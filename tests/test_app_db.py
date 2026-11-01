@@ -12,7 +12,8 @@ pytestmark = pytest.mark.db
 
 @pytest.fixture
 def client():
-    with TestClient(create_app(get_settings())) as c:
+    # 테스트에서는 와처를 끈다 — 켜면 실제 ~/.claude/projects를 운영 DB에 적재한다
+    with TestClient(create_app(get_settings().model_copy(update={"watch_enabled": False}))) as c:
         yield c
 
 
@@ -99,3 +100,14 @@ def test_ws_wrong_token_reason_has_length_only(client):
     assert e.value.code == 1008
     assert "61" in e.value.reason
     assert get_settings().foreman_api_token.get_secret_value() not in e.value.reason
+
+
+def test_hooks_reject_paths(client):
+    hook = get_settings().foreman_hook_token.get_secret_value()
+    api = get_settings().foreman_api_token.get_secret_value()
+    body = {"hook_event_name": "Stop", "session_id": "x"}
+    assert client.post("/hooks", json=body).status_code == 401
+    assert client.post("/hooks", json=body, headers={"Authorization": f"Bearer {api}"}).status_code == 401  # API 토큰으론 안 된다
+    assert client.post("/hooks", content=b"nope", headers={"Authorization": f"Bearer {hook}"}).status_code == 400
+    assert client.post("/hooks", json={"x": 1}, headers={"Authorization": f"Bearer {hook}"}).status_code == 400
+    assert client.post("/hooks", json=body, headers={"Authorization": f"Bearer {hook}"}).status_code == 503  # 와처 꺼짐

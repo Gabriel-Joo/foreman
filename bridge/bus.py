@@ -70,6 +70,10 @@ class Pipeline:
     def subscribers(self) -> int:
         return len(self._subs)
 
+    def publish(self, msg: dict[str, Any]) -> None:
+        """이미 적재된 것을 구독자에게만 낸다(조립기 — 턴 · 트랜스크립트 이벤트는 조립기가 직접 적재한다)."""
+        self._fanout(msg)
+
     def _fanout(self, msg: dict[str, Any]) -> None:
         for q in list(self._subs):
             try:
