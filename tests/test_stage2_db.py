@@ -201,9 +201,13 @@ async def test_partial_then_complete_and_reread_no_dup(env):
                            password=s.mysql_password.get_secret_value(), database=s.mysql_database, autocommit=True)
     conn.cursor().execute("UPDATE transcript_file SET read_offset = 0")
     conn.close()
+    states = q(s, "SELECT prompt_id, end_reason, closed_by, ended_at, duration_ms, compacted FROM turn ORDER BY seq")
     await run(s)
     after = q(s, "SELECT (SELECT COUNT(*) FROM event), (SELECT COUNT(*) FROM message), (SELECT COUNT(*) FROM turn)")
     assert after == mid
+    # 수만이 아니라 상태도 같아야 한다 — 마지막 턴(p4)은 여전히 열려 있다(옛 turn_duration이 닫으면 안 된다)
+    assert q(s, "SELECT prompt_id, end_reason, closed_by, ended_at, duration_ms, compacted FROM turn ORDER BY seq") == states
+    assert states[-1][:2] == ("p4", None)
 
 
 async def test_sweep_closes_dead_session(env):
@@ -226,6 +230,7 @@ async def test_hook_first_then_transcript_same_turn(env):
     await Watcher(s, asm).backfill()
     await asm.apply_hook("Stop", {"session_id": SID, "cwd": CWD})
     with main.open("a", encoding="utf-8") as f:
+        f.write(MAIN[7] + "\n")                              # 응답 줄이 Stop hook보다 늦게 쓰인다(실측)
         f.write(MAIN[8] + "\n")                              # turn_duration은 더 늦게
     await Watcher(s, asm).backfill()
     rows = q(s, "SELECT prompt_id, end_reason, closed_by, duration_ms, prompt_text FROM turn")
@@ -234,3 +239,19 @@ async def test_hook_first_then_transcript_same_turn(env):
     assert (pid, reason, by, dur) == ("p1", "stop", "hook", 1234)
     assert SECRET not in ptext
     assert q(s, "SELECT COUNT(*) FROM event WHERE source = 'hook'")[0][0] == 2
+    assert q(s, "SELECT COUNT(*) FROM event WHERE type = 'assistant_msg' AND turn_id IS NULL")[0][0] == 0
+
+
+async def test_input_without_response_is_merged(env):
+    s, main = env
+    for p in (main.parent / SID / "subagents").iterdir():
+        p.unlink()
+    main.write_text("\n".join([
+        user(U(201), "q1", NOTIF.replace("abc123", "zzz"), origin={"kind": "task-notification"}, turnOrigin="task_notification"),
+        user(U(202), "q2", "Another Claude session sent a message: hi", isMeta=True),
+        asst(U(203), "msg_q", {"type": "text", "text": "둘 다 봤다"}),
+        system(U(204), "turn_duration", durationMs=10),
+    ]) + "\n", encoding="utf-8")
+    await run(s)
+    assert q(s, "SELECT prompt_id, origin, end_reason FROM turn ORDER BY seq") == (
+        ("q1", "task_notification", "merged"), ("q2", "agent_message", "stop"))
