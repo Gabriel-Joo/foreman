@@ -23,7 +23,8 @@
 <p class="note">이벤트 하나가 대기열 → DB 적재 → WebSocket까지 가는지 본다. 토큰은 이 탭에만 둔다(sessionStorage).</p>
 
 <div class="row">
-  <input id="token" type="password" placeholder="FOREMAN_API_TOKEN" autocomplete="off">
+  <input id="token" type="password" placeholder="FOREMAN_API_TOKEN 값" autocomplete="new-password">
+  <span id="toklen" class="note"></span>
   <button id="connect">연결</button>
   <span id="state">끊김</span>
 </div>
@@ -41,12 +42,17 @@ const log = (obj) => {
   $('log').textContent = line + $('log').textContent;
 };
 const setState = (txt, cls) => { $('state').textContent = txt; $('state').className = cls || ''; };
+// .env.bridge 줄을 통째로 붙여넣은 경우(FOREMAN_API_TOKEN=… · 따옴표)를 값만 남긴다. 값은 화면에 내지 않고 길이만 보인다
+const tokenValue = () => $('token').value.trim().replace(/^FOREMAN_API_TOKEN=/, '').replace(/^(['"])(.*)\1$/, '$2');
+const showLen = () => { const n = tokenValue().length; $('toklen').textContent = n ? `길이 ${n}` : ''; };
 try { $('token').value = sessionStorage.getItem('foremanToken') || ''; } catch (e) {}
+showLen();
+$('token').addEventListener('input', showLen);
 
 let ws = null, lastSeen = 0, hb = 15, watchdog = null;
 
 function connect() {
-  const token = $('token').value.trim();
+  const token = tokenValue();
   try { sessionStorage.setItem('foremanToken', token); } catch (e) {}
   if (ws) ws.close();
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -59,7 +65,10 @@ function connect() {
     if (msg.type === 'hello') { hb = msg.heartbeat_s; setState('연결됨', 'ok'); }
     if (msg.type !== 'ping') log(msg);
   };
-  ws.onclose = (e) => { setState(`끊김 (code ${e.code})`, 'bad'); log(`close ${e.code}`); };
+  ws.onclose = (e) => {
+    setState(`끊김 (code ${e.code}${e.reason ? ' — ' + e.reason : ''})`, 'bad');
+    log(`close ${e.code}${e.reason ? ' ' + e.reason : ''}`);
+  };
   clearInterval(watchdog);
   // 하트비트 두 번을 놓치면 끊긴 것으로 본다(README 3.10 — 서버 다운은 브라우저가 침묵으로 안다)
   watchdog = setInterval(() => {
@@ -72,7 +81,7 @@ function connect() {
 async function emit() {
   const r = await fetch('/api/debug/emit', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${$('token').value.trim()}` },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tokenValue()}` },
     body: JSON.stringify({ target: $('target').value || '확인용 이벤트', payload: { from: 'index.html' } }),
   });
   log(`POST /api/debug/emit → ${r.status} ${await r.text()}`);
