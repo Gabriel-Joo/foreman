@@ -1,2 +1,10 @@
 # 비밀값 — 커밋하지 않는다
 .env*
+# 견본은 커밋한다
+!.env*.example
+
+# 파이썬
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
