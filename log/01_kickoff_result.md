@@ -147,7 +147,7 @@ CC 바이너리: `[200~`/`[201~` → paste-start/paste-end. CC 자신의 pty 입
 - **브리프 01의 4(기존 구현 조사)** — 아직 안 함
 - **브리프 01의 5(로드맵 0단계 tmux 이전)** — 보류(사용자 결정). 런슈즈 · 펫퍼민트 세션(14일 · 17일째)은 옮기다 컨텍스트를 날릴 위험이 커서 FOREMAN이 실제로 동작하는 것을 확인한 뒤에 옮긴다. 지금 tmux에서 도는 것은 FOREMAN 작업 세션 `cc-foreman`과 브리지 `foreman-bridge`뿐. 정지 4개는 대상이 아니다. 세션 이름 규칙은 옮길 때 정한다
 - **DB 위치 · 브리지 배치** — 결정됨: 호스트 도커 FOREMAN 전용 MySQL(`127.0.0.1:3308`), 브리지는 호스트 프로세스. 근거는 README 3.12(감시하는 쪽과 감시받는 쪽의 장애 범위 분리)
-- **로드맵 1단계** — 완료. [`stage1_bridge_db_result.md`](stage1_bridge_db_result.md). 남은 것은 집 PC 브라우저 접속 확인
+- **로드맵 1단계** — 완료. [`stage1_bridge_db_result.md`](stage1_bridge_db_result.md). 집 PC 브라우저 왕복까지 확인
 - **로드맵 2단계**(hook 수신 + JSONL 와처 + 턴 판정) — 다음
 - 서브에이전트 output 토큰: `<task-notification>`의 `subagent_tokens`는 소수에만 있어 보조 검증용. 주 경로 후보 OTel 실측은 여전히 필요(README 3.11)
 - 브리프 02는 로드맵 6단계 뒤에 실행. 그 전에 "기존 systemd 유닛 2개" 전제를 실제(유닛 1개 + 클러스터 터널)에 맞게 고쳐야 한다. 노션 문서 위치 · Access 허용 이메일은 사용자에게 받는다. 실행 전에 `DEBUG_ENDPOINTS=false`
