@@ -2,7 +2,7 @@
 
 > AI 코딩 에이전트가 만든 변경이 배포까지 가는 전 과정을, 브라우저 한 화면에서 보고 지시하는 관제실.
 
-🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. **로드맵 1단계 완료**([결과](log/stage1_bridge_db_result.md)). 서버 PC 변경 기록은 [`log/`](log/)
+🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. **로드맵 1단계 완료**([결과](log/stage1_bridge_db_result.md)), **2단계 완료**([결과](log/stage2_transcript_result.md) — hook 설치만 사용자 결정 대기). 서버 PC 변경 기록은 [`log/`](log/)
 
 **개발 중 접속**: 로드맵 0~5단계는 `ssh -L 8000:localhost:8000`으로 붙고, 6단계 이후에 Cloudflare Tunnel로 바꾼다. 코드는 바뀌지 않고 앞단만 바뀐다.
 
@@ -194,7 +194,9 @@ tmux send-keys -t <pane> Enter       # 제출
 | 세션 종료 (창 닫힘·exit) | 0/5 | SessionEnd (reason) | 프로세스 소멸 폴링 |
 | 턴 도중 auto-compact | 턴이 `compact_boundary`를 넘어 이어짐 | — | — |
 
-그래서 턴에 `end_reason`을 두고, **먼저 도착한 신호가 턴을 닫는다.** 시작은 UserPromptSubmit hook, 실시간 종료 트리거는 Stop / StopFailure / SessionEnd hook, 중단은 interrupt 마커, 비정상 소멸은 폴링이 맡는다. `turn_duration`은 소요시간(`durationMs`)과 사후 대조에 쓴다.
+그래서 턴에 `end_reason`을 두고, **먼저 도착한 신호가 턴을 닫는다**(`closed_by`에 출처: transcript · hook · sweep). 시작은 UserPromptSubmit hook, 실시간 종료 트리거는 Stop / StopFailure / SessionEnd hook, 중단은 interrupt 마커, 비정상 소멸은 폴링이 맡는다. `turn_duration`은 소요시간(`durationMs`)과 사후 대조에 쓴다.
+
+**턴의 경계는 CC의 `promptId`다**(2단계 실측). 한 턴의 user 줄(프롬프트 · tool_result · 중단 표시 · compact 요약)이 모두 같은 `promptId`를 갖는다. 새 `promptId`를 가진 user 줄이 턴을 연다 — 사람 프롬프트만이 아니라 task-notification과 다른 세션의 메시지도 연다(`turn.origin`). 앞 턴이 안 닫힌 채 다음 턴이 열리면, 앞 턴에 모델 활동이 없었으면 `merged`(응답 없이 다음 입력과 함께 처리 — 실측 54건 전부), 있었으면 `no_signal`. 프로세스가 사라진 세션은 hook을 받던 세션이면 `process_lost`, 아니면 `session_end`. hook이 트랜스크립트보다 먼저 오는 경우(Stop이 마지막 응답 줄보다 먼저)는 늦게 온 줄을 직전 턴에 붙인다.
 
 턴이 닫히는 순간 브리지가 한 번에 처리한다:
 
@@ -351,7 +353,8 @@ CC 세션 하나가 `Agent` 도구(이 버전에서는 `Task`가 아니라 `Agen
 
 #### 처리 규칙
 
-- **와처**: 세션 폴더의 `subagents/`도 inotify로 감시한다. 종료는 `meta.json`의 `finished`와 SubagentStop hook으로 판정한다. `api-request` 선필터도 같게 적용한다.
+- **와처**: 세션 폴더의 `subagents/`도 inotify로 감시한다. 종료는 `meta.json`의 `finished`와 SubagentStop hook, `<task-notification>`의 status로 판정한다. 부모 세션의 프로세스가 사라지면 남은 running은 stopped. `api-request` 선필터도 같게 적용한다.
+- **행을 만드는 곳**: 부모의 `Agent` tool_result(`toolUseResult.agentId`, `async_launched`)에서 만들고 그 턴을 `spawn_turn`으로 한다(2단계). 자식 파일이 먼저 오면 meta.json으로 만들고 연결 작업이 나중에 채운다.
 - **귀속**: 백그라운드는 띄운 턴과 결과를 받는 턴이 다르다. 토큰·이벤트는 **띄운 턴**(`toolUseId`로 연결)에 귀속하고, 결과를 받은 턴은 `result_turn_id`로 따로 남긴다.
 - **상태**: 부모 턴이 Stop으로 끝나도 자식은 돌 수 있다(토큰은 계속 나간다). 상태 값을 늘리지 않고 **"IDLE + 백그라운드 n개"** 배지로 보인다.
 - **알림**: 서브에이전트마다 보내지 않는다. 부모 턴이 끝날 때 한 번, 또는 백그라운드 묶음이 모두 끝났을 때 한 번 묶어서 보낸다.
@@ -484,7 +487,7 @@ CC에는 `/remote-control` 모드가 이미 존재한다. 세션 뷰어 구간�
 | prompt_uuid | varchar | 프롬프트 줄의 uuid |
 | prompt_text | text | 사용자 입력 (compact 요약 줄은 제외) |
 | started_at / ended_at | datetime | |
-| end_reason | enum | stop stop_failure interrupted session_end process_lost |
+| end_reason | enum | stop stop_failure interrupted session_end process_lost merged no_signal (3.2) |
 | duration_ms | int nullable | `system/turn_duration`의 `durationMs` |
 | compacted | bool | 턴 도중 compact가 일어났나 |
 
@@ -611,7 +614,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 |---|---|---|
 | 0 | `cleanupPeriodDays` 상향 (완료: 120일) + CC를 tmux로 이전 | SSH + tmux attach만으로 VNC 우회. pane 하나에 claude 하나. **tmux 이전은 FOREMAN 세션(`cc-foreman`)만 했다.** 런슈즈 · 펫퍼민트 세션(14일 · 17일째)은 옮기다 컨텍스트를 날릴 위험이 커서 FOREMAN이 실제로 동작하는 것을 확인한 뒤에 옮긴다(2026-11-02 결정) |
 | 1 | 브리지 + 스키마 + MySQL + WebSocket | ✅ **완료**(2026-11-02, [결과](log/stage1_bridge_db_result.md)) — 집 PC 브라우저 왕복까지 확인. 토대. MySQL은 호스트 도커 전용 인스턴스(3.12) |
-| 2 | hook 수신 + inotify 기반 JSONL 와처 (offset tail, `subagents/` 포함) + 턴 판정 (`end_reason`) | 기존 구현 참고 |
+| 2 | hook 수신 + inotify 기반 JSONL 와처 (offset tail, `subagents/` 포함) + 턴 판정 (`end_reason`) | ✅ **완료**(2026-11-02, [결과](log/stage2_transcript_result.md)) — 1.4GB 백필 18초, 다시 읽어도 행 · 턴 상태 동일. hook은 받는 쪽만 만들고 설치는 사용자 결정 대기 |
 | 3 | send-keys 실측 선행 → 입력 → 왕복 완성 | ⚠️ **최대 리스크.** 격리된 tmux에서 CC로 방법 C·멀티라인·`/` `!` `@`·긴 붙여넣기를 먼저 실측. 여기가 막히면 프로젝트가 성립하지 않음 |
 | 4 | 텔레그램 이관 + 연결 끊김 표시 | 3번과 같은 신호를 쓴다. 그 전까지는 CLAUDE.md "알림" 절 + `scripts/notify-telegram.sh`(모델 판단 발송)가 임시로 쓰이며, 이 단계에서 지운다 |
 | 5 | 승인 정책 엔진 | 원래 불편 중 유일하게 안 풀린 것 |
@@ -665,3 +668,4 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | [infra_20261102_host-changes.md](log/infra_20261102_host-changes.md) | 11-02 서버 PC 변경(포트 노출 닫기, milvus 외부 etcd, search-service 유닛, VM 자동 시작), 되돌리기용 자원, 작업 시 주의 |
 | [infra_20261102_milvus-port-forward.md](log/infra_20261102_milvus-port-forward.md) | 567,740회 재시작하던 유닛 정지 — 호스트 서비스 감시(2.2)의 근거 |
 | [stage1_bridge_db_result.md](log/stage1_bridge_db_result.md) | 로드맵 1단계(브리지 · 스키마 · MySQL · WebSocket) 결과 — 설계 확인 5가지, 시험에서 찾은 것(cryptography), 남은 것 |
+| [stage2_transcript_result.md](log/stage2_transcript_result.md) | 로드맵 2단계(와처 · 조립 · 턴 판정 · hook 수신) 결과 — promptId 실측, 백필 · 다시 읽기 · 실시간 · hook 검증, 시험에서 찾은 것 |
