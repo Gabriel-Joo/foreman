@@ -255,3 +255,15 @@ async def test_input_without_response_is_merged(env):
     await run(s)
     assert q(s, "SELECT prompt_id, origin, end_reason FROM turn ORDER BY seq") == (
         ("q1", "task_notification", "merged"), ("q2", "agent_message", "stop"))
+
+
+async def test_prompt_hook_while_turn_open_is_queued_input(env):
+    """바쁠 때 보낸 입력에도 UserPromptSubmit이 불린다(3단계 실측) — 진행 중인 턴을 닫거나 새로 열면 안 된다."""
+    s, main = env
+    for p in (main.parent / SID / "subagents").iterdir():
+        p.unlink()
+    main.write_text(MAIN[0] + "\n", encoding="utf-8")       # p1 열림(2026-10-01, 15초보다 오래 전)
+    asm = await run(s)
+    await asm.apply_hook("UserPromptSubmit", {"session_id": SID, "cwd": CWD, "prompt": "바쁠 때 보낸 것"})
+    assert q(s, "SELECT prompt_id, end_reason FROM turn") == (("p1", None),)
+    assert q(s, "SELECT type FROM event WHERE source = 'hook'") == (("queued",),)
