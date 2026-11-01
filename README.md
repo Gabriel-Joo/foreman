@@ -2,7 +2,7 @@
 
 > AI 코딩 에이전트가 만든 변경이 배포까지 가는 전 과정을, 브라우저 한 화면에서 보고 지시하는 관제실.
 
-🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4·5, 로드맵 0단계의 tmux 이전. 서버 PC 변경 기록은 [`log/`](log/)
+🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. 서버 PC 변경 기록은 [`log/`](log/)
 
 **개발 중 접속**: 로드맵 0~5단계는 `ssh -L 8000:localhost:8000`으로 붙고, 6단계 이후에 Cloudflare Tunnel로 바꾼다. 코드는 바뀌지 않고 앞단만 바뀐다.
 
@@ -131,7 +131,7 @@ UI에서는 부모-자식 관계를 트리로 그리지 않는다. **공간으�
     │              + 프로세스 상태 폴링 (/proc/<pid>/stat)
     ├─ 승인 정책   PreToolUse에서 allow / ask 판정
     ├─ 수명 관리   tmux 생성·종료, git worktree add·remove
-    ├─ 적재        MySQL (FOREMAN용 DB는 아직 없다 — 위치는 1단계에서 정한다. 기존 운영 DB 파드는 호스트에서 직접 연결 불가)
+    ├─ 적재        MySQL — 호스트 도커의 FOREMAN 전용 인스턴스 (127.0.0.1:3308, 3.12)
     ├─ 발신        텔레그램
     ├─ 수신        웹훅 (GitLab · Jenkins · Harbor · ArgoCD)
     └─ 폴링        인프라 생존 확인, LLM 지표, 프로메테우스 쿼리,
@@ -361,12 +361,29 @@ CC 세션 하나가 `Agent` 도구(이 버전에서는 `Task`가 아니라 `Agen
 
 - 서브에이전트 줄의 usage는 **응답을 받기 시작한 시점의 값**으로 보인다 — `stop_reason`이 null이고 output_tokens가 글자당 0.002(부모는 0.77, 예: 10,603자 블록에 8). 입력 쪽(cache_read·cache_creation)은 그럴듯하지만 검증 안 함
 - **SubagentStop hook 입력에 usage가 없다**(2.1.316 바이너리). 필드는 공통(session_id, transcript_path, cwd, permission_mode, agent_id, agent_type, effort) + `stop_hook_active`, `agent_transcript_path`, `last_assistant_message`, `background_tasks`, `session_crons`
-- 완료 알림(`<task-notification>`)의 **일부**에 합계가 있다 — `<usage><subagent_tokens>N</subagent_tokens><tool_uses>N</tool_uses><duration_ms>N</duration_ms></usage>`. 런슈즈 서브에이전트 140개 중 34개, 펫퍼민트 `cddadc68` 18개 중 11개(completed 알림인데도 없는 경우가 많다). 종류 구분 없는 합계 하나이고 입력 포함 여부는 미확인 — 있으면 `subagent_run`에 합계로 저장한다
-- **후보: OpenTelemetry 메트릭 `claude_code.token.usage`** — 응답이 끝난 뒤의 최종 usage로 type(input·output·cacheRead·cacheCreation)별로 더하고, 속성에 `model`·`query_source`·`effort`가 붙는다. `query_source`로 본체와 서브에이전트가 구분되는지는 실측이 필요하다
+- 완료 알림(`<task-notification>`)의 **일부**에 합계가 있다 — `<usage><subagent_tokens>N</subagent_tokens><tool_uses>N</tool_uses><duration_ms>N</duration_ms></usage>`. 런슈즈 서브에이전트 140개 중 34개, 펫퍼민트 `cddadc68` 18개 중 11개(completed 알림인데도 없는 경우가 많다). 종류 구분 없는 합계 하나이고 입력 포함 여부는 미확인. **소수에만 있으므로 주 경로로 쓰지 않는다** — 있으면 `subagent_run`에 합계로 남겨 다른 경로의 값과 대조하는 **보조 검증용**으로만 쓴다
+- **주 경로 후보: OpenTelemetry 메트릭 `claude_code.token.usage`** — 위 합계로 대신할 수 없으므로 **OTel 실측은 여전히 필요하다**. — 응답이 끝난 뒤의 최종 usage로 type(input·output·cacheRead·cacheCreation)별로 더하고, 속성에 `model`·`query_source`·`effort`가 붙는다. `query_source`로 본체와 서브에이전트가 구분되는지는 실측이 필요하다
 - 실측 방법: 버리는 디렉토리에서 `CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=console OTEL_METRIC_EXPORT_INTERVAL=5000`으로 CC를 띄워, 서브에이전트 없는 프롬프트 하나와 서브에이전트 하나를 띄우는 프롬프트 하나를 보낸다. 콘솔 메트릭의 `query_source` 값과 output 합계를, 같은 세션 트랜스크립트 부모 줄의 output 합계와 비교한다
 - 그 전까지 서브에이전트 output은 `output_tokens_reliable = false`로 저장하고 화면에 "추정"으로 표시한다
 
 **미정**: 동시 서브에이전트 수에 상한·경고를 둘지. 자동 기상의 "동시 ACTIVE 최대 3"(3.5)은 캐릭터 세션 수이고 서브에이전트는 세지 않는다.
+
+### 3.12 배치 — 브리지와 DB는 클러스터 밖, 호스트에 둔다
+
+**결정 (2026-11-02)**: 브리지는 호스트 프로세스, DB는 호스트 도커의 **FOREMAN 전용 MySQL**(`127.0.0.1:3308`)이다. 클러스터(k8s)에 올리지 않는다.
+
+**결정적 이유 — 감시하는 쪽과 감시받는 쪽의 장애 범위를 나눈다.** FOREMAN은 클러스터와 호스트 서비스가 망가지는 순간을 기록하려고 만든다. DB가 클러스터 안에 있으면 클러스터가 흔들리는 바로 그 순간에 적재가 멈추고 화면이 꺼진다. 2026-11-02의 두 사고가 정확히 그런 상황이었다 — `milvus-port-forward.service`가 한 달 넘게 567,740회 재시작했고, milvus 컨테이너가 17분 크래시 루프를 돌았다(2.2). 감시 장비가 감시 대상과 같이 죽으면 그 기록이 남지 않는다.
+
+그 밖의 근거:
+
+- 브리지가 다루는 것(tmux, `~/.claude/projects/` 트랜스크립트, hook, `/proc` 폴링, systemd·docker 폴링)이 전부 호스트에 있다. DB도 같은 곳에 둔다
+- 재부팅 때 docker 데몬과 함께 바로 뜬다. VM 4대와 클러스터가 다 올라오기를 기다리지 않는다
+- **기존 MySQL에 얹지 않는다.** 클러스터의 `petmint/mysql-0` · `runshoes/runshoes-mysql-0`는 운영 DB이고 headless라 호스트에서 바로 붙을 수 없다. 호스트 3306(`mysql`)은 펫퍼민트 로컬 개발·측정용이다 — 펫퍼민트 `db/bootstrap.py`가 관리하고, 초기화할 때(`~/mysql-data`를 비우는 경우 등) FOREMAN 기록이 같이 사라지며, FOREMAN이 계속 쓰면 측정값이 오염된다
+- 검토하고 버린 선택지: m-k8s에서 `kubectl port-forward`(파드가 재시작되면 끊기고 감독 프로세스가 따로 필요하다 — `milvus-port-forward`와 같은 모양), NodePort·MetalLB 신설(연결은 되지만 위의 장애 범위 문제가 그대로이고, 데이터가 노드 하나의 `local-path`에 묶인다)
+
+**브리지를 파드로 띄울 수 없는 이유**: 여기서 k8s 노드는 libvirt VM이다. `hostPID`·`hostPath`가 가리키는 "호스트"는 서버 PC가 아니라 VM이므로, 서버 PC의 claude 프로세스(`/proc`)도 `~/.claude/`도 보이지 않는다. tmux 유닉스 소켓은 VM 경계를 넘지 못한다. 우회하려면 파드에서 호스트로 ssh해야 하는데, 그러면 사용자 계정의 ssh 키가 클러스터 Secret에 들어간다 — 파드 하나가 털리면 서버 PC 셸이 털린다. 트랜스크립트를 NFS로 내보내면 클라이언트 쪽에서 inotify가 오지 않아 폴링으로 돌아간다.
+
+**수집부(호스트) · API/UI(파드) 분리는 9단계에서 다시 본다.** 수집부가 브리지 일의 대부분(와처, hook, 주입, 폴링)을 가져가고, 파드에는 API·UI·웹훅만 남는다. 지금은 배포 단위가 둘이 되고, 그 사이 내부 프로토콜과 한쪽만 죽는 상태를 처리해야 하며, 클러스터가 죽으면 정작 그때 화면이 꺼진다. 물리 서버가 하나라 가용성도 늘지 않는다. 얻는 것은 GitOps 배포 이야기 하나이므로, FOREMAN을 CI/CD에 태우는 9단계에서 배포 대상을 정할 때 함께 판단한다.
 
 ## 4. 만들 것과 가져다 쓸 것
 
@@ -590,8 +607,8 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 
 | 단계 | 내용 | 비고 |
 |---|---|---|
-| 0 | `cleanupPeriodDays` 상향 (완료: 120일) + CC를 tmux로 이전 | 즉시 가능. SSH + tmux attach만으로 VNC 우회. pane 하나에 claude 하나 |
-| 1 | 브리지 + 스키마 + MySQL + WebSocket | 토대 |
+| 0 | `cleanupPeriodDays` 상향 (완료: 120일) + CC를 tmux로 이전 | SSH + tmux attach만으로 VNC 우회. pane 하나에 claude 하나. **tmux 이전은 FOREMAN 세션(`cc-foreman`)만 했다.** 런슈즈 · 펫퍼민트 세션(14일 · 17일째)은 옮기다 컨텍스트를 날릴 위험이 커서 FOREMAN이 실제로 동작하는 것을 확인한 뒤에 옮긴다(2026-11-02 결정) |
+| 1 | 브리지 + 스키마 + MySQL + WebSocket | 토대. MySQL은 호스트 도커 전용 인스턴스(3.12) |
 | 2 | hook 수신 + inotify 기반 JSONL 와처 (offset tail, `subagents/` 포함) + 턴 판정 (`end_reason`) | 기존 구현 참고 |
 | 3 | send-keys 실측 선행 → 입력 → 왕복 완성 | ⚠️ **최대 리스크.** 격리된 tmux에서 CC로 방법 C·멀티라인·`/` `!` `@`·긴 붙여넣기를 먼저 실측. 여기가 막히면 프로젝트가 성립하지 않음 |
 | 4 | 텔레그램 이관 + 연결 끊김 표시 | 3번과 같은 신호를 쓴다. 그 전까지는 CLAUDE.md "알림" 절 + `scripts/notify-telegram.sh`(모델 판단 발송)가 임시로 쓰이며, 이 단계에서 지운다 |
@@ -599,7 +616,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 6 | 대시보드 (못생겨도 되는 실사용 UI) | 여기까지가 매일 쓸 수 있는 물건 |
 | 7 | 터미널 패널 (ttyd) + 명령 자동 채우기 | |
 | 8 | LLM 지표 + 병목 시각화 | AI 인프라 축 |
-| 9 | CI/CD 웹훅 + 인과 체인 + 파이프라인 구역 | 차별점 |
+| 9 | CI/CD 웹훅 + 인과 체인 + 파이프라인 구역 | 차별점. FOREMAN 자체를 CI/CD에 태울 때 수집부(호스트) · API/UI(파드) 분리를 다시 본다(3.12) |
 | 10 | 테마 렌더러 | 데이터가 어떻게 생겼는지 안 뒤에 설계. 방이 여러 개일 때 보여주는 방식(나란히 / 탭 / 줌, 2.5)도 여기서 정한다 |
 | 11 | 캐릭터 수명 관리 + 포먼 + 세션 인계 | |
 | 12 | 포트폴리오 작성 캐릭터 (Notion MCP) | 로그를 읽어 회고 생성 |
@@ -635,7 +652,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 
 | # | 브리프 | 내용 | 실행 시점 |
 |---|---|---|---|
-| 01 | [kickoff](docs/01_kickoff.md) | 설계 검토: README 파악, 환경 조사, 설계 리스크, 기존 구현 조사, 단계 0 계획 | 지금 — 1~3 끝(3은 범위 축소, [결과](log/01_kickoff_result.md)), 4·5 남음 |
+| 01 | [kickoff](docs/01_kickoff.md) | 설계 검토: README 파악, 환경 조사, 설계 리스크, 기존 구현 조사, 단계 0 계획 | 지금 — 1~3 끝(3은 범위 축소, [결과](log/01_kickoff_result.md)), 4 남음, 5 보류(FOREMAN 동작 확인 뒤) |
 | 02 | [cloudflare tunnel](docs/02_cloudflare_tunnel.md) | 외부 노출: foreman.ronanlab.dev 터널 + Access 사람 인증, 브리지 자체 토큰 | 로드맵 6단계 완료 후 |
 
 ### 기록 (`log/`)
