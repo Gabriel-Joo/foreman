@@ -89,3 +89,13 @@ def test_emit_duplicate_uuid_409(client):
     assert client.post("/api/debug/emit", json={"uuid": u}, headers=_auth()).status_code == 201
     assert client.post("/api/debug/emit", json={"uuid": u}, headers=_auth()).status_code == 409
     client.delete("/api/debug/events", headers=_auth())
+
+
+def test_ws_wrong_token_reason_has_length_only(client):
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"type": "auth", "token": "z" * 61})
+        with pytest.raises(WebSocketDisconnect) as e:
+            ws.receive_json()
+    assert e.value.code == 1008
+    assert "61" in e.value.reason
+    assert get_settings().foreman_api_token.get_secret_value() not in e.value.reason

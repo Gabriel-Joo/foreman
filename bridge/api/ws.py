@@ -28,16 +28,12 @@ async def ws_endpoint(ws: WebSocket) -> None:
     pipeline = ws.app.state.pipeline
     await ws.accept()
 
-    try:
-        async with asyncio.timeout(s.ws_auth_timeout_s):
-            first = json.loads(await ws.receive_text())
-        ok = isinstance(first, dict) and first.get("type") == "auth" and token_ok(
-            first.get("token"), s.foreman_api_token.get_secret_value()
-        )
-    except (TimeoutError, ValueError, WebSocketDisconnect):
-        ok = False
-    if not ok:
-        await _close(ws, status.WS_1008_POLICY_VIOLATION)
+    reason = await _auth_failure(ws, s.ws_auth_timeout_s, s.foreman_api_token.get_secret_value())
+    if reason is not None:
+        # 값은 남기지 않는다. 이유와 받은 길이만 — 길이로 붙여넣기 실수(키 이름 · 따옴표 · 잘림)를 가늠한다
+        client = f"{ws.client.host}:{ws.client.port}" if ws.client else "?"
+        log.warning("WS 인증 실패 %s: %s (기대 길이 %d)", client, reason, len(s.foreman_api_token.get_secret_value()))
+        await _close(ws, status.WS_1008_POLICY_VIOLATION, reason)
         return
 
     q = pipeline.subscribe()
@@ -69,8 +65,31 @@ async def ws_endpoint(ws: WebSocket) -> None:
         pipeline.unsubscribe(q)
 
 
-async def _close(ws: WebSocket, code: int) -> None:
+async def _auth_failure(ws: WebSocket, timeout_s: float, expected: str) -> str | None:
+    """첫 메시지를 검사한다. 통과하면 None, 아니면 클라이언트에도 그대로 보낼 짧은 이유(close reason, 123바이트 이하)."""
     try:
-        await ws.close(code)
+        async with asyncio.timeout(timeout_s):
+            text = await ws.receive_text()
+    except TimeoutError:
+        return f"{timeout_s:g}초 안에 인증 메시지가 없음"
+    except WebSocketDisconnect:
+        return "인증 전에 끊김"
+    try:
+        first = json.loads(text)
+    except ValueError:
+        return "첫 메시지가 JSON이 아님"
+    if not isinstance(first, dict) or first.get("type") != "auth":
+        return 'type이 "auth"가 아님'
+    token = first.get("token")
+    if not isinstance(token, str) or not token:
+        return "token이 없음"
+    if not token_ok(token, expected):
+        return f"토큰 불일치(받은 길이 {len(token)})"  # 기대 길이는 서버 로그에만
+    return None
+
+
+async def _close(ws: WebSocket, code: int, reason: str = "") -> None:
+    try:
+        await ws.close(code, reason)
     except RuntimeError:
         pass  # 이미 닫힘
