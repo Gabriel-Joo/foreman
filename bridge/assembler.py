@@ -776,10 +776,16 @@ class Assembler:
                         st.hook_seen = True
                         tid = st.open_turn.id if st.open_turn else None
                         sub_id = None
+                        hook_type = self.HOOK_EVENT[name]
                         if name == "UserPromptSubmit":
                             o = st.open_turn
-                            if o and o.prompt_id and (now - o.started_at).total_seconds() < 15:
-                                tid = o.id  # 트랜스크립트가 먼저 열었다
+                            if o is not None:
+                                # 턴이 열려 있다 — 트랜스크립트가 이미 연 이 프롬프트이거나, 바쁠 때 보낸 입력(대기열 →
+                                # 같은 턴에 전달). 후자에도 UserPromptSubmit이 불린다(3단계 실측). 새 턴을 열지 않는다.
+                                # (시간 창으로 가르던 것은 15초 넘은 턴에 대기열 입력이 오면 진행 중인 턴을 닫았다)
+                                tid = o.id
+                                if o.prompt_id and (now - o.started_at).total_seconds() >= 15:
+                                    hook_type = "queued"
                             else:
                                 tid = await self._open_turn(c, st, b, pid=None, uuid=None, origin="human",
                                                             prompt=self.mask.text(p.get("prompt")), ts=now, by="hook")
@@ -801,7 +807,7 @@ class Assembler:
                                     {"id": sub.id})
                         keep = {k: p.get(k) for k in ("hook_event_name", "reason", "error", "agent_type",
                                                       "stop_hook_active", "permission_mode") if p.get(k) is not None}
-                        self._event(b, st, uuid=str(uuidlib.uuid4()), ts=now, type=self.HOOK_EVENT[name], source="hook",
+                        self._event(b, st, uuid=str(uuidlib.uuid4()), ts=now, type=hook_type, source="hook",
                                     turn_id=tid, subagent_id=sub_id, payload=keep or None)
                         await self._flush(c, b)
             except BaseException:
