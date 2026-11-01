@@ -20,6 +20,19 @@ FOREMAN 설계의 근거가 된 사고들이 여기서 나왔다(README 2.2 호�
 
 중단: 펫퍼민트 검색이 milvus 첫 재시작 시도 때 약 17분(05:20~05:37), 외부 etcd 전환 때 약 30초, search-service 재시작 때마다 약 30초.
 
+## FOREMAN 로드맵 1단계로 생긴 것 (같은 날 07:43~)
+
+FOREMAN 자체의 자원이다. 근거는 README 3.12, 결과는 [`stage1_bridge_db_result.md`](stage1_bridge_db_result.md).
+
+| 대상 | 상태 | 비고 |
+|---|---|---|
+| 컨테이너 `foreman-mysql` | `mysql:8.0.46`, restart unless-stopped, mem 1g. compose 프로젝트 `foreman`(`foreman/deploy/mysql/compose.yml`) | 호스트 3306 `mysql`(펫퍼민트)과 별개 |
+| 포트 3308 | `127.0.0.1:3308` → 컨테이너 3306 | 호스트 밖에는 열지 않는다 |
+| `~/volumes/foreman-mysql` | 데이터(bind mount). compose가 만들어 소유자가 컨테이너 쪽(mysql uid) | `docker volume prune`에 지워지지 않는다. 지우면 FOREMAN 기록이 사라진다 |
+| `~/backups/foreman` | kopo17 소유 700(사용자가 sudo로 생성, 07:57:30). `foreman-*.sql.gz` 14개 보관 + `backup.log` | |
+| 사용자 crontab | `30 4 * * * …/foreman/deploy/mysql/backup.sh >> ~/backups/foreman/backup.log 2>&1` — 이 crontab의 유일한 줄 | 실패하면 텔레그램(`[포먼] DB 백업 실패`) |
+| tmux 세션 `foreman-bridge` | 브리지(`.venv/bin/python -m bridge`) → `127.0.0.1:8000`. 로그 `/tmp/foreman-bridge.log` | 손으로 띄운 것 — 재부팅하면 안 뜬다(systemd 유닛은 6단계 즈음). 같은 tmux 서버에 `cc-foreman`(FOREMAN 작업 세션)도 있다 |
+
 ## 남겨 둔 것 (되돌리기용) — 재부팅 검증 뒤 정리
 
 | 대상 | 용량 | 상태 |

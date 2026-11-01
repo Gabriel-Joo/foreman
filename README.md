@@ -2,7 +2,7 @@
 
 > AI 코딩 에이전트가 만든 변경이 배포까지 가는 전 과정을, 브라우저 한 화면에서 보고 지시하는 관제실.
 
-🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. 서버 PC 변경 기록은 [`log/`](log/)
+🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. **로드맵 1단계 완료**([결과](log/stage1_bridge_db_result.md)). 서버 PC 변경 기록은 [`log/`](log/)
 
 **개발 중 접속**: 로드맵 0~5단계는 `ssh -L 8000:localhost:8000`으로 붙고, 6단계 이후에 Cloudflare Tunnel로 바꾼다. 코드는 바뀌지 않고 앞단만 바뀐다.
 
@@ -418,6 +418,8 @@ CC에는 `/remote-control` 모드가 이미 존재한다. 세션 뷰어 구간�
 
 ## 5. 데이터 모델
 
+> 실제 DDL의 기준은 [`migrations/0001_init.sql`](migrations/0001_init.sql)이다. 1단계에서 승인된 차이(`transcript_file` 분리, event FK 없음, `target_truncated`, `build` · `summary` 보류 등)는 그 파일 머리말과 [1단계 결과](log/stage1_bridge_db_result.md)에 있다. 아래 표는 개념 설명이다.
+
 ### project
 
 | 컬럼 | 타입 | 설명 |
@@ -608,7 +610,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 단계 | 내용 | 비고 |
 |---|---|---|
 | 0 | `cleanupPeriodDays` 상향 (완료: 120일) + CC를 tmux로 이전 | SSH + tmux attach만으로 VNC 우회. pane 하나에 claude 하나. **tmux 이전은 FOREMAN 세션(`cc-foreman`)만 했다.** 런슈즈 · 펫퍼민트 세션(14일 · 17일째)은 옮기다 컨텍스트를 날릴 위험이 커서 FOREMAN이 실제로 동작하는 것을 확인한 뒤에 옮긴다(2026-11-02 결정) |
-| 1 | 브리지 + 스키마 + MySQL + WebSocket | 토대. MySQL은 호스트 도커 전용 인스턴스(3.12) |
+| 1 | 브리지 + 스키마 + MySQL + WebSocket | ✅ **완료**(2026-11-02, [결과](log/stage1_bridge_db_result.md)) — 집 PC 브라우저 접속 확인만 남음. 토대. MySQL은 호스트 도커 전용 인스턴스(3.12) |
 | 2 | hook 수신 + inotify 기반 JSONL 와처 (offset tail, `subagents/` 포함) + 턴 판정 (`end_reason`) | 기존 구현 참고 |
 | 3 | send-keys 실측 선행 → 입력 → 왕복 완성 | ⚠️ **최대 리스크.** 격리된 tmux에서 CC로 방법 C·멀티라인·`/` `!` `@`·긴 붙여넣기를 먼저 실측. 여기가 막히면 프로젝트가 성립하지 않음 |
 | 4 | 텔레그램 이관 + 연결 끊김 표시 | 3번과 같은 신호를 쓴다. 그 전까지는 CLAUDE.md "알림" 절 + `scripts/notify-telegram.sh`(모델 판단 발송)가 임시로 쓰이며, 이 단계에서 지운다 |
@@ -662,3 +664,4 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | [01_kickoff_result.md](log/01_kickoff_result.md) | 브리프 01 실행 결과 |
 | [infra_20261102_host-changes.md](log/infra_20261102_host-changes.md) | 11-02 서버 PC 변경(포트 노출 닫기, milvus 외부 etcd, search-service 유닛, VM 자동 시작), 되돌리기용 자원, 작업 시 주의 |
 | [infra_20261102_milvus-port-forward.md](log/infra_20261102_milvus-port-forward.md) | 567,740회 재시작하던 유닛 정지 — 호스트 서비스 감시(2.2)의 근거 |
+| [stage1_bridge_db_result.md](log/stage1_bridge_db_result.md) | 로드맵 1단계(브리지 · 스키마 · MySQL · WebSocket) 결과 — 설계 확인 5가지, 시험에서 찾은 것(cryptography), 남은 것 |
