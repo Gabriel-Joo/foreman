@@ -2,7 +2,7 @@
 
 > AI 코딩 에이전트가 만든 변경이 배포까지 가는 전 과정을, 브라우저 한 화면에서 보고 지시하는 관제실.
 
-🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. **로드맵 1단계 완료**([결과](log/stage1_bridge_db_result.md)), **2단계 완료**([결과](log/stage2_transcript_result.md) — hook 설치만 사용자 결정 대기). 서버 PC 변경 기록은 [`log/`](log/)
+🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. **로드맵 1단계 완료**([결과](log/stage1_bridge_db_result.md)), **2단계 완료**([결과](log/stage2_transcript_result.md)), **3단계 완료**([결과](log/stage3_inject_result.md) — hook은 사용자 설정에 설치). 서버 PC 변경 기록은 [`log/`](log/)
 
 **개발 중 접속**: 로드맵 0~5단계는 `ssh -L 8000:localhost:8000`으로 붙고, 6단계 이후에 Cloudflare Tunnel로 바꾼다. 코드는 바뀌지 않고 앞단만 바뀐다.
 
@@ -167,7 +167,10 @@ tmux send-keys -t <pane> Enter       # 제출
 - **pane 하나에 claude 하나.** job control(Ctrl+Z, `&`, `fg`)을 쓰지 않는다. send-keys는 pane의 포그라운드 프로세스로 가므로, bash 하나에 claude 여럿이 얹히면 대상이 모호해진다.
 - **주입 전 `#{pane_current_command}` 확인.** claude가 아니면 주입하지 않는다. CC가 정지되면 포그라운드는 bash가 되고, 보낸 프롬프트가 **셸 명령으로 실행된다.** 따라서 SUSPENDED 캐릭터에는 주입을 차단한다.
 - **ACTIVE 중 입력은 새 턴이 아니라 대기열로 들어간다**(트랜스크립트 `queue-operation` enqueue/dequeue/remove). UI는 캐릭터별 대기열을 표시한다.
-- 미검증: 긴 붙여넣기의 `[Pasted text #N +M lines]` 접힘이 트랜스크립트에 원문으로 남는지, 첫 글자 `/` `!`의 모드 전환, `@` 자동완성 중 Enter 동작. 3단계 전에 실측한다.
+- **실측 결과(3단계, [기록](log/stage3_inject_result.md))**: 따옴표 · `$` · 백틱 · 백슬래시 · 한글 · 들여쓰기는 그대로, 긴 붙여넣기(3천 자)도 원문이 트랜스크립트에 남는다. 다만 **여러 줄은 `<pasted_content id="…">` 태그로 감싸여 모델에 "붙여넣은 글"로 가고, 탭은 공백 4칸이 된다.**
+- **첫 글자**: `/`는 슬래시 명령으로, **`!`는 셸 명령으로 실행된다** → 앞에 공백 한 칸을 붙인다(`/`는 일부러 명령을 보낼 때만 그대로, `!`는 언제나 막는다). `@`는 새지 않는다. 폭 없는 공백 보호는 Enter가 안 먹혀 입력 칸에 남았다 — 쓰지 않는다
+- **제출 확인**: 보낸 글이 트랜스크립트에 프롬프트나 대기열(`queue-operation enqueue`)로 기록됐는지 본다. 안 되면 실패로 알리되 입력 칸은 자동으로 비우지 않는다(사람의 초안을 지울 수 있다)
+- **바쁨 판정은 CC가 `~/.claude/sessions/<pid>.json`에 적는 `status`(busy · idle · shell)**. 바쁠 때 보낸 입력에도 UserPromptSubmit hook이 불린다 — 열린 턴이 있으면 새 턴을 열지 않는다
 
 #### 트랜스크립트 읽기
 
@@ -206,7 +209,7 @@ tmux send-keys -t <pane> Enter       # 제출
 
 텔레그램 알림 시점 = 캐릭터 상태 전환 시점이므로 하나를 구현하면 둘 다 된다.
 
-**hook 설치 위치**: 사용자 설정 `~/.claude/settings.json`(2026-11-02, 모든 세션 — FOREMAN이 보려는 것이 런슈즈 · 펫퍼민트 세션이다). 설정 원본은 `deploy/hooks/foreman-hooks.json`, 스크립트는 `scripts/foreman-hook.sh`(2초 타임아웃 · 출력 없음 · 항상 exit 0 — 브리지가 꺼져 있어도 CC를 막지 않는다). 설치 전 백업은 `~/.claude/backups/settings.json.before-foreman-hooks`.
+**hook 설치 위치**: 사용자 설정 `~/.claude/settings.json`(2026-11-02, 모든 세션 — FOREMAN이 보려는 것이 런슈즈 · 펫퍼민트 세션이다). 설정 원본은 `deploy/hooks/foreman-hooks.json`, 스크립트는 `scripts/foreman-hook.sh`(2초 타임아웃 · 출력 없음 · 항상 exit 0 — 브리지가 꺼져 있어도 CC를 막지 않는다). 설치 전 백업은 `~/.claude/backups/settings.json.before-foreman-hooks`. **실행 중인 CC는 설정 파일 변경을 다음 프롬프트부터 반영한다**(3단계 실측 — 사용자 설정 · 프로젝트 설정 모두) — 이미 떠 있던 세션도 재시작 없이 hook을 보낸다.
 
 현재 방식(프로젝트 CLAUDE.md의 지시로 모델이 `scripts/notify-telegram.sh`를 실행해 봇 API를 부른다)은 모델이 턴 종료를 판정하므로 누락이 생긴다. 브리지로 옮기면 기계적으로 바뀌고, 턴 수·소요시간 통계가 공짜로 따라온다.
 
@@ -620,8 +623,8 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 |---|---|---|
 | 0 | `cleanupPeriodDays` 상향 (완료: 120일) + CC를 tmux로 이전 | SSH + tmux attach만으로 VNC 우회. pane 하나에 claude 하나. **tmux 이전은 FOREMAN 세션(`cc-foreman`)만 했다.** 런슈즈 · 펫퍼민트 세션(14일 · 17일째)은 옮기다 컨텍스트를 날릴 위험이 커서 FOREMAN이 실제로 동작하는 것을 확인한 뒤에 옮긴다(2026-11-02 결정) |
 | 1 | 브리지 + 스키마 + MySQL + WebSocket | ✅ **완료**(2026-11-02, [결과](log/stage1_bridge_db_result.md)) — 집 PC 브라우저 왕복까지 확인. 토대. MySQL은 호스트 도커 전용 인스턴스(3.12) |
-| 2 | hook 수신 + inotify 기반 JSONL 와처 (offset tail, `subagents/` 포함) + 턴 판정 (`end_reason`) | ✅ **완료**(2026-11-02, [결과](log/stage2_transcript_result.md)) — 1.4GB 백필 18초, 다시 읽어도 행 · 턴 상태 동일. hook은 받는 쪽만 만들고 설치는 사용자 결정 대기 |
-| 3 | send-keys 실측 선행 → 입력 → 왕복 완성 | ⚠️ **최대 리스크.** 격리된 tmux에서 CC로 방법 C·멀티라인·`/` `!` `@`·긴 붙여넣기를 먼저 실측. 여기가 막히면 프로젝트가 성립하지 않음 |
+| 2 | hook 수신 + inotify 기반 JSONL 와처 (offset tail, `subagents/` 포함) + 턴 판정 (`end_reason`) | ✅ **완료**(2026-11-02, [결과](log/stage2_transcript_result.md)) — 1.4GB 백필 18초, 다시 읽어도 행 · 턴 상태 동일. hook은 사용자 설정에 설치(3단계 때) |
+| 3 | send-keys 실측 선행 → 입력 → 왕복 완성 | ✅ **완료**(2026-11-02, [결과](log/stage3_inject_result.md)) — 방법 C 성립. `/` · `!`는 앞 공백으로 막음, 제출 확인, 바쁨은 대기열. 주입 대상은 tmux 안의 CC뿐(런슈즈 · 펫퍼민트는 0단계 이전 뒤) |
 | 4 | 텔레그램 이관 + 연결 끊김 표시 | 3번과 같은 신호를 쓴다. 그 전까지는 CLAUDE.md "알림" 절 + `scripts/notify-telegram.sh`(모델 판단 발송)가 임시로 쓰이며, 이 단계에서 지운다 |
 | 5 | 승인 정책 엔진 | 원래 불편 중 유일하게 안 풀린 것 |
 | 6 | 대시보드 (못생겨도 되는 실사용 UI) | 여기까지가 매일 쓸 수 있는 물건 |
@@ -675,3 +678,4 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | [infra_20261102_milvus-port-forward.md](log/infra_20261102_milvus-port-forward.md) | 567,740회 재시작하던 유닛 정지 — 호스트 서비스 감시(2.2)의 근거 |
 | [stage1_bridge_db_result.md](log/stage1_bridge_db_result.md) | 로드맵 1단계(브리지 · 스키마 · MySQL · WebSocket) 결과 — 설계 확인 5가지, 시험에서 찾은 것(cryptography), 남은 것 |
 | [stage2_transcript_result.md](log/stage2_transcript_result.md) | 로드맵 2단계(와처 · 조립 · 턴 판정 · hook 수신) 결과 — promptId 실측, 백필 · 다시 읽기 · 실시간 · hook 검증, 시험에서 찾은 것 |
+| [stage3_inject_result.md](log/stage3_inject_result.md) | hook 설치(실행 중 세션도 다시 읽음 — 실측) + 로드맵 3단계(입력 주입) 결과 — 방법 C 실측표, 첫 글자 · 제출 확인 · 대기열, 거부 경로 |
