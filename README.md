@@ -72,6 +72,13 @@ SUSPENDED는 트랜스크립트로는 판별할 수 없다. 정지된 프로세�
 
 등장은 이벤트 기반이지만 **생존은 폴링 기반**이다. 웹훅은 "사라졌다"는 신호를 보내지 않으므로, 주기적으로 엔드포인트를 확인해 응답이 없으면 `STALE` → 일정 시간 후 퇴장시킨다. 덤으로 인프라 헬스체크가 공짜로 생긴다.
 
+**호스트의 systemd 유닛과 docker 컨테이너도 감시한다.** 웹훅과 엔드포인트 응답만으로는 "죽지 않고 계속 다시 뜨는" 상태가 잡히지 않는다. 2026-11-02에 이런 것이 둘 나왔고 둘 다 어느 경로에도 걸리지 않았다 — `milvus-port-forward.service`는 10-01부터 567,740회 재시작했고(실행 파일 없음), milvus 컨테이너는 재시작 크래시 루프를 17분 돌았다(재시작 중에도 잠깐씩 응답).
+
+- **신호는 상태보다 재시작 추세다.** systemd `NRestarts` · `ActiveState`/`SubState` · `ExecMainStatus`, docker `RestartCount` · `State`를 폴링하고, 시간 창 안에서 재시작 횟수가 계속 늘면 `restart_loop` 이벤트를 낸다. 한 번의 실패는 잡음일 수 있다.
+- **유닛·컨테이너는 캐릭터로 만들지 않는다.** 서버의 유닛 전부를 캐릭터로 만들 수는 없다.
+  - 프로젝트에 연결된 것(예: `petmint-search`, `cloudflared-ollama`, milvus, ollama 컨테이너)은 대응하는 인프라 캐릭터의 상태에 반영한다 — 재시작 루프면 그 캐릭터가 `STALE`·경고가 된다. 연결은 `character.watch_targets`에 둔다.
+  - 어느 캐릭터에도 속하지 않는 것(이번의 `milvus-port-forward` 같은 것)은 포먼의 경고 목록에 띄운다.
+
 ### 2.3 역할은 바뀐다
 
 Jenkins 캐릭터에게 "왜 터졌어?"라고 물으면 inspector 세션이 붙고, "고쳐줘"라고 하면 같은 캐릭터에 coder 세션이 붙는다. 캐릭터는 그대로이고 세션 이력이 쌓인다.
@@ -87,7 +94,22 @@ Jenkins 캐릭터에게 "왜 터졌어?"라고 물으면 inspector 세션이 붙
 
 포먼도 평소에는 세션 없이 서 있다가, 말을 걸면 붙는다.
 
-UI에서는 부모-자식 관계를 트리로 그리지 않는다. **공간으로 표현한다.** 포먼에게는 별도의 방(구석 사무실 / 사서 데스크)을 주고, 일꾼은 공용 작업장에 둔다.
+UI에서는 부모-자식 관계를 트리로 그리지 않는다. **공간으로 표현한다.** 포먼에게는 프로젝트 방 안에 별도의 자리(구석 사무실 / 사서 데스크)를 주고, 일꾼은 공용 작업장에 둔다(2.5).
+
+### 2.5 공간 구성
+
+- **프로젝트마다 별도의 방이다.** 런슈즈와 펫퍼민트는 다른 방에 있다. 방 안에 포먼의 자리, 일꾼의 공용 작업장, 파이프라인 구역(3.6), 인프라 캐릭터의 자리가 있다.
+- **서브에이전트는 부모 옆에서 돈다**(3.11). 그러므로 자동으로 부모와 같은 방 안이다.
+- **떠돌이 캐릭터**(`project_id`가 null, 예: 포트폴리오 작성 캐릭터)는 어느 방에도 속하지 않으므로 방 밖의 별도 공간이 필요하다(예: 복도·라운지).
+- **방이 여러 개일 때 화면을 어떻게 보여줄지는 10단계(테마 렌더러)에서 정한다.** 선택지와 지금의 의견만 적어 둔다.
+
+| 선택지 | 좋은 점 | 문제 |
+|---|---|---|
+| 나란히 | 모든 방이 한 번에 보인다 | 방이 3개를 넘으면 각 방이 작아져, 서브에이전트 10개가 도는 장면이 안 보인다 |
+| 탭 | 한 방을 크게 본다 | 다른 방에서 생긴 사고가 안 보인다 — "모르고 있던 것을 보이게 한다"는 목적과 부딪힌다 |
+| 줌 (전체 지도 → 방 확대) | 축소 상태에서도 방마다 경고·ACTIVE·재시작 루프가 보이고, 알림이 온 방으로 들어가기 자연스럽다 | 지도·확대 전환을 만들어야 한다 |
+
+의견: **줌**. 방 수가 늘어도 전체 상태 요약이 한 화면에 남고, 확대하면 한 방의 장면을 크게 볼 수 있어 둘 다 잃지 않는다.
 
 ---
 
@@ -103,15 +125,17 @@ UI에서는 부모-자식 관계를 트리로 그리지 않는다. **공간으�
 서버 PC
   브리지 (FastAPI)
     ├─ 입력        tmux load-buffer → paste-buffer -p -r → Enter
-    ├─ 출력        JSONL 트랜스크립트 와처 (inotify + offset tail)
-    ├─ 상태        CC hooks (UserPromptSubmit / PreToolUse / PostToolUse / Stop / StopFailure / SessionEnd)
+    ├─ 출력        JSONL 트랜스크립트 와처 (inotify + offset tail, <sessionId>/subagents/ 포함)
+    ├─ 상태        CC hooks (UserPromptSubmit / PreToolUse / PostToolUse / Stop / StopFailure / SessionEnd
+    │                        / SubagentStart / SubagentStop)
     │              + 프로세스 상태 폴링 (/proc/<pid>/stat)
     ├─ 승인 정책   PreToolUse에서 allow / ask 판정
     ├─ 수명 관리   tmux 생성·종료, git worktree add·remove
     ├─ 적재        MySQL (클러스터 내 파드)
     ├─ 발신        텔레그램
     ├─ 수신        웹훅 (GitLab · Jenkins · Harbor · ArgoCD)
-    └─ 폴링        인프라 생존 확인, LLM 지표, 프로메테우스 쿼리
+    └─ 폴링        인프라 생존 확인, LLM 지표, 프로메테우스 쿼리,
+                   systemd 유닛·docker 컨테이너 재시작 추세 (2.2)
         ↕
   tmux 세션들
     ├─ agent 세션  claude 실행 → 캐릭터로 표시
@@ -264,6 +288,16 @@ AI 인프라 관점의 핵심 축. 프로젝트마다 호스트에 LLM이 떠 �
 
 **3D는 쓰지 않는다.** 에셋과 카메라·조명 비용이 2D의 몇 배인데 전달되는 정보량은 같다. 2D로 테마 세 개가 3D 하나보다 낫다.
 
+#### 서브에이전트 렌더링
+
+데이터 모델과 렌더링을 분리한다. 서브에이전트는 캐릭터가 아니라 `subagent_run` 행이지만(3.11), **렌더러는 이것을 실제 일꾼으로 그린다.** "에이전트들이 돌아다니면서 일하는" 장면이 이 화면의 목표이고, 서브에이전트 10개가 동시에 도는 것이 그 장면의 핵심이다.
+
+- **외형은 부모 캐릭터의 축소판이다.** 부모 스프라이트를 작게 줄이고 색조만 살짝 바꾼다. 별도 에셋이 필요 없고, 누가 띄웠는지 선이나 색으로 설명하지 않아도 생김새로 보인다. 한 방에서 코더와 CI/CD 캐릭터가 각각 서브에이전트를 띄워도 구분되고, 역할별 외형도 그대로 상속된다 — CI/CD 캐릭터가 띄우면 작은 CI/CD 일꾼이 나온다.
+- **위치는 부모 옆이다.** 그러므로 자동으로 부모와 같은 방 안이다(2.5).
+- **움직임은 부모와 같은 매핑 테이블을 쓴다.** 서브에이전트 안의 도구 사용도 `status`·`tool` 이벤트이므로 테마 매핑을 그대로 탄다.
+- **부모가 IDLE이어도 일꾼은 돈다.** 부모는 자리에 앉아 있고 작은 일꾼들이 돌아다니며, 부모 위에 "백그라운드 n개" 배지가 붙는다(3.11).
+- **복잡도:** 같은 작업을 여러 개로 나눠 띄우는 경우가 흔하므로(예: "Wide yes/no search wn1"…) `description`의 공통 앞부분으로 묶어 묶음 이름을 단다. **접는 것은 한 부모의 일꾼이 10개를 넘을 때만** — 넘는 만큼 "+N"으로 접는다.
+
 ### 3.9 터미널 패널
 
 CC에게 시킬 수 없는 일이 있다. sudo 암호, SSH 패스프레이즈, 레지스트리 로그인.
@@ -288,6 +322,51 @@ CC가 "이 명령을 실행해주세요"라고 하면 브리지가 감지해 터
 끊기면 화면 전체를 덮고 재연결을 시도한다. 침묵으로 아는 것이다.
 
 ---
+
+### 3.11 서브에이전트 (CC 세션 안의 병렬)
+
+CC 세션 하나가 `Agent` 도구(이 버전에서는 `Task`가 아니라 `Agent`)로 서브에이전트를 띄운다. 실측(2026-11-02): 런슈즈 132회, 동시 최대 10개 / 펫퍼민트 47회, 동시 최대 6개. 179회 전부 `async_launched` — 결과는 tool_result가 아니라 **나중에 부모의 새 입력으로** 돌아온다.
+
+**캐릭터가 아니다.** 부모 프로세스 안에서 몇 분 살다 끝나고 한 세션에서 10개까지 동시에 뜨므로 `character` 테이블에 넣지 않는다(영속 캐릭터, 포먼만 채용). FOREMAN이 띄우는 일꾼(자기 tmux·worktree·CC 세션)은 캐릭터이고, CC 내부 서브에이전트는 `subagent_run` 행이다. 화면에서는 일꾼으로 그린다(3.8 서브에이전트 렌더링).
+
+#### 트랜스크립트 구조 (실측)
+
+- 위치: `~/.claude/projects/<proj>/<sessionId>/subagents/agent-<agentId>.jsonl` + `agent-<agentId>.meta.json`(`agentType`, `description`, `toolUseId`, `spawnDepth`, `requestShape`, `finished`). 런슈즈 132쌍 160.7MB, 펫퍼민트 47쌍 48.4MB
+- 기록 종류와 필드는 부모와 같다 — 같은 파서를 쓴다. 다른 점:
+  - 모든 줄에 `agentId`, `isSidechain: true`
+  - **`sessionId`가 부모와 같다.** 부모·자식 구별은 `agentId`·파일 경로로 한다
+  - 첫 줄 `parentUuid`가 null — 부모의 uuid 체인과 이어지지 않는다
+  - **system 기록이 없다**(`turn_duration` 없음). 소요 시간은 첫·마지막 줄 timestamp로 잰다
+- 부모와 잇는 필드:
+
+```
+부모 assistant  tool_use(name=Agent).id ─┬─ meta.json toolUseId
+                                         └─ 나중의 <task-notification> <tool-use-id>
+부모 user       tool_result.toolUseResult = {agentId, status: async_launched, description, outputFile, …}
+                agentId ─┬─ 파일 이름 agent-<agentId>.jsonl, 자식의 모든 줄 agentId
+                         └─ <task-notification> <task-id>
+결과 전달       부모 queue-operation enqueue
+                → user "<agent-message from=agentId> [Subagent hand-back] …" + "<task-notification> … <status> <summary>"
+```
+
+#### 처리 규칙
+
+- **와처**: 세션 폴더의 `subagents/`도 inotify로 감시한다. 종료는 `meta.json`의 `finished`와 SubagentStop hook으로 판정한다. `api-request` 선필터도 같게 적용한다.
+- **귀속**: 백그라운드는 띄운 턴과 결과를 받는 턴이 다르다. 토큰·이벤트는 **띄운 턴**(`toolUseId`로 연결)에 귀속하고, 결과를 받은 턴은 `result_turn_id`로 따로 남긴다.
+- **상태**: 부모 턴이 Stop으로 끝나도 자식은 돌 수 있다(토큰은 계속 나간다). 상태 값을 늘리지 않고 **"IDLE + 백그라운드 n개"** 배지로 보인다.
+- **알림**: 서브에이전트마다 보내지 않는다. 부모 턴이 끝날 때 한 번, 또는 백그라운드 묶음이 모두 끝났을 때 한 번 묶어서 보낸다.
+- **토큰**: 서브에이전트 단위로 따로 저장하고, 화면에서는 부모 턴에 "본인 + 서브에이전트"로 나눠 합산해 보인다.
+
+#### 출력 토큰 문제 (미해결)
+
+- 서브에이전트 줄의 usage는 **응답을 받기 시작한 시점의 값**으로 보인다 — `stop_reason`이 null이고 output_tokens가 글자당 0.002(부모는 0.77, 예: 10,603자 블록에 8). 입력 쪽(cache_read·cache_creation)은 그럴듯하지만 검증 안 함
+- **SubagentStop hook 입력에 usage가 없다**(2.1.316 바이너리). 필드는 공통(session_id, transcript_path, cwd, permission_mode, agent_id, agent_type, effort) + `stop_hook_active`, `agent_transcript_path`, `last_assistant_message`, `background_tasks`, `session_crons`
+- 완료 알림(`<task-notification>`)에도 usage가 없다
+- **후보: OpenTelemetry 메트릭 `claude_code.token.usage`** — 응답이 끝난 뒤의 최종 usage로 type(input·output·cacheRead·cacheCreation)별로 더하고, 속성에 `model`·`query_source`·`effort`가 붙는다. `query_source`로 본체와 서브에이전트가 구분되는지는 실측이 필요하다
+- 실측 방법: 버리는 디렉토리에서 `CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=console OTEL_METRIC_EXPORT_INTERVAL=5000`으로 CC를 띄워, 서브에이전트 없는 프롬프트 하나와 서브에이전트 하나를 띄우는 프롬프트 하나를 보낸다. 콘솔 메트릭의 `query_source` 값과 output 합계를, 같은 세션 트랜스크립트 부모 줄의 output 합계와 비교한다
+- 그 전까지 서브에이전트 output은 `output_tokens_reliable = false`로 저장하고 화면에 "추정"으로 표시한다
+
+**미정**: 동시 서브에이전트 수에 상한·경고를 둘지. 자동 기상의 "동시 ACTIVE 최대 3"(3.5)은 캐릭터 세션 수이고 서브에이전트는 세지 않는다.
 
 ## 4. 만들 것과 가져다 쓸 것
 
@@ -349,6 +428,7 @@ CC에는 `/remote-control` 모드가 이미 존재한다. 세션 뷰어 구간�
 | infra_source | enum nullable | k8s host external |
 | infra_endpoint | varchar nullable | 헬스체크·조회 대상 |
 | home_position | json | 화면상 자기 자리 |
+| watch_targets | json nullable | 상태를 이 캐릭터에 반영할 systemd 유닛·docker 컨테이너 이름(2.2). 어디에도 없는 유닛은 포먼 경고 목록 |
 | spawned_by | enum | user foreman cicd auto |
 | created_at / retired_at | datetime | |
 
@@ -396,7 +476,8 @@ API 응답 하나(`message.id`)가 한 행이다. 트랜스크립트에서는 co
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | PK varchar | `msg_…` |
-| turn_id | FK | |
+| turn_id | FK | 서브에이전트 메시지는 띄운 턴 |
+| subagent_id | FK nullable | 서브에이전트의 API 응답이면 그 `subagent_run` |
 | model | varchar | |
 | stop_reason | varchar | end_turn tool_use stop_sequence … |
 | request_id | varchar | `req_…` |
@@ -405,6 +486,29 @@ API 응답 하나(`message.id`)가 한 행이다. 트랜스크립트에서는 co
 | token_cache_read | int | 실제 입력의 대부분 |
 | token_cache_creation | int | |
 
+### subagent_run
+
+CC 세션 안에서 `Agent` 도구로 띄운 서브에이전트 하나가 한 행이다(3.11). 캐릭터가 아니다.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| id | PK | |
+| session_id | FK | 부모 `character_session` |
+| agent_id | varchar UNIQUE | 트랜스크립트·파일 이름의 `agentId` |
+| tool_use_id | varchar | 부모의 `Agent` tool_use id = meta.json `toolUseId` |
+| spawn_turn_id | FK | 띄운 턴. 토큰·이벤트는 여기에 귀속 |
+| result_turn_id | FK nullable | hand-back을 받은 턴(백그라운드는 다를 수 있다) |
+| agent_type | varchar | general-purpose, fork … |
+| mode | enum | foreground background fork |
+| spawn_depth | int | meta.json `spawnDepth` |
+| description | varchar | 묶음 표시에 쓴다(3.8) |
+| transcript_path | varchar | `subagents/agent-<agentId>.jsonl` |
+| transcript_inode / transcript_offset | bigint nullable | 부모 세션과 같은 방식으로 이어 읽기 |
+| started_at / ended_at | datetime | 첫·마지막 줄 timestamp(system 기록이 없다) |
+| status | enum | running done failed stopped |
+| token_input / token_output / token_cache_read / token_cache_creation | int | `message.id` 단위로 한 번씩 |
+| output_tokens_reliable | bool | 서브에이전트 줄의 output은 응답 시작 시점 값이라 false(3.11) |
+
 ### event
 
 | 컬럼 | 타입 | 설명 |
@@ -412,13 +516,15 @@ API 응답 하나(`message.id`)가 한 행이다. 트랜스크립트에서는 co
 | id | PK | |
 | uuid | varchar UNIQUE nullable | 트랜스크립트 줄 uuid. 재적재·hook 중복 방지 |
 | parent_uuid | varchar nullable | 순서의 기준 (timestamp 아님) |
-| session_id | FK | |
+| session_id | FK nullable | 호스트 감시 이벤트(`restart_loop`)는 세션이 없다 |
+| character_id | FK nullable | 세션 없는 이벤트를 붙일 캐릭터(`watch_targets`로 찾음). 둘 다 없으면 포먼 경고 목록 |
 | turn_id | FK nullable | |
 | message_id | FK nullable | 어느 API 응답의 블록인가 |
+| subagent_id | FK nullable | 서브에이전트 안에서 일어난 이벤트 |
 | tool_use_id | varchar nullable | tool_use와 tool_result 짝짓기 |
 | source | enum | hook transcript poll |
 | ts | datetime | 표시용. 정렬에 쓰지 않는다 |
-| type | enum | start tool_use tool_result assistant_msg stop error approval_req approval_res interrupted compact queued session_end |
+| type | enum | start tool_use tool_result assistant_msg stop error approval_req approval_res interrupted compact queued session_end subagent_start subagent_stop restart_loop |
 | tool | varchar nullable | Read, Edit, Bash … |
 | target | varchar nullable | 파일 경로, 명령어 (마스킹 적용) |
 | status | enum | working idle waiting done error |
@@ -468,6 +574,12 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | event | `(commit_sha)` | 인과 체인 |
 | event | `uuid` UNIQUE | 중복 방지 |
 | message | `(turn_id)` | 턴별 토큰 집계 |
+| message | `(subagent_id)` | 서브에이전트별 토큰 집계 |
+| event | `(subagent_id)` | 서브에이전트 타임라인 |
+| event | `(character_id, type, ts)` | 캐릭터별 재시작 루프 조회 |
+| subagent_run | `agent_id` UNIQUE | 트랜스크립트·hook·알림에서 찾기 |
+| subagent_run | `(session_id, status)` | 지금 도는 서브에이전트(배지·렌더링) |
+| subagent_run | `(spawn_turn_id)` | 턴별 합산 |
 | build | `(commit_sha)` | 인과 체인 |
 | character_session | `(cc_session_id)` | hook 수신 시 세션 찾기 |
 | character_session | `(character_id, detached_at)` | 현재 붙어 있는 세션 조회 |
@@ -480,7 +592,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 |---|---|---|
 | 0 | `cleanupPeriodDays` 상향 (완료: 120일) + CC를 tmux로 이전 | 즉시 가능. SSH + tmux attach만으로 VNC 우회. pane 하나에 claude 하나 |
 | 1 | 브리지 + 스키마 + MySQL + WebSocket | 토대 |
-| 2 | hook 수신 + inotify 기반 JSONL 와처 (offset tail) + 턴 판정 (`end_reason`) | 기존 구현 참고 |
+| 2 | hook 수신 + inotify 기반 JSONL 와처 (offset tail, `subagents/` 포함) + 턴 판정 (`end_reason`) | 기존 구현 참고 |
 | 3 | send-keys 실측 선행 → 입력 → 왕복 완성 | ⚠️ **최대 리스크.** 격리된 tmux에서 CC로 방법 C·멀티라인·`/` `!` `@`·긴 붙여넣기를 먼저 실측. 여기가 막히면 프로젝트가 성립하지 않음 |
 | 4 | 텔레그램 이관 + 연결 끊김 표시 | 3번과 같은 신호를 쓴다. 그 전까지는 CLAUDE.md "알림" 절 + `scripts/notify-telegram.sh`(모델 판단 발송)가 임시로 쓰이며, 이 단계에서 지운다 |
 | 5 | 승인 정책 엔진 | 원래 불편 중 유일하게 안 풀린 것 |
@@ -488,7 +600,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 7 | 터미널 패널 (ttyd) + 명령 자동 채우기 | |
 | 8 | LLM 지표 + 병목 시각화 | AI 인프라 축 |
 | 9 | CI/CD 웹훅 + 인과 체인 + 파이프라인 구역 | 차별점 |
-| 10 | 테마 렌더러 | 데이터가 어떻게 생겼는지 안 뒤에 설계 |
+| 10 | 테마 렌더러 | 데이터가 어떻게 생겼는지 안 뒤에 설계. 방이 여러 개일 때 보여주는 방식(나란히 / 탭 / 줌, 2.5)도 여기서 정한다 |
 | 11 | 캐릭터 수명 관리 + 포먼 + 세션 인계 | |
 | 12 | 포트폴리오 작성 캐릭터 (Notion MCP) | 로그를 읽어 회고 생성 |
 
