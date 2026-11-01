@@ -11,7 +11,11 @@
 
 ## 조치
 
-`systemctl stop` + `disable`. 유닛 파일은 지우지 않고 남겨 둔다.
+**아직 정지되지 않았다(07:01 확인).** 계획은 `sudo systemctl disable --now milvus-port-forward`, 유닛 파일은 지우지 않고 남긴다.
+
+- 07:01 기준 `is-active` = activating(auto-restart), `is-enabled` = enabled, NRestarts 568,131(06:41의 567,740에서 계속 증가)
+- journal의 sudo 기록에서 kopo17의 마지막 sudo는 06:34(petmint-search 설치)이고, 그 뒤 disable 명령은 실행된 기록이 없다
+- 정지가 확인되면 이 절을 실제 결과로 고친다
 
 ## 다시 켜기 전에 볼 것
 
