@@ -10,7 +10,8 @@
   열기  새 promptId를 가진 user 줄(프롬프트 · task-notification · 다른 세션 메시지). hook UserPromptSubmit
   닫기  system/turn_duration → stop · '[Request interrupted by user…]' → interrupted · API 오류 → stop_failure
         hook Stop/StopFailure/SessionEnd · 프로세스가 사라짐(sweep) → session_end(hook을 한 번도 못 받은 세션) / process_lost
-        새 턴이 열렸는데 앞 턴이 안 닫혔으면 → no_signal(어떤 종료 신호도 기록되지 않았다)
+        새 턴이 열렸는데 앞 턴이 안 닫혔으면 → 앞 턴에 모델 활동이 있었으면 no_signal(종료 신호가 기록되지 않았다),
+        없었으면 merged(응답 없이 다음 입력과 함께 처리 — 실측 54건 전부 이쪽: task-notification 46 · 다른 세션 메시지 5 · 사람 3)
   순서  파일 기록 순서. timestamp로 정렬하지 않는다(역전 실측)
 
 서브에이전트(README 3.11): 부모의 Agent tool_result(toolUseResult.agentId)에서 행을 만들고 그 턴을 spawn_turn으로.
@@ -89,6 +90,7 @@ class TurnRef:
     prompt_id: str | None
     started_at: datetime
     by_hook: bool = False
+    active: bool = False  # 이 턴에 모델 활동(assistant 줄)이 있었나 — 안 닫힌 채 다음 턴이 오면 merged / no_signal
 
 
 @dataclass
@@ -220,7 +222,13 @@ class Assembler:
             last = (await c.execute(text("SELECT MAX(id) FROM turn WHERE session_id = :s"), {"s": sess_id})).scalar()
             hook = (await c.execute(text(
                 "SELECT 1 FROM event WHERE session_id = :s AND source = 'hook' LIMIT 1"), {"s": sess_id})).first()
-            st = SessionState(sess_id, char, project, seq, TurnRef(o[0], o[1], o[2], o[1] is None) if o else None,
+            ref = None
+            if o:
+                act = (await c.execute(text(
+                    "SELECT 1 FROM event WHERE turn_id = :t AND type IN ('assistant_msg', 'tool_use') LIMIT 1"),
+                    {"t": o[0]})).first()
+                ref = TurnRef(o[0], o[1], o[2], o[1] is None, active=act is not None)
+            st = SessionState(sess_id, char, project, seq, ref,
                               last, hook_seen=hook is not None, detached=detached, transcript_file_id=tf)
             self.sessions[sid] = st
         if tf_id is not None and st.transcript_file_id is None:
@@ -293,10 +301,12 @@ class Assembler:
                          origin: str, prompt: str | None, ts: datetime, by: str) -> int:
         if pid:
             r = (await c.execute(text("SELECT id, ended_at FROM turn WHERE prompt_id = :p"), {"p": pid})).first()
-            if r:  # 다시 읽는 중 — 이미 있는 턴
+            if r:
+                # 다시 읽는 중 — 이미 있는 턴. 닫힌 턴이어도 지금부터의 줄은 이 턴의 것이다.
+                # (가장 최근의 열린 턴을 문맥으로 두면 옛 턴의 turn_duration이 그 턴을 닫는다 — 2단계 다시 읽기 시험에서 발견)
+                # 닫힌 턴을 다시 닫는 것은 아무것도 바꾸지 않는다(ended_at IS NULL 조건) — duration만 비어 있으면 채운다
                 st.remember(st.prompt_turns, pid, r[0], 256)
-                if r[1] is None:
-                    st.open_turn = TurnRef(r[0], pid, ts)
+                st.open_turn = TurnRef(r[0], pid, ts, active=True)
                 return r[0]
             o = st.open_turn
             if o and o.prompt_id is None and o.by_hook:  # hook이 먼저 연 턴 — promptId를 채운다
@@ -308,7 +318,7 @@ class Assembler:
                 st.remember(st.prompt_turns, pid, o.id, 256)
                 return o.id
         if st.open_turn:
-            await self._close_turn(c, st, b, "no_signal", st.last_ts or ts, by)
+            await self._close_turn(c, st, b, "no_signal" if st.open_turn.active else "merged", st.last_ts or ts, by)
         st.seq += 1
         res = await c.execute(text(
             "INSERT INTO turn (session_id, seq, prompt_id, origin, prompt_uuid, prompt_text, started_at) "
@@ -329,8 +339,9 @@ class Assembler:
         if tid is None:
             return None
         res = await c.execute(text(
-            "UPDATE turn SET ended_at = :ts, end_reason = :r, closed_by = :by, duration_ms = COALESCE(:d, duration_ms) "
-            "WHERE id = :id AND ended_at IS NULL"), {"ts": ts, "r": reason, "by": by, "d": duration, "id": tid})
+            "UPDATE turn SET ended_at = GREATEST(:ts, started_at), end_reason = :r, closed_by = :by, "
+            "duration_ms = COALESCE(:d, duration_ms) WHERE id = :id AND ended_at IS NULL"),
+            {"ts": ts, "r": reason, "by": by, "d": duration, "id": tid})
         if res.rowcount:
             self.stats.turns_closed[reason] = self.stats.turns_closed.get(reason, 0) + 1
             b.turn_msgs.append({"type": "turn", "op": "close", "turn_id": tid, "session_id": st.id, "reason": reason,
@@ -448,7 +459,11 @@ class Assembler:
             if t == "user":
                 await self._main_user(c, st, b, d, uid, ts, par)
             elif t == "assistant":
-                tid = st.open_turn.id if st.open_turn else None
+                # 열린 턴이 없으면 직전 턴 — hook(Stop)이 트랜스크립트보다 먼저 와서 턴을 닫은 뒤 늦게 쓰인 응답 줄
+                # (실측: headless CC에서 Stop hook이 마지막 assistant 줄보다 먼저 도착)
+                tid = st.open_turn.id if st.open_turn else st.last_turn_id
+                if st.open_turn:
+                    st.open_turn.active = True
                 self._message(b, d, tid, None, ts)
                 if d.get("isApiErrorMessage"):
                     self._event(b, st, uuid=uid, ts=ts, type="error", turn_id=tid, parent_uuid=par, status="error",
@@ -531,7 +546,12 @@ class Assembler:
         known = await self._turn_of_prompt(c, st, pid) if pid else None
         origin = self._origin(d, s)
         if known is not None and pid:
-            # 같은 턴의 다른 user 줄(이미지 설명 등). 사람의 글이 뒤에 오면 턴의 출처 · 본문을 바꾼다
+            # 이미 있는 턴의 줄 — 같은 턴의 다른 user 줄(이미지 설명 등)이거나, 다시 읽는 중에 지나가는 옛 턴의 프롬프트.
+            # 어느 쪽이든 지금부터의 줄은 이 턴의 것이다(닫힌 턴이어도). 최근의 열린 턴을 문맥으로 두면
+            # 옛 턴의 turn_duration이 그 턴을 닫는다 — 2단계 다시 읽기 시험에서 발견
+            if not (st.open_turn and st.open_turn.id == known):
+                st.open_turn = TurnRef(known, pid, ts, active=True)
+            # 사람의 글이 뒤에 오면 턴의 출처 · 본문을 바꾼다
             if origin == "human":
                 await c.execute(text(
                     "UPDATE turn SET origin = 'human', prompt_text = :t, prompt_uuid = :u WHERE id = :id AND origin = 'meta'"),
@@ -711,7 +731,7 @@ class Assembler:
                             st = self.sessions.get(sid)
                             reason = "process_lost" if hooked else "session_end"
                             res = await c.execute(text(
-                                "UPDATE turn SET ended_at = :ts, end_reason = :r, closed_by = 'sweep' "
+                                "UPDATE turn SET ended_at = GREATEST(:ts, started_at), end_reason = :r, closed_by = 'sweep' "
                                 "WHERE id = :id AND ended_at IS NULL"), {"ts": end, "r": reason, "id": open_turn})
                             if res.rowcount:
                                 closed += 1
@@ -725,6 +745,10 @@ class Assembler:
                         if detached_at is None:
                             await c.execute(text("UPDATE character_session SET detached_at = :ts WHERE id = :id"),
                                             {"ts": end, "id": sess_id})
+                            # 서브에이전트는 부모 프로세스 안에서 돈다 — 부모가 없으면 끝난 것
+                            await c.execute(text(
+                                "UPDATE subagent_run SET status = 'stopped' WHERE session_id = :id AND status = 'running'"),
+                                {"id": sess_id})
                             if (st := self.sessions.get(sid)):
                                 st.detached = True
         if self.live and self.publish:
@@ -821,7 +845,7 @@ def _summary(type_: str, payload_json: str | None) -> str | None:
     if type_ == "assistant_msg":
         return (p.get("text") or "")[:200] if p.get("block") == "text" else f"(thinking {p.get('chars')}자)"
     if type_ == "stop":
-        return f"{p.get('durationMs')}ms"
+        return f"{p['durationMs']}ms" if p.get("durationMs") is not None else None
     return (p.get("summary") or p.get("text") or "")[:200] or None
 
 
