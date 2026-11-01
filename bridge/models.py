@@ -29,6 +29,7 @@ class EventSource(StrEnum):
     TRANSCRIPT = "transcript"
     POLL = "poll"
     DEBUG = "debug"  # 1단계 확인용(/api/debug/emit)
+    BRIDGE = "bridge"  # 브리지가 한 일(입력 주입 등)
 
 
 class EventType(StrEnum):
@@ -47,6 +48,7 @@ class EventType(StrEnum):
     SUBAGENT_START = "subagent_start"
     SUBAGENT_STOP = "subagent_stop"
     RESTART_LOOP = "restart_loop"
+    INPUT = "input"  # 3단계 입력 주입(거부 포함)
     DEBUG = "debug"
 
 
