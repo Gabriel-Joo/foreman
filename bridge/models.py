@@ -1,6 +1,10 @@
 """VARCHAR 칼럼에 들어가는 값의 목록. DB는 ENUM을 쓰지 않고 여기서 검사한다(0001_init.sql 머리말)."""
 
+from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class CharacterStatus(StrEnum):
@@ -66,3 +70,34 @@ def clip_target(target: str | None) -> tuple[str | None, str | None]:
     if target is None or len(target) <= TARGET_MAX:
         return target, None
     return target[: TARGET_MAX - 1] + "…", target
+
+
+def utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+class EventIn(BaseModel):
+    """생산자(hook · 와처 · 폴링 · 디버그)가 파이프라인에 넣는 이벤트. id는 적재 때 붙는다."""
+
+    source: EventSource
+    type: EventType
+    ts: datetime = Field(default_factory=utcnow)
+    uuid: str | None = Field(default=None, max_length=36)
+    parent_uuid: str | None = Field(default=None, max_length=36)
+    session_id: int | None = None
+    character_id: int | None = None
+    turn_id: int | None = None
+    message_id: str | None = Field(default=None, max_length=64)
+    subagent_id: int | None = None
+    tool_use_id: str | None = Field(default=None, max_length=64)
+    tool: str | None = Field(default=None, max_length=64)
+    target: str | None = None  # 마스킹 후. 길면 clip_target이 자른다
+    status: EventStatus | None = None
+    commit_sha: str | None = Field(default=None, min_length=40, max_length=40)
+    payload: dict[str, Any] | None = None
+
+    @field_validator("ts")
+    @classmethod
+    def _assume_utc(cls, v: datetime) -> datetime:
+        # 시간대 없는 값은 UTC로 본다(트랜스크립트 timestamp는 Z, 서버 로컬은 KST라 섞이면 9시간 어긋난다)
+        return v.replace(tzinfo=UTC) if v.tzinfo is None else v
