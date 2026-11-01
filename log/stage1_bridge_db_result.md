@@ -29,6 +29,13 @@
 
 - **`cryptography` 누락 — DB 재시작 뒤 브리지가 영영 복구되지 않았다.** MySQL 8 `caching_sha2_password`는 재시작으로 서버의 인증 캐시가 비면 비TLS 연결에서 RSA 전체 인증을 하고, PyMySQL은 그때 `cryptography`를 요구한다(`RuntimeError: 'cryptography' package is required …`). 첫 기동 때는 마이그레이션 · CLI 로그인으로 캐시가 차 있어 드러나지 않았다. pytest(DB 연결 포함)도 통과했으므로 **재시작 시험이 아니면 못 잡았다.** 의존성에 추가(`1ec1bfd`)
 - **healthz가 원인을 삼키고 있었다.** 위 버그를 찾을 때 응답이 `down`뿐이라 바로 알 수 없었다 → 상태가 바뀔 때 한 번 원인을 로그로 남기게 고침
+- **집 PC 브라우저에서 WS가 계속 1008로 끊겼다 — 서버가 실패 이유를 아예 남기지 않아 원인을 찾을 수 없었다.** 인증 실패를 로그 없이 1008로 닫고 있어서, 서버 로그에는 `"WebSocket /ws" [accepted] · connection open` 세 줄뿐이었고 브라우저도 코드 1008만 받았다. 확인한 것:
+  - 형식은 맞았다 — 페이지는 `{"type":"auth","token":…}`(JSON 텍스트 하나), 브리지도 같은 것을 기대
+  - `.env.bridge` 값과 설정이 읽은 값이 같았다(길이 43, sha256 앞 12자리 비교 — 값은 내지 않음). 파일은 브리지 기동 전부터 그대로
+  - 실행 중인 브리지에 페이지 형식 그대로 보내 재현: 정확한 토큰 · 앞뒤 공백 → hello, `FOREMAN_API_TOKEN=…` 줄째(61자) · 따옴표(45) · 한 글자 빠짐(42) · `Bearer …`(50) → 1008
+  - → 서버가 아니라 브라우저로 넘어간 값이 다르다고 판단
+  - 고친 것: 서버 로그에 실패 이유와 받은 길이(`토큰 불일치(받은 길이 61) (기대 길이 43)` — 값은 남기지 않음), close reason으로 브라우저에도 이유(기대 길이는 서버 로그에만), 페이지는 입력 길이 표시 · `FOREMAN_API_TOKEN=` 와 따옴표를 떼고 보냄 · `autocomplete="new-password"`
+  - 결과: 수정 뒤 브라우저는 첫 시도에 붙었고(인증 실패 로그 없음) emit → id 10 → WS 수신까지 확인. **처음 불일치의 정확한 원인(줄째 붙여넣기 · 자동 채움 · 복사 중 변형 중 무엇)은 당시 기록이 없어 확정하지 못했다** — 이것 자체가 이 빈틈의 대가다. 2단계 이후 거절 경로(hook 토큰, 승인 정책)는 처음부터 거절 이유를 로그에 남긴다
 - 컨테이너 healthcheck(`mysqladmin ping`, 계정 없음)는 Access denied여도 종료 코드 0 — "서버가 살아 있다"만 본다. 의도대로지만 앱 계정 인증까지 보지는 않는다
 
 ## 확인한 동작 (실행 중인 브리지에서)
@@ -39,9 +46,10 @@
 | `docker restart foreman-mysql` | healthz 503 약 5초 → 저절로 200(1초 간격 기록 50회 중 200 45 · 503 5) |
 | `docker pause`(서버가 답하지 않음) | healthz가 정확히 5.0초(타임아웃)에 503 — 멈추지 않음. unpause 4초 안에 200 |
 | pause 중 emit 2회 | 202 `queued`(버리지 않음). unpause 직후 id 5 · 6이 순서대로 DB와 WS에 도착 |
-| WS | 틀린 토큰 · JSON 아닌 첫 메시지 → close 1008. 15초 하트비트 ping 수신 |
+| WS | 틀린 토큰 · JSON 아닌 첫 메시지 → close 1008(이유 포함). 15초 하트비트 ping 수신 |
+| 집 PC 브라우저(`ssh -L 8000:localhost:8000`) | 토큰 → 연결 → emit → id 10 → WS 수신(사용자 확인, 토큰 불일치 수정 뒤) |
 | HTTP 인증 | 토큰 없음 · 틀림 → 401 |
-| pytest | 14개(단위 5 + DB 9) |
+| pytest | 15개(단위 5 + DB 10) |
 
 ## 설계와 달랐던 점
 
@@ -59,7 +67,6 @@
 
 ## 아직 안 한 것
 
-- **집 PC 브라우저 접속 확인** — `ssh -L 8000:localhost:8000` → `http://localhost:8000/` → 토큰 → 연결 → 이벤트 보내기. 서버 안에서는 같은 경로를 확인했다
 - 브리지 systemd 유닛(sudo · linger 꺼짐) — 매일 쓰기 시작하는 6단계 즈음
 - 재부팅 검증(사용자가 시킬 때) — `foreman-mysql`은 restart unless-stopped라 docker와 함께 뜨는 것이 기대값
 - `DEBUG_ENDPOINTS`는 터널(브리프 02) 전에 false로
