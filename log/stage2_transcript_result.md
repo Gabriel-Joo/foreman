@@ -94,7 +94,7 @@
 
 ## 아직 안 한 것 · 남은 미검증
 
-- **hook 설치** — 어디에 걸지(사용자 설정 / 프로젝트 설정) 사용자 결정 대기. 실행 중인 CC가 바뀐 hook 설정을 다시 읽는지는 미검증
+- ~~hook 설치~~ → 3단계 때 사용자 설정에 설치, 실행 중인 CC도 다음 프롬프트부터 다시 읽음을 실측([stage3](stage3_inject_result.md))
 - 사용자 중단 시 Stop hook 미발동(문서 기준) — hook을 설치한 실세션에서 확인
 - `PreToolUse` · `PostToolUse` hook은 받지 않는다(트랜스크립트와 같은 정보, 승인 정책은 5단계)
 - 서브에이전트 출력 토큰 — 여전히 `output_tokens_reliable=false`, OTel 실측 필요
