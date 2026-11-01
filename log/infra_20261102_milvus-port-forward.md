@@ -11,11 +11,15 @@
 
 ## 조치
 
-**아직 정지되지 않았다(07:01 확인).** 계획은 `sudo systemctl disable --now milvus-port-forward`, 유닛 파일은 지우지 않고 남긴다.
+`sudo systemctl disable --now milvus-port-forward` — 07:03 확인. 유닛 파일은 지우지 않고 남겼다.
 
-- 07:01 기준 `is-active` = activating(auto-restart), `is-enabled` = enabled, NRestarts 568,131(06:41의 567,740에서 계속 증가)
-- journal의 sudo 기록에서 kopo17의 마지막 sudo는 06:34(petmint-search 설치)이고, 그 뒤 disable 명령은 실행된 기록이 없다
-- 정지가 확인되면 이 절을 실제 결과로 고친다
+- 정지 직전 NRestarts 568,131(07:01). 정지 후 `is-active` = inactive(dead), `is-enabled` = disabled
+- 유닛 파일 `/etc/systemd/system/milvus-port-forward.service`는 그대로 있다
+- 첫 시도(06:41 안내)는 실행되지 않았다 — journal sudo 기록에 없었고, 07:01 재확인 때도 재시작이 계속 늘고 있었다. 두 번째 안내 뒤 실행됨(sudo 기록에 `systemctl disable --now milvus-port-forward`)
+
+같은 명령 줄에서 petmint-search 유닛도 바꿨다(petmint-rag-chatbot `cc5a523`, Milvus healthz 대기 `ExecStartPre`).
+설치된 유닛이 저장소 파일과 같고, 07:03:18 재시작 때 ExecStartPre가 1초 안에 status=0으로 끝난 뒤 새 PID 2400186으로 떴다.
+/health 200, /search 200(0.72초), 파드에서 검색→조문 조립 전체 경로 0.28초.
 
 ## 다시 켜기 전에 볼 것
 
