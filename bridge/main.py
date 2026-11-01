@@ -4,15 +4,19 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from pathlib import Path
 
-from bridge.api import health, ws
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+
+from bridge.api import debug, health, ws
 from bridge.bus import Pipeline
 from bridge.config import Settings, get_settings
 from bridge.db.engine import make_engine
 from bridge.store import Store
 
 log = logging.getLogger("foreman")
+STATIC = Path(__file__).resolve().parent / "static"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -39,4 +43,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="FOREMAN bridge", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.include_router(health.router)
     app.include_router(ws.router)
+    if s.debug_endpoints:
+        app.include_router(debug.router)
+
+    @app.get("/", include_in_schema=False)
+    async def index() -> FileResponse:
+        # 1단계 확인용 페이지. 비밀값이 없으므로 인증 없이 준다(토큰은 사용자가 페이지에 넣는다)
+        return FileResponse(STATIC / "index.html")
+
     return app

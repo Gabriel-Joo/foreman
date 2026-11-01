@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FOREMAN 1단계 확인</title>
+<style>
+  :root { --bg:#fff; --fg:#1d1d1f; --muted:#6e6e73; --line:#d2d2d7; --ok:#1a7f37; --bad:#c62828; --code:#f5f5f7; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#e8e8ea; --muted:#9a9aa0; --line:#333; --ok:#4ade80; --bad:#f87171; --code:#1c1c1e; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, sans-serif; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  p.note { color:var(--muted); margin:0 0 16px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+  input { flex:1 1 260px; min-width:0; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  button { padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:var(--code); color:var(--fg); cursor:pointer; }
+  #state { font-weight:600; }
+  #state.ok { color:var(--ok); } #state.bad { color:var(--bad); }
+  #log { background:var(--code); border:1px solid var(--line); border-radius:6px; padding:8px; height:60vh; overflow:auto; font:12px/1.45 ui-monospace, monospace; white-space:pre-wrap; word-break:break-all; }
+</style>
+</head>
+<body>
+<h1>FOREMAN 브리지 — 1단계 확인</h1>
+<p class="note">이벤트 하나가 대기열 → DB 적재 → WebSocket까지 가는지 본다. 토큰은 이 탭에만 둔다(sessionStorage).</p>
+
+<div class="row">
+  <input id="token" type="password" placeholder="FOREMAN_API_TOKEN" autocomplete="off">
+  <button id="connect">연결</button>
+  <span id="state">끊김</span>
+</div>
+<div class="row">
+  <input id="target" placeholder="target (비우면 기본 문구)">
+  <button id="emit">이벤트 보내기</button>
+  <button id="health">healthz</button>
+</div>
+<div id="log"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const log = (obj) => {
+  const line = `${new Date().toLocaleTimeString()}  ${typeof obj === 'string' ? obj : JSON.stringify(obj)}\n`;
+  $('log').textContent = line + $('log').textContent;
+};
+const setState = (txt, cls) => { $('state').textContent = txt; $('state').className = cls || ''; };
+try { $('token').value = sessionStorage.getItem('foremanToken') || ''; } catch (e) {}
+
+let ws = null, lastSeen = 0, hb = 15, watchdog = null;
+
+function connect() {
+  const token = $('token').value.trim();
+  try { sessionStorage.setItem('foremanToken', token); } catch (e) {}
+  if (ws) ws.close();
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  setState('연결 중…');
+  ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token }));
+  ws.onmessage = (m) => {
+    lastSeen = Date.now();
+    const msg = JSON.parse(m.data);
+    if (msg.type === 'hello') { hb = msg.heartbeat_s; setState('연결됨', 'ok'); }
+    if (msg.type !== 'ping') log(msg);
+  };
+  ws.onclose = (e) => { setState(`끊김 (code ${e.code})`, 'bad'); log(`close ${e.code}`); };
+  clearInterval(watchdog);
+  // 하트비트 두 번을 놓치면 끊긴 것으로 본다(README 3.10 — 서버 다운은 브라우저가 침묵으로 안다)
+  watchdog = setInterval(() => {
+    if (ws && ws.readyState === 1 && lastSeen && Date.now() - lastSeen > hb * 2000 + 2000) {
+      setState('응답 없음', 'bad'); ws.close();
+    }
+  }, 1000);
+}
+
+async function emit() {
+  const r = await fetch('/api/debug/emit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${$('token').value.trim()}` },
+    body: JSON.stringify({ target: $('target').value || '확인용 이벤트', payload: { from: 'index.html' } }),
+  });
+  log(`POST /api/debug/emit → ${r.status} ${await r.text()}`);
+}
+
+async function health() {
+  const r = await fetch('/healthz');
+  log(`GET /healthz → ${r.status} ${await r.text()}`);
+}
+
+$('connect').onclick = connect;
+$('emit').onclick = emit;
+$('health').onclick = health;
+</script>
+</body>
+</html>
