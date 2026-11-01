@@ -54,6 +54,17 @@ class Settings(BaseSettings):
     # 디버그 엔드포인트(/api/debug/*). 터널로 내보내기 전에 끈다
     debug_endpoints: bool = Field(default=False)
 
+    # 2단계 — 트랜스크립트 와처 · 조립
+    projects_root: Path = Path.home() / ".claude" / "projects"
+    sessions_dir: Path = Path.home() / ".claude" / "sessions"   # <pid>.json만 읽는다(.key는 열지 않는다)
+    watch_enabled: bool = True          # 테스트 · 일회성 적재(python -m bridge.ingest)에서는 끈다
+    ingest_chunk_bytes: int = 8 << 20   # 한 번에 읽는 양(= DB 트랜잭션 하나)
+    ingest_timeout_s: float = 120.0     # 덩어리 하나 적재 상한
+    rescan_s: float = 60.0              # inotify를 놓쳤을 때를 위한 전체 크기 비교 주기
+    sweep_s: float = 30.0               # 프로세스가 사라진 세션의 열린 턴을 닫는 주기
+    link_s: float = 30.0                # 서브에이전트 턴 연결 · 토큰 합계 주기
+    idle_close_s: float = 60.0          # 프로세스가 없고 이만큼 조용하면 열린 턴을 닫는다
+
     @field_validator("foreman_api_token", "foreman_hook_token")
     @classmethod
     def _long_enough(cls, v: SecretStr) -> SecretStr:

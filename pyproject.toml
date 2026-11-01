@@ -10,6 +10,7 @@ dependencies = [
   "sqlalchemy[asyncio]>=2.1,<2.2",
   "aiomysql>=0.3,<0.4",
   "pymysql>=1.2,<2",
+  "inotify_simple>=2.0,<3",
   "cryptography>=44",  # MySQL 8 caching_sha2_password 전체 인증(재시작으로 캐시가 비면 필요 — 1단계 재시작 시험에서 발견)
   "pydantic>=2.14,<3",
   "pydantic-settings>=2.16,<3",
@@ -19,7 +20,7 @@ dependencies = [
 dev = ["pytest>=9", "pytest-asyncio>=1.4", "httpx>=0.28", "websockets>=17"]
 
 [tool.setuptools]
-packages = ["bridge", "bridge.db", "bridge.api"]
+packages = ["bridge", "bridge.db", "bridge.api", "bridge.transcript"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -20,7 +20,7 @@ from pathlib import Path
 import pymysql
 from pymysql.constants import CLIENT
 
-from bridge.config import REPO, get_settings
+from bridge.config import REPO, Settings, get_settings
 
 MIGRATIONS = REPO / "migrations"
 NAME_RE = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
@@ -35,8 +35,8 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 """
 
 
-def connect() -> pymysql.connections.Connection:
-    s = get_settings()
+def connect(s: Settings | None = None) -> pymysql.connections.Connection:
+    s = s or get_settings()
     return pymysql.connect(
         host=s.mysql_host,
         port=s.mysql_port,
@@ -70,13 +70,13 @@ def run_file(cur: pymysql.cursors.Cursor, path: Path) -> None:
         pass
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, settings: Settings | None = None) -> int:
     ap = argparse.ArgumentParser(prog="bridge.db.migrate")
     ap.add_argument("--status", action="store_true", help="적용 상태만 보인다")
     args = ap.parse_args(argv)
 
     files = discover()
-    conn = connect()
+    conn = connect(settings)
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT GET_LOCK(%s, 10)", (LOCK,))
