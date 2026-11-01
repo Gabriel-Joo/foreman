@@ -24,5 +24,7 @@ async def healthz(request: Request) -> JSONResponse:
         if was != "down":
             log.warning("DB 응답 없음: %s: %s", type(e).__name__, str(e)[:200])
     request.app.state.health_db = db
-    body = {"status": "ok" if db == "ok" else "degraded", "db": db, "queue": pipeline.depth}
+    asm = getattr(request.app.state, "assembler", None)
+    ingest = "off" if asm is None else ("live" if asm.live else "backfill")
+    body = {"status": "ok" if db == "ok" else "degraded", "db": db, "queue": pipeline.depth, "ingest": ingest}
     return JSONResponse(body, status_code=200 if db == "ok" else 503)

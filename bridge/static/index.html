@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FOREMAN 1단계 확인</title>
+<title>FOREMAN 확인</title>
 <style>
   :root { --bg:#fff; --fg:#1d1d1f; --muted:#6e6e73; --line:#d2d2d7; --ok:#1a7f37; --bad:#c62828; --code:#f5f5f7; }
   @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#e8e8ea; --muted:#9a9aa0; --line:#333; --ok:#4ade80; --bad:#f87171; --code:#1c1c1e; } }
@@ -19,8 +19,8 @@
 </style>
 </head>
 <body>
-<h1>FOREMAN 브리지 — 1단계 확인</h1>
-<p class="note">이벤트 하나가 대기열 → DB 적재 → WebSocket까지 가는지 본다. 토큰은 이 탭에만 둔다(sessionStorage).</p>
+<h1>FOREMAN 브리지 — 확인</h1>
+<p class="note">CC 세션의 실제 이벤트(트랜스크립트 · hook)와 턴 열기 · 닫기가 흐른다. 디버그 이벤트도 보낼 수 있다. 토큰은 이 탭에만 둔다(sessionStorage).</p>
 
 <div class="row">
   <input id="token" type="password" placeholder="FOREMAN_API_TOKEN 값" autocomplete="new-password">
@@ -32,6 +32,8 @@
   <input id="target" placeholder="target (비우면 기본 문구)">
   <button id="emit">이벤트 보내기</button>
   <button id="health">healthz</button>
+  <button id="ingest">수집 상태</button>
+  <label><input id="raw" type="checkbox"> JSON 그대로</label>
 </div>
 <div id="log"></div>
 
@@ -63,7 +65,7 @@ function connect() {
     lastSeen = Date.now();
     const msg = JSON.parse(m.data);
     if (msg.type === 'hello') { hb = msg.heartbeat_s; setState('연결됨', 'ok'); }
-    if (msg.type !== 'ping') log(msg);
+    if (msg.type !== 'ping') log(fmt(msg));
   };
   ws.onclose = (e) => {
     setState(`끊김 (code ${e.code}${e.reason ? ' — ' + e.reason : ''})`, 'bad');
@@ -76,6 +78,28 @@ function connect() {
       setState('응답 없음', 'bad'); ws.close();
     }
   }, 1000);
+}
+
+// 한 줄 요약: [프로젝트] #턴 종류 도구 대상/요약
+function fmt(msg) {
+  if ($('raw').checked) return msg;
+  if (msg.type === 'turn') {
+    const p = msg.project || '미분류';
+    return msg.op === 'open' ? `▶ [${p}] 턴 #${msg.turn_id} 열림 (${msg.origin}, ${msg.by})`
+                             : `■ [${p}] 턴 #${msg.turn_id} 닫힘 — ${msg.reason} (${msg.by})`;
+  }
+  if (msg.type === 'event') {
+    const e = msg.event, p = e.project || (e.source === 'debug' ? 'debug' : '미분류');
+    const who = e.subagent_id ? ` ↳서브${e.subagent_id}` : '';
+    const what = [e.tool, e.target || e.summary].filter(Boolean).join(' ');
+    return `  [${p}] #${e.turn_id ?? '-'}${who} ${e.source === 'hook' ? 'hook:' : ''}${e.type} ${what}`.slice(0, 300);
+  }
+  return msg;
+}
+
+async function ingest() {
+  const r = await fetch('/api/ingest', { headers: { 'Authorization': `Bearer ${tokenValue()}` } });
+  log(`GET /api/ingest → ${r.status} ${await r.text()}`);
 }
 
 async function emit() {
@@ -95,6 +119,7 @@ async function health() {
 $('connect').onclick = connect;
 $('emit').onclick = emit;
 $('health').onclick = health;
+$('ingest').onclick = ingest;
 </script>
 </body>
 </html>
