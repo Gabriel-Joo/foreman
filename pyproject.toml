@@ -10,6 +10,7 @@ dependencies = [
   "sqlalchemy[asyncio]>=2.1,<2.2",
   "aiomysql>=0.3,<0.4",
   "pymysql>=1.2,<2",
+  "cryptography>=44",  # MySQL 8 caching_sha2_password 전체 인증(재시작으로 캐시가 비면 필요 — 1단계 재시작 시험에서 발견)
   "pydantic>=2.14,<3",
   "pydantic-settings>=2.16,<3",
 ]
@@ -23,4 +24,5 @@ packages = ["bridge", "bridge.db", "bridge.api"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = ["db: 실행 중인 foreman-mysql(127.0.0.1:3308)이 필요하다"]
