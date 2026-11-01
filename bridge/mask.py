@@ -1,6 +1,7 @@
 """DB에 넣기 전에 비밀값을 가린다 — 프롬프트, 명령, assistant 글, 큐 내용 전부.
 
-1. 정확한 값: 저장소의 .env.*(db · bridge · telegram)에 있는 값(8자 이상)을 «masked:KEY»로
+1. 정확한 값: 저장소의 .env.*(db · bridge · telegram)에서 이름이 비밀인 키(PASSWORD · TOKEN · SECRET · KEY)의
+   값(8자 이상)을 «masked:KEY»로. MYSQL_USER 같은 비밀 아닌 값은 가리지 않는다(실측: foreman_app이 가려졌다)
 2. 형식: 알려진 토큰 모양(텔레그램 봇, Anthropic, GitHub, AWS, Bearer, 개인키 블록)
 3. 키=값: 이름에 PASSWORD · SECRET · TOKEN · API_KEY · PWD가 들어간 대입의 값(6자 이상)
 
@@ -17,6 +18,7 @@ from bridge.config import REPO
 
 ENV_FILES = (".env.db", ".env.bridge", ".env.telegram")
 MIN_EXACT = 8
+SECRET_KEY = re.compile(r"(?i)PASSWORD|PASSWD|TOKEN|SECRET|KEY")
 
 _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S), "«masked:private-key»"),
@@ -47,6 +49,8 @@ def _load_exact(paths: Iterable[Path]) -> list[tuple[str, str]]:
                 continue
             key, _, val = line.partition("=")
             val = val.strip().strip("'\"")
+            if not SECRET_KEY.search(key):
+                continue
             if len(val) >= MIN_EXACT and not val.isdigit() and val.lower() not in ("true", "false"):
                 out.append((val, f"«masked:{key.strip()}»"))
     out.sort(key=lambda kv: -len(kv[0]))  # 긴 것부터(한 값이 다른 값을 포함할 때)
