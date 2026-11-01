@@ -11,7 +11,7 @@
   h1 { font-size:18px; margin:0 0 4px; }
   p.note { color:var(--muted); margin:0 0 16px; }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
-  input { flex:1 1 260px; min-width:0; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  input, select, textarea { flex:1 1 260px; min-width:0; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
   button { padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:var(--code); color:var(--fg); cursor:pointer; }
   #state { font-weight:600; }
   #state.ok { color:var(--ok); } #state.bad { color:var(--bad); }
@@ -34,6 +34,15 @@
   <button id="health">healthz</button>
   <button id="ingest">수집 상태</button>
   <label><input id="raw" type="checkbox"> JSON 그대로</label>
+</div>
+<div class="row">
+  <select id="sess"><option value="">세션 목록을 불러오세요</option></select>
+  <button id="loadSess">세션 목록</button>
+  <label><input id="cmd" type="checkbox"> '/'를 슬래시 명령으로</label>
+</div>
+<div class="row">
+  <textarea id="inputText" rows="3" placeholder="세션에 보낼 입력 (첫 글자 '!'는 항상 막힌다 — 앞에 공백을 붙여 보낸다)"></textarea>
+  <button id="send">주입</button>
 </div>
 <div id="log"></div>
 
@@ -92,9 +101,43 @@ function fmt(msg) {
     const e = msg.event, p = e.project || (e.source === 'debug' ? 'debug' : '미분류');
     const who = e.subagent_id ? ` ↳서브${e.subagent_id}` : '';
     const what = [e.tool, e.target || e.summary].filter(Boolean).join(' ');
+    if (e.type === 'input') {
+      const pl = e.payload || {};
+      return `⇢ [세션 #${e.session_id}] 주입 ${pl.refused ? '거부: ' + pl.refused : (pl.queued ? '→ 대기열' : '→ 새 턴')} ${(e.target || '').slice(0, 80)}`;
+    }
     return `  [${p}] #${e.turn_id ?? '-'}${who} ${e.source === 'hook' ? 'hook:' : ''}${e.type} ${what}`.slice(0, 300);
   }
   return msg;
+}
+
+async function loadSessions() {
+  const r = await fetch('/api/sessions', { headers: { 'Authorization': `Bearer ${tokenValue()}` } });
+  if (!r.ok) { log(`GET /api/sessions → ${r.status}`); return; }
+  const list = await r.json();
+  $('sess').innerHTML = '';
+  for (const x of list) {
+    const o = document.createElement('option');
+    o.value = x.id;
+    const st = x.state === 'T' ? '정지' : (x.status || (x.pid ? '?' : '프로세스 없음'));
+    o.textContent = `#${x.id} [${x.project || '미분류'}] ${(x.cc_session_id || '').slice(0, 8)} ${st}${x.tmux_pane ? ' ' + x.tmux_pane : ' tmux밖'}${x.injectable ? '' : ' (주입 불가)'}`;
+    o.disabled = !x.injectable;
+    $('sess').appendChild(o);
+  }
+  log(`세션 ${list.length}개 (주입 가능 ${list.filter(x => x.injectable).length})`);
+}
+
+async function send() {
+  const id = $('sess').value, text = $('inputText').value;
+  if (!id || !text) { log('세션과 입력을 고르세요'); return; }
+  const r = await fetch(`/api/sessions/${id}/input`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tokenValue()}` },
+    body: JSON.stringify({ text, command: $('cmd').checked }),
+  });
+  const j = await r.json();
+  if (r.status === 409) log(`주입 거부 — ${j.refused}`);
+  else log(`주입 ${r.status} — ${j.queued ? '대기열(세션이 바쁨)' : '새 턴'}${j.guarded ? ', 첫 글자 보호' : ''}, 제출 ${j.verified ? '확인' : '확인 안 됨(입력 칸에 남았을 수 있음)'}`);
+  if (r.status === 202) $('inputText').value = '';
 }
 
 async function ingest() {
@@ -120,6 +163,8 @@ $('connect').onclick = connect;
 $('emit').onclick = emit;
 $('health').onclick = health;
 $('ingest').onclick = ingest;
+$('loadSess').onclick = loadSessions;
+$('send').onclick = send;
 </script>
 </body>
 </html>

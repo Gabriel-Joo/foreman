@@ -1,0 +1,243 @@
+"""CC 세션에 입력 주입 — 방법 C (README 3.1)
+
+    tmux load-buffer -b <buf> -                 # 텍스트를 버퍼에(stdin)
+    tmux paste-buffer -p -r -d -b <buf> -t <pane>   # 괄호 붙여넣기, LF 유지, 버퍼 지움
+    (잠깐 대기)
+    tmux send-keys -t <pane> Enter              # 제출
+
+tmux는 셸이 아니라 인자 목록으로 부른다(따옴표 · $ · 백틱 · 백슬래시 · 한글이 그대로 지난다).
+
+주입 전에 막는 것 — 하나라도 걸리면 아무것도 보내지 않고 이유를 돌려준다(로그에도 남긴다):
+  - 살아 있는 CC 프로세스가 아니다(~/.claude/sessions/<pid>.json + procStart)
+  - 정지(T, SUSPENDED) — 포그라운드가 bash라 프롬프트가 셸 명령으로 실행된다
+  - tmux 밖 세션 — 프로세스 환경변수 TMUX · TMUX_PANE이 없다
+  - pane의 포그라운드가 claude가 아니다(#{pane_current_command})
+  - 그 pane의 claude가 이 세션의 프로세스가 아니다(pane_pid의 자손인지)
+바쁜 세션(CC가 sessions json에 status=busy)에 보낸 입력은 새 턴이 아니라 대기열로 들어간다 — queued=True로 알린다.
+"""
+
+import asyncio
+import json
+import logging
+import os
+import re
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from bridge.liveness import LiveSession, live_sessions
+
+log = logging.getLogger("foreman.inject")
+
+TMUX_TIMEOUT_S = 3.0
+
+
+@dataclass(frozen=True)
+class Target:
+    socket: str       # tmux 서버 소켓 경로
+    pane: str         # %N
+    pid: int          # claude 프로세스
+    session_id: str
+
+
+@dataclass
+class Result:
+    ok: bool
+    reason: str | None = None
+    queued: bool = False
+    target: Target | None = None
+    first_char: str | None = None
+    steps: list[str] = field(default_factory=list)
+
+
+class Refused(Exception):
+    pass
+
+
+def _tmux_env(pid: int) -> tuple[str, str] | None:
+    """claude 프로세스 환경변수에서 TMUX(소켓,서버pid,세션) · TMUX_PANE만 읽는다. 다른 값은 보지 않는다."""
+    try:
+        raw = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:
+        return None
+    env: dict[str, str] = {}
+    for item in raw.split(b"\0"):
+        if item.startswith((b"TMUX=", b"TMUX_PANE=")):
+            k, _, v = item.partition(b"=")
+            env[k.decode()] = v.decode(errors="replace")
+    if "TMUX" not in env or "TMUX_PANE" not in env:
+        return None
+    return env["TMUX"].split(",")[0], env["TMUX_PANE"]
+
+
+def _ancestors(pid: int, limit: int = 32) -> list[int]:
+    out = []
+    for _ in range(limit):
+        try:
+            ppid = int(Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            break
+        if ppid <= 1:
+            break
+        out.append(ppid)
+        pid = ppid
+    return out
+
+
+async def tmux(socket: str, *args: str, stdin: bytes | None = None, timeout: float = TMUX_TIMEOUT_S) -> str:
+    proc = await asyncio.create_subprocess_exec(
+        "tmux", "-S", socket, *args,
+        stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    try:
+        async with asyncio.timeout(timeout):
+            out, err = await proc.communicate(stdin)
+    except TimeoutError:
+        proc.kill()
+        raise Refused(f"tmux 응답 없음({timeout:g}초): {args[0]}") from None
+    if proc.returncode != 0:
+        raise Refused(f"tmux {args[0]} 실패: {err.decode(errors='replace').strip()[:200]}")
+    return out.decode(errors="replace")
+
+
+async def resolve(session_id: str, sessions_dir: str | Path) -> tuple[Target, LiveSession, bool]:
+    """주입 가능한 대상인지 확인하고 (대상, 프로세스, 바쁨 여부)를 돌려준다. 안 되면 Refused."""
+    live = live_sessions(sessions_dir)
+    ls = live.get(session_id)
+    if ls is None:
+        raise Refused("살아 있는 CC 프로세스가 없다")
+    if ls.state == "T":
+        raise Refused("정지된 세션(SUSPENDED, T) — 포그라운드가 셸이라 입력이 명령으로 실행된다")
+    te = _tmux_env(ls.pid)
+    if te is None:
+        raise Refused("tmux 밖 세션 — 주입할 pane이 없다")
+    socket, pane = te
+    info = (await tmux(socket, "display-message", "-p", "-t", pane,
+                       "#{pane_current_command}\t#{pane_pid}\t#{pane_dead}")).strip().split("\t")
+    if len(info) != 3:
+        raise Refused(f"pane 정보를 읽지 못했다: {pane}")
+    cmd, pane_pid, dead = info
+    if dead == "1":
+        raise Refused(f"pane이 죽었다: {pane}")
+    if cmd != "claude":
+        raise Refused(f"pane의 포그라운드가 claude가 아니다({cmd})")
+    if int(pane_pid) != ls.pid and int(pane_pid) not in _ancestors(ls.pid):
+        raise Refused("그 pane의 claude가 이 세션의 프로세스가 아니다")
+    busy = _status(sessions_dir, ls.pid) == "busy"
+    return Target(socket, pane, ls.pid, session_id), ls, busy
+
+
+def _status(sessions_dir: str | Path, pid: int) -> str | None:
+    try:
+        return json.loads(Path(sessions_dir, f"{pid}.json").read_text(encoding="utf-8")).get("status")
+    except (OSError, ValueError):
+        return None
+
+
+# 첫 글자 처리 — 3단계 실측(CC 2.1.316, 괄호 붙여넣기 + Enter):
+#   '/' → 슬래시 명령으로 실행된다(모델에 안 감)          → 앞에 공백 한 칸. command=True일 때만 그대로
+#   '!' → bash 모드로 셸 명령이 실행된다                    → 항상 앞에 공백 한 칸(셸은 터미널 패널, 7단계)
+#   '@' → 새지 않는다(끝에 와도 자동완성이 Enter를 먹지 않았다) → 그대로
+#   폭 없는 공백(U+200B) 보호는 쓰지 않는다 — Enter가 제출되지 않고 입력 칸에 남아 다음 입력과 이어 붙었다
+GUARD = " "
+LEADING = ("/", "!")
+
+
+def guarded(text: str, command: bool = False) -> tuple[str, bool]:
+    """(보낼 텍스트, 보호를 붙였나)."""
+    first = text[:1]
+    if first == "!" or (first == "/" and not command):
+        return GUARD + text, True
+    return text, False
+
+
+def recorded_forms(sent: str) -> set[str]:
+    """트랜스크립트 user 줄에 남을 모양. 여러 줄 붙여넣기는 <pasted_content id=…>로 감싸이고(정규식으로 확인),
+    탭은 공백 4칸이 된다(실측)."""
+    return {sent.replace("\t", "    ")}
+
+
+_WRAP = re.compile(r'\n\n<pasted_content id="([0-9a-f]+)">\n(.*)\n</pasted_content id="\1">\n', re.S)
+
+
+def unwrap(s: str) -> str:
+    m = _WRAP.fullmatch(s)
+    return m.group(2) if m else s
+
+
+def find_delivery(path: str, offset: int, sent: str) -> dict | None:
+    """offset 뒤에 보낸 글이 프롬프트(user 줄) 또는 대기열(queue-operation enqueue)로 기록됐는지."""
+    forms = recorded_forms(sent)
+    try:
+        with open(path, "rb") as f:
+            f.seek(offset)
+            data = f.read()
+    except OSError:
+        return None
+    for raw in data.split(b"\n"):
+        if not raw.strip() or b'"type":"api-request' in raw:
+            continue
+        try:
+            d = json.loads(raw)
+        except ValueError:
+            continue
+        t = d.get("type")
+        if t == "user" and not d.get("isMeta"):
+            c = (d.get("message") or {}).get("content")
+            if isinstance(c, str) and unwrap(c) in forms:
+                return {"as": "prompt", "uuid": d.get("uuid"), "prompt_id": d.get("promptId")}
+        elif t == "queue-operation" and d.get("operation") == "enqueue":
+            c = d.get("content")
+            if isinstance(c, str) and unwrap(c) in forms:
+                return {"as": "queued"}
+    return None
+
+_locks: dict[str, asyncio.Lock] = {}
+
+
+async def paste_and_submit(t: Target, text: str, *, delay_s: float = 0.15, guard: str | None = None) -> list[str]:
+    """방법 C. 보낸 그대로 붙여넣는다 — 첫 글자 보호는 guarded()로 먼저 한다(guard 인자는 실측 스크립트용)."""
+    if guard and text[:1] in ("/", "!", "@"):
+        text = guard + text
+    buf = f"foreman-{uuid.uuid4().hex[:12]}"
+    lock = _locks.setdefault(f"{t.socket}:{t.pane}", asyncio.Lock())
+    steps = []
+    async with lock:  # 같은 pane에 두 입력이 섞이지 않게
+        await tmux(t.socket, "load-buffer", "-b", buf, "-", stdin=text.encode("utf-8"))
+        steps.append("load-buffer")
+        try:
+            await tmux(t.socket, "paste-buffer", "-p", "-r", "-d", "-b", buf, "-t", t.pane)
+            steps.append("paste-buffer -p -r")
+        except Refused:
+            await tmux(t.socket, "delete-buffer", "-b", buf)
+            raise
+        await asyncio.sleep(delay_s)
+        await tmux(t.socket, "send-keys", "-t", t.pane, "Enter")
+        steps.append("Enter")
+    return steps
+
+
+async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, transcript: str | None,
+                  command: bool = False, delay_s: float = 0.15, verify_s: float = 6.0) -> dict:
+    """확인 → 보호 → 방법 C → 제출 확인. 거부면 Refused. 결과 dict: queued · guarded · delivered(as/uuid)."""
+    t, _ls, busy = await resolve(session_id, sessions_dir)
+    send, guarded_ = guarded(text, command)
+    offset = os.path.getsize(transcript) if transcript and os.path.exists(transcript) else None
+    steps = await paste_and_submit(t, send, delay_s=delay_s)
+    delivered = None
+    if transcript:
+        loop = asyncio.get_running_loop()
+        end = loop.time() + verify_s
+        while loop.time() < end:
+            await asyncio.sleep(0.25)
+            path_ok = os.path.exists(transcript)
+            delivered = find_delivery(transcript, offset or 0, send) if path_ok else None
+            if delivered:
+                break
+    out = {"pane": t.pane, "queued": busy or bool(delivered and delivered["as"] == "queued"), "guarded": guarded_,
+           "steps": steps, "delivered": delivered, "chars": len(text), "lines": text.count("\n") + 1}
+    if transcript and not delivered:
+        # 제출이 확인되지 않았다 — 입력 칸에 남았을 수 있다(실측: 폭 없는 공백 보호에서 Enter가 먹히지 않음).
+        # 사람이 그 pane에 쓰던 글을 지울 수 있으므로 자동으로 비우지 않는다
+        log.warning("주입 제출 확인 안 됨 %s %s(%d자) — 입력 칸에 남았을 수 있다", session_id[:8], t.pane, len(text))
+    return out

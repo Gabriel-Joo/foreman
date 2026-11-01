@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI
 from fastapi.responses import FileResponse
 
-from bridge.api import debug, health, hooks, ws
+from bridge.api import debug, health, hooks, sessions, ws
 from bridge.api.auth import require_api_token
 from bridge.assembler import Assembler
 from bridge.bus import Pipeline
@@ -63,6 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router)
     app.include_router(ws.router)
     app.include_router(hooks.router)
+    app.include_router(sessions.router)
 
     @app.get("/api/ingest", dependencies=[Depends(require_api_token)])
     async def ingest_status() -> dict:
