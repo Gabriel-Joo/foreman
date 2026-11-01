@@ -31,6 +31,18 @@ class Store:
             async with self.engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
 
+    async def character_exists(self, character_id: int) -> bool:
+        async with asyncio.timeout(self.timeout):
+            async with self.engine.connect() as conn:
+                res = await conn.execute(text("SELECT 1 FROM `character` WHERE id = :id"), {"id": character_id})
+                return res.first() is not None
+
+    async def delete_debug_events(self) -> int:
+        async with asyncio.timeout(self.timeout):
+            async with self.engine.begin() as conn:
+                res = await conn.execute(text("DELETE FROM event WHERE source = 'debug'"))
+                return res.rowcount
+
     async def insert_event(self, ev: EventIn) -> dict[str, Any]:
         """적재하고 WS로 내보낼 형태(id 포함)를 돌려준다. 중복 uuid면 IntegrityError(1062)가 올라간다."""
         target, full = clip_target(ev.target)

@@ -26,3 +26,6 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = ["db: 실행 중인 foreman-mysql(127.0.0.1:3308)이 필요하다"]
+
+[tool.setuptools.package-data]
+bridge = ["static/*.html"]
