@@ -1,0 +1,26 @@
+[project]
+name = "foreman-bridge"
+version = "0.1.0"
+description = "FOREMAN 브리지 — CC 세션·인프라 이벤트를 모아 DB에 적재하고 브라우저로 내보낸다"
+requires-python = ">=3.14"
+# 정확한 버전은 requirements.lock (pip freeze). 여기는 호환 범위만
+dependencies = [
+  "fastapi>=0.162,<1",
+  "uvicorn[standard]>=0.54,<1",
+  "sqlalchemy[asyncio]>=2.1,<2.2",
+  "aiomysql>=0.3,<0.4",
+  "pymysql>=1.2,<2",
+  "pydantic>=2.14,<3",
+  "pydantic-settings>=2.16,<3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9", "pytest-asyncio>=1.4", "httpx>=0.28", "websockets>=17"]
+
+[tool.setuptools]
+packages = ["bridge", "bridge.db", "bridge.api"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["db: 실행 중인 foreman-mysql(127.0.0.1:3308)이 필요하다"]
