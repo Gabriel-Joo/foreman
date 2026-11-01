@@ -2,7 +2,7 @@
 
 > AI 코딩 에이전트가 만든 변경이 배포까지 가는 전 과정을, 브라우저 한 화면에서 보고 지시하는 관제실.
 
-🚧 **킥오프** (2026-11-02) — 진행은 [`docs/`](docs/) 브리프 참고
+🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4·5, 로드맵 0단계의 tmux 이전. 서버 PC 변경 기록은 [`log/`](log/)
 
 **개발 중 접속**: 로드맵 0~5단계는 `ssh -L 8000:localhost:8000`으로 붙고, 6단계 이후에 Cloudflare Tunnel로 바꾼다. 코드는 바뀌지 않고 앞단만 바뀐다.
 
@@ -131,7 +131,7 @@ UI에서는 부모-자식 관계를 트리로 그리지 않는다. **공간으�
     │              + 프로세스 상태 폴링 (/proc/<pid>/stat)
     ├─ 승인 정책   PreToolUse에서 allow / ask 판정
     ├─ 수명 관리   tmux 생성·종료, git worktree add·remove
-    ├─ 적재        MySQL (클러스터 내 파드)
+    ├─ 적재        MySQL (FOREMAN용 DB는 아직 없다 — 위치는 1단계에서 정한다. 기존 운영 DB 파드는 호스트에서 직접 연결 불가)
     ├─ 발신        텔레그램
     ├─ 수신        웹훅 (GitLab · Jenkins · Harbor · ArgoCD)
     └─ 폴링        인프라 생존 확인, LLM 지표, 프로메테우스 쿼리,
@@ -153,7 +153,7 @@ CC는 TUI라서 tmux 화면을 긁으면 ANSI 이스케이프와 화면 갱신�
 
 shell 세션은 트랜스크립트가 없으므로 `tmux capture-pane`으로 긁고, 파싱하지 않고 xterm.js로 화면을 그대로 띄운다.
 
-#### 입력 주입
+#### 입력 주입 (방법 C)
 
 ```
 tmux load-buffer -b <buf> -          # 텍스트를 버퍼에 적재 (stdin)
@@ -204,7 +204,7 @@ tmux send-keys -t <pane> Enter       # 제출
 
 텔레그램 알림 시점 = 캐릭터 상태 전환 시점이므로 하나를 구현하면 둘 다 된다.
 
-현재 CC가 직접 봇 API를 호출하는 방식은 CC 자신이 턴 종료를 판정하므로 누락이 생긴다. 브리지로 옮기면 기계적으로 바뀌고, 턴 수·소요시간 통계가 공짜로 따라온다.
+현재 방식(프로젝트 CLAUDE.md의 지시로 모델이 `scripts/notify-telegram.sh`를 실행해 봇 API를 부른다)은 모델이 턴 종료를 판정하므로 누락이 생긴다. 브리지로 옮기면 기계적으로 바뀌고, 턴 수·소요시간 통계가 공짜로 따라온다.
 
 ### 3.3 승인 정책
 
@@ -361,7 +361,7 @@ CC 세션 하나가 `Agent` 도구(이 버전에서는 `Task`가 아니라 `Agen
 
 - 서브에이전트 줄의 usage는 **응답을 받기 시작한 시점의 값**으로 보인다 — `stop_reason`이 null이고 output_tokens가 글자당 0.002(부모는 0.77, 예: 10,603자 블록에 8). 입력 쪽(cache_read·cache_creation)은 그럴듯하지만 검증 안 함
 - **SubagentStop hook 입력에 usage가 없다**(2.1.316 바이너리). 필드는 공통(session_id, transcript_path, cwd, permission_mode, agent_id, agent_type, effort) + `stop_hook_active`, `agent_transcript_path`, `last_assistant_message`, `background_tasks`, `session_crons`
-- 완료 알림(`<task-notification>`)에도 usage가 없다
+- 완료 알림(`<task-notification>`)의 **일부**에 합계가 있다 — `<usage><subagent_tokens>N</subagent_tokens><tool_uses>N</tool_uses><duration_ms>N</duration_ms></usage>`. 런슈즈 서브에이전트 140개 중 34개, 펫퍼민트 `cddadc68` 18개 중 11개(completed 알림인데도 없는 경우가 많다). 종류 구분 없는 합계 하나이고 입력 포함 여부는 미확인 — 있으면 `subagent_run`에 합계로 저장한다
 - **후보: OpenTelemetry 메트릭 `claude_code.token.usage`** — 응답이 끝난 뒤의 최종 usage로 type(input·output·cacheRead·cacheCreation)별로 더하고, 속성에 `model`·`query_source`·`effort`가 붙는다. `query_source`로 본체와 서브에이전트가 구분되는지는 실측이 필요하다
 - 실측 방법: 버리는 디렉토리에서 `CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=console OTEL_METRIC_EXPORT_INTERVAL=5000`으로 CC를 띄워, 서브에이전트 없는 프롬프트 하나와 서브에이전트 하나를 띄우는 프롬프트 하나를 보낸다. 콘솔 메트릭의 `query_source` 값과 output 합계를, 같은 세션 트랜스크립트 부모 줄의 output 합계와 비교한다
 - 그 전까지 서브에이전트 output은 `output_tokens_reliable = false`로 저장하고 화면에 "추정"으로 표시한다
@@ -564,7 +564,7 @@ CC 세션 안에서 `Agent` 도구로 띄운 서브에이전트 하나가 한 �
 
 **적재 제외**: `api-request`, `api-request-blob` 줄은 적재하지 않는다(트랜스크립트 용량의 80% 이상, 대화 복원에 불필요).
 
-CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우므로 서버 PC 설정에서 120일로 올려 두었다. 서버를 쓸 수 있는 기간에 맞춘 값이다(하루 약 64MB × 120일 ≈ 7.7GB, 디스크 84% 사용 중). 브리지 적재가 안정되면 이 값과 `event` 보관 기간을 함께 다시 정한다.
+CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우므로 서버 PC 설정에서 120일로 올려 두었다. 서버를 쓸 수 있는 기간에 맞춘 값이다(하루 약 64MB × 120일 ≈ 7.7GB, 결정 당시 디스크 84%). 브리지 적재가 안정되면 이 값과 `event` 보관 기간을 함께 다시 정한다.
 
 ### 인덱스
 
@@ -635,5 +635,13 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 
 | # | 브리프 | 내용 | 실행 시점 |
 |---|---|---|---|
-| 01 | [kickoff](docs/01_kickoff.md) | 설계 검토: README 파악, 환경 조사, 설계 리스크, 기존 구현 조사, 단계 0 계획 | 지금 |
+| 01 | [kickoff](docs/01_kickoff.md) | 설계 검토: README 파악, 환경 조사, 설계 리스크, 기존 구현 조사, 단계 0 계획 | 지금 — 1~3 끝(3은 범위 축소, [결과](log/01_kickoff_result.md)), 4·5 남음 |
 | 02 | [cloudflare tunnel](docs/02_cloudflare_tunnel.md) | 외부 노출: foreman.ronanlab.dev 터널 + Access 사람 인증, 브리지 자체 토큰 | 로드맵 6단계 완료 후 |
+
+### 기록 (`log/`)
+
+| 파일 | 내용 |
+|---|---|
+| [01_kickoff_result.md](log/01_kickoff_result.md) | 브리프 01 실행 결과 |
+| [infra_20261102_host-changes.md](log/infra_20261102_host-changes.md) | 11-02 서버 PC 변경(포트 노출 닫기, milvus 외부 etcd, search-service 유닛, VM 자동 시작), 되돌리기용 자원, 작업 시 주의 |
+| [infra_20261102_milvus-port-forward.md](log/infra_20261102_milvus-port-forward.md) | 567,740회 재시작하던 유닛 정지 — 호스트 서비스 감시(2.2)의 근거 |
