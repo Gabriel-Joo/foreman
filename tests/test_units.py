@@ -43,3 +43,22 @@ def test_short_token_rejected():
 def test_naive_ts_is_utc():
     ev = EventIn(source=EventSource.DEBUG, type=EventType.DEBUG, ts=datetime(2026, 11, 2, 0, 0))
     assert ev.ts.tzinfo is UTC
+
+
+def test_mask_exact_only_secret_keys(tmp_path):
+    from bridge.mask import Masker
+    env = tmp_path / ".env.x"
+    env.write_text("MYSQL_USER=foreman_app\nMY_PASSWORD=Zq8vLm2pXy\nCHAT_ID=123456789\n", encoding="utf-8")
+    m = Masker([env])
+    assert m.text("user foreman_app pw Zq8vLm2pXy") == "user foreman_app pw «masked:MY_PASSWORD»"
+
+
+def test_mask_patterns():
+    from bridge.mask import Masker
+    m = Masker([])
+    assert "«masked:telegram-bot-token»" in m.text("bot 1234567890:" + "A" * 35)
+    assert m.text("curl -H 'Authorization: Bearer abcdefghijklmnop1234'").endswith("Bearer «masked»'")
+    assert m.text("export API_KEY=abcdef123456") == "export API_KEY=«masked»"
+    assert m.text("max_tokens: 4096") == "max_tokens: 4096"          # 6자 미만은 그대로
+    assert m.text("regex sk-ant-[A-Za-z0-9_-]{20,}") == "regex sk-ant-[A-Za-z0-9_-]{20,}"  # 키 모양이 아니다
+    assert m.deep({"a": ["x" * 10]}, clip=4) == {"a": ["xxxx…(10자)"]}
