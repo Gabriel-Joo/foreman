@@ -62,3 +62,24 @@ def test_mask_patterns():
     assert m.text("max_tokens: 4096") == "max_tokens: 4096"          # 6자 미만은 그대로
     assert m.text("regex sk-ant-[A-Za-z0-9_-]{20,}") == "regex sk-ant-[A-Za-z0-9_-]{20,}"  # 키 모양이 아니다
     assert m.deep({"a": ["x" * 10]}, clip=4) == {"a": ["xxxx…(10자)"]}
+
+
+def test_notify_rules_and_format(tmp_path):
+    from bridge.notify import compose_batch, first_line, fmt_duration, load_rules
+    r = load_rules("config/notify.toml")
+    assert r.for_project("runshoes").prefix == "[런슈즈]"
+    assert r.for_project("petmint-rag-chatbot").min_turn_s == 300
+    assert r.for_project(None) is None and "merged" not in r.defaults.end_reasons
+    assert [fmt_duration(x) for x in (5, 75, 3700)] == ["5초", "1분 15초", "1시간 1분"]
+    assert first_line('\n\n<pasted_content id="6bfc">\n첫 줄\n둘째\n</pasted_content id="6bfc">\n', 80) == "첫 줄"
+    assert compose_batch("[p]", [("done", "a"), ("failed", "b")]).splitlines()[1] == "서브에이전트 2 — 완료 1 · 실패 1"
+
+
+def test_origin_subagent_handback_vs_other_session():
+    from bridge.assembler import Assembler
+    o = Assembler._origin
+    assert o({"isMeta": True}, '<agent-message from="a04"> [Subagent hand-back] done') == "subagent_message"
+    assert o({"origin": {"kind": "human"}}, '<agent-message from="a31">\n받음') == "subagent_message"  # isMeta 없이 올 때
+    assert o({"isMeta": True}, 'Another Claude session sent a message: <agent-message from="x">') == "agent_message"
+    assert o({"isMeta": True}, "[Image: original 1440x3318]") == "meta"
+    assert o({"turnOrigin": "task_notification"}, "<task-notification>…") == "task_notification"

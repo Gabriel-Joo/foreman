@@ -267,3 +267,202 @@ async def test_prompt_hook_while_turn_open_is_queued_input(env):
     await asm.apply_hook("UserPromptSubmit", {"session_id": SID, "cwd": CWD, "prompt": "바쁠 때 보낸 것"})
     assert q(s, "SELECT prompt_id, end_reason FROM turn") == (("p1", None),)
     assert q(s, "SELECT type FROM event WHERE source = 'hook'") == (("queued",),)
+
+
+# ── 4단계 알림 ──────────────────────────────────────────────
+class FakeTG:
+    def __init__(self):
+        self.sent = []
+
+    async def send(self, msg):
+        self.sent.append(msg)
+
+
+def _rules(tmp_path):
+    from bridge.notify import load_rules
+    p = tmp_path / "notify.toml"
+    p.write_text('[telegram]\nsettle_s = 0\nmin_interval_s = 0\n[projects.foreman]\nprefix = "[포먼]"\n', encoding="utf-8")
+    return load_rules(p)
+
+
+async def _live(s, tmp_path):
+    from bridge.notify import Notifier
+    asm = await run(s)
+    tg = FakeTG()
+    n = Notifier(asm.engine, _rules(tmp_path), tg, Masker())
+    n.start()
+    await n.baseline()
+    asm.on_turn_closed = n.on_turn_closed
+    asm.on_subagents_changed = n.on_subagents_changed
+    asm.live = True
+    return asm, n, tg
+
+
+async def _append(s, asm, main, *lines):
+    with main.open("a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    await Watcher(s, asm).backfill()
+
+
+async def test_notify_stop_interrupt_and_dedupe(env, tmp_path):
+    s, main = env
+    main.write_text("\n".join(MAIN) + "\n", encoding="utf-8")     # p4가 열린 채
+    asm, n, tg = await _live(s, tmp_path)
+    await asm.apply_hook("Stop", {"session_id": SID, "cwd": CWD, "last_assistant_message": f"다 했다\nMY_TOKEN={SECRET}"})
+    await n.drain()
+    assert len(tg.sent) == 1 and tg.sent[0].startswith("[포먼] 끝남 · ")
+    assert "요청: 네 번째" in tg.sent[0] and "응답: 다 했다" in tg.sent[0] and SECRET not in tg.sent[0]
+    tid = q(s, "SELECT id FROM turn WHERE prompt_id = 'p4'")[0][0]
+    n.on_turn_closed(1, tid, "stop", "transcript", None)                # 같은 턴의 두 번째 신호
+    await _append(s, asm, main, user(U(301), "p5", "다섯 번째", origin={"kind": "human"}),
+                  user(U(302), "p5", "[Request interrupted by user]"))
+    await n.drain()
+    assert len(tg.sent) == 2 and tg.sent[1].startswith("[포먼] ⏹ 중단됨(사용자)")
+    assert q(s, "SELECT decision, COUNT(*) FROM notification GROUP BY decision") == (("sent", 2),)
+    await n.stop()
+
+
+async def test_notify_subagent_summary_hold_and_batch(env, tmp_path):
+    s, main = env
+    for p in (main.parent / SID / "subagents").iterdir():
+        p.unlink()
+    main.write_text("", encoding="utf-8")
+    asm, n, tg = await _live(s, tmp_path)
+    await _append(s, asm, main,
+                  user(U(401), "h1", "서브에이전트 띄워", origin={"kind": "human"}),
+                  asst(U(402), "msg_h1", {"type": "tool_use", "id": "toolu_C", "name": "Agent",
+                                          "input": {"description": "긴 조사", "subagent_type": "general-purpose",
+                                                    "run_in_background": True}}),
+                  result(U(403), "h1", "toolu_C", "launched", tur={"agentId": "sub2", "status": "async_launched"}),
+                  asst(U(404), "msg_h2", {"type": "text", "text": "백그라운드로 돌린다"}),
+                  system(U(405), "turn_duration", durationMs=900))
+    await n.drain()
+    assert len(tg.sent) == 1 and "서브에이전트 1 — 진행 1" in tg.sent[0]
+    bash_notif = NOTIF.replace("<tool-use-id>toolu_A</tool-use-id>\n", "").replace("abc123", "bash1")
+    await _append(s, asm, main,
+                  user(U(406), "n1", bash_notif, origin={"kind": "task-notification"}, turnOrigin="task_notification"),
+                  system(U(407), "turn_duration", durationMs=50))
+    await n.drain()
+    assert len(tg.sent) == 1                                            # 서브에이전트가 아직 돈다 → 보류
+    assert q(s, "SELECT decision, rule FROM notification WHERE kind = 'batch'") == (("held", "subagents_running:1"),)
+    done = NOTIF.replace("abc123", "sub2").replace("toolu_A", "toolu_C")
+    await _append(s, asm, main,
+                  user(U(408), "n2", done, origin={"kind": "task-notification"}, turnOrigin="task_notification"),
+                  asst(U(409), "msg_n2", {"type": "text", "text": "결과 정리"}),
+                  system(U(410), "turn_duration", durationMs=70))
+    await n.drain()
+    assert len(tg.sent) == 2 and tg.sent[1].startswith("[포먼] 백그라운드 서브에이전트 1개 모두 끝남")
+    assert "- 긴 조사 (완료)" in tg.sent[1]
+    await n.stop()
+
+
+async def test_notify_skips_unassigned_and_merged(env, tmp_path):
+    from bridge.notify import compose_turn
+    s, main = env
+    asm, n, tg = await _live(s, tmp_path)
+    n.rules.projects.clear()                                            # 접두어 있는 프로젝트가 없다 = 미분류 취급
+    await asm.apply_hook("Stop", {"session_id": SID, "cwd": CWD})
+    await n.drain()
+    assert tg.sent == [] and q(s, "SELECT rule FROM notification") == (("project:foreman",),)
+    assert compose_turn("[x]", "stop_failure", "human", 5, "요청", None, "overloaded", []).startswith("[x] ⚠ API 오류로 멈춤 · 5초")
+    await n.stop()
+
+
+async def test_batch_sent_when_subagents_finish_without_turn_close(env, tmp_path):
+    """완료 알림 줄은 기록됐지만 CC가 그 입력으로 모델 턴을 돌리지 않는 경우(4단계 실측) — 턴이 안 닫혀도 묶음은 나간다.
+    사람 턴이 진행 중일 때는 보류(그 턴의 종료 알림이 요약해 싣는다)."""
+    s, main = env
+    for p in (main.parent / SID / "subagents").iterdir():
+        p.unlink()
+    main.write_text("", encoding="utf-8")
+    asm, n, tg = await _live(s, tmp_path)
+    await _append(s, asm, main,
+                  user(U(501), "h1", "띄워", origin={"kind": "human"}),
+                  asst(U(502), "msg_b1", {"type": "tool_use", "id": "toolu_D", "name": "Agent",
+                                          "input": {"description": "조사 D", "run_in_background": True}}),
+                  result(U(503), "h1", "toolu_D", "launched", tur={"agentId": "subD", "status": "async_launched"}))
+    done = NOTIF.replace("abc123", "subD").replace("toolu_A", "toolu_D")
+    await asm.apply_hook("SubagentStop", {"session_id": SID, "cwd": CWD, "agent_id": "subD"})   # h1이 아직 열려 있다
+    await n.drain()
+    assert tg.sent == []                                                  # 부모 턴 진행 중 → 보류
+    await _append(s, asm, main, system(U(504), "turn_duration", durationMs=10))   # 부모 턴 끝 → 요약에 실림
+    await n.drain()
+    assert len(tg.sent) == 1 and "서브에이전트 1 — 완료 1" in tg.sent[0]
+    await _append(s, asm, main, user(U(505), "n9", done, origin={"kind": "task-notification"}, turnOrigin="task_notification"))
+    await n.drain()                                                       # 완료 알림 턴(안 닫힘) — 이미 알렸으니 묶음 없음
+    assert len(tg.sent) == 1
+    await n.stop()
+
+
+async def test_batch_after_parent_closed_by_subagent_stop_only(env, tmp_path):
+    s, main = env
+    for p in (main.parent / SID / "subagents").iterdir():
+        p.unlink()
+    main.write_text("", encoding="utf-8")
+    asm, n, tg = await _live(s, tmp_path)
+    await _append(s, asm, main,
+                  user(U(601), "h1", "띄워", origin={"kind": "human"}),
+                  asst(U(602), "msg_c1", {"type": "tool_use", "id": "toolu_E", "name": "Agent",
+                                          "input": {"description": "조사 E", "run_in_background": True}}),
+                  result(U(603), "h1", "toolu_E", "launched", tur={"agentId": "subE", "status": "async_launched"}),
+                  system(U(604), "turn_duration", durationMs=10))
+    await n.drain()
+    assert len(tg.sent) == 1 and "진행 1" in tg.sent[0]
+    await asm.apply_hook("SubagentStop", {"session_id": SID, "cwd": CWD, "agent_id": "subE"})   # 턴은 안 닫힌다
+    await n.drain()
+    assert len(tg.sent) == 2 and tg.sent[1].startswith("[포먼] 백그라운드 서브에이전트 1개 모두 끝남")
+    await n.stop()
+
+
+async def test_subagent_fields_filled_after_hook_created_row(env, tmp_path):
+    s, main = env
+    for p in (main.parent / SID / "subagents").iterdir():
+        p.unlink()
+    main.write_text("", encoding="utf-8")
+    asm, n, tg = await _live(s, tmp_path)
+    await _append(s, asm, main, user(U(701), "h1", "띄워", origin={"kind": "human"}))
+    await asm.apply_hook("SubagentStart", {"session_id": SID, "cwd": CWD, "agent_id": "subF"})  # hook이 먼저 — 설명 없음
+    await _append(s, asm, main,
+                  asst(U(702), "msg_f1", {"type": "tool_use", "id": "toolu_F", "name": "Agent",
+                                          "input": {"description": "조사 F", "subagent_type": "general-purpose"}}),
+                  result(U(703), "h1", "toolu_F", "launched", tur={"agentId": "subF", "status": "async_launched"}))
+    assert q(s, "SELECT description, agent_type, tool_use_id FROM subagent_run WHERE agent_id = 'subF'") == (
+        ("조사 F", "general-purpose", "toolu_F"),)
+    await n.stop()
+
+
+async def test_hook_opened_handback_turn_is_batch_origin(env, tmp_path):
+    s, main = env
+    main.write_text("", encoding="utf-8")
+    asm, n, tg = await _live(s, tmp_path)
+    await asm.apply_hook("UserPromptSubmit", {"session_id": SID, "cwd": CWD, "prompt": '<agent-message from="abc123">\n결과'})
+    await asm.apply_hook("Stop", {"session_id": SID, "cwd": CWD, "last_assistant_message": "받음"})
+    await n.drain()
+    assert tg.sent == []
+    assert q(s, "SELECT origin, end_reason FROM turn") == (("subagent_message", "stop"),)
+    await n.stop()
+
+
+async def test_internal_subagent_stop_without_type_is_ignored(env, tmp_path):
+    s, main = env
+    main.write_text("", encoding="utf-8")
+    asm, n, tg = await _live(s, tmp_path)
+    await asm.apply_hook("SubagentStop", {"session_id": SID, "cwd": CWD, "agent_id": "internal1", "agent_type": ""})
+    await n.drain()
+    assert q(s, "SELECT COUNT(*) FROM subagent_run WHERE agent_id = 'internal1'")[0][0] == 0 and tg.sent == []
+    await n.stop()
+
+
+async def test_agent_message_from_own_subagent_vs_other_session(env, tmp_path):
+    s, main = env
+    main.write_text("\n".join(MAIN) + "\n", encoding="utf-8")   # 개행 없는 마지막 줄을 빼고 시작
+    asm, n, tg = await _live(s, tmp_path)      # MAIN에 abc123 서브에이전트가 있다
+    await asm.apply_hook("Stop", {"session_id": SID, "cwd": CWD})
+    await _append(s, asm, main,
+                  user(U(801), "g1", 'Another Claude session sent a message: <agent-message from="abc123">결과</agent-message>', isMeta=True),
+                  system(U(802), "turn_duration", durationMs=5),
+                  user(U(803), "g2", 'Another Claude session sent a message: <agent-message from="zzz-other">안녕</agent-message>', isMeta=True),
+                  system(U(804), "turn_duration", durationMs=5))
+    assert q(s, "SELECT prompt_id, origin FROM turn WHERE prompt_id IN ('g1', 'g2') ORDER BY prompt_id") == (
+        ("g1", "subagent_message"), ("g2", "agent_message"))
+    await n.stop()

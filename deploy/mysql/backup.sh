@@ -13,8 +13,8 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 
 fail() {
   echo "$(date -Is) 실패: $1" >&2
-  # 실패는 조용히 지나가면 안 된다(milvus-port-forward 교훈). 알림 스크립트는 로드맵 4단계에서 브리지로 바뀐다
-  [ -x "$REPO/scripts/notify-telegram.sh" ] && "$REPO/scripts/notify-telegram.sh" "DB 백업 실패" "$1" || true
+  # 실패는 조용히 지나가면 안 된다(milvus-port-forward 교훈). 브리지와 같은 규칙 · 토큰으로 직접 보낸다(서버가 꺼져 있어도)
+  (cd "$REPO" && timeout 30 .venv/bin/python -m bridge.telegram "DB 백업 실패" "$1") || true
   exit 1
 }
 

@@ -13,7 +13,7 @@ pytestmark = pytest.mark.db
 @pytest.fixture
 def client():
     # 테스트에서는 와처를 끈다 — 켜면 실제 ~/.claude/projects를 운영 DB에 적재한다
-    with TestClient(create_app(get_settings().model_copy(update={"watch_enabled": False}))) as c:
+    with TestClient(create_app(get_settings().model_copy(update={"watch_enabled": False, "notify_enabled": False}))) as c:
         yield c
 
 
