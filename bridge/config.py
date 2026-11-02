@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     watch_enabled: bool = True          # 테스트 · 일회성 적재(python -m bridge.ingest)에서는 끈다
     ingest_chunk_bytes: int = 8 << 20   # 한 번에 읽는 양(= DB 트랜잭션 하나)
     ingest_timeout_s: float = 120.0     # 덩어리 하나 적재 상한
+    ingest_alert_s: float = 300.0       # 한 파일이 이만큼 같은 자리에서 실패 중이면 "적재 막힘"(텔레그램 · 대시보드, 11-03)
+    ingest_tick_alert_s: float = 120.0  # 실시간 감시 루프가 이만큼 돌지 않으면 "와처 멈춤"
     rescan_s: float = 60.0              # inotify를 놓쳤을 때를 위한 전체 크기 비교 주기
     sweep_s: float = 30.0               # 프로세스가 사라진 세션의 열린 턴을 닫는 주기
     link_s: float = 30.0                # 서브에이전트 턴 연결 · 토큰 합계 주기

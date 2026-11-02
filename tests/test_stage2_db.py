@@ -622,3 +622,133 @@ async def test_permission_terminal_first_and_timeout(env):
     out = await mgr.permission_request(_p("echo hi", event="PermissionRequest"))      # CC 자체 판단 · 아무도 안 답함
     assert out is None
     assert q(s, "SELECT status, rule FROM approval ORDER BY id DESC LIMIT 1") == (("timeout", "cc"),)
+
+
+# ── 11-03 적재가 조용히 막힌 일 — resume · fork 세션, 재시도 안전장치, 스스로 알리기 ─────────────
+SID2 = "22222222-3333-4444-8555-666666666666"
+
+
+def _fork_lines() -> list[str]:
+    """resume · fork로 만든 세션: 앞 세션 줄을 uuid째 복사하고 sessionId만 바꾸고 promptId는 뺀다(실측 bb19f9d2)."""
+    copied = json.loads(MAIN[0])
+    copied.pop("promptId")
+    copied["sessionId"] = SID2
+    a = json.loads(MAIN[1])
+    a["sessionId"] = SID2
+    return [dumps(copied), dumps(a),
+            dumps(json.loads(user(U(201), "f1", "포크한 세션의 새 입력", origin={"kind": "human"},
+                                  ts="2026-10-02T00:00:00.000Z")) | {"sessionId": SID2})]
+
+
+async def test_forked_session_copied_prompt_does_not_block(env):
+    s, main = env
+    asm = await run(s)
+    before = q(s, "SELECT COUNT(*) FROM turn")[0][0]
+    (main.parent / f"{SID2}.jsonl").write_text("\n".join(_fork_lines()) + "\n", encoding="utf-8")
+    w = Watcher(s, asm)
+    await w.backfill()
+    assert w.failures == {}                                            # 전에는 IntegrityError(uq_turn_prompt)로 영원히 재시도
+    rows = q(s, "SELECT t.prompt_id, cs.cc_session_id FROM turn t JOIN character_session cs ON cs.id = t.session_id "
+                "WHERE cs.cc_session_id = %s", SID2)
+    assert rows == (("f1", SID2),)                                     # 복사된 앞 세션 프롬프트는 새 턴이 아니다
+    assert q(s, "SELECT COUNT(*) FROM turn")[0][0] == before + 1
+    assert asm.stats.copied_prompts == 1
+    # 원래 세션의 턴 · 이벤트는 그대로(복사 줄의 이벤트는 uuid가 같아 겹쳐 버려진다)
+    assert q(s, "SELECT cs.cc_session_id FROM turn t JOIN character_session cs ON cs.id = t.session_id "
+                "WHERE t.prompt_uuid = %s", U(1)) == ((SID,),)
+
+
+async def _retry(w: Watcher) -> None:
+    for f in w.failures.values():
+        f.retry_at = 0
+    w._requeue()
+    await w._drain()
+
+
+async def test_failure_does_not_block_other_files_then_tolerant_then_skip(env):
+    from bridge.transcript import watcher as wmod
+    s, main = env
+    engine = make_engine(s)
+    ENGINES.append(engine)
+    asm = Assembler(engine, s, Masker())
+    await asm.load()
+    real = asm._main_user
+
+    async def bad(c, st, b, d, uid, ts, par):                          # 한 줄이 늘 결정적으로 실패한다
+        if uid == U(9):
+            raise ValueError("나쁜 줄")
+        return await real(c, st, b, d, uid, ts, par)
+    asm._main_user = bad
+    w = Watcher(s, asm)
+    await w.backfill()
+    f = w.failures[str(main)]
+    assert f.n == 1 and not f.transient and f.retry_at > 0
+    assert q(s, "SELECT COUNT(*) FROM subagent_run")[0][0] == 1         # 다른 파일(서브에이전트)은 기다리지 않고 적재됐다
+    for _ in range(wmod.TOLERANT_AFTER - 1):
+        await _retry(w)
+    assert w.failures[str(main)].n == wmod.TOLERANT_AFTER
+    await _retry(w)                                                    # 너그러운 모드 — 나쁜 줄만 버린다
+    assert str(main) not in w.failures
+    assert [x["kind"] for x in w.skips] == ["records"] and w.skips[0]["count"] == 1
+    assert {r[0] for r in q(s, "SELECT prompt_id FROM turn")} >= {"p1", "p3", "p4"}   # 나머지는 들어왔다
+    assert asm.stats.skipped_records == 1
+
+
+async def test_skip_chunk_last_resort_but_never_on_transient(env):
+    from sqlalchemy.exc import OperationalError
+    from bridge.transcript import watcher as wmod
+    s, main = env
+    engine = make_engine(s)
+    ENGINES.append(engine)
+    asm = Assembler(engine, s, Masker())
+    await asm.load()
+    kind = {"e": OperationalError("x", {}, Exception("연결 끊김"))}
+
+    async def boom(*a, **k):                                           # 줄 밖(덩어리 단위)에서 실패 — 너그러운 모드로도 못 푼다
+        raise kind["e"]
+    asm._flush = boom
+    w = Watcher(s, asm)
+    await w.backfill()
+    for _ in range(wmod.SKIP_AFTER + 2):
+        await _retry(w)
+    f = w.failures[str(main)]
+    assert f.transient and f.n >= wmod.SKIP_AFTER and not w.skips      # DB 끊김은 건너뛰지 않는다 — 줄을 잃지 않는다
+    kind["e"] = KeyError("결정적")
+    f.n = 0
+    for _ in range(wmod.SKIP_AFTER):
+        await _retry(w)
+    assert any(x["kind"] == "chunk" and x["path"] == str(main) for x in w.skips)
+    assert q(s, "SELECT read_offset > 0 FROM transcript_file WHERE path = %s", str(main))[0][0] == 1
+
+
+async def test_ingest_monitor_alerts_once_and_recovers(env):
+    from types import SimpleNamespace
+    from bridge.ingest_health import IngestMonitor
+    from bridge.transcript.watcher import Failure
+    s, main = env
+    asm = await run(s)
+    asm.live = True
+    w = Watcher(s, asm)
+    sent = []
+    notifier = SimpleNamespace(rules=SimpleNamespace(for_project=lambda n: SimpleNamespace(prefix="[포먼]")),
+                               send_direct=lambda p, k, sid, msg: sent.append((k, msg)))
+    mon = IngestMonitor(w, asm, notifier, alert_s=60, tick_alert_s=120)
+    import time as _t
+    w.failures[str(main)] = Failure(9, _t.time() - 600, 0, "IntegrityError: (1062, Duplicate)", 0, False)
+    mon.check()
+    mon.check()
+    assert len(sent) == 1 and sent[0][0] == "ingest" and "적재 막힘" in sent[0][1] and "[포먼]" in sent[0][1]
+    assert mon.snapshot()["stuck"] and not mon.snapshot()["ok"]
+    del w.failures[str(main)]
+    mon.check()
+    assert "적재 회복" in sent[-1][1] and mon.snapshot()["ok"]
+    w.last_tick = _t.time() - 300                                      # 루프가 멈췄다
+    mon.check()
+    assert "와처 멈춤" in sent[-1][1]
+    w.last_tick = _t.time()
+    mon.check()
+    assert "다시 돈다" in sent[-1][1]
+    w._skip_note(type("K", (), {"path": str(main), "cc_session_id": SID})(), "chunk", 0, 100, 3, "KeyError")
+    mon.check()
+    mon.check()
+    assert sum("건너뛰었다" in m for _, m in sent) == 1

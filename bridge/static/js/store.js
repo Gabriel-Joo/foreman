@@ -109,6 +109,7 @@ export class Store {
     for (const a of j.approvals) st.approvals.set(a.id, { ...st.approvals.get(a.id), ...a, project: this.projectOf(a.session_id) });
     st.generatedAt = j.generated_at;
     st.hiddenDormant = j.hidden_dormant;
+    st.ingest = j.ingest || null;   // 적재(수집기) 상태 — 막히면 머리에 띄운다(11-03)
     if (j.terminal) {
       const t = st.terminal;
       t.enabled = !!j.terminal.enabled; t.running = !!j.terminal.running;
