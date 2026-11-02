@@ -266,6 +266,17 @@ CC에서 Esc로 중단하면 **Stop hook이 불리지 않는다**(4단계 실측
 | `python3 - <<'EOF'` … `os.system("rm -rf /x")` … `EOF` | 파이썬이 **실행한다** | 묻는다 |
 | `bash cleanup.sh` (안에 `rm -rf`가 들어 있다) | 파일 안의 명령이 **실행된다** — 실행하는 순간 파일 내용을 읽어 본다 | 묻는다 |
 | `git commit -F - <<EOF` … `$(rm -rf x)` … `EOF` (EOF에 따옴표가 없다) | 따옴표 없는 본문 속 `$( )`는 셸이 **먼저 실행한다** — 받는 쪽이 커밋이어도 | 묻는다 |
+| `grep -nE "rm -rf\|docker rm" log/*.md` | 그 글자를 **찾을** 뿐 (rg · sed · awk의 패턴 인자도 같다) | 통과 |
+| `grep -o "rm -rf /x" f \| sh` | 찾은 글자를 셸이 **실행한다** — 뒤에 셸 · 해석기 · xargs가 오면 | 묻는다 |
+| `grep "$(rm -rf x)" f` · `sed 's/a/b/e'` · `awk '{system($0)}'` | 패턴 자리에서 **실행된다**(명령 치환 · sed `e` · awk `system`) | 묻는다 |
+| `bash -n deploy.sh` · `shellcheck` · `python -m py_compile` | 문법만 본다 — **실행하지 않는다** | 통과 |
+| `sed -n 's/=.*//p' .env` · `cut -d= -f1 .env` | 비밀 파일을 읽지만 **키 이름만** 나온다 | 통과 |
+| `sed -n 's/^TOKEN=//p' .env` · `cut -d= -f2 .env` | **값이 화면에** 찍힌다 — 한번 찍히면 되돌릴 수 없다 | 묻는다 |
+| `curl -H @<(printf 'Authorization: Bearer %s' "$(sed -n 's/^TOKEN=//p' .env)") http://127.0.0.1:8000/…` | 값이 **이 서버로 가는 요청 헤더로만** 간다 | 통과 |
+| 위와 같은데 `-v` · `--trace` · `--libcurl`, 또는 보내는 곳이 밖 · 변수 | 헤더가 화면 · 파일에 찍히거나 **값이 서버를 떠난다** | 묻는다 |
+| `D=$(mktemp -d) … rm -rf "${D:?}"` (같은 명령 안) | **방금 만든 빈 임시 디렉토리**를 지운다 | 통과 |
+| `D=/tmp/old; rm -rf "${D:?}"` · `D=$(mktemp -d); D=/home; rm -rf "${D:?}"` | 무엇을 지울지 이 명령 안에서 **확인할 수 없다** | 묻는다 |
+| `python3 - <<'EOF'` … `open('.env.db', 'w')` … `EOF` | 스크립트가 **비밀 파일을 쓴다**(읽기만 — 앱이 설정을 읽는 것 — 은 통과) | 묻는다 |
 
 정리하면,
 
@@ -273,6 +284,9 @@ CC에서 Esc로 중단하면 **Stop hook이 불리지 않는다**(4단계 실측
 2. **실행기**(`bash`, `sh`, `python` 등)로 들어가는 본문은 검사한다.
 3. **나중에 그 파일을 실행할 때**(`bash x.sh`, `source x`, `./x.sh`) 파일 내용을 검사한다 — 위험한 명령을 파일에 숨겨 두어도 실행하는 순간 잡힌다. 그래서 1번은 구멍이 아니다. 파일을 쓰는 다른 길(Write 도구)도 내용은 원래 검사하지 않았고, 똑같이 실행 순간에 잡힌다.
 4. 따옴표 없는 본문 속 `$( )` · 백틱은 셸이 실제로 실행하므로, 받는 쪽이 커밋이어도 검사한다.
+5. **넓힌 것(11-02)** — 같은 생각을 명령 한 줄 안으로 넓혔다: 검색어(grep · rg · sed · awk의 패턴 인자), 문법 검사만 하는 것(`bash -n` 등), 키 이름만 뽑는 것, 값이 로컬 요청 헤더로만 가는 것, 같은 명령 안에서 `mktemp -d`로 만든 디렉토리를 `${V:?}`로 지우는 것. 조건이 하나라도 어긋나면 예전처럼 검사한다. 이 예외는 "검사 전에 무해한 자리표시로 바꾸기"라 **새로 allow를 만들지 않는다**(allow 판정은 바꾸기 전 원문으로 한다).
+   - `mktemp -d` 예외는 흉내 낸 우회를 막으려 좁게 잡았다: 변수가 같은 명령 안에서 `$(mktemp -d …)`로 **딱 한 번** 정해지고, 다시 정하기 · `for` · `read` · `eval` · `source` · `${V:=…}` · `export` · `unset`이 없고, 지우는 대상이 정확히 `"${V:?}"`일 때만(`..` · 덧붙인 경로 · 글롭 없음). 앞 명령에서 만든 디렉토리를 경로로 지우는 것은 이 명령 안에서 확인할 수 없어 여전히 묻는다 — 만들고 지우기를 한 명령에 둔다
+   - 다시 돌려 보다 찾은 빈틈도 막았다: 해석기 heredoc(`python3 - <<EOF`)이 비밀 파일을 **쓰거나 바로 찍는** 것은 어느 규칙에도 안 걸렸다 → 묻는다
 
 그리고 **규칙 파일 자체**(`config/approval.toml`, `notify.toml`)는 쓰는 것 자체를 묻는다 — 위험한 글자가 들어 있어서가 아니라, 안전 규칙을 바꾸는 일이라서다.
 
@@ -326,6 +340,23 @@ UI에서도 "이 캐릭터는 이 브랜치"가 자연스럽게 보인다. 머�
 연결고리는 **커밋 SHA**다. 캐릭터 이벤트에 SHA를 심고, 각 웹훅에서 같은 SHA를 받으면 자동으로 묶인다.
 
 시각적으로도 이어진다. 캐릭터가 작업을 마치고 파이프라인 구역으로 걸어가고, 거기서 실패하면 그 지점이 붉게 표시된다.
+
+**만든 모양(8단계)** — 런슈즈 · 펫퍼민트는 같은 구조다(각 저장소 Jenkinsfile 머리말): GitHub push → Jenkins 폴링(2분) → BuildKit → Harbor(태그 = 커밋 12자리) → ronanlab-infra `newTag` 커밋 → ArgoCD 자동 Sync.
+
+```
+로컬 git(같은 서버) ── 20초 폴링 ──> git_commit(세션 · 도구 호출 이벤트에 귀속, event.commit_sha) · push(origin/main)
+Jenkins(Jenkinsfile curl) ─┐
+Harbor(프로젝트 웹훅)  ─────┼─ 192.168.122.1:8001/webhooks/* (VM 망 · 웹훅 토큰) ──> build(단계 행) · build_commit
+ArgoCD(notifications)  ────┘                                                       └─ 실패로 바뀌면 텔레그램
+인프라 캐릭터 ── 첫 웹훅에 등장 ── 60초 폴링(ingress VIP, Host 헤더) ── 3번 무응답 STALE · 24시간 STALE면 퇴장
+```
+
+- **커밋 단계는 GitLab이 아니라 로컬 저장소다.** GitLab은 지금 돌고 있지 않다(10-18 학교 환경에서 GitHub로 옮김). GitHub 웹훅은 Access에 막혀 이 서버에 오지 않는다. 대신 같은 서버의 저장소를 폴링하면 "어느 세션이 만든 커밋인가"까지 안다 — 커밋 시각 직전의 `git commit` 도구 호출로 찾고, **명령에 그 커밋 제목이 들어 있어야** 귀속한다(다른 제목을 준 명령 · 다른 저장소로 들어가 커밋한 명령은 아니다. 메시지를 알 수 없는 `git revert --no-edit` 같은 것만 가까운 것으로). 다른 프로젝트 세션(포먼 · 미분류)이 `cd <저장소> && git commit`한 것도 제목이 맞으면 그 세션 것
+- **여러 커밋이 한 빌드에** — Jenkins는 2분마다 폴링하므로 그 사이 push된 커밋들이 빌드 하나가 된다. 빌드의 머리(GIT_COMMIT)와 직전 빌드 머리 사이의 커밋을 로컬 저장소에서 `git rev-list`로 구해 `build_commit`에 묶는다. 머리가 아닌 내 커밋도 이 표로 자기 빌드를 찾는다
+- **이음매는 커밋 12자리** — Harbor 태그와 ArgoCD 이미지 태그가 같은 12자리다(Jenkinsfile 규칙). 로컬 저장소에서 전체 SHA로 푼다. ArgoCD 리비전은 인프라 저장소 커밋이라 이음매가 아니다
+- **어디서 깨졌나** — 체인 한 줄(커밋 → Jenkins → Harbor → ArgoCD)에서 처음 실패한 단계를 붉게, Jenkins는 스테이지 이름까지(Jenkinsfile이 `FOREMAN_STAGE`를 보낸다), ArgoCD는 sync 실패와 health Degraded를 가른다
+- **웹훅 받는 곳** — 브리지는 127.0.0.1에만 묶여 있어 VM에서 닿지 않는다. 같은 프로세스가 virbr0(192.168.122.1:8001)에 웹훅 전용 리스너를 하나 더 연다: `/webhooks/*`만 열리고, 보낸 곳이 VM 망이어야 하며(리눅스는 다른 인터페이스로 들어온 패킷도 받으므로 IP로도 거른다), 별도 토큰(`FOREMAN_WEBHOOK_TOKEN` — API · hook 토큰과 별개)이 필요하다
+- **보내는 쪽 설정**(사람이 실행 — 공유 클러스터 변경이라 CC 자동 모드가 막는다): `scripts/cicd-apply.sh`(ArgoCD notifications · Jenkins Secret · Harbor 웹훅 정책, 토큰은 표준 입력으로만), Jenkinsfile은 `deploy/cicd/jenkinsfile-*.patch`(알림이 실패해도 빌드는 그대로 — `try/catch` · `curl || true` · Secret은 optional)
 
 ### 3.7 LLM 지표
 
@@ -641,12 +672,14 @@ CC 세션 안에서 `Agent` 도구로 띄운 서브에이전트 하나가 한 �
 | id | PK | |
 | project_id | FK | |
 | character_id | FK nullable | 이 변경을 만든 캐릭터 |
-| commit_sha | varchar | 체인 연결 |
-| stage | enum | gitlab jenkins harbor argocd |
+| commit_sha | varchar | 체인 연결(그 단계가 다룬 머리 커밋) |
+| stage | enum | jenkins harbor argocd — 커밋 단계는 `git_commit`(로컬 저장소 폴링, 세션 귀속)이 맡는다(8단계, GitLab 없음) |
 | status | enum | running success failed |
 | started_at / ended_at | datetime | |
 | log_url | varchar | |
 | message | text | 실패 사유 |
+
+실제 DDL은 [`migrations/0012_pipeline.sql`](migrations/0012_pipeline.sql) — `build`에 `external_id`(Jenkins `job#번호` · Harbor `repo@digest` · ArgoCD `app@리비전`, 프로젝트 · 단계와 함께 UNIQUE) · `tag` · `step`(깨진 스테이지) · `infra_character_id`를 더했고, `git_commit`(커밋 · 세션 귀속 · push 시각)과 `build_commit`(빌드 하나에 묶인 커밋들)을 따로 둔다.
 
 ### summary
 
@@ -705,7 +738,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 5 | 승인 정책 엔진 | ✅ **완료**(2026-11-02, [결과](log/stage5_approval_result.md)) — 위험한 것은 ask · 확실한 것만 allow · 나머지는 CC에, 브라우저 · 텔레그램 · 터미널 승인, 모든 판정 기록. 런슈즈 · 펫퍼민트는 observe로 시작 |
 | 6 | 대시보드 (못생겨도 되는 실사용 UI) | ✅ **완료**(2026-11-02, [결과](log/stage6_dashboard_result.md)) — 프로젝트별 세션 상태 · 하는 일 · 대화 · 서브에이전트 · 승인 · 토큰, 입력 · 승인 · 끊김. 데이터(`static/js/store.js`)와 그리기(`render.js`)를 나눠 10단계에서 그리기만 바꾼다. 여기까지가 매일 쓸 수 있는 물건 |
 | 7 | 터미널 패널 (ttyd) + 명령 자동 채우기 | ✅ **완료**(2026-11-02, [결과](log/stage7_terminal_result.md)) — ttyd(UNIX 소켓) + tmux `foreman-shell`, 대시보드 아래 접이식, 친 명령 기록(마스킹), CC 부탁 감지 → 미리 채움 → 결과를 그 세션에(3.9). 사용자가 패널 · 새 텔레그램 토큰 동작 확인 |
-| 8 | CI/CD 웹훅 + 인과 체인 + 파이프라인 구역 | 차별점. FOREMAN 자체를 CI/CD에 태울 때 수집부(호스트) · API/UI(파드) 분리를 다시 본다(3.12). **9단계와 순서를 바꿨다**(아래) |
+| 8 | CI/CD 웹훅 + 인과 체인 + 파이프라인 구역 | 🔧 **FOREMAN 쪽 구현 · 시험 끝, 보내는 쪽 설정 대기**(2026-11-02, [결과](log/stage8_cicd_result.md)) — 커밋(로컬 git, 세션 귀속) → Jenkins → Harbor → ArgoCD 한 줄, 여러 커밋 한 빌드, 깨진 곳 표시, 인프라 캐릭터, 실패 알림(3.6). 클러스터 설정은 사람이 `scripts/cicd-apply.sh` · Jenkinsfile 패치. 차별점. FOREMAN 자체를 CI/CD에 태울 때 수집부(호스트) · API/UI(파드) 분리를 다시 본다(3.12). **9단계와 순서를 바꿨다**(아래) |
 | 9 | LLM 지표 + 병목 시각화 | AI 인프라 축. 프로메테우스는 펫퍼민트 설계가 정해진 뒤에 설치한다(아래) |
 
 **8 · 9단계 순서를 바꾼 이유**(2026-11-02 사용자 결정) — 원래는 LLM 지표가 8, CI/CD가 9였다.
@@ -763,3 +796,4 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | [stage5_approval_result.md](log/stage5_approval_result.md) | 로드맵 5단계(승인 정책 엔진) 결과 — auto mode 실측(hook 판정 · 승인 창 · 터미널과 경주), 과거 데이터 모의 실험, 규칙 조정 |
 | [stage6_dashboard_result.md](log/stage6_dashboard_result.md) | 승인 규칙 좁히기(되돌릴 수 없는 것만, 실행과 글자) + 로드맵 6단계(대시보드) 결과 |
 | [stage7_terminal_result.md](log/stage7_terminal_result.md) | 로드맵 7단계(터미널 패널) 결과 — ttyd를 UNIX 소켓에, 쿠키 · Origin, 기록 · 마스킹, 부탁 감지 · 미리 채우기 · 결과 전달 |
+| [stage8_cicd_result.md](log/stage8_cicd_result.md) | 로드맵 8단계(CI/CD 인과 체인) 결과 — GitLab 없음 · 로컬 git 커밋 귀속, 웹훅 전용 포트, 보내는 쪽 설정(사람 실행), 승인 규칙 "실행과 글자" 넓히기 |

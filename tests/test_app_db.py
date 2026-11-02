@@ -15,7 +15,8 @@ def client():
     # 테스트에서는 와처를 끈다 — 켜면 실제 ~/.claude/projects를 운영 DB에 적재한다.
     # 터미널 패널도 끈다 — 켜면 운영 tmux 셸 · ttyd 소켓을 건드린다(터미널은 tests/test_terminal.py가 따로 띄운다)
     with TestClient(create_app(get_settings().model_copy(update={"watch_enabled": False, "notify_enabled": False,
-                                                                 "terminal_enabled": False}))) as c:
+                                                                 "terminal_enabled": False,
+                                                                 "pipeline_enabled": False}))) as c:
         yield c
 
 

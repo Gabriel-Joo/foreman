@@ -103,7 +103,9 @@ class Policy:
         return None
 
     def _bash(self, cmd: str, cwd: str | None, scratchpad: str | None, depth: int = 0) -> Decision | None:
-        scan, written = _strip_file_heredocs(cmd)
+        orig, written = _strip_file_heredocs(cmd)
+        # "실행과 글자" 넓히기(11-02) — 실행되지 않는 글자 · 값이 새지 않는 것이 명백한 모양을 검사 전에 지운다(_neutralize)
+        scan = _neutralize(orig)
         for target in written:                     # heredoc으로 파일을 쓴다 — 쓰는 곳이 보호 · 비밀 파일이면 ask
             if (s := self._match(target, cwd, self.protect + self.sensitive)):
                 return Decision("ask", "보호-설정파일", f"Bash: 안전 규칙 · 설정 · 비밀 파일 쓰기({s})")
@@ -114,6 +116,16 @@ class Policy:
         for head, tok in _path_tokens(scan):   # 경로 토큰마다(공백 뒤 .env도)
             if any(s.search(tok) for s in self.sensitive) and (head in self.secret_readers or "@" in tok):
                 return Decision("ask", "민감한-경로", f"Bash: 비밀이 든 파일을 찍거나 옮긴다 — 한번 찍히면 되돌릴 수 없다({head} {_short(tok, 50)})")
+        # 해석기로 들어가는 heredoc(python - <<EOF …)이 비밀 파일 경로를 쥐고 그 파일을 쓰거나 내용을 바로 찍는다.
+        # (11-02 다시 돌려 보기에서 찾은 빈틈: python heredoc으로 .env.db를 쓰는 명령이 어느 규칙에도 걸리지 않았다.
+        #  읽기만 하는 것 — 앱이 설정을 읽는 x = open('.env').read() — 은 5단계 결정대로 묻지 않는다)
+        for m in HEREDOC.finditer(scan):
+            body = m.group("body")
+            if not _SCRIPT_WRITE.search(body):
+                continue
+            for lit in re.findall(r"['\"]([^'\"\n]{1,200})['\"]", body):
+                if any(s.search(os.path.expanduser(lit)) for s in self.sensitive):
+                    return Decision("ask", "민감한-경로", f"Bash: 스크립트가 비밀이 든 파일을 쓰거나 찍는다({_short(lit, 50)})")
         segs = _segments(scan)
         if segs is None:
             if self.delete_outside and re.search(r"(^|[\s;&|(])rm\s", scan):
@@ -121,8 +133,8 @@ class Policy:
             return None
         if (d := self._segments_ask(segs, cwd, scratchpad, depth)):
             return d
-        if any(x in scan for x in ("$(", "`", "<(", ">(")):
-            return None                            # 명령 치환 — 무엇이 실행될지 확실하지 않다. allow하지 않는다
+        if any(x in orig for x in ("$(", "`", "<(", ">(")):
+            return None                            # 명령 치환 — 무엇이 실행될지 확실하지 않다. allow하지 않는다(지우기 전 원문으로 본다)
         if self._all_allowed(segs, depth):
             return Decision("allow", self._allow_rule(segs), "읽기 · 되돌릴 수 있는 명령")
         return None
@@ -261,6 +273,255 @@ class Policy:
         return "inside" if _within(p, root) else "outside"
 
 
+# ── 실행과 글자 — 넓히기(11-02) ─────────────────────────────────
+# 검사 전에 "실행되지 않는 글자"와 "값이 새지 않는 것이 명백한 모양"을 무해한 자리표시로 바꾼다. 조건이 하나라도 어긋나면
+# 그대로 둔다(= 예전처럼 검사한다). allow 판정은 바꾸기 전 원문으로 하므로, 이 함수가 allow를 새로 만들지는 않는다.
+#   1. 검색어: grep · rg · sed · awk의 패턴 인자(명령 치환이 없는 것). 그 파이프가 셸 · 해석기 · xargs로 이어지면 안 지운다.
+#      sed의 e 명령 · s///e, awk의 system() · getline · print | 는 실행이므로 안 지운다
+#   2. 키 이름만: 비밀 파일을 읽어도 마지막 단계가 sed 's/=.*//' · cut -d= -f1 · awk -F= '{print $1}'이면 값이 나오지 않는다
+#   3. mktemp -d로 만든 디렉토리를 "${V:?}"로 지우기 — 같은 명령 안에서 V가 mktemp -d로 딱 한 번 정해지고 바뀌지 않을 때만
+#   4. 비밀 파일 값을 curl 헤더로만: -H @<(printf '이름: … %s' "$(sed -n 's/^KEY=//p' 파일)") — curl이 요청 헤더를
+#      찍는 옵션(-v · --trace · --libcurl)이 없고, 보내는 곳이 이 서버 · VM 망일 때만(밖으로 보내면 그 자체가 유출)
+_SCRIPT_WRITE = re.compile(r"open\([^)\n]*['\"][wax]\+?b?['\"]|\.write_(text|bytes)\(|os\.(rename|replace)\(|"
+                           r"shutil\.(copy\w*|move)\(|print\(\s*open\(|sys\.stdout\.write\(\s*open\(")
+_SEARCH = ("grep","egrep", "fgrep", "rg", "ugrep", "sed", "awk", "gawk", "mawk")
+_EXEC_SINKS = set(SHELLS) | {"python", "python3", "perl", "ruby", "node", "xargs", "eval", "source", ".", "env", "sudo",
+                             "parallel", "watch", "nohup", "time"}
+_OPT_ARG = {"grep": {"-f", "-m", "-A", "-B", "-C", "-d", "-D", "--file", "--max-count", "--include", "--exclude"},
+            "rg": {"-f", "-m", "-A", "-B", "-C", "-g", "-t", "-T", "-j", "-M", "--glob", "--type", "--type-not",
+                   "--max-count", "--max-columns", "--file"},
+            "sed": {"-f", "-l", "--file", "--line-length"},
+            "awk": {"-f", "-v", "-F", "--file", "--assign", "--field-separator"}}
+_SED_EXEC = re.compile(r"(^|[;\n{}])\s*[0-9,$/!]*\s*e(\s|;|$)|s(.)(?:\\.|(?!\3).)*\3(?:\\.|(?!\3).)*\3[gpIiMm0-9w]*e")
+_AWK_EXEC = re.compile(r"system\s*\(|getline|\|\s*[\"$]|print[^;}]*\|")
+_LOCAL_HOST = re.compile(r"^(127\.\d+\.\d+\.\d+|localhost|\[::1\]|192\.168\.12[12]\.\d+)$")
+_HDR = re.compile(
+    r"(?P<opt>-H|--header)\s+@<\(\s*printf\s+(?P<q>['\"])(?P<fmt>[^'\"\n]*)(?P=q)\s+"
+    r"\"\$\(\s*sed\s+-n\s+(?P<q2>['\"])s/\^?[A-Za-z_][A-Za-z0-9_]*=//p(?P=q2)\s+(?P<file>[^\s)'\"]+)\s*\)\"\s*\)")
+
+
+def _seg_spans(cmd: str) -> list[tuple[int, int, str]]:
+    """맨 바깥 수준의 (시작, 끝, 앞 구분자) — 따옴표 · $( ) · <( ) · 백틱 안의 구분자는 무시한다."""
+    out, start, i, depth, q, sep = [], 0, 0, 0, None, ""
+    n = len(cmd)
+    while i < n:
+        ch = cmd[i]
+        if q:
+            if ch == "\\" and q == '"':
+                i += 2
+                continue
+            if ch == q:
+                q = None
+            i += 1
+            continue
+        if ch in "'\"`":
+            q = ch
+        elif ch == "\\":
+            i += 2
+            continue
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        elif depth == 0 and ch in ";&|\n":
+            two = cmd[i:i + 2]
+            s = two if two in ("&&", "||", "|&", ";;") else ch
+            out.append((start, i, sep))
+            sep, i = s, i + len(s)
+            start = i
+            continue
+        i += 1
+    out.append((start, n, sep))
+    return [(a, b, s) for a, b, s in out if cmd[a:b].strip()]
+
+
+def _words(seg: str) -> list[str] | None:
+    try:
+        lex = shlex.shlex(seg, posix=True, punctuation_chars=False)
+        lex.whitespace_split = True
+        return list(lex)
+    except ValueError:
+        return None
+
+
+def _head(words: list[str]) -> tuple[str, int]:
+    i = 0
+    while i < len(words) and re.fullmatch(r"[A-Za-z_]\w*=.*", words[i]):
+        i += 1
+    return (os.path.basename(words[i]) if i < len(words) else ""), i
+
+
+def _pattern_idx(kind: str, words: list[str], h: int) -> list[int]:
+    """검색 명령에서 패턴(스크립트 · 프로그램) 인자의 자리."""
+    fam = "grep" if kind in ("grep", "egrep", "fgrep", "ugrep") else ("awk" if kind in ("awk", "gawk", "mawk") else kind)
+    takes = _OPT_ARG.get(fam, set())
+    explicit, positional, i = [], [], h + 1
+    while i < len(words):
+        w = words[i]
+        if w == "--":
+            positional += list(range(i + 1, len(words)))
+            break
+        if fam in ("grep", "rg", "sed") and w in ("-e", "--regexp", "--expression"):
+            explicit.append(i + 1)
+            i += 2
+            continue
+        if fam in ("grep", "rg") and w.startswith("--regexp="):
+            return []                           # 붙여 쓴 패턴 — 따로 다루지 않는다(그대로 검사)
+        if fam in ("sed", "awk") and w in ("-f", "--file"):
+            return []                           # 스크립트 파일 — 실행 내용을 모른다
+        if w in takes:
+            i += 2
+            continue
+        if w.startswith("-") and len(w) > 1:
+            i += 1
+            continue
+        positional.append(i)
+        i += 1
+    if explicit:
+        return [j for j in explicit if j < len(words)]
+    return positional[:1]
+
+
+def _blank_patterns(cmd: str) -> str:
+    spans = _seg_spans(cmd)
+    # 파이프 묶음마다 — 뒤에 셸 · 해석기가 있으면 그 묶음은 손대지 않는다
+    groups: list[list[tuple[int, int, str]]] = []
+    for sp in spans:
+        if sp[2] in ("|", "|&") and groups:
+            groups[-1].append(sp)
+        else:
+            groups.append([sp])
+    edits: list[tuple[int, int, str]] = []
+    for g in groups:
+        heads = []
+        for a, b, _ in g:
+            w = _words(cmd[a:b])
+            heads.append(_head(w)[0] if w else "")
+        for k, (a, b, _s) in enumerate(g):
+            if heads[k] not in _SEARCH or any(h in _EXEC_SINKS for h in heads[k + 1:]):
+                continue
+            seg = cmd[a:b]
+            words = _words(seg)
+            if not words:
+                continue
+            kind, h = _head(words)
+            new = list(words)
+            changed = False
+            for j in _pattern_idx(kind, words, h):
+                p = words[j]
+                if "$(" in p or "`" in p:
+                    continue
+                if kind == "sed" and _SED_EXEC.search(p):
+                    continue
+                if kind in ("awk", "gawk", "mawk") and _AWK_EXEC.search(p):
+                    continue
+                new[j] = "PATTERN"
+                changed = True
+            if changed:
+                lead = seg[: len(seg) - len(seg.lstrip())]
+                edits.append((a, b, lead + " ".join(shlex.quote(x) for x in new) + " "))
+    for a, b, rep in sorted(edits, reverse=True):
+        cmd = cmd[:a] + rep + cmd[b:]
+    return cmd
+
+
+def _key_only(words: list[str]) -> bool:
+    """마지막 단계가 키 이름만 내보내는가 — sed 's/=.*//' · cut -d= -f1 · awk -F= '{print $1}'."""
+    kind, h = _head(words)
+    args = words[h + 1:]
+    if kind == "cut":
+        j = " ".join(args)
+        return bool(re.search(r"(^|\s)(-d\s*=|--delimiter==)", j)) and bool(re.search(r"(^|\s)(-f\s*1|--fields=1)(\s|$)", j))
+    if kind == "sed":
+        if any(a.startswith("-i") or a.startswith("--in-place") for a in args):
+            return False
+        scripts = [a for a in args if not a.startswith("-")]
+        return bool(scripts) and re.fullmatch(r"s(.)=\.\*\$?\1\1[gp]*", scripts[0]) is not None
+    if kind in ("awk", "gawk", "mawk"):
+        j = " ".join(args)
+        prog = [a for a in args if a.startswith("{")]
+        return bool(re.search(r"(^|\s)-F\s*=", j)) and len(prog) == 1 and \
+            re.fullmatch(r"\{\s*print\s+\$1\s*;?\s*\}", prog[0]) is not None
+    return False
+
+
+_KEY_PRE = {"cat", "grep", "egrep", "sort", "uniq", "head", "tail", "sed"}
+
+
+def _blank_key_only(cmd: str) -> str:
+    """비밀 파일을 읽어도 키 이름만 나오는 파이프 묶음을 자리표시로. 묶음 안에 리다이렉트 · 다른 명령이 있으면 안 바꾼다."""
+    spans = _seg_spans(cmd)
+    groups: list[list[tuple[int, int, str]]] = []
+    for sp in spans:
+        if sp[2] in ("|", "|&") and groups:
+            groups[-1].append(sp)
+        else:
+            groups.append([sp])
+    edits = []
+    for g in groups:
+        a, b = g[0][0], g[-1][1]
+        text = cmd[a:b]
+        if re.search(r"(?<![0-9&])>|\$\(|`|<\(", text.replace("2>/dev/null", "")):
+            continue
+        ws = [_words(cmd[x:y]) for x, y, _ in g]
+        if any(w is None or not w for w in ws) or not _key_only(ws[-1]):
+            continue
+        if any(_head(w)[0] not in _KEY_PRE or (_head(w)[0] == "sed" and any(t.startswith("-i") for t in w))
+               for w in ws[:-1]):
+            continue
+        edits.append((a, b, " : keys-only "))
+    for a, b, rep in sorted(edits, reverse=True):
+        cmd = cmd[:a] + rep + cmd[b:]
+    return cmd
+
+
+def _safe_tmp_rm(cmd: str) -> str:
+    """V=$(mktemp -d …) … rm -rf "${V:?}" — 같은 명령에서 V가 mktemp -d로 딱 한 번 정해지고 바뀌지 않으면 그 rm을 자리표시로."""
+    assign = r"(?:^|[\s;&|(]){v}=(\"?)\$\(\s*mktemp\s+-d(?:\s+[^$`;&|()\"'\n]*)?\)\1(?=[\s;&|)]|$)"
+    names = {m.group(1) for m in re.finditer(assign.replace("{v}", r"([A-Za-z_]\w*)").replace(r"\1", r"\2"), cmd)}
+    for v in sorted(names):
+        m = re.search(assign.replace("{v}", re.escape(v)), cmd)
+        if m is None:
+            continue
+        if len(re.findall(rf"(?<![\w$]){v}=", cmd)) != 1:
+            continue                                # 다시 정했다
+        if re.search(rf"\bfor\s+{v}\b|\bread\b[^;&|\n]*\b{v}\b|\$\{{{v}:?[=+-]|\b(declare|typeset|local|readonly|export|unset)\b[^;&|\n]*\b{v}\b|\beval\b|\bsource\b|(^|\s)\.\s",
+                     cmd):
+            continue                                # 바꿀 수 있는 길이 있다 — 그대로 검사
+        rm = re.compile(rf"\brm\s+(?:-[rRfv]+\s+)*(?:--\s+)?\"\$\{{{v}:\?\}}\"(?=\s*($|[;&|)\n]))")
+        start = m.end()
+        cmd = cmd[:start] + rm.sub(" : tmp-rm ", cmd[start:])
+    return cmd
+
+
+def _safe_header_secret(cmd: str) -> str:
+    """비밀 파일 값을 curl 요청 헤더로만 넘기는 모양을 자리표시로(조건은 위 4)."""
+    for sa, sb, _ in reversed(_seg_spans(cmd)):
+        seg = cmd[sa:sb]
+        if not re.match(r"\s*curl\s", seg):
+            continue
+        ms = list(_HDR.finditer(seg))
+        if not ms or not all(re.fullmatch(r"[A-Za-z][A-Za-z-]*:\s*[^%]*%s(\\n)?", m.group("fmt")) for m in ms):
+            continue
+        rest = _HDR.sub(" ", seg)
+        if re.search(r"(^|\s)(-v|--verbose|--trace(-ascii|-time)?|--libcurl|-[a-zA-Z]*v[a-zA-Z]*)(\s|=|$)", rest):
+            continue                                # 요청 헤더를 화면 · 파일에 찍는다
+        urls = re.findall(r"\S*://\S*", rest)
+        hosts = re.findall(r"https?://([^/:\s'\"?#]+)", rest)
+        if not hosts or any("$" in u for u in urls) or not all(_LOCAL_HOST.match(h) for h in hosts):
+            continue                                # 밖으로 보내면 값이 이 서버를 떠난다
+        cmd = cmd[:sa] + _HDR.sub(lambda m: f"{m.group('opt')} @LOCAL_SECRET_HEADER", seg) + cmd[sb:]
+    return cmd
+
+
+def _neutralize(cmd: str) -> str:
+    try:
+        # 키 이름만 · 헤더로만은 sed 스크립트 모양을 보므로 검색어 지우기보다 먼저
+        return _blank_patterns(_safe_tmp_rm(_safe_header_secret(_blank_key_only(cmd))))
+    except Exception:  # noqa: BLE001 — 지우기가 실패하면 원문 그대로 검사한다(덜 지우는 쪽으로)
+        return cmd
+
+
 # ── 명령 나누기 ─────────────────────────────────────────────
 def _strip_file_heredocs(cmd: str) -> tuple[str, list[str]]:
     """파일에 쓰기만 하는 heredoc(cat > f · cat >> f · tee [-a] f)의 본문을 빼고, 쓰는 파일 목록을 돌려준다.
@@ -336,10 +597,14 @@ def _inner_command(words: list[str]) -> str | None:
 
 
 def _script_path(words: list[str]) -> str | None:
-    """스크립트 파일 실행이면 그 경로 — bash x.sh · sh x · source x · . x · ./x.sh · /path/x.sh"""
+    """스크립트 파일 실행이면 그 경로 — bash x.sh · sh x · source x · . x · ./x.sh · /path/x.sh.
+    bash -n x.sh(문법 검사만 — 실행하지 않는다)는 실행이 아니다(11-02 오탐: 문법 검사한 스크립트 안의 kubectl delete)."""
     if not words:
         return None
     if words[0] in SHELLS:
+        flags = [w for w in words[1:] if w.startswith("-") and not w.startswith("--")]
+        if any("n" in f[1:] for f in flags) and "-c" not in words:
+            return None                         # -n(noexec): 읽기만 한다
         args = [w for w in words[1:] if not w.startswith("-")]
         if "-c" in words or "-s" in words or not args:
             return None

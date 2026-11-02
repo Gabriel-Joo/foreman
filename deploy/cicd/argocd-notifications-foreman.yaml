@@ -1,0 +1,42 @@
+# FOREMAN 8단계 — ArgoCD 동기화 · 헬스 변화를 FOREMAN 브리지 웹훅(호스트 virbr0 192.168.122.1:8001)으로 보낸다.
+# argocd-notifications-controller는 이미 떠 있었다(설정만 비어 있었다). 동기화 동작은 바뀌지 않는다 — 알림만 더한다.
+#
+# 적용(m-k8s):  kubectl -n argocd patch cm argocd-notifications-cm --type merge --patch-file argocd-notifications-foreman.yaml
+# 토큰:         argocd-notifications-secret의 키 foreman-webhook-token(값은 FOREMAN .env.bridge의 FOREMAN_WEBHOOK_TOKEN —
+#               scripts/cicd-apply.sh가 화면에 내지 않고 넣는다). 여기에는 $foreman-webhook-token 참조만 둔다
+# 되돌리기:     아래 키들을 지운다(kubectl -n argocd edit cm argocd-notifications-cm) — 다른 키는 없었다(11-02 비어 있음)
+#
+# 본문은 FOREMAN bridge/pipeline.py argocd_status()가 읽는 모양: {app, trigger, sync, health, phase, message, revision, images, at}
+# operationState가 없는 앱(한 번도 동기화 안 됨)도 있어 if로 감싼다 — 없는 필드를 읽으면 템플릿이 실패한다
+data:
+  service.webhook.foreman: |
+    url: http://192.168.122.1:8001
+    headers:
+      - name: Authorization
+        value: Bearer $foreman-webhook-token
+  template.foreman: |
+    webhook:
+      foreman:
+        method: POST
+        path: /webhooks/argocd
+        body: |
+          {"app": {{toJson .app.metadata.name}}, "sync": {{toJson .app.status.sync.status}}, "health": {{toJson .app.status.health.status}}, "revision": {{toJson .app.status.sync.revision}}, "images": {{toJson .app.status.summary.images}}{{if .app.status.operationState}}, "phase": {{toJson .app.status.operationState.phase}}, "message": {{toJson .app.status.operationState.message}}, "at": {{toJson .app.status.operationState.finishedAt}}{{end}}}
+  trigger.foreman-sync-running: |
+    - when: app.status.operationState != nil and app.status.operationState.phase in ['Running']
+      send: [foreman]
+  trigger.foreman-sync-succeeded: |
+    - when: app.status.operationState != nil and app.status.operationState.phase in ['Succeeded']
+      send: [foreman]
+  trigger.foreman-sync-failed: |
+    - when: app.status.operationState != nil and app.status.operationState.phase in ['Error', 'Failed']
+      send: [foreman]
+  trigger.foreman-health-degraded: |
+    - when: app.status.health.status == 'Degraded'
+      send: [foreman]
+  trigger.foreman-deployed: |
+    - when: app.status.operationState != nil and app.status.operationState.phase in ['Succeeded'] and app.status.health.status == 'Healthy'
+      oncePer: app.status.sync.revision
+      send: [foreman]
+  subscriptions: |
+    - recipients: [foreman]
+      triggers: [foreman-sync-running, foreman-sync-succeeded, foreman-sync-failed, foreman-health-degraded, foreman-deployed]

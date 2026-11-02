@@ -88,6 +88,23 @@ class Settings(BaseSettings):
     terminal_output_lines: int = 60          # 세션에 전달하는 출력 — 마지막 N줄(마스킹 후)
     terminal_cookie_ttl_s: float = 12 * 3600
 
+    # 8단계 — CI/CD 웹훅(Jenkins · Harbor · ArgoCD)과 인과 체인(규칙은 config/pipeline.toml).
+    # 웹훅은 클러스터(libvirt VM)에서 온다 — 127.0.0.1에는 닿지 못하므로 virbr0(호스트 쪽 192.168.122.1)에 웹훅 전용 포트를 연다.
+    # 그 포트는 /webhooks/*만 받고, 보낸 곳이 VM 망(아래 CIDR)이어야 하며, 토큰(FOREMAN_WEBHOOK_TOKEN — hook · API와 별개)이 필요하다
+    foreman_webhook_token: SecretStr | None = None
+    pipeline_enabled: bool = True
+    pipeline_config: Path = REPO / "config" / "pipeline.toml"
+    webhook_bind_host: str = "192.168.122.1"
+    webhook_bind_port: int = 8001
+    webhook_allow_cidrs: str = "127.0.0.0/8,192.168.121.0/24,192.168.122.0/24"
+
+    @field_validator("foreman_webhook_token")
+    @classmethod
+    def _webhook_long_enough(cls, v: SecretStr | None) -> SecretStr | None:
+        if v is not None and len(v.get_secret_value()) < MIN_TOKEN_LEN:
+            raise ValueError(f"토큰은 {MIN_TOKEN_LEN}자 이상이어야 한다")
+        return v
+
     @field_validator("foreman_api_token", "foreman_hook_token")
     @classmethod
     def _long_enough(cls, v: SecretStr) -> SecretStr:

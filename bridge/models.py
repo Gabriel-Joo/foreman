@@ -31,6 +31,7 @@ class EventSource(StrEnum):
     DEBUG = "debug"  # 1단계 확인용(/api/debug/emit)
     BRIDGE = "bridge"  # 브리지가 한 일(입력 주입 등)
     SHELL = "shell"    # 7단계 터미널 패널에서 사람이 친 명령(PROMPT_COMMAND → /hooks/shell)
+    WEBHOOK = "webhook"  # 8단계 CI/CD 웹훅(Jenkins · Harbor · ArgoCD)
 
 
 class EventType(StrEnum):
@@ -53,6 +54,8 @@ class EventType(StrEnum):
     SHELL_CMD = "shell_cmd"          # 7단계 — 터미널 패널에서 친 명령(마스킹). 승인 정책은 걸리지 않는다
     TERM_REQUEST = "term_request"    # CC가 사람에게 부탁한 명령을 감지해 패널에 미리 채웠다
     TERM_RESULT = "term_result"      # 그 명령의 결과를 부탁한 세션에 전달했다(거부 포함)
+    BUILD = "build"                  # 8단계 — 파이프라인 단계(Jenkins · Harbor · ArgoCD)가 바뀌었다. commit_sha로 체인에 꿴다
+    INFRA = "infra"                  # 8단계 — 인프라 캐릭터 등장 · 회복
     DEBUG = "debug"
 
 

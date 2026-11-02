@@ -53,6 +53,38 @@ function why(s) {
   return '';
 }
 
+// ── 8단계 파이프라인 — 프로젝트마다 인프라 캐릭터와 최근 체인(커밋 → Jenkins → Harbor → ArgoCD), 깨진 곳은 붉게 ──
+const PIPE_STAGES = [['jenkins', 'Jenkins'], ['harbor', 'Harbor'], ['argocd', 'ArgoCD']];
+const PIPE_MARK = { success: '✓', failed: '✗', running: '…' };
+const INFRA_LABEL = { IDLE: '응답', ACTIVE: '일하는 중', STALE: '응답 없음' };
+function pipeBlock(pp) {
+  if (!pp) return '';
+  const infra = pp.infra.filter((c) => !c.retired);
+  if (!infra.length && !pp.chains.length && !pp.waiting.length) return '';
+  const chips = infra.map((c) => `<span class="pill infra ${c.status === 'STALE' ? 'warn' : ''}" title="${esc(INFRA_LABEL[c.status] || c.status)} · 마지막 응답 ${esc(ago(c.last_seen_at))}">${esc(c.name)}${c.status === 'STALE' ? ' ⚠' : ''}</span>`).join('');
+  const who = (c) => c.title || c.character || (c.session_id ? '세션' : '사람');
+  const chains = pp.chains.slice(0, 4).map((ch) => {
+    const commits = ch.commits.length ? ch.commits : [{ short: ch.short, subject: '' }];
+    const head = commits.find((c) => c.sha === ch.head) || commits[0];
+    const extra = commits.length > 1 ? ` <span class="muted">+${commits.length - 1}커밋</span>` : '';
+    const steps = PIPE_STAGES.map(([k, label]) => {
+      const x = ch.stages[k];
+      const cls = x ? `ps-${x.status}` : 'ps-none';
+      const tip = x ? `${label} ${x.status}${x.step ? ' · ' + x.step : ''}${x.message ? '\n' + x.message : ''}` : `${label} 아직`;
+      const inner = `${label} ${x ? PIPE_MARK[x.status] || '' : '·'}${x && x.step && x.status === 'failed' ? ` <b>${esc(x.step)}</b>` : ''}`;
+      return x && x.url ? `<a class="ps ${cls}" href="${esc(x.url)}" target="_blank" rel="noopener" title="${esc(tip)}">${inner}</a>`
+        : `<span class="ps ${cls}" title="${esc(tip)}">${inner}</span>`;
+    }).join('<span class="ps-arrow">→</span>');
+    return `<div class="chain ${ch.broke ? 'broke' : ''}" title="${esc(commits.map((c) => `${c.short} ${c.subject || ''} — ${who(c)}`).join('\n'))}">
+      <div class="chain-commit small"><code class="sha">${esc(head.short)}</code> ${esc(oneLine(head.subject || '', 60))}${extra} <span class="muted">· ${esc(who(head))} · ${ago(ch.at)}</span></div>
+      <div class="chain-steps small">${steps}</div>
+      ${ch.broke ? `<div class="small bad">여기서 깨짐: ${esc(PIPE_STAGES.find(([k]) => k === ch.broke)[1])}${ch.stages[ch.broke].step ? ' · ' + esc(ch.stages[ch.broke].step) : ''}${ch.stages[ch.broke].message ? ' — ' + esc(oneLine(ch.stages[ch.broke].message, 140)) : ''}</div>` : ''}
+    </div>`;
+  }).join('');
+  const waiting = pp.waiting.length ? `<div class="small muted">빌드 전 커밋: ${pp.waiting.map((w) => `<code class="sha">${esc(w.short)}</code>${w.pushed ? '' : '(push 전)'}`).join(' ')}</div>` : '';
+  return `<div class="pipe"><div class="pipe-head small"><b>파이프라인</b> ${chips}</div>${waiting}${chains}</div>`;
+}
+
 export function createRenderer(root, store) {
   root.innerHTML = `
     <header class="top">
@@ -96,7 +128,7 @@ export function createRenderer(root, store) {
     </form></div>`;
 
   const $ = (id) => root.querySelector('#' + id);
-  const seen = { conn: -1, approvals: -1, grid: -1, panel: -1 };
+  const seen = { conn: -1, approvals: -1, grid: -1, panel: -1, pipe: -1 };
   let lastSel = undefined;
 
   // ── 동작 연결 ──────────────────────────────────────────
@@ -219,6 +251,7 @@ export function createRenderer(root, store) {
       const dormant = ss.filter((s) => s.state === 'DORMANT');
       return `<section class="proj">
         <h2>${esc(p.label)} <span class="muted small">${live.length}개 살아 있음</span></h2>
+        ${pipeBlock(st.pipeline.get(p.name))}
         ${live.map((s) => card(s, st)).join('')}
         ${dormant.length ? `<details class="dormant"><summary class="small muted">종료된 세션 ${dormant.length}개</summary>${dormant.map((s) => card(s, st)).join('')}</details>` : ''}
       </section>`;
@@ -266,7 +299,9 @@ export function createRenderer(root, store) {
   store.subscribe((st) => {
     if (seen.conn !== st.ver.conn) { seen.conn = st.ver.conn; drawConn(st); }
     if (seen.approvals !== st.ver.approvals) { seen.approvals = st.ver.approvals; drawApprovals(st); }
-    if (seen.grid !== st.ver.grid) { seen.grid = st.ver.grid; drawGrid(st); drawSummary(st); }
+    if (seen.grid !== st.ver.grid || seen.pipe !== st.ver.pipe) {
+      seen.grid = st.ver.grid; seen.pipe = st.ver.pipe; drawGrid(st); drawSummary(st);
+    }
     if (seen.panel !== st.ver.panel) { seen.panel = st.ver.panel; drawPanel(st); }
   });
   // "n초 전" · "n분째" 같은 시간 표시만 갱신
