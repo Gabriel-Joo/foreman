@@ -341,22 +341,21 @@ UI에서도 "이 캐릭터는 이 브랜치"가 자연스럽게 보인다. 머�
 
 시각적으로도 이어진다. 캐릭터가 작업을 마치고 파이프라인 구역으로 걸어가고, 거기서 실패하면 그 지점이 붉게 표시된다.
 
-**만든 모양(8단계)** — 런슈즈 · 펫퍼민트는 같은 구조다(각 저장소 Jenkinsfile 머리말): GitHub push → Jenkins 폴링(2분) → BuildKit → Harbor(태그 = 커밋 12자리) → ronanlab-infra `newTag` 커밋 → ArgoCD 자동 Sync.
+**실제 흐름(8단계 조사, 2026-11-02 — 적용은 보류)** — 런슈즈 · 펫퍼민트는 같은 구조이고, **전 구간이 폴링**이다(웹훅 없음 — 운영 도구는 Cloudflare Access 뒤라 GitHub 웹훅이 닿지 않는다):
 
 ```
-로컬 git(같은 서버) ── 20초 폴링 ──> git_commit(세션 · 도구 호출 이벤트에 귀속, event.commit_sha) · push(origin/main)
-Jenkins(Jenkinsfile curl) ─┐
-Harbor(프로젝트 웹훅)  ─────┼─ 192.168.122.1:8001/webhooks/* (VM 망 · 웹훅 토큰) ──> build(단계 행) · build_commit
-ArgoCD(notifications)  ────┘                                                       └─ 실패로 바뀌면 텔레그램
-인프라 캐릭터 ── 첫 웹훅에 등장 ── 60초 폴링(ingress VIP, Host 헤더) ── 3번 무응답 STALE · 24시간 STALE면 퇴장
+로컬 커밋 → GitHub push ─(최대 2분, Jenkins SCM 폴링)→ Jenkins 빌드 → Harbor push(태그 = 커밋 12자리)
+  → ronanlab-infra apps/<앱> newTag 커밋 ─(최대 3분, ArgoCD 폴링)→ 런슈즈 자동 Sync / 펫퍼민트 수동 Sync
 ```
 
-- **커밋 단계는 GitLab이 아니라 로컬 저장소다.** GitLab은 지금 돌고 있지 않다(10-18 학교 환경에서 GitHub로 옮김). GitHub 웹훅은 Access에 막혀 이 서버에 오지 않는다. 대신 같은 서버의 저장소를 폴링하면 "어느 세션이 만든 커밋인가"까지 안다 — 커밋 시각 직전의 `git commit` 도구 호출로 찾고, **명령에 그 커밋 제목이 들어 있어야** 귀속한다(다른 제목을 준 명령 · 다른 저장소로 들어가 커밋한 명령은 아니다. 메시지를 알 수 없는 `git revert --no-edit` 같은 것만 가까운 것으로). 다른 프로젝트 세션(포먼 · 미분류)이 `cd <저장소> && git commit`한 것도 제목이 맞으면 그 세션 것
-- **여러 커밋이 한 빌드에** — Jenkins는 2분마다 폴링하므로 그 사이 push된 커밋들이 빌드 하나가 된다. 빌드의 머리(GIT_COMMIT)와 직전 빌드 머리 사이의 커밋을 로컬 저장소에서 `git rev-list`로 구해 `build_commit`에 묶는다. 머리가 아닌 내 커밋도 이 표로 자기 빌드를 찾는다
-- **이음매는 커밋 12자리** — Harbor 태그와 ArgoCD 이미지 태그가 같은 12자리다(Jenkinsfile 규칙). 로컬 저장소에서 전체 SHA로 푼다. ArgoCD 리비전은 인프라 저장소 커밋이라 이음매가 아니다
-- **어디서 깨졌나** — 체인 한 줄(커밋 → Jenkins → Harbor → ArgoCD)에서 처음 실패한 단계를 붉게, Jenkins는 스테이지 이름까지(Jenkinsfile이 `FOREMAN_STAGE`를 보낸다), ArgoCD는 sync 실패와 health Degraded를 가른다
-- **웹훅 받는 곳** — 브리지는 127.0.0.1에만 묶여 있어 VM에서 닿지 않는다. 같은 프로세스가 virbr0(192.168.122.1:8001)에 웹훅 전용 리스너를 하나 더 연다: `/webhooks/*`만 열리고, 보낸 곳이 VM 망이어야 하며(리눅스는 다른 인터페이스로 들어온 패킷도 받으므로 IP로도 거른다), 별도 토큰(`FOREMAN_WEBHOOK_TOKEN` — API · hook 토큰과 별개)이 필요하다
-- **보내는 쪽 설정**(사람이 실행 — 공유 클러스터 변경이라 CC 자동 모드가 막는다): `scripts/cicd-apply.sh`(ArgoCD notifications · Jenkins Secret · Harbor 웹훅 정책, 토큰은 표준 입력으로만), Jenkinsfile은 `deploy/cicd/jenkinsfile-*.patch`(알림이 실패해도 빌드는 그대로 — `try/catch` · `curl || true` · Secret은 optional)
+**FOREMAN이 끼어드는 법(정한 방향)** — 기존 흐름에 아무것도 더하지 않고 **읽기 조회**로 본다:
+- **Jenkins**: 읽기 API(빌드 결과 · 머리 SHA · 묶인 커밋 · 스테이지별 상태). 2분 폴링 사이에 push된 커밋 여럿이 빌드 하나가 되는 것도 Jenkins가 알려 준다. 필요한 것은 읽기 토큰 하나
+- **Harbor**: 따로 받지 않는다 — push는 Jenkins "빌드·push" 스테이지 안이고 태그가 곧 커밋. 생존 확인만
+- **ArgoCD**: notifications 웹훅이 후보(동기화 동작은 그대로) — **App of Apps 구조를 본 뒤** 정한다
+- **커밋 → 세션**: Jenkins가 알려 준 커밋의 제목 · 시각으로 그 세션의 `git commit` 도구 호출을 찾는다(**명령에 커밋 제목이 있어야** 귀속 — 실데이터 66개 모두 일치). 로컬 저장소를 따로 폴링하지 않는다
+- 인프라 캐릭터는 첫 관찰에 등장하고 ingress VIP 폴링으로 생존을 본다. 실패는 실패로 바뀔 때 텔레그램 한 번
+
+처음엔 실제 설정을 읽기 전에 웹훅을 새로 붙이는 쪽(Jenkinsfile 수정 · Harbor 정책 · 웹훅 포트)으로 설계했다가 되돌렸다 — 경위와 실제 설정 표는 [8단계 기록](log/stage8_cicd_result.md)
 
 ### 3.7 LLM 지표
 
@@ -738,7 +737,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 5 | 승인 정책 엔진 | ✅ **완료**(2026-11-02, [결과](log/stage5_approval_result.md)) — 위험한 것은 ask · 확실한 것만 allow · 나머지는 CC에, 브라우저 · 텔레그램 · 터미널 승인, 모든 판정 기록. 런슈즈 · 펫퍼민트는 observe로 시작 |
 | 6 | 대시보드 (못생겨도 되는 실사용 UI) | ✅ **완료**(2026-11-02, [결과](log/stage6_dashboard_result.md)) — 프로젝트별 세션 상태 · 하는 일 · 대화 · 서브에이전트 · 승인 · 토큰, 입력 · 승인 · 끊김. 데이터(`static/js/store.js`)와 그리기(`render.js`)를 나눠 10단계에서 그리기만 바꾼다. 여기까지가 매일 쓸 수 있는 물건 |
 | 7 | 터미널 패널 (ttyd) + 명령 자동 채우기 | ✅ **완료**(2026-11-02, [결과](log/stage7_terminal_result.md)) — ttyd(UNIX 소켓) + tmux `foreman-shell`, 대시보드 아래 접이식, 친 명령 기록(마스킹), CC 부탁 감지 → 미리 채움 → 결과를 그 세션에(3.9). 사용자가 패널 · 새 텔레그램 토큰 동작 확인 |
-| 8 | CI/CD 웹훅 + 인과 체인 + 파이프라인 구역 | 🔧 **FOREMAN 쪽 구현 · 시험 끝, 보내는 쪽 설정 대기**(2026-11-02, [결과](log/stage8_cicd_result.md)) — 커밋(로컬 git, 세션 귀속) → Jenkins → Harbor → ArgoCD 한 줄, 여러 커밋 한 빌드, 깨진 곳 표시, 인프라 캐릭터, 실패 알림(3.6). 클러스터 설정은 사람이 `scripts/cicd-apply.sh` · Jenkinsfile 패치. 차별점. FOREMAN 자체를 CI/CD에 태울 때 수집부(호스트) · API/UI(파드) 분리를 다시 본다(3.12). **9단계와 순서를 바꿨다**(아래) |
+| 8 | CI/CD 웹훅 + 인과 체인 + 파이프라인 구역 | ⏸ **조사 완료, 적용 보류**(2026-11-02, [결과](log/stage8_cicd_result.md)) — 실제 파이프라인은 폴링(Jenkins 2분 · ArgoCD 3분, 웹훅 없음)이었다. 기존 흐름은 건드리지 않고 **읽기 조회**로 끼어든다(Jenkins 읽기 API, Harbor는 Jenkins 스테이지로, ArgoCD는 알림 웹훅 후보). **ArgoCD App of Apps를 먼저** 하고 그 구조에 맞춰 적용한다. 지금 브리지의 파이프라인 기능은 꺼 둠. 차별점. FOREMAN 자체를 CI/CD에 태울 때 수집부(호스트) · API/UI(파드) 분리를 다시 본다(3.12). **9단계와 순서를 바꿨다**(아래) |
 | 9 | LLM 지표 + 병목 시각화 | AI 인프라 축. 프로메테우스는 펫퍼민트 설계가 정해진 뒤에 설치한다(아래) |
 
 **8 · 9단계 순서를 바꾼 이유**(2026-11-02 사용자 결정) — 원래는 LLM 지표가 8, CI/CD가 9였다.
