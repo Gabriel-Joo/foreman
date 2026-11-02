@@ -43,6 +43,20 @@
 - 그대로 쓸 것: 커밋 귀속 규칙(명령에 커밋 제목이 있어야 — 아래), `build` · `build_commit` 표, 대시보드 파이프라인 칸, 인프라 캐릭터 등장 · 생존 규칙, 실패 알림
 - App of Apps 때 FOREMAN이 기대는 것: Application 이름(`runshoes` · `petmint`)과 앱 ↔ Jenkins job ↔ Harbor 프로젝트 대응(`config/pipeline.toml`), 펫퍼민트 수동 Sync(실패 판정이 "Sync 안 함"과 섞이지 않게), notifications 구독을 어디에 둘지(루트 앱 · 라벨 · 앱 주석)
 
+## 재개할 때 다시 조사할 것 (11-03 기록 — 아직 아무것도 안 봄)
+
+11-03에 펫퍼민트 세션에서 App of Apps 작업이 끝났고 웹훅을 거는 중이라고 사용자가 알려 왔다. **그 작업이 끝날 때까지 FOREMAN은 아무것도 하지 않는다**(조사도 하지 않음). 끝나면 위 "지금 실제 설정" 표를 다시 채우는 것부터 한다. 이 표의 11-02 값은 그때 낡은 것으로 본다. 보는 방법은 똑같이 live 설정을 읽기 전용으로 본다.
+
+| 볼 것 | 11-02 값(비교 기준) | 확인할 곳 |
+|---|---|---|
+| **App of Apps에서 Application이 어떻게 나뉘는지**: 루트 앱 이름 · 자식 앱 목록 · 앱 이름이 `runshoes` · `petmint` 그대로인지 · 앱 하나에 무엇이 묶였는지(앱/플랫폼 분리 등) · `project`(AppProject) | 손으로 `kubectl apply`한 Application 4개(`cloudflared` · `monitoring` · `petmint` · `runshoes`), ArgoCD가 자기 Application을 관리하지 않음 | `kubectl -n argocd get applications`(+ `-o yaml`의 `ownerReferences` · `app.kubernetes.io/instance` 라벨), `appprojects`, `ronanlab-infra` 새 디렉토리 구조(`platform/argocd/…`), 루트 앱의 `source.path` |
+| **웹훅이 걸리면 폴링이 없어지는지** — Jenkins 2분 | `SCMTrigger H/2`, GitHub 웹훅은 Cloudflare Access(302)에 막혀 닿을 수 없음 | job live `config.xml`의 트리거(`GitHubPushTrigger`? `SCMTrigger`가 남았나 · spec), 최근 `build.xml`의 원인(`GitHubPushCause` vs `SCMTriggerCause`), `scm-polling.log`가 계속 2분마다 도는지, 터널 · Access에 웹훅 경로 예외(bypass)가 생겼는지(`cloudflared-config`, 밖에서 `/github-webhook/` 응답 코드), 플러그인 목록 |
+| **웹훅이 걸리면 폴링이 없어지는지** — ArgoCD 3분 | 기본 3분, `argocd-secret`에 `webhook.github.secret` 없음 | `argocd-secret` **키 이름만**(`webhook.github.secret` 생겼나), `argocd-cm`의 `timeout.reconciliation`, 밖에서 `argocd.ronanlab.dev/api/webhook` 응답 코드, 인프라 저장소 push → Application `status.reconciledAt`까지 걸린 시간. 웹훅을 걸어도 ArgoCD 폴링은 보통 꺼지지 않고(기본값 그대로 같이 돈다) 감지만 빨라진다 — 실제 값을 확인 |
+| **FOREMAN이 ArgoCD 알림 웹훅(①안)을 붙일 자리** | `argocd-notifications-cm` · `-secret` 비어 있음. 초안 `deploy/cicd/argocd-notifications-foreman.yaml`(기본 구독 = 모든 앱) | ① 펫퍼민트 쪽이 notifications를 이미 쓰기 시작했나(cm · secret이 비었나, 누가 관리하나 — 인프라 저장소에 있으면 거기 더해야 한다. 손으로 `apply`하면 ArgoCD self-heal과 충돌할 수 있다) ② 구독을 어디에 둘지: cm의 기본 구독(`subscriptions`) · 자식 Application 주석(`notifications.argoproj.io/subscribe.<trigger>.foreman`) · AppProject 주석 중 무엇이 새 구조에 맞나 ③ 루트 앱이 자식 앱 정의를 관리하면 주석도 인프라 저장소에 넣어야 한다(손으로 붙이면 되돌려진다) ④ 받는 주소 `192.168.122.1:8001`(virbr0) — 노드에서 닿는지 다시 확인 |
+| **펫퍼민트 수동 Sync가 유지되는지** | 런슈즈 `automated: {}`(prune · selfHeal 끔), 펫퍼민트 `automated` 없음 | 새 Application `spec.syncPolicy` 둘 다. 루트 앱 자신의 syncPolicy도. 수동이면 FOREMAN은 "OutOfSync로 기다림"을 실패가 아닌 별도 상태로 보여 준다 |
+
+같이 볼 것: 앱 ↔ Jenkins job ↔ Harbor 프로젝트 대응(`config/pipeline.toml`)이 바뀌었나, `kustomization.yaml` newTag 자리(경로)가 그대로인가 — Jenkinsfile 마지막 스테이지가 거기를 고친다. 바뀐 것이 있으면 위 "정한 방향"(Jenkins 읽기 조회 · ArgoCD ①)을 다시 판단하고 사용자에게 먼저 보인다.
+
 ## 지금 상태 (보류 중)
 
 - **브리지**: 파이프라인(로컬 git 폴링 · 웹훅 포트 8001 · 인프라 생존 폴링)을 **껐다**(`pipeline_enabled = False`). `/api/pipeline`은 `enabled: false`, 대시보드 파이프라인 칸은 안 보인다
