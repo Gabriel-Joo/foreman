@@ -6,15 +6,26 @@
 - 시작하면 inotify를 먼저 건 다음 전체를 백필한다 — 백필 중에 쓰인 줄도 놓치지 않는다
 - rescan_s마다 크기 > offset인 파일을 다시 본다(inotify 대기열 넘침 등 놓친 것 대비)
 - 읽기는 스레드(asyncio.to_thread), 적재는 조립기의 단일 writer
+
+적재 실패(11-03 — 한 세션이 06:48부터 몇 시간 같은 덩어리에서 실패를 되풀이했고, 아무도 몰랐다):
+- 실패한 파일은 다음 시도 시각까지 미뤄 두고 다른 파일은 계속 적재한다(전에는 그 자리에서 최대 60초 잠들어 모든 파일이 밀렸다)
+- 같은 자리에서 TOLERANT_AFTER번 실패하면 너그러운 모드 — 줄마다 SAVEPOINT, 실패한 줄만 버린다
+- 그래도 실패하고 오류가 결정적(DB 끊김 · 시간 초과가 아님)이면 SKIP_AFTER번째에 그 덩어리를 건너뛴다(마지막 수단, 로그 · 알림).
+  DB가 내려간 것 같은 일시적 오류는 건너뛰지 않는다 — 기다리면 돌아온다(줄을 잃지 않는다)
+- health()로 막힌 파일 · 버린 줄 · 루프 생존을 내보낸다 — main.py가 N분 넘게 막히면 텔레그램, 대시보드에 띄운다
 """
 
 import asyncio
+import collections
 import logging
 import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from inotify_simple import INotify, flags
+from sqlalchemy import exc as sa_exc
 
 from bridge.assembler import Assembler
 from bridge.config import Settings
@@ -23,6 +34,24 @@ from bridge.transcript.reader import FileKey, classify, iter_transcripts, read_c
 log = logging.getLogger("foreman.watcher")
 
 DIR_MASK = flags.CREATE | flags.MODIFY | flags.CLOSE_WRITE | flags.MOVED_TO | flags.DELETE_SELF
+TOLERANT_AFTER = 3     # 같은 자리에서 이만큼 실패하면 너그러운 모드(줄마다 SAVEPOINT)
+SKIP_AFTER = 6         # 결정적 오류가 이만큼 되풀이되면 덩어리를 건너뛴다(약 2분 반)
+
+
+@dataclass
+class Failure:
+    n: int              # 같은 offset에서 연달아 실패한 수
+    since: float        # 처음 실패한 시각(time.time)
+    offset: int
+    error: str
+    retry_at: float     # 다음 시도(time.monotonic)
+    transient: bool
+
+
+def _transient(e: BaseException) -> bool:
+    """기다리면 풀릴 오류 — DB 연결 · 시간 초과. 이런 오류로는 줄을 버리지 않는다."""
+    return isinstance(e, (sa_exc.OperationalError, sa_exc.InterfaceError, TimeoutError, ConnectionError)) or bool(
+        getattr(e, "connection_invalidated", False))
 
 
 class Watcher:
@@ -36,7 +65,11 @@ class Watcher:
         self.wake = asyncio.Event()
         self.backfill_done = asyncio.Event()
         self.backfill_seconds: float | None = None
-        self.failures: dict[str, int] = {}
+        self.failures: dict[str, Failure] = {}
+        self.deferred: dict[str, FileKey] = {}          # 다음 시도 시각을 기다리는 파일
+        self.skips: collections.deque[dict[str, Any]] = collections.deque(maxlen=50)   # 버린 줄 · 덩어리(알림 · 화면)
+        self.skips_total = 0
+        self.last_tick = time.time()                    # 실시간 루프가 마지막으로 돈 시각
 
     # ── inotify ─────────────────────────────────────────────
     def _watch_dir(self, d: Path) -> None:
@@ -86,28 +119,77 @@ class Watcher:
                 self.dirty[k.path] = k
 
     # ── 읽기 · 적재 ──────────────────────────────────────────
+    def _requeue(self) -> None:
+        """다음 시도 시각이 된 파일을 다시 적재 대기열에."""
+        now = time.monotonic()
+        for path in [p for p in self.deferred if (f := self.failures.get(p)) is None or f.retry_at <= now]:
+            self.dirty.setdefault(path, self.deferred.pop(path))
+
     async def _drain(self) -> None:
         while self.dirty:
             path, key = next(iter(self.dirty.items()))
             del self.dirty[path]
+            f = self.failures.get(path)
+            if f is not None and time.monotonic() < f.retry_at:
+                self.deferred[path] = key      # 아직 기다리는 중 — 다른 파일 먼저
+                continue
             fs = self.asm.file_state(path)
+            start = fs.offset if fs else 0
+            ch = None
             try:
-                ch = await asyncio.to_thread(read_chunk, key, fs.offset if fs else 0, fs.inode if fs else None,
-                                             self.s.ingest_chunk_bytes)
+                ch = await asyncio.to_thread(read_chunk, key, start, fs.inode if fs else None, self.s.ingest_chunk_bytes)
                 if ch is None:
+                    self.failures.pop(path, None)
                     continue
                 if ch.reset:
                     log.warning("같은 파일이 아니다(inode 변경 · 잘림) — 처음부터: %s", path)
-                await self.asm.apply_chunk(ch)
+                tolerant = f is not None and f.offset == ch.start and f.n >= TOLERANT_AFTER
+                skipped = await self.asm.apply_chunk(ch, tolerant=tolerant)
+                if skipped:
+                    self._skip_note(key, "records", ch.start, ch.end, len(skipped), skipped[0][1])
+                if f is not None:
+                    log.info("적재 회복 %s — %d번 실패 뒤%s", path, f.n, f" (너그러운 모드, 버린 줄 {len(skipped)})" if tolerant else "")
                 self.failures.pop(path, None)
                 if not ch.at_eof:
                     self.dirty[path] = key  # 남은 부분
                     await asyncio.sleep(0)  # hook 등 다른 작업에 차례를 준다
             except Exception as e:  # noqa: BLE001 — 한 파일 실패가 와처를 멈추면 안 된다
-                n = self.failures[path] = self.failures.get(path, 0) + 1
-                log.warning("적재 실패(%d회) %s: %s: %s", n, path, type(e).__name__, str(e)[:300])
-                await asyncio.sleep(min(2 ** n, 60))
-                self.dirty[path] = key
+                at = ch.start if ch is not None else start
+                same = f is not None and f.offset == at
+                n = (f.n if same else 0) + 1
+                transient = _transient(e)
+                err = f"{type(e).__name__}: {str(e)[:300]}"
+                if ch is not None and not transient and n >= SKIP_AFTER:
+                    try:
+                        await self.asm.skip_chunk(ch)
+                        log.error("적재 포기 — 덩어리를 건너뜀 %s [%d, %d) (%d번 실패, 너그러운 모드 포함): %s",
+                                  path, ch.start, ch.end, n - 1, err)
+                        self._skip_note(key, "chunk", ch.start, ch.end, len(ch.records), err)
+                        self.failures.pop(path, None)
+                        if not ch.at_eof:
+                            self.dirty[path] = key
+                        continue
+                    except Exception as e2:  # noqa: BLE001
+                        log.warning("덩어리 건너뛰기도 실패 %s: %s", path, type(e2).__name__)
+                self.failures[path] = Failure(n, f.since if same else time.time(), at, err,
+                                              time.monotonic() + min(2 ** n, 60), transient)
+                log.warning("적재 실패(%d회%s) %s: %s", n, ", 다음은 너그러운 모드" if n == TOLERANT_AFTER and not transient
+                            else "", path, err)
+                self.deferred[path] = key
+
+    def _skip_note(self, key: FileKey, kind: str, start: int, end: int, count: int, reason: str) -> None:
+        self.skips_total += 1
+        self.skips.append({"path": key.path, "session": key.cc_session_id, "kind": kind, "start": start, "end": end,
+                           "count": count, "reason": reason[:200], "at": time.time(), "seq": self.skips_total})
+
+    def health(self, stuck_after_s: float) -> dict[str, Any]:
+        """막힌 파일(stuck_after_s 넘게 실패 중), 실패 중인 파일 수, 버린 줄, 루프 생존."""
+        now = time.time()
+        stuck = [{"path": p, "session": p.rsplit("/", 1)[-1].removesuffix(".jsonl"), "failures": f.n,
+                  "since": f.since, "minutes": int((now - f.since) // 60), "error": f.error, "transient": f.transient}
+                 for p, f in self.failures.items() if now - f.since >= stuck_after_s]
+        return {"stuck": stuck, "failing": len(self.failures), "tick_age_s": now - self.last_tick,
+                "skips": list(self.skips), "skips_total": self.skips_total}
 
     async def backfill(self) -> float:
         """전체를 한 번 읽는다(inotify 없이). 걸린 초를 돌려준다."""
@@ -140,6 +222,8 @@ class Watcher:
                 except TimeoutError:
                     pass
                 self.wake.clear()
+                self.last_tick = time.time()
+                self._requeue()
                 await self._drain()
                 now = time.monotonic()
                 if now - last_rescan > self.s.rescan_s:

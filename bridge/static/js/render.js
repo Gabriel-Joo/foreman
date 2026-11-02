@@ -202,7 +202,12 @@ export function createRenderer(root, store) {
       subs += s.subagents_running || 0;
     }
     const pending = [...st.approvals.values()].filter((a) => a.status === 'pending').length;
-    $('summary').innerHTML =
+    // 적재(수집기)가 막히면 맨 앞에 — 이 화면이 보여 주는 기록 자체가 멈춘 것이다(11-03)
+    const ig = st.ingest;
+    const ingest = !ig ? '' : (ig.stalled ? `<span class="bad" title="트랜스크립트 감시 루프가 ${ig.tick_age_s}초째 돌지 않는다">⚠ 와처 멈춤</span>`
+      : (ig.stuck && ig.stuck.length ? `<span class="bad" title="${esc(ig.stuck.map((x) => `${x.session} ${x.minutes}분 · ${x.failures}번 — ${x.error}`).join('\n'))}">⚠ 적재 막힘 ${ig.stuck.length}개 세션 · ${Math.max(...ig.stuck.map((x) => x.minutes))}분</span>`
+      : (ig.skips && ig.skips.length ? `<span class="warn" title="${esc(ig.skips.map((x) => `${x.session} ${x.kind === 'chunk' ? '덩어리' : '줄'} ${x.count} — ${x.reason}`).join('\n'))}">적재 중 버린 줄 있음(24시간)</span>` : '')));
+    $('summary').innerHTML = ingest +
       `<span>작업 중 <b>${active}</b>/${live}</span>` +
       (subs ? `<span>서브에이전트 <b>${subs}</b></span>` : '') +
       (pending ? `<span class="warn">승인 대기 <b>${pending}</b></span>` : '') +

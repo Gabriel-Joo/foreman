@@ -141,6 +141,7 @@ class Batch:
     closed: list[tuple[int, int, str, str, str | None]] = field(default_factory=list)  # 커밋 뒤 알림(세션, 턴, 이유, 출처, 메모)
     subs_done: set[int] = field(default_factory=set)  # 커밋 뒤 묶음 판정할 세션(서브에이전트가 끝났다)
     tool_results: list[tuple[str, Any]] = field(default_factory=list)  # 커밋 뒤 승인 대기에 알릴 (tool_use_id, permissionDecision)
+    skipped: list[tuple[int, str]] = field(default_factory=list)  # 너그러운 모드에서 버린 줄 (offset, 이유)
 
 
 @dataclass
@@ -155,6 +156,8 @@ class Stats:
     turns_opened: int = 0
     turns_closed: dict[str, int] = field(default_factory=dict)
     resets: int = 0
+    copied_prompts: int = 0      # resume · fork 세션이 복사해 온 앞 세션의 프롬프트(이미 원래 세션에 있다 — 건너뜀)
+    skipped_records: int = 0     # 너그러운 모드에서 건너뛴 줄(watcher가 같은 덩어리에서 여러 번 실패한 뒤)
 
 
 class Assembler:
@@ -333,7 +336,7 @@ class Assembler:
                 await c.execute(text(
                     "UPDATE turn SET prompt_id = :p, prompt_uuid = :u, origin = :o, "
                     "prompt_text = COALESCE(prompt_text, :t) WHERE id = :id"),
-                    {"p": pid, "u": uuid, "o": origin, "t": prompt, "id": o.id})
+                    {"p": pid, "u": await self._free_uuid(c, uuid, o.id), "o": origin, "t": prompt, "id": o.id})
                 o.prompt_id = pid
                 st.remember(st.prompt_turns, pid, o.id, 256)
                 return o.id
@@ -353,7 +356,7 @@ class Assembler:
         res = await c.execute(text(
             "INSERT INTO turn (session_id, seq, prompt_id, origin, prompt_uuid, prompt_text, started_at) "
             "VALUES (:s, :seq, :p, :o, :u, :t, :at)"),
-            {"s": st.id, "seq": st.seq, "p": pid, "o": origin, "u": uuid, "t": prompt, "at": ts})
+            {"s": st.id, "seq": st.seq, "p": pid, "o": origin, "u": await self._free_uuid(c, uuid), "t": prompt, "at": ts})
         tid = res.lastrowid
         st.open_turn = TurnRef(tid, pid, ts, by_hook=(by == "hook"))
         if pid:
@@ -362,6 +365,15 @@ class Assembler:
         b.turn_msgs.append({"type": "turn", "op": "open", "turn_id": tid, "session_id": st.id, "seq": st.seq,
                             "origin": origin, "project": st.project, "ts": ts.isoformat() + "Z", "by": by})
         return tid
+
+    @staticmethod
+    async def _free_uuid(c: AsyncConnection, uuid: str | None, own: int | None = None) -> str | None:
+        """turn.prompt_uuid는 UNIQUE다. 다른 턴이 이미 가진 uuid면 비운다(NULL) — 그 값 하나로 덩어리 전체가 막히면 안 된다
+        (11-03: resume · fork 세션이 앞 세션 줄을 uuid째 복사해 와서 06:48부터 한 세션 적재가 몇 시간 막혔다)."""
+        if not uuid:
+            return None
+        r = (await c.execute(text("SELECT id FROM turn WHERE prompt_uuid = :u"), {"u": uuid})).first()
+        return uuid if r is None or r[0] == own else None
 
     async def _close_turn(self, c: AsyncConnection, st: SessionState, b: Batch, reason: str, ts: datetime, by: str,
                           *, turn_id: int | None = None, duration: int | None = None, note: str | None = None) -> int | None:
@@ -441,7 +453,19 @@ class Assembler:
             self.stats.events += len(b.events)
 
     # ── 덩어리 적용 ──────────────────────────────────────────
-    async def apply_chunk(self, ch: Chunk) -> None:
+    async def skip_chunk(self, ch: Chunk) -> None:
+        """마지막 수단 — 이 덩어리를 적재하지 않고 offset만 넘긴다(같은 실패가 너그러운 모드에서도 되풀이될 때, watcher).
+        그 줄들은 DB에 없다. 파일 · 범위는 watcher가 로그와 알림으로 남긴다."""
+        async with self.lock:
+            async with self.engine.begin() as c:
+                tf_id = await self._file(c, ch)
+                await c.execute(text("UPDATE transcript_file SET read_offset = :o, inode = :i WHERE id = :id"),
+                                {"o": ch.end, "i": ch.inode, "id": tf_id})
+            self.sessions.pop(ch.key.cc_session_id, None)   # 메모리 문맥은 DB에서 다시 읽는다
+            self.files[ch.key.path] = FileState(tf_id, ch.end, ch.inode)
+
+    async def apply_chunk(self, ch: Chunk, tolerant: bool = False) -> list[tuple[int, str]]:
+        """적재한다. 돌려주는 값: 너그러운 모드에서 버린 줄(offset, 이유) — 보통은 빈 목록."""
         async with self.lock:
             b = Batch()
             sid = ch.key.cc_session_id
@@ -456,7 +480,7 @@ class Assembler:
                         if ch.key.is_sub:
                             await self._apply_sub(c, ch, st, b)
                         else:
-                            await self._apply_main(c, ch, st, b)
+                            await self._apply_main(c, ch, st, b, tolerant)
                         await self._flush(c, b)
                         last_uuid = next((d.get("uuid") for _, d in reversed(ch.records) if d.get("uuid")), None)
                         await c.execute(text(
@@ -466,7 +490,8 @@ class Assembler:
                 # 롤백됐다 — 이 세션의 메모리 상태를 버리고 다음에 DB에서 다시 읽는다
                 self.sessions.pop(sid, None)
                 self.subs = {k: v for k, v in self.subs.items() if v.session_id != (st.id if "st" in locals() else -1)}
-                self.files.pop(ch.key.path, None)
+                # 파일 offset은 그대로 둔다 — 롤백이라 DB의 read_offset도 이 덩어리 앞이다. 전에는 지워서 실패할 때마다
+                # 파일을 처음부터 다시 읽었다(큰 트랜스크립트면 재시도마다 수십 MB, 11-03)
                 raise
             self.files[ch.key.path] = FileState(tf_id, ch.end, ch.inode)
             s = self.stats
@@ -480,6 +505,7 @@ class Assembler:
         self._after_commit(b)
         if self.live and self.publish:
             await self._publish(b, st)
+        return b.skipped
 
     def _after_commit(self, b: Batch) -> None:
         if self.live and self.on_turn_closed:
@@ -492,64 +518,77 @@ class Assembler:
             for tuid, perm in b.tool_results:
                 self.on_tool_result(tuid, perm)
 
-    async def _apply_main(self, c: AsyncConnection, ch: Chunk, st: SessionState, b: Batch) -> None:
-        key = ch.key
+    async def _apply_main(self, c: AsyncConnection, ch: Chunk, st: SessionState, b: Batch, tolerant: bool = False) -> None:
         for off, d in ch.records:
-            t = d.get("type")
-            uid = d.get("uuid") or _uuid5(key.path, off)
-            ts = _ts(d.get("timestamp")) if d.get("timestamp") else (st.last_ts or _ts(None))
-            par = d.get("parentUuid")
-            if t == "user":
-                await self._main_user(c, st, b, d, uid, ts, par)
-            elif t == "assistant":
-                # 열린 턴이 없으면 직전 턴 — hook(Stop)이 트랜스크립트보다 먼저 와서 턴을 닫은 뒤 늦게 쓰인 응답 줄
-                # (실측: headless CC에서 Stop hook이 마지막 assistant 줄보다 먼저 도착)
-                tid = st.open_turn.id if st.open_turn else st.last_turn_id
+            if not tolerant:
+                await self._main_record(c, ch.key, st, b, off, d)
+                continue
+            # 너그러운 모드(watcher가 같은 덩어리에서 여러 번 실패한 뒤) — 줄마다 SAVEPOINT. 실패한 줄만 버리고 나머지는 적재한다
+            try:
+                async with c.begin_nested():
+                    await self._main_record(c, ch.key, st, b, off, d)
+            except Exception as e:  # noqa: BLE001
+                self.stats.skipped_records += 1
+                b.skipped.append((off, f"{type(e).__name__}: {str(e)[:200]}"))
+                log.warning("줄 건너뜀 %s @%d: %s: %s", ch.key.path, off, type(e).__name__, str(e)[:200])
+
+    async def _main_record(self, c: AsyncConnection, key: FileKey, st: SessionState, b: Batch, off: int,
+                           d: dict[str, Any]) -> None:
+        t = d.get("type")
+        uid = d.get("uuid") or _uuid5(key.path, off)
+        ts = _ts(d.get("timestamp")) if d.get("timestamp") else (st.last_ts or _ts(None))
+        par = d.get("parentUuid")
+        if t == "user":
+            await self._main_user(c, st, b, d, uid, ts, par)
+        elif t == "assistant":
+            # 열린 턴이 없으면 직전 턴 — hook(Stop)이 트랜스크립트보다 먼저 와서 턴을 닫은 뒤 늦게 쓰인 응답 줄
+            # (실측: headless CC에서 Stop hook이 마지막 assistant 줄보다 먼저 도착)
+            tid = st.open_turn.id if st.open_turn else st.last_turn_id
+            if st.open_turn:
+                st.open_turn.active = True
+            self._message(b, d, tid, None, ts)
+            if d.get("isApiErrorMessage"):
+                self._event(b, st, uuid=uid, ts=ts, type="error", turn_id=tid, parent_uuid=par, status="error",
+                            payload={"error": d.get("error"), "text": self.mask.text(_text_of(d["message"].get("content")))[:PREVIEW]})
+                await self._close_turn(c, st, b, "stop_failure", ts, "transcript")
+            else:
+                self._assistant_blocks(b, st, d, uid, ts, par, tid, None)
+        elif t == "system":
+            sub = d.get("subtype")
+            if sub == "turn_duration":
+                dur = d.get("durationMs")
                 if st.open_turn:
-                    st.open_turn.active = True
-                self._message(b, d, tid, None, ts)
-                if d.get("isApiErrorMessage"):
-                    self._event(b, st, uuid=uid, ts=ts, type="error", turn_id=tid, parent_uuid=par, status="error",
-                                payload={"error": d.get("error"), "text": self.mask.text(_text_of(d["message"].get("content")))[:PREVIEW]})
-                    await self._close_turn(c, st, b, "stop_failure", ts, "transcript")
+                    tid = await self._close_turn(c, st, b, "stop", ts, "transcript", duration=dur)
                 else:
-                    self._assistant_blocks(b, st, d, uid, ts, par, tid, None)
-            elif t == "system":
-                sub = d.get("subtype")
-                if sub == "turn_duration":
-                    dur = d.get("durationMs")
-                    if st.open_turn:
-                        tid = await self._close_turn(c, st, b, "stop", ts, "transcript", duration=dur)
-                    else:
-                        tid = st.last_turn_id
-                        if tid:
-                            await self._close_turn(c, st, b, "stop", ts, "transcript", turn_id=tid, duration=dur)
-                    self._event(b, st, uuid=uid, ts=ts, type="stop", turn_id=tid, parent_uuid=par, status="idle",
-                                payload={"durationMs": dur, "messageCount": d.get("messageCount")})
-                elif sub == "compact_boundary":
-                    tid = st.open_turn.id if st.open_turn else None
+                    tid = st.last_turn_id
                     if tid:
-                        await c.execute(text("UPDATE turn SET compacted = TRUE WHERE id = :id"), {"id": tid})
-                    self._event(b, st, uuid=uid, ts=ts, type="compact", turn_id=tid, parent_uuid=par,
-                                payload={"compactMetadata": d.get("compactMetadata")})
-            elif t == "ai-title":
-                # CC가 붙이는 세션 제목 — 대화가 흘러가며 바뀐다. 같은 제목이 수천 번 반복되므로 바뀔 때만 쓴다
-                title = (self.mask.text(str(d.get("aiTitle") or "")) or "").strip()[:255]
-                if title and title != st.title:
-                    await c.execute(text("UPDATE character_session SET title = :t WHERE id = :id"), {"t": title, "id": st.id})
-                    st.title = title
-            elif t == "queue-operation":
-                op = d.get("operation")
-                self._event(b, st, uuid=uid, ts=ts, type="queued", turn_id=st.open_turn.id if st.open_turn else None,
-                            status="waiting" if op == "enqueue" else None,
-                            payload={"op": op, "content": self.mask.deep(_text_of(d.get("content")) or d.get("content"), PREVIEW)})
-            elif t == "attachment" and (d.get("attachment") or {}).get("type") == "queued_command":
-                a = d["attachment"]
-                self._event(b, st, uuid=uid, ts=ts, type="queued", turn_id=st.open_turn.id if st.open_turn else None,
-                            parent_uuid=par, payload={"op": "delivered", "mode": a.get("commandMode"),
-                                                      "prompt": self.mask.deep(_text_of(a.get("prompt")) or a.get("prompt"), PREVIEW)})
-            if d.get("timestamp"):
-                st.last_ts = ts
+                        await self._close_turn(c, st, b, "stop", ts, "transcript", turn_id=tid, duration=dur)
+                self._event(b, st, uuid=uid, ts=ts, type="stop", turn_id=tid, parent_uuid=par, status="idle",
+                            payload={"durationMs": dur, "messageCount": d.get("messageCount")})
+            elif sub == "compact_boundary":
+                tid = st.open_turn.id if st.open_turn else None
+                if tid:
+                    await c.execute(text("UPDATE turn SET compacted = TRUE WHERE id = :id"), {"id": tid})
+                self._event(b, st, uuid=uid, ts=ts, type="compact", turn_id=tid, parent_uuid=par,
+                            payload={"compactMetadata": d.get("compactMetadata")})
+        elif t == "ai-title":
+            # CC가 붙이는 세션 제목 — 대화가 흘러가며 바뀐다. 같은 제목이 수천 번 반복되므로 바뀔 때만 쓴다
+            title = (self.mask.text(str(d.get("aiTitle") or "")) or "").strip()[:255]
+            if title and title != st.title:
+                await c.execute(text("UPDATE character_session SET title = :t WHERE id = :id"), {"t": title, "id": st.id})
+                st.title = title
+        elif t == "queue-operation":
+            op = d.get("operation")
+            self._event(b, st, uuid=uid, ts=ts, type="queued", turn_id=st.open_turn.id if st.open_turn else None,
+                        status="waiting" if op == "enqueue" else None,
+                        payload={"op": op, "content": self.mask.deep(_text_of(d.get("content")) or d.get("content"), PREVIEW)})
+        elif t == "attachment" and (d.get("attachment") or {}).get("type") == "queued_command":
+            a = d["attachment"]
+            self._event(b, st, uuid=uid, ts=ts, type="queued", turn_id=st.open_turn.id if st.open_turn else None,
+                        parent_uuid=par, payload={"op": "delivered", "mode": a.get("commandMode"),
+                                                  "prompt": self.mask.deep(_text_of(a.get("prompt")) or a.get("prompt"), PREVIEW)})
+        if d.get("timestamp"):
+            st.last_ts = ts
 
     async def _main_user(self, c: AsyncConnection, st: SessionState, b: Batch, d: dict[str, Any], uid: str,
                          ts: datetime, par: str | None) -> None:
@@ -605,9 +644,23 @@ class Assembler:
             # 사람의 글이 뒤에 오면 턴의 출처 · 본문을 바꾼다
             if origin == "human":
                 await c.execute(text(
-                    "UPDATE turn SET origin = 'human', prompt_text = :t, prompt_uuid = :u WHERE id = :id AND origin = 'meta'"),
-                    {"t": self.mask.text(s), "u": uid, "id": known})
+                    "UPDATE turn SET origin = 'human', prompt_text = :t, prompt_uuid = COALESCE(:u, prompt_uuid) "
+                    "WHERE id = :id AND origin = 'meta'"),
+                    {"t": self.mask.text(s), "u": await self._free_uuid(c, uid, known), "id": known})
             return
+        if not pid and uid:
+            # promptId 없는 사람 줄 — 이 uuid의 턴이 이미 있으면 새 턴을 열지 않는다.
+            #  · 다른 세션의 턴: resume · fork로 만든 세션이 앞 세션 기록을 복사해 시작한다(uuid 그대로, promptId는 빠진 채).
+            #    그 기록은 원래 세션에 이미 있다 — 건너뛴다(뒤따르는 복사 줄의 이벤트도 uuid가 같아 적재 때 겹쳐 버려진다)
+            #  · 같은 세션의 턴: 다시 읽는 중(inode 변경 · 잘림) — 그 턴을 문맥으로
+            r = (await c.execute(text("SELECT id, session_id FROM turn WHERE prompt_uuid = :u"), {"u": uid})).first()
+            if r is not None:
+                if r[1] == st.id:
+                    st.open_turn = TurnRef(r[0], None, ts, active=True)
+                else:
+                    self.stats.copied_prompts += 1
+                    st.open_turn = None
+                return
         tid = await self._open_turn(c, st, b, pid=pid, uuid=uid, origin=origin, prompt=self.mask.text(s), ts=ts,
                                     by="transcript")
         self._event(b, st, uuid=uid, ts=ts, type="start", turn_id=tid, parent_uuid=par, status="working",

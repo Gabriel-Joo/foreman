@@ -22,6 +22,7 @@ from bridge.assembler import Assembler
 from bridge.bus import Pipeline
 from bridge.config import Settings, get_settings
 from bridge.db.engine import make_engine
+from bridge.ingest_health import IngestMonitor
 from bridge.mask import Masker
 from bridge.notify import Notifier, default_telegram, load_rules
 from bridge.session_state import SessionStateWatcher
@@ -56,7 +57,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         pipeline.start()
         app.state.assembler = app.state.watcher = app.state.notifier = app.state.approvals = None
         app.state.terminal = None
-        watch_task = state_task = None
+        app.state.ingest_monitor = None
+        watch_task = state_task = health_task = None
         if s.terminal_enabled:
             # 7단계 터미널 패널 — ttyd(UNIX 소켓) + tmux foreman-shell. 실패해도 브리지는 뜬다
             term = TerminalManager(engine, s, pipeline, Masker(), publish=pipeline.publish,
@@ -107,6 +109,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.info("승인 정책 켬: %s (끊긴 대기 %d건 정리)", ", ".join(
                     f"{k}={v.mode}" for k, v in mgr.policy.projects.items()), n)
             watch_task = asyncio.create_task(watcher.run(), name="foreman-watcher")
+            # 11-03 — 적재가 막히면 스스로 알린다(텔레그램 [포먼] + 대시보드 머리 띠, bridge/ingest_health.py)
+            mon = IngestMonitor(watcher, asm, app.state.notifier, s.ingest_alert_s, s.ingest_tick_alert_s,
+                                on_change=dashboard_api.invalidate)
+            app.state.ingest_monitor = mon
+            health_task = asyncio.create_task(mon.run(), name="foreman-ingest-health")
             # 6단계 — 프로세스 정지 · 사라짐, CC status(busy · idle)는 이벤트로 오지 않는다. 바뀐 것만 WS로
             sw = SessionStateWatcher(s.sessions_dir, pipeline.publish)
             sw.on_change = dashboard_api.invalidate
@@ -158,7 +165,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await app.state.notifier.stop()
             if app.state.terminal:
                 await app.state.terminal.stop()   # ttyd만 내린다 — tmux 셸은 남는다
-            for t in (watch_task, state_task):
+            for t in (watch_task, state_task, health_task):
                 if t:
                     t.cancel()
                     try:
@@ -201,7 +208,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if asm is None:
             return {"watch": "off"}
         return {"watch": "live" if asm.live else "backfill", "backfill_seconds": w.backfill_seconds,
-                "watched_dirs": len(w.wd_path), "dirty": len(w.dirty), "stats": await asm.stats_snapshot()}
+                "watched_dirs": len(w.wd_path), "dirty": len(w.dirty), "stats": await asm.stats_snapshot(),
+                "health": w.health(s.ingest_alert_s)}
 
     if s.debug_endpoints:
         app.include_router(debug.router)

@@ -154,6 +154,8 @@ async def dashboard(request: Request) -> dict[str, Any]:
                        "created_at": _iso(a[6]), "status": "pending"} for a in appr_rows],
         "hidden_dormant": len(rows) - len(visible),
         "terminal": term.snapshot() if (term := getattr(request.app.state, "terminal", None)) else {"enabled": False},
+        # 적재(수집기) 상태 — 막히면 머리 띠(11-03, bridge/ingest_health.py)
+        "ingest": mon.snapshot() if (mon := getattr(request.app.state, "ingest_monitor", None)) else None,
     }
     _cache.update(at=time.monotonic(), data=data)
     return data
