@@ -36,6 +36,7 @@ TITLES = {
     "process_lost": "⚠ 프로세스가 사라짐(종료 신호 없음)",
     "merged": "응답 없이 다음 입력과 합쳐짐",
     "no_signal": "종료 신호 없이 다음 턴이 시작됨",
+    "abandoned": "끝 신호 없이 버려진 턴",
 }
 ORIGIN_LABEL = {"human": "요청", "meta": "입력", "agent_message": "다른 세션 메시지", "task_notification": "완료 알림",
                 "subagent_message": "서브에이전트 결과"}
