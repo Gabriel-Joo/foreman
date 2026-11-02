@@ -1,7 +1,7 @@
 # 로드맵 8단계 — CI/CD 인과 체인: 조사 완료, 적용 보류 (+ 승인 규칙 "실행과 글자" 넓히기)
 
 - **실행일**: 2026-11-02 (8 · 9단계 순서를 바꾼 뒤 — README 로드맵)
-- **11-03**: App of Apps · 웹훅 뒤 재조사 완료(아래 "11-03 재조사"). Jenkins 읽기 토큰을 받으면 재개
+- **11-03**: App of Apps · 웹훅 뒤 재조사 완료(아래 "11-03 재조사"). 그 뒤 Jenkins 연동을 API 조회에서 **Jenkinsfile 알림 + 토큰 없는 보정**으로 바꿨다 — "새도 되는 비밀의 무게"(아래). 설계안까지, 적용 전
 - **상태(11-02)**: **조사 완료, 적용 보류.** 실제 파이프라인은 웹훅이 아니라 폴링이었다. FOREMAN은 "읽기 조회"로 끼어드는 방향으로 정했고(사용자 결정), **ArgoCD App of Apps를 먼저 한 뒤** 그 구조에 맞춰 만든다 — Application 구조가 바뀌면 FOREMAN이 보는 방식도 바뀌므로 지금 맞추면 두 번 일한다
 - 커밋: `0178fd5`(웹훅 수신 · 로컬 git 폴링 — 지금은 꺼 둠), 이 문서 · 정리는 다음 커밋
 
@@ -36,7 +36,7 @@
 
 | 단계 | 끼어드는 법 | 기존 흐름에 닿는 것 |
 |---|---|---|
-| Jenkins | FOREMAN이 읽기 API를 조회(30초 남짓) — 빌드마다 결과 · 머리 SHA · 묶인 커밋(changeSets) · 스테이지별 상태(wfapi) | 없음. **읽기 토큰 하나**(사용자 › Security › API Token — App of Apps 뒤에 사용자가 만든다) |
+| Jenkins | **(11-03 바뀜 → Jenkinsfile 알림 + 토큰 없는 보정, 아래 "Jenkins 연동 방식")** ~~FOREMAN이 읽기 API를 조회(30초 남짓)~~ — 빌드마다 결과 · 머리 SHA · 묶인 커밋(changeSets) · 스테이지별 상태(wfapi) | 없음. **읽기 토큰 하나**(사용자 › Security › API Token — App of Apps 뒤에 사용자가 만든다) |
 | Harbor | 따로 받지 않는다 — push는 Jenkins "빌드·push" 스테이지 안이고 태그는 커밋 12자리. 생존만 `/api/v2.0/ping` | 없음 |
 | ArgoCD | **① notifications 웹훅**으로 생각 중(동기화 동작은 그대로, FOREMAN이 ArgoCD 비밀을 갖지 않는다). App of Apps 구조를 보고 최종 결정 — 구독 범위 · 받는 주소가 그 구조에 달렸다 | 알림 설정 추가뿐 |
 
@@ -68,9 +68,180 @@
 
 `authorizationStrategy` = `FullControlOnceLoggedInAuthorizationStrategy`(익명 읽기 거부), 보안 영역은 Jenkins 자체 사용자 DB(가입 막힘). matrix-auth · role-strategy 플러그인 없음 → **로그인한 사용자는 누구나 전체 권한이다. 지금 구조로는 "읽기 전용 계정"을 만들 수 없다.** 사용자는 `admin`(JCasC가 기동 때마다 Secret `jenkins/jenkins-admin`으로 비밀번호를 다시 넣는다)과 `cjswoduf` 둘. 결정: 전용 계정 `foreman`을 만들어 그 계정의 API 토큰을 쓴다(권한은 같지만 토큰을 따로 끊을 수 있고, Jenkins 기록에 `foreman`으로 남고, admin 비밀번호 교체에 안 엮인다). FOREMAN 쪽은 GET만 하도록 코드에서 막는다. 진짜 읽기 전용이 필요하면 인프라 저장소에서 matrix-auth(플러그인 목록 + JCasC `authorizationStrategy`)로 — 잘못 넣으면 잠기므로 그쪽 세션의 일.
 
-### 재개 범위 (11-03 사용자 확정, Jenkins 읽기 토큰을 받으면)
+### 재개 범위 (11-03 사용자 확정 — Jenkins 부분은 아래 "Jenkins 연동 방식"에서 알림으로 바뀜)
 
-Jenkins 읽기 조회 · ArgoCD 알림 웹훅(기본 구독 + `instance=root`) · 웹훅 끊김 감지(폴링 원인 연속 2번) · 대시보드 파이프라인 표시(펫퍼민트 "Sync 대기 중"은 실패와 구분) · 인프라 캐릭터 등장. 런슈즈 웹훅은 다음 push 때 확인.
+~~Jenkins 읽기 조회~~ → Jenkinsfile 알림 + 토큰 없는 보정 · ArgoCD 알림 웹훅(기본 구독 + `instance=root`) · 웹훅 끊김 감지(폴링 원인 연속 2번) · 대시보드 파이프라인 표시(펫퍼민트 "Sync 대기 중"은 실패와 구분) · 인프라 캐릭터 등장. 런슈즈 웹훅은 다음 push 때 확인.
+
+## Jenkins 연동 방식 — "새도 되는 비밀의 무게"로 골랐다 (11-03 사용자 결정)
+
+### 두 방식
+
+| | 기존 흐름에 닿는 것 | 필요한 비밀 |
+|---|---|---|
+| **API 조회** — FOREMAN이 Jenkins 읽기 API를 주기적으로 부른다 | 없음(Jenkins 설정 · Jenkinsfile 그대로) | **Jenkins API 토큰**(FOREMAN 호스트에 둔다) |
+| **Jenkinsfile 알림** — 빌드가 FOREMAN에 알린다 | Jenkinsfile에 몇 줄(두 앱 저장소) + Jenkins 자격 증명 하나 | **FOREMAN이 받는 쪽 토큰**(Jenkins가 보낼 때 쓴다) |
+
+처음에는 "기존 파이프라인을 건드리지 않는다"를 우선해 API 조회로 정했다. 토큰을 만들기 직전에 그 토큰이 무엇을 열 수 있는지 다시 따졌고, 선택이 뒤집혔다.
+
+### 토큰의 무게 — live 설정으로 확인한 것
+
+1. **"읽기 전용 토큰"을 만들 방법이 없다.** Jenkins 권한 방식이 `FullControlOnceLoggedInAuthorizationStrategy`(로그인하면 전체 권한)이고 matrix-auth · role-strategy 같은 권한 플러그인이 없다(Jenkins 홈 `config.xml`, 플러그인 목록). 전용 계정 `foreman`을 만들어도 admin과 권한이 같다
+2. **그 토큰은 Jenkins 관리자 권한이다.** API 토큰으로 Script Console(`/script`)에 Groovy를 보내면 컨트롤러 안에서 임의 코드가 돈다. 저장된 자격 증명도 복호화해 꺼낼 수 있다 — Harbor push robot 두 개(`harbor-robot-petmint-jenkins` · `harbor-robot-runshoes-jenkins`)와 **ronanlab-infra 쓰기 deploy key**(`ronanlab-infra-deploy-key`, JCasC `values.yaml`)
+3. **infra 쓰기 = 배포.** 런슈즈는 자동 Sync라 `apps/runshoes/kustomization.yaml`의 이미지를 바꿔 push하면 그대로 배포된다. 그리고 **App of Apps 뒤로는 런슈즈에 그치지 않는다** — 루트 `root`가 자동 Sync이고 `apps/*/app.yaml`을 읽어 Application을 만들므로, `apps/<아무거나>/app.yaml`에 자동 Sync Application을 하나 더하면 루트가 만들고 그 Application이 매니페스트를 깐다. AppProject는 제한 없는 `default`라 대상 네임스페이스도 정하기 나름이다. 펫퍼민트의 수동 Sync도 이 길을 막지 못한다
+4. 즉 **"읽기용"으로 생각한 토큰이 실은 빌드 → 레지스트리 → 매니페스트 → 클러스터 배포 경로 전체의 열쇠**였다
+5. FOREMAN 코드에서 GET만 보내도록 막는 것은 FOREMAN 자신의 버그를 막는 장치이지 보안 경계가 아니다 — 토큰이 새면 그 제한은 같이 새지 않는다
+6. 서버는 여러 계정이 쓴다(kopo17 · kopo02). 파일 권한 600은 다른 일반 계정을 막지만, 이 계정에서 도는 CC 세션 · 로그 · 트랜스크립트로 새는 길은 남는다 — 이 프로젝트에서도 httpx 로그에 텔레그램 봇 토큰이 찍혀 재발급한 적이 있다(7단계). 그만한 비밀을 호스트에 두는 것 자체가 부담이다
+
+### 알림 방식의 토큰
+
+새도 할 수 있는 것은 **FOREMAN에 가짜 빌드 이벤트를 넣는 것**이다 — 대시보드에 거짓 상태, 거짓 실패 알림(텔레그램), DB 행. 배포 · 레지스트리 · 클러스터에는 닿지 않는다. 그나마도 받는 쪽이 VM 망 IP만 받으므로(`webhook_allow_cidrs`, 리스너는 virbr0 `192.168.122.1:8001`) 클러스터 · VM 망 안에 있어야 쓸 수 있다. 받는 쪽은 이미 있다 — `POST /webhooks/jenkins`, 토큰 비교 `hmac.compare_digest`, VM 망 IP 제한(지금 꺼 둠).
+
+**같은 유출이라도 피해 범위가 다르다. 그래서 "새도 되는 비밀의 무게"를 기준으로 알림 방식을 골랐다.**
+
+대신 처음에 API 조회를 고른 이유("기존 파이프라인을 건드리지 않는다")를 조건으로 바꿔 지킨다 — **알림은 빌드 결과에 영향을 주지 않는다**: curl 실패는 `|| true`, 짧은 timeout(연결 3초 · 전체 5초), post 중 맨 마지막(`cleanup`)에 둔다. 그리고 단계 자체가 예외를 던지는 경우(에이전트 연결 끊김 등)까지 `try/catch`로 삼킨다 — `|| true`는 셸 종료 코드만 막는다.
+
+알림만으로는 "알림이 안 왔다 = 빌드가 없었다"를 믿을 수 없다(Jenkinsfile 문법 오류 · 에이전트 파드가 안 뜸 · 빌드 중 컨트롤러 재시작 · 웹훅 유실 · 알림 자체 실패). 그래서 **보정은 토큰 없이** 한다 — 로컬 저장소 push를 보고(브리지 `scan_git`, 20초), push 뒤 정해진 시간 안에 빌드 알림이 없으면 "빌드 알림 없음 — Jenkins 확인"으로 알린다. 내용을 되살리지는 못해도, 놓친 것을 놓친 채로 두지 않는다 — milvus-port-forward가 567,740번 재시작하는 것을 한 달 넘게 몰랐던 것 같은 조용한 고장을 잡는 것이 이 프로젝트를 만든 이유다. 실패 상세(스테이지별 로그)가 필요해지면 그때 matrix-auth로 진짜 읽기 전용 토큰을 만들어 보정용으로 더한다 — 지금은 만들지 않는다.
+
+## Jenkins 알림 설계안 (11-03 — 적용 전, 사용자 검토용)
+
+### 1. Jenkinsfile (런슈즈 · 펫퍼민트 같은 모양)
+
+각 stage 첫 줄에서 지금 스테이지 이름을 전역 `env.STAGE`에 옮긴다. stage 안에는 Jenkins가 주는 `env.STAGE_NAME`이 있지만 pipeline 단계 `post`에서는 실패한 스테이지 이름이 남지 않고, 샌드박스에서 쓸 수 있는 스테이지 조회 API도 없어서다. 이름을 두 번 쓰지 않으려고 `STAGE_NAME`을 복사한다.
+
+```groovy
+    stage('태그') {
+      steps {
+        script {
+          env.STAGE = env.STAGE_NAME
+          env.TAG = env.GIT_COMMIT.take(12)
+          currentBuild.description = …                 // 그대로
+        }
+        foremanNotify('started')                       // 시작 알림 — "push 뒤 빌드가 시작됐나" 판정에 쓴다
+      }
+    }
+    stage('빌드·push') {
+      steps {
+        script { env.STAGE = env.STAGE_NAME }
+        container('buildkit') { … }                    // 그대로
+      }
+    }
+    stage('매니페스트 태그') {
+      steps {
+        script { env.STAGE = env.STAGE_NAME }
+        withCredentials(…) { … }                       // 그대로
+      }
+    }
+  }
+
+  post {
+    always { sh 'rm -rf …' }                           // 그대로
+    cleanup { foremanNotify('completed') }             // post 블록 중 맨 마지막에 돈다
+  }
+}
+
+// FOREMAN 빌드 알림(foreman log/stage8_cicd_result.md). 실패해도 빌드 결과에 영향 없다:
+// 단계 예외는 try/catch, curl 실패는 || true, 연결 3초 · 전체 5초. 토큰은 셸 환경변수로만(Groovy 문자열에 넣지 않는다),
+// curl 인자가 아니라 표준 입력 설정(-K -)으로 넘겨 프로세스 목록 · 로그에 안 남는다.
+def foremanNotify(String phase) {
+  try {
+    def causes = currentBuild.getBuildCauses().collect { it._class as String }
+    String cause = causes.any { it.endsWith('GitHubPushCause') } ? 'webhook'
+                 : causes.any { it.contains('SCMTrigger') }      ? 'poll'
+                 : causes.any { it.contains('UserIdCause') }     ? 'manual' : 'other'
+    withEnv(["F_PHASE=${phase}", "F_CAUSE=${cause}", "F_STAGE=${env.STAGE ?: ''}",
+             "F_RESULT=${phase == 'completed' ? currentBuild.currentResult : ''}",
+             "F_DURATION=${currentBuild.duration}"]) {
+      withCredentials([string(credentialsId: 'foreman-webhook-token', variable: 'F_TOKEN')]) {
+        sh '''
+          set +x
+          body=$(printf '{"job":"%s","number":%s,"phase":"%s","result":"%s","commit":"%s","stage":"%s","cause":"%s","url":"%s","timestamp":%s000,"duration":%s}' \
+            "$JOB_NAME" "$BUILD_NUMBER" "$F_PHASE" "$F_RESULT" "${GIT_COMMIT:-}" "$F_STAGE" "$F_CAUSE" "$BUILD_URL" "$(date +%s)" "$F_DURATION")
+          printf 'header = "Authorization: Bearer %s"\n' "$F_TOKEN" |
+            curl -sS -o /dev/null --connect-timeout 3 --max-time 5 -K - \
+              -H 'Content-Type: application/json' --data "$body" \
+              http://192.168.122.1:8001/webhooks/jenkins || true
+        '''
+      }
+    }
+  } catch (e) {
+    echo "FOREMAN 알림 실패(빌드 결과와 무관): ${e}"
+  }
+}
+```
+
+- 보내는 값은 모두 Jenkins가 정한 것(job · 번호 · SHA · 결과 enum · 스테이지 이름 · URL) — 따옴표가 들어갈 자리가 없어 printf로 JSON을 만든다. 받는 쪽 형식은 지금 `jenkins_status`가 받는 `{job, number, phase, result, commit, stage, url}` + `cause` · `duration`
+- `cause`가 들어가므로 **웹훅 끊김 감지도 토큰 없이 된다**(아래 3)
+- 차이: 런슈즈는 스테이지가 같고 이미지 둘, 펫퍼민트는 이미지 하나 — 알림 부분은 글자까지 같다
+
+### 2. JCasC 자격 증명 (`ronanlab-infra platform/jenkins/values.yaml`, 웹훅 시크릿과 같은 방식)
+
+```yaml
+  additionalExistingSecrets:
+    …
+    # FOREMAN 빌드 알림 토큰 — 사람이 넣은 Secret jenkins/foreman-webhook-token(키 token). 값은 foreman .env.bridge FOREMAN_WEBHOOK_TOKEN.
+    # 새도 FOREMAN에 가짜 빌드 이벤트를 넣는 정도(foreman log/stage8_cicd_result.md "새도 되는 비밀의 무게")
+    - name: foreman-webhook-token
+      keyName: token
+
+  JCasC:
+    configScripts:
+      foreman: |                    # 따로 둔다 — 지울 때 이 블록만. configScripts는 합쳐진다(credentials 목록이 이어 붙는다)
+        credentials:
+          system:
+            domainCredentials:
+              - credentials:
+                  - string:
+                      scope: GLOBAL
+                      id: foreman-webhook-token
+                      description: "FOREMAN 빌드 알림 토큰 — POST 192.168.122.1:8001/webhooks/jenkins"
+                      secret: "${foreman-webhook-token-token}"
+```
+
+Secret은 사람이 넣는다(값을 화면에 내지 않고 `.env.bridge`에서 바로):
+`sed -n 's/^FOREMAN_WEBHOOK_TOKEN=//p' .env.bridge | tr -d '\n' | (cd ~/k8s-cluster && vagrant ssh m-k8s -c 'kubectl -n jenkins create secret generic foreman-webhook-token --from-file=token=/dev/stdin')`
+
+`additionalExistingSecrets`가 바뀌면 컨트롤러 파드의 볼륨이 바뀌므로 `helm upgrade` 때 **Jenkins 컨트롤러가 재시작된다** — 빌드가 없을 때.
+
+### 3. 확인한 것 두 가지 (11-03, 읽기 전용)
+
+| 확인 | 결과 | 근거 |
+|---|---|---|
+| post가 도는 컨테이너(jnlp)에 curl이 있나 | **있다** | 실제 에이전트 이미지는 `jenkins/inbound-agent:3391.va_37fa_a_305d6d-1-jdk25`(런슈즈 #51 빌드 로그 — 클라우드 설정의 3385가 아니라 플러그인 기본값). 공식 `jenkinsci/docker-agent` `debian/Dockerfile`의 agent 단계가 `curl`을 설치하고 inbound-agent가 그 위에 선다. 같은 계열(Debian 13) 컨트롤러에도 `/usr/bin/curl`. 적용 첫 빌드 로그로 최종 확인 — 없더라도 `try` · `\|\| true`라 빌드는 그대로, 알림이 안 와서 보정 규칙이 잡는다 |
+| 파드 → 호스트가 FOREMAN의 VM 망 IP 제한을 통과하나 | **통과한다(경로 확인, 출발 IP는 설정으로 판단)** | 파드(`jenkins-0`, 10.244.x)에서 `192.168.122.1:11434`(ollama) 200 — 경로 있음. Calico IP 풀 `10.244.0.0/16` `natOutgoing: true` → 풀 밖으로 나가는 패킷은 노드 IP로 SNAT된다. 노드 IP는 `192.168.121.{64,179,95,158}` → 허용 목록 `192.168.121.0/24` 안. 출발 IP를 직접 보지는 못했다(ollama는 docker 프록시를 거쳐 172.17.0.1로 보인다) — 적용 때 브리지 로그(거절하면 출발 IP를 남긴다)로 확인. 11-02에 노드에서 8001로 보내 401 · 404를 받은 것도 같은 출발 IP다 |
+
+### 4. "빠진 알림 찾기" 규칙
+
+기준은 로컬 저장소 push(브리지 `scan_git` — 20초마다 `origin/main`이 움직였는지. 11-02에 꺼 둔 것을 다시 켠다). 빌드 하나가 커밋 여럿을 묶으므로(`disableConcurrentBuilds`), push 머리 H는 **H와 같거나 H를 조상으로 가진 커밋의 빌드 알림**이 오면 채워진 것으로 본다.
+
+| 상황 | 기다리는 시간 | 하는 것 |
+|---|---|---|
+| push 뒤 시작 알림 없음 | **3분** | 대시보드에 "빌드 시작 알림 없음 — 폴링 안전망 대기" 노란색(텔레그램 안 보냄). 웹훅이면 몇 초 안에 시작한다(펫퍼민트 #48: push → 시작 3초) |
+| 〃 | **17분**(폴링 15분 + 2분) | 텔레그램 `[런슈즈] 빌드 알림 없음 — push abc1234 "제목" 뒤 17분째 Jenkins 시작 알림이 없다. Jenkins 확인: <job URL>`, 대시보드 빨간색 |
+| 시작은 왔는데 끝 알림 없음 | **35분**(Jenkins `timeout` 30분 + 5분) | 텔레그램 "빌드 끝 알림 없음 — #N" |
+| 같은 job 앞 빌드가 아직 도는 중 | 그 빌드가 끝날 때부터 잰다 | `disableConcurrentBuilds`라 줄 서 있는 것 |
+| 늦게 도착 | — | "늦게 도착함(N분)"을 한 번 보내고 상태를 정상으로 |
+| 웹훅 끊김 | 웹훅 원인 빌드가 있던 job에서 **`cause: poll` 빌드가 연달아 2번** | 텔레그램 "웹훅 끊김 의심 — 최근 두 빌드가 폴링으로 시작". 원인이 `webhook`으로 돌아오면 해제 |
+
+- 알림은 (job, push 머리)마다 한 번. 실제 빌드 시간: 런슈즈 약 4~5분, 펫퍼민트 약 1분(최근 6개)
+- main 밖 브랜치 push는 보지 않는다
+- 첫 런슈즈 빌드가 런슈즈 웹훅 검증을 겸한다(원인 `webhook`이면 확인 끝)
+
+### 5. 적용 순서와 부작용
+
+1. Secret(사람) → `values.yaml` + `helm upgrade`(컨트롤러 재시작, 빌드 없을 때)
+2. FOREMAN 브리지 파이프라인 켜기(리스너 8001, `scan_git`) — 알림 받는 쪽부터
+3. 두 앱 저장소 Jenkinsfile 커밋 · push — **이 push가 빌드를 한 번 부른다.** 코드가 같아도 커밋이 새로 생겨 태그가 바뀌므로 런슈즈는 자동 Sync로 다시 배포된다(롤링, 같은 코드). 펫퍼민트는 OutOfSync로 "Sync 대기". 피하려면 다음 실제 변경과 같이 넣는다. 이 빌드가 런슈즈 웹훅 검증 · curl · 출발 IP 확인을 겸한다
+
+순서가 바뀌어도 위험은 없다 — 자격 증명이 없으면 `withCredentials`가 예외를 던지고 `try`가 삼킨다. 세 저장소(runshoes · petmint-rag-chatbot · ronanlab-infra) 수정은 사용자 지시로, 각 저장소 CLAUDE.md를 따른다.
+
+### 6. 되돌리기
+
+| 범위 | 방법 | 빌드 영향 |
+|---|---|---|
+| 즉시 · Jenkins를 안 건드림 | FOREMAN `pipeline_enabled = False` → 8001이 닫혀 curl이 바로 연결 거부, `\|\| true` | 없음 |
+| 알림 단계 제거 | 두 앱 저장소에서 Jenkinsfile 커밋 `git revert` + push | 이 push도 빌드 한 번(런슈즈 재배포) |
+| 자격 증명 제거 | `values.yaml`에서 `foreman` configScript · `additionalExistingSecrets` 항목 지우고 `helm upgrade`(컨트롤러 재시작), `kubectl -n jenkins delete secret foreman-webhook-token` | 없음(Jenkinsfile에 남아 있어도 `try`가 삼킨다) |
+| 토큰이 샜을 때 | `.env.bridge`의 `FOREMAN_WEBHOOK_TOKEN` 바꾸고 브리지 재시작 + Secret 갱신 → JCasC 다시 읽기 | 없음 |
 
 ### 재개할 때 다시 조사할 것 (11-03 아침 기록 — 위에서 다 봤다)
 
@@ -119,5 +290,5 @@ Jenkins 읽기 조회 · ArgoCD 알림 웹훅(기본 구독 + `instance=root`) �
 
 - **이 세션의 7 · 8단계 작업(20:30 이후, 도구 호출 304개): 10 → 3.** 남은 3개는 묻는 게 맞다 — `.env.bridge`에 토큰 쓰기, 토큰 값을 임시 파일로 옮기기, 테스트 문자열에 `rm -rf`가 든 python heredoc
 - 포먼 하루 49는 대부분 이전 단계의 것 — 앞 명령에서 만든 임시 디렉토리를 경로로 지우기, 글롭 루프 삭제. 만들기와 지우기를 한 명령에 두면 묻지 않는다
-- **고치지 않은 오탐**: `git -C $d status`가 "git 동사 자리가 변수"(애매한-운영명령)로 걸린다 — `-C`가 값을 받는 옵션인 것을 `verb_re`가 모른다. `config/approval.toml` 정규식이라 보호 파일 쓰기 승인이 필요하다 — 다음 후보
+- ~~고치지 않은 오탐~~ **11-03 고침**: `git -C $d status`가 "git 동사 자리가 변수"(애매한-운영명령)로 걸렸다 — `-C`가 값을 받는 옵션인 것을 `verb_re`가 몰랐다. 이제 git의 `-C` · `-c` · `--git-dir` · `--work-tree` · `--namespace`는 다음 토큰을 값으로 넘기고 그 뒤를 동사 자리로 본다. 동사가 변수면 그대로 묻고(`git -C "$d" $VERB`), 값만 있고 끝나는 `git -C $x`도 묻는다(따옴표 없는 `$x`가 "경로 push --force"로 쪼개질 수 있다). 21일 재생: 빠진 ask 7건(포먼 6 · 런슈즈 1, 모두 `git -C $d <고정 동사>`), 새로 생긴 ask 0. 시험 104개 통과. 사용자가 보호 파일 쓰기를 승인
 - 6단계 표(런슈즈 7.2)는 20일로 나눴고 지금은 활동한 날로 나눈다(같은 총량 약 145건)

@@ -62,7 +62,10 @@ delete_outside_worktree = true
 # 위험한 명령의 동사 자리가 변수 · 명령 치환이라 무엇을 할지 확정할 수 없는 것, eval — 애매하면 ask.
 # (명령 어딘가에 $가 있기만 한 것은 아니다 — 과거 데이터로 돌려 보니 heredoc · 반복문에 수백 건 오탐이 났다)
 [ask.ambiguous]
-verb_re = '''\b(kubectl|helm|argocd|docker(\s+compose)?|virsh|vagrant|crontab)(\s+--?[\w-]+(=\S+)?)*\s+["']?(\$|`)|\beval\s|\bgit(\s+--?[\w-]+(=\S+)?)*\s+["']?(\$|`)'''
+# git의 -C · -c · --git-dir · --work-tree · --namespace는 다음 토큰이 값(경로 · 설정)이다 — 그 값이 $d여도 동사가 아니다
+# (11-03 오탐: git -C $r log). 값 다음에 오는 토큰이 진짜 동사 자리. 값만 있고 끝나는 git -C $x는 그대로 묻는다
+# (따옴표 없는 $x가 "경로 push --force"로 쪼개질 수 있다)
+verb_re = '''\b(kubectl|helm|argocd|docker(\s+compose)?|virsh|vagrant|crontab)(\s+--?[\w-]+(=\S+)?)*\s+["']?(\$|`)|\beval\s|\bgit(\s+(-C|-c|--git-dir|--work-tree|--namespace)\s+\S+|\s+(?!(-C|-c|--git-dir|--work-tree|--namespace)\s)--?[\w-]+(=\S+)?)*\s+["']?(\$|`)|\bgit(\s+--?[\w-]+(=\S+)?)*\s+-C\s+["']?\$\S*\s*($|[;&|)])'''
 
 # ── 민감한 경로 ────────────────────────────────────────────
 # secret: 읽기 · 쓰기 모두 ask — 비밀이 트랜스크립트에 한번 찍히면 되돌릴 수 없다
