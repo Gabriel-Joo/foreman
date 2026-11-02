@@ -111,3 +111,33 @@ def test_hooks_reject_paths(client):
     assert client.post("/hooks", content=b"nope", headers={"Authorization": f"Bearer {hook}"}).status_code == 400
     assert client.post("/hooks", json={"x": 1}, headers={"Authorization": f"Bearer {hook}"}).status_code == 400
     assert client.post("/hooks", json=body, headers={"Authorization": f"Bearer {hook}"}).status_code == 503  # 와처 꺼짐
+
+
+def test_dashboard_snapshot_and_pages(client):
+    """6단계 — 운영 DB를 읽기만 한다."""
+    assert client.get("/api/dashboard").status_code == 401
+    r = client.get("/api/dashboard", headers=_auth())
+    assert r.status_code == 200
+    j = r.json()
+    assert {"projects", "approvals", "generated_at", "hidden_dormant"} <= j.keys()
+    for p in j["projects"]:
+        for s in p["sessions"]:
+            assert s["state"] in ("ACTIVE", "IDLE", "DORMANT", "SUSPENDED")
+            assert {"activity", "open_turn", "subagents_running", "tokens", "injectable"} <= s.keys()
+    assert client.get("/api/sessions/999999/conversation", headers=_auth()).status_code == 404
+    if j["projects"] and j["projects"][0]["sessions"]:
+        sid = j["projects"][0]["sessions"][0]["id"]
+        c = client.get(f"/api/sessions/{sid}/conversation?limit=2", headers=_auth()).json()
+        assert len(c["turns"]) <= 2
+    assert client.get("/").status_code == 200 and b"store.js" in client.get("/").content
+    assert client.get("/debug").status_code == 200
+    assert client.get("/static/js/render.js").status_code == 200
+
+
+def test_char_state_rule():
+    from bridge.api.dashboard import char_state
+    assert char_state(None, None, False) == "DORMANT"
+    assert char_state("T", "busy", True) == "SUSPENDED"
+    assert char_state("S", "busy", False) == "ACTIVE"
+    assert char_state("S", "idle", True) == "ACTIVE"
+    assert char_state("S", "idle", False) == "IDLE"
