@@ -139,5 +139,7 @@ def test_char_state_rule():
     assert char_state(None, None, False) == "DORMANT"
     assert char_state("T", "busy", True) == "SUSPENDED"
     assert char_state("S", "busy", False) == "ACTIVE"
-    assert char_state("S", "idle", True) == "ACTIVE"
+    assert char_state("S", "idle", True) == "IDLE"      # 끝 신호 없이 멈춘 턴 — CC가 일하지 않으면 IDLE(stuck_turn으로 따로 표시)
+    assert char_state("S", "shell", True) == "IDLE"
+    assert char_state("S", None, True) == "ACTIVE"      # CC status를 모를 때만 열린 턴을 본다
     assert char_state("S", "idle", False) == "IDLE"

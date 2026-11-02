@@ -46,13 +46,16 @@ def invalidate() -> None:
 
 
 def char_state(proc: str | None, cc_status: str | None, open_turn: bool) -> str:
+    """프로세스가 살아 있으면 CC가 직접 적는 status가 기준이다(busy → ACTIVE, 그 밖 → IDLE).
+    열린 턴은 status를 모를 때만 본다 — 끝 신호 없이 멈춘 턴 하나가 세션을 몇 시간씩 ACTIVE로 보이게 했다
+    (6단계 실측: 펫퍼민트가 프롬프트 · API 요청 뒤 응답도 끝 신호도 없이 10시간, CC status는 idle)."""
     if proc is None:
         return "DORMANT"
     if proc == "T":
         return "SUSPENDED"
-    if cc_status == "busy" or open_turn:
-        return "ACTIVE"
-    return "IDLE"
+    if cc_status is not None:
+        return "ACTIVE" if cc_status == "busy" else "IDLE"
+    return "ACTIVE" if open_turn else "IDLE"
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -123,6 +126,8 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "title": title, "cc_name": _cc_name(s.sessions_dir, ls.pid) if ls else None, "role": role,
             "cwd": cwd, "pid": ls.pid if ls else None, "proc": ls.state if ls else None, "cc_status": cc_status,
             "state": char_state(ls.state if ls else None, cc_status, ot is not None),
+            # 열린 턴이 있는데 CC는 일하지 않는다 — 끝 신호 없이 멈춘 턴(숨기지 않고 따로 보인다)
+            "stuck_turn": bool(ot is not None and ls and ls.state != "T" and cc_status not in (None, "busy")),
             "injectable": bool(ls and te and ls.state != "T"), "tmux_pane": te[1] if te else None,
             "open_turn": {"id": ot[0], "origin": ot[1], "started_at": _iso(ot[2]), "prompt": ot[3]} if ot else None,
             "activity": {"tool": act[0], "target": (act[1] or "")[:200], "ts": _iso(act[2]),

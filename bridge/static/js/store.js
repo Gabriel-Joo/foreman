@@ -8,11 +8,15 @@ const RESNAP_MS = 15000;      // 스냅샷으로 맞추는 주기
 const FEED_MAX = 40;          // 세션별 최근 활동 줄 수
 
 export function charState(proc, ccStatus, openTurn) {
-  // 서버(bridge/api/dashboard.py char_state)와 같은 규칙
+  // 서버(bridge/api/dashboard.py char_state)와 같은 규칙 — 살아 있으면 CC가 적는 status가 기준, 열린 턴은 status를 모를 때만
   if (proc == null) return 'DORMANT';
   if (proc === 'T') return 'SUSPENDED';
-  if (ccStatus === 'busy' || openTurn) return 'ACTIVE';
-  return 'IDLE';
+  if (ccStatus != null) return ccStatus === 'busy' ? 'ACTIVE' : 'IDLE';
+  return openTurn ? 'ACTIVE' : 'IDLE';
+}
+export function stuckTurn(s) {
+  // 열린 턴이 있는데 CC는 일하지 않는다 — 끝 신호 없이 멈춘 턴
+  return !!(s.open_turn && s.proc && s.proc !== 'T' && s.cc_status != null && s.cc_status !== 'busy');
 }
 
 export class Store {
