@@ -30,6 +30,16 @@ KST = timedelta(hours=9)
 _cache: dict[str, Any] = {"at": 0.0, "data": None}
 
 
+def _cc_name(sessions_dir: Any, pid: int) -> str | None:
+    """sessions/<pid>.json의 name(CC가 붙이는 짧은 이름, 예: petmint-rag-chatbot-33). .key는 열지 않는다."""
+    import json
+    from pathlib import Path
+    try:
+        return json.loads(Path(sessions_dir, f"{pid}.json").read_text(encoding="utf-8")).get("name")
+    except (OSError, ValueError):
+        return None
+
+
 def invalidate() -> None:
     """세션 상태가 바뀌었다 — 다음 스냅샷은 새로 만든다."""
     _cache["data"] = None
@@ -66,7 +76,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
     async with request.app.state.store.engine.connect() as c:
         rows = (await c.execute(text(
             "SELECT cs.id, cs.cc_session_id, cs.cwd, cs.attached_at, cs.detached_at, ch.name, p.name, "
-            "(SELECT MAX(e.ts) FROM event e WHERE e.session_id = cs.id) AS last_ts "
+            "(SELECT MAX(e.ts) FROM event e WHERE e.session_id = cs.id) AS last_ts, cs.title, cs.role "
             "FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
             "LEFT JOIN project p ON p.id = ch.project_id WHERE cs.cc_session_id IS NOT NULL"))).all()
         visible = [r for r in rows if (r[1] in live) or (r[7] and r[7] >= cut)]
@@ -98,7 +108,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "ORDER BY id"))).all()
         appr_rows = appr
     projects: dict[str | None, list[dict[str, Any]]] = {}
-    for sid, cc, cwd, attached, detached, char, project, last_ts in visible:
+    for sid, cc, cwd, attached, detached, char, project, last_ts, title, role in visible:
         ls = live.get(cc)
         cc_status = _status(s.sessions_dir, ls.pid) if ls else None
         te = _tmux_env(ls.pid) if ls else None
@@ -108,6 +118,9 @@ async def dashboard(request: Request) -> dict[str, Any]:
         st_ = sub_toks.get(sid) or (0, 0)
         projects.setdefault(project, []).append({
             "id": sid, "cc_session_id": cc, "short": (cc or "")[:8], "character": char, "project": project,
+            # 세션을 알아보는 이름: CC가 붙인 제목(ai-title) → 살아 있으면 CC 세션 이름(예: runshoes-50) → 짧은 id.
+            # 캐릭터(포먼 등) · 역할(coder 등)은 따로 — 한 캐릭터에 세션 여럿이 붙어 있다(2단계 입양)
+            "title": title, "cc_name": _cc_name(s.sessions_dir, ls.pid) if ls else None, "role": role,
             "cwd": cwd, "pid": ls.pid if ls else None, "proc": ls.state if ls else None, "cc_status": cc_status,
             "state": char_state(ls.state if ls else None, cc_status, ot is not None),
             "injectable": bool(ls and te and ls.state != "T"), "tmux_pane": te[1] if te else None,

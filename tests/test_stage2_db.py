@@ -18,6 +18,26 @@ from bridge.db.engine import make_engine
 from bridge.mask import Masker
 from bridge.transcript.watcher import Watcher
 
+
+async def test_session_title_from_ai_title(env):
+    """6단계 — 세션을 알아보는 이름은 CC의 ai-title(대화가 흘러가며 바뀐다). 바뀔 때만 쓴다, 빈 칸은 채운다."""
+    s, main = env
+    main.write_text("\n".join([
+        MAIN[0],
+        dumps({"type": "ai-title", "sessionId": SID, "aiTitle": "첫 제목"}),
+        dumps({"type": "ai-title", "sessionId": SID, "aiTitle": "첫 제목"}),
+        dumps({"type": "ai-title", "sessionId": SID, "aiTitle": f"배포 정리 MY_TOKEN={SECRET}"}),
+    ]) + "\n", encoding="utf-8")
+    asm = await run(s)
+    title = q(s, "SELECT title FROM character_session")[0][0]
+    assert title.startswith("배포 정리") and SECRET not in title
+    q_conn = pymysql.connect(host=s.mysql_host, port=s.mysql_port, user=s.mysql_user,
+                             password=s.mysql_password.get_secret_value(), database=s.mysql_database, autocommit=True)
+    q_conn.cursor().execute("UPDATE character_session SET title = NULL")
+    q_conn.close()
+    assert await asm.fill_titles() == 1
+    assert q(s, "SELECT title FROM character_session")[0][0].startswith("배포 정리")
+
 pytestmark = pytest.mark.db
 
 CWD = "/home/kopo17/AI_programming/foreman"

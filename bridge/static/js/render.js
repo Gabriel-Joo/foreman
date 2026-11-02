@@ -6,6 +6,14 @@ const STATE_LABEL = { ACTIVE: '작업 중', IDLE: '대기', SUSPENDED: '정지',
 const ORIGIN_LABEL = { human: '나', task_notification: '완료 알림', subagent_message: '서브에이전트 결과', agent_message: '다른 세션', meta: '시스템' };
 const END_LABEL = { stop: '끝남', stop_failure: 'API 오류', interrupted: '중단', session_end: '세션 종료', process_lost: '프로세스 사라짐', merged: '다음 입력에 합쳐짐', no_signal: '신호 없음' };
 
+const ROLE_LABEL = { coder: '코더', foreman: '포먼', cicd: 'CI/CD', inspector: '점검', helper: '도우미', infra: '인프라' };
+
+// 세션을 알아보는 이름 — CC가 붙인 제목 → CC 세션 이름 → 짧은 id. 캐릭터 이름은 아래 줄에(한 캐릭터에 세션 여럿)
+export function sessionName(s) { return s.title || s.cc_name || s.short; }
+function sessionSub(s) {
+  return [s.character, ROLE_LABEL[s.role] || s.role, s.short, s.tmux_pane].filter(Boolean).join(' · ');
+}
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export function ago(ts) {
@@ -185,12 +193,13 @@ export function createRenderer(root, store) {
     const doing = s.state === 'ACTIVE' && a ? `<div class="doing"><b>${esc(a.tool)}</b>${a.subagent ? ' <span class="muted">(서브)</span>' : ''} ${esc(oneLine(a.target, 90))} <span class="muted small">${ago(a.ts)}</span></div>` : '';
     const turn = s.open_turn ? `<div class="turn small">▶ ${esc(ORIGIN_LABEL[s.open_turn.origin] || '')} ${esc(oneLine(s.open_turn.prompt || '', 80))} <span class="muted">${since(s.open_turn.started_at)}</span></div>` : '';
     const reply = s.replyPreview && s.state === 'ACTIVE' ? `<div class="reply small">${esc(oneLine(s.replyPreview, 100))}</div>` : '';
-    return `<article class="card st-${s.state}${st.selected === s.id ? ' sel' : ''}" data-sid="${s.id}" tabindex="0" aria-label="${esc(s.character)} ${STATE_LABEL[s.state]}">
+    return `<article class="card st-${s.state}${st.selected === s.id ? ' sel' : ''}" data-sid="${s.id}" tabindex="0" aria-label="${esc(sessionName(s))} ${STATE_LABEL[s.state]}">
       <div class="card-top">
         <span class="badge st-${s.state}">${s.state}</span>
-        <b>${esc(s.character)}</b> <span class="muted small">${esc(s.short)}${s.tmux_pane ? ' · ' + esc(s.tmux_pane) : ''}</span>
+        <b class="title" title="${esc(sessionName(s))}">${esc(sessionName(s))}</b>
         <span class="right small muted">${s.state === 'DORMANT' ? ago(s.last_ts) : STATE_LABEL[s.state]}</span>
       </div>
+      <div class="sub small muted">${esc(sessionSub(s))}</div>
       ${turn}${doing}${reply}
       <div class="meta small">
         ${s.subagents_running ? `<span class="pill">서브에이전트 ${s.subagents_running}</span>` : ''}
@@ -226,7 +235,7 @@ export function createRenderer(root, store) {
       return;
     }
     const t = s.tokens;
-    $('panelHead').innerHTML = `<span class="badge st-${s.state}">${s.state}</span> <b>${esc(s.character)}</b> <span class="muted small">${esc(s.short)} · ${esc((s.cwd || '').replace(/^\/home\/[^/]+/, '~'))}</span>`;
+    $('panelHead').innerHTML = `<span class="badge st-${s.state}">${s.state}</span> <b>${esc(sessionName(s))}</b><div class="muted small">${esc(sessionSub(s))} · ${esc((s.cwd || '').replace(/^\/home\/[^/]+/, '~'))}</div>`;
     $('panelInfo').innerHTML = `<div class="small kv">
       <span>프로세스</span><span>${s.pid ? `${s.pid} (${esc(s.proc)}) · CC ${esc(s.cc_status || '?')}` : '없음'}${s.tmux_pane ? ' · tmux ' + esc(s.tmux_pane) : ''}</span>
       <span>지금</span><span>${s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target, 120))} (${ago(s.activity.ts)})` : (s.state === 'ACTIVE' ? '생각 중' : STATE_LABEL[s.state])}</span>
