@@ -30,7 +30,7 @@ FOREMAN 자체의 자원이다. 근거는 README 3.12, 결과는 [`stage1_bridge
 | 포트 3308 | `127.0.0.1:3308` → 컨테이너 3306 | 호스트 밖에는 열지 않는다 |
 | `~/volumes/foreman-mysql` | 데이터(bind mount). compose가 만들어 소유자가 컨테이너 쪽(mysql uid) | `docker volume prune`에 지워지지 않는다. 지우면 FOREMAN 기록이 사라진다 |
 | `~/backups/foreman` | kopo17 소유 700(사용자가 sudo로 생성, 07:57:30). `foreman-*.sql.gz` 14개 보관 + `backup.log` | |
-| 사용자 crontab | `30 4 * * * …/foreman/deploy/mysql/backup.sh >> ~/backups/foreman/backup.log 2>&1` — 이 crontab의 유일한 줄 | 실패하면 텔레그램(`[포먼] DB 백업 실패`) |
+| 사용자 crontab | `30 4 * * * …/foreman/deploy/mysql/backup.sh >> ~/backups/foreman/backup.log 2>&1` — 이 crontab의 유일한 줄 | 실패하면 텔레그램(`[포먼] DB 백업 실패`) — 4단계부터 `python -m bridge.telegram`으로(스크립트 삭제) |
 | tmux 세션 `foreman-bridge` | 브리지(`.venv/bin/python -m bridge`) → `127.0.0.1:8000`. 로그 `/tmp/foreman-bridge.log`. 2단계부터 `~/.claude/projects`를 inotify로 감시하고 `~/.claude/sessions/*.json`을 읽는다(.key는 안 읽음) | 손으로 띄운 것 — 재부팅하면 안 뜬다(systemd 유닛은 6단계 즈음). 같은 tmux 서버에 `cc-foreman`(FOREMAN 작업 세션)도 있다 |
 | `~/.claude/settings.json` `hooks` | UserPromptSubmit · Stop · StopFailure · SessionEnd · SubagentStart/Stop → `foreman/scripts/foreman-hook.sh`(3단계, 08:44). **모든 CC 세션에 걸린다** | 백업 `~/.claude/backups/settings.json.before-foreman-hooks`. 되돌리려면 그 파일로. 08:57:53~08:58:10에 시험용 hook을 잠깐 더했다가 백업으로 되돌림(동일 확인) |
 | DB `foreman_test` | `foreman-mysql` 안의 테스트용 데이터베이스, `foreman_app`에 ALL 권한(2단계, root로 생성) | pytest가 매번 테이블을 지우고 다시 만든다. 운영 `foreman`과 별개 |

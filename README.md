@@ -2,7 +2,7 @@
 
 > AI 코딩 에이전트가 만든 변경이 배포까지 가는 전 과정을, 브라우저 한 화면에서 보고 지시하는 관제실.
 
-🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. **로드맵 1단계 완료**([결과](log/stage1_bridge_db_result.md)), **2단계 완료**([결과](log/stage2_transcript_result.md)), **3단계 완료**([결과](log/stage3_inject_result.md) — hook은 사용자 설정에 설치). 서버 PC 변경 기록은 [`log/`](log/)
+🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. **로드맵 1단계 완료**([결과](log/stage1_bridge_db_result.md)), **2단계 완료**([결과](log/stage2_transcript_result.md)), **3단계 완료**([결과](log/stage3_inject_result.md) — hook은 사용자 설정에 설치), **4단계 완료**([결과](log/stage4_notify_result.md) — 텔레그램은 브리지가 보낸다). 서버 PC 변경 기록은 [`log/`](log/)
 
 **개발 중 접속**: 로드맵 0~5단계는 `ssh -L 8000:localhost:8000`으로 붙고, 6단계 이후에 Cloudflare Tunnel로 바꾼다. 코드는 바뀌지 않고 앞단만 바뀐다.
 
@@ -211,7 +211,7 @@ tmux send-keys -t <pane> Enter       # 제출
 
 **hook 설치 위치**: 사용자 설정 `~/.claude/settings.json`(2026-11-02, 모든 세션 — FOREMAN이 보려는 것이 런슈즈 · 펫퍼민트 세션이다). 설정 원본은 `deploy/hooks/foreman-hooks.json`, 스크립트는 `scripts/foreman-hook.sh`(2초 타임아웃 · 출력 없음 · 항상 exit 0 — 브리지가 꺼져 있어도 CC를 막지 않는다). 설치 전 백업은 `~/.claude/backups/settings.json.before-foreman-hooks`. **실행 중인 CC는 설정 파일 변경을 다음 프롬프트부터 반영한다**(3단계 실측 — 사용자 설정 · 프로젝트 설정 모두) — 이미 떠 있던 세션도 재시작 없이 hook을 보낸다.
 
-현재 방식(프로젝트 CLAUDE.md의 지시로 모델이 `scripts/notify-telegram.sh`를 실행해 봇 API를 부른다)은 모델이 턴 종료를 판정하므로 누락이 생긴다. 브리지로 옮기면 기계적으로 바뀌고, 턴 수·소요시간 통계가 공짜로 따라온다.
+**알림은 브리지가 보낸다(4단계, [결과](log/stage4_notify_result.md)).** 예전에는 CLAUDE.md 지시로 모델이 스크립트를 실행해 모델이 턴 종료를 판정했고 누락이 생겼다. 이제 턴이 닫히는 순간(먼저 온 신호) 브리지가 `config/notify.toml` 규칙으로 판정해 보낸다 — 종료 이유마다 제목이 다르고(끝남 · ⚠ API 오류 · ⏹ 중단 · 세션 종료 · ⚠ 프로세스 사라짐), 프로젝트 접두어를 붙인다. 사람이 연 턴만 보내고, 완료 알림 · 서브에이전트 결과 전달로 열린 턴은 보내지 않는다 — 백그라운드 서브에이전트는 세션의 것이 모두 끝났을 때 한 번 묶어 보낸다. 보낸 것 · 안 보낸 것(+규칙)은 `notification`에 남는다. 서브에이전트 결과 전달은 `<agent-message from=X>`의 X가 그 세션의 서브에이전트인지로 가른다(문장 모양으로는 못 가른다).
 
 ### 3.3 승인 정책
 
@@ -326,7 +326,7 @@ CC가 "이 명령을 실행해주세요"라고 하면 브리지가 감지해 터
 
 브리지가 서버 PC에서 돌므로, 서버가 죽으면 브리지도 죽는다. 따라서 "서버 다운"은 브리지가 알려주는 것이 아니라 **브라우저가 WebSocket 끊김으로 판단**한다.
 
-끊기면 화면 전체를 덮고 재연결을 시도한다. 침묵으로 아는 것이다.
+끊기면 화면 전체를 덮고 재연결을 시도한다. 침묵으로 아는 것이다. 확인 페이지에 붙였다(4단계): 한 번 연결된 뒤 끊기면(1006 · 서버 종료 · 하트비트 두 번 놓침) 덮개에 언제부터 끊겼는지와 다음 시도까지 남은 초를 보이고 1→2→4→8→15초로 다시 붙는다. 토큰이 틀려 끊긴 것(1008)은 덮지 않고 멈춘다.
 
 ---
 
@@ -625,7 +625,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 1 | 브리지 + 스키마 + MySQL + WebSocket | ✅ **완료**(2026-11-02, [결과](log/stage1_bridge_db_result.md)) — 집 PC 브라우저 왕복까지 확인. 토대. MySQL은 호스트 도커 전용 인스턴스(3.12) |
 | 2 | hook 수신 + inotify 기반 JSONL 와처 (offset tail, `subagents/` 포함) + 턴 판정 (`end_reason`) | ✅ **완료**(2026-11-02, [결과](log/stage2_transcript_result.md)) — 1.4GB 백필 18초, 다시 읽어도 행 · 턴 상태 동일. hook은 사용자 설정에 설치(3단계 때) |
 | 3 | send-keys 실측 선행 → 입력 → 왕복 완성 | ✅ **완료**(2026-11-02, [결과](log/stage3_inject_result.md)) — 방법 C 성립. `/` · `!`는 앞 공백으로 막음, 제출 확인, 바쁨은 대기열. 주입 대상은 tmux 안의 CC뿐(런슈즈 · 펫퍼민트는 0단계 이전 뒤) |
-| 4 | 텔레그램 이관 + 연결 끊김 표시 | 3번과 같은 신호를 쓴다. 그 전까지는 CLAUDE.md "알림" 절 + `scripts/notify-telegram.sh`(모델 판단 발송)가 임시로 쓰이며, 이 단계에서 지운다 |
+| 4 | 텔레그램 이관 + 연결 끊김 표시 | ✅ **완료**(2026-11-02, [결과](log/stage4_notify_result.md)) — 런슈즈 · 펫퍼민트 · 포먼 실제 턴으로 확인 후 세 저장소의 CLAUDE.md 알림 절 · `scripts/notify-telegram.sh`를 정리. 턴 종료 → 전송 평균 3.3초 |
 | 5 | 승인 정책 엔진 | 원래 불편 중 유일하게 안 풀린 것 |
 | 6 | 대시보드 (못생겨도 되는 실사용 UI) | 여기까지가 매일 쓸 수 있는 물건 |
 | 7 | 터미널 패널 (ttyd) + 명령 자동 채우기 | |
@@ -679,3 +679,4 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | [stage1_bridge_db_result.md](log/stage1_bridge_db_result.md) | 로드맵 1단계(브리지 · 스키마 · MySQL · WebSocket) 결과 — 설계 확인 5가지, 시험에서 찾은 것(cryptography), 남은 것 |
 | [stage2_transcript_result.md](log/stage2_transcript_result.md) | 로드맵 2단계(와처 · 조립 · 턴 판정 · hook 수신) 결과 — promptId 실측, 백필 · 다시 읽기 · 실시간 · hook 검증, 시험에서 찾은 것 |
 | [stage3_inject_result.md](log/stage3_inject_result.md) | hook 설치(실행 중 세션도 다시 읽음 — 실측) + 로드맵 3단계(입력 주입) 결과 — 방법 C 실측표, 첫 글자 · 제출 확인 · 대기열, 거부 경로 |
+| [stage4_notify_result.md](log/stage4_notify_result.md) | 로드맵 4단계(텔레그램 브리지 이관 + 연결 끊김 표시) 결과 — 규칙 · 묶음, 실세션 검증, 서브에이전트 결과 전달 판별, 옛 경로 정리 |
