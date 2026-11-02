@@ -1,7 +1,8 @@
 # 로드맵 8단계 — CI/CD 인과 체인: 조사 완료, 적용 보류 (+ 승인 규칙 "실행과 글자" 넓히기)
 
 - **실행일**: 2026-11-02 (8 · 9단계 순서를 바꾼 뒤 — README 로드맵)
-- **상태**: **조사 완료, 적용 보류.** 실제 파이프라인은 웹훅이 아니라 폴링이었다. FOREMAN은 "읽기 조회"로 끼어드는 방향으로 정했고(사용자 결정), **ArgoCD App of Apps를 먼저 한 뒤** 그 구조에 맞춰 만든다 — Application 구조가 바뀌면 FOREMAN이 보는 방식도 바뀌므로 지금 맞추면 두 번 일한다
+- **11-03**: App of Apps · 웹훅 뒤 재조사 완료(아래 "11-03 재조사"). Jenkins 읽기 토큰을 받으면 재개
+- **상태(11-02)**: **조사 완료, 적용 보류.** 실제 파이프라인은 웹훅이 아니라 폴링이었다. FOREMAN은 "읽기 조회"로 끼어드는 방향으로 정했고(사용자 결정), **ArgoCD App of Apps를 먼저 한 뒤** 그 구조에 맞춰 만든다 — Application 구조가 바뀌면 FOREMAN이 보는 방식도 바뀌므로 지금 맞추면 두 번 일한다
 - 커밋: `0178fd5`(웹훅 수신 · 로컬 git 폴링 — 지금은 꺼 둠), 이 문서 · 정리는 다음 커밋
 
 ## 지금 실제 설정 (11-02 조사 — App of Apps 작업 때 참고)
@@ -43,9 +44,37 @@
 - 그대로 쓸 것: 커밋 귀속 규칙(명령에 커밋 제목이 있어야 — 아래), `build` · `build_commit` 표, 대시보드 파이프라인 칸, 인프라 캐릭터 등장 · 생존 규칙, 실패 알림
 - App of Apps 때 FOREMAN이 기대는 것: Application 이름(`runshoes` · `petmint`)과 앱 ↔ Jenkins job ↔ Harbor 프로젝트 대응(`config/pipeline.toml`), 펫퍼민트 수동 Sync(실패 판정이 "Sync 안 함"과 섞이지 않게), notifications 구독을 어디에 둘지(루트 앱 · 라벨 · 앱 주석)
 
-## 재개할 때 다시 조사할 것 (11-03 기록 — 아직 아무것도 안 봄)
+## 11-03 재조사 — App of Apps · 웹훅 뒤 (위 11-02 표보다 이것이 지금 값)
 
-11-03에 펫퍼민트 세션에서 App of Apps 작업이 끝났고 웹훅을 거는 중이라고 사용자가 알려 왔다. **그 작업이 끝날 때까지 FOREMAN은 아무것도 하지 않는다**(조사도 하지 않음). 끝나면 위 "지금 실제 설정" 표를 다시 채우는 것부터 한다. 이 표의 11-02 값은 그때 낡은 것으로 본다. 보는 방법은 똑같이 live 설정을 읽기 전용으로 본다.
+런슈즈 · 펫퍼민트 세션이 App of Apps로 바꾸고 웹훅을 건 뒤(사용자: "폴링은 안전장치로 15분만"), 아래 "재개할 때 다시 조사할 것" 네 가지 + 빌드 원인 구분을 live 설정으로 읽었다(읽기 전용 — `kubectl get` · `logs`, Jenkins 홈 `config.xml` · `build.xml`, `~/ronanlab-infra` = 클러스터 리비전 `79e5679`). 바꾼 것 없음. 조사 시각 2026-11-03 07:00 무렵(KST).
+
+| 볼 것 | 지금 | 근거 |
+|---|---|---|
+| Application 구조 | **루트 `root`**(`bootstrap/root-app.yaml`, 사람이 한 번 apply) → `apps/` 아래 `*/app.yaml`만 읽어 자식 Application을 만든다(directory recurse + include, `monitoring/app.yaml`은 exclude — 클러스터에 없음). 자식: **`runshoes` · `petmint` · `cloudflared` — 이름 그대로**. 자식에는 라벨 `app.kubernetes.io/instance=root`, 루트에는 없음. AppProject는 `default` 하나. 루트: 자동 Sync(prune · selfHeal 끔), finalizer 없음, `ignoreDifferences /spec/syncPolicy` + `RespectIgnoreDifferences` — **자식의 Sync 방식은 루트가 덮지 않고 클러스터의 값이 진짜 스위치**(`app.yaml`은 기록). `platform/`(Jenkins · Harbor · ingress · argocd ingress …)은 ArgoCD 밖 | `kubectl -n argocd get applications,appprojects`, 인프라 저장소 `740f9dd` · 루트 머리말 |
+| Jenkins 감지 | **웹훅 + 폴링 15분(안전망).** job `config.xml` 트리거 = `com.cloudbees.jenkins.GitHubPushTrigger` + `hudson.triggers.SCMTrigger H/15`. github 플러그인 1.47.0, 서명 검증 SHA-256(Secret `jenkins/github-webhook-secret`, 두 앱 저장소가 같이 씀). Cloudflare Access는 `/github-webhook/`만 Bypass — 밖에서 GET 405(Jenkins까지 닿음), `/login`은 그대로 302 | live `config.xml`, 인프라 `734319f`, 밖에서 curl. Jenkins 로그 06:55:30 `Received PushEvent … petmint-rag-chatbot` → `Poked petmint-app` → `Triggering #48` |
+| 웹훅 검증 상태 | **펫퍼민트 ✅**(#46 · #47 · #48이 웹훅 원인). **런슈즈 ⚠ 아직 검증 안 됨** — 웹훅을 건 뒤 빌드가 없다(마지막 #51은 11-02 21:04, 폴링 원인). 다음 런슈즈 push 때 원인이 `GitHubPushCause`인지 본다 | `build.xml` causeBag |
+| ArgoCD 감지 | **웹훅 + 폴링 3분(기본 그대로).** `argocd-secret`에 `webhook.github.secret` 키가 생겼다. `argocd-cm` · `argocd-cmd-params-cm`은 비어 있어 `timeout.reconciliation` 기본 180초 — 컨트롤러 로그에 3분마다 `comparison expired` 새로 고침이 계속 있다. 웹훅은 06:43부터 `Received push event repo: …/ronanlab-infra` → `normal refresh requested`(그 전 06:23~06:37에 서명 실패 · 헤더 없음 몇 번 — 설정 중). 밖에서 `/api/webhook` GET 400(ArgoCD까지 닿음). **"15분 안전망"은 Jenkins만이다** — ArgoCD는 그대로 3분(부담이 작아 그대로 둬도 된다, 사용자에게 알림) | 키 이름만 봄, `argocd-server` · 컨트롤러 로그 |
+| ① 붙일 자리 | `argocd-notifications-cm` · `-secret` **여전히 비어 있음, git으로 관리하지 않는다**(ArgoCD 설치물은 ArgoCD 밖) — 손으로 넣어도 되돌려지지 않는다. **기본 구독(`subscriptions`)에 셀렉터 `app.kubernetes.io/instance=root`** 로 건다(사용자 결정) — 자식 전부 · 앞으로 더할 앱이 자동으로 들어오고 루트는 빠진다. 앱 주석 방식은 루트가 `app.yaml`을 관리해 인프라 저장소를 고쳐야 해서 버림. 받는 주소 `192.168.122.1:8001` — 알림 컨트롤러 **파드**에서 닿는지는 적용 때 확인(11-02엔 노드에서만 봤다) | 키 이름 · 데이터 비어 있음 확인 |
+| 펫퍼민트 Sync | **수동 유지**(`syncPolicy`에 `automated` 없음). 런슈즈 자동(`automated: {}`), cloudflared 수동. 루트가 자식 syncPolicy를 덮지 않으니 바뀌지 않는다 → FOREMAN은 펫퍼민트 OutOfSync를 **"Sync 대기 중"** 으로, 실패와 따로 보여 준다 | live `spec.syncPolicy` |
+| 그 밖 | ArgoCD v2.13.2 그대로. 앱 ↔ Jenkins job ↔ Harbor 대응(`config/pipeline.toml`) · `apps/<앱>/kustomization.yaml` newTag 자리 그대로 — 바꿀 것 없음 | — |
+
+### 빌드가 웹훅으로 시작됐는지 폴링으로 시작됐는지 — 구분된다
+
+빌드마다 원인(cause) 클래스가 남는다: 웹훅 `com.cloudbees.jenkins.GitHubPushCause`(펫퍼민트 #46~48), 폴링 `hudson.triggers.SCMTrigger$SCMTriggerCause`(그 전 전부 — XML에는 `SCMTrigger_-SCMTriggerCause`), 손으로 누름 `hudson.model.Cause$UserIdCause`. API 한 번이면 읽힌다: `/job/<job>/api/json?tree=builds[number,timestamp,result,actions[causes[_class]]]`. **익명 읽기는 403** → 읽기 토큰이 필요하다.
+
+웹훅 끊김 규칙(재개 범위): SCM 폴링은 바뀐 것이 있을 때만 빌드를 시작하므로 웹훅이 살아 있으면 폴링 원인 빌드는 거의 생기지 않는다 → **"웹훅 원인 빌드가 있던 job에서 폴링 원인 빌드가 연달아 2번"이면 끊김으로 알린다.** 보조 신호로 push → 빌드 시작 지연(웹훅 수 초, 폴링 최대 15분). ArgoCD 웹훅 끊김은 FOREMAN이 직접 보기 어렵다 — 인프라 커밋 → 반영이 3분 가까이로 늘어나는 것이 간접 신호.
+
+### Jenkins 인증 구조 (토큰 계정 판단 근거)
+
+`authorizationStrategy` = `FullControlOnceLoggedInAuthorizationStrategy`(익명 읽기 거부), 보안 영역은 Jenkins 자체 사용자 DB(가입 막힘). matrix-auth · role-strategy 플러그인 없음 → **로그인한 사용자는 누구나 전체 권한이다. 지금 구조로는 "읽기 전용 계정"을 만들 수 없다.** 사용자는 `admin`(JCasC가 기동 때마다 Secret `jenkins/jenkins-admin`으로 비밀번호를 다시 넣는다)과 `cjswoduf` 둘. 결정: 전용 계정 `foreman`을 만들어 그 계정의 API 토큰을 쓴다(권한은 같지만 토큰을 따로 끊을 수 있고, Jenkins 기록에 `foreman`으로 남고, admin 비밀번호 교체에 안 엮인다). FOREMAN 쪽은 GET만 하도록 코드에서 막는다. 진짜 읽기 전용이 필요하면 인프라 저장소에서 matrix-auth(플러그인 목록 + JCasC `authorizationStrategy`)로 — 잘못 넣으면 잠기므로 그쪽 세션의 일.
+
+### 재개 범위 (11-03 사용자 확정, Jenkins 읽기 토큰을 받으면)
+
+Jenkins 읽기 조회 · ArgoCD 알림 웹훅(기본 구독 + `instance=root`) · 웹훅 끊김 감지(폴링 원인 연속 2번) · 대시보드 파이프라인 표시(펫퍼민트 "Sync 대기 중"은 실패와 구분) · 인프라 캐릭터 등장. 런슈즈 웹훅은 다음 push 때 확인.
+
+### 재개할 때 다시 조사할 것 (11-03 아침 기록 — 위에서 다 봤다)
+
+11-03에 펫퍼민트 세션에서 App of Apps 작업이 끝났고 웹훅을 거는 중이라고 사용자가 알려 왔다. 그 작업이 끝날 때까지 FOREMAN은 아무것도 하지 않았고, 끝난 뒤 위처럼 읽었다.
 
 | 볼 것 | 11-02 값(비교 기준) | 확인할 곳 |
 |---|---|---|
