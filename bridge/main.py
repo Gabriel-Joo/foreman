@@ -9,7 +9,9 @@ from pathlib import Path
 from fastapi import Depends, FastAPI
 from fastapi.responses import FileResponse
 
-from bridge.api import debug, health, hooks, sessions, ws
+from bridge.api import approvals as approvals_api, debug, health, hooks, sessions, ws
+from bridge.approval import load_policy
+from bridge.approvals import ApprovalManager
 from bridge.api.auth import require_api_token
 from bridge.assembler import Assembler
 from bridge.bus import Pipeline
@@ -36,7 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.store = store
         app.state.pipeline = pipeline
         pipeline.start()
-        app.state.assembler = app.state.watcher = app.state.notifier = None
+        app.state.assembler = app.state.watcher = app.state.notifier = app.state.approvals = None
         watch_task = None
         if s.watch_enabled:
             asm = Assembler(engine, s, Masker(), publish=pipeline.publish)
@@ -53,6 +55,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.info("알림 켬: %s", ", ".join(f"{k}{v.prefix}" for k, v in rules.projects.items()))
             watcher = Watcher(s, asm)
             app.state.assembler, app.state.watcher = asm, watcher
+            if s.approval_enabled:
+                mgr = ApprovalManager(engine, load_policy(s.approval_config), asm, pipeline, Masker(),
+                                      app.state.notifier)
+                n = await mgr.start()
+                asm.on_tool_result = mgr.on_tool_result
+                app.state.approvals = mgr
+                log.info("승인 정책 켬: %s (끊긴 대기 %d건 정리)", ", ".join(
+                    f"{k}={v.mode}" for k, v in mgr.policy.projects.items()), n)
             watch_task = asyncio.create_task(watcher.run(), name="foreman-watcher")
         log.info("브리지 시작 %s:%d (DB %s:%d, 와처 %s)", s.bind_host, s.bind_port, s.mysql_host, s.mysql_port,
                  "켬" if s.watch_enabled else "끔")
@@ -77,6 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ws.router)
     app.include_router(hooks.router)
     app.include_router(sessions.router)
+    app.include_router(approvals_api.router)
 
     @app.get("/api/ingest", dependencies=[Depends(require_api_token)])
     async def ingest_status() -> dict:

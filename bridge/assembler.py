@@ -138,6 +138,7 @@ class Batch:
     turn_msgs: list[dict[str, Any]] = field(default_factory=list)  # WS로 낼 턴 열기·닫기
     closed: list[tuple[int, int, str, str, str | None]] = field(default_factory=list)  # 커밋 뒤 알림(세션, 턴, 이유, 출처, 메모)
     subs_done: set[int] = field(default_factory=set)  # 커밋 뒤 묶음 판정할 세션(서브에이전트가 끝났다)
+    tool_results: list[tuple[str, Any]] = field(default_factory=list)  # 커밋 뒤 승인 대기에 알릴 (tool_use_id, permissionDecision)
 
 
 @dataclass
@@ -171,6 +172,7 @@ class Assembler:
         # 턴이 닫힌 직후 부르는 함수(session_id, turn_id, reason, by, note) — 4단계 알림. 실시간 모드에서만
         self.on_turn_closed: Any = None
         self.on_subagents_changed: Any = None  # (session_id) — 서브에이전트가 끝났다
+        self.on_tool_result: Any = None        # (tool_use_id, permissionDecision) — 5단계 승인 대기(터미널에서 답했다)
 
     # ── 시작 ────────────────────────────────────────────────
     async def load(self) -> None:
@@ -474,6 +476,9 @@ class Assembler:
         if self.live and self.on_subagents_changed:
             for sid in b.subs_done:
                 self.on_subagents_changed(sid)
+        if self.on_tool_result:
+            for tuid, perm in b.tool_results:
+                self.on_tool_result(tuid, perm)
 
     async def _apply_main(self, c: AsyncConnection, ch: Chunk, st: SessionState, b: Batch) -> None:
         key = ch.key
@@ -546,6 +551,8 @@ class Assembler:
                 if err:
                     pl["error_preview"] = (self.mask.text(_text_of(body)) or "")[:ERR_PREVIEW]
                 tuid = r.get("tool_use_id")
+                if tuid:
+                    b.tool_results.append((tuid, d.get("permissionDecision")))
                 self._event(b, st, uuid=uid if i == 0 else _uuid5(uid, i), ts=ts, type="tool_result", turn_id=tid,
                             parent_uuid=par, tool_use_id=tuid, tool=st.tool_names.get(tuid or ""),
                             status="error" if err else "done", payload=pl)
@@ -710,6 +717,8 @@ class Assembler:
                     pl: dict[str, Any] = {"chars": chars, "is_error": err}
                     if err:
                         pl["error_preview"] = (self.mask.text(_text_of(body)) or "")[:ERR_PREVIEW]
+                    if r.get("tool_use_id"):
+                        b.tool_results.append((r["tool_use_id"], d.get("permissionDecision")))
                     self._event(b, st, uuid=uid if i == 0 else _uuid5(uid, i), ts=ts, type="tool_result", turn_id=tid,
                                 parent_uuid=par, subagent_id=sub.id, tool_use_id=r.get("tool_use_id"),
                                 tool=st.tool_names.get(r.get("tool_use_id") or ""), status="error" if err else "done",
@@ -810,6 +819,27 @@ class Assembler:
             for m in b.turn_msgs:
                 self.publish(m)
         return closed
+
+    async def ids_for(self, p: dict[str, Any]) -> tuple[int | None, int | None, int | None]:
+        """hook 입력(session_id · cwd · transcript_path · prompt_id)으로 (세션, 캐릭터, 턴) id — 5단계 판정 기록용."""
+        sid = p.get("session_id")
+        if not sid:
+            return None, None, None
+        st = self.sessions.get(sid)
+        if st is None:
+            tp = p.get("transcript_path") or ""
+            async with self.lock:
+                async with asyncio.timeout(self.s.db_query_timeout_s * 2):
+                    async with self.engine.begin() as c:
+                        st = await self._session(c, sid, p.get("cwd"), Path(tp).parent.name if tp else "",
+                                                 datetime.now(UTC).replace(tzinfo=None), None)
+        turn = None
+        pid = p.get("prompt_id")
+        if pid and pid in st.prompt_turns:
+            turn = st.prompt_turns[pid]
+        elif st.open_turn:
+            turn = st.open_turn.id
+        return st.id, st.character_id, turn
 
     # ── hook ────────────────────────────────────────────────
     HOOK_EVENT = {"UserPromptSubmit": "start", "Stop": "stop", "StopFailure": "error", "SessionEnd": "session_end",

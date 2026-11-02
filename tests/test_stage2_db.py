@@ -4,6 +4,7 @@
 content 블록마다 쪼개진 줄 · api-request 줄 · 개행 없는 마지막 줄.
 """
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -466,3 +467,98 @@ async def test_agent_message_from_own_subagent_vs_other_session(env, tmp_path):
     assert q(s, "SELECT prompt_id, origin FROM turn WHERE prompt_id IN ('g1', 'g2') ORDER BY prompt_id") == (
         ("g1", "subagent_message"), ("g2", "agent_message"))
     await n.stop()
+
+
+# ── 5단계 승인 ──────────────────────────────────────────────
+class FakePipe:
+    def __init__(self):
+        self.events, self.published = [], []
+
+    def submit(self, ev):
+        self.events.append(ev)
+
+    def publish(self, msg):
+        self.published.append(msg)
+
+
+class FakeNotifier:
+    def __init__(self):
+        self.sent = []
+        from bridge.notify import Rules
+        self.rules = Rules()
+
+    def send_direct(self, project, kind, session_id, msg):
+        self.sent.append(msg)
+
+
+async def _mgr(s, wait_s=5.0):
+    from bridge.approval import load_policy
+    from bridge.approvals import ApprovalManager
+    asm = await run(s)
+    pol = load_policy("config/approval.toml")
+    for pp in [pol.defaults, *pol.projects.values()]:
+        pp.wait_s = wait_s
+    pipe, notif = FakePipe(), FakeNotifier()
+    mgr = ApprovalManager(asm.engine, pol, asm, pipe, Masker(), notif)
+    await mgr.start()
+    asm.on_tool_result = mgr.on_tool_result
+    return mgr, pipe, notif
+
+
+def _p(cmd, tuid="toolu_X", cwd=CWD, event="PreToolUse"):
+    return {"session_id": SID, "cwd": cwd, "hook_event_name": event, "tool_name": "Bash",
+            "tool_input": {"command": cmd}, "tool_use_id": tuid, "prompt_id": "p4", "permission_mode": "auto"}
+
+
+async def test_pre_tool_use_enforce_and_observe(env):
+    s, _ = env
+    mgr, pipe, _ = await _mgr(s)
+    out = mgr.pre_tool_use(_p("git status"))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+    out = mgr.pre_tool_use(_p("kubectl apply -f x.yaml"))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+    assert "kubectl-변경" in out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert mgr.pre_tool_use(_p("make build")) is None                         # pass — CC가 정한다
+    assert mgr.pre_tool_use(_p("kubectl apply -f x", cwd="/home/kopo17/AI_programming/runshoes")) is None  # 관찰
+    await asyncio.sleep(0.3)
+    got = [(e.payload["decision"], e.payload["enforced"]) for e in pipe.events]
+    assert got == [("allow", True), ("ask", True), ("pass", False), ("ask", False)]   # 자동 통과 · 관찰도 기록
+
+
+async def test_permission_browser_allow_and_deny(env):
+    s, _ = env
+    mgr, pipe, notif = await _mgr(s)
+    mgr.pre_tool_use(_p("kubectl apply -f x.yaml", tuid="toolu_B1"))
+    task = asyncio.create_task(mgr.permission_request(_p("kubectl apply -f x.yaml", event="PermissionRequest")))
+    while not mgr.waiting:
+        await asyncio.sleep(0.01)
+    aid = next(iter(mgr.waiting))
+    assert mgr.decide(aid, "allow", None) == "ok"
+    out = await task
+    assert out["hookSpecificOutput"]["decision"] == {"behavior": "allow"}
+    assert notif.sent and "🔐 승인 대기 · Bash" in notif.sent[0] and "kubectl-변경" in notif.sent[0]
+    assert q(s, "SELECT status, decided_by, rule, tool_use_id FROM approval WHERE id = %s", aid) == (
+        ("allowed", "browser", "kubectl-변경", "toolu_B1"),)
+    assert mgr.decide(aid, "deny", None) == "gone"                           # 이미 결정됨
+    task = asyncio.create_task(mgr.permission_request(_p("kubectl apply -f x.yaml", event="PermissionRequest")))
+    while not mgr.waiting:
+        await asyncio.sleep(0.01)
+    mgr.decide(next(iter(mgr.waiting)), "deny", "운영 배포는 내가 직접 한다")
+    out = await task
+    assert out["hookSpecificOutput"]["decision"] == {"behavior": "deny", "message": "운영 배포는 내가 직접 한다"}
+
+
+async def test_permission_terminal_first_and_timeout(env):
+    s, _ = env
+    mgr, pipe, _ = await _mgr(s, wait_s=0.5)
+    mgr.pre_tool_use(_p("git push origin main", tuid="toolu_T1"))
+    task = asyncio.create_task(mgr.permission_request(_p("git push origin main", event="PermissionRequest")))
+    while not mgr.waiting:
+        await asyncio.sleep(0.01)
+    mgr.on_tool_result("toolu_T1", {"decision": "accept", "source": "user_temporary"})   # 터미널에서 먼저 답했다
+    assert await task is None
+    await asyncio.sleep(0.2)
+    assert q(s, "SELECT status, decided_by, terminal_decision FROM approval")[0] == ("terminal", "terminal", "accept")
+    out = await mgr.permission_request(_p("echo hi", event="PermissionRequest"))      # CC 자체 판단 · 아무도 안 답함
+    assert out is None
+    assert q(s, "SELECT status, rule FROM approval ORDER BY id DESC LIMIT 1") == (("timeout", "cc"),)

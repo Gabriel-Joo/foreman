@@ -264,6 +264,23 @@ class Notifier:
             self._batch_pending.pop(session_id, None)
             log.warning("묶음 판정 실패 session=%s: %s: %s", session_id, type(e).__name__, str(e)[:200])
 
+    def send_direct(self, project: str | None, kind: str, session_id: int | None, msg: str) -> None:
+        """규칙 판정 없이 바로 보낸다(승인 대기 등 — 기다리는 사람이 있다). 기록은 kind로 남는다."""
+        if not self.rules.enabled:
+            return
+
+        async def go() -> None:
+            try:
+                async with self.engine.begin() as c:
+                    nid = await self._record(c, session_id, None, kind, None, "pending", None, msg)
+                if nid:
+                    await self._send_q.put((nid, msg))
+            except Exception as e:  # noqa: BLE001
+                log.warning("직접 알림 실패: %s", type(e).__name__)
+        t = asyncio.create_task(go())
+        self._tasks.add(t)
+        t.add_done_callback(self._tasks.discard)
+
     def on_turn_closed(self, session_id: int, turn_id: int, reason: str, by: str, note: str | None = None) -> None:
         """조립기가 턴을 닫은 직후 부른다(트랜잭션 안일 수 있다 — 여기서는 기다렸다 읽기만 예약한다)."""
         if not self.rules.enabled:

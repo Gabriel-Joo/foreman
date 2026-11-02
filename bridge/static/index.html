@@ -22,6 +22,13 @@
   #down .box { max-width:420px; width:100%; border:2px solid var(--bad); border-radius:10px; padding:16px 18px; background:var(--bg); }
   #down h2 { margin:0 0 6px; font-size:17px; color:var(--bad); }
   #down p { margin:4px 0; color:var(--muted); }
+  #appr { margin-bottom:12px; display:grid; gap:8px; }
+  .card { border:1px solid var(--line); border-left:4px solid var(--bad); border-radius:6px; padding:8px 10px; background:var(--bg); }
+  .card.done { border-left-color:var(--line); opacity:.6; }
+  .card code { display:block; white-space:pre-wrap; word-break:break-all; background:var(--code); padding:4px 6px; border-radius:4px; margin:4px 0; font-size:12px; }
+  .card .meta { color:var(--muted); font-size:12px; }
+  .card button { margin-right:6px; }
+  h2.sec { font-size:15px; margin:4px 0; }
   #log { background:var(--code); border:1px solid var(--line); border-radius:6px; padding:8px; height:60vh; overflow:auto; font:12px/1.45 ui-monospace, monospace; white-space:pre-wrap; word-break:break-all; }
 </style>
 </head>
@@ -51,6 +58,8 @@
   <textarea id="inputText" rows="3" placeholder="세션에 보낼 입력 (첫 글자 '!'는 항상 막힌다 — 앞에 공백을 붙여 보낸다)"></textarea>
   <button id="send">주입</button>
 </div>
+<div class="row"><h2 class="sec">승인 대기</h2><button id="loadAppr">새로고침</button><span id="apprCount" class="note"></span></div>
+<div id="appr"></div>
 <div id="log"></div>
 <div id="down" role="alert" aria-live="assertive"><div class="box">
   <h2>서버 연결 끊김</h2>
@@ -116,7 +125,8 @@ function open_() {
   sock.onmessage = (m) => {
     lastSeen = Date.now();
     const msg = JSON.parse(m.data);
-    if (msg.type === 'hello') { hb = msg.heartbeat_s; setState('연결됨', 'ok'); everUp = true; tries = 0; hideDown(); }
+    if (msg.type === 'hello') { hb = msg.heartbeat_s; setState('연결됨', 'ok'); everUp = true; tries = 0; hideDown(); loadApprovals(); }
+    if (msg.type === 'approval') apprCard(msg.op === 'resolved' ? msg.approval : { ...msg.approval, status: 'pending' });
     if (msg.type !== 'ping') log(fmt(msg));
   };
   sock.onclose = (e) => {
@@ -145,8 +155,16 @@ function fmt(msg) {
     return msg.op === 'open' ? `▶ [${p}] 턴 #${msg.turn_id} 열림 (${msg.origin}, ${msg.by})`
                              : `■ [${p}] 턴 #${msg.turn_id} 닫힘 — ${msg.reason} (${msg.by})`;
   }
+  if (msg.type === 'approval') {
+    const a = msg.approval;
+    return msg.op === 'pending' ? `🔐 [${a.project || '미분류'}] 승인 대기 #${a.id} ${a.tool} — ${a.rule}` : `🔓 승인 #${a.id} → ${a.status}`;
+  }
   if (msg.type === 'event') {
     const e = msg.event, p = e.project || (e.source === 'debug' ? 'debug' : '미분류');
+    if (e.type === 'approval_req') {
+      const pl = e.payload || {};
+      return `  [세션 #${e.session_id}] 판정 ${pl.decision}${pl.enforced ? '' : '(관찰)'} ${e.tool} ${(e.target || '').slice(0, 80)} — ${pl.rule}`;
+    }
     const who = e.subagent_id ? ` ↳서브${e.subagent_id}` : '';
     const what = [e.tool, e.target || e.summary].filter(Boolean).join(' ');
     if (e.type === 'input') {
@@ -156,6 +174,53 @@ function fmt(msg) {
     return `  [${p}] #${e.turn_id ?? '-'}${who} ${e.source === 'hook' ? 'hook:' : ''}${e.type} ${what}`.slice(0, 300);
   }
   return msg;
+}
+
+// ── 승인 대기(5단계) — 터미널 · 여기 · 시간 초과 중 먼저 온 것이 정한다 ──
+const apprCards = new Map();
+function apprCard(a) {
+  let el = apprCards.get(a.id);
+  if (!el) {
+    el = document.createElement('div'); el.className = 'card'; apprCards.set(a.id, el);
+    $('appr').prepend(el);
+  }
+  const done = a.status && a.status !== 'pending';
+  el.className = 'card' + (done ? ' done' : '');
+  el.innerHTML = '';
+  const t = document.createElement('div');
+  t.textContent = `#${a.id} [${a.project || '미분류'}] ${a.tool}${done ? ' — ' + a.status + (a.decided_by ? ' (' + a.decided_by + ')' : '') : ''}`;
+  const c = document.createElement('code'); c.textContent = a.target || '';
+  const m = document.createElement('div'); m.className = 'meta'; m.textContent = `이유: ${a.rule} — ${a.reason || ''}`;
+  el.append(t, c, m);
+  if (!done) {
+    const ok = document.createElement('button'); ok.textContent = '승인';
+    const no = document.createElement('button'); no.textContent = '거부';
+    ok.onclick = () => decide(a.id, 'allow');
+    no.onclick = () => { const why = prompt('거부 이유(모델에게 전달된다)', '사용자가 거부'); if (why !== null) decide(a.id, 'deny', why); };
+    el.append(ok, no);
+  } else {
+    setTimeout(() => { el.remove(); apprCards.delete(a.id); countAppr(); }, 30000);
+  }
+  countAppr();
+}
+function countAppr() {
+  const n = [...apprCards.values()].filter(e => !e.classList.contains('done')).length;
+  $('apprCount').textContent = n ? `${n}건 대기` : '없음';
+}
+async function loadApprovals() {
+  const r = await fetch('/api/approvals?status=pending', { headers: { 'Authorization': `Bearer ${tokenValue()}` } });
+  if (!r.ok) { log(`GET /api/approvals → ${r.status}`); return; }
+  for (const a of await r.json()) apprCard(a);
+  countAppr();
+}
+async function decide(id, decision, message) {
+  const r = await fetch(`/api/approvals/${id}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tokenValue()}` },
+    body: JSON.stringify({ decision, message: message || null }),
+  });
+  const j = await r.json().catch(() => ({}));
+  log(r.ok ? `승인 #${id} → ${decision}` : `승인 #${id} 결정 실패 ${r.status} — ${j.detail || ''}`);
 }
 
 async function loadSessions() {
@@ -213,6 +278,7 @@ $('emit').onclick = emit;
 $('health').onclick = health;
 $('ingest').onclick = ingest;
 $('loadSess').onclick = loadSessions;
+$('loadAppr').onclick = loadApprovals;
 $('send').onclick = send;
 </script>
 </body>

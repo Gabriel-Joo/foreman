@@ -9,7 +9,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from bridge.api.auth import token_ok
 
@@ -18,21 +18,58 @@ log = logging.getLogger("foreman.hooks")
 _tasks: set[asyncio.Task[None]] = set()
 
 
-@router.post("/hooks")
-async def receive_hook(request: Request) -> JSONResponse:
+async def _authed_body(request: Request) -> tuple[dict | None, JSONResponse | None]:
+    """hook 토큰 확인 + JSON 본문. 거절은 언제나 이유를 로그에(값은 남기지 않는다)."""
     s = request.app.state.settings
     client = request.client.host if request.client else "?"
     auth = request.headers.get("authorization", "")
     given = auth[7:] if auth.startswith("Bearer ") else None
     if not token_ok(given, s.foreman_hook_token.get_secret_value()):
         why = "Authorization 없음" if not auth else ("Bearer 아님" if given is None else f"토큰 불일치(받은 길이 {len(given)})")
-        log.warning("hook 거절 %s: %s", client, why)
-        return JSONResponse({"error": "인증 필요"}, status_code=401)
+        log.warning("hook 거절 %s %s: %s", client, request.url.path, why)
+        return None, JSONResponse({"error": "인증 필요"}, status_code=401)
     try:
         body = json.loads(await request.body())
     except ValueError:
-        log.warning("hook 거절 %s: JSON이 아님", client)
-        return JSONResponse({"error": "JSON이 아님"}, status_code=400)
+        log.warning("hook 거절 %s %s: JSON이 아님", client, request.url.path)
+        return None, JSONResponse({"error": "JSON이 아님"}, status_code=400)
+    if not isinstance(body, dict):
+        return None, JSONResponse({"error": "객체가 아님"}, status_code=400)
+    return body, None
+
+
+@router.post("/hooks/pre")
+async def pre_tool_use(request: Request) -> Response:
+    """PreToolUse — 판정을 바로 돌려준다(메모리 안에서). 판정하지 않으면 204(본문 없음 → CC가 정한다)."""
+    body, err = await _authed_body(request)
+    if err:
+        return err
+    mgr = getattr(request.app.state, "approvals", None)
+    if mgr is None:
+        return Response(status_code=204)
+    out = mgr.pre_tool_use(body)
+    return JSONResponse(out) if out else Response(status_code=204)
+
+
+@router.post("/hooks/permission")
+async def permission_request(request: Request) -> Response:
+    """PermissionRequest — 승인 창이 떴다. 브라우저 결정을 기다린다(터미널에서 먼저 답하면 풀린다)."""
+    body, err = await _authed_body(request)
+    if err:
+        return err
+    mgr = getattr(request.app.state, "approvals", None)
+    if mgr is None:
+        return Response(status_code=204)
+    out = await mgr.permission_request(body)
+    return JSONResponse(out) if out else Response(status_code=204)
+
+
+@router.post("/hooks")
+async def receive_hook(request: Request) -> JSONResponse:
+    client = request.client.host if request.client else "?"
+    body, err = await _authed_body(request)
+    if err:
+        return err
     name = body.get("hook_event_name") if isinstance(body, dict) else None
     if not name or not body.get("session_id"):
         log.warning("hook 거절 %s: hook_event_name · session_id 없음", client)
