@@ -1,10 +1,11 @@
 # FOREMAN CI/CD 인과 체인 (로드맵 8단계). 바꾸면 브리지를 다시 띄운다.
 # 비밀값은 여기 두지 않는다 — 웹훅 토큰은 .env.bridge의 FOREMAN_WEBHOOK_TOKEN
 #
-# 흐름(런슈즈 · 펫퍼민트 같은 구조, 각 저장소 Jenkinsfile 머리말):
-#   로컬 커밋 → GitHub push → Jenkins 폴링(2분) → BuildKit 빌드 → Harbor push(태그 = 커밋 12자리)
-#   → ronanlab-infra apps/<앱>/kustomization.yaml newTag 커밋 → ArgoCD 자동 Sync
-# 웹훅은 클러스터에서 호스트(virbr0 192.168.122.1)의 웹훅 전용 포트로 온다.
+# ⏸ 11-02 보류 — 브리지에서 꺼 둠(pipeline_enabled = False). 읽기 조회로 다시 만든다(ArgoCD App of Apps 뒤, log/stage8_cicd_result.md)
+#
+# 실제 흐름(11-02 live 설정 조사 — 전 구간 폴링, 웹훅 없음):
+#   로컬 커밋 → GitHub push → Jenkins SCM 폴링(2분) → BuildKit 빌드 → Harbor push(태그 = 커밋 12자리)
+#   → ronanlab-infra apps/<앱>/kustomization.yaml newTag 커밋 → ArgoCD 폴링(3분) → 런슈즈 자동 Sync / 펫퍼민트 수동 Sync
 
 [git]
 poll_s = 20                    # 로컬 저장소에서 새 커밋 · push를 찾는 주기

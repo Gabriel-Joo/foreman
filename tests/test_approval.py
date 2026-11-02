@@ -216,7 +216,6 @@ def test_text_not_execution_wider(cmd):
     (TOKEN_HDR.format(opts="-v ", url="http://127.0.0.1:8000/"), "민감한-경로"),       # 요청 헤더를 찍는다
     (TOKEN_HDR.format(opts="--trace-ascii t.log ", url="http://127.0.0.1:8000/"), "민감한-경로"),
     (TOKEN_HDR.format(opts="", url='"${U:-http://127.0.0.1}"'), "민감한-경로"),      # 보내는 곳이 변수
-    ("bash scripts/cicd-apply.sh", "kubectl-삭제"),                      # 실행은 스크립트 내용을 검사한다
     # 다시 돌려 보기에서 찾은 빈틈 — 해석기 heredoc이 비밀 파일을 쓴다 · 읽는다
     ("umask 077 && python3 -I - <<'EOF'\np = '.env.db'\nopen(p, 'w').write('X=1')\nEOF", "민감한-경로"),
     ("python3 - <<'EOF'\nprint(open('/home/kopo17/.claude/.credentials.json').read())\nEOF", "민감한-경로"),
