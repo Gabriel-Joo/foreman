@@ -77,6 +77,17 @@ class Settings(BaseSettings):
     approval_enabled: bool = True
     approval_config: Path = REPO / "config" / "approval.toml"
 
+    # 7단계 — 터미널 패널(ttyd + tmux). ttyd는 TCP 포트를 열지 않고 UNIX 소켓에만 묶는다(.run/은 0700).
+    # 브라우저는 브리지(127.0.0.1)의 /terminal/을 거쳐서만 닿는다 — 쿠키 인증(API 토큰으로 받는다)
+    terminal_enabled: bool = True       # 테스트에서는 끈다
+    ttyd_bin: Path = REPO / ".tools" / "ttyd"
+    terminal_socket: Path = REPO / ".run" / "ttyd.sock"
+    terminal_tmux_session: str = "foreman-shell"
+    terminal_rcfile: Path = REPO / "deploy" / "shell" / "foreman-bashrc"
+    terminal_request_ttl_s: float = 1800.0   # CC가 부탁한 명령을 이만큼 기다린다(그 뒤 친 명령은 결과를 전달하지 않는다)
+    terminal_output_lines: int = 60          # 세션에 전달하는 출력 — 마지막 N줄(마스킹 후)
+    terminal_cookie_ttl_s: float = 12 * 3600
+
     @field_validator("foreman_api_token", "foreman_hook_token")
     @classmethod
     def _long_enough(cls, v: SecretStr) -> SecretStr:

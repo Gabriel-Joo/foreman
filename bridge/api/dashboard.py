@@ -81,7 +81,8 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "SELECT cs.id, cs.cc_session_id, cs.cwd, cs.attached_at, cs.detached_at, ch.name, p.name, "
             "(SELECT MAX(e.ts) FROM event e WHERE e.session_id = cs.id) AS last_ts, cs.title, cs.role "
             "FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
-            "LEFT JOIN project p ON p.id = ch.project_id WHERE cs.cc_session_id IS NOT NULL"))).all()
+            # 셸 세션(7단계 터미널 패널, type='shell')은 캐릭터 카드가 아니다
+            "LEFT JOIN project p ON p.id = ch.project_id WHERE cs.cc_session_id IS NOT NULL AND cs.type = 'agent'"))).all()
         visible = [r for r in rows if (r[1] in live) or (r[7] and r[7] >= cut)]
         ids = [r[0] for r in visible] or [0]
         in_ids = "(" + ",".join(str(int(i)) for i in ids) + ")"
@@ -152,6 +153,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
         "approvals": [{"id": a[0], "session_id": a[1], "tool": a[2], "target": a[3], "rule": a[4], "reason": a[5],
                        "created_at": _iso(a[6]), "status": "pending"} for a in appr_rows],
         "hidden_dormant": len(rows) - len(visible),
+        "terminal": term.snapshot() if (term := getattr(request.app.state, "terminal", None)) else {"enabled": False},
     }
     _cache.update(at=time.monotonic(), data=data)
     return data

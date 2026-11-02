@@ -381,6 +381,23 @@ CC가 "이 명령을 실행해주세요"라고 하면 브리지가 감지해 터
 
 비밀번호가 CC 컨텍스트에 들어가지 않는다. 사람이 직접 치고, CC는 결과만 받는다. 사람의 수동 개입은 이벤트로 기록하되, 민감 값은 마스킹한다.
 
+**만든 모양(7단계)** — ttyd와 tmux를 그대로 쓰고, 브리지는 길만 낸다.
+
+```
+브라우저 iframe /terminal/ ──(쿠키)── 브리지 127.0.0.1:8000 ──── ttyd (.run/ttyd.sock, TCP 포트 없음)
+                                                                    └─ tmux foreman-shell ─ bash --rcfile deploy/shell/foreman-bashrc
+셸 PROMPT_COMMAND ── /hooks/shell(hook 토큰) ──> event(source=shell, type=shell_cmd, 마스킹)
+CC 턴 끝 ── 부탁 감지 ──> 셸 입력 줄에 미리 채움(send-keys, Enter 없음) + WS terminal_request(패널을 올린다)
+사람이 그 명령을 침 ──> 출력(capture-pane, 마스킹) ──> 부탁한 세션에 주입(3단계 방법 C) · 안 되면 화면에만
+```
+
+- **밖에 열리지 않는다.** ttyd는 TCP 포트를 열지 않고 UNIX 소켓에만 묶는다(디렉토리 0700 — 다른 사용자도 못 붙는다). 127.0.0.1 포트보다 한 단계 좁다. 브라우저는 브리지를 거쳐서만 닿는다: API 토큰으로 쿠키(HttpOnly · SameSite=Strict · Path=/terminal, 브리지 메모리에만 — 브리지를 다시 띄우면 새로 받는다)를 받고, WS는 Origin이 Host와 같아야 한다(다른 사이트가 브라우저 쿠키로 셸을 여는 것을 막는다). 화면은 같은 출처의 틀 안에서만(`X-Frame-Options: SAMEORIGIN`)
+- **승인 정책은 걸리지 않는다, 기록은 남는다.** 명령마다 `shell_cmd` 이벤트(명령 · 종료 코드 · 위치). 마스킹은 기존 규칙(정확한 값 · 토큰 모양 · `KEY=값`)에 명령줄 자리를 더했다: `--password 값`, `docker/podman/helm registry login -p 값`, `mysql -p값`, `sshpass -p`, `echo 값 | sudo -S`, `| … --password-stdin`, URL의 `user:암호@`, `curl -u user:암호`. 셸 기록 파일은 디스크에 남기지 않고(`HISTFILE=`), 공백으로 시작하는 명령도 기록한다(`HISTCONTROL=`)
+- **셸은 캐릭터가 아니다.** `character_session.type='shell'`(포먼 프로젝트의 포먼에 붙인 행 하나). 대시보드 · 세션 목록은 `type='agent'`만 본다
+- **부탁 찾기** — 턴이 `stop`으로 끝나면 그 턴의 assistant 글에서: ① 셸 코드 블록 · 인라인 코드 · `! 명령` 안에 ② 사람이 쳐야 하는 명령(`sudo` · `su` · `ssh-add` · `ssh-keygen` · `ssh-copy-id` · `passwd` · `kinit` · `docker/podman/… login` · `gh/glab/gcloud auth login` …)이 있고 ③ 부탁하는 말("실행해 주세요" · "쳐 주세요" · "직접 실행" · "please run" …)이 있을 때. 설명 · 기록에 나온 `sudo`는 ③이 없어 걸리지 않는다. `! 명령` 꼴은 그 자체가 부탁이다. 여럿이면 첫 번째를 채우고 나머지는 배너에 보인다
+- **미리 채우기** — 셸 입력 줄을 비우고(C-e C-u) 글자로 넣는다(`send-keys -l`, Enter 없음). 비밀번호 자리(`<password>` · `«masked…»` · `YOUR_…` · `-p 값` 등)는 비우고 커서를 거기로 옮긴다. 셸이 다른 일을 하는 중이면(암호 입력 중 · 다른 명령 실행 중) 건드리지 않고 배너에 "다시 채우기"를 둔다
+- **결과 전달** — 사람이 친 명령이 부탁과 같으면(비운 자리 앞까지, 아니면 앞 단어 세 개) 화면에서 그 명령의 출력(명령을 친 프롬프트 줄 다음부터 새 프롬프트 앞까지, 마지막 60줄)을 마스킹해 `[터미널 패널] …`로 부탁한 세션에 넣는다. 주입이 안 되는 세션(tmux 밖 · 정지)은 배너에만 보인다. 부탁은 30분 기다리고, 세션마다 최신 하나만 둔다
+
 ### 3.10 서버 연결 상태
 
 브리지가 서버 PC에서 돌므로, 서버가 죽으면 브리지도 죽는다. 따라서 "서버 다운"은 브리지가 알려주는 것이 아니라 **브라우저가 WebSocket 끊김으로 판단**한다.
@@ -608,9 +625,9 @@ CC 세션 안에서 `Agent` 도구로 띄운 서브에이전트 하나가 한 �
 | message_id | FK nullable | 어느 API 응답의 블록인가 |
 | subagent_id | FK nullable | 서브에이전트 안에서 일어난 이벤트 |
 | tool_use_id | varchar nullable | tool_use와 tool_result 짝짓기 |
-| source | enum | hook transcript poll |
+| source | enum | hook transcript poll bridge shell(7단계 터미널 패널) |
 | ts | datetime | 표시용. 정렬에 쓰지 않는다 |
-| type | enum | start tool_use tool_result assistant_msg stop error approval_req approval_res interrupted compact queued session_end subagent_start subagent_stop restart_loop |
+| type | enum | start tool_use tool_result assistant_msg stop error approval_req approval_res interrupted compact queued session_end subagent_start subagent_stop restart_loop input shell_cmd term_request term_result |
 | tool | varchar nullable | Read, Edit, Bash … |
 | target | varchar nullable | 파일 경로, 명령어 (마스킹 적용) |
 | status | enum | working idle waiting done error |
@@ -687,7 +704,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 4 | 텔레그램 이관 + 연결 끊김 표시 | ✅ **완료**(2026-11-02, [결과](log/stage4_notify_result.md)) — 런슈즈 · 펫퍼민트 · 포먼 실제 턴으로 확인 후 세 저장소의 CLAUDE.md 알림 절 · `scripts/notify-telegram.sh`를 정리. 턴 종료 → 전송 평균 3.3초 |
 | 5 | 승인 정책 엔진 | ✅ **완료**(2026-11-02, [결과](log/stage5_approval_result.md)) — 위험한 것은 ask · 확실한 것만 allow · 나머지는 CC에, 브라우저 · 텔레그램 · 터미널 승인, 모든 판정 기록. 런슈즈 · 펫퍼민트는 observe로 시작 |
 | 6 | 대시보드 (못생겨도 되는 실사용 UI) | ✅ **완료**(2026-11-02, [결과](log/stage6_dashboard_result.md)) — 프로젝트별 세션 상태 · 하는 일 · 대화 · 서브에이전트 · 승인 · 토큰, 입력 · 승인 · 끊김. 데이터(`static/js/store.js`)와 그리기(`render.js`)를 나눠 10단계에서 그리기만 바꾼다. 여기까지가 매일 쓸 수 있는 물건 |
-| 7 | 터미널 패널 (ttyd) + 명령 자동 채우기 | |
+| 7 | 터미널 패널 (ttyd) + 명령 자동 채우기 | 🔧 **구현 · 시험 끝, 사용 확인 대기**(2026-11-02, [결과](log/stage7_terminal_result.md)) — ttyd(UNIX 소켓) + tmux `foreman-shell`, 대시보드 아래 접이식, 친 명령 기록(마스킹), CC 부탁 감지 → 미리 채움 → 결과를 그 세션에(3.9) |
 | 8 | LLM 지표 + 병목 시각화 | AI 인프라 축 |
 | 9 | CI/CD 웹훅 + 인과 체인 + 파이프라인 구역 | 차별점. FOREMAN 자체를 CI/CD에 태울 때 수집부(호스트) · API/UI(파드) 분리를 다시 본다(3.12) |
 | 10 | 테마 렌더러 | 데이터가 어떻게 생겼는지 안 뒤에 설계. 방이 여러 개일 때 보여주는 방식(나란히 / 탭 / 줌, 2.5)도 여기서 정한다 |
@@ -741,3 +758,4 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | [stage4_notify_result.md](log/stage4_notify_result.md) | 로드맵 4단계(텔레그램 브리지 이관 + 연결 끊김 표시) 결과 — 규칙 · 묶음, 실세션 검증, 서브에이전트 결과 전달 판별, 옛 경로 정리 |
 | [stage5_approval_result.md](log/stage5_approval_result.md) | 로드맵 5단계(승인 정책 엔진) 결과 — auto mode 실측(hook 판정 · 승인 창 · 터미널과 경주), 과거 데이터 모의 실험, 규칙 조정 |
 | [stage6_dashboard_result.md](log/stage6_dashboard_result.md) | 승인 규칙 좁히기(되돌릴 수 없는 것만, 실행과 글자) + 로드맵 6단계(대시보드) 결과 |
+| [stage7_terminal_result.md](log/stage7_terminal_result.md) | 로드맵 7단계(터미널 패널) 결과 — ttyd를 UNIX 소켓에, 쿠키 · Origin, 기록 · 마스킹, 부탁 감지 · 미리 채우기 · 결과 전달 |

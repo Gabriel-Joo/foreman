@@ -14,10 +14,13 @@ dependencies = [
   "cryptography>=44",  # MySQL 8 caching_sha2_password 전체 인증(재시작으로 캐시가 비면 필요 — 1단계 재시작 시험에서 발견)
   "pydantic>=2.14,<3",
   "pydantic-settings>=2.16,<3",
+  # 7단계 터미널 패널 — /terminal/*을 ttyd UNIX 소켓으로 넘긴다(HTTP · WS)
+  "httpx>=0.28,<1",
+  "websockets>=17,<18",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9", "pytest-asyncio>=1.4", "httpx>=0.28", "websockets>=17"]
+dev = ["pytest>=9", "pytest-asyncio>=1.4"]
 
 [tool.setuptools]
 packages = ["bridge", "bridge.db", "bridge.api", "bridge.transcript"]

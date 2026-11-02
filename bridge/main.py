@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from bridge.api import approvals as approvals_api, dashboard as dashboard_api, debug, health, hooks, sessions, ws
+from bridge.api import terminal as terminal_api
 from bridge.approval import load_policy
 from bridge.approvals import ApprovalManager
 from bridge.api.auth import require_api_token
@@ -22,6 +23,7 @@ from bridge.mask import Masker
 from bridge.notify import Notifier, default_telegram, load_rules
 from bridge.session_state import SessionStateWatcher
 from bridge.store import Store
+from bridge.terminal import TerminalManager
 from bridge.transcript.watcher import Watcher
 
 log = logging.getLogger("foreman")
@@ -41,7 +43,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.pipeline = pipeline
         pipeline.start()
         app.state.assembler = app.state.watcher = app.state.notifier = app.state.approvals = None
+        app.state.terminal = None
         watch_task = state_task = None
+        if s.terminal_enabled:
+            # 7단계 터미널 패널 — ttyd(UNIX 소켓) + tmux foreman-shell. 실패해도 브리지는 뜬다
+            term = TerminalManager(engine, s, pipeline, Masker(), publish=pipeline.publish,
+                                   on_change=dashboard_api.invalidate)
+            try:
+                await term.start()
+                app.state.terminal = term
+                log.info("터미널 패널 켬: tmux %s, ttyd 소켓 %s", s.terminal_tmux_session, s.terminal_socket)
+            except Exception as e:  # noqa: BLE001
+                log.warning("터미널 패널 시작 실패: %s: %s", type(e).__name__, str(e)[:200])
         if s.watch_enabled:
             asm = Assembler(engine, s, Masker(), publish=pipeline.publish)
             await asm.load()
@@ -51,10 +64,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 notifier.start()
                 n = await notifier.baseline()
                 log.info("알림 기준선: 이미 끝난 서브에이전트 %d개를 알린 것으로", n)
-                asm.on_turn_closed = notifier.on_turn_closed
                 asm.on_subagents_changed = notifier.on_subagents_changed
                 app.state.notifier = notifier
                 log.info("알림 켬: %s", ", ".join(f"{k}{v.prefix}" for k, v in rules.projects.items()))
+            # 턴이 닫히면 — 알림(4단계)과 터미널 부탁 감지(7단계)
+            closed_cbs = [x.on_turn_closed for x in (app.state.notifier, app.state.terminal) if x]
+            if closed_cbs:
+                def on_turn_closed(*a: object) -> None:
+                    for cb in closed_cbs:
+                        cb(*a)
+                asm.on_turn_closed = on_turn_closed
             watcher = Watcher(s, asm)
             app.state.assembler, app.state.watcher = asm, watcher
 
@@ -87,6 +106,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             if app.state.notifier:
                 await app.state.notifier.stop()
+            if app.state.terminal:
+                await app.state.terminal.stop()   # ttyd만 내린다 — tmux 셸은 남는다
             for t in (watch_task, state_task):
                 if t:
                     t.cancel()
@@ -106,6 +127,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(sessions.router)
     app.include_router(approvals_api.router)
     app.include_router(dashboard_api.router)
+    app.include_router(terminal_api.api)
+    app.include_router(terminal_api.router)
 
     @app.get("/api/ingest", dependencies=[Depends(require_api_token)])
     async def ingest_status() -> dict:

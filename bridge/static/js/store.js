@@ -34,7 +34,9 @@ export class Store {
       conn: { status: 'idle', since: null, attempt: 0, nextIn: 0, reason: '' },
       projects: [], sessions: new Map(), approvals: new Map(), selected: null, convo: new Map(),
       generatedAt: null, hiddenDormant: 0, lastInput: null,
-      ver: { grid: 0, approvals: 0, panel: 0, conn: 0 },
+      // 7단계 터미널 패널: enabled · running, requests(Map id → CC가 부탁한 명령), result(마지막 결과), shell(최근 친 명령)
+      terminal: { enabled: false, running: false, requests: new Map(), result: null, shell: [], openReq: 0 },
+      ver: { grid: 0, approvals: 0, panel: 0, conn: 0, term: 0 },
     };
     this.subs = new Set();
     this.dirty = false;
@@ -105,8 +107,13 @@ export class Store {
     for (const a of j.approvals) st.approvals.set(a.id, { ...st.approvals.get(a.id), ...a, project: this.projectOf(a.session_id) });
     st.generatedAt = j.generated_at;
     st.hiddenDormant = j.hidden_dormant;
+    if (j.terminal) {
+      const t = st.terminal;
+      t.enabled = !!j.terminal.enabled; t.running = !!j.terminal.running;
+      t.requests = new Map((j.terminal.pending || []).map(r => [r.id, r]));
+    }
     if (st.selected && !st.sessions.has(st.selected)) st.selected = null;
-    this.touch('grid', 'approvals', 'panel');
+    this.touch('grid', 'approvals', 'panel', 'term');
   }
   scheduleSnapshot(ms = 800) {
     if (this.snapSoon) return;
@@ -187,6 +194,21 @@ export class Store {
       case 'turn': return this.onTurn(msg);
       case 'approval': return this.onApproval(msg);
       case 'event': return this.onEvent(msg.event);
+      case 'terminal_request': {
+        const t = st.terminal;
+        for (const [id, r] of t.requests) if (r.session_id === msg.request.session_id) t.requests.delete(id);
+        t.requests.set(msg.request.id, msg.request);
+        t.openReq += 1;                      // 패널을 올리라는 신호
+        this.touch('term');
+        return;
+      }
+      case 'terminal_result': {
+        const t = st.terminal;
+        t.requests.delete(msg.request_id);
+        if (!msg.dismissed) t.result = { ...msg, project: this.projectOf(msg.session_id), at: Date.now() };
+        this.touch('term');
+        return;
+      }
     }
   }
 
@@ -230,6 +252,13 @@ export class Store {
   }
 
   onEvent(e) {
+    if (e.source === 'shell') {              // 터미널 패널에서 친 명령 — 셸 세션은 카드가 아니다
+      const t = this.state.terminal;
+      t.shell.push({ ts: e.ts, cmd: e.target || '', exit: (e.payload || {}).exit });
+      if (t.shell.length > 20) t.shell.splice(0, t.shell.length - 20);
+      this.touch('term');
+      return;
+    }
     if (e.session_id == null) return;
     const s = this.sessionFor(e.session_id);
     if (!s) return;
@@ -265,6 +294,13 @@ export class Store {
         break;
       }
       case 'error': this.pushFeed(s, e.ts, 'error', `오류: ${e.summary || ''}`); break;
+      case 'term_request': this.pushFeed(s, e.ts, 'ask', `터미널 부탁: ${e.target || ''}`); break;
+      case 'term_result': {
+        const pl = e.payload || {};
+        this.pushFeed(s, e.ts, pl.delivered ? 'input' : 'error',
+          `터미널 결과(종료 ${pl.exit}) ${pl.delivered ? '전달' : `전달 못 함 — ${pl.refused || ''}`}: ${e.target || ''}`);
+        break;
+      }
       default: return;
     }
     s.last_ts = e.ts;
@@ -310,6 +346,23 @@ export class Store {
     this.state.lastInput = { sessionId: id, ts: Date.now(), ...res };
     this.touch('panel');
     return res;
+  }
+  // ── 터미널 패널 ───────────────────────────────────────
+  async terminalSession() {          // 쿠키(Path=/terminal)를 받는다 — iframe이 이걸로 ttyd에 붙는다
+    const r = await fetch('/api/terminal/session', { method: 'POST', headers: this.headers() });
+    if (!r.ok) throw new Error(r.status === 503 ? '터미널 패널이 꺼져 있다' : `HTTP ${r.status}`);
+    return r.json();
+  }
+  async terminalDismiss(id) {
+    await fetch(`/api/terminal/requests/${id}`, { method: 'DELETE', headers: this.headers() });
+    this.state.terminal.requests.delete(id);
+    this.touch('term');
+  }
+  async terminalPrefill(id) {
+    const r = await fetch(`/api/terminal/requests/${id}/prefill`, { method: 'POST', headers: this.headers() });
+    const j = await r.json().catch(() => ({}));
+    const q = this.state.terminal.requests.get(id);
+    if (q) { q.prefilled = !!j.ok; q.note = j.note || null; this.touch('term'); }
   }
   async decide(aid, decision, message) {
     const r = await fetch(`/api/approvals/${aid}`, { method: 'POST', headers: this.headers(true), body: JSON.stringify({ decision, message: message || null }) });
