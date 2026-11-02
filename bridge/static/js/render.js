@@ -6,6 +6,8 @@ const STATE_LABEL = { ACTIVE: '작업 중', IDLE: '대기', SUSPENDED: '정지',
 const ORIGIN_LABEL = { human: '나', task_notification: '완료 알림', subagent_message: '서브에이전트 결과', agent_message: '다른 세션', meta: '시스템' };
 const END_LABEL = { stop: '끝남', stop_failure: 'API 오류', interrupted: '중단', session_end: '세션 종료', process_lost: '프로세스 사라짐', merged: '다음 입력에 합쳐짐', no_signal: '신호 없음' };
 
+import { stuckTurn } from './store.js';
+
 const ROLE_LABEL = { coder: '코더', foreman: '포먼', cicd: 'CI/CD', inspector: '점검', helper: '도우미', infra: '인프라' };
 
 // 세션을 알아보는 이름 — CC가 붙인 제목 → CC 세션 이름 → 짧은 id. 캐릭터 이름은 아래 줄에(한 캐릭터에 세션 여럿)
@@ -191,7 +193,8 @@ export function createRenderer(root, store) {
     const a = s.activity;
     const pend = [...st.approvals.values()].filter((x) => x.session_id === s.id && x.status === 'pending').length;
     const doing = s.state === 'ACTIVE' && a ? `<div class="doing"><b>${esc(a.tool)}</b>${a.subagent ? ' <span class="muted">(서브)</span>' : ''} ${esc(oneLine(a.target, 90))} <span class="muted small">${ago(a.ts)}</span></div>` : '';
-    const turn = s.open_turn ? `<div class="turn small">▶ ${esc(ORIGIN_LABEL[s.open_turn.origin] || '')} ${esc(oneLine(s.open_turn.prompt || '', 80))} <span class="muted">${since(s.open_turn.started_at)}</span></div>` : '';
+    const stuck = stuckTurn(s);
+    const turn = s.open_turn ? `<div class="turn small${stuck ? ' warn' : ''}">${stuck ? '⚠ 끝 신호 없는 턴' : '▶'} ${esc(ORIGIN_LABEL[s.open_turn.origin] || '')} ${esc(oneLine(s.open_turn.prompt || '', 80))} <span class="muted">${since(s.open_turn.started_at)}</span></div>` : '';
     const reply = s.replyPreview && s.state === 'ACTIVE' ? `<div class="reply small">${esc(oneLine(s.replyPreview, 100))}</div>` : '';
     return `<article class="card st-${s.state}${st.selected === s.id ? ' sel' : ''}" data-sid="${s.id}" tabindex="0" aria-label="${esc(sessionName(s))} ${STATE_LABEL[s.state]}">
       <div class="card-top">
