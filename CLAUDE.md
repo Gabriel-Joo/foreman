@@ -26,25 +26,16 @@
 | 펫퍼민트(RAG 챗봇) | `~/AI_programming/petmint-rag-chatbot` — 호스트 서비스는 `deploy/host/`(milvus compose, search-service 유닛) |
 | 클러스터 매니페스트 | `~/ronanlab-infra`(GitHub private), ArgoCD가 본다 |
 | k8s VM(m-k8s · w1~w3, libvirt) | `~/k8s-cluster` — kubectl은 `cd ~/k8s-cluster && vagrant ssh m-k8s -c '…'` |
-| Python | `~/llm_env` venv(3.14). FOREMAN 브리지가 이것을 쓸지는 1단계에서 정한다 |
+| Python | 브리지는 저장소의 전용 `.venv`(시스템 python 3.14, 1단계 결정). `~/llm_env`는 LLM · 펫퍼민트 작업용 |
 | 접속 구조 | 집 PC → 교육 PC → 서버 PC(VNC `DISPLAY=:2`). 서버 PC가 GPU 호스트이고 클러스터 VM도 여기서 돈다 |
 
 서버의 현재 포트 · 컨테이너 · 유닛 상태와 작업 시 주의는 `log/infra_20261102_host-changes.md`.
 
 ## 알림(텔레그램)
 
-사용자가 기다리는 모든 경우에 텔레그램으로 알린다:
-작업이 끝났을 때 · 질문에 답했을 때 · 조사를 끝냈을 때 · 사용자의 승인이나 결정이 필요할 때 · 실패했을 때.
-답을 화면에 쓰고 차례를 넘기기 직전에 보낸다. 브리프가 "채팅으로만"이라고 해도 알림은 보낸다(파일이 아니다).
+텔레그램 알림은 **브리지가 턴이 끝날 때 기계적으로 보낸다**(Stop hook 등 턴 종료 신호, 로드맵 4단계 — README 3.2, 규칙은 `config/notify.toml`). **이 세션에서 직접 보내지 않는다.** 런슈즈 · 펫퍼민트도 같다(접두어 `[런슈즈]` · `[펫퍼민트]` · `[포먼]`).
 
-- 보내기: `scripts/notify-telegram.sh "제목" "핵심 줄" …` — 앞에 `[포먼]` 이 붙는다
-- 형식: 제목 한 줄 + 핵심 몇 줄. 길게 쓰지 않는다
-  ```
-  [포먼] 01 킥오프 설계 검토 끝남
-  - 턴 경계: 단일 신호 불가, end_reason 도입
-  승인 필요
-  ```
-- 토큰 · chat_id 는 저장소 맨 위 `.env.telegram` 에 있다(권한 600, `.gitignore` 의 `.env*` — 커밋하지 않는다). 런슈즈 · 펫퍼민트와 같은 봇 · 같은 방이지만 파일은 따로다
+- 무엇을 보낼지 바꾸려면 `config/notify.toml`을 고치고 브리지를 다시 띄운다. 보낸 것 · 안 보낸 것(+규칙)은 DB `notification`
+- 브리지 밖 알림(백업 실패 등)은 `.venv/bin/python -m bridge.telegram "제목" "줄" …` — 모델이 판단해 부르는 용도가 아니다
+- 토큰 · chat_id는 저장소 맨 위 `.env.telegram`(권한 600, `.gitignore`의 `.env*` — 커밋하지 않는다)
 - 토큰 값을 이 파일 · 코드 · 커밋 · 로그 · 화면 출력에 쓰지 않는다
-- 이 규칙은 이 프로젝트만이다 — 상위 디렉토리나 다른 프로젝트에 옮기지 않는다
-- **임시 방편이다.** 로드맵 4단계에서 브리지가 턴 종료를 기계 판정해 직접 보내는 방식으로 바꾸고, 그때 이 절과 `scripts/notify-telegram.sh`를 지운다. 그 전까지 두 경로가 함께 있는 것은 의도된 것이다.
