@@ -1,0 +1,94 @@
+# FOREMAN 승인 정책 (로드맵 5단계). 바꾸면 브리지를 다시 띄운다.
+#
+# PreToolUse hook마다 브리지가 판정한다:
+#   ask   위험한 것 — 승인 창을 띄운다(auto mode의 자동 통과도 막는다). 브라우저 · 텔레그램 · 터미널 중 먼저 답한 쪽
+#   allow 확실히 안전한 것만 — 승인 창 없이 통과
+#   pass  그 밖 — 브리지는 결정하지 않는다. 지금처럼 CC가 정한다(auto mode 분류기 · 사용자 설정)
+# 순서: ask 규칙이 하나라도 걸리면 ask → 모두 allow 규칙을 만족하면 allow → 나머지는 unmatched
+# 정규식은 Python re. 명령 규칙은 따옴표 안까지 명령 전체에서 찾는다(bash -c '…', vagrant ssh -c '…' 안의 것도)
+#
+# 모든 판정(allow · pass 포함)은 event(type=approval_req)로 남는다 — "무엇이 자동으로 통과됐나"를 볼 수 있게.
+# ask와 승인 결과는 로그에도 이유와 함께 남는다.
+
+[defaults]
+mode = "enforce"        # enforce: 판정을 CC에 돌려준다 / observe: 기록만 하고 CC에는 아무것도 돌려주지 않는다
+# 규칙에 없는 도구 호출. "ask"로 하면 auto mode가 자동 통과시키던 평범한 작업(실측 20일 약 9,700건)이 모두 승인 창이 된다
+unmatched = "pass"
+remote_approval = true  # 승인 창이 뜨면(우리 ask든 CC 자체든) 텔레그램으로 알리고 브라우저에서 승인 · 거부를 받는다
+wait_s = 600            # 브라우저 결정을 기다리는 최대 시간. 그동안에도 터미널 승인 창은 그대로 쓸 수 있다
+
+# ── 확실히 안전한 것 ─────────────────────────────────────────
+[allow]
+tools = ["Read", "Grep", "Glob"]
+# 작업 트리(세션 cwd의 git 최상위) 안의 편집. 민감한 파일([sensitive])과 .git/ 안은 제외
+edit_in_worktree = ["Edit", "MultiEdit", "NotebookEdit"]
+# Bash는 &&, ||, ;, | 로 나눈 모든 조각이 아래 중 하나여야 allow. 명령 치환 · 리다이렉트(/dev/null 제외) ·
+# 환경변수 앞붙임 · git -c / --output / --ext-diff 가 있으면 allow하지 않는다(확실하지 않다)
+bash_git_readonly = ["status", "log", "diff"]
+bash_filters = ["head", "tail", "wc", "grep", "sort", "uniq", "cut"]   # 파이프 뒤에서만
+bash_cd = true
+# CC가 자기 일로 쓰는 곳 — 작업 트리 안으로 친다(계획 · 메모리 파일). 세션 scratchpad는 hook이 알려 준다
+cc_own_paths = ['^~/\.claude/plans/', '^~/\.claude/projects/[^/]+/memory/']
+
+# ── 위험한 것 ───────────────────────────────────────────────
+[ask]
+# 작업 트리 밖에 쓰기 · 편집(CC가 주는 세션 scratchpad는 안으로 친다)
+write_outside_worktree = ["Write", "Edit", "MultiEdit", "NotebookEdit"]
+
+[ask.bash]   # 이름 = 정규식(명령 전체에서 찾는다). 이름이 로그 · 이벤트 · 텔레그램에 이유로 나간다
+"kubectl-변경" = '\bkubectl\b[^|;&\n]*?\s(apply|delete|create|replace|patch|scale|rollout|drain|cordon|uncordon|edit|set|label|annotate|exec|cp|taint)\b'
+"helm-변경" = '\bhelm\s+(install|upgrade|uninstall|rollback|delete)\b'
+"argocd-동기화" = '\bargocd\s+(app\s+(sync|delete|rollback|set)|repo\s+rm)\b'
+"git-push" = '\bgit\b[^|;&\n]*?\spush\b'
+"git-되돌리기" = '\bgit\b[^|;&\n]*?\s(reset\s+--hard|clean\s+-\w*f|checkout\s+--\s|restore\s+--staged\s+--worktree|branch\s+-D|stash\s+(drop|clear))'
+"docker-정지삭제" = '\bdocker(\s+compose)?\b[^|;&\n]*?\s(rm|rmi|stop|kill|down|restart|prune|volume\s+rm|network\s+rm)\b'
+"systemctl-변경" = '\bsystemctl\b[^|;&\n]*?\s(start|stop|restart|reload|enable|disable|mask|daemon-reload)\b'
+"sudo" = '(^|[\s;&|(`])sudo\s'
+"rm-재귀" = '(^|[\s;&|(`])rm\s+(-\w*[rR]\w*|--recursive)'
+"권한-소유-변경" = '(^|[\s;&|(`])(chmod\s+-R|chown)\s'
+"디스크-전원" = '(^|[\s;&|(`])(dd\s+if=|mkfs|shutdown|reboot|poweroff|virsh\s+(destroy|undefine)|vagrant\s+(destroy|halt))'
+"원격스크립트-실행" = '(curl|wget)\b[^|;\n]*\|\s*(ba|z)?sh\b'
+"DB-파괴" = '(?i)\b(drop\s+(database|table|schema)|truncate\s+table)\b'
+"크론" = '\bcrontab\s+(-r|-e|\S+\s*$)'
+
+# 위험한 명령의 동사 자리가 변수 · 명령 치환이라 무엇을 할지 확정할 수 없는 것, eval — 애매하면 ask.
+# (명령 어딘가에 $가 있기만 한 것은 아니다 — 과거 데이터로 돌려 보니 heredoc · 반복문에 수백 건 오탐이 났다)
+[ask.ambiguous]
+verb_re = '''\b(kubectl|helm|argocd|systemctl|docker(\s+compose)?|virsh|vagrant|crontab)(\s+--?[\w-]+(=\S+)?)*\s+["']?(\$|`)|\beval\s|\bgit(\s+--?[\w-]+(=\S+)?)*\s+["']?(\$|`)'''
+
+# ── 민감한 경로 ────────────────────────────────────────────
+# secret: 읽기 · 쓰기 모두 ask(비밀이 들어 있다). protect: 쓰기 · 편집만 ask(설정 — 읽는 것은 괜찮다)
+# Bash는 heredoc 본문을 빼고, 경로처럼 생긴 토큰(/ · . · ~ 로 시작하거나 / 가 든 것)만 본다.
+# 그리고 그 토큰이 내용을 찍거나 옮기는 명령의 인자일 때만 묻는다 — source ./.env 처럼 환경을 불러오는 것은
+# 비밀을 화면 · 트랜스크립트에 내지 않는다(과거 데이터: 펫퍼민트 76건 중 대부분)
+[sensitive]
+bash_secret_readers = ["cat", "head", "tail", "less", "more", "grep", "egrep", "rg", "awk", "sed", "cut", "sort",
+                       "cp", "mv", "scp", "rsync", "base64", "xxd", "od", "strings", "tar", "zip", "curl", "wget",
+                       "diff", "vim", "nano", "jq", "tee", "echo", "printf", "python", "python3", "node"]
+secret = [
+  '(^|/)\.env(?![\w.-]*\.(example|sample|template|dist)$)(\.[\w.-]+)?$',
+  '(^|/)\.claude/\.credentials\.json$',
+  '(^|/)\.claude/sessions/[^/]+\.key$',
+  '(^|/)\.ssh/',
+  '\.(pem|p12|pfx)$',
+  '(^|/)[^/]*\.key$',
+  '(^|/)(credentials|secrets?)(\.\w+)?$',
+  '(^|/)\.kube/config$',
+]
+protect = [
+  '(^|/)\.claude/settings(\.local)?\.json$',
+  '(^|/)\.gitconfig$',
+  '(^|/)\.(bash|zsh)rc$',
+]
+
+# ── 프로젝트별 ─────────────────────────────────────────────
+# 실행 중인 세션에 곧바로 걸린다(hook은 다음 도구 호출부터 반영 — 3단계 실측).
+# 런슈즈 · 펫퍼민트는 관찰로 시작한다: 기록만 하고 판정을 돌려주지 않는다. 결과를 보고 enforce로 바꾼다
+[projects.runshoes]
+mode = "observe"
+
+[projects.petmint-rag-chatbot]
+mode = "observe"
+
+[projects.foreman]
+mode = "enforce"
