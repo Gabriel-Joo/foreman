@@ -32,7 +32,7 @@
 | 입력 칸 비우기 | `C-u`는 한 줄만, `Escape`는 안 비운다. 줄 수만큼 `C-u` · `BSpace`를 반복하면 비워진다 |
 | 붙여넣기 → Enter 대기 0 · 0.02 · 0.15초 | 모두 정상(tmux가 명령을 차례로 처리). 0.15초 유지 |
 | 바쁠 때 입력 | `queue-operation enqueue` → 진행 중인 턴 안에 `attachment/queued_command`로 전달(새 턴 아님). **UserPromptSubmit hook도 불린다** |
-| CC가 적는 `sessions/<pid>.json` `status` | `busy` · `idle` · `shell`(셸 명령 실행 중으로 보임 — 런슈즈에서 봄). `tmux`(`세션:@창.%pane`, 소켓 없음) |
+| CC가 적는 `sessions/<pid>.json` `status` | `busy` · `idle` · `shell`(의미 미확인 — 처음엔 "셸 명령 실행 중"으로 적었지만 틀렸다: 런슈즈는 턴이 끝난 시각부터 아무 일 없이 `shell`이었다, [stage4](stage4_notify_result.md)). `tmux`(`세션:@창.%pane`, 소켓 없음) |
 
 거부 경로:
 
@@ -73,8 +73,8 @@
 
 ## 아직 안 한 것 · 남은 미검증
 
-- 런슈즈 · 펫퍼민트 실세션에서 hook이 실제로 오는지(설치 뒤 새 턴 없음) — 위 확인 쿼리
-- 사용자 중단 시 Stop hook 미발동(문서 기준)
+- ~~런슈즈 · 펫퍼민트 실세션에서 hook이 실제로 오는지~~ → 런슈즈가 00:16 UTC부터 재시작 없이 보냄([stage4](stage4_notify_result.md))
+- ~~사용자 중단 시 Stop hook 미발동(문서 기준)~~ → 실측으로 확인(Esc 중단 턴에 hook stop 없음, [stage4](stage4_notify_result.md))
 - Ctrl+Z 뒤 `fg` 복귀 때 입력 버퍼 · 진행 중 API 스트림
 - 사람이 그 pane에 초안을 쓰고 있을 때 주입하면 초안 뒤에 붙는다 — FOREMAN이 만든 pane(11단계)에서는 문제가 안 되지만 사람과 같이 쓰는 pane은 주의
 - 주입 대상이 지금은 tmux 안의 CC뿐이다 — 런슈즈 · 펫퍼민트는 tmux로 옮긴 뒤(로드맵 0단계 보류분)
