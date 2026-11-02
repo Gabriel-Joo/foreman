@@ -2,7 +2,7 @@
 
 > AI 코딩 에이전트가 만든 변경이 배포까지 가는 전 과정을, 브라우저 한 화면에서 보고 지시하는 관제실.
 
-🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. **로드맵 1단계 완료**([결과](log/stage1_bridge_db_result.md)), **2단계 완료**([결과](log/stage2_transcript_result.md)), **3단계 완료**([결과](log/stage3_inject_result.md) — hook은 사용자 설정에 설치), **4단계 완료**([결과](log/stage4_notify_result.md) — 텔레그램은 브리지가 보낸다). 서버 PC 변경 기록은 [`log/`](log/)
+🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. **로드맵 1단계 완료**([결과](log/stage1_bridge_db_result.md)), **2단계 완료**([결과](log/stage2_transcript_result.md)), **3단계 완료**([결과](log/stage3_inject_result.md) — hook은 사용자 설정에 설치), **4단계 완료**([결과](log/stage4_notify_result.md) — 텔레그램은 브리지가 보낸다), **5단계 완료**([결과](log/stage5_approval_result.md) — 승인 정책). 서버 PC 변경 기록은 [`log/`](log/)
 
 **개발 중 접속**: 로드맵 0~5단계는 `ssh -L 8000:localhost:8000`으로 붙고, 6단계 이후에 Cloudflare Tunnel로 바꾼다. 코드는 바뀌지 않고 앞단만 바뀐다.
 
@@ -215,17 +215,21 @@ tmux send-keys -t <pane> Enter       # 제출
 
 ### 3.3 승인 정책
 
-원래 불편 중 마지막 항목. PreToolUse hook이 `allow`를 반환하면 사람에게 묻지 않는다.
+원래 불편 중 마지막 항목(5단계, [결과](log/stage5_approval_result.md)). PreToolUse hook마다 브리지가 판정한다 — 규칙은 `config/approval.toml`.
 
-| 대상 | 판정 |
-|---|---|
-| Read · Grep · Glob | `allow` |
-| Bash (git status · log · diff) | `allow` |
-| Edit (worktree 안) | `allow` |
-| Bash (kubectl apply, 운영) | `ask` |
-| Write (worktree 밖) | `ask` |
+| 판정 | 대상 | CC에서 |
+|---|---|---|
+| `ask` | 운영 명령(kubectl · helm · argocd 변경, git push · reset --hard, docker 정지 · 삭제, systemctl, sudo, rm -r, DB 파괴, curl \| sh), 작업 트리 밖 쓰기, 비밀 · 설정 파일, **동사 자리가 변수 · 명령 치환인 운영 명령(애매하면 ask)** | 승인 창 — auto mode의 자동 통과보다 앞선다 |
+| `allow` | Read · Grep · Glob, 작업 트리 안 Edit, `git status · log · diff`(조각마다 확인 — 리다이렉트 · 명령 치환 · `-c` 있으면 안 됨) | 승인 창 없이 통과 |
+| `pass` | 그 밖 | 브리지는 정하지 않는다 — CC(auto mode 분류기 · 사용자 설정)가 지금처럼 |
 
-브리지로 모으면 승인 대기가 알림으로 오고, 폰에서 눌러도 된다. 터미널에 포커스를 둘 필요가 없어진다.
+**규칙에 없는 것을 `ask`로 하지 않는 이유**: 세 프로젝트 모두 auto mode로 돌고, 20일 동안 도구 호출 약 9,700건 중 사람이 승인을 누른 것은 18건뿐이었다. 규칙에 없는 모든 것을 묻게 하면 승인 창이 수천 건이 된다. `unmatched = "ask"`로 바꿀 수 있다.
+
+**승인 창이 뜨면**(우리 ask든 CC 자체 판단이든) PermissionRequest hook이 브리지에 와서 승인 대기가 생기고 텔레그램 `🔐 승인 대기`가 간다. **브라우저(확인 페이지) · 터미널 · 시간 초과(10분) 중 먼저 온 것이 정한다** — hook이 기다리는 동안에도 터미널 승인 창은 떠 있고, 터미널에서 먼저 답하면 바로 진행된다(실측). 브리지가 꺼져 있으면 hook은 아무것도 돌려주지 않는다 — CC가 지금처럼 정한다(허용 쪽으로 새지 않는다).
+
+**모든 판정을 남긴다**: 자동 승인 · pass까지 `event(type=approval_req)`(규칙 · 이유 · 강제 여부), 승인 대기와 결과는 `approval` 테이블과 `event(approval_res)`. ask와 결정은 로그에도 이유와 함께.
+
+**프로젝트별 mode**: `enforce`(판정을 돌려준다) / `observe`(기록만). 실행 중인 세션에 곧바로 걸리므로 런슈즈 · 펫퍼민트는 observe로 시작했다 — 쌓인 판정을 보고 enforce로 바꾼다.
 
 ### 3.4 병렬 작업과 충돌
 
@@ -626,7 +630,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 2 | hook 수신 + inotify 기반 JSONL 와처 (offset tail, `subagents/` 포함) + 턴 판정 (`end_reason`) | ✅ **완료**(2026-11-02, [결과](log/stage2_transcript_result.md)) — 1.4GB 백필 18초, 다시 읽어도 행 · 턴 상태 동일. hook은 사용자 설정에 설치(3단계 때) |
 | 3 | send-keys 실측 선행 → 입력 → 왕복 완성 | ✅ **완료**(2026-11-02, [결과](log/stage3_inject_result.md)) — 방법 C 성립. `/` · `!`는 앞 공백으로 막음, 제출 확인, 바쁨은 대기열. 주입 대상은 tmux 안의 CC뿐(런슈즈 · 펫퍼민트는 0단계 이전 뒤) |
 | 4 | 텔레그램 이관 + 연결 끊김 표시 | ✅ **완료**(2026-11-02, [결과](log/stage4_notify_result.md)) — 런슈즈 · 펫퍼민트 · 포먼 실제 턴으로 확인 후 세 저장소의 CLAUDE.md 알림 절 · `scripts/notify-telegram.sh`를 정리. 턴 종료 → 전송 평균 3.3초 |
-| 5 | 승인 정책 엔진 | 원래 불편 중 유일하게 안 풀린 것 |
+| 5 | 승인 정책 엔진 | ✅ **완료**(2026-11-02, [결과](log/stage5_approval_result.md)) — 위험한 것은 ask · 확실한 것만 allow · 나머지는 CC에, 브라우저 · 텔레그램 · 터미널 승인, 모든 판정 기록. 런슈즈 · 펫퍼민트는 observe로 시작 |
 | 6 | 대시보드 (못생겨도 되는 실사용 UI) | 여기까지가 매일 쓸 수 있는 물건 |
 | 7 | 터미널 패널 (ttyd) + 명령 자동 채우기 | |
 | 8 | LLM 지표 + 병목 시각화 | AI 인프라 축 |
@@ -680,3 +684,4 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | [stage2_transcript_result.md](log/stage2_transcript_result.md) | 로드맵 2단계(와처 · 조립 · 턴 판정 · hook 수신) 결과 — promptId 실측, 백필 · 다시 읽기 · 실시간 · hook 검증, 시험에서 찾은 것 |
 | [stage3_inject_result.md](log/stage3_inject_result.md) | hook 설치(실행 중 세션도 다시 읽음 — 실측) + 로드맵 3단계(입력 주입) 결과 — 방법 C 실측표, 첫 글자 · 제출 확인 · 대기열, 거부 경로 |
 | [stage4_notify_result.md](log/stage4_notify_result.md) | 로드맵 4단계(텔레그램 브리지 이관 + 연결 끊김 표시) 결과 — 규칙 · 묶음, 실세션 검증, 서브에이전트 결과 전달 판별, 옛 경로 정리 |
+| [stage5_approval_result.md](log/stage5_approval_result.md) | 로드맵 5단계(승인 정책 엔진) 결과 — auto mode 실측(hook 판정 · 승인 창 · 터미널과 경주), 과거 데이터 모의 실험, 규칙 조정 |
