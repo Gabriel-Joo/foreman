@@ -186,6 +186,9 @@ export class Store {
         this.hb = msg.heartbeat_s; this.everUp = true; st.conn.attempt = 0;
         this.setConn('up');
         this.loadSnapshot().catch(() => {});
+        // 한 번 인증으로 둘 다 — 같은 토큰으로 터미널 쿠키도 받는다(iframe은 헤더를 못 붙여 쿠키가 필요하다).
+        // 브리지를 다시 띄우면 쿠키가 사라지므로 연결될 때마다 새로 받는다
+        this.terminalSession().then(() => { this.state.terminal.cookieAt = Date.now(); this.touch('term'); }).catch(() => {});
         if (st.selected) this.loadConversation(st.selected);
         return;
       case 'ping': return;

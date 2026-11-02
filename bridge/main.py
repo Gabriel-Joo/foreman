@@ -150,5 +150,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def debug_page() -> FileResponse:
         return FileResponse(STATIC / "debug.html")       # 1~5단계 확인 페이지(로그 · 디버그 이벤트)
 
+    @app.middleware("http")
+    async def no_stale_ui(request, call_next):  # type: ignore[no-untyped-def]
+        # 화면 파일은 매번 다시 확인한다(ETag라 바뀌지 않았으면 304) — 7단계 실측: 브라우저가 옛 store.js를 캐시에서 써서
+        # 새 terminal.js와 어긋났고, 그 오류로 대시보드 연결이 시작되지 않았다
+        resp = await call_next(request)
+        p = request.url.path
+        if p == "/" or p == "/debug" or p.startswith("/static/"):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

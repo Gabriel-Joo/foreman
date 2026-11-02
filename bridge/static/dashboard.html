@@ -135,9 +135,10 @@
   const store = new Store();
   window.foreman = store;            // 콘솔에서 상태를 볼 수 있게(디버그용)
   createRenderer(document.getElementById('app'), store);
-  createTerminal(store);             // 7단계 — 아래 접이식 터미널 패널
   if (store.token) store.start();
   else document.getElementById('tokDlg').classList.add('on');
+  // 7단계 — 아래 접이식 터미널 패널. 패널이 깨져도 대시보드 연결은 이미 시작됐다
+  try { createTerminal(store); } catch (err) { console.error('터미널 패널 실패', err); }
 </script>
 </body>
 </html>
