@@ -8,8 +8,9 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from bridge.api import approvals as approvals_api, debug, health, hooks, sessions, ws
+from bridge.api import approvals as approvals_api, dashboard as dashboard_api, debug, health, hooks, sessions, ws
 from bridge.approval import load_policy
 from bridge.approvals import ApprovalManager
 from bridge.api.auth import require_api_token
@@ -19,6 +20,7 @@ from bridge.config import Settings, get_settings
 from bridge.db.engine import make_engine
 from bridge.mask import Masker
 from bridge.notify import Notifier, default_telegram, load_rules
+from bridge.session_state import SessionStateWatcher
 from bridge.store import Store
 from bridge.transcript.watcher import Watcher
 
@@ -39,7 +41,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.pipeline = pipeline
         pipeline.start()
         app.state.assembler = app.state.watcher = app.state.notifier = app.state.approvals = None
-        watch_task = None
+        watch_task = state_task = None
         if s.watch_enabled:
             asm = Assembler(engine, s, Masker(), publish=pipeline.publish)
             await asm.load()
@@ -64,6 +66,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.info("승인 정책 켬: %s (끊긴 대기 %d건 정리)", ", ".join(
                     f"{k}={v.mode}" for k, v in mgr.policy.projects.items()), n)
             watch_task = asyncio.create_task(watcher.run(), name="foreman-watcher")
+            # 6단계 — 프로세스 정지 · 사라짐, CC status(busy · idle)는 이벤트로 오지 않는다. 바뀐 것만 WS로
+            sw = SessionStateWatcher(s.sessions_dir, pipeline.publish)
+            sw.on_change = dashboard_api.invalidate
+            state_task = asyncio.create_task(sw.run(), name="foreman-session-state")
         log.info("브리지 시작 %s:%d (DB %s:%d, 와처 %s)", s.bind_host, s.bind_port, s.mysql_host, s.mysql_port,
                  "켬" if s.watch_enabled else "끔")
         try:
@@ -71,12 +77,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             if app.state.notifier:
                 await app.state.notifier.stop()
-            if watch_task:
-                watch_task.cancel()
-                try:
-                    await watch_task
-                except asyncio.CancelledError:
-                    pass
+            for t in (watch_task, state_task):
+                if t:
+                    t.cancel()
+                    try:
+                        await t
+                    except asyncio.CancelledError:
+                        pass
             await pipeline.stop()
             await engine.dispose()
             log.info("브리지 종료")
@@ -88,6 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(hooks.router)
     app.include_router(sessions.router)
     app.include_router(approvals_api.router)
+    app.include_router(dashboard_api.router)
 
     @app.get("/api/ingest", dependencies=[Depends(require_api_token)])
     async def ingest_status() -> dict:
@@ -100,9 +108,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if s.debug_endpoints:
         app.include_router(debug.router)
 
+    # 화면은 비밀값이 없으므로 인증 없이 준다(토큰은 사용자가 페이지에 넣는다). 데이터 API는 모두 토큰이 필요하다
     @app.get("/", include_in_schema=False)
     async def index() -> FileResponse:
-        # 1단계 확인용 페이지. 비밀값이 없으므로 인증 없이 준다(토큰은 사용자가 페이지에 넣는다)
-        return FileResponse(STATIC / "index.html")
+        return FileResponse(STATIC / "dashboard.html")   # 6단계 대시보드
 
+    @app.get("/debug", include_in_schema=False)
+    async def debug_page() -> FileResponse:
+        return FileResponse(STATIC / "debug.html")       # 1~5단계 확인 페이지(로그 · 디버그 이벤트)
+
+    app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

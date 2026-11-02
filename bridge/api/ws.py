@@ -6,6 +6,8 @@
   서버 → {"type": "event", "event": {...}}                          적재가 끝난 이벤트(id 포함)
   서버 → {"type": "ping", "ts": "..."}                              N초 동안 보낼 것이 없을 때. 끊김 감지용(README 3.10)
   서버 → {"type": "resync"}                                         밀려서 버렸다 — 빠진 것은 DB에서 다시 읽는다
+  서버 → {"type": "batch", "items": [...]}                          50ms 안에 쌓인 메시지 묶음(6단계)
+  서버 → {"type": "session_state", ...}                             프로세스 · CC status가 바뀜(6단계)
 클라이언트가 보내는 그 밖의 메시지는 지금은 무시한다(3단계 입력 주입에서 쓴다).
 """
 
@@ -45,13 +47,20 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await ws.receive_text()  # 끊기면 WebSocketDisconnect
 
         async def writer() -> None:
+            # 이벤트가 몰리면(초당 수십 개) 쌓인 것을 한 프레임으로 묶는다 — {"type": "batch", "items": [...]}.
+            # 화면은 프레임마다가 아니라 자기 주기로 그린다(static/js/store.js)
             while True:
                 try:
                     async with asyncio.timeout(s.ws_heartbeat_s):
                         msg = await q.get()
                 except TimeoutError:
-                    msg = {"type": "ping", "ts": datetime.now(UTC).isoformat(timespec="seconds")}
-                await ws.send_json(msg)
+                    await ws.send_json({"type": "ping", "ts": datetime.now(UTC).isoformat(timespec="seconds")})
+                    continue
+                await asyncio.sleep(0.05)         # 50ms 모아서
+                items = [msg]
+                while not q.empty() and len(items) < 500:
+                    items.append(q.get_nowait())
+                await ws.send_json(items[0] if len(items) == 1 else {"type": "batch", "items": items})
 
         tasks = [asyncio.create_task(reader()), asyncio.create_task(writer())]
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
