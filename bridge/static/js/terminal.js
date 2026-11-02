@@ -21,7 +21,7 @@ export function createTerminal(store) {
   document.body.appendChild(el);
   const $ = (id) => el.querySelector('#' + id);
   const frame = $('termFrame');
-  let open = false, loaded = false, seenOpenReq = 0, seenVer = -1, lastConn = null;
+  let open = false, loaded = false, seenOpenReq = 0, seenVer = -1, lastConn = null, seenCookie = 0;
 
   function setHeight() {
     const h = open ? el.getBoundingClientRect().height : BAR_H;
@@ -29,6 +29,7 @@ export function createTerminal(store) {
   }
   async function connect(force) {
     try {
+      // 쿠키는 대시보드가 연결될 때 이미 받았다(store.js hello). 패널을 열 때 한 번 더 받아 만료 · 재시작에 대비한다
       const j = await store.terminalSession();
       $('termMsg').textContent = j.running ? '' : 'ttyd가 떠 있지 않다 — 브리지 로그를 본다';
       if (!loaded || force) { frame.src = '/terminal/'; loaded = true; }
@@ -68,6 +69,7 @@ export function createTerminal(store) {
 
   function draw(st) {
     const t = st.terminal;
+    if (!t) return;                           // 옛 store.js(캐시)와 섞였을 때 — 대시보드를 막지 않는다
     el.hidden = !t.enabled;
     if (!t.enabled) { document.body.style.setProperty('--term-h', '0px'); return; }
     const reqs = [...t.requests.values()];
@@ -99,8 +101,12 @@ export function createTerminal(store) {
       seenOpenReq = t.openReq;
       if (!open) setOpen(true); else setTimeout(focusShell, 100);
     }
-    // 브리지가 다시 떴다 — 쿠키가 새로 필요하다(쿠키는 브리지 메모리에만 있다)
-    if (st.conn.status === 'up' && lastConn && lastConn !== 'up' && loaded) connect(true);
+    // 다시 연결됐다(브리지를 다시 띄웠을 수 있다) — store가 쿠키를 새로 받으면 화면도 다시 붙인다
+    if (t.cookieAt && t.cookieAt !== seenCookie) {
+      const again = seenCookie !== 0;
+      seenCookie = t.cookieAt;
+      if (again && loaded) { frame.src = '/terminal/'; }
+    }
     lastConn = st.conn.status;
     requestAnimationFrame(setHeight);
   }

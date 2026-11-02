@@ -96,34 +96,55 @@ def _clean(line: str) -> str:
     return line.strip()
 
 
+# 따옴표 안의 말은 부탁이 아니라 인용이다(7단계 실측: 기능을 설명하는 글의 "실행해 주세요"가 부탁으로 잡혔다)
+_QUOTED = re.compile(r"\"[^\"\n]{0,120}\"|“[^”\n]{0,120}”|「[^」\n]{0,120}」")
+CUE_BEFORE, CUE_AFTER = 300, 150
+
+
+def _has_cue(msg: str, start: int, end: int) -> bool:
+    """명령 가까이(앞 300자 · 뒤 150자, 다른 코드 블록 · 인라인 코드 · 인용 빼고)에 부탁하는 말이 있나."""
+    win = msg[max(0, start - CUE_BEFORE):start] + " " + msg[end:end + CUE_AFTER]
+    win = _QUOTED.sub(" ", _INLINE.sub(" ", _FENCE.sub(" ", win)))
+    return CUE.search(win) is not None
+
+
 def find_requests(msg: str) -> list[str]:
-    """assistant 글에서 사람에게 부탁한 명령(사람이 쳐야 하는 것만). 부탁하는 말이 없으면 `! 명령` 꼴만 인정한다."""
+    """assistant 글에서 사람에게 부탁한 명령(사람이 쳐야 하는 것만). 그 명령 가까이에 부탁하는 말이 있어야 한다 —
+    `! 명령` 꼴은 그 자체가 부탁이다."""
     if not msg:
         return []
-    out: list[str] = []
-    bang: set[str] = set()
-    prose = _FENCE.sub(" ", msg)
+    found: list[tuple[int, str]] = []
 
-    def add(c: str, is_bang: bool = False) -> None:
+    def add(c: str, start: int, end: int, is_bang: bool = False) -> None:
         c = _clean(c)
-        if c and not c.startswith("#") and len(c) <= 500 and HUMAN_CMD.search(c) and c not in out:
-            out.append(c)
-        if is_bang and c:
-            bang.add(c)
+        if not c or c.startswith("#") or len(c) > 500 or not HUMAN_CMD.search(c):
+            return
+        if is_bang or _has_cue(msg, start, end):
+            found.append((start, c))
 
+    fences = []
     for m in _FENCE.finditer(msg):
+        fences.append((m.start(), m.end()))
         if m.group(1).lower() not in _SHELL_LANGS:
             continue
         body = re.sub(r"\\\n\s*", " ", m.group(2))     # 줄 이음
         for line in body.splitlines():
-            add(line, line.strip().startswith("!"))
-    for m in _INLINE.finditer(prose):
-        add(m.group(1), m.group(1).strip().startswith("!"))
-    for m in _BANG_LINE.finditer(prose):
-        add(m.group(1).strip("`"), True)
-    if CUE.search(prose):
-        return out
-    return [c for c in out if c in bang]
+            add(line, m.start(), m.end(), line.strip().startswith("!"))
+
+    def in_fence(i: int) -> bool:
+        return any(a <= i < b for a, b in fences)
+
+    for m in _INLINE.finditer(msg):
+        if not in_fence(m.start()):
+            add(m.group(1), m.start(), m.end(), m.group(1).strip().startswith("!"))
+    for m in _BANG_LINE.finditer(msg):
+        if not in_fence(m.start()):
+            add(m.group(1).strip("`"), m.start(), m.end(), True)
+    out: list[str] = []
+    for _, c in sorted(found, key=lambda x: x[0]):
+        if c not in out:
+            out.append(c)
+    return out
 
 
 # ── 미리 채우기 — 비밀번호 자리는 비우고 커서를 거기에 ──────────────

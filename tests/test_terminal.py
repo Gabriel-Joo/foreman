@@ -50,6 +50,20 @@ def test_find_ignores_without_cue_or_human_command():
     assert find_requests("실행해 주세요\n```python\nos.system('sudo reboot')\n```") == []
 
 
+def test_find_ignores_feature_description():
+    # 7단계 실측: 기능을 설명한 보고가 부탁으로 잡혀 셸에 `echo 값 | sudo -S`가 채워졌다.
+    # 부탁하는 말은 따옴표 안(인용)이었고, 명령과 멀리 떨어져 있었다
+    msg = ("- **기록:** 마스킹 대상: `--password 값`, `echo 값 | sudo -S`, URL에 든 `user:암호@`.\n"
+           "- **셸은 캐릭터로 안 보입니다:** `character_session.type='shell'`.\n"
+           "- **부탁 감지:** 턴이 끝나면 아래 세 조건을 봅니다.\n"
+           "  - sudo, ssh-add, docker login처럼 사람이 쳐야 하는 명령\n"
+           "  - \"실행해 주세요\" 같은 부탁하는 말\n")
+    assert find_requests(msg) == []
+    assert find_requests('"이 명령 실행해 주세요" 감지: `sudo true`') == []
+    # 멀리 떨어진 부탁은 그 명령의 부탁이 아니다
+    assert find_requests("`sudo a b`" + "가" * 400 + " 다음을 실행해 주세요: `ls`") == []
+
+
 def test_find_multiple_and_comments():
     msg = "실행해 주세요.\n```bash\n# 먼저\n$ sudo systemctl stop a\nsudo systemctl start b\n```"
     assert find_requests(msg) == ["sudo systemctl stop a", "sudo systemctl start b"]
