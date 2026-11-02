@@ -40,6 +40,12 @@ def bash(cmd, **kw):
     ("cat .env.telegram", "민감한-경로"),
     ("grep TOKEN ./.env", "민감한-경로"),
     ("kubectl $VERB -f x.yaml", "애매한-운영명령"),
+    # git -C · -c 다음은 값 — 그 뒤가 동사 자리(11-03 오탐 고침). 동사가 변수면 그대로 묻는다
+    ('git -C "$d" $VERB', "애매한-운영명령"),
+    ("git -c core.x=1 -C $d `cmd`", "애매한-운영명령"),
+    ("git $VERB", "애매한-운영명령"),
+    ("git -C $x", "애매한-운영명령"),            # 따옴표 없는 $x가 "경로 push --force"로 쪼개질 수 있다
+    ("for r in a b; do git -C $r; done", "애매한-운영명령"),
     ("rm /etc/hosts", "작업트리-밖-삭제"),
     ("rm ~/notes.txt", "작업트리-밖-삭제"),
     ("cd /tmp && rm x.log", "작업트리-밖-삭제"),
@@ -193,6 +199,11 @@ TOKEN_HDR = ("curl -s -H @<(printf 'Authorization: Bearer %s\\n' \"$(sed -n 's/^
     "python -m py_compile deploy/cicd/harbor-webhook.py",
     TOKEN_HDR.format(opts="", url="http://127.0.0.1:8000/api/pipeline"),  # 값은 로컬로 가는 헤더로만
     TOKEN_HDR.format(opts="-X POST ", url="http://192.168.122.1:8001/webhooks/jenkins"),
+    # git -C · -c 다음은 값(경로), 동사는 고정 — 11-03 오탐
+    "for r in runshoes petmint-rag-chatbot; do git -C $r log --oneline -1 -- Jenkinsfile; done",
+    'git -C "$D" status --short',
+    "git -c color.ui=never -C $repo diff --stat",
+    "git --git-dir=$G log -1",
 ])
 def test_text_not_execution_wider(cmd):
     r = bash(cmd)
