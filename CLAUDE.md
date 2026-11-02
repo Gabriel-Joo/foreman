@@ -14,7 +14,7 @@
 - **sudo가 필요한 명령은 직접 치지 않고 사용자에게 한 줄로 알린다**(비대화형 sudo 불가). 쳤다고 하면 journal 등으로 실제 실행 여부를 확인한다 — 11-02에 "쳤다"는 명령이 실제로는 실행되지 않은 적이 있다
 - **브리프 실행과 기록은 분리한다.** 브리프가 "파일을 고치지 마라 / 채팅으로만"이라고 하면 실행 중에는 채팅으로만 보고하고, `log/` 기록 · README 반영은 사용자가 시킬 때 한다
 - 브리프는 `docs/NN_<이름>.md`, 실행 결과는 `log/NN_<이름>_result.md`. 결과에는 한 일 · 조사 결과 · 설계와 달랐던 점 · 판단 근거만 쓰고 브리프를 재서술하지 않는다. 브리프가 아닌 서버 작업 기록은 `log/infra_<날짜>_<주제>.md`. 브리프 없이 진행한 로드맵 단계의 결과는 `log/stage<N>_<이름>_result.md`(예: `stage1_bridge_db_result.md`) — 쓰는 내용은 브리프 결과와 같다
-- 커밋 · push는 사용자가 시킬 때. git 원격은 GitHub(`Gabriel-Joo/foreman`)만. GitLab은 로드맵 9단계에서 FOREMAN을 CI/CD에 태울 때 추가한다
+- 커밋 · push는 사용자가 시킬 때. git 원격은 GitHub(`Gabriel-Joo/foreman`)만. GitLab은 로드맵 8단계(CI/CD — 11-02에 9단계와 순서를 바꿈)에서 FOREMAN을 CI/CD에 태울 때 추가한다
 - **다른 저장소(runshoes · petmint-rag-chatbot · ronanlab-infra)는 사용자가 시킬 때만 고치고, 그 저장소의 CLAUDE.md를 따른다**(알림 접두어 · 토큰 파일이 저장소마다 따로다)
 - **비밀값을 화면 · 로그 · 커밋에 내지 않는다**: `.env*`, `~/.claude/.credentials.json`, `~/.claude/sessions/*.key`(세션 간 통신 토큰 — 11-02 조사 때 한 번 출력에 찍혔다). 값이 필요 없으면 키 이름만 본다
 
