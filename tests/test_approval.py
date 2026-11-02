@@ -98,6 +98,20 @@ def test_heredoc_written_to_file_is_not_executed():
     assert bash(f"tee docs/y.md <<'EOF' >/dev/null\n{DANGER_TEXT}EOF").verdict != "ask"
 
 
+def test_text_sinks_are_not_executed():
+    """커밋 · 태그 · 노트 · PR 본문 — 텍스트로 저장만 된다(실측: git commit -F - 본문의 글자로 승인 창)."""
+    assert bash(f"git add -A && git commit -q -F - <<'EOF'\n{DANGER_TEXT}EOF\ngit log --oneline -1").verdict != "ask"
+    assert bash(f"git tag -a v1 -F - <<'EOF'\n{DANGER_TEXT}EOF").verdict != "ask"
+    assert bash(f"git notes add --file=- <<'EOF'\n{DANGER_TEXT}EOF").verdict != "ask"
+    assert bash(f"gh pr create --title x --body-file - <<'EOF'\n{DANGER_TEXT}EOF").verdict != "ask"
+
+
+def test_unquoted_heredoc_substitution_is_scanned():
+    """따옴표 없는 heredoc 본문의 $(…)는 셸이 실행한다 — 받는 쪽이 커밋이어도 검사한다."""
+    assert bash("git commit -F - <<EOF\nmsg $(rm -rf ~/x)\nEOF").verdict == "ask"
+    assert bash("cat > notes.md <<EOF\n`rm -rf /x`\nEOF").verdict == "ask"
+
+
 def test_heredoc_into_interpreter_is_scanned():
     assert bash("bash <<'EOF'\nrm -rf ~/data\nEOF").verdict == "ask"
     assert bash("python3 - <<'EOF'\nimport os; os.system('rm -rf /x')\nEOF").verdict == "ask"
