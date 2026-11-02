@@ -30,6 +30,11 @@ REDIRECT = re.compile(r"^(\d*>>?|&>>?|<<?<?|\d*<&|\d*>&)$")
 SHELLS = ("bash", "sh", "zsh", "dash")
 SCRIPT_MAX = 256 * 1024
 # heredoc: <<EOF · <<'EOF' · <<-"EOF" … 본문 … EOF. 여는 줄(앞부분 포함)을 함께 잡아 무엇이 받는지 본다
+# heredoc을 텍스트로 저장만 하는 곳(파일 쓰기 cat > f · tee f 는 따로 — 쓰는 파일이 보호 파일인지 본다)
+TEXT_SINKS = [
+    re.compile(r"(^|\s)git\b.*\s(commit|tag|notes|merge)\b.*(\s-F\s*-|\s--file(=|\s+)-)(\s|$)"),
+    re.compile(r"(^|\s)gh\b.*\s(--body-file|-F)\s+-(\s|$)"),
+]
 HEREDOC = re.compile(r"(?P<line>[^\n]*?)<<-?\s*(['\"]?)(?P<tag>\w+)\2(?P<rest>[^\n]*)\n(?P<body>.*?)\n[ \t]*(?P=tag)\b", re.S)
 
 
@@ -264,8 +269,15 @@ def _strip_file_heredocs(cmd: str) -> tuple[str, list[str]]:
     written: list[str] = []
 
     def sub(m: re.Match[str]) -> str:
+        # 따옴표 없는 heredoc(<<EOF)은 본문의 $(…) · 백틱을 셸이 실행한다 — 그러면 받는 쪽과 무관하게 검사한다
+        quoted = bool(m.group(2))
+        if not quoted and re.search(r"\$\(|`", m.group("body")):
+            return m.group(0)
         line = m.group("line") + " " + m.group("rest")
         seg = re.split(r"&&|\|\||;", line)[-1] if "|" not in m.group("line").split("<<")[0][-3:] else line
+        if any(p.search(seg) for p in TEXT_SINKS):
+            # 커밋 · 태그 · 노트 · PR 본문 — 텍스트로 저장만 된다(실측: git commit -F - 본문의 글자로 승인 창)
+            return m.group("line") + "<<" + m.group("tag") + m.group("rest") + "\n" + m.group("tag")
         w = re.search(r"(?:^|[\s(])(cat|tee)\b(?P<args>[^|]*)$", seg.strip())
         if not w:
             return m.group(0)
