@@ -92,9 +92,9 @@ class Settings(BaseSettings):
     # 웹훅은 클러스터(libvirt VM)에서 온다 — 127.0.0.1에는 닿지 못하므로 virbr0(호스트 쪽 192.168.122.1)에 웹훅 전용 포트를 연다.
     # 그 포트는 /webhooks/*만 받고, 보낸 곳이 VM 망(아래 CIDR)이어야 하며, 토큰(FOREMAN_WEBHOOK_TOKEN — hook · API와 별개)이 필요하다
     foreman_webhook_token: SecretStr | None = None
-    # 11-02 보류: 실제 파이프라인은 폴링(Jenkins 2분 · ArgoCD 3분)이었다 — 읽기 조회로 다시 만든다(ArgoCD App of Apps 뒤).
-    # 그때까지 로컬 git 폴링 · 웹훅 포트(8001)는 끈다(log/stage8_cicd_result.md)
-    pipeline_enabled: bool = False
+    # 11-03 재개: Jenkins는 Jenkinsfile 알림(웹훅 포트 8001) + 토큰 없는 보정(로컬 git 폴링 → 빠진 알림 찾기).
+    # 끄면(False) 8001이 닫혀 Jenkinsfile curl은 바로 실패하고 || true — 빌드 영향 없음(log/stage8_cicd_result.md 되돌리기)
+    pipeline_enabled: bool = True
     pipeline_config: Path = REPO / "config" / "pipeline.toml"
     webhook_bind_host: str = "192.168.122.1"
     webhook_bind_port: int = 8001

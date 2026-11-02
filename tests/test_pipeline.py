@@ -16,8 +16,8 @@ from bridge.config import Settings
 from bridge.db.engine import make_engine
 from bridge.db.migrate import main as migrate_main
 from bridge.mask import Masker
-from bridge.pipeline import (PipelineManager, argocd_status, harbor_items, image_tag, jenkins_status, load_pipeline,
-                             commit_match, other_repo)
+from bridge.pipeline import (PipelineManager, argocd_status, build_cause, harbor_items, image_tag, jenkins_status,
+                             load_pipeline, commit_match, other_repo, watch_state, webhook_broken)
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -28,6 +28,25 @@ def test_jenkins_status():
     assert jenkins_status({"phase": "completed", "result": "SUCCESS"}) == ("success", None)
     assert jenkins_status({"phase": "completed", "result": "FAILURE", "stage": "빌드·push"}) == ("failed", "빌드·push")
     assert jenkins_status({"phase": "completed", "result": "ABORTED"})[0] == "failed"
+
+
+def test_build_cause_and_webhook_break():
+    assert build_cause({"cause": "webhook"}) == "webhook"
+    assert build_cause({"cause": "x"}) is None and build_cause({}) is None
+    # 새것부터. 웹훅으로 시작한 적이 있고, 최근 2번이 폴링 → 끊김
+    assert webhook_broken(["poll", "poll", "webhook"])
+    assert webhook_broken(["poll", "manual", "poll", "webhook"])          # 손으로 누른 것은 건너뛴다
+    assert not webhook_broken(["poll", "webhook", "poll"])                 # 연달아 2번이 아니다
+    assert not webhook_broken(["poll", "poll", "poll"])                    # 웹훅으로 시작한 적이 없다(아직 안 건 job)
+    assert not webhook_broken(["webhook", "poll", "poll", "webhook"])      # 다시 웹훅 — 복구
+    assert not webhook_broken([None, None, None])                          # 옛 빌드(원인 모름)
+
+
+def test_watch_state():
+    assert watch_state(30, 180, 1020) == "ok"
+    assert watch_state(180, 180, 1020) == "late"
+    assert watch_state(1019, 180, 1020) == "late"
+    assert watch_state(1020, 180, 1020) == "missing"
 
 
 def test_harbor_items():
@@ -225,5 +244,75 @@ async def test_chain_end_to_end(env):
         assert "Jenkins 빌드 · 빌드·push" in notifier.sent[-1][2]
         # 모르는 job은 건너뛴다
         assert "ignored" in await pm.on_jenkins({"job": "other", "number": 1})
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.db
+async def test_watch_missing_and_webhook_break(env):
+    """빠진 알림 찾기(토큰 없는 보정) — push 뒤 시작 알림이 없으면 알리고, 늦게 오면 한 번 더. 웹훅 끊김 · 복구."""
+    s, repo, conn = env
+    t0 = datetime.now(UTC).replace(tzinfo=None, microsecond=0) - timedelta(minutes=30)
+    c1 = _commit(repo, "a.txt", t0)
+    _git(repo, "update-ref", "refs/remotes/origin/main", c1)
+    engine = make_engine(s)
+    notifier = FakeNotifier()
+    pm = PipelineManager(engine, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+                         notifier)
+    try:
+        await pm.start(loops=False)
+        p = pm.rules.projects["runshoes"]
+        await pm.track_origin(p)
+        assert "runshoes" not in pm._pending                     # 처음 본 머리는 기준만
+        c2 = _commit(repo, "b.txt", t0 + timedelta(minutes=1))
+        _git(repo, "update-ref", "refs/remotes/origin/main", c2)
+        await pm.track_origin(p)
+        pend = pm._pending["runshoes"]
+        assert pend["head"] == c2
+        await pm.check_watch()
+        assert pend["state"] == "ok" and not notifier.sent
+        pend["at"] -= timedelta(minutes=4)
+        await pm.check_watch()
+        assert pend["state"] == "late" and not notifier.sent      # 3분: 화면만
+        pend["at"] -= timedelta(minutes=14)
+        await pm.check_watch()
+        await pm.check_watch()
+        assert pend["state"] == "missing" and len(notifier.sent) == 1 and "빌드 알림 없음" in notifier.sent[0][2]
+        snap = await pm.snapshot()
+        assert next(x for x in snap["projects"] if x["project"] == "runshoes")["watch"]["state"] == "missing"
+        # 늦게 도착 — 폴링이 잡은 빌드
+        await pm.on_jenkins({"job": "runshoes-app", "number": 10, "phase": "started", "commit": c2, "cause": "webhook"})
+        await pm.check_watch()
+        assert "runshoes" not in pm._pending and "늦게 도착" in notifier.sent[-1][2]
+
+        # 머리의 자손을 빌드해도 채워진 것으로 본다(커밋 여럿이 한 빌드)
+        c3 = _commit(repo, "c.txt", t0 + timedelta(minutes=2))
+        _git(repo, "update-ref", "refs/remotes/origin/main", c3)
+        await pm.track_origin(p)
+        c4 = _commit(repo, "d.txt", t0 + timedelta(minutes=3))
+        await pm.on_jenkins({"job": "runshoes-app", "number": 11, "phase": "completed", "result": "SUCCESS", "commit": c4,
+                             "cause": "poll"})
+        await pm.check_watch()
+        assert "runshoes" not in pm._pending
+        n = len(notifier.sent)
+        # 웹훅 끊김: 웹훅으로 시작한 적이 있고 폴링이 연달아 2번 → 한 번 알림, 웹훅으로 돌아오면 복구
+        await pm.on_jenkins({"job": "runshoes-app", "number": 12, "phase": "started", "commit": c4, "cause": "poll"})
+        assert len(notifier.sent) == n + 1 and "웹훅 끊김" in notifier.sent[-1][2]
+        await pm.on_jenkins({"job": "runshoes-app", "number": 12, "phase": "completed", "result": "SUCCESS",
+                             "commit": c4, "cause": "poll"})
+        await pm.on_jenkins({"job": "runshoes-app", "number": 13, "phase": "started", "commit": c4, "cause": "poll"})
+        assert len(notifier.sent) == n + 1                        # 같은 상태는 다시 안 알린다
+        await pm.on_jenkins({"job": "runshoes-app", "number": 14, "phase": "started", "commit": c4, "cause": "webhook"})
+        assert "웹훅 복구" in notifier.sent[-1][2]
+        # 시작은 왔는데 35분 넘게 끝 알림 없음 — 한 번만
+        old = int((datetime.now(UTC) - timedelta(minutes=40)).timestamp() * 1000)
+        await pm.on_jenkins({"job": "runshoes-app", "number": 15, "phase": "started", "commit": c4, "cause": "webhook",
+                             "timestamp": old})
+        k = len(notifier.sent)
+        await pm.check_watch()
+        await pm.check_watch()
+        ends = [m for _, _, m in notifier.sent[k:] if "끝 알림 없음" in m]
+        assert len(ends) >= 1 and any("runshoes-app#15" in m for m in ends)
+        assert len([m for m in ends if "#15" in m]) == 1
     finally:
         await engine.dispose()

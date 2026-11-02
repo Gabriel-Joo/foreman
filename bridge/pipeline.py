@@ -70,6 +70,11 @@ class PipeRules:
     stale_after: int = 3
     retire_after_h: float = 24
     ingress: str = "http://192.168.122.240"
+    # 빠진 알림 찾기(11-03) — push 뒤 시작 알림이 없으면 warn_s에 화면 노란색, alert_s에 텔레그램. 시작했는데 끝 알림이 없으면 end_s
+    watch_warn_s: float = 180
+    watch_alert_s: float = 1020
+    watch_end_s: float = 2100
+    hook_break_after: int = 2
     infra: dict[str, InfraDef] = field(default_factory=dict)
     projects: dict[str, PipeProject] = field(default_factory=dict)
 
@@ -79,10 +84,12 @@ class PipeRules:
 
 def load_pipeline(path: str | Path) -> PipeRules:
     raw = tomllib.loads(Path(path).read_text(encoding="utf-8"))
-    g, i = raw.get("git", {}), raw.get("infra", {})
+    g, i, w = raw.get("git", {}), raw.get("infra", {}), raw.get("watch", {})
     r = PipeRules(git_poll_s=g.get("poll_s", 20), attribute_window_s=g.get("attribute_window_s", 300),
                   infra_poll_s=i.get("poll_s", 60), stale_after=i.get("stale_after", 3),
-                  retire_after_h=i.get("retire_after_h", 24), ingress=i.get("ingress", "http://192.168.122.240"))
+                  retire_after_h=i.get("retire_after_h", 24), ingress=i.get("ingress", "http://192.168.122.240"),
+                  watch_warn_s=w.get("started_warn_s", 180), watch_alert_s=w.get("started_alert_s", 1020),
+                  watch_end_s=w.get("completed_alert_s", 2100), hook_break_after=w.get("webhook_break_after", 2))
     for k in STAGES:
         d = i.get(k)
         if isinstance(d, dict):
@@ -124,6 +131,28 @@ def jenkins_status(body: dict[str, Any]) -> tuple[str, str | None]:
     if result == "SUCCESS":
         return "success", None
     return "failed", (body.get("stage") or None)
+
+
+def build_cause(body: dict[str, Any]) -> str | None:
+    """Jenkinsfile foremanNotify가 보내는 빌드 원인: webhook(GitHubPushCause) · poll(SCMTrigger) · manual · other."""
+    c = str(body.get("cause") or "").lower()
+    return c if c in ("webhook", "poll", "manual", "other") else None
+
+
+def watch_state(elapsed_s: float, warn_s: float, alert_s: float) -> str:
+    """push 뒤(앞 빌드가 끝난 뒤) 시작 알림 없이 지난 시간 → ok · late(화면 노란색) · missing(텔레그램)."""
+    if elapsed_s >= alert_s:
+        return "missing"
+    if elapsed_s >= warn_s:
+        return "late"
+    return "ok"
+
+
+def webhook_broken(causes: list[str | None], n: int = 2) -> bool:
+    """최근 빌드 원인(새것부터). 웹훅으로 시작한 빌드가 있던 job에서 폴링 원인이 연달아 n번 — 웹훅이 끊긴 것으로 본다.
+    손으로 누른 빌드(manual)는 건너뛴다(웹훅과 무관)."""
+    seq = [c for c in causes if c in ("webhook", "poll")]
+    return len(seq) > n and all(c == "poll" for c in seq[:n]) and "webhook" in seq[n:]
 
 
 def harbor_items(body: dict[str, Any]) -> list[dict[str, Any]]:
@@ -221,6 +250,11 @@ class PipelineManager:
         self._tasks: list[asyncio.Task[None]] = []
         self._fails: dict[int, int] = {}
         self._lock = asyncio.Lock()
+        # 빠진 알림 찾기 — 메모리 상태(브리지를 다시 띄우면 지금 origin 머리부터 다시 잰다)
+        self._origin: dict[str, str] = {}                 # 프로젝트 → 마지막으로 본 origin/<브랜치>
+        self._pending: dict[str, dict[str, Any]] = {}     # 프로젝트 → {head, short, subject, at, state, alerted}
+        self._end_alerted: set[int] = set()               # 끝 알림 없음을 알린 build id
+        self._hook_broken: dict[str, bool] = {}
 
     # ── 수명 ──
     async def start(self, loops: bool = True) -> None:
@@ -234,7 +268,8 @@ class PipelineManager:
             del self.rules.projects[name]
         if loops:
             self._tasks = [asyncio.create_task(self._loop(self.scan_all, self.rules.git_poll_s), name="foreman-git"),
-                           asyncio.create_task(self._loop(self.poll_infra, self.rules.infra_poll_s), name="foreman-infra")]
+                           asyncio.create_task(self._loop(self.poll_infra, self.rules.infra_poll_s), name="foreman-infra"),
+                           asyncio.create_task(self._loop(self.check_watch, 30), name="foreman-watch")]
 
     async def stop(self) -> None:
         for t in self._tasks:
@@ -291,8 +326,114 @@ class PipelineManager:
         for p in self.rules.projects.values():
             try:
                 await self.scan_git(p)
+                await self.track_origin(p)
             except Exception as e:  # noqa: BLE001
                 log.warning("git 폴링 실패 %s: %s: %s", p.name, type(e).__name__, str(e)[:200])
+
+    # ── 빠진 알림 찾기(토큰 없는 보정) ──
+    async def track_origin(self, p: PipeProject) -> None:
+        """origin/<브랜치>가 움직였으면(이 서버에서 push · fetch) 빌드 시작 알림을 기다린다. 처음 본 머리는 기준만 잡는다."""
+        if not p.jenkins_job:
+            return
+        head = (await self.git(p.repo, "rev-parse", "--verify", "--quiet", f"origin/{p.branch}")).strip()
+        if not SHA_RE.match(head):
+            return
+        prev = self._origin.get(p.name)
+        self._origin[p.name] = head
+        if prev is None or prev == head:
+            return
+        subject = (await self.git(p.repo, "log", "-1", "--format=%s", head)).strip()
+        old = self._pending.get(p.name)
+        self._pending[p.name] = {"head": head, "short": head[:8], "subject": (self.mask.text(subject) or "")[:200],
+                                 "at": _now(), "state": "ok", "alerted": bool(old and old.get("alerted"))}
+        log.info("push 감지 %s %s — 빌드 시작 알림을 기다린다", p.name, head[:8])
+        self._changed(p.name)
+
+    async def _covered(self, p: PipeProject, head: str, since: datetime) -> bool:
+        """push 머리 H를 담은 Jenkins 빌드 알림이 왔나 — 머리가 H이거나, 묶인 커밋에 H가 있거나, 머리가 H의 자손."""
+        async with self.engine.connect() as c:
+            rows = (await c.execute(text(
+                "SELECT b.commit_sha, EXISTS(SELECT 1 FROM build_commit bc WHERE bc.build_id = b.id AND bc.commit_sha = :h) "
+                "FROM build b WHERE b.project_id = :p AND b.stage = 'jenkins' AND b.started_at >= :t "
+                "AND b.commit_sha IS NOT NULL ORDER BY b.id DESC LIMIT 10"),
+                {"p": p.project_id, "h": head, "t": since - timedelta(minutes=2)})).all()
+        for sha, linked in rows:
+            if sha == head or linked:
+                return True
+            try:
+                await self.git(p.repo, "merge-base", "--is-ancestor", head, sha)
+                return True
+            except RuntimeError:
+                continue
+        return False
+
+    async def check_watch(self) -> None:
+        now = _now()
+        for p in self.rules.projects.values():
+            if not p.jenkins_job:
+                continue
+            # 시작은 왔는데 끝 알림이 없는 빌드
+            async with self.engine.connect() as c:
+                rows = (await c.execute(text(
+                    "SELECT id, external_id, started_at, log_url FROM build WHERE project_id = :p AND stage = 'jenkins' "
+                    "AND status = 'running' AND started_at < :t"),
+                    {"p": p.project_id, "t": now - timedelta(seconds=self.rules.watch_end_s)})).all()
+                busy = (await c.execute(text(
+                    "SELECT MAX(COALESCE(ended_at, :n)) FROM build WHERE project_id = :p AND stage = 'jenkins' "
+                    "AND started_at >= :t"), {"p": p.project_id, "n": now, "t": now - timedelta(hours=1)})).scalar()
+            for bid, ext, started, url in rows:
+                if bid not in self._end_alerted:
+                    self._end_alerted.add(bid)
+                    mins = int((now - started).total_seconds() // 60)
+                    self._send(p, f"⚠ 빌드 끝 알림 없음 — {ext} 시작 뒤 {mins}분째 끝 알림이 없다. Jenkins 확인"
+                                  f"{chr(10) + str(url) if url else ''}")
+            pend = self._pending.get(p.name)
+            if not pend:
+                continue
+            if await self._covered(p, pend["head"], pend["at"]):
+                if pend["alerted"]:
+                    mins = int((now - pend["at"]).total_seconds() // 60)
+                    self._send(p, f"✅ 빌드 알림 늦게 도착 — push {pend['short']} 뒤 {mins}분")
+                del self._pending[p.name]
+                self._changed(p.name)
+                continue
+            # 앞 빌드가 아직 돌거나 방금 끝났으면 그때부터 잰다(disableConcurrentBuilds — 줄 서 있다)
+            base = max(pend["at"], busy) if busy else pend["at"]
+            state = watch_state((now - base).total_seconds(), self.rules.watch_warn_s, self.rules.watch_alert_s)
+            if state != pend["state"]:
+                pend["state"] = state
+                self._changed(p.name)
+            if state == "missing" and not pend["alerted"]:
+                pend["alerted"] = True
+                mins = int((now - pend["at"]).total_seconds() // 60)
+                self._send(p, f"⚠ 빌드 알림 없음 — push {pend['short']} \"{pend['subject'][:80]}\" 뒤 {mins}분째 "
+                              f"Jenkins 시작 알림이 없다. Jenkins 확인\nhttps://jenkins.ronanlab.dev/job/{p.jenkins_job}/")
+
+    async def _check_hook(self, p: PipeProject) -> None:
+        """새 빌드마다 — 최근 빌드 원인으로 웹훅 끊김 · 복구를 판단한다(바뀔 때 한 번 알린다)."""
+        async with self.engine.connect() as c:
+            causes = [r[0] for r in (await c.execute(text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(payload, '$.cause')) FROM build WHERE project_id = :p "
+                "AND stage = 'jenkins' ORDER BY id DESC LIMIT 30"), {"p": p.project_id})).all()]
+        broken = webhook_broken(causes, self.rules.hook_break_after)
+        was = self._hook_broken.get(p.name, False)
+        if broken and not was:
+            self._send(p, f"⚠ 웹훅 끊김 의심 — {p.jenkins_job} 최근 {self.rules.hook_break_after}번이 폴링으로 시작했다"
+                          f"(웹훅이면 몇 초, 폴링은 최대 15분). GitHub 웹훅 Recent Deliveries · Cloudflare Bypass 확인")
+        elif was and causes and causes[0] == "webhook":
+            self._send(p, f"✅ 웹훅 복구 — {p.jenkins_job} 빌드가 다시 웹훅으로 시작했다")
+            broken = False
+        self._hook_broken[p.name] = broken
+        if broken != was:
+            self._changed(p.name)
+
+    def _send(self, p: PipeProject, msg: str) -> None:
+        log.warning("파이프라인 알림 %s: %s", p.name, msg.splitlines()[0])
+        if self.notifier is None:
+            return
+        rule = self.notifier.rules.for_project(p.name)
+        if rule is not None:
+            self.notifier.send_direct(p.name, "pipeline", None, f"{rule.prefix} {msg}")
 
     async def scan_git(self, p: PipeProject, since_days: int = 7) -> int:
         """새 커밋 · push를 찾는다. 돌려주는 값: 새로 본 커밋 수."""
@@ -465,9 +606,12 @@ class PipelineManager:
         msg = self.mask.text(str(body.get("message") or "")[:2000]) or None
         bid, prev = await self._upsert(p, "jenkins", f"{job}#{number}", head, head[:12] if head else None, status, step,
                                        _ts(body.get("timestamp")), body.get("url"), msg, infra,
-                                       {k: body.get(k) for k in ("phase", "result", "stage", "duration")})
+                                       {**{k: body.get(k) for k in ("phase", "result", "stage", "duration")},
+                                        "cause": build_cause(body)})
         if head and prev is None:
             await self._link_commits(p, bid, head)
+        if prev is None:
+            await self._check_hook(p)
         return {"build": bid, "status": status}
 
     async def on_harbor(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -641,7 +785,11 @@ class PipelineManager:
                     "AND NOT EXISTS (SELECT 1 FROM build b WHERE b.commit_sha = gc.sha) "
                     "AND gc.committed_at >= :t ORDER BY gc.committed_at DESC LIMIT 5"),
                     {"p": p.project_id, "t": _now() - timedelta(days=2)})).all()]
-                out.append({"project": p.name, "infra": infra, "chains": rows, "waiting": waiting})
+                pend = self._pending.get(p.name)
+                watch = {"state": pend["state"], "short": pend["short"], "subject": pend["subject"],
+                         "since": _iso(pend["at"])} if pend else None
+                out.append({"project": p.name, "infra": infra, "chains": rows, "waiting": waiting, "watch": watch,
+                            "webhook_broken": self._hook_broken.get(p.name, False)})
         return {"projects": out, "generated_at": _iso(_now())}
 
     async def _commits(self, c: Any, p: PipeProject, head: str) -> list[dict[str, Any]]:
