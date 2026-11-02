@@ -194,7 +194,7 @@ tmux send-keys -t <pane> Enter       # 제출
 | 종료 상황 | `turn_duration` | hook | 보완 신호 |
 |---|---|---|---|
 | 정상 종료 | 625/625 | Stop | — |
-| 사용자 중단(Esc) | 29건 중 15건만 | Stop 미발동 (공식 문서 기준) | 트랜스크립트 `[Request interrupted by user]` 줄 |
+| 사용자 중단(Esc) | 29건 중 15건만 | Stop 미발동 (4단계 실측) | 트랜스크립트 `[Request interrupted by user]` 줄 — **첫 응답 전에 누르면 이 줄도 없다**(아래) |
 | API 에러 | 2/2 | StopFailure (error, error_details) | — |
 | 세션 종료 (창 닫힘·exit) | 0/5 | SessionEnd (reason) | 프로세스 소멸 폴링 |
 | 턴 도중 auto-compact | 턴이 `compact_boundary`를 넘어 이어짐 | — | — |
@@ -202,6 +202,23 @@ tmux send-keys -t <pane> Enter       # 제출
 그래서 턴에 `end_reason`을 두고, **먼저 도착한 신호가 턴을 닫는다**(`closed_by`에 출처: transcript · hook · sweep). 시작은 UserPromptSubmit hook, 실시간 종료 트리거는 Stop / StopFailure / SessionEnd hook, 중단은 interrupt 마커, 비정상 소멸은 폴링이 맡는다. `turn_duration`은 소요시간(`durationMs`)과 사후 대조에 쓴다.
 
 **턴의 경계는 CC의 `promptId`다**(2단계 실측). 한 턴의 user 줄(프롬프트 · tool_result · 중단 표시 · compact 요약)이 모두 같은 `promptId`를 갖는다. 새 `promptId`를 가진 user 줄이 턴을 연다 — 사람 프롬프트만이 아니라 task-notification과 다른 세션의 메시지도 연다(`turn.origin`). 앞 턴이 안 닫힌 채 다음 턴이 열리면, 앞 턴에 모델 활동이 없었으면 `merged`(응답 없이 다음 입력과 함께 처리 — 실측 54건 전부), 있었으면 `no_signal`. 프로세스가 사라진 세션은 hook을 받던 세션이면 `process_lost`, 아니면 `session_end`. hook이 트랜스크립트보다 먼저 오는 경우(Stop이 마지막 응답 줄보다 먼저)는 늦게 온 줄을 직전 턴에 붙인다.
+
+#### Esc 중단은 흔적을 남긴다 — FOREMAN이 다루는 법
+
+CC에서 Esc로 중단하면 **Stop hook이 불리지 않는다**(4단계 실측). 이건 CC의 동작이라 FOREMAN이 바꿀 수 없다. 그래서 FOREMAN은 남는 흔적으로 판단한다.
+
+| 언제 눌렀나 | 트랜스크립트에 남는 것 | FOREMAN |
+|---|---|---|
+| 응답이 오는 도중 · 도구 실행 중 | `[Request interrupted by user]` 줄 | 그 줄로 바로 `interrupted`(텔레그램 `⏹ 중단됨`) |
+| **첫 응답이 오기 전**(프롬프트를 보내자마자) | 프롬프트 줄과 API 요청 줄뿐 — **중단 표시 줄도 없다** | 턴이 열린 채 남는다 → 아래 |
+
+실제로 있었던 일(2026-11-02): 펫퍼민트 창에 잘못 붙여넣고 바로 Esc. 턴이 10시간 열려 있었고, 대시보드에는 그 세션이 "작업 중"으로 보였다.
+
+열린 채 남은 턴은 이렇게 다룬다.
+1. **화면**: 세션의 상태는 CC가 직접 적는 상태(busy · idle)로 정한다. 열린 턴이 있어도 CC가 일하지 않으면 "작업 중"이 아니라 "대기"이고, 카드에 **"⚠ 끝 신호 없는 턴"**을 따로 표시한다
+2. **1시간 뒤 정리**: 프로세스는 살아 있는데 CC가 일하지 않고 그 턴이 1시간 넘게 조용하면 `abandoned`로 닫는다(정리 작업, 종료 시각은 마지막 활동 시각)
+3. **다음 입력이 오면**: 응답 없이 열려 있던 앞 턴은 다음 입력까지 1시간 안이면 `merged`(다음 입력과 함께 처리됨), 1시간 넘으면 `abandoned`(버려짐)
+4. **1시간인 이유**: 실측에서 진짜로 다음 입력과 합쳐진 턴은 66개 모두 56분 안이었다 — 1시간이면 그것을 잘못 닫지 않는다. 설정 `turn_abandon_s`
 
 턴이 닫히는 순간 브리지가 한 번에 처리한다:
 
@@ -534,7 +551,7 @@ CC에는 `/remote-control` 모드가 이미 존재한다. 세션 뷰어 구간�
 | prompt_uuid | varchar | 프롬프트 줄의 uuid |
 | prompt_text | text | 사용자 입력 (compact 요약 줄은 제외) |
 | started_at / ended_at | datetime | |
-| end_reason | enum | stop stop_failure interrupted session_end process_lost merged no_signal (3.2) |
+| end_reason | enum | stop stop_failure interrupted session_end process_lost merged no_signal abandoned (3.2) |
 | duration_ms | int nullable | `system/turn_duration`의 `durationMs` |
 | compacted | bool | 턴 도중 compact가 일어났나 |
 

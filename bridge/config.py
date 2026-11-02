@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     sweep_s: float = 30.0               # 프로세스가 사라진 세션의 열린 턴을 닫는 주기
     link_s: float = 30.0                # 서브에이전트 턴 연결 · 토큰 합계 주기
     idle_close_s: float = 60.0          # 프로세스가 없고 이만큼 조용하면 열린 턴을 닫는다
+    # 끝 신호 없이 버려진 턴(abandoned) — 응답 없는 열린 턴이 이만큼 조용하면(CC가 일하지 않을 때) 또는
+    # 다음 입력이 이만큼 뒤에 오면. 실측: 진짜로 다음 입력에 합쳐진 것(merged)은 최대 56분
+    turn_abandon_s: float = 3600.0
     subagent_stale_s: float = 1800.0    # running인데 이만큼 기록 · 끝 신호가 없으면 stale(옛 CC는 meta에 finished가 없다)
 
     # 4단계 — 텔레그램 알림(규칙은 config/notify.toml)

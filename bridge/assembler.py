@@ -34,6 +34,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from bridge.config import Settings
+from bridge.inject import _status
 from bridge.liveness import live_sessions
 from bridge.mask import Masker
 from bridge.models import clip_target
@@ -337,7 +338,17 @@ class Assembler:
                 st.remember(st.prompt_turns, pid, o.id, 256)
                 return o.id
         if st.open_turn:
-            await self._close_turn(c, st, b, "no_signal" if st.open_turn.active else "merged", st.last_ts or ts, by)
+            o = st.open_turn
+            last = st.last_ts or o.started_at
+            if o.active:
+                reason = "no_signal"
+            elif (ts - last).total_seconds() >= self.s.turn_abandon_s:
+                # 응답 없이 1시간 넘게 열려 있던 입력 — 다음 입력에 합쳐진 것이 아니라 버려진 것(Esc가 첫 응답 전에
+                # 눌리면 중단 표시 줄도 Stop hook도 남지 않는다 — 6단계 실측). 진짜 merged는 최대 56분(실측)
+                reason = "abandoned"
+            else:
+                reason = "merged"
+            await self._close_turn(c, st, b, reason, last if reason == "abandoned" else (st.last_ts or ts), by)
         st.seq += 1
         res = await c.execute(text(
             "INSERT INTO turn (session_id, seq, prompt_id, origin, prompt_uuid, prompt_text, started_at) "
@@ -812,6 +823,26 @@ class Assembler:
                             if pid != ls.pid or detached_at is not None:
                                 await c.execute(text("UPDATE character_session SET pid = :p, detached_at = NULL WHERE id = :id"),
                                                 {"p": ls.pid, "id": sess_id})
+                            # 프로세스는 살아 있는데 CC가 일하지 않고(busy 아님 · 정지 아님) 열린 턴이 1시간 넘게 조용하다 —
+                            # 끝 신호 없이 버려진 턴(Esc가 첫 응답 전에 눌린 경우 등). 마지막 활동 시각으로 닫는다
+                            if open_turn and ls.state != "T" and _status(self.s.sessions_dir, ls.pid) not in (None, "busy"):
+                                tlast = (await c.execute(text(
+                                    "SELECT COALESCE((SELECT MAX(e.ts) FROM event e WHERE e.turn_id = t.id), t.started_at) "
+                                    "FROM turn t WHERE t.id = :t"), {"t": open_turn})).scalar()
+                                if tlast and (now - tlast).total_seconds() >= self.s.turn_abandon_s:
+                                    res = await c.execute(text(
+                                        "UPDATE turn SET ended_at = GREATEST(:ts, started_at), end_reason = 'abandoned', "
+                                        "closed_by = 'sweep' WHERE id = :id AND ended_at IS NULL"), {"ts": tlast, "id": open_turn})
+                                    if res.rowcount:
+                                        closed += 1
+                                        self.stats.turns_closed["abandoned"] = self.stats.turns_closed.get("abandoned", 0) + 1
+                                        b.closed.append((sess_id, open_turn, "abandoned", "sweep", None))
+                                        b.turn_msgs.append({"type": "turn", "op": "close", "turn_id": open_turn,
+                                                            "session_id": sess_id, "reason": "abandoned", "by": "sweep",
+                                                            "ts": tlast.isoformat() + "Z"})
+                                        if (st_ := self.sessions.get(sid)) and st_.open_turn and st_.open_turn.id == open_turn:
+                                            st_.open_turn = None
+                                            st_.last_turn_id = open_turn
                             continue
                         quiet = last_ts is None or (now - last_ts).total_seconds() > idle
                         if not quiet:

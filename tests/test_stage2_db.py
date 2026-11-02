@@ -19,6 +19,46 @@ from bridge.mask import Masker
 from bridge.transcript.watcher import Watcher
 
 
+def _fake_live_session(sessions_dir, status):
+    """테스트 프로세스 자신을 살아 있는 CC로 꾸민다(procStart를 /proc에서 맞춘다)."""
+    import os
+    pid = os.getpid()
+    start = open(f"/proc/{pid}/stat").read().rsplit(") ", 1)[1].split()[19]
+    (sessions_dir / f"{pid}.json").write_text(json.dumps({"pid": pid, "sessionId": SID, "cwd": CWD,
+                                                         "procStart": start, "status": status}), encoding="utf-8")
+
+
+async def test_abandoned_when_next_prompt_comes_much_later(env):
+    """응답 없는 입력 뒤 다음 입력이 1시간 넘어 오면 merged가 아니라 abandoned(Esc가 첫 응답 전에 눌린 경우 등)."""
+    s, main = env
+    for p in (main.parent / SID / "subagents").iterdir():
+        p.unlink()
+    main.write_text("\n".join([
+        user(U(901), "a1", "잘못 붙여넣은 입력", origin={"kind": "human"}, ts="2026-10-01T00:00:00.000Z"),
+        user(U(902), "a2", "두 시간 뒤 입력", origin={"kind": "human"}, ts="2026-10-01T02:00:00.000Z"),
+        user(U(903), "a3", "곧바로 다음 입력", origin={"kind": "human"}, ts="2026-10-01T02:00:20.000Z"),
+    ]) + "\n", encoding="utf-8")
+    await run(s)
+    assert q(s, "SELECT prompt_id, end_reason FROM turn ORDER BY seq") == (
+        ("a1", "abandoned"), ("a2", "merged"), ("a3", None))
+    assert q(s, "SELECT ended_at FROM turn WHERE prompt_id = 'a1'")[0][0].hour == 0   # 마지막 활동 시각으로 닫는다
+
+
+async def test_sweep_abandons_idle_live_session_turn(env, tmp_path):
+    """프로세스는 살아 있는데 CC가 일하지 않고 열린 턴이 1시간 넘게 조용하면 정리 작업이 abandoned로 닫는다."""
+    s, main = env
+    for p in (main.parent / SID / "subagents").iterdir():
+        p.unlink()
+    main.write_text(user(U(911), "b1", "Esc로 바로 중단한 입력", origin={"kind": "human"}) + "\n", encoding="utf-8")
+    _fake_live_session(tmp_path / "sessions", "busy")
+    asm = await run(s)
+    assert await asm.sweep() == 0                                                  # CC가 일하는 중 — 닫지 않는다
+    _fake_live_session(tmp_path / "sessions", "idle")
+    assert await asm.sweep() == 1
+    assert q(s, "SELECT end_reason, closed_by FROM turn WHERE prompt_id = 'b1'") == (("abandoned", "sweep"),)
+    assert q(s, "SELECT detached_at FROM character_session")[0][0] is None          # 세션은 살아 있다
+
+
 async def test_session_title_from_ai_title(env):
     """6단계 — 세션을 알아보는 이름은 CC의 ai-title(대화가 흘러가며 바뀐다). 바뀔 때만 쓴다, 빈 칸은 채운다."""
     s, main = env
