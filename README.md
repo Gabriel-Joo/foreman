@@ -2,9 +2,9 @@
 
 > AI 코딩 에이전트가 만든 변경이 배포까지 가는 전 과정을, 브라우저 한 화면에서 보고 지시하는 관제실.
 
-🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. **로드맵 1단계 완료**([결과](log/stage1_bridge_db_result.md)), **2단계 완료**([결과](log/stage2_transcript_result.md)), **3단계 완료**([결과](log/stage3_inject_result.md) — hook은 사용자 설정에 설치), **4단계 완료**([결과](log/stage4_notify_result.md) — 텔레그램은 브리지가 보낸다), **5단계 완료**([결과](log/stage5_approval_result.md) — 승인 정책). 서버 PC 변경 기록은 [`log/`](log/)
+🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. **로드맵 1단계 완료**([결과](log/stage1_bridge_db_result.md)), **2단계 완료**([결과](log/stage2_transcript_result.md)), **3단계 완료**([결과](log/stage3_inject_result.md) — hook은 사용자 설정에 설치), **4단계 완료**([결과](log/stage4_notify_result.md) — 텔레그램은 브리지가 보낸다), **5단계 완료**([결과](log/stage5_approval_result.md) — 승인 정책), **6단계 완료**([결과](log/stage6_dashboard_result.md) — 대시보드 `/`). 서버 PC 변경 기록은 [`log/`](log/)
 
-**개발 중 접속**: 로드맵 0~5단계는 `ssh -L 8000:localhost:8000`으로 붙고, 6단계 이후에 Cloudflare Tunnel로 바꾼다. 코드는 바뀌지 않고 앞단만 바뀐다.
+**개발 중 접속**: 로드맵 0~5단계는 `ssh -L 8000:localhost:8000`으로 붙고, 6단계 이후에 Cloudflare Tunnel로 바꾼다. 코드는 바뀌지 않고 앞단만 바뀐다. 화면은 `http://localhost:8000/`(대시보드), 확인 · 디버그 페이지는 `/debug`.
 
 ---
 
@@ -667,7 +667,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 3 | send-keys 실측 선행 → 입력 → 왕복 완성 | ✅ **완료**(2026-11-02, [결과](log/stage3_inject_result.md)) — 방법 C 성립. `/` · `!`는 앞 공백으로 막음, 제출 확인, 바쁨은 대기열. 주입 대상은 tmux 안의 CC뿐(런슈즈 · 펫퍼민트는 0단계 이전 뒤) |
 | 4 | 텔레그램 이관 + 연결 끊김 표시 | ✅ **완료**(2026-11-02, [결과](log/stage4_notify_result.md)) — 런슈즈 · 펫퍼민트 · 포먼 실제 턴으로 확인 후 세 저장소의 CLAUDE.md 알림 절 · `scripts/notify-telegram.sh`를 정리. 턴 종료 → 전송 평균 3.3초 |
 | 5 | 승인 정책 엔진 | ✅ **완료**(2026-11-02, [결과](log/stage5_approval_result.md)) — 위험한 것은 ask · 확실한 것만 allow · 나머지는 CC에, 브라우저 · 텔레그램 · 터미널 승인, 모든 판정 기록. 런슈즈 · 펫퍼민트는 observe로 시작 |
-| 6 | 대시보드 (못생겨도 되는 실사용 UI) | 여기까지가 매일 쓸 수 있는 물건 |
+| 6 | 대시보드 (못생겨도 되는 실사용 UI) | ✅ **완료**(2026-11-02, [결과](log/stage6_dashboard_result.md)) — 프로젝트별 세션 상태 · 하는 일 · 대화 · 서브에이전트 · 승인 · 토큰, 입력 · 승인 · 끊김. 데이터(`static/js/store.js`)와 그리기(`render.js`)를 나눠 10단계에서 그리기만 바꾼다. 여기까지가 매일 쓸 수 있는 물건 |
 | 7 | 터미널 패널 (ttyd) + 명령 자동 채우기 | |
 | 8 | LLM 지표 + 병목 시각화 | AI 인프라 축 |
 | 9 | CI/CD 웹훅 + 인과 체인 + 파이프라인 구역 | 차별점. FOREMAN 자체를 CI/CD에 태울 때 수집부(호스트) · API/UI(파드) 분리를 다시 본다(3.12) |
@@ -721,3 +721,4 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | [stage3_inject_result.md](log/stage3_inject_result.md) | hook 설치(실행 중 세션도 다시 읽음 — 실측) + 로드맵 3단계(입력 주입) 결과 — 방법 C 실측표, 첫 글자 · 제출 확인 · 대기열, 거부 경로 |
 | [stage4_notify_result.md](log/stage4_notify_result.md) | 로드맵 4단계(텔레그램 브리지 이관 + 연결 끊김 표시) 결과 — 규칙 · 묶음, 실세션 검증, 서브에이전트 결과 전달 판별, 옛 경로 정리 |
 | [stage5_approval_result.md](log/stage5_approval_result.md) | 로드맵 5단계(승인 정책 엔진) 결과 — auto mode 실측(hook 판정 · 승인 창 · 터미널과 경주), 과거 데이터 모의 실험, 규칙 조정 |
+| [stage6_dashboard_result.md](log/stage6_dashboard_result.md) | 승인 규칙 좁히기(되돌릴 수 없는 것만, 실행과 글자) + 로드맵 6단계(대시보드) 결과 |
