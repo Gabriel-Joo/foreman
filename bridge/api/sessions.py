@@ -46,7 +46,8 @@ async def list_sessions(request: Request) -> list[dict[str, Any]]:
             "SELECT cs.id, cs.cc_session_id, cs.cwd, p.name, ch.name, "
             "(SELECT t.id FROM turn t WHERE t.session_id = cs.id AND t.ended_at IS NULL ORDER BY t.seq DESC LIMIT 1) "
             "FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
-            "LEFT JOIN project p ON p.id = ch.project_id WHERE cs.detached_at IS NULL ORDER BY cs.id"))).all()
+            "LEFT JOIN project p ON p.id = ch.project_id WHERE cs.detached_at IS NULL AND cs.type = 'agent' "
+            "ORDER BY cs.id"))).all()
     out = []
     for sid, cc, cwd, project, char, open_turn in rows:
         ls = live.get(cc or "")

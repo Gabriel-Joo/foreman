@@ -3,6 +3,10 @@
 # 견본은 커밋한다
 !.env*.example
 
+# 내려받은 도구(ttyd 등)와 실행 중에 생기는 소켓
+.tools/
+.run/
+
 # 파이썬
 .venv/
 __pycache__/
