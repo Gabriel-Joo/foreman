@@ -16,6 +16,7 @@ from bridge.bus import Pipeline
 from bridge.config import Settings, get_settings
 from bridge.db.engine import make_engine
 from bridge.mask import Masker
+from bridge.notify import Notifier, default_telegram, load_rules
 from bridge.store import Store
 from bridge.transcript.watcher import Watcher
 
@@ -35,11 +36,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.store = store
         app.state.pipeline = pipeline
         pipeline.start()
-        app.state.assembler = app.state.watcher = None
+        app.state.assembler = app.state.watcher = app.state.notifier = None
         watch_task = None
         if s.watch_enabled:
             asm = Assembler(engine, s, Masker(), publish=pipeline.publish)
             await asm.load()
+            if s.notify_enabled:
+                rules = load_rules(s.notify_config)
+                notifier = Notifier(engine, rules, default_telegram(rules), Masker())
+                notifier.start()
+                n = await notifier.baseline()
+                log.info("알림 기준선: 이미 끝난 서브에이전트 %d개를 알린 것으로", n)
+                asm.on_turn_closed = notifier.on_turn_closed
+                asm.on_subagents_changed = notifier.on_subagents_changed
+                app.state.notifier = notifier
+                log.info("알림 켬: %s", ", ".join(f"{k}{v.prefix}" for k, v in rules.projects.items()))
             watcher = Watcher(s, asm)
             app.state.assembler, app.state.watcher = asm, watcher
             watch_task = asyncio.create_task(watcher.run(), name="foreman-watcher")
@@ -48,6 +59,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            if app.state.notifier:
+                await app.state.notifier.stop()
             if watch_task:
                 watch_task.cancel()
                 try:

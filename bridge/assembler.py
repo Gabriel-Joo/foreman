@@ -26,7 +26,7 @@ import re
 import uuid as uuidlib
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +47,7 @@ AGENT_MSG = "Another Claude session sent a message"
 TEXT_CLIP = 2000      # tool_use 입력의 문자열 하나
 PREVIEW = 500         # 큐 · 알림 미리보기
 ERR_PREVIEW = 300     # 오류 tool_result 앞부분
+FROM_RE = re.compile(r'<agent-message from="([^"]+)"')
 TAG_RE = re.compile(r"<(task-id|tool-use-id|status|summary|subagent_tokens|tool_uses|duration_ms)>(.*?)</\1>", re.S)
 NOTIF_STATUS = {"completed": "done", "failed": "failed", "killed": "stopped", "stopped": "stopped", "cancelled": "stopped"}
 
@@ -135,6 +136,8 @@ class Batch:
     events: list[dict[str, Any]] = field(default_factory=list)
     messages: dict[str, dict[str, Any]] = field(default_factory=dict)
     turn_msgs: list[dict[str, Any]] = field(default_factory=list)  # WS로 낼 턴 열기·닫기
+    closed: list[tuple[int, int, str, str, str | None]] = field(default_factory=list)  # 커밋 뒤 알림(세션, 턴, 이유, 출처, 메모)
+    subs_done: set[int] = field(default_factory=set)  # 커밋 뒤 묶음 판정할 세션(서브에이전트가 끝났다)
 
 
 @dataclass
@@ -165,6 +168,9 @@ class Assembler:
         self.projects: list[tuple[str, int, str, int]] = []  # (repo_path, project_id, name, 포먼 character_id)
         self.unassigned_char: int | None = None
         self.stats = Stats()
+        # 턴이 닫힌 직후 부르는 함수(session_id, turn_id, reason, by, note) — 4단계 알림. 실시간 모드에서만
+        self.on_turn_closed: Any = None
+        self.on_subagents_changed: Any = None  # (session_id) — 서브에이전트가 끝났다
 
     # ── 시작 ────────────────────────────────────────────────
     async def load(self) -> None:
@@ -267,6 +273,7 @@ class Assembler:
                    spawn_turn: int | None = None, info: dict[str, Any] | None = None) -> SubState:
         """agent_id로 subagent_run을 찾거나 만든다. 부모 tool_result에서 오면 spawn_turn을 채운다."""
         sub = self.subs.get(agent_id)
+        created = False
         if sub is None:
             r = (await c.execute(text("SELECT id, session_id, spawn_turn_id FROM subagent_run WHERE agent_id = :a"),
                                  {"a": agent_id})).first()
@@ -288,7 +295,16 @@ class Assembler:
                      "depth": info.get("spawn_depth") or 1, "desc": (info.get("description") or "")[:512] or None,
                      "status": info.get("status") or "running"})
                 sub = SubState(res.lastrowid, st.id, spawn_turn)
+                created = True
             self.subs[agent_id] = sub
+        if not created and info and (info.get("description") or info.get("agent_type") or tool_use_id):
+            # hook(SubagentStart)이 트랜스크립트보다 먼저 행을 만들면 설명 · 종류가 비어 있다 — 뒤에 온 정보로 채운다(4단계 실측)
+            await c.execute(text(
+                "UPDATE subagent_run SET description = COALESCE(description, :desc), "
+                "agent_type = IF(agent_type = 'unknown' AND :type IS NOT NULL, :type, agent_type), "
+                "tool_use_id = IF(tool_use_id = '' AND :tu IS NOT NULL, :tu, tool_use_id) WHERE id = :id"),
+                {"desc": (info.get("description") or "")[:512] or None, "type": info.get("agent_type"),
+                 "tu": tool_use_id, "id": sub.id})
         if spawn_turn is not None and sub.spawn_turn_id is None:
             await c.execute(text(
                 "UPDATE subagent_run SET spawn_turn_id = :t, tool_use_id = IF(tool_use_id = '', :tu, tool_use_id) "
@@ -334,7 +350,7 @@ class Assembler:
         return tid
 
     async def _close_turn(self, c: AsyncConnection, st: SessionState, b: Batch, reason: str, ts: datetime, by: str,
-                          *, turn_id: int | None = None, duration: int | None = None) -> int | None:
+                          *, turn_id: int | None = None, duration: int | None = None, note: str | None = None) -> int | None:
         tid = turn_id or (st.open_turn.id if st.open_turn else None)
         if tid is None:
             return None
@@ -346,6 +362,7 @@ class Assembler:
             self.stats.turns_closed[reason] = self.stats.turns_closed.get(reason, 0) + 1
             b.turn_msgs.append({"type": "turn", "op": "close", "turn_id": tid, "session_id": st.id, "reason": reason,
                                 "by": by, "project": st.project, "ts": ts.isoformat() + "Z"})
+            b.closed.append((st.id, tid, reason, by, note))  # 커밋 뒤에 알린다 — 트랜잭션 안에서 부르면 닫히기 전을 읽는다
         elif duration is not None:  # 이미 다른 신호로 닫힘 — 소요 시간만 채운다
             await c.execute(text("UPDATE turn SET duration_ms = :d WHERE id = :id AND duration_ms IS NULL"),
                             {"d": duration, "id": tid})
@@ -446,8 +463,17 @@ class Assembler:
             s.resets += int(ch.reset)
             if ch.bad_lines:
                 log.warning("JSON 아닌 줄 %d개 건너뜀: %s", ch.bad_lines, ch.key.path)
+        self._after_commit(b)
         if self.live and self.publish:
             await self._publish(b, st)
+
+    def _after_commit(self, b: Batch) -> None:
+        if self.live and self.on_turn_closed:
+            for args in b.closed:
+                self.on_turn_closed(*args)
+        if self.live and self.on_subagents_changed:
+            for sid in b.subs_done:
+                self.on_subagents_changed(sid)
 
     async def _apply_main(self, c: AsyncConnection, ch: Chunk, st: SessionState, b: Batch) -> None:
         key = ch.key
@@ -544,7 +570,7 @@ class Assembler:
             await self._close_turn(c, st, b, "interrupted", ts, "transcript", turn_id=tid)
             return
         known = await self._turn_of_prompt(c, st, pid) if pid else None
-        origin = self._origin(d, s)
+        origin = await self._resolve_origin(c, st, d, s)
         if known is not None and pid:
             # 이미 있는 턴의 줄 — 같은 턴의 다른 user 줄(이미지 설명 등)이거나, 다시 읽는 중에 지나가는 옛 턴의 프롬프트.
             # 어느 쪽이든 지금부터의 줄은 이 턴의 것이다(닫힌 턴이어도). 최근의 열린 턴을 문맥으로 두면
@@ -565,11 +591,28 @@ class Assembler:
         if origin == "task_notification":
             await self._notification(c, st, b, s, uid, ts, tid)
 
+    async def _resolve_origin(self, c: AsyncConnection, st: SessionState, d: dict[str, Any], s: str) -> str:
+        """_origin + 보낸 쪽 확인. <agent-message from="X">의 X가 이 세션의 서브에이전트면 subagent_message,
+        아니면 agent_message(다른 세션). 문장 모양으로는 못 가른다 — 같은 결과 전달이 트랜스크립트에는
+        "Another Claude session sent a message: <agent-message …"로, hook에는 "<agent-message …"로 왔다(4단계 실측)."""
+        origin = self._origin(d, s)
+        m = FROM_RE.search(s[:300])
+        if m and origin in ("agent_message", "subagent_message", "meta", "human"):
+            aid = m.group(1)
+            own = aid in self.subs or (await c.execute(text(
+                "SELECT 1 FROM subagent_run WHERE agent_id = :a AND session_id = :s"), {"a": aid, "s": st.id})).first()
+            origin = "subagent_message" if own else "agent_message"
+        return origin
+
     @staticmethod
     def _origin(d: dict[str, Any], s: str) -> str:
         kind = (d.get("origin") or {}).get("kind")
         if s.lstrip().startswith("<task-notification") or d.get("turnOrigin") == "task_notification" or kind == "task-notification":
             return "task_notification"
+        # 서브에이전트가 돌려준 결과(hand-back) — 내용으로 가른다. isMeta가 붙어 올 때도, 사람 입력(origin human)처럼
+        # 올 때도 있었다(4단계 실측). 다른 세션의 메시지는 "Another Claude session sent a message: <agent-message …"
+        if s.lstrip().startswith("<agent-message"):
+            return "subagent_message"
         if d.get("isMeta"):
             return "agent_message" if AGENT_MSG in s[:120] else "meta"
         return "human"
@@ -598,6 +641,7 @@ class Assembler:
             "reported_duration_ms = COALESCE(:rd, reported_duration_ms) WHERE id = :id"),
             {"st": NOTIF_STATUS.get(tags.get("status", "")), "rt": tid, "rtk": num("subagent_tokens"),
              "rtu": num("tool_uses"), "rd": num("duration_ms"), "id": sub.id})
+        b.subs_done.add(st.id)
         self._event(b, st, uuid=_uuid5(uid, "subagent_stop"), ts=ts, type="subagent_stop", turn_id=tid,
                     subagent_id=sub.id, tool_use_id=tags.get("tool-use-id"), status="done",
                     payload={"status": tags.get("status"), "summary": self.mask.text(tags.get("summary", ""))[:PREVIEW],
@@ -672,8 +716,11 @@ class Assembler:
                                 payload=pl)
         await c.execute(text(
             "UPDATE subagent_run SET started_at = COALESCE(started_at, :f), ended_at = GREATEST(COALESCE(ended_at, :l), :l), "
-            "status = IF(:fin AND status = 'running', 'done', status) WHERE id = :id"),
+            "status = IF(:fin AND status IN ('running', 'stale'), 'done', IF(status = 'stale', 'running', status)) "
+            "WHERE id = :id"),
             {"f": first_ts, "l": last_ts or first_ts, "fin": bool(meta.get("finished")), "id": sub.id})
+        if meta.get("finished"):
+            b.subs_done.add(st.id)
 
     # ── 사후 연결 · 정리 ──────────────────────────────────────
     async def link(self) -> dict[str, int]:
@@ -715,6 +762,12 @@ class Assembler:
                         "EXISTS(SELECT 1 FROM event e WHERE e.session_id = cs.id AND e.source = 'hook') AS hooked, "
                         "(SELECT t.id FROM turn t WHERE t.session_id = cs.id AND t.ended_at IS NULL ORDER BY t.seq DESC LIMIT 1) AS open_turn "
                         "FROM character_session cs WHERE cs.cc_session_id IS NOT NULL"))).all()
+                    # 기록도 끝 신호도 없이 오래된 running 서브에이전트 — 묶음 알림이 영원히 기다리지 않게(실측: 펫퍼민트에
+                    # 10-15~10-19의 7개가 running으로 남아 있었다). 새로 알릴 일이 아니므로 알린 것으로 표시한다
+                    await c.execute(text(
+                        "UPDATE subagent_run SET status = 'stale', notified_at = COALESCE(notified_at, UTC_TIMESTAMP(3)) "
+                        "WHERE status = 'running' AND COALESCE(ended_at, started_at) < :cut"),
+                        {"cut": now - timedelta(seconds=self.s.subagent_stale_s)})
                     b = Batch()
                     for sess_id, sid, detached_at, pid, last_ts, hooked, open_turn in rows:
                         ls = live.get(sid)
@@ -736,6 +789,7 @@ class Assembler:
                             if res.rowcount:
                                 closed += 1
                                 self.stats.turns_closed[reason] = self.stats.turns_closed.get(reason, 0) + 1
+                                b.closed.append((sess_id, open_turn, reason, "sweep", None))
                                 b.turn_msgs.append({"type": "turn", "op": "close", "turn_id": open_turn,
                                                     "session_id": sess_id, "reason": reason, "by": "sweep",
                                                     "ts": end.isoformat() + "Z"})
@@ -751,6 +805,7 @@ class Assembler:
                                 {"id": sess_id})
                             if (st := self.sessions.get(sid)):
                                 st.detached = True
+        self._after_commit(b)
         if self.live and self.publish:
             for m in b.turn_msgs:
                 self.publish(m)
@@ -787,10 +842,14 @@ class Assembler:
                                 if o.prompt_id and (now - o.started_at).total_seconds() >= 15:
                                     hook_type = "queued"
                             else:
-                                tid = await self._open_turn(c, st, b, pid=None, uuid=None, origin="human",
+                                # 출처는 프롬프트 내용으로 — 서브에이전트 결과 전달은 트랜스크립트에 프롬프트 줄 없이
+                                # hook으로만 오는 경우가 있었다(4단계 실측, 턴이 human으로 남아 개별 알림이 나갔다)
+                                tid = await self._open_turn(c, st, b, pid=None, uuid=None,
+                                                            origin=await self._resolve_origin(c, st, {}, p.get("prompt") or ""),
                                                             prompt=self.mask.text(p.get("prompt")), ts=now, by="hook")
                         elif name == "Stop":
-                            tid = await self._close_turn(c, st, b, "stop", now, "hook")
+                            tid = await self._close_turn(c, st, b, "stop", now, "hook",
+                                                         note=p.get("last_assistant_message"))
                         elif name == "StopFailure":
                             tid = await self._close_turn(c, st, b, "stop_failure", now, "hook")
                         elif name == "SessionEnd":
@@ -799,12 +858,18 @@ class Assembler:
                                             {"ts": now, "id": st.id})
                             st.detached = True
                         elif name in ("SubagentStart", "SubagentStop") and p.get("agent_id"):
-                            sub = await self._sub(c, p["agent_id"], st, info={"agent_type": p.get("agent_type")})
-                            sub_id = sub.id
-                            if name == "SubagentStop":
-                                await c.execute(text(
-                                    "UPDATE subagent_run SET status = IF(status = 'running', 'done', status) WHERE id = :id"),
-                                    {"id": sub.id})
+                            # agent_type이 빈 SubagentStop은 CC 내부 보조 에이전트다 — Start도 트랜스크립트 파일도 없다(4단계 실측).
+                            # hook만으로는 행을 만들지 않는다: Stop은 있는 행만 갱신, Start는 종류가 있을 때만 만든다
+                            known = p["agent_id"] in self.subs or (await c.execute(text(
+                                "SELECT 1 FROM subagent_run WHERE agent_id = :a"), {"a": p["agent_id"]})).first() is not None
+                            if known or (name == "SubagentStart" and p.get("agent_type")):
+                                sub = await self._sub(c, p["agent_id"], st, info={"agent_type": p.get("agent_type") or None})
+                                sub_id = sub.id
+                                if name == "SubagentStop":
+                                    await c.execute(text(
+                                        "UPDATE subagent_run SET status = IF(status = 'running', 'done', status) WHERE id = :id"),
+                                        {"id": sub.id})
+                                    b.subs_done.add(st.id)
                         keep = {k: p.get(k) for k in ("hook_event_name", "reason", "error", "agent_type",
                                                       "stop_hook_active", "permission_mode") if p.get(k) is not None}
                         self._event(b, st, uuid=str(uuidlib.uuid4()), ts=now, type=hook_type, source="hook",
@@ -813,6 +878,7 @@ class Assembler:
             except BaseException:
                 self.sessions.pop(sid, None)
                 raise
+        self._after_commit(b)
         if self.live and self.publish:
             await self._publish(b, st)
 
