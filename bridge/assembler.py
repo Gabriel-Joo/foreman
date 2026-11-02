@@ -106,6 +106,7 @@ class SessionState:
     hook_seen: bool = False
     detached: bool = False
     transcript_file_id: int | None = None
+    title: str | None = None
     prompt_turns: "OrderedDict[str, int]" = field(default_factory=OrderedDict)
     tool_names: "OrderedDict[str, str]" = field(default_factory=OrderedDict)
     agent_inputs: "OrderedDict[str, dict[str, Any]]" = field(default_factory=OrderedDict)
@@ -209,7 +210,7 @@ class Assembler:
         st = self.sessions.get(sid)
         if st is None:
             row = (await c.execute(text(
-                "SELECT cs.id, cs.character_id, cs.detached_at, cs.transcript_file_id, p.name "
+                "SELECT cs.id, cs.character_id, cs.detached_at, cs.transcript_file_id, p.name, cs.title "
                 "FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
                 "LEFT JOIN project p ON p.id = ch.project_id "
                 "WHERE cs.cc_session_id = :sid ORDER BY cs.id DESC LIMIT 1"), {"sid": sid})).first()
@@ -219,9 +220,9 @@ class Assembler:
                     "INSERT INTO character_session (character_id, type, role, cc_session_id, cwd, transcript_file_id, "
                     "wake_reason, attached_at) VALUES (:char, 'agent', 'coder', :sid, :cwd, :tf, 'user', :at)"),
                     {"char": char, "sid": sid, "cwd": cwd, "tf": tf_id, "at": first_ts or _ts(None)})
-                sess_id, detached, tf = res.lastrowid, False, tf_id
+                sess_id, detached, tf, title = res.lastrowid, False, tf_id, None
             else:
-                sess_id, char, detached, tf, project = row[0], row[1], row[2] is not None, row[3], row[4]
+                sess_id, char, detached, tf, project, title = row[0], row[1], row[2] is not None, row[3], row[4], row[5]
             seq = (await c.execute(text("SELECT COALESCE(MAX(seq), 0) FROM turn WHERE session_id = :s"),
                                    {"s": sess_id})).scalar_one()
             o = (await c.execute(text(
@@ -237,7 +238,7 @@ class Assembler:
                     {"t": o[0]})).first()
                 ref = TurnRef(o[0], o[1], o[2], o[1] is None, active=act is not None)
             st = SessionState(sess_id, char, project, seq, ref,
-                              last, hook_seen=hook is not None, detached=detached, transcript_file_id=tf)
+                              last, hook_seen=hook is not None, detached=detached, transcript_file_id=tf, title=title)
             self.sessions[sid] = st
         if tf_id is not None and st.transcript_file_id is None:
             await c.execute(text("UPDATE character_session SET transcript_file_id = :tf WHERE id = :id"),
@@ -520,6 +521,12 @@ class Assembler:
                         await c.execute(text("UPDATE turn SET compacted = TRUE WHERE id = :id"), {"id": tid})
                     self._event(b, st, uuid=uid, ts=ts, type="compact", turn_id=tid, parent_uuid=par,
                                 payload={"compactMetadata": d.get("compactMetadata")})
+            elif t == "ai-title":
+                # CC가 붙이는 세션 제목 — 대화가 흘러가며 바뀐다. 같은 제목이 수천 번 반복되므로 바뀔 때만 쓴다
+                title = (self.mask.text(str(d.get("aiTitle") or "")) or "").strip()[:255]
+                if title and title != st.title:
+                    await c.execute(text("UPDATE character_session SET title = :t WHERE id = :id"), {"t": title, "id": st.id})
+                    st.title = title
             elif t == "queue-operation":
                 op = d.get("operation")
                 self._event(b, st, uuid=uid, ts=ts, type="queued", turn_id=st.open_turn.id if st.open_turn else None,
@@ -731,6 +738,27 @@ class Assembler:
         if meta.get("finished"):
             b.subs_done.add(st.id)
 
+    async def fill_titles(self) -> int:
+        """제목이 빈 세션(0011 이전에 적재)에 트랜스크립트의 마지막 ai-title을 채운다. 재적재가 아니라 빈 칸 채우기."""
+        async with self.engine.connect() as c:
+            rows = (await c.execute(text(
+                "SELECT cs.id, tf.path FROM character_session cs JOIN transcript_file tf ON tf.id = cs.transcript_file_id "
+                "WHERE cs.title IS NULL"))).all()
+        n = 0
+        for sess_id, path in rows:
+            title = await asyncio.to_thread(_last_ai_title, path)
+            if not title:
+                continue
+            title = (self.mask.text(title) or "").strip()[:255]
+            async with self.engine.begin() as c:
+                await c.execute(text("UPDATE character_session SET title = :t WHERE id = :id AND title IS NULL"),
+                                {"t": title, "id": sess_id})
+            for st in self.sessions.values():
+                if st.id == sess_id:
+                    st.title = title
+            n += 1
+        return n
+
     # ── 사후 연결 · 정리 ──────────────────────────────────────
     async def link(self) -> dict[str, int]:
         """띄운 턴을 늦게 안 서브에이전트의 메시지 · 이벤트에 턴을 채우고, 토큰 합계를 다시 낸다."""
@@ -937,6 +965,34 @@ class Assembler:
 
     async def stats_snapshot(self) -> dict[str, Any]:
         return self.stats.__dict__ | {"turns_closed": dict(self.stats.turns_closed), "live": self.live}
+
+
+def _last_ai_title(path: str, tail: int = 4 << 20, whole_max: int = 64 << 20) -> str | None:
+    """트랜스크립트의 마지막 ai-title. 끝 4MB를 먼저 보고, 없으면 작은 파일만 처음부터."""
+    import json
+    import os
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return None
+
+    def scan(data: bytes) -> str | None:
+        last = None
+        for raw in data.split(b"\n"):
+            if b'"type":"ai-title"' in raw[:200]:
+                try:
+                    last = json.loads(raw).get("aiTitle") or last
+                except ValueError:
+                    pass
+        return last
+
+    with open(path, "rb") as f:
+        f.seek(max(0, size - tail))
+        t = scan(f.read())
+        if t or size <= tail or size > whole_max:
+            return t
+        f.seek(0)
+        return scan(f.read())
 
 
 def _summary(type_: str, payload_json: str | None) -> str | None:

@@ -57,6 +57,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.info("알림 켬: %s", ", ".join(f"{k}{v.prefix}" for k, v in rules.projects.items()))
             watcher = Watcher(s, asm)
             app.state.assembler, app.state.watcher = asm, watcher
+
+            async def titles() -> None:   # 0011 이전에 적재한 세션의 제목 — 빈 칸만 채운다
+                try:
+                    n = await asm.fill_titles()
+                    if n:
+                        log.info("세션 제목 채움: %d개", n)
+                        dashboard_api.invalidate()
+                except Exception as e:  # noqa: BLE001
+                    log.warning("세션 제목 채우기 실패: %s", type(e).__name__)
+            app.state.title_task = asyncio.create_task(titles(), name="foreman-titles")
             if s.approval_enabled:
                 mgr = ApprovalManager(engine, load_policy(s.approval_config), asm, pipeline, Masker(),
                                       app.state.notifier)

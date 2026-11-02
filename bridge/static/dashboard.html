@@ -42,7 +42,10 @@
   .card:focus-visible, .card.sel { outline:2px solid var(--sel); outline-offset:1px; }
   .card.st-ACTIVE { border-left-color:var(--st-ACTIVE); } .card.st-IDLE { border-left-color:var(--st-IDLE); }
   .card.st-SUSPENDED { border-left-color:var(--st-SUSPENDED); } .card.st-DORMANT { opacity:.75; }
-  .card-top { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .card-top { display:flex; gap:6px; align-items:center; }
+  .card-top .title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .card-top .right { flex:none; }
+  .card .sub { margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .badge { font-size:10px; font-weight:700; padding:1px 6px; border-radius:8px; color:#fff; background:var(--st-DORMANT); letter-spacing:.03em; }
   .badge.st-ACTIVE { background:var(--st-ACTIVE); } .badge.st-IDLE { background:var(--st-IDLE); } .badge.st-SUSPENDED { background:var(--st-SUSPENDED); color:#111; }
   .doing, .turn, .reply { margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
