@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     notify_enabled: bool = True         # 테스트에서는 끈다
     notify_config: Path = REPO / "config" / "notify.toml"
 
+    # 5단계 — 승인 정책(규칙은 config/approval.toml)
+    approval_enabled: bool = True
+    approval_config: Path = REPO / "config" / "approval.toml"
+
     @field_validator("foreman_api_token", "foreman_hook_token")
     @classmethod
     def _long_enough(cls, v: SecretStr) -> SecretStr:
