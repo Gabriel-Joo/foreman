@@ -1,17 +1,20 @@
 """FastAPI 앱. 실행은 `.venv/bin/python -m bridge` (bridge/__main__.py)."""
 
-import logging
 import asyncio
-from collections.abc import AsyncIterator
+import contextlib
+import logging
+import socket
+from collections.abc import AsyncIterator, Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import uvicorn
 from fastapi import Depends, FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from bridge.api import approvals as approvals_api, dashboard as dashboard_api, debug, health, hooks, sessions, ws
-from bridge.api import terminal as terminal_api
+from bridge.api import terminal as terminal_api, webhooks
 from bridge.approval import load_policy
 from bridge.approvals import ApprovalManager
 from bridge.api.auth import require_api_token
@@ -22,12 +25,21 @@ from bridge.db.engine import make_engine
 from bridge.mask import Masker
 from bridge.notify import Notifier, default_telegram, load_rules
 from bridge.session_state import SessionStateWatcher
+from bridge.pipeline import PipelineManager, load_pipeline
 from bridge.store import Store
 from bridge.terminal import TerminalManager
 from bridge.transcript.watcher import Watcher
 
 log = logging.getLogger("foreman")
 STATIC = Path(__file__).resolve().parent / "static"
+
+
+class _QuietServer(uvicorn.Server):
+    """웹훅 전용 포트 — 같은 앱 · 같은 프로세스의 두 번째 리스너. 신호(Ctrl-C)는 주 서버가 받는다(이 서버가 가로채지 않게)."""
+
+    @contextlib.contextmanager
+    def capture_signals(self) -> Generator[None, None, None]:
+        yield
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -99,11 +111,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             sw = SessionStateWatcher(s.sessions_dir, pipeline.publish)
             sw.on_change = dashboard_api.invalidate
             state_task = asyncio.create_task(sw.run(), name="foreman-session-state")
+        # 8단계 — CI/CD 인과 체인: 로컬 git 폴링 · 웹훅 · 인프라 캐릭터 생존. 웹훅 전용 포트(VM 망 쪽)도 여기서 띄운다
+        app.state.pipeline_mgr = None
+        hook_server = hook_task = None
+        if s.pipeline_enabled:
+            try:
+                pm = PipelineManager(engine, load_pipeline(s.pipeline_config), pipeline, Masker(), app.state.notifier,
+                                     on_change=dashboard_api.invalidate)
+                await pm.start()
+                app.state.pipeline_mgr = pm
+                log.info("파이프라인 켬: %s", ", ".join(pm.rules.projects))
+            except Exception as e:  # noqa: BLE001
+                log.warning("파이프라인 시작 실패: %s: %s", type(e).__name__, str(e)[:200])
+            if app.state.pipeline_mgr and s.webhook_bind_host and s.foreman_webhook_token:
+                # 소켓을 먼저 직접 묶는다 — uvicorn은 묶기에 실패하면 프로세스를 끝낸다(sys.exit). 실패해도 브리지는 산다
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    sock.bind((s.webhook_bind_host, s.webhook_bind_port))
+                    sock.set_inheritable(True)
+                except OSError as e:
+                    sock = None
+                    log.warning("웹훅 포트 %s:%d를 열지 못함: %s", s.webhook_bind_host, s.webhook_bind_port, e)
+                if sock:
+                    hook_server = _QuietServer(uvicorn.Config(app, lifespan="off", proxy_headers=False, log_level="info"))
+                    hook_task = asyncio.create_task(hook_server.serve(sockets=[sock]), name="foreman-webhook-listener")
+                    log.info("웹훅 포트 %s:%d (/webhooks/*만, 허용 망 %s)", s.webhook_bind_host, s.webhook_bind_port,
+                             s.webhook_allow_cidrs)
+            elif app.state.pipeline_mgr:
+                log.warning("웹훅 포트를 열지 않음 — FOREMAN_WEBHOOK_TOKEN이 없다")
         log.info("브리지 시작 %s:%d (DB %s:%d, 와처 %s)", s.bind_host, s.bind_port, s.mysql_host, s.mysql_port,
                  "켬" if s.watch_enabled else "끔")
         try:
             yield
         finally:
+            if hook_server and hook_task:
+                hook_server.should_exit = True
+                try:
+                    async with asyncio.timeout(5):
+                        await hook_task
+                except (TimeoutError, asyncio.CancelledError, Exception):  # noqa: BLE001
+                    hook_task.cancel()
+            if app.state.pipeline_mgr:
+                await app.state.pipeline_mgr.stop()
             if app.state.notifier:
                 await app.state.notifier.stop()
             if app.state.terminal:
@@ -129,6 +179,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(dashboard_api.router)
     app.include_router(terminal_api.api)
     app.include_router(terminal_api.router)
+    app.include_router(webhooks.router)
+
+    @app.middleware("http")
+    async def webhook_port_only(request, call_next):  # type: ignore[no-untyped-def]
+        # 웹훅 전용 포트(VM 망 쪽)에서는 /webhooks/*만 — 대시보드 · API · 터미널은 127.0.0.1에서만 열린다
+        server = request.scope.get("server")
+        if server and server[1] == s.webhook_bind_port and server[0] == s.webhook_bind_host \
+                and not request.url.path.startswith("/webhooks/"):
+            return JSONResponse({"error": "없음"}, status_code=404)
+        return await call_next(request)
+
+    @app.get("/api/pipeline", dependencies=[Depends(require_api_token)])
+    async def pipeline_snapshot() -> dict:
+        pm = app.state.pipeline_mgr
+        return await pm.snapshot() if pm else {"projects": [], "enabled": False}
 
     @app.get("/api/ingest", dependencies=[Depends(require_api_token)])
     async def ingest_status() -> dict:

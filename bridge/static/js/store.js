@@ -36,7 +36,9 @@ export class Store {
       generatedAt: null, hiddenDormant: 0, lastInput: null,
       // 7단계 터미널 패널: enabled · running, requests(Map id → CC가 부탁한 명령), result(마지막 결과), shell(최근 친 명령)
       terminal: { enabled: false, running: false, requests: new Map(), result: null, shell: [], openReq: 0 },
-      ver: { grid: 0, approvals: 0, panel: 0, conn: 0, term: 0 },
+      // 8단계 파이프라인: 프로젝트 이름 → { infra, chains, waiting } (/api/pipeline)
+      pipeline: new Map(),
+      ver: { grid: 0, approvals: 0, panel: 0, conn: 0, term: 0, pipe: 0 },
     };
     this.subs = new Set();
     this.dirty = false;
@@ -115,6 +117,13 @@ export class Store {
     if (st.selected && !st.sessions.has(st.selected)) st.selected = null;
     this.touch('grid', 'approvals', 'panel', 'term');
   }
+  async loadPipeline() {
+    const r = await fetch('/api/pipeline', { headers: this.headers() });
+    if (!r.ok) return;
+    const j = await r.json();
+    this.state.pipeline = new Map((j.projects || []).map((p) => [p.project, p]));
+    this.touch('pipe');
+  }
   scheduleSnapshot(ms = 800) {
     if (this.snapSoon) return;
     this.snapSoon = setTimeout(() => { this.snapSoon = null; this.loadSnapshot().catch(() => {}); }, ms);
@@ -189,6 +198,7 @@ export class Store {
         // 한 번 인증으로 둘 다 — 같은 토큰으로 터미널 쿠키도 받는다(iframe은 헤더를 못 붙여 쿠키가 필요하다).
         // 브리지를 다시 띄우면 쿠키가 사라지므로 연결될 때마다 새로 받는다
         this.terminalSession().then(() => { this.state.terminal.cookieAt = Date.now(); this.touch('term'); }).catch(() => {});
+        this.loadPipeline().catch(() => {});
         if (st.selected) this.loadConversation(st.selected);
         return;
       case 'ping': return;
@@ -197,6 +207,10 @@ export class Store {
       case 'turn': return this.onTurn(msg);
       case 'approval': return this.onApproval(msg);
       case 'event': return this.onEvent(msg.event);
+      case 'pipeline':                       // 단계가 바뀌었다 — 몰려와도 한 번만 다시 읽는다
+        clearTimeout(this.pipeSoon);
+        this.pipeSoon = setTimeout(() => this.loadPipeline().catch(() => {}), 500);
+        return;
       case 'terminal_request': {
         const t = st.terminal;
         for (const [id, r] of t.requests) if (r.session_id === msg.request.session_id) t.requests.delete(id);
