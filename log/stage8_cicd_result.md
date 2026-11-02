@@ -1,7 +1,7 @@
-# 로드맵 8단계 — CI/CD 인과 체인: 조사 완료, 적용 보류 (+ 승인 규칙 "실행과 글자" 넓히기)
+# 로드맵 8단계 — CI/CD 인과 체인 (+ 승인 규칙 "실행과 글자" 넓히기)
 
 - **실행일**: 2026-11-02 (8 · 9단계 순서를 바꾼 뒤 — README 로드맵)
-- **11-03**: App of Apps · 웹훅 뒤 재조사 완료(아래 "11-03 재조사"). 그 뒤 Jenkins 연동을 API 조회에서 **Jenkinsfile 알림 + 토큰 없는 보정**으로 바꿨다 — "새도 되는 비밀의 무게"(아래). 설계안까지, 적용 전
+- **11-03**: App of Apps · 웹훅 뒤 재조사 완료(아래 "11-03 재조사"). 그 뒤 Jenkins 연동을 API 조회에서 **Jenkinsfile 알림 + 토큰 없는 보정**으로 바꿨다 — "새도 되는 비밀의 무게"(아래). **Jenkins 부분 적용 완료**(아래 "11-03 적용 결과"). 남은 것: ArgoCD 알림 웹훅, 펫퍼민트 "Sync 대기" 표시
 - **상태(11-02)**: **조사 완료, 적용 보류.** 실제 파이프라인은 웹훅이 아니라 폴링이었다. FOREMAN은 "읽기 조회"로 끼어드는 방향으로 정했고(사용자 결정), **ArgoCD App of Apps를 먼저 한 뒤** 그 구조에 맞춰 만든다 — Application 구조가 바뀌면 FOREMAN이 보는 방식도 바뀌므로 지금 맞추면 두 번 일한다
 - 커밋: `0178fd5`(웹훅 수신 · 로컬 git 폴링 — 지금은 꺼 둠), 이 문서 · 정리는 다음 커밋
 
@@ -27,10 +27,6 @@
 | 클러스터에서 호스트 | 노드에서 `192.168.122.1`(virbr0) 닿음 | m-k8s에서 확인 |
 
 즉 흐름은: **로컬 커밋 → GitHub push → (최대 2분) Jenkins 폴링 → 빌드 · Harbor push → 인프라 저장소 newTag 커밋 → (최대 3분) ArgoCD 폴링 → 런슈즈는 자동 Sync / 펫퍼민트는 사람이 Sync.**
-
-## 처음 접근이 틀린 이유
-
-처음에는 리포 파일(Jenkinsfile 머리말 · values.yaml)만 읽고 바로 설계해 웹훅을 "새로 붙이는" 쪽으로 갔다 — Jenkinsfile에 알림 단계 추가(push하면 두 앱이 다시 빌드 · 배포된다), Harbor 웹훅 정책 추가, ArgoCD notifications, 호스트에 웹훅 전용 포트. **이미 동작하는 흐름을 먼저 읽고 거기 맞췄어야 했다**(사용자 지적). 실제 설정을 읽어 보니 전 구간이 폴링이라, 관찰도 읽기 조회로 하면 기존 흐름에 아무것도 더할 필요가 없다. (클러스터 쪽 적용은 CC 자동 모드가 막아 실제로 바뀐 것은 없다.)
 
 ## 정한 방향 (적용은 App of Apps 뒤)
 
@@ -207,7 +203,7 @@ Secret은 사람이 넣는다(값을 화면에 내지 않고 `.env.bridge`에서
 | 확인 | 결과 | 근거 |
 |---|---|---|
 | post가 도는 컨테이너(jnlp)에 curl이 있나 | **있다** | 실제 에이전트 이미지는 `jenkins/inbound-agent:3391.va_37fa_a_305d6d-1-jdk25`(런슈즈 #51 빌드 로그 — 클라우드 설정의 3385가 아니라 플러그인 기본값). 공식 `jenkinsci/docker-agent` `debian/Dockerfile`의 agent 단계가 `curl`을 설치하고 inbound-agent가 그 위에 선다. 같은 계열(Debian 13) 컨트롤러에도 `/usr/bin/curl`. 적용 첫 빌드 로그로 최종 확인 — 없더라도 `try` · `\|\| true`라 빌드는 그대로, 알림이 안 와서 보정 규칙이 잡는다 |
-| 파드 → 호스트가 FOREMAN의 VM 망 IP 제한을 통과하나 | **통과한다(경로 확인, 출발 IP는 설정으로 판단)** | 파드(`jenkins-0`, 10.244.x)에서 `192.168.122.1:11434`(ollama) 200 — 경로 있음. Calico IP 풀 `10.244.0.0/16` `natOutgoing: true` → 풀 밖으로 나가는 패킷은 노드 IP로 SNAT된다. 노드 IP는 `192.168.121.{64,179,95,158}` → 허용 목록 `192.168.121.0/24` 안. 출발 IP를 직접 보지는 못했다(ollama는 docker 프록시를 거쳐 172.17.0.1로 보인다) — 적용 때 브리지 로그(거절하면 출발 IP를 남긴다)로 확인. 11-02에 노드에서 8001로 보내 401 · 404를 받은 것도 같은 출발 IP다 |
+| 파드 → 호스트가 FOREMAN의 VM 망 IP 제한을 통과하나 | **통과한다(경로 확인, 출발 IP는 설정으로 판단)** — 적용 때 실측: `192.168.122.13`(노드의 122망 주소, 아래 "적용 결과") | 파드(`jenkins-0`, 10.244.x)에서 `192.168.122.1:11434`(ollama) 200 — 경로 있음. Calico IP 풀 `10.244.0.0/16` `natOutgoing: true` → 풀 밖으로 나가는 패킷은 노드 IP로 SNAT된다. 노드 IP는 `192.168.121.{64,179,95,158}` → 허용 목록 `192.168.121.0/24` 안. 출발 IP를 직접 보지는 못했다(ollama는 docker 프록시를 거쳐 172.17.0.1로 보인다) — 적용 때 브리지 로그(거절하면 출발 IP를 남긴다)로 확인. 11-02에 노드에서 8001로 보내 401 · 404를 받은 것도 같은 출발 IP다 |
 
 ### 4. "빠진 알림 찾기" 규칙
 
@@ -257,13 +253,41 @@ Secret은 사람이 넣는다(값을 화면에 내지 않고 `.env.bridge`에서
 
 같이 볼 것: 앱 ↔ Jenkins job ↔ Harbor 프로젝트 대응(`config/pipeline.toml`)이 바뀌었나, `kustomization.yaml` newTag 자리(경로)가 그대로인가 — Jenkinsfile 마지막 스테이지가 거기를 고친다. 바뀐 것이 있으면 위 "정한 방향"(Jenkins 읽기 조회 · ArgoCD ①)을 다시 판단하고 사용자에게 먼저 보인다.
 
-## 지금 상태 (보류 중)
+## 11-03 적용 결과 — Jenkins 알림 (사용자 순서: 자격 증명 → FOREMAN → Jenkinsfile)
 
-- **브리지**: 파이프라인(로컬 git 폴링 · 웹훅 포트 8001 · 인프라 생존 폴링)을 **껐다**(`pipeline_enabled = False`). `/api/pipeline`은 `enabled: false`, 대시보드 파이프라인 칸은 안 보인다
-- **남긴 코드**: `bridge/pipeline.py` · `bridge/api/webhooks.py` · `config/pipeline.toml` · `tests/test_pipeline.py`(시험은 그대로 통과) — 읽기 조회로 다시 만들 때 판정 · 연결 · 화면 · 알림 부분을 쓴다
-- **지운 것**: Jenkinsfile 패치 2개, Harbor 웹훅 정책 스크립트, 클러스터 설정 스크립트(`scripts/cicd-apply.sh`). ArgoCD notifications 매니페스트(`deploy/cicd/argocd-notifications-foreman.yaml`)는 ① 후보라 **초안으로 남겼다**(적용 안 함, 머리말에 표시)
-- **DB**: 마이그레이션 0012 적용됨(`git_commit` · `build` · `build_commit` · `character.last_seen_at`). `git_commit`에 최근 7일 커밋 83행(런슈즈 54 · 펫퍼민트 29)이 남아 있다 — 다시 만들 때 쓰거나 비운다. `build`는 비어 있다. 인프라 캐릭터는 만들어지지 않았다
-- **`.env.bridge`의 `FOREMAN_WEBHOOK_TOKEN`**: 쓰는 곳 없음(ArgoCD ①로 가면 쓴다)
+되돌리기 · 진행 기록: 호스트 `~/k8s-cluster/backup/2026-11-03-foreman-notify/ROLLBACK.md`(바꾸기 전 `values-rev7.yaml`).
+
+| 단계 | 한 것 | 확인 |
+|---|---|---|
+| 1. 자격 증명 | Secret `jenkins/foreman-webhook-token`(값은 `.env.bridge`에서 바로, 43바이트 — 화면에 안 냄) → `values.yaml`(`additionalExistingSecrets` + `configScripts.foreman`) → `helm upgrade`(revision 7 → 8, 22:49:53~22:50:35 UTC, 재시작 42초). 빌드 없을 때(에이전트 파드 0). 배포된 rev7 값 = 저장소 값 확인 뒤. infra `8277b64` | 자격 증명 id 5개(새로 `foreman-webhook-token`), job 2개 · `githubPush` 그대로, 플러그인 73개 그대로, `/login` 200 |
+| 2. FOREMAN | `pipeline_enabled = True` — 8001 리스너, 로컬 git 폴링, 인프라 생존 폴링, **빠진 알림 찾기**(새 — `track_origin` · `check_watch`, `[watch]` 설정), **웹훅 끊김 감지**(새 — 빌드 원인 `cause`) | `jenkins-0`(w3)에서 토큰 없이 POST → **401**(출발 IP 허용, 토큰만 없음), 다른 경로 404. **출발 IP는 `192.168.122.13`** — 설계 때 생각한 `192.168.121.x`가 아니라 노드의 122망 주소로 SNAT된다(둘 다 허용 대역) |
+| 3. Jenkinsfile | 펫퍼민트 먼저(빌드 1분 · 수동 Sync라 배포 없음) `d336871`, 확인 뒤 런슈즈 `385c750`. 알림 부분은 두 파일이 글자까지 같다. push 전에 셸 부분을 임시 수신기로 시험(헤더 인증 · JSON · 한글 스테이지 이름 · 받는 쪽이 꺼져도 종료 코드 0) | 아래 |
+
+검증 빌드 두 개(사용자: "3번 push 빌드를 검증에 쓰자"):
+
+| | 펫퍼민트 #49 | 런슈즈 #52 |
+|---|---|---|
+| push → FOREMAN push 감지 | 9초 | 4초 |
+| push → 시작 알림 | 25초 | 23초 |
+| 빌드 원인 | `webhook` | **`GitHubPushCause` — 런슈즈 웹훅 첫 검증** |
+| 결과 · 끝 알림 | SUCCESS 58초, `stage` 매니페스트 태그 | SUCCESS 295초 |
+| jnlp curl | 있음(빌드 로그에 `curl: not found` · 알림 실패 0) | 같음 |
+| 출발 IP | 192.168.122.13 | 192.168.122.13 |
+| 토큰이 빌드 로그에 | 0번 | 0번 |
+| 샌드박스 거부(`Scripts not permitted`) | 0 | 0 |
+| 그 뒤 | infra `b88ef7c` → ArgoCD OutOfSync(수동 Sync 대기) | infra `ce51759` → 자동 Sync, `runshoes:385c75027699` Healthy(재배포 — 사용자 감수) |
+
+인프라 캐릭터 Jenkins가 두 프로젝트에 첫 알림으로 등장했다. 빠진 알림 찾기는 두 push 모두 시작 알림이 와서 대기 → 해제(경고 없음).
+
+## 지금 상태
+
+- **브리지**: 파이프라인 **켜짐**(11-03) — 8001(virbr0, `/webhooks/*`만, VM 망 IP만, 토큰), 로컬 git 폴링 20초, 인프라 생존 폴링, 빠진 알림 찾기 30초
+- ~~11-02 보류 때~~: 파이프라인을 껐었다(`pipeline_enabled = False`)
+- **코드**: `bridge/pipeline.py`(+ `build_cause` · `watch_state` · `webhook_broken`, `track_origin` · `check_watch` · `_check_hook`), `bridge/api/webhooks.py`, `config/pipeline.toml`(`[watch]`), 대시보드 `render.js`(빌드 기다림 · 알림 없음 · 웹훅 끊김 줄). 시험 193개
+- **ArgoCD**: 아직 — notifications 매니페스트 초안(`deploy/cicd/argocd-notifications-foreman.yaml`)을 기본 구독 + `instance=root`로 고쳐 적용할 차례. 펫퍼민트 "Sync 대기"는 이것과 같이(지금 대시보드는 Jenkins 단계까지만)
+- **DB**: `build`에 검증 빌드 2행(`petmint-app#49` · `runshoes-app#52`), 인프라 캐릭터 Jenkins 2(프로젝트마다)
+- **`FOREMAN_WEBHOOK_TOKEN`**: `.env.bridge`(브리지가 받을 때) + Secret `jenkins/foreman-webhook-token`(Jenkins가 보낼 때). 바꿀 때 둘 다
+- **빠진 알림 찾기의 한계**: 상태가 메모리에 있다 — 브리지를 다시 띄우면 그때의 origin 머리부터 다시 잰다(재시작 직전 push는 놓친다). 이 서버에서 push · fetch해 `origin/main`이 움직여야 보인다(다른 PC에서 GitHub에 직접 push하면 못 본다 — 지금은 모두 이 서버의 세션이 push한다)
 
 ## 만들면서 확인한 것 (다시 만들 때 쓴다)
 

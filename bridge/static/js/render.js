@@ -60,7 +60,13 @@ const INFRA_LABEL = { IDLE: '응답', ACTIVE: '일하는 중', STALE: '응답 �
 function pipeBlock(pp) {
   if (!pp) return '';
   const infra = pp.infra.filter((c) => !c.retired);
-  if (!infra.length && !pp.chains.length && !pp.waiting.length) return '';
+  if (!infra.length && !pp.chains.length && !pp.waiting.length && !pp.watch && !pp.webhook_broken) return '';
+  // 빠진 알림 찾기(11-03): push 뒤 시작 알림이 없으면 3분에 노란색, 17분에 빨간색(텔레그램도)
+  const w = pp.watch;
+  const watch = w && w.state !== 'ok'
+    ? `<div class="small ${w.state === 'missing' ? 'bad' : 'warn'}">${w.state === 'missing' ? '빌드 알림 없음 — Jenkins 확인' : '빌드 시작 알림 없음 — 폴링 안전망 대기'}: push <code class="sha">${esc(w.short)}</code> ${esc(oneLine(w.subject || '', 60))} · ${ago(w.since)}</div>`
+    : (w ? `<div class="small muted">빌드 기다리는 중: push <code class="sha">${esc(w.short)}</code> · ${ago(w.since)}</div>` : '');
+  const hook = pp.webhook_broken ? '<div class="small bad">웹훅 끊김 의심 — 최근 빌드가 폴링으로 시작</div>' : '';
   const chips = infra.map((c) => `<span class="pill infra ${c.status === 'STALE' ? 'warn' : ''}" title="${esc(INFRA_LABEL[c.status] || c.status)} · 마지막 응답 ${esc(ago(c.last_seen_at))}">${esc(c.name)}${c.status === 'STALE' ? ' ⚠' : ''}</span>`).join('');
   const who = (c) => c.title || c.character || (c.session_id ? '세션' : '사람');
   const chains = pp.chains.slice(0, 4).map((ch) => {
@@ -82,7 +88,7 @@ function pipeBlock(pp) {
     </div>`;
   }).join('');
   const waiting = pp.waiting.length ? `<div class="small muted">빌드 전 커밋: ${pp.waiting.map((w) => `<code class="sha">${esc(w.short)}</code>${w.pushed ? '' : '(push 전)'}`).join(' ')}</div>` : '';
-  return `<div class="pipe"><div class="pipe-head small"><b>파이프라인</b> ${chips}</div>${waiting}${chains}</div>`;
+  return `<div class="pipe"><div class="pipe-head small"><b>파이프라인</b> ${chips}</div>${hook}${watch}${waiting}${chains}</div>`;
 }
 
 export function createRenderer(root, store) {
