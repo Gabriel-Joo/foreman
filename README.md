@@ -886,6 +886,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 파일 | 내용 |
 |---|---|
 | [01_kickoff_result.md](log/01_kickoff_result.md) | 브리프 01 실행 결과 |
+| [later_codex_bridge.md](log/later_codex_bridge.md) | **나중에 할 일** — Claude Code와 Codex 같이 쓰기: 후보 5개 조사, `codex mcp-server`는 0.154에서 제거돼 `codex exec -s read-only` + `/etc/codex/requirements.toml` 잠금으로 방향 수정, 설치는 나중 |
 | [infra_20261102_host-changes.md](log/infra_20261102_host-changes.md) | 11-02 서버 PC 변경(포트 노출 닫기, milvus 외부 etcd, search-service 유닛, VM 자동 시작), 되돌리기용 자원, 작업 시 주의 |
 | [infra_20261102_milvus-port-forward.md](log/infra_20261102_milvus-port-forward.md) | 567,740회 재시작하던 유닛 정지 — 호스트 서비스 감시(2.2)의 근거 |
 | [stage1_bridge_db_result.md](log/stage1_bridge_db_result.md) | 로드맵 1단계(브리지 · 스키마 · MySQL · WebSocket) 결과 — 설계 확인 5가지, 시험에서 찾은 것(cryptography), 남은 것 |
