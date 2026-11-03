@@ -1,0 +1,73 @@
+{
+  "name": "office",
+  "label": "오피스",
+  "_comment": "테마 = 이 파일 하나. 렌더러는 상태(state) · 도구(tool) · 플래그(flags)만 보고 여기서 동작을 고른다(README 3.8). 다른 테마는 같은 키에 다른 값.",
+
+  "palette": {
+    "floor": "#2b2f3a", "floorAlt": "#30343f", "wall": "#4a5063", "wallTop": "#5d6479",
+    "office": "#3a3550", "officeGlass": "#8fb3ff33", "desk": "#8a6a4a", "deskTop": "#a8835c",
+    "rack": "#22262e", "rackLed": "#5dff8a", "window": "#7fb7ff", "infraFloor": "#26313a",
+    "lounge": "#2f2a30", "label": "#e8e8f0", "muted": "#9aa0b4",
+    "ok": "#5dd39e", "warn": "#f2c14e", "bad": "#ff6b6b", "act": "#7aa7ff", "frozen": "#9fd8ff"
+  },
+
+  "layout": {
+    "tile": 16,
+    "room": { "w": 28, "h": 18 },
+    "lounge": { "w": 14, "h": 18 },
+    "gap": 4,
+    "zones": {
+      "foreman_office": { "x": 1, "y": 1, "w": 7, "h": 6, "seat": [4, 4] },
+      "desks": { "x": 10, "y": 2, "cols": 4, "rows": 2, "dx": 4, "dy": 4 },
+      "server_rack": { "x": 1, "y": 8, "w": 3, "h": 3, "stand": [4, 9] },
+      "window": { "x": 26, "y": 2, "w": 1, "h": 6, "stand": [24, 5] },
+      "phone": { "x": 22, "y": 10, "stand": [22, 11] },
+      "infra": {
+        "y": 13, "h": 4,
+        "jenkins": { "x": 3, "label": "Jenkins 빌드기" },
+        "harbor": { "x": 12, "label": "Harbor 창고" },
+        "argocd": { "x": 21, "label": "ArgoCD 출하장" }
+      },
+      "lounge_seats": { "x": 2, "y": 3, "cols": 3, "rows": 4, "dx": 4, "dy": 3 }
+    }
+  },
+
+  "states": {
+    "ACTIVE":    { "anim": "walk", "go": "desk" },
+    "IDLE":      { "anim": "sit", "go": "desk" },
+    "SUSPENDED": { "anim": "still", "go": "desk", "fx": "frozen" },
+    "DORMANT":   { "anim": "stand", "go": "desk", "alpha": 0.45 }
+  },
+
+  "tools": [
+    { "match": "Read|Grep|Glob|NotebookRead", "go": "desk", "anim": "read" },
+    { "match": "Edit|Write|MultiEdit|NotebookEdit", "go": "desk", "anim": "type" },
+    { "match": "Bash|BashOutput|KillShell", "go": "server_rack", "anim": "type" },
+    { "match": "WebFetch|WebSearch", "go": "window", "anim": "look" },
+    { "match": "Agent|Task", "go": "desk", "anim": "call", "spawn": true },
+    { "match": "mcp__*", "go": "phone", "anim": "talk" },
+    { "match": "TodoWrite|ExitPlanMode", "go": "desk", "anim": "think" },
+    { "match": "*", "go": "desk", "anim": "type" }
+  ],
+
+  "flags": {
+    "approval_pending": { "bubble": "?", "anim": "raise_hand", "priority": 30 },
+    "stuck_turn":       { "bubble": "…", "priority": 20 },
+    "error":            { "fx": "smoke", "priority": 10 }
+  },
+
+  "infra": {
+    "running": { "anim": "work" },
+    "success": { "anim": "idle" },
+    "failed":  { "anim": "idle", "fx": "smoke" },
+    "waiting": { "anim": "idle", "prop": "pause_sign" },
+    "none":    { "anim": "idle", "alpha": 0.6 }
+  },
+
+  "sprites": {
+    "_comment": "10a는 도형(shapes). 10d에 CC0 시트로 바꾼다 — 이 칸만 바뀐다",
+    "kind": "shapes",
+    "person": { "w": 10, "h": 14, "head": 4 },
+    "mini_scale": 0.6
+  }
+}
