@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import time
 from collections import OrderedDict
 from datetime import UTC, datetime
@@ -33,6 +34,19 @@ def _target(tool: str, inp: dict[str, Any]) -> str:
     v = inp.get("command") or inp.get("file_path") or inp.get("notebook_path") or inp.get("path") \
         or inp.get("url") or inp.get("pattern") or inp.get("description")
     return v if isinstance(v, str) else json.dumps(inp, ensure_ascii=False)[:300]
+
+
+def _scratchpad(p: dict[str, Any]) -> str | None:
+    """세션 스크래치패드 — hook 입력에는 없다. 트랜스크립트 경로에서 만든다(11-03):
+    ~/.claude/projects/<디렉토리>/<세션>.jsonl → /tmp/claude-<uid>/<디렉토리>/<세션>/scratchpad. 모양이 다르면 None(예외를 안 쓴다)."""
+    tp = p.get("transcript_path") or ""
+    sid = p.get("session_id") or ""
+    if not tp or not sid:
+        return None
+    path = Path(tp)
+    if path.name != f"{sid}.jsonl" or path.parent.parent != Path.home() / ".claude" / "projects":
+        return None
+    return f"/tmp/claude-{os.getuid()}/{path.parent.name}/{sid}/scratchpad"
 
 
 def _key(sid: str, tool: str, inp: dict[str, Any]) -> str:
@@ -77,7 +91,7 @@ class ApprovalManager:
         tool, inp = p.get("tool_name") or "?", p.get("tool_input") or {}
         project = self._project(p)
         pp = self.policy.for_project(project)
-        dec = self.policy.decide(tool, inp, p.get("cwd"), p.get("scratchpad_dir"), project)
+        dec = self.policy.decide(tool, inp, p.get("cwd"), p.get("scratchpad_dir") or _scratchpad(p), project)
         enforced = pp.mode == "enforce" and dec.verdict in ("allow", "ask")
         sid = p.get("session_id") or ""
         summary = self._summary(tool, inp, dec.rule, dec.reason, p.get("cwd")) if dec.verdict == "ask" else None

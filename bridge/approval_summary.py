@@ -183,7 +183,12 @@ def summarize(tool: str, inp: dict[str, Any], rule: str, reason: str, cwd: str |
                                                          ("기존 파일" if os.path.exists(p) else "새 파일"))
             return f"{verb} → {p} ({kind})"[:MAX]
         return f"{tool} — {reason}"[:MAX]
-    cmd = str(inp.get("command") or "")
+    full = str(inp.get("command") or "")
+    # heredoc 본문은 대상을 뽑지 않는다(11-03 — 파이썬 f"rm … {SP}/shots"를 셸 명령으로 읽어 "frm (변수…)"가 나왔다).
+    # 검사(approval.py)는 본문까지 하지만, 요약은 셸 명령 줄만 본다. 걸린 게 본문 안이면 "해석기 스크립트 안"이라고만 적는다
+    from bridge.approval import HEREDOC
+    bodies = [(m.group("line").strip(), m.group("body")) for m in HEREDOC.finditer(full)]
+    cmd = HEREDOC.sub(lambda m: m.group("line") + " <<HEREDOC", full)
     if rule in ("민감한-경로", "보호-설정파일"):
         m = re.search(r"\(([^()]*)\)\s*$", reason)
         if m:
@@ -200,6 +205,11 @@ def summarize(tool: str, inp: dict[str, Any], rule: str, reason: str, cwd: str |
             s = None
         if s:
             return s[:MAX]
+    if bodies:
+        head = bodies[0][0] or "heredoc"
+        interp = re.search(r"\b(python3?|bash|sh|node|perl|ruby|mysql|psql|kubectl|vagrant)\b", head)
+        return (f"{rule} → {interp.group(1) if interp else 'heredoc'} 스크립트 안에서 걸림 "
+                f"(본문 {len(bodies[0][1].splitlines())}줄 — 대상은 본문을 직접 본다)")[:MAX]
     m = re.search(r"\(([^()]{3,})\)\s*$", reason)
     if m:
         return f"{rule} → {m.group(1)}"[:MAX]

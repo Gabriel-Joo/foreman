@@ -51,3 +51,14 @@ def test_outcome():
     assert outcome("timeout", "timeout", None, 1) == "approved"     # 시간 초과 뒤 터미널에서 허락 — 도구가 돌았다
     assert outcome("timeout", "timeout", None, 0) == "denied"
     assert outcome("abandoned", "bridge", None, None) == "unknown"
+
+
+def test_heredoc_body_is_not_parsed_as_shell():
+    """11-03 — 파이썬 heredoc 안 f"rm -f {SP}/shots"를 셸로 읽어 "frm (변수…)"가 나왔다."""
+    cmd = ".venv/bin/python - <<'EOF'\nimport subprocess\nSP='/x'\nsubprocess.run(f\"rm -rf {SP}/shots\", shell=True)\nEOF"
+    out = s(cmd)
+    assert "frm" not in out and "{SP}" not in out
+    assert out.startswith("rm-재귀 → python") and "스크립트 안에서 걸림" in out
+    # heredoc 밖의 셸 명령은 그대로 뽑는다
+    out2 = s("rm -rf /tmp/zz-none && cat > notes.md <<'EOF'\nrm -rf 설명\nEOF")
+    assert out2.startswith("rm -rf → /tmp/zz-none")

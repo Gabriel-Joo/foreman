@@ -110,7 +110,7 @@ class Policy:
     def _bash(self, cmd: str, cwd: str | None, scratchpad: str | None, depth: int = 0) -> Decision | None:
         orig, written = _strip_file_heredocs(cmd)
         # "실행과 글자" 넓히기(11-02) — 실행되지 않는 글자 · 값이 새지 않는 것이 명백한 모양을 검사 전에 지운다(_neutralize)
-        scan = _neutralize(orig)
+        scan = _neutralize(orig, scratchpad)
         for target in written:                     # heredoc으로 파일을 쓴다 — 쓰는 곳이 보호 · 비밀 파일이면 ask
             if (s := self._match(target, cwd, self.protect + self.sensitive)):
                 return Decision("ask", "보호-설정파일", f"Bash: 안전 규칙 · 설정 · 비밀 파일 쓰기({s})")
@@ -607,8 +607,57 @@ def _blank_literals(cmd: str) -> str:
     return _CURL_DATA.sub(lambda m: m.group(1) + ("'DATA'" if not m.group(2)[1:].startswith("@") else m.group(2)), cmd)
 
 
-def _neutralize(cmd: str) -> str:
+def _safe_scratch_rm(cmd: str, scratchpad: str | None) -> str:
+    """세션 스크래치패드 안만 지우는 rm(-r 포함)을 자리표시로(11-03 사용자 요청 — 스크린샷 시험마다 shots/*.png 지우기가 걸렸다).
+    조건: 모든 대상이 스크래치패드 **안쪽**(그 자체는 아님) — 부모 디렉토리를 realpath로 풀어 확인(.. · 심볼릭 링크로 밖을 가리키면 빠진다),
+    글롭은 마지막 조각에만, 변수는 같은 명령에서 문자 그대로의 경로로 딱 한 번 정한 것만 푼다($( ) · 다시 정하기 · read · for 등이면 빠진다).
+    스크래치패드의 부모 /tmp/claude-<uid>는 권한 700 — 다른 계정이 링크를 심을 수 없다."""
+    if not scratchpad:
+        return cmd
+    root = os.path.realpath(scratchpad)
+    env: dict[str, str] = {}
+    for m in re.finditer(r"(?:^|[\s;&|(])([A-Za-z_]\w*)=(\"?)([^\s\"'$`;&|()]+)\2(?=[\s;&|)]|$)", cmd):
+        env[m.group(1)] = m.group(3)
+    for v in list(env):
+        if len(re.findall(rf"(?<![\w$]){v}=", cmd)) != 1 or re.search(
+                rf"\bfor\s+{v}\b|\bread\b[^;&|\n]*\b{v}\b|\$\{{{v}:?[=+-]|\b(declare|typeset|local|readonly|export|unset)\b[^;&|\n]*\b{v}\b|\beval\b|\bsource\b",
+                cmd):
+            del env[v]
+
+    def inside(tok: str) -> bool:
+        m = re.fullmatch(r"\$\{?([A-Za-z_]\w*)(?::\?)?\}?(/.*)?", tok)
+        if m:
+            if m.group(1) not in env:
+                return False
+            tok = env[m.group(1)] + (m.group(2) or "")
+        if "$" in tok or "`" in tok or not os.path.isabs(os.path.expanduser(tok)):
+            return False
+        p = os.path.normpath(os.path.expanduser(tok))
+        parent, last = os.path.split(p)
+        if any(ch in parent for ch in "*?[") or not last or last in (".", ".."):
+            return False
+        rp = os.path.realpath(parent)
+        return (rp == root or rp.startswith(root + os.sep)) and p != root
+
+    edits = []
+    for a, b, _sep in _seg_spans(cmd):
+        w = _words(cmd[a:b])
+        if not w:
+            continue
+        head, h = _head(w)
+        if head != "rm":
+            continue
+        targets = [t for t in w[h + 1:] if not t.startswith("-")]
+        if targets and all(inside(t) for t in targets) and not re.search(r"[<>]|\$\(|`", cmd[a:b]):
+            edits.append((a, b, " : scratch-rm "))
+    for a, b, rep in sorted(edits, reverse=True):
+        cmd = cmd[:a] + rep + cmd[b:]
+    return cmd
+
+
+def _neutralize(cmd: str, scratchpad: str | None = None) -> str:
     try:
+        cmd = _safe_scratch_rm(cmd, scratchpad)
         # 키 이름만 · 헤더로만은 sed 스크립트 모양을 보므로 검색어 지우기보다 먼저. 리터럴(5)은 맨 먼저
         return _blank_patterns(_safe_tmp_rm(_safe_header_secret(_blank_key_only(_blank_literals(cmd)))))
     except Exception:  # noqa: BLE001 — 지우기가 실패하면 원문 그대로 검사한다(덜 지우는 쪽으로)
