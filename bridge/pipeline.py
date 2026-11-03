@@ -639,7 +639,7 @@ class PipelineManager:
     async def on_argocd(self, body: dict[str, Any]) -> dict[str, Any]:
         p = self.rules.by("argocd_app", str(body.get("app") or ""))
         if p is None:
-            return {"ignored": "모르는 ArgoCD 앱"}
+            return {"ignored": f"모르는 ArgoCD 앱: {str(body.get('app') or '')[:64]}"}   # cloudflared 등 체인 밖 앱
         status, step = argocd_status(body)
         tag = image_tag(body.get("images"), p.harbor_project)
         if str(body.get("sync") or "") == "OutOfSync" and status in ("waiting", "running"):
