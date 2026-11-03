@@ -1,7 +1,7 @@
 # 로드맵 8단계 — CI/CD 인과 체인 (+ 승인 규칙 "실행과 글자" 넓히기)
 
 - **실행일**: 2026-11-02 (8 · 9단계 순서를 바꾼 뒤 — README 로드맵)
-- **11-03**: App of Apps · 웹훅 뒤 재조사 완료(아래 "11-03 재조사"). 그 뒤 Jenkins 연동을 API 조회에서 **Jenkinsfile 알림 + 토큰 없는 보정**으로 바꿨다 — "새도 되는 비밀의 무게"(아래). **Jenkins 부분 적용 완료**(아래 "11-03 적용 결과"). 남은 것: ArgoCD 알림 웹훅, 펫퍼민트 "Sync 대기" 표시
+- **11-03**: App of Apps · 웹훅 뒤 재조사 완료(아래 "11-03 재조사"). 그 뒤 Jenkins 연동을 API 조회에서 **Jenkinsfile 알림 + 토큰 없는 보정**으로 바꿨다 — "새도 되는 비밀의 무게"(아래). **Jenkins · ArgoCD 모두 적용**(아래 "11-03 적용 결과" 두 절). 시험 중 웹훅 토큰이 도구 출력에 노출돼 교체했다(같은 절)
 - **상태(11-02)**: **조사 완료, 적용 보류.** 실제 파이프라인은 웹훅이 아니라 폴링이었다. FOREMAN은 "읽기 조회"로 끼어드는 방향으로 정했고(사용자 결정), **ArgoCD App of Apps를 먼저 한 뒤** 그 구조에 맞춰 만든다 — Application 구조가 바뀌면 FOREMAN이 보는 방식도 바뀌므로 지금 맞추면 두 번 일한다
 - 커밋: `0178fd5`(웹훅 수신 · 로컬 git 폴링 — 지금은 꺼 둠), 이 문서 · 정리는 다음 커밋
 
@@ -279,12 +279,50 @@ Secret은 사람이 넣는다(값을 화면에 내지 않고 `.env.bridge`에서
 
 인프라 캐릭터 Jenkins가 두 프로젝트에 첫 알림으로 등장했다. 빠진 알림 찾기는 두 push 모두 시작 알림이 와서 대기 → 해제(경고 없음).
 
+## 11-03 적용 결과 — ArgoCD 알림 웹훅 (사용자 순서: Secret · cm 먼저 → 펫퍼민트 수동 알림 1건 → 구독)
+
+되돌리기 · 진행 기록: 호스트 `~/k8s-cluster/backup/2026-11-03-argocd-notifications/ROLLBACK.md`(바꾸기 전 `cm-before.yaml` — 둘 다 비어 있었다).
+
+| 확인(사용자 요청) | 결과 |
+|---|---|
+| cm · secret이 ArgoCD 밖이라 루트 앱이 안 덮나 | 맞다 — 10-13 설치 때 `kubectl client-side apply`(managedFields), ArgoCD 추적 라벨 · 주석 없음, 루트가 관리하는 것은 Application 3개뿐. `apply`가 아니라 `patch`로 넣었다 — install.yaml을 다시 apply해도 이 키들은 지워지지 않는다 |
+| 알림 컨트롤러 파드에서 8001에 닿나 | 닿는다 — 그 파드에 curl이 없어 `git ls-remote http://192.168.122.1:8001/…`로 GET을 보냈고 브리지 로그에 출발 IP `192.168.122.11`(w1, 허용 대역). 실제 알림도 같은 IP에서 202 |
+| 기본 구독 + `instance=root`가 자식 전부를 잡고 루트는 빠지나 | 맞다 — 구독을 켜자 첫 알림이 cloudflared · petmint · runshoes에만 갔고(성공 · 배포 완료 각 1), root는 컨트롤러가 처리만 하고 보내지 않았다. cloudflared는 `config/pipeline.toml` 밖이라 FOREMAN이 건너뛴다(이제 로그에 앱 이름). 주의: ArgoCD 추적 방식을 annotation으로 바꾸면 라벨이 사라져 구독이 조용히 끊긴다 |
+| 되돌리기 | 둘 다 원래 비어 있었다 → `patch … '{"data":null}'` 두 줄. 구독만 끄기 · FOREMAN만 끄기도 ROLLBACK.md에 |
+
+- 본문 템플릿 실측: `{"app":"petmint","sync":"Synced","health":"Healthy","revision":…,"images":[…:d33687127aa3,…],"automated":false,"phase":"Succeeded",…,"op_revision":…}` — 런슈즈의 `automated: {}`(빈 맵)를 if로 보면 거짓이라 `hasKey`로 본다
+- 트리거 6개: out-of-sync(수동 Sync 앱이면 FOREMAN "⏸ Sync 대기") · sync-running · sync-succeeded · sync-failed · health-degraded · deployed
+- 수동 Sync 대기 표시는 OutOfSync 알림의 이미지가 아직 옛 태그라 "Jenkins 성공 · ArgoCD 성공 없는 가장 최근 빌드"에 붙인다(시험)
+
+### 토큰이 도구 출력에 섞여 들어온 일 — 그리고 "새도 되는 비밀의 무게"가 실제로 작동한 사례
+
+**경위**: 2단계 확인에서 알림 컨트롤러 파드 안의 `argocd admin notifications template notify foreman petmint --recipient foreman`을 돌렸다. 이 CLI가 디버그 로그로 보내는 요청을 통째로 찍었고(`Sending request: POST … Authorization: Bearer <토큰>`), 그 출력이 도구 결과로 이 세션 대화에 들어왔다. 출력을 거르지 않고 돌린 실수다 — CLAUDE.md "비밀값을 화면에 내지 않는다" 위반.
+
+**피해 범위를 따졌다**:
+- 값이 남은 곳: 이 세션의 트랜스크립트 파일(권한 **600**, kopo17만 — 공유 서버의 kopo02는 못 읽는다)과 대화 맥락
+- FOREMAN DB: 도구 결과는 **길이 · 오류 여부만** 저장한다(`event.payload` `chars` · `is_error`) — 값이 DB에 들어가지 않았다
+- 이 토큰으로 할 수 있는 일: FOREMAN에 **가짜 빌드 · 배포 이벤트**를 넣는 것뿐, 그것도 받는 쪽이 **VM 망 IP만** 받으므로 클러스터 · VM 망 안에서만. 배포 · 레지스트리 · 클러스터에는 닿지 않는다
+
+이 토큰이 **바로 이런 때를 위해 고른 것**이다 — Jenkins 연동을 API 조회(토큰 = Jenkins 관리자 = 배포 경로 전체의 열쇠)에서 알림 방식(새도 가짜 이벤트뿐)으로 바꾼 이유가 "새도 되는 비밀의 무게"였다. 같은 실수로 Jenkins API 토큰이 찍혔다면 Script Console · 자격 증명 · 인프라 쓰기 키까지 열렸고, 교체에 Jenkins 계정 정리와 자격 증명 감사가 따랐을 것이다. 실제로는 "급하지 않다"고 판단할 수 있었다.
+
+**그래도 바꾼 이유**: 노출된 비밀은 바꾸는 게 원칙이고, **지금이 비용이 가장 적었다** — ArgoCD는 구독을 켜기 전이라 보낼 것이 없었고, Jenkins는 빌드가 없을 때를 고르면 됐다.
+
+**교체 순서**(받는 쪽을 맨 끝에 — 틈이 생기지 않게. 처음에 설명 없이 `.env.bridge`부터 바꾸려다 사용자가 멈췄다: "ArgoCD가 가진 건 옛날 게 되고, Jenkins도 같은 토큰 쓰고 있는데"):
+1. Jenkins 빌드 없음 확인 — 런슈즈 `#56`이 돌고 있어 3번까지만 먼저 하고 끝나길 기다렸다
+2. 새 값을 화면에 내지 않고 `.env.bridge`에(브리지는 아직 옛 값으로 받는다)
+3. ArgoCD secret(표준 입력 · 셸 내장 `printf`로 — 프로세스 목록에도 안 보이게)
+4. Jenkins secret + 컨트롤러 재시작(자격 증명은 기동 때 읽는다, 62초)
+5. 브리지 재시작
+6. 확인: 세 곳의 해시 앞 12자리가 같다(값은 비교하지 않음), Jenkins 파드에서 토큰 없이 401 · 마운트된 새 값으로 202(본문 `{}` — 모르는 job이라 DB에 쓰지 않음), ArgoCD 알림(이번엔 **출력을 버리고** 브리지 로그로) 202, **옛 토큰 401**
+
+**앞으로**: `argocd admin notifications … notify` 같은 "시험 전송" CLI는 출력을 버리고(`>/dev/null 2>&1`) 받는 쪽 로그로만 확인한다(메모리에도 남김).
+
 ## 지금 상태
 
+- **ArgoCD**: 알림 웹훅 **켜짐**(11-03) — 구독 `instance=root`, 트리거 6개, 토큰 교체 끝
 - **브리지**: 파이프라인 **켜짐**(11-03) — 8001(virbr0, `/webhooks/*`만, VM 망 IP만, 토큰), 로컬 git 폴링 20초, 인프라 생존 폴링, 빠진 알림 찾기 30초
 - ~~11-02 보류 때~~: 파이프라인을 껐었다(`pipeline_enabled = False`)
 - **코드**: `bridge/pipeline.py`(+ `build_cause` · `watch_state` · `webhook_broken`, `track_origin` · `check_watch` · `_check_hook`), `bridge/api/webhooks.py`, `config/pipeline.toml`(`[watch]`), 대시보드 `render.js`(빌드 기다림 · 알림 없음 · 웹훅 끊김 줄). 시험 193개
-- **ArgoCD**: 아직 — notifications 매니페스트 초안(`deploy/cicd/argocd-notifications-foreman.yaml`)을 기본 구독 + `instance=root`로 고쳐 적용할 차례. 펫퍼민트 "Sync 대기"는 이것과 같이(지금 대시보드는 Jenkins 단계까지만)
 - **DB**: `build`에 검증 빌드 2행(`petmint-app#49` · `runshoes-app#52`), 인프라 캐릭터 Jenkins 2(프로젝트마다)
 - **`FOREMAN_WEBHOOK_TOKEN`**: `.env.bridge`(브리지가 받을 때) + Secret `jenkins/foreman-webhook-token`(Jenkins가 보낼 때). 바꿀 때 둘 다
 - **빠진 알림 찾기의 한계**: 상태가 메모리에 있다 — 브리지를 다시 띄우면 그때의 origin 머리부터 다시 잰다(재시작 직전 push는 놓친다). 이 서버에서 push · fetch해 `origin/main`이 움직여야 보인다(다른 PC에서 GitHub에 직접 push하면 못 본다 — 지금은 모두 이 서버의 세션이 push한다)
