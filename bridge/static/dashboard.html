@@ -33,6 +33,10 @@
   .appr { display:flex; gap:10px; align-items:flex-start; border:1px solid var(--warn); border-left:5px solid var(--warn); border-radius:8px; padding:8px 10px; background:var(--card); }
   .appr.done { border-color:var(--line); opacity:.6; }
   .appr-main { flex:1; min-width:0; }
+  .appr-sum { font-weight:600; margin:2px 0; word-break:break-all; }   /* 무엇을 대상으로(11-03) */
+  .appr-hist { padding:6px 16px 0; } .appr-hist > summary { cursor:pointer; }
+  table.hist { border-collapse:collapse; margin:6px 0; } table.hist td, table.hist th { padding:2px 8px; border-bottom:1px solid var(--line); text-align:left; }
+  .hist-items { margin:6px 0; padding-left:18px; } .hist-items li { margin:2px 0; }
   .appr-act { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
 
   .layout { display:grid; grid-template-columns: minmax(0,1fr) minmax(340px, 40%); gap:0; min-height:calc(100vh - 50px); }

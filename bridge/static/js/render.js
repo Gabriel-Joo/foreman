@@ -100,6 +100,7 @@ export function createRenderer(root, store) {
       <button id="tokBtn" class="ghost" title="API 토큰">토큰</button>
     </header>
     <section id="approvals" class="approvals" aria-label="승인 대기"></section>
+    <details id="apprHist" class="appr-hist"><summary class="small">승인 이력 <span id="apprHistHead" class="muted"></span></summary><div id="apprHistBody" class="small"></div></details>
     <main class="layout">
       <section id="grid" class="grid" aria-label="세션"></section>
       <aside id="panel" class="panel" aria-label="선택한 세션">
@@ -156,6 +157,35 @@ export function createRenderer(root, store) {
       const m = prompt('거부 이유(모델에게 전달된다)', '사용자가 거부');
       if (m !== null) store.decide(aid, 'deny', m);
     } else if (b.dataset.act === 'open') store.select(Number(b.dataset.sid));
+  });
+  // 승인 이력(11-03) — 무엇이 몇 번 걸렸고 다 승인했는지. 늘 Yes만 누르는 규칙은 손볼 후보로 표시
+  let histDays = 1, histTimer = null;
+  const OUT = { approved: ['승인', 'ok'], denied: ['거부', 'bad'], unknown: ['모름', 'muted'] };
+  async function loadHist() {
+    try {
+      const r = await fetch(`/api/approvals/history?days=${histDays}`, { headers: store.headers() });
+      if (!r.ok) { $('apprHistBody').textContent = `불러오지 못함(${r.status})`; return; }
+      const h = await r.json();
+      const t = h.total;
+      $('apprHistHead').textContent = `— ${histDays === 1 ? '오늘' : histDays + '일'} ${t.n}건 · 승인 ${t.approved} · 거부 ${t.denied}${t.unknown ? ' · 모름 ' + t.unknown : ''}`;
+      const yes = h.by_rule.filter((b) => b.always_yes);
+      const rules = h.by_rule.map((b) => `<tr${b.always_yes ? ' class="warn"' : ''}><td>${esc(b.rule)}</td><td>${b.n}</td><td>${b.approved}</td><td>${b.denied}</td><td>${b.unknown}</td><td>${b.always_yes ? '늘 Yes — 규칙 손볼 후보' : ''}</td></tr>`).join('');
+      const items = h.items.slice(0, 30).map((x) => `<li><span class="${OUT[x.outcome][1]}">${OUT[x.outcome][0]}</span> <span class="muted">${ago(x.at)} · ${esc(x.project || '미분류')} · ${esc(x.rule)}</span> ${esc(oneLine(x.summary || '', 140))}</li>`).join('');
+      const obs = h.observe.length ? `<div class="muted">관찰 모드(창을 띄우지 않음)에서 걸렸을 것: ${h.observe.map((o) => `${esc(o.project)} ${esc(o.rule)} ${o.n}`).join(' · ')}</div>` : '';
+      $('apprHistBody').innerHTML = `
+        <div class="row"><button class="ghost small" data-days="1">오늘</button><button class="ghost small" data-days="7">7일</button><button class="ghost small" data-days="30">30일</button></div>
+        ${yes.length ? `<div class="warn">늘 Yes: ${yes.map((b) => `${esc(b.rule)} ${b.n}번`).join(' · ')} — 묻는 의미가 없으면 규칙을 고친다</div>` : ''}
+        ${rules ? `<table class="hist"><tr><th>규칙</th><th>걸림</th><th>승인</th><th>거부</th><th>모름</th><th></th></tr>${rules}</table>` : '<div class="muted">걸린 것 없음</div>'}
+        ${obs}<ul class="hist-items">${items}</ul>`;
+    } catch (e) { $('apprHistBody').textContent = '불러오지 못함'; }
+  }
+  $('apprHist').addEventListener('toggle', () => {
+    clearInterval(histTimer);
+    if ($('apprHist').open) { loadHist(); histTimer = setInterval(loadHist, 60000); }
+  });
+  $('apprHistBody').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-days]');
+    if (b) { histDays = Number(b.dataset.days); loadHist(); }
   });
   $('inputForm').onsubmit = async (ev) => {
     ev.preventDefault();
@@ -222,7 +252,8 @@ export function createRenderer(root, store) {
       return `<div class="appr ${done ? 'done' : ''}">
         <div class="appr-main">
           <div><b>🔐 ${esc(label)}</b> · ${esc(a.tool)} <span class="muted small">#${a.id} · ${esc(a.rule)}</span></div>
-          <code>${esc(a.target)}</code>
+          ${a.summary ? `<div class="appr-sum">▶ ${esc(a.summary)}</div>` : ''}
+          ${a.summary ? `<details class="small"><summary class="muted">명령 전체</summary><code>${esc(a.target)}</code></details>` : `<code>${esc(a.target)}</code>`}
           <div class="small muted">${esc(a.reason || '')}${a.error ? ` · <span class="bad">${esc(a.error)}</span>` : ''}</div>
         </div>
         <div class="appr-act">${done ? `<span class="small">${esc(a.status)}${a.decided_by ? ' · ' + esc(a.decided_by) : ''}</span>` :
