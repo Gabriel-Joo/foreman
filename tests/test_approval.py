@@ -359,3 +359,32 @@ def test_rule_file_read_copy_is_not_write():
     assert bash("cp /tmp/x ~/.claude/settings.json").rule == "보호-설정파일"
     assert bash("mv ~/.claude/settings.json /tmp/x").rule == "보호-설정파일"          # 옮겨 없앤다
     assert bash("sed -i 's/a/b/' ~/.claude/settings.json").rule == "보호-설정파일"
+
+
+# ── 11-03 세션 스크래치패드 안만 지우는 rm은 통과 ───────────────
+def test_scratchpad_rm_passes_but_escapes_ask(tmp_path):
+    sp = tmp_path / "sess" / "scratchpad"
+    (sp / "shots").mkdir(parents=True)
+    out = tmp_path / "outside"
+    out.mkdir()
+    (sp / "link").symlink_to(out)                                   # 밖을 가리키는 링크
+    S = str(sp)
+    ok = [f"rm -f {S}/shots/*.png", f"S={S}; rm -f $S/shots/*.png", f'S={S} && rm -rf "$S/shots"',
+          f"rm -rf {S}/shots {S}/x.json"]
+    for c in ok:
+        r = d("Bash", scratch=S, command=c)
+        assert r.verdict != "ask", (c, r)
+    bad = [f"rm -rf {S}", f"rm -rf {S}/../..", f"rm -rf {S}/link/*", f"rm -rf {S}/shots /tmp/other",
+           f"S={S}; S=/home; rm -rf $S/x", f"rm -rf $(echo {S})/x", f"rm -rf {S}/*/deep"]
+    for c in bad:
+        assert d("Bash", scratch=S, command=c).verdict == "ask", c
+    assert d("Bash", command=f"rm -rf {S}/shots").verdict == "ask"   # 스크래치패드를 모르면 예외 없음
+
+
+def test_scratchpad_from_transcript_path():
+    from pathlib import Path
+    from bridge.approvals import _scratchpad
+    tp = str(Path.home() / ".claude/projects/-home-x-proj/abc.jsonl")
+    assert _scratchpad({"transcript_path": tp, "session_id": "abc"}) == f"/tmp/claude-{os.getuid()}/-home-x-proj/abc/scratchpad"
+    assert _scratchpad({"transcript_path": "/tmp/evil/abc.jsonl", "session_id": "abc"}) is None
+    assert _scratchpad({"transcript_path": tp, "session_id": "other"}) is None
