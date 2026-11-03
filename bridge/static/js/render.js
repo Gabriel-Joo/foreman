@@ -55,7 +55,7 @@ function why(s) {
 
 // ── 8단계 파이프라인 — 프로젝트마다 인프라 캐릭터와 최근 체인(커밋 → Jenkins → Harbor → ArgoCD), 깨진 곳은 붉게 ──
 const PIPE_STAGES = [['jenkins', 'Jenkins'], ['harbor', 'Harbor'], ['argocd', 'ArgoCD']];
-const PIPE_MARK = { success: '✓', failed: '✗', running: '…' };
+const PIPE_MARK = { success: '✓', failed: '✗', running: '…', waiting: '⏸ Sync 대기' };   // waiting — 수동 Sync 앱, 실패 아님(11-03)
 const INFRA_LABEL = { IDLE: '응답', ACTIVE: '일하는 중', STALE: '응답 없음' };
 function pipeBlock(pp) {
   if (!pp) return '';

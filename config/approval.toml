@@ -36,7 +36,7 @@ cc_own_paths = ['^~/\.claude/plans/', '^~/\.claude/projects/[^/]+/memory/']
 "kubectl-적용" = '''^kubectl(\s+(-n|--namespace|--context|-f|--filename|-l|--selector)\s+\S+|\s+--?[\w-]+(=\S+)?)*\s+(apply|create|replace|patch|scale|rollout|set|label|annotate|edit|cordon|uncordon|drain|taint|autoscale)\b'''
 "helm-적용" = '''^helm\s+(install|upgrade|rollback)\b'''
 "argocd-동기화" = '''^argocd\s+app\s+(sync|rollback|set|wait|get|list)\b'''
-"git-push" = '''^git(\s+(-C\s+\S+|--no-pager))*\s+push\b(?!.*(\s-f\b|--force|--delete|\s-d\b|--mirror|\s\+\S))'''
+"git-push" = '''^git(\s+(-C\s+\S+|--no-pager))*\s+push\b(?!.*(\s-f\b|--force|--delete|\s-d\b|--mirror|\s\+\S|\s:[\w./-]|\s-\w*f\w*\b|--prune\b))'''
 "docker-재시작" = '''^docker(\s+compose(\s+(-f|--file|-p|--project-name)\s+\S+)*)?\s+(stop|restart|start|kill|up|pause|unpause)\b'''
 "docker-compose-down" = '''^docker\s+compose(\s+(-f|--file|-p|--project-name)\s+\S+)*\s+down\b(?!.*(\s-v\b|--volumes|--rmi))'''
 "systemctl-변경" = '''^systemctl(\s+--user)?\s+(start|stop|restart|reload|enable|disable|daemon-reload|status|is-active|is-enabled)\b'''
@@ -50,11 +50,21 @@ delete_outside_worktree = true
 "rm-재귀" = '''(^|[\s;&|(`'"])rm\s+(-\w*[rR]\w*|--recursive)'''
 "docker-삭제" = '''\bdocker(\s+compose)?\b[^|;&\n]*?\s(rm|rmi|prune|volume\s+rm|network\s+rm)\b|\bdocker\s+compose\b[^|;&\n]*?\sdown\b[^|;&\n]*?(\s-v\b|--volumes|--rmi)'''
 "git-되돌리기" = '''\bgit\b[^|;&\n]*?\s(reset\s+--hard|clean\s+-\w*f|checkout\s+--\s|checkout\s+\.(\s|$)|restore\s|branch\s+-D|stash\s+(drop|clear))'''
-"git-강제push" = '''\bgit\b[^|;&\n]*?\spush\b[^|;&\n]*?(\s-f\b|--force|--delete|\s-d\b|--mirror|\s\+\S)'''
+"git-강제push" = '''\bgit\b[^|;&\n]*?\spush\b[^|;&\n]*?(\s-f\b|--force|--delete|\s-d\b|--mirror|\s\+\S|\s:[\w./-]|\s-\w*f\w*\b|--prune\b)'''
 "kubectl-삭제" = '''\bkubectl\b[^|;&\n]*?\sdelete\b'''
 "helm-삭제" = '''\bhelm\s+(uninstall|delete)\b'''
 "argocd-삭제" = '''\bargocd\s+(app\s+delete|repo\s+rm|cluster\s+rm)\b'''
-"DB-파괴" = '''(?i)\b(drop\s+(database|table|schema)|truncate\s+table)\b'''
+"DB-파괴" = '''(?i)\b(drop\s+(database|table|schema)|truncate\s+table)\b|\bdelete\s+from\s+[\w.`"]+\s*(;|"|'|$)|\bflush(all|db)\b|\bdropdb\b|\bmysqladmin\b[^|;&\n]*\sdrop\b'''
+# ── 11-03 보강 — 다른 게이트 구현에서 가져온 위험 패턴(우리 환경에 있는 것만, README 3.3 "다른 구현과 비교") ──
+"git-기록파괴" = '''\bgit\b[^|;&\n]*?\s(filter-branch|filter-repo|reflog\s+expire|gc\b[^|;&\n]*--prune=(now|all))\b'''
+"find-삭제" = '''\bfind\b[^|;&\n]*?\s(-delete\b|-exec(dir)?\s+(rm|shred|mv)\b)'''
+"권한-대량변경" = '''\bchmod\b[^|;&\n]*\s0?777\b|\b(chmod|chown)\s+(-\w+\s+)*-\w*R\w*\b[^|;&\n]*\s(/|~|\$HOME)/?(\s|$|;)'''
+"재부팅-종료" = '''(^|[;&|(\n'"]|\bsudo)\s*(reboot|shutdown|poweroff|halt)(\s|$|;)|\bsystemctl\s+(reboot|poweroff|halt|kexec)\b|\binit\s+[06](\s|$)'''
+# pkill · killall은 대상이 CC · tmux · 브리지 · 인프라 프로세스에 걸릴 때만 — 21일 실데이터 17건은 모두 자기가 띄운 스크립트(vite · uvicorn · 실험)를 끄는 것
+"프로세스-대량종료" = '''\bkill\s+(-\w+\s+)*-1(\s|$)|(^|[;&|(\n'"]\s*)(sudo\s+)?(killall|pkill)\b[^;&|\n]*((?<![/\w-])claude(?![\w-])|\bnode\b|\btmux\b|\bttyd\b|\bsshd?\b|docker|containerd|kubelet|qemu|libvirt|mysqld|vagrant|\bbridge\b|\s-u\s|\s-U\s|\s--uid\b)'''
+"디스크-덮어쓰기" = '''>\s*/dev/(sd|nvme|vd)[a-z]|\btruncate\s+(-\w+\s+)*-s\s*0\b|:\(\)\s*\{\s*:\s*\|\s*:\s*&'''
+# 맨 env는 명령 자리(줄 처음 · ; & | 뒤)에서만 — print(env) 같은 해석기 코드 글자는 아니다(11-03 다시 돌려 보기)
+"환경-덤프" = '''(^|[;&|(\n'"]\s*)printenv\b|(^|[;&\n]|&&|\|\|)\s*env\s*($|[|;&>])|/proc/[^/\s]+/environ\b'''
 "원격스크립트-실행" = '''(curl|wget)\b[^|;\n]*\|\s*(sudo\s+)?(ba|z)?sh\b'''
 "디스크-파괴" = '''(^|[\s;&|(`])(dd\s+if=|mkfs|shred\s)|\bvirsh\s+undefine\b|\bvagrant\s+destroy\b'''
 "크론-삭제" = '''\bcrontab\s+-r\b'''
@@ -86,9 +96,19 @@ secret = [
   '(^|/)[^/]*\.key$',
   '(^|/)(credentials|secrets?)(\.\w+)?$',
   '(^|/)\.kube/config$',
+  # 11-03 보강 — 다른 구현(protect-secrets · damage-control · PolicyApprovalGate)의 비밀 파일 목록에서
+  '(^|/)\.(netrc|npmrc|pypirc|git-credentials|pgpass|my\.cnf|vault-token)$',
+  '(^|/)\.docker/config\.json$',
+  '(^|/)\.aws/(credentials|config)$',
+  '(^|/)\.gnupg/',
+  '\.(jks|keystore|tfstate)$',
+  '(^|/)[^/]*service-?account[^/]*\.json$',
 ]
 protect = [
   '(^|/)AI_programming/foreman/config/(approval|notify)\.toml$',   # FOREMAN 안전 규칙 · 알림 규칙 자체
+  '(^|/)AI_programming/foreman/scripts/foreman-(hook|decide)\.sh$', # 11-03 — 게이트 자신(hook 스크립트)을 고쳐 끄는 길(PolicyApprovalGate 자기 보호)
+  '(^|/)\.claude\.json$',                                           # CC 전역 설정(MCP 서버 등)
+  '(^|/)\.mcp\.json$',
   '(^|/)\.claude/settings(\.local)?\.json$',
   '(^|/)\.gitconfig$',
   '(^|/)\.(bash|zsh)rc$',

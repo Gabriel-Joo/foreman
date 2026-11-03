@@ -1,29 +1,46 @@
-# ⚠ 초안 — 적용하지 않았다(11-02, 8단계 보류). ArgoCD App of Apps 뒤 구조를 보고 ①(알림 웹훅)으로 갈지 정할 때 다시 본다.
-#   그때 바뀔 수 있는 것: 구독 범위(앱 이름 · 라벨), 받는 주소(웹훅 포트는 지금 꺼져 있다), 토큰을 넣는 방법
+# FOREMAN 8단계 — ArgoCD 동기화 · 헬스 · Sync 대기를 FOREMAN 브리지 웹훅(호스트 virbr0 192.168.122.1:8001)으로 보낸다.
+# 11-03 확정안(적용 전 — 사용자 검토). 동기화 동작은 바뀌지 않는다 — 알림만 더한다.
 #
-# FOREMAN 8단계 — ArgoCD 동기화 · 헬스 변화를 FOREMAN 브리지 웹훅(호스트 virbr0 192.168.122.1:8001)으로 보낸다.
-# argocd-notifications-controller는 이미 떠 있었다(설정만 비어 있었다). 동기화 동작은 바뀌지 않는다 — 알림만 더한다.
+# 어디에 있나: argocd-notifications-cm · -secret은 ArgoCD 설치물(10-13 kubectl apply, 추적 라벨 · 주석 없음)이다.
+#   ArgoCD가 관리하지 않고(루트 앱은 Application 3개만 관리), 인프라 저장소 platform/에도 없다 → 손으로 넣어도 되돌려지지 않는다.
+#   `kubectl apply`가 아니라 `kubectl patch`로 넣는다 — ArgoCD를 install.yaml로 다시 apply(업그레이드)해도 이 키들이 지워지지 않게
+#   (설치 때의 last-applied에 이 키들이 없으므로 apply가 "지울 것"으로 보지 않는다)
+#
+# 구독: 기본 구독 + selector app.kubernetes.io/instance=root — 루트가 만든 자식 앱(runshoes · petmint · cloudflared, 앞으로 더할 앱)에는
+#   ArgoCD가 이 라벨을 붙이고(추적 방식 기본값 = label), 루트 자신에는 없다. 추적 방식을 annotation으로 바꾸면 라벨이 사라져 구독이 조용히 끊긴다 — 그때 다시 볼 것
 #
 # 적용(m-k8s):  kubectl -n argocd patch cm argocd-notifications-cm --type merge --patch-file argocd-notifications-foreman.yaml
-# 토큰:         argocd-notifications-secret의 키 foreman-webhook-token(값은 FOREMAN .env.bridge의 FOREMAN_WEBHOOK_TOKEN —
-#               scripts/cicd-apply.sh가 화면에 내지 않고 넣는다). 여기에는 $foreman-webhook-token 참조만 둔다
-# 되돌리기:     아래 키들을 지운다(kubectl -n argocd edit cm argocd-notifications-cm) — 다른 키는 없었다(11-02 비어 있음)
+# 토큰:         argocd-notifications-secret의 키 foreman-webhook-token — 값은 FOREMAN .env.bridge FOREMAN_WEBHOOK_TOKEN(Jenkins와 같은 값).
+#               화면에 내지 않고 표준 입력으로 patch한다. 여기에는 $foreman-webhook-token 참조만 둔다
+# 되돌리기:     두 객체 모두 11-03까지 비어 있었다 →  kubectl -n argocd patch cm argocd-notifications-cm --type merge -p '{"data":null}'
+#               kubectl -n argocd patch secret argocd-notifications-secret --type merge -p '{"data":null}'
+#               (FOREMAN만 끄려면 bridge pipeline_enabled = False — 컨트롤러 로그에 전송 실패만 남고 동기화는 그대로)
 #
-# 본문은 FOREMAN bridge/pipeline.py argocd_status()가 읽는 모양: {app, trigger, sync, health, phase, message, revision, images, at}
-# operationState가 없는 앱(한 번도 동기화 안 됨)도 있어 if로 감싼다 — 없는 필드를 읽으면 템플릿이 실패한다
+# 본문은 FOREMAN bridge/pipeline.py argocd_status()가 읽는 모양:
+#   {app, sync, health, revision, images, automated, phase, message, at, op_revision}
+#   phase · message · op_revision은 마지막 동기화 작업의 것(지금 리비전과 다를 수 있다 — op_revision으로 가른다)
+#   automated: syncPolicy에 automated 키가 있나 — 런슈즈는 automated: {}(빈 맵)라 if로 보면 거짓이 된다, hasKey로 본다(sprig)
+#   없는 필드를 읽으면 템플릿이 실패한다 — operationState · syncResult · syncPolicy는 if로 감싼다
 data:
   service.webhook.foreman: |
     url: http://192.168.122.1:8001
     headers:
       - name: Authorization
         value: Bearer $foreman-webhook-token
+      - name: Content-Type
+        value: application/json
   template.foreman: |
     webhook:
       foreman:
         method: POST
         path: /webhooks/argocd
         body: |
-          {"app": {{toJson .app.metadata.name}}, "sync": {{toJson .app.status.sync.status}}, "health": {{toJson .app.status.health.status}}, "revision": {{toJson .app.status.sync.revision}}, "images": {{toJson .app.status.summary.images}}{{if .app.status.operationState}}, "phase": {{toJson .app.status.operationState.phase}}, "message": {{toJson .app.status.operationState.message}}, "at": {{toJson .app.status.operationState.finishedAt}}{{end}}}
+          {"app": {{toJson .app.metadata.name}}, "sync": {{toJson .app.status.sync.status}}, "health": {{toJson .app.status.health.status}}, "revision": {{toJson .app.status.sync.revision}}, "images": {{toJson .app.status.summary.images}}, "automated": {{if .app.spec.syncPolicy}}{{hasKey .app.spec.syncPolicy "automated"}}{{else}}false{{end}}{{if .app.status.operationState}}, "phase": {{toJson .app.status.operationState.phase}}, "message": {{toJson .app.status.operationState.message}}, "at": {{toJson .app.status.operationState.finishedAt}}{{if .app.status.operationState.syncResult}}, "op_revision": {{toJson .app.status.operationState.syncResult.revision}}{{end}}{{end}}}
+  # 새 리비전이 들어와 OutOfSync — 수동 Sync 앱은 FOREMAN에서 "Sync 대기", 자동 Sync 앱은 "곧 동기화"
+  trigger.foreman-out-of-sync: |
+    - when: app.status.sync.status == 'OutOfSync'
+      oncePer: app.status.sync.revision
+      send: [foreman]
   trigger.foreman-sync-running: |
     - when: app.status.operationState != nil and app.status.operationState.phase in ['Running']
       send: [foreman]
@@ -42,4 +59,5 @@ data:
       send: [foreman]
   subscriptions: |
     - recipients: [foreman]
-      triggers: [foreman-sync-running, foreman-sync-succeeded, foreman-sync-failed, foreman-health-degraded, foreman-deployed]
+      selector: app.kubernetes.io/instance=root
+      triggers: [foreman-out-of-sync, foreman-sync-running, foreman-sync-succeeded, foreman-sync-failed, foreman-health-degraded, foreman-deployed]

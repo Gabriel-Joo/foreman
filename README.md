@@ -277,6 +277,13 @@ CC에서 Esc로 중단하면 **Stop hook이 불리지 않는다**(4단계 실측
 | `D=$(mktemp -d) … rm -rf "${D:?}"` (같은 명령 안) | **방금 만든 빈 임시 디렉토리**를 지운다 | 통과 |
 | `D=/tmp/old; rm -rf "${D:?}"` · `D=$(mktemp -d); D=/home; rm -rf "${D:?}"` | 무엇을 지울지 이 명령 안에서 **확인할 수 없다** | 묻는다 |
 | `python3 - <<'EOF'` … `open('.env.db', 'w')` … `EOF` | 스크립트가 **비밀 파일을 쓴다**(읽기만 — 앱이 설정을 읽는 것 — 은 통과) | 묻는다 |
+| `git -C $d log` · `git -c x=1 -C "$d" status` (11-03) | `-C` · `-c` · `--git-dir` · `--work-tree` 다음은 **값**(경로 · 설정), 동사는 `log`로 고정 | 통과 |
+| `git -C "$d" $VERB` · `git -C $x`(끝) | 동사가 변수 · 따옴표 없는 `$x`가 "경로 push --force"로 **쪼개질 수 있다** | 묻는다 |
+| `echo "== cm/secret metadata"` · `printf '%s\n' '…'` (11-03) | 따옴표 친 글자를 **찍을 뿐** — echo는 파일을 읽지 않는다(안쪽 `vagrant ssh -c '…'` 스크립트 안에서도) | 통과 |
+| `git commit -m "…rm -rf · .env…"` · `git tag -m` · `curl --data '{"…"}'` (11-03) | **메시지 · 요청 본문**으로 저장 · 전송될 뿐 | 통과 |
+| `echo "…" \| docker exec -i db mysql` · `echo "…" \| sh` | 출력을 **받는 프로그램이 실행한다** — 파이프로 어디든 넘어가면 | 묻는다 |
+| `$(echo "rm -rf x")` · `bash <(echo …)` · `echo … > run.sh` | 결과가 **명령으로 실행된다** · 스크립트로 쓴다 | 묻는다 |
+| `echo rm -rf /x`(따옴표 없음) · `curl -d @.env …` · `git commit -m "$(cat .env)"` | 따옴표 없는 인자는 글자로 보지 않는다 · `@파일`은 **파일을 읽어 보낸다** · 따옴표 안 `$( )`도 **명령이다** | 묻는다 |
 
 정리하면,
 
@@ -287,8 +294,67 @@ CC에서 Esc로 중단하면 **Stop hook이 불리지 않는다**(4단계 실측
 5. **넓힌 것(11-02)** — 같은 생각을 명령 한 줄 안으로 넓혔다: 검색어(grep · rg · sed · awk의 패턴 인자), 문법 검사만 하는 것(`bash -n` 등), 키 이름만 뽑는 것, 값이 로컬 요청 헤더로만 가는 것, 같은 명령 안에서 `mktemp -d`로 만든 디렉토리를 `${V:?}`로 지우는 것. 조건이 하나라도 어긋나면 예전처럼 검사한다. 이 예외는 "검사 전에 무해한 자리표시로 바꾸기"라 **새로 allow를 만들지 않는다**(allow 판정은 바꾸기 전 원문으로 한다).
    - `mktemp -d` 예외는 흉내 낸 우회를 막으려 좁게 잡았다: 변수가 같은 명령 안에서 `$(mktemp -d …)`로 **딱 한 번** 정해지고, 다시 정하기 · `for` · `read` · `eval` · `source` · `${V:=…}` · `export` · `unset`이 없고, 지우는 대상이 정확히 `"${V:?}"`일 때만(`..` · 덧붙인 경로 · 글롭 없음). 앞 명령에서 만든 디렉토리를 경로로 지우는 것은 이 명령 안에서 확인할 수 없어 여전히 묻는다 — 만들고 지우기를 한 명령에 둔다
    - 다시 돌려 보다 찾은 빈틈도 막았다: 해석기 heredoc(`python3 - <<EOF`)이 비밀 파일을 **쓰거나 바로 찍는** 것은 어느 규칙에도 안 걸렸다 → 묻는다
+6. **넓힌 것(11-03) — 출력 · 메시지 리터럴**: `echo` · `printf`의 따옴표 인자, `git commit` · `tag`의 `-m`, `curl --data` 본문. 원칙은 PolicyApprovalGate의 것과 같다 — "명령어 자리만 실행이고 따옴표 친 인자는 글자다(`echo 'sudo rm -rf /'`는 아무것도 지우지 않는다)". 다만 출력이 **파이프로 어디든** 넘어가거나(`| mysql`도 실행한다 — 다시 돌려 보다 처음 안(셸만 막은) 판이 `echo "DROP DATABASE …" | docker exec -i … mysql`을 놓쳐서 넓혔다), 명령 · 프로세스 치환 안이거나, `.sh` · `.py`로 쓰면 예전처럼 검사한다. `git -C`의 값 자리도 이때 고쳤다
+
+**오탐 패턴 정리(11-02 ~ 11-03)** — 모두 "검사 전에 자리표시로 바꾸기"라 allow를 새로 만들지 않는다:
+
+| # | 모양 | 조건(하나라도 어긋나면 그대로 검사) |
+|---|---|---|
+| 1 | 파일로 저장하는 heredoc 본문 | 받는 쪽이 `cat >` · `tee` · `git commit -F -` · `git tag -F -`, 따옴표 친 EOF, `.sh` 등으로 쓰지 않음 |
+| 2 | 검색 패턴(grep · rg · sed · awk) | 뒤에 셸 · 해석기 · xargs 없음, `$( )` 없음, sed `e` · awk `system` 없음 |
+| 3 | 문법 검사(`bash -n` · shellcheck · py_compile) | 실행 옵션 없음 |
+| 4 | `.env` 키 이름만 | 마지막 단계가 `sed 's/=.*//'` · `cut -d= -f1` · `awk -F= '{print $1}'`, 리다이렉트 · 치환 없음 |
+| 5 | `mktemp -d` 디렉토리를 `"${V:?}"`로 지우기 | 같은 명령에서 딱 한 번 정해짐, 바꾸는 길 없음 |
+| 6 | 비밀 값을 curl 헤더로만 | `-H @<(printf … "$(sed …)")` 모양, `-v` · `--trace` 없음, 보내는 곳이 이 서버 · VM 망 |
+| 7 | `git -C` · `-c` 값 | 값 뒤 동사가 고정 |
+| 8 | echo · printf · `-m` 메시지 · `--data` 본문 | 따옴표 안, `$( )` · 백틱 없음, 파이프 · 치환 · 스크립트 쓰기 없음 |
+
+미리 훑어보고 **넣지 않은 것**: 변수 대입 리터럴(`MSG="rm -rf …"` — `$MSG`로 그대로 실행될 수 있다), 해석기 코드(`python3 -c "print('cat .env')"` — 글자인지 실행인지 가를 수 없다).
+
+#### 다른 구현과 비교 (11-03)
+
+바퀴를 다시 만들지 않으려고 공개된 PreToolUse 게이트 다섯을 읽었다(코드는 실행하지 않음). 통째로 바꾸지 않았다 — 우리 것은 이미 동작하고 실데이터로 검증했다. **오탐 처리 방식과 놓친 위험 패턴만** 가져왔다.
+
+| 저장소 | 라이선스 | 매칭 | 우리 오탐 1~8 처리 | 가져온 것 |
+|---|---|---|---|---|
+| [nobuo-miura/PolicyApprovalGate](https://github.com/nobuo-miura/PolicyApprovalGate) | MIT | Go, 셸 AST(mvdan.cc/sh) — `sudo` · `timeout` · `env` 벗기기, `sh -c` · `eval` 다시 파싱 | 1 · 2 · 7(push만) · 8을 구조로 처리, 4 · 5 · 6은 우리보다 거칠다(`${V:?}` 삭제는 deny) | 8의 원칙("따옴표 친 인자는 글자"), 게이트 자기 보호(hook 스크립트 쓰기), `find -delete`, 재부팅, 비밀 경로 |
+| [seelig-ai/claude-code-command-guard](https://github.com/seelig-ai/claude-code-command-guard)(Yodaisgaming에서 옮김) | MIT | JS 정규식, `sh -c` · heredoc · `$( )` 안을 한 번 더 훑는다. 파싱 실패 · 100KB 초과 → **deny**(fail-closed) | 없음(heredoc 본문까지 훑어 1은 더 막힌다) | `DELETE` WHERE 없음 · `FLUSHALL` · `dropdb`, `git filter-branch` · `reflog expire` · `gc --prune`, `truncate -s 0` · `> /dev/sd*` |
+| [karanb192/claude-code-hooks](https://github.com/karanb192/claude-code-hooks) | MIT | JS 정규식, 3단계(critical · high · strict) | 없음(grep · echo는 오히려 더 막는다) | `printenv` · `/proc/*/environ`, `chmod 777`, 비밀 파일 목록(`.netrc` · `.npmrc` · `.docker/config.json` …) |
+| [disler/claude-code-damage-control](https://github.com/disler/claude-code-damage-control) | README에 "MIT"만(LICENSE 파일 없음 — 코드는 가져오지 않았다) | Python 정규식 + 경로 목록(zero-access · read-only · no-delete) | 없음. `git\s+reset` 식이라 `git -C d reset --hard`는 **놓친다** | `pkill` · `killall`, 비밀 경로(`.gnupg` · `.aws` · `*.tfstate`) |
+| TribeAI/claude-code-alignment-checks | — | **저장소 없음**(404, 소유자는 있음) | — | — |
+
+- 가져오지 않은 것: 클라우드 CLI(`aws` · `terraform` · `gcloud` …)와 Windows 규칙 — 이 서버에 없다. AST 파서 — 파이썬에는 같은 수준의 셸 파서가 마땅치 않다(bashlex는 GPL). fail-closed — 파싱 실패를 막으면 우리 실데이터에서 heredoc · 긴 명령이 다 막힌다(우리는 파싱 실패 + `rm`이면 "애매한-삭제"로 묻는다)
+- 다른 구현들은 우리 오탐 1~8을 대부분 다루지 않는다 — "글자를 지운 뒤 검사"는 우리 실데이터에서 나온 것이다
+- **우리가 놓친 위험 중 실데이터에 있던 것**: 펫퍼민트 세션이 파일을 이력에서 지우려고 `git filter-branch` → `git reflog expire --expire=now --all` → `git gc --prune`을 실행했다(어느 규칙에도 안 걸렸다 — observe라 기록만). 이제 `git-기록파괴`로 묻는다
+- 새 규칙(`ask.bash`): `git-기록파괴` · `find-삭제` · `권한-대량변경` · `재부팅-종료`(CLAUDE.md "재부팅은 사용자가 시킬 때만") · `프로세스-대량종료`(대상이 CC · tmux · 브리지 · 인프라일 때만 — 21일 실데이터 `pkill` 17건은 모두 자기가 띄운 스크립트를 끈 것) · `디스크-덮어쓰기` · `환경-덤프`, `DB-파괴`에 `DELETE`(WHERE 없음) · `FLUSHALL` · `dropdb` · `mysqladmin drop`, `git-강제push`에 `:브랜치` · 붙여 쓴 `-f` · `--prune`. 비밀 경로 7줄, 보호 파일 3줄(hook 스크립트 · `~/.claude.json` · `.mcp.json`)
+- 따옴표 안 `$( )` · `<( )` · 백틱도 제 명령으로 본다 — `git commit -m "$(cat .env)"`가 통과하던 빈틈(전부터 있었다)
+
+**다시 돌려 본 결과(11-03, 21일 · 도구 호출 18,014개)** — 하루 승인 창(활동한 날로 나눔):
+
+| 프로젝트 | 전 | 후 | 바뀐 것 |
+|---|---|---|---|
+| 런슈즈 | 13.1 | 13.1 | — |
+| 펫퍼민트 | 6.5 | 6.8 | 새로 잡음: `/proc/<pid>/environ` 읽기 4, 이력 재작성 2 |
+| 포먼 | 34.5 | 39.5 | 새로 잡음: 시험 DB를 비우는 `DELETE FROM …` 7, hook 스크립트 쓰기 2, 토큰을 셸 변수로 읽기 1, environ 1. 빠짐: `echo "== cm/secret"` 1(이 일의 계기) |
+| 미분류 | 5.3 | 6.3 | 새로 잡음: environ 3 |
+
+새로 생긴 ask 21건을 하나씩 봤고 모두 실제로 위험하거나(비밀 · 이력 · 삭제) 의도한 자기 보호다. 도중에 찾은 오탐 3개(경로 속 `/tmp/claude-1000`의 claude, 파이썬 코드 `print(env)` · 마크다운 `| env |`)는 고쳤다. 포먼 수치는 활동한 날이 이틀뿐이고 그 이틀이 이 시스템을 만드는 날이라 높다.
 
 그리고 **규칙 파일 자체**(`config/approval.toml`, `notify.toml`)는 쓰는 것 자체를 묻는다 — 위험한 글자가 들어 있어서가 아니라, 안전 규칙을 바꾸는 일이라서다.
+
+#### 근거 — hook의 `ask`는 auto mode에서도 승인 창을 띄운다
+
+우리 설계는 이 한 가지에 기대어 돈다: **세 프로젝트 모두 auto mode인데, 되돌릴 수 없는 것만은 사람이 본다.** 공식 문서(11-03 확인):
+
+- [permission-modes](https://code.claude.com/docs/en/permission-modes): "In auto mode, a PreToolUse hook's "ask" normally sends the tool call to the permission prompt, and the classifier doesn't decide it." — 그리고 "auto mode still shows you those prompts"(hook이 강제한 창)
+- [hooks](https://code.claude.com/docs/en/hooks): `"ask"` prompts the user to confirm. 판정 없이 끝나면(exit 0, 출력 없음) "the tool call continues through the normal permission flow" — 브리지가 꺼졌을 때 우리 hook이 아무것도 내지 않는 이유. 여러 hook이 다르면 "deny > defer > ask > allow"
+- [permissions](https://code.claude.com/docs/en/permissions): "PreToolUse hook decisions don't bypass permission rules … a matching ask rule still prompts even when the hook returned "allow"" — 우리 `allow`는 사용자 설정의 deny · ask 규칙을 넘지 못한다
+
+**실측**: 이 세션(FOREMAN 작업, 트랜스크립트의 `permissionMode`가 461줄 모두 `auto`)에서 우리 `ask` 26건이 모두 승인 창으로 떴고 터미널에서 답했다(`approval`: terminal 24, 중단 1, 시간 초과 1).
+
+**문서에 없는 것**(기대지 않는다): bypassPermissions · acceptEdits에서 hook `ask`, hook `allow`가 auto mode 분류기를 건너뛰는지(11-02 `kubectl patch`를 분류기가 막았을 때 우리 판정은 `pass`였다 — 이 질문의 실측은 아직 없다), `claude -p`에서 hook `ask`.
+
+참고: PolicyApprovalGate 문서에 이 근거가 있다고 들었지만, 확인해 보니 그 저장소는 auto mode를 말하지 않고 공식 문서 링크도 없다. auto mode에서도 ask가 확인을 강제한다고 쓴 것은 command-guard README이고(출처 링크 없음), 위 공식 문서가 근거다.
 
 #### 그 밖
 

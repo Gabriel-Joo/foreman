@@ -514,10 +514,40 @@ def _safe_header_secret(cmd: str) -> str:
     return cmd
 
 
+# 5. 출력 · 메시지 리터럴(11-03): echo · printf의 따옴표 인자, git commit · tag의 -m 메시지, curl --data 본문.
+#    따옴표 안이고 명령 치환($( ) · 백틱)이 없을 때만 글자로 본다. 그대로 검사하는 것:
+#    셸 · 해석기로 넘김(| sh · | xargs …), 명령 치환 · 프로세스 치환 안($(echo …) · <(echo …) — 결과가 실행될 수 있다),
+#    스크립트 파일로 씀(> x.sh), 따옴표 없는 인자, curl -d @파일(파일을 읽는다). 리다이렉트 대상(> .env)은 남겨 따로 검사한다
+_DQ = r'"(?:[^"\\`$]|\\.|\$(?!\())*"'
+_SQ = r"'[^']*'"
+_LIT = rf"(?:{_DQ}|{_SQ})"
+_ECHO = re.compile(rf"(?P<cmd>\b(?:echo|printf))(?P<args>(?:\s+-[neE]{{1,3}})*(?:\s+{_LIT})+)(?=\s*(?:$|[;&|)\n>'\"]|2>))")
+_ECHO_PRE = re.compile(r"(?:^|[;&|({\n'\"]|\b(?:do|then|else)\b)\s*$")
+_IN_SUBST = re.compile(r"[$<>]\(\s*$")
+# 출력이 파이프로 어디든 넘어가면 글자로 보지 않는다 — 받는 프로그램이 실행할 수 있다
+# (11-03 다시 돌려 보기: echo "DROP DATABASE …" | docker exec -i … mysql — 셸만 막았더니 mysql이 받는 것을 놓쳤다)
+_TO_SINK = re.compile(r"\s*(?:\|(?!\|)|(?:>>?)\s*\S+\.(?:sh|bash|zsh|py)\b)")
+_GIT_MSG = re.compile(rf"(\bgit\b[^;&|\n]*?\s(?:-[a-zA-Z]*m|--message)(?:=|\s+))({_LIT})")
+_CURL_DATA = re.compile(rf"(\s(?:-d|--data|--data-raw|--data-binary|--data-ascii|--json)(?:=|\s+))({_LIT})")
+
+
+def _blank_literals(cmd: str) -> str:
+    out, last = [], 0
+    for m in _ECHO.finditer(cmd):
+        pre = cmd[:m.start("cmd")]
+        if not _ECHO_PRE.search(pre) or _IN_SUBST.search(pre) or _TO_SINK.match(cmd, m.end()):
+            continue
+        out.append(cmd[last:m.start("args")] + ' "TEXT"')
+        last = m.end("args")
+    cmd = "".join(out) + cmd[last:]
+    cmd = _GIT_MSG.sub(lambda m: m.group(1) + '"MESSAGE"', cmd)
+    return _CURL_DATA.sub(lambda m: m.group(1) + ("'DATA'" if not m.group(2)[1:].startswith("@") else m.group(2)), cmd)
+
+
 def _neutralize(cmd: str) -> str:
     try:
-        # 키 이름만 · 헤더로만은 sed 스크립트 모양을 보므로 검색어 지우기보다 먼저
-        return _blank_patterns(_safe_tmp_rm(_safe_header_secret(_blank_key_only(cmd))))
+        # 키 이름만 · 헤더로만은 sed 스크립트 모양을 보므로 검색어 지우기보다 먼저. 리터럴(5)은 맨 먼저
+        return _blank_patterns(_safe_tmp_rm(_safe_header_secret(_blank_key_only(_blank_literals(cmd)))))
     except Exception:  # noqa: BLE001 — 지우기가 실패하면 원문 그대로 검사한다(덜 지우는 쪽으로)
         return cmd
 
@@ -633,7 +663,10 @@ def _path_tokens(cmd: str) -> list[tuple[str, str]]:
     경로처럼 생긴 것 = / · . · ~ 로 시작하거나 / 가 든 것. @파일(curl -d @x)도 경로로 본다."""
     body = HEREDOC.sub(" ", cmd)
     out = []
-    for seg in re.split(r"&&|\|\||[;|\n]", body):
+    # 인자 안의 명령 치환 · 프로세스 치환 · 백틱도 제 명령으로 본다 — git commit -m "$(cat .env)"는 cat이 .env를 찍는다
+    # (11-03 다른 구현과 비교하다 찾은 빈틈: 조각의 첫 단어만 명령으로 봐서 head가 git이었다)
+    inner = [m.group(1) or m.group(2) or "" for m in re.finditer(r"[$<>]\(([^()]*)\)|`([^`]*)`", body)]
+    for seg in [*re.split(r"&&|\|\||[;|\n]", body), *[s for i in inner for s in re.split(r"&&|\|\||[;|\n]", i)]]:
         words = [w for w in re.split(r"[\s'\"=<>()]+", seg) if w]
         words = [w for w in words if not re.fullmatch(r"\w+=.*", w)] or words   # FOO=bar 앞붙임 건너뜀
         head = os.path.basename(words[0]) if words else ""
