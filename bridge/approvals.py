@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import time
 from collections import OrderedDict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -51,6 +52,7 @@ class ApprovalManager:
         self.waiting: dict[int, asyncio.Future[tuple[str, str | None]]] = {}
         self.by_tool_use: dict[str, int] = {}
         self._tasks: set[asyncio.Task[Any]] = set()
+        self._rule_notice: dict[str, float] = {}   # 안전 규칙 파일 도구 편집 알림 — 파일 → 마지막 알린 시각
 
     def _bg(self, coro: Any) -> None:
         t = asyncio.create_task(coro)
@@ -88,12 +90,30 @@ class ApprovalManager:
             log.warning("ask %s[%s] %s %s — %s: %s", project or "미분류", pp.mode, tool,
                         _short(self.mask.text(_target(tool, inp)) or "", 80), dec.rule, dec.reason)
         self._bg(self._record_pre(p, tool, inp, dec, pp.mode, enforced, summary))
+        if dec.rule == "규칙파일-편집":
+            self._rule_file_notice(project, tool, inp)
         if not enforced:
             return None
         # CC 승인 창에 보이는 문구 — 무엇을 대상으로가 맨 앞(11-03). 규칙 이름 · 이유는 뒤에
         why = f"FOREMAN {summary}  [{dec.rule}: {dec.reason}]" if summary else f"FOREMAN {dec.rule}: {dec.reason}"
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": dec.verdict,
                                        "permissionDecisionReason": why}}
+
+    def _rule_file_notice(self, project: str | None, tool: str, inp: dict[str, Any]) -> None:
+        """안전 규칙 파일을 도구로 고쳤다(묻지 않고 통과) — 대신 알린다. 같은 파일은 10분에 한 번(11-03)."""
+        path = str(inp.get("file_path") or "")
+        now = time.monotonic()
+        if now - self._rule_notice.get(path, -1e9) < 600:
+            return
+        self._rule_notice[path] = now
+        log.warning("안전 규칙 파일 수정(%s) %s — 묻지 않고 통과, 알림", tool, path)
+        if self.notifier:
+            rule_ = self.notifier.rules.for_project(project)
+            prefix = rule_.prefix if rule_ else "[미분류]"
+            self.notifier.send_direct(project, "rulefile", None,
+                                      f"{prefix} 🛡 안전 규칙 파일 수정 · {tool}\n▶ {path}\n"
+                                      f"묻지 않고 통과(도구 편집은 내용이 보인다) — 브리지를 다시 띄워야 반영된다. "
+                                      f"10분 안의 다음 수정은 따로 알리지 않는다")
 
     def _summary(self, tool: str, inp: dict[str, Any], rule: str, reason: str, cwd: str | None) -> str | None:
         try:

