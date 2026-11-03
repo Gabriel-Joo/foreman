@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FOREMAN · 오피스</title>
+<style>
+  :root { --bg:#111214; --fg:#e8e8ea; --muted:#9a9aa0; --line:#2e2f33; --card:#1a1b1e;
+          --ok:#4ade80; --bad:#f87171; --warn:#f0b445; --act:#5aa2ff; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, -apple-system, "Noto Sans KR", sans-serif; }
+  #app { display:flex; flex-direction:column; height:100%; }
+  a { color:var(--act); }
+  button { font:inherit; padding:4px 10px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+  button:disabled { opacity:.45; cursor:default; } button.ghost { background:transparent; }
+  .muted { color:var(--muted); } .small { font-size:12px; } .warn { color:var(--warn); } .bad { color:var(--bad); }
+  .otop { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:6px 14px; border-bottom:1px solid var(--line); }
+  .brand { font-weight:700; letter-spacing:.04em; }
+  .oalerts { display:flex; gap:10px; font-size:13px; }
+  .conn { margin-left:auto; font-size:12px; padding:2px 8px; border-radius:10px; border:1px solid var(--line); }
+  .conn.up { color:var(--ok); } .conn.down, .conn.auth { color:var(--bad); border-color:var(--bad); }
+  .ostage { position:relative; flex:1; min-height:0; }
+  .ostage canvas { display:block; image-rendering:pixelated; cursor:pointer; }
+  .oinfo { position:fixed; right:14px; bottom:14px; width:min(380px, calc(100vw - 28px)); background:#0d0f14f0; border:1px solid var(--line);
+           border-radius:8px; padding:10px 12px; display:grid; gap:4px; }
+  .oinfo[hidden] { display:none; }
+  .badge { font-size:11px; padding:1px 6px; border-radius:8px; border:1px solid var(--line); }
+  .st-ACTIVE { color:var(--act); } .st-IDLE { color:var(--ok); } .st-SUSPENDED { color:#9fd8ff; } .st-DORMANT { color:var(--muted); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<noscript>이 화면은 자바스크립트가 필요하다.</noscript>
+<script type="module">
+  // 10단계 픽셀 오피스. 데이터는 6단계 store.js 그대로 — 그리기만 office.js(테마는 themes/<이름>/theme.json)
+  import { Store } from '/static/js/store.js';
+  import { createOffice } from '/static/js/office.js';
+  const store = new Store();
+  window.foreman = store;
+  const theme = new URLSearchParams(location.search).get('theme') || 'office';
+  createOffice(document.getElementById('app'), store, `/static/themes/${encodeURIComponent(theme)}/theme.json`)
+    .then((o) => { window.office = o; })
+    .catch((err) => { document.getElementById('app').textContent = '오피스 화면을 띄우지 못했다: ' + err; console.error(err); });
+  if (store.token) store.start();
+  else document.getElementById('app').insertAdjacentHTML('afterbegin', '<p class="warn small" style="padding:6px 14px">토큰이 없다 — 오른쪽 위 "토큰"을 눌러 넣는다(클래식 화면에서 넣었으면 여기도 쓴다)</p>');
+</script>
+</body>
+</html>

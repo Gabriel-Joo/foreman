@@ -219,6 +219,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def index() -> FileResponse:
         return FileResponse(STATIC / "dashboard.html")   # 6단계 대시보드
 
+    @app.get("/office", include_in_schema=False)
+    async def office_page() -> FileResponse:
+        return FileResponse(STATIC / "office.html")   # 10단계 픽셀 오피스(안정되면 / 로 바꾸고 지금 화면은 /classic)
+
     @app.get("/debug", include_in_schema=False)
     async def debug_page() -> FileResponse:
         return FileResponse(STATIC / "debug.html")       # 1~5단계 확인 페이지(로그 · 디버그 이벤트)
@@ -229,7 +233,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # 새 terminal.js와 어긋났고, 그 오류로 대시보드 연결이 시작되지 않았다
         resp = await call_next(request)
         p = request.url.path
-        if p == "/" or p == "/debug" or p.startswith("/static/"):
+        if p in ("/", "/debug", "/office") or p.startswith("/static/"):
             resp.headers["Cache-Control"] = "no-cache"
         return resp
 
