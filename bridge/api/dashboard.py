@@ -108,7 +108,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
             f"SELECT session_id, SUM(token_input + token_cache_read + token_cache_creation), SUM(token_output) "
             f"FROM subagent_run WHERE session_id IN {in_ids} GROUP BY session_id"))).all()}
         appr = (await c.execute(text(
-            "SELECT id, session_id, tool, target, rule, reason, created_at FROM approval WHERE status = 'pending' "
+            "SELECT id, session_id, tool, target, rule, reason, created_at, summary FROM approval WHERE status = 'pending' "
             "ORDER BY id"))).all()
         appr_rows = appr
     projects: dict[str | None, list[dict[str, Any]]] = {}
@@ -151,7 +151,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
         "generated_at": _iso(datetime.now(UTC).replace(tzinfo=None)),
         "projects": out_projects,
         "approvals": [{"id": a[0], "session_id": a[1], "tool": a[2], "target": a[3], "rule": a[4], "reason": a[5],
-                       "created_at": _iso(a[6]), "status": "pending"} for a in appr_rows],
+                       "created_at": _iso(a[6]), "summary": a[7], "status": "pending"} for a in appr_rows],
         "hidden_dormant": len(rows) - len(visible),
         "terminal": term.snapshot() if (term := getattr(request.app.state, "terminal", None)) else {"enabled": False},
         # 적재(수집기) 상태 — 막히면 머리 띠(11-03, bridge/ingest_health.py)

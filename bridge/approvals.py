@@ -22,6 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from bridge.approval import Decision, Policy, _short
+from bridge.approval_summary import summarize
 from bridge.models import EventIn, EventSource, EventStatus, EventType
 
 log = logging.getLogger("foreman.approval")
@@ -46,7 +47,7 @@ class ApprovalManager:
         self.pipeline = pipeline
         self.mask = masker
         self.notifier = notifier
-        self.recent: "OrderedDict[str, tuple[str | None, Decision, str | None]]" = OrderedDict()  # 키 → (tool_use_id, 판정, prompt_id)
+        self.recent: "OrderedDict[str, tuple[str | None, Decision, str | None, str | None]]" = OrderedDict()  # 키 → (tool_use_id, 판정, prompt_id, 요약)
         self.waiting: dict[int, asyncio.Future[tuple[str, str | None]]] = {}
         self.by_tool_use: dict[str, int] = {}
         self._tasks: set[asyncio.Task[Any]] = set()
@@ -77,7 +78,8 @@ class ApprovalManager:
         dec = self.policy.decide(tool, inp, p.get("cwd"), p.get("scratchpad_dir"), project)
         enforced = pp.mode == "enforce" and dec.verdict in ("allow", "ask")
         sid = p.get("session_id") or ""
-        self.recent[_key(sid, tool, inp)] = (p.get("tool_use_id"), dec, p.get("prompt_id"))
+        summary = self._summary(tool, inp, dec.rule, dec.reason, p.get("cwd")) if dec.verdict == "ask" else None
+        self.recent[_key(sid, tool, inp)] = (p.get("tool_use_id"), dec, p.get("prompt_id"), summary)
         self.recent.move_to_end(_key(sid, tool, inp))
         while len(self.recent) > 4096:
             self.recent.popitem(last=False)
@@ -85,14 +87,23 @@ class ApprovalManager:
             # 거절 · 보류는 언제나 이유를 남긴다(1단계 교훈)
             log.warning("ask %s[%s] %s %s — %s: %s", project or "미분류", pp.mode, tool,
                         _short(self.mask.text(_target(tool, inp)) or "", 80), dec.rule, dec.reason)
-        self._bg(self._record_pre(p, tool, inp, dec, pp.mode, enforced))
+        self._bg(self._record_pre(p, tool, inp, dec, pp.mode, enforced, summary))
         if not enforced:
             return None
+        # CC 승인 창에 보이는 문구 — 무엇을 대상으로가 맨 앞(11-03). 규칙 이름 · 이유는 뒤에
+        why = f"FOREMAN {summary}  [{dec.rule}: {dec.reason}]" if summary else f"FOREMAN {dec.rule}: {dec.reason}"
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": dec.verdict,
-                                       "permissionDecisionReason": f"FOREMAN {dec.rule}: {dec.reason}"}}
+                                       "permissionDecisionReason": why}}
+
+    def _summary(self, tool: str, inp: dict[str, Any], rule: str, reason: str, cwd: str | None) -> str | None:
+        try:
+            return self.mask.text(summarize(tool, inp, rule, reason, cwd)) or None
+        except Exception as e:  # noqa: BLE001 — 요약 실패가 판정을 막으면 안 된다
+            log.warning("승인 요약 실패: %s: %s", type(e).__name__, str(e)[:200])
+            return None
 
     async def _record_pre(self, p: dict[str, Any], tool: str, inp: dict[str, Any], dec: Decision, mode: str,
-                          enforced: bool) -> None:
+                          enforced: bool, summary: str | None = None) -> None:
         try:
             sess_id, char_id, turn_id = await self.asm.ids_for(p)
             self.pipeline.submit(EventIn(
@@ -101,7 +112,7 @@ class ApprovalManager:
                 target=self.mask.text(_target(tool, inp)),
                 status=EventStatus.WAITING if dec.verdict == "ask" and enforced else EventStatus.WORKING,
                 payload={"decision": dec.verdict, "rule": dec.rule, "reason": dec.reason, "mode": mode,
-                         "enforced": enforced, "permission_mode": p.get("permission_mode")}))
+                         "enforced": enforced, "permission_mode": p.get("permission_mode"), "summary": summary}))
         except Exception as e:  # noqa: BLE001 — 기록 실패가 판정을 바꾸지 않는다
             log.warning("판정 기록 실패: %s: %s", type(e).__name__, str(e)[:200])
 
@@ -113,28 +124,31 @@ class ApprovalManager:
         if not pp.remote_approval:
             return None
         sid = p.get("session_id") or ""
-        tuid, dec, _pid = self.recent.get(_key(sid, tool, inp), (None, None, None))
+        tuid, dec, _pid, summary = self.recent.get(_key(sid, tool, inp), (None, None, None, None))
         rule, reason = (dec.rule, dec.reason) if dec and dec.verdict == "ask" else ("cc", "CC가 묻는다(auto mode 분류기 · 설정)")
+        if not summary:   # CC 자체가 묻는 것에도 — 규칙이 아니라 명령을 본다
+            summary = self._summary(tool, inp, rule, reason, p.get("cwd"))
         target = self.mask.text(_target(tool, inp)) or ""
         sess_id, _char, turn_id = await self.asm.ids_for(p)
         async with self.engine.begin() as c:
             res = await c.execute(text(
-                "INSERT INTO approval (session_id, turn_id, tool_use_id, tool, target, rule, reason, status) "
-                "VALUES (:s, :t, :tu, :tool, :tg, :r, :why, 'pending')"),
+                "INSERT INTO approval (session_id, turn_id, tool_use_id, tool, target, rule, reason, summary, status) "
+                "VALUES (:s, :t, :tu, :tool, :tg, :r, :why, :sum, 'pending')"),
                 {"s": sess_id, "t": turn_id, "tu": tuid, "tool": tool[:64], "tg": target[:1024], "r": rule[:64],
-                 "why": reason[:255]})
+                 "why": reason[:255], "sum": (summary or "")[:512] or None})
             aid = res.lastrowid
         fut: asyncio.Future[tuple[str, str | None]] = asyncio.get_running_loop().create_future()
         self.waiting[aid] = fut
         if tuid:
             self.by_tool_use[tuid] = aid
         item = {"id": aid, "project": project, "session_id": sess_id, "tool": tool, "target": target[:300],
-                "rule": rule, "reason": reason, "wait_s": pp.wait_s}
-        log.warning("승인 대기 #%d %s %s %s — %s", aid, project or "미분류", tool, _short(target, 80), rule)
+                "rule": rule, "reason": reason, "summary": summary, "wait_s": pp.wait_s}
+        log.warning("승인 대기 #%d %s %s — %s", aid, project or "미분류", summary or _short(target, 80), rule)
         self.pipeline.publish({"type": "approval", "op": "pending", "approval": item})
         if self.notifier:
             self.notifier.send_direct(project, "approval", sess_id,
-                                      _approval_text(project, tool, target, rule, reason, pp.wait_s, self.notifier))
+                                      _approval_text(project, tool, target, rule, reason, pp.wait_s, self.notifier,
+                                                     summary))
         try:
             async with asyncio.timeout(pp.wait_s):
                 outcome, message = await fut
@@ -202,13 +216,15 @@ class ApprovalManager:
 
 
 def _approval_text(project: str | None, tool: str, target: str, rule: str, reason: str, wait_s: float,
-                   notifier: Any) -> str:
+                   notifier: Any, summary: str | None = None) -> str:
     rule_ = notifier.rules.for_project(project) if notifier else None
     prefix = rule_.prefix if rule_ else "[미분류]"
+    # 무엇을 대상으로가 둘째 줄(11-03) — 명령 원문은 그 아래 짧게
     return "\n".join([
         f"{prefix} 🔐 승인 대기 · {tool}",
-        _short(target, 160),
-        f"이유: {rule} — {reason}",
+        *([f"▶ {summary}"] if summary else []),
+        f"명령: {_short(target, 120)}" if summary else _short(target, 160),
+        f"규칙: {rule} — {reason}",
         f"확인 페이지에서 승인 · 거부, 또는 터미널에서. {int(wait_s // 60)}분이 지나면 터미널로만",
     ])
 
