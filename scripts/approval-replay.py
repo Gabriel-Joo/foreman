@@ -64,7 +64,7 @@ def main() -> int:
     asks = {"old": collections.Counter(), "new": collections.Counter()}
     rules = {"old": collections.Counter(), "new": collections.Counter()}
     days: dict[str, set] = collections.defaultdict(set)
-    dropped, kept = [], []
+    dropped, kept, added = [], [], []
     today = (datetime.now(UTC).replace(tzinfo=None) + KST).date()
     today_cnt = {"old": collections.Counter(), "new": collections.Counter()}
     for ts, tool, target, cwd, sid, project in rows:
@@ -94,6 +94,8 @@ def main() -> int:
                 dropped.append((project, out["old"].rule, target))
             elif out["new"].verdict == "ask":
                 kept.append((project, out["new"].rule, target))
+                if out["old"].verdict != "ask":
+                    added.append((project, out["new"].rule, target))
     print(f"기간: 최근 {a.days}일, 도구 호출 {len(rows)}개 (옛 규칙 = {a.old})\n")
     print("| 프로젝트 | 날 수 | 옛 규칙 ask/일 | 새 규칙 ask/일 | 오늘(KST) 옛 → 새 |")
     print("|---|---|---|---|---|")
@@ -102,10 +104,14 @@ def main() -> int:
         print(f"| {proj} | {n} | {asks['old'][proj] / n:.1f} | {asks['new'][proj] / n:.1f} | "
               f"{today_cnt['old'][proj]} → {today_cnt['new'][proj]} |")
     print("\n빠진 ask(옛 → 새) 규칙별:", collections.Counter((p, r) for p, r, _ in dropped).most_common(12))
+    print("새로 생긴 ask(옛 → 새) 규칙별:", collections.Counter((p, r) for p, r, _ in added).most_common(12))
     print("남은 ask 규칙별:", rules["new"].most_common(12))
     if a.show:
         print("\n— 빠진 것 예시")
         for p, r, t in dropped[: a.show]:
+            print(f"  [{p}] {r}: {t[:160]!r}")
+        print("— 새로 생긴 것 예시")
+        for p, r, t in added[: a.show]:
             print(f"  [{p}] {r}: {t[:160]!r}")
         print("— 남은 것 예시")
         for p, r, t in kept[: a.show]:

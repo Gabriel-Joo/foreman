@@ -64,7 +64,17 @@ def test_argocd_status_and_tag():
     assert argocd_status({"phase": "Succeeded", "health": "Healthy", "sync": "Synced"}) == ("success", None)
     assert argocd_status({"phase": "Failed"}) == ("failed", "sync")
     assert argocd_status({"phase": "Succeeded", "health": "Degraded"}) == ("failed", "health")
-    imgs = ["mysql:8.0", "harbor.ronanlab.dev/runshoes/runshoes:0f349e101774",
+    # 11-03 Sync 대기 — 수동 Sync 앱의 새 리비전 OutOfSync는 실패가 아니다
+    base = {"sync": "OutOfSync", "health": "Healthy", "revision": "b" * 40, "op_revision": "a" * 40}
+    assert argocd_status({**base, "automated": False, "phase": "Succeeded"}) == ("waiting", None)
+    assert argocd_status({**base, "automated": False, "phase": "Failed"}) == ("waiting", None)   # 지난 작업의 실패 — 새 리비전과 무관
+    assert argocd_status({**base, "automated": True, "phase": "Succeeded"}) == ("running", None)  # 자동 Sync — 곧 동기화된다
+    assert argocd_status({**base, "automated": None}) == ("running", None)                         # 모르면 예전처럼
+    same = {**base, "op_revision": "b" * 40}
+    assert argocd_status({**same, "automated": False, "phase": "Failed"}) == ("failed", "sync")    # 이 리비전의 Sync가 실패
+    assert argocd_status({**same, "automated": False, "phase": "Running"}) == ("running", None)    # 사람이 Sync를 눌렀다
+    assert argocd_status({**base, "automated": False, "health": "Degraded"}) == ("failed", "health")
+    imgs =["mysql:8.0", "harbor.ronanlab.dev/runshoes/runshoes:0f349e101774",
             "harbor.ronanlab.dev/runshoes/runshoes-chatbot:0f349e101774"]
     assert image_tag(imgs, "runshoes") == "0f349e101774"
     assert image_tag(["harbor.ronanlab.dev/petmint/petmint-app:abcdefabcdef"], "runshoes") is None
@@ -314,5 +324,41 @@ async def test_watch_missing_and_webhook_break(env):
         ends = [m for _, _, m in notifier.sent[k:] if "끝 알림 없음" in m]
         assert len(ends) >= 1 and any("runshoes-app#15" in m for m in ends)
         assert len([m for m in ends if "#15" in m]) == 1
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.db
+async def test_argocd_sync_waiting_attaches_to_undeployed_build(env):
+    """수동 Sync 앱(펫퍼민트 모양): OutOfSync 알림의 이미지는 아직 옛 태그다 — Sync 대기는 배포 안 된 새 빌드에 붙고,
+    실패가 아니어서 알림도 없다. 사람이 Sync하면 같은 행이 성공으로."""
+    s, repo, conn = env
+    t0 = datetime.now(UTC).replace(tzinfo=None, microsecond=0) - timedelta(minutes=30)
+    old = _commit(repo, "a.txt", t0)
+    new = _commit(repo, "b.txt", t0 + timedelta(minutes=1))
+    _git(repo, "update-ref", "refs/remotes/origin/main", new)
+    engine = make_engine(s)
+    notifier = FakeNotifier()
+    pm = PipelineManager(engine, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+                         notifier)
+    try:
+        await pm.start(loops=False)
+        img = lambda sha: [f"harbor.ronanlab.dev/runshoes/runshoes:{sha[:12]}"]   # noqa: E731
+        await pm.on_jenkins({"job": "runshoes-app", "number": 1, "phase": "completed", "result": "SUCCESS", "commit": old})
+        await pm.on_argocd({"app": "runshoes", "sync": "Synced", "health": "Healthy", "phase": "Succeeded",
+                            "revision": "1" * 40, "op_revision": "1" * 40, "images": img(old), "automated": False})
+        await pm.on_jenkins({"job": "runshoes-app", "number": 2, "phase": "completed", "result": "SUCCESS", "commit": new})
+        out = await pm.on_argocd({"app": "runshoes", "sync": "OutOfSync", "health": "Healthy", "phase": "Succeeded",
+                                  "revision": "2" * 40, "op_revision": "1" * 40, "images": img(old), "automated": False})
+        assert out["status"] == "waiting"
+        assert q(conn, "SELECT commit_sha, status FROM build WHERE id = %s", out["build"])[0] == (new, "waiting")
+        assert q(conn, "SELECT status FROM build WHERE stage = 'argocd' AND commit_sha = %s", old)[0][0] == "success"
+        assert not notifier.sent                                           # 실패가 아니다
+        snap = await pm.snapshot()
+        chain = next(x for x in snap["projects"] if x["project"] == "runshoes")["chains"][0]
+        assert chain["head"] == new and chain["stages"]["argocd"]["status"] == "waiting" and chain["broke"] is None
+        await pm.on_argocd({"app": "runshoes", "sync": "Synced", "health": "Healthy", "phase": "Succeeded",
+                            "revision": "2" * 40, "op_revision": "2" * 40, "images": img(new), "automated": False})
+        assert q(conn, "SELECT status FROM build WHERE id = %s", out["build"])[0][0] == "success"
     finally:
         await engine.dispose()

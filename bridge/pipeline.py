@@ -40,7 +40,7 @@ STAGES = ("jenkins", "harbor", "argocd")
 STAGE_LABEL = {"commit": "커밋", "push": "push", "jenkins": "Jenkins 빌드", "harbor": "Harbor 이미지", "argocd": "ArgoCD 배포"}
 TAG_RE = re.compile(r"^[0-9a-f]{12}$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-RANK = {"running": 0, "success": 1, "failed": 1}   # 끝난 상태를 running으로 되돌리지 않는다
+RANK = {"running": 0, "waiting": 0, "success": 1, "failed": 1}   # 끝난 상태를 running · waiting으로 되돌리지 않는다
 
 
 @dataclass
@@ -175,17 +175,25 @@ def harbor_items(body: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def argocd_status(body: dict[str, Any]) -> tuple[str, str | None]:
-    """templates의 webhook 본문: {app, trigger, sync, health, phase, message, revision, images}."""
+    """notifications 템플릿 본문: {app, sync, health, revision, images, automated, phase, message, at, op_revision}.
+
+    phase · message는 **마지막 동기화 작업**의 것이라 지금 리비전의 것이 아닐 수 있다(op_revision ≠ revision) —
+    새 리비전이 OutOfSync인데 지난 작업이 Failed였다고 실패로 보면 안 된다.
+    waiting = 수동 Sync 앱(automated false)이 새 리비전으로 OutOfSync — 사람이 Sync하기를 기다린다. 실패가 아니다(11-03)."""
     phase = str(body.get("phase") or "")
     health = str(body.get("health") or "")
     sync = str(body.get("sync") or "")
-    if phase in ("Failed", "Error"):
+    rev, op_rev = body.get("revision"), body.get("op_revision")
+    current_op = not rev or not op_rev or rev == op_rev
+    if current_op and phase in ("Failed", "Error"):
         return "failed", "sync"
     if health == "Degraded":
         return "failed", "health"
-    if phase == "Running" or health in ("Progressing", "Missing") or sync == "OutOfSync":
+    if sync == "OutOfSync" and not (current_op and phase == "Running"):
+        return ("waiting", None) if body.get("automated") is False else ("running", None)
+    if phase == "Running" or health in ("Progressing", "Missing"):
         return "running", None
-    if health == "Healthy" and phase in ("Succeeded", ""):
+    if health == "Healthy" and sync in ("Synced", ""):
         return "success", None
     return "running", None
 
@@ -634,14 +642,29 @@ class PipelineManager:
             return {"ignored": "모르는 ArgoCD 앱"}
         status, step = argocd_status(body)
         tag = image_tag(body.get("images"), p.harbor_project)
+        if str(body.get("sync") or "") == "OutOfSync" and status in ("waiting", "running"):
+            # OutOfSync일 때 앱 상태의 이미지는 아직 배포된 옛 태그다 — 그걸로 찾으면 이미 배포된 체인에 붙는다.
+            # 대신 Jenkins가 성공했는데 아직 ArgoCD 성공이 없는 가장 최근 빌드(그 빌드가 인프라 저장소 태그를 바꿨다)
+            pending = await self._undeployed_tag(p)
+            tag = pending or tag
         sha = await self.resolve(p, tag)
         rev = str(body.get("revision") or "")[:40] or "?"
         infra = await self.ensure_infra(p, "argocd")
         msg = self.mask.text(str(body.get("message") or "")[:2000]) or None
         bid, _ = await self._upsert(p, "argocd", f"{p.argocd_app}@{rev}", sha, tag, status, step,
                                     _ts(body.get("at")), None, msg, infra,
-                                    {k: body.get(k) for k in ("trigger", "sync", "health", "phase", "revision")})
+                                    {k: body.get(k) for k in ("trigger", "sync", "health", "phase", "revision",
+                                                              "op_revision", "automated")})
         return {"build": bid, "status": status}
+
+    async def _undeployed_tag(self, p: PipeProject) -> str | None:
+        async with self.engine.connect() as c:
+            r = (await c.execute(text(
+                "SELECT j.tag FROM build j WHERE j.project_id = :p AND j.stage = 'jenkins' AND j.status = 'success' "
+                "AND j.tag IS NOT NULL AND NOT EXISTS (SELECT 1 FROM build a WHERE a.project_id = j.project_id "
+                "AND a.stage = 'argocd' AND a.status = 'success' AND a.commit_sha = j.commit_sha) "
+                "ORDER BY j.id DESC LIMIT 1"), {"p": p.project_id})).first()
+        return r[0] if r else None
 
     async def _upsert(self, p: PipeProject, stage: str, ext: str, sha: str | None, tag: str | None, status: str,
                       step: str | None, at: datetime, url: Any, message: str | None, infra: int | None,
@@ -678,7 +701,8 @@ class PipelineManager:
         self._submit(EventIn(source=EventSource.WEBHOOK, type=EventType.BUILD, character_id=infra, tool=stage,
                              target=f"{STAGE_LABEL[stage]} {ext} {status}{' · ' + step if step else ''}",
                              commit_sha=sha, status=EventStatus.ERROR if status == "failed" else (
-                                 EventStatus.DONE if status == "success" else EventStatus.WORKING),
+                                 EventStatus.DONE if status == "success" else (
+                                     EventStatus.WAITING if status == "waiting" else EventStatus.WORKING)),
                              payload={"project": p.name, "stage": stage, "build_id": bid, "status": status,
                                       "step": step, "tag": tag}))
         if status == "failed" and prev != "failed":
