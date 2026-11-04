@@ -320,8 +320,13 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     for (const r of [...world.rooms, world.lounge]) drawBadge(r, zoomedIn);
     if (view === 'hq') {
       drawHQCards();
+      drawTag(world.hq.x + 0.3, world.hq.y + 2.2, (theme.hq && theme.hq.label) || '감독실', true);
       for (const a of list) if (a.room === '_hq') drawName(a);
-    } else if (zoomedIn) for (const a of list) if (a.room === (view === '_lounge' ? null : view)) drawName(a);
+    } else if (zoomedIn) {
+      const room = roomByView();
+      if (room && !room.lounge) drawZoneTags(room);
+      for (const a of list) if (a.room === (view === '_lounge' ? null : view)) drawName(a);
+    }
     requestAnimationFrame(frame);
   }
 
@@ -700,6 +705,81 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       ctx.beginPath(); ctx.arc(tx * T + Math.sin(t * 6 + i) * 3, ty * T - t * 18, 3 + t * 5, 0, Math.PI * 2); ctx.fill();
     }
     ctx.globalAlpha = 1;
+  }
+
+  // ── 구역 이름표(화면 좌표 — 줌과 상관없이 작고 선명하게) ─────
+  const TAG = (theme.tags && theme.tags.style) || { bg: '#000000cc', fg: '#ffffff', border: '#ffffff55', font: '600 10px system-ui, sans-serif', kind: 'sign' };
+  // (wx, wy) 월드 타일 → 그 자리에 이름표 하나. big: 감독실 이름처럼 조금 크게. dot: 앞에 붙는 상태 색
+  function drawTag(wx, wy, text, big = false, dot = null, sub = null) {
+    const [sx, sy] = toScreen(wx * T, wy * T);
+    const font = big ? TAG.font.replace(/(\d+)px/, (m, n) => `${+n + 3}px`) : TAG.font;
+    ctx.font = font; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const fs = +(font.match(/(\d+)px/) || [0, 10])[1];
+    const tw = ctx.measureText(text).width;
+    ctx.font = TAG.font;
+    const sw = sub ? ctx.measureText(sub).width + 8 : 0;
+    const padL = TAG.kind === 'hazard' ? 9 : TAG.kind === 'sign' ? 7 : 6;
+    const w = Math.ceil(padL + (dot ? 9 : 0) + tw + 6 + sw), h = fs + 7;
+    const x = Math.round(sx), y = Math.round(sy);
+    ctx.fillStyle = TAG.bg; ctx.fillRect(x, y, w, h);
+    if (TAG.kind === 'hazard') {                                     // 안전 표지판 — 왼쪽에 검정 · 노랑 빗금, 검정 테두리
+      ctx.save(); ctx.beginPath(); ctx.rect(x, y, 6, h); ctx.clip();
+      ctx.fillStyle = TAG.border; ctx.fillRect(x, y, 6, h);
+      ctx.fillStyle = TAG.bg; for (let k = -h; k < 6; k += 5) { ctx.beginPath(); ctx.moveTo(x + k, y + h); ctx.lineTo(x + k + 2, y + h); ctx.lineTo(x + k + 2 + h, y); ctx.lineTo(x + k + h, y); ctx.fill(); }
+      ctx.restore();
+      ctx.strokeStyle = TAG.border; ctx.lineWidth = 1.5; ctx.strokeRect(x + 0.75, y + 0.75, w - 1.5, h - 1.5);
+    } else if (TAG.kind === 'sign') {                                // 사인판 — 왼쪽 색 띠
+      ctx.fillStyle = TAG.border; ctx.fillRect(x, y, 3, h);
+      ctx.strokeStyle = '#00000022'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    } else {                                                         // 양피지 — 테두리 + 모서리 말림
+      ctx.strokeStyle = TAG.border; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      ctx.fillStyle = TAG.border; ctx.beginPath(); ctx.moveTo(x + w - 5, y + h); ctx.lineTo(x + w, y + h - 5); ctx.lineTo(x + w, y + h); ctx.fill();
+      ctx.fillStyle = '#c9b282'; ctx.fillRect(x + 1, y + h - 2, w - 7, 1);
+    }
+    let cx = x + padL;
+    if (dot) { ctx.fillStyle = dot; ctx.beginPath(); ctx.arc(cx + 3, y + h / 2, 3, 0, Math.PI * 2); ctx.fill(); cx += 9; }
+    ctx.font = font; ctx.fillStyle = TAG.fg; ctx.fillText(text, cx, y + h / 2 + 0.5);
+    if (sub) {                                                       // 상태 — 이름표 바탕 위에서 읽히게 글자색, 앞에 구분선
+      ctx.fillStyle = TAG.fg; ctx.globalAlpha = 0.35; ctx.fillRect(cx + tw + 4, y + 3, 1, h - 6); ctx.globalAlpha = 1;
+      ctx.font = TAG.font.replace(/^(italic )?\d*\s*/, 'bold '); ctx.fillStyle = TAG.fg; ctx.fillText(sub, cx + tw + 8, y + h / 2 + 0.5);
+    }
+    return { x, y, w, h };
+  }
+
+  const STATUS_KO = { running: '진행 중', success: '성공', failed: '실패', waiting: 'Sync 대기', none: '기록 없음' };
+  function drawZoneTags(r) {
+    const names = (theme.tags && theme.tags.zones) || {};
+    for (const [key, v] of Object.entries(names)) {
+      const z = L.zones[key];
+      if (!z || z.x == null) continue;
+      const [label, dx, dy] = Array.isArray(v) ? v : [v, 0, 0];      // ["아치 창", dx, dy] — 옆 구역 이름표와 겹치면 비켜 둔다
+      drawTag(r.x + z.x + 0.1 + (dx || 0), r.y + z.y + 0.08 + (dy || 0), label);
+    }
+    // 출하 라인 — 이름 · 세 단계(번호 · 무엇 · 지금 상태) · 단계 사이 화살표
+    const iz = L.zones.infra, it = (theme.tags && theme.tags.infra) || {};
+    if (!iz) return;
+    if (it.title) drawTag(r.x + 1.1, r.y + iz.y - 0.6, it.title);
+    const kinds = ['jenkins', 'harbor', 'argocd'];
+    kinds.forEach((kind, i) => {
+      const st = r['st_' + kind] || 'none';
+      const col = { running: P.act, success: P.ok, failed: P.bad, waiting: P.warn, none: P.muted }[st] || P.muted;
+      const label = `${'①②③'[i]} ${it[kind] || (iz[kind] && iz[kind].label) || kind}`;
+      drawTag(r.x + iz[kind].x + 0.1, r.y + iz.y + 0.25, label, false, col, STATUS_KO[st] || st);
+      if (i < kinds.length - 1) {                                     // 다음 단계로 화살표
+        const [ax, ay] = toScreen((r.x + iz[kind].x + 4.7) * T, (r.y + iz.y + 1.5) * T);
+        const [bx] = toScreen((r.x + iz[kinds[i + 1]].x - 0.1) * T, 0);
+        if (bx - ax > 16) {
+          // 이름표 바탕색(양피지 · 흰색 · 안전 노랑)에 테두리색 그림자 — 어느 바닥에서도 보이게
+          for (const [col, wdt] of [[TAG.border, 5], [TAG.bg.slice(0, 7), 3]]) {
+            ctx.strokeStyle = col; ctx.lineWidth = wdt; ctx.globalAlpha = 0.9;
+            ctx.setLineDash([8, 5]); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx - 9, ay); ctx.stroke(); ctx.setLineDash([]);
+          }
+          ctx.fillStyle = TAG.bg.slice(0, 7); ctx.strokeStyle = TAG.border; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(bx, ay); ctx.lineTo(bx - 10, ay - 6); ctx.lineTo(bx - 10, ay + 6); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      }
+    });
   }
 
   function drawName(a) {
