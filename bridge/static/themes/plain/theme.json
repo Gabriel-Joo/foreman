@@ -69,6 +69,12 @@
     "colors": { "lead": "#d4a72c", "builder": "#3f7fd0", "reviewer": "#c0392b", "researcher": "#2e9e6a", "ops": "#8e44ad" }
   },
 
+  "tags": {
+    "style": { "bg": "#1b1f27ee", "fg": "#e8e8f0", "border": "#5d6479", "font": "600 10px system-ui, sans-serif", "kind": "sign" },
+    "zones": { "foreman_office": "포먼 사무실", "desks": "책상", "server_rack": "서버랙", "window": "창가", "phone": "전화" },
+    "infra": { "title": "배포 파이프", "jenkins": "Jenkins 빌드", "harbor": "Harbor 이미지", "argocd": "ArgoCD 배포" }
+  },
+
   "sprites": {
     "_comment": "10a는 도형(shapes). 10d에 CC0 시트로 바꾼다 — 이 칸만 바뀐다",
     "kind": "shapes",

@@ -45,6 +45,14 @@
 
   "spawn": { "zone": "meeting" },
 
+  "tags": {
+    "_": "구역 이름표 — 흰 사인판 + 파란 띠",
+    "style": { "bg": "#ffffffee", "fg": "#1f2430", "border": "#3d9ee6", "font": "600 10px system-ui, 'Noto Sans KR', sans-serif", "kind": "sign" },
+    "zones": { "foreman_office": "팀장실", "library": "아카이브", "desks": "워크스테이션", "server": "서버룸", "test": "QA 부스",
+               "meeting": "회의실", "lounge": "라운지", "window": "창가 바", "commit": "커밋 데스크" },
+    "infra": { "title": "배포 파이프", "jenkins": "빌드 모니터 · Jenkins 빌드", "harbor": "저장소 · Harbor 이미지", "argocd": "배포 보드 · ArgoCD 배포" }
+  },
+
   "roles": {
     "_": "역할 → 사원증 끈 색(11단계에서 포먼이 캐릭터에 role을 붙이면 쓴다). 미리 보기 ?roles=demo",
     "mode": "lanyard",

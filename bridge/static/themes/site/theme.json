@@ -44,6 +44,14 @@
 
   "spawn": { "zone": "plans" },
 
+  "tags": {
+    "_": "구역 이름표 — 안전 노랑 표지판(검정 글씨, 빗금 띠)",
+    "style": { "bg": "#f2c14e", "fg": "#141414", "border": "#141414", "font": "bold 10px ui-monospace, 'D2Coding', monospace", "kind": "hazard" },
+    "zones": { "foreman_office": "감독 컨테이너", "store": "자재창고", "desks": "작업대", "tools": "공구실", "test": "검사대",
+               "plans": "도면실", "camp": "함바", "gate": "셔터", "ship": "출하 접수대" },
+    "infra": { "title": "출하장", "jenkins": "검수대 · Jenkins 빌드", "harbor": "팔레트 · Harbor 이미지", "argocd": "트럭 · ArgoCD 배포" }
+  },
+
   "roles": {
     "_": "역할 → 안전모 색(11단계). 역할이 없으면 노란 안전모, 감독은 흰 안전모. 미리 보기 ?roles=demo",
     "mode": "helmet", "default": "#f2c14e", "foreman": "#f4f4f4",
