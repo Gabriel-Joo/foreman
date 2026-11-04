@@ -43,6 +43,11 @@
     }
   },
 
+  "roles": {
+    "_": "역할 → 로브 색(11단계에서 포먼이 캐릭터에 role을 붙이면 쓴다). 렌더러가 옷 픽셀의 색상만 바꾼다. 미리 보기 ?roles=demo",
+    "colors": { "lead": "#d4a72c", "builder": "#3f7fd0", "reviewer": "#c0392b", "researcher": "#2e9e6a", "ops": "#8e44ad" }
+  },
+
   "hq": {
     "_": "감독실(1단) = 교장실. 벽에 거대한 지도, 현장마다 촛불(작업중 밝게 · 승인 대기 붉게 · 실패 꺼짐+연기 · 쉼 작게 · 없음 꺼짐)",
     "label": "교장실", "size": { "w": 28, "h": 16 }, "seat": [14.0, 9.9], "floor": "wood",
@@ -94,6 +99,7 @@
 
   "sprites": {
     "kind": "sheets",
+    "mini_scale": 0.625,
     "_comment": "원본 파일 그대로(sprites/) — 자르기 · 외곽선 · 색조는 렌더러가 불러올 때. outline: Calciumtrice 가구에 1px 진한 외곽선(Ninja · 0x72 화풍에 맞춤)",
     "outline": "#1a1620",
     "sheets": {

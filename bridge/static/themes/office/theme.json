@@ -64,6 +64,11 @@
     "none":    { "anim": "idle", "alpha": 0.6 }
   },
 
+  "roles": {
+    "_": "역할 → 사원증 끈 색(11단계). 미리 보기 ?roles=demo",
+    "colors": { "lead": "#d4a72c", "builder": "#3f7fd0", "reviewer": "#c0392b", "researcher": "#2e9e6a", "ops": "#8e44ad" }
+  },
+
   "sprites": {
     "_comment": "10a는 도형(shapes). 10d에 CC0 시트로 바꾼다 — 이 칸만 바뀐다",
     "kind": "shapes",
