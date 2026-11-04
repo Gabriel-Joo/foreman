@@ -119,10 +119,30 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         const desk = seat(room, k);
         const [tx, ty, face] = spot(room, act.go, desk, k);
         const key = 's:' + s.id;
-        upsert(key, { kind: 'session', room: room.name, tx, ty, face, act, desk, s, hue: hueOf(s.id),
-                      char: CH.pool ? CH.pool[s.id % CH.pool.length] : null,
+        const char = CH.pool ? CH.pool[s.id % CH.pool.length] : null;
+        upsert(key, { kind: 'session', room: room.name, tx, ty, face, act, desk, s, hue: hueOf(s.id), char, role: roleOf(s),
                       name: s.title || s.cc_name || ('세션 ' + s.id) });
         seen.add(key);
+        // 서브에이전트 — 부모의 축소판. 10명까지 보이고 나머지는 +N(10c). 새로 생기면 원탁방 마법진에서 소환, 끝나면 연기
+        const n = s.subagents_running || 0;
+        const g = groupSubagents(s.subagent_descs || [], MINI_CAP);
+        const shown = Math.min(n, MINI_CAP);
+        for (let i = 0; i < shown; i++) {
+          const mk = `m:${s.id}:${i}`;
+          const born = !actors.has(mk);
+          const from = born ? summonPoint(room, tx, ty) : null;
+          upsert(mk, { kind: 'mini', room: room.name, parent: key, idx: i, of: shown, char, hue: hueOf(s.id), role: roleOf(s),
+                       act: { anim: 'walk' }, name: g.shown[i] || g.label || '서브에이전트', tx: from ? from[0] : tx, ty: from ? from[1] : ty });
+          if (born) {
+            const a = actors.get(mk);
+            a.x = from[0]; a.y = from[1]; a.bornAt = performance.now() + i * 180;   // 하나씩 차례로 나온다
+            summons.push({ x: from[0], y: from[1], t0: a.bornAt });
+          }
+          seen.add(mk);
+        }
+        const self = actors.get(key);
+        self.subHidden = Math.max(0, n - shown);
+        self.subLabel = g.label;
       });
       if (!room.lounge) {
         // 포먼 캐릭터 — 자기 세션이 아직 없다(README 2.4 임시 상태). 구석 사무실에 서 있다
@@ -183,6 +203,31 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     info(st);
   }
 
+  // 역할(로브 · 사원증 끈 · 안전모 색) — 11단계에서 포먼이 캐릭터를 만들면 세션에 role이 온다(지금은 없음).
+  // 미리 보기: /office?roles=demo — 세션 id로 돌려 가며 붙인다
+  const ROLES = (theme.roles && theme.roles.colors) || {};
+  const DEMO_ROLES = new URLSearchParams(location.search).get('roles') === 'demo' ? Object.keys(ROLES) : null;
+  function roleOf(s) { return s.role || (DEMO_ROLES && DEMO_ROLES.length ? DEMO_ROLES[s.id % DEMO_ROLES.length] : null); }
+  function roleColor(role) { return (role && ROLES[role]) || null; }
+
+  // 서브에이전트(10c) — 소환 자리: 그 방에 마법진(circle 구역)이 있으면 그 가운데, 없으면 부모 자리
+  const MINI_CAP = 10;
+  const MINI = theme.sprites.mini_scale || 0.6;
+  const summons = [];
+  function summonPoint(room, px, py) {
+    const z = L.zones.circle || L.zones[(theme.spawn && theme.spawn.zone) || ''];
+    if (!z || room.lounge) return [px, py];
+    return [room.x + z.x + z.w / 2, room.y + z.y + z.h / 2];
+  }
+  // 작은 일꾼은 부모 둘레를 천천히 돈다 — 목표를 매 프레임 다시 정한다
+  function miniTarget(a, now) {
+    const p = actors.get(a.parent);
+    if (!p) return [a.tx, a.ty];
+    const ang = (a.idx / Math.max(1, a.of)) * Math.PI * 2 + now / 6000 + (a.idx % 2) * 0.4;
+    const rx = 1.1 + 0.25 * (a.idx % 3), ry = 0.55;
+    return [p.x + Math.cos(ang) * rx, p.y + 0.35 + Math.sin(ang) * ry];
+  }
+
   // 사라지기 — 서브에이전트(작은 일꾼)는 연기로 흩어진다(10c). 나머지는 그냥 지운다
   const puffs = [];
   function vanish(k) {
@@ -229,8 +274,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const k = Math.min(1, dt * 6);
     cam.x += (camT.x - cam.x) * k; cam.y += (camT.y - cam.y) * k; cam.s += (camT.s - cam.s) * k;
     for (const a of actors.values()) {
+      if (a.kind === 'mini') {
+        if (a.bornAt && now < a.bornAt) continue;              // 아직 소환 중 — 마법진 가운데서 기다린다
+        [a.tx, a.ty] = miniTarget(a, now);
+      }
       const dx = a.tx - a.x, dy = a.ty - a.y, d = Math.hypot(dx, dy);
-      const step = SPEED * dt;
+      const step = SPEED * dt * (a.kind === 'mini' ? 0.8 : 1);
       a.moving = d > 0.05;
       if (a.moving) a.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
       if (d <= step) { a.x = a.tx; a.y = a.ty; } else { a.x += dx / d * step; a.y += dy / d * step; }
@@ -248,7 +297,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       drawHQS(now, sorted);
       for (const r of world.rooms) drawRoomS(r, now, sorted);
       if (world.lounge) drawLoungeS(world.lounge, now, sorted);
-      for (const a of list) sorted.push({ y: a.y, draw: () => drawActorS(a, now) });
+      for (const a of list) if (!(a.bornAt && now < a.bornAt)) sorted.push({ y: a.y, draw: () => drawActorS(a, now) });
       sorted.sort((p, q) => p.y - q.y);
       for (const it of sorted) it.draw();
       for (const a of list) drawOverlay(a, now);
@@ -256,8 +305,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       drawHQShapes(now);
       for (const r of world.rooms) drawRoom(r, now);
       if (world.lounge) drawLounge(world.lounge);
-      for (const a of list) drawActor(a, now);
+      for (const a of list) if (!(a.bornAt && now < a.bornAt)) drawActor(a, now);
     }
+    drawSummonsPuffs(now);
     // 글자는 화면 좌표로(선명하게)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const zoomedIn = view !== 'map';
@@ -322,6 +372,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
 
   function drawActor(a, now) {
     const sp = theme.sprites.person, act = a.act || {};
+    if (a.kind === 'mini') {                                  // 도형 테마의 축소판
+      const s = MINI, x = a.x * T, yb = a.y * T, h = sp.h * s, w = sp.w * s, bob = Math.abs(Math.sin(a.phase)) * 1.5;
+      ctx.fillStyle = roleColor(a.role) || `hsl(${a.hue} 55% 55%)`; ctx.fillRect(x - w / 2, yb - h * 0.7 - bob, w, h * 0.7);
+      ctx.fillStyle = '#f1c9a5'; ctx.beginPath(); ctx.arc(x, yb - h * 0.8 - bob, sp.head * s, 0, Math.PI * 2); ctx.fill();
+      return;
+    }
     const x = a.x * T, yBase = a.y * T;
     const anim = a.moving ? 'walk' : (act.anim || 'stand');
     const sit = !a.moving && (anim === 'sit' || anim === 'type' || anim === 'read' || anim === 'think' || anim === 'call');
@@ -346,7 +402,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.globalAlpha = 1;
     if (act.fx === 'smoke') drawSmoke(a.x, a.y - 1.4, now);
     if (act.bubble) drawBubble(x, y - 6, act.bubble, act.flag === 'approval_pending' ? P.warn : '#e8e8f0');
-    if (a.kind === 'session' && a.s && a.s.subagents_running) drawBubble(x + 10, y + 2, `+${a.s.subagents_running}`, P.act, 7);   // 10c에 축소판 일꾼으로
+    if (a.subHidden) drawBubble(x + 10, y + 2, `+${a.subHidden}`, P.act, 7);              // 10명 넘는 서브에이전트는 접는다
+    const rc = roleColor(a.role);
+    if (rc) { ctx.fillStyle = rc; ctx.fillRect(x - 1, y + sp.head * 1.6, 2, h - sp.head * 1.6 - 2); }   // 역할 — 사원증 끈 색
     if (a.key === selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - 9, y - 3, 18, h + 6); }
   }
 
@@ -463,14 +521,48 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
 
   // 사람 — Ninja 시트. 걷기는 진짜 프레임, 앉기는 탁자가 가리고, 자기 · 들기 · 석화 · 유령은 엔진 흉내
+  // 소환(마법진이 밝아지고 불꽃) · 퇴장(연기) — 10c
+  function drawSummonsPuffs(now) {
+    for (let i = summons.length - 1; i >= 0; i--) {
+      const s = summons[i], e = now - s.t0;
+      if (e > 500) { summons.splice(i, 1); continue; }
+      if (e < -600) continue;
+      const k = 1 - Math.abs(e + 50) / 550;
+      if (SP && SP.has('fx_circle')) {
+        ctx.globalAlpha = Math.max(0, k);
+        SP.draw(ctx, 'fx_circle', s.x * T - 16, s.y * T - 16, now);
+        if (SP.has('fx_spark')) SP.draw(ctx, 'fx_spark', s.x * T - 15, s.y * T - 30, now);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.strokeStyle = P.act; ctx.globalAlpha = Math.max(0, k); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(s.x * T, s.y * T, 6 + (1 - k) * 10, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+      }
+    }
+    for (let i = puffs.length - 1; i >= 0; i--) {
+      const p = puffs[i], e = now - p.t0;
+      if (e > 600) { puffs.splice(i, 1); continue; }
+      if (e < 0) continue;
+      if (SP && SP.has('fx_smoke')) SP.draw(ctx, 'fx_smoke', p.x * T - 16, p.y * T - 26, now, 1, Math.floor(e / 100));
+      else drawSmoke(p.x, p.y - 0.3, now);
+    }
+  }
+
   function drawActorS(a, now) {
+    if (a.kind === 'mini') {                                  // 부모의 축소판 — 늘 걷는 그림(돌아다닌다)
+      const dir = a.dir || 'down';
+      const c = SP.charFrame(a.char, 'walk', dir, Math.floor(a.phase * 0.8) % 4, null, roleColor(a.role));
+      if (!c) return;
+      const sz = Math.round(16 * MINI);
+      ctx.drawImage(c, Math.round(a.x * T - sz / 2), Math.round(a.y * T - sz), sz, sz);
+      return;
+    }
     const act = a.act || {};
     const anim = a.moving ? 'walk' : (act.anim || 'stand');
     const dir = a.moving ? (a.dir || 'down') : (a.face || 'down');
     const mode = act.fx === 'stone' || act.fx === 'frozen' ? 'stone' : act.fx === 'ghost' ? 'ghost' : null;
     const walking = a.moving || anim === 'work';
     const f = walking && !mode ? Math.floor(a.phase * 0.8) % 4 : 0;
-    const c = SP.charFrame(a.char, walking ? 'walk' : 'idle', dir, f, mode);
+    const c = SP.charFrame(a.char, walking ? 'walk' : 'idle', dir, f, mode, mode ? null : roleColor(a.role));
     if (!c) return;
     let px = Math.round(a.x * T - 8), py = Math.round(a.y * T - 16);
     if (anim === 'sleep') py += 4;                                               // 엎드려 잔다 — 머리를 탁자 위로
@@ -504,7 +596,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       ctx.globalAlpha = 1 - t; ctx.fillStyle = P.zz; ctx.font = 'bold 7px ui-monospace, monospace'; ctx.textAlign = 'left';
       ctx.fillText('z', x + 5 + t * 4, top + 2 - t * 8); ctx.globalAlpha = 1;
     }
-    if (a.kind === 'session' && a.s && a.s.subagents_running) drawBubble(x + 10, top + 4, `+${a.s.subagents_running}`, P.act, 7);   // 10c에 작은 로브로
+    if (a.subHidden) drawBubble(x + 11, top + 4, `+${a.subHidden}`, P.act, 7);      // 10명 넘는 서브에이전트는 접는다
     if (a.key === selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - 9, top - 2, 18, 20); }
   }
 
@@ -527,14 +619,22 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
 
   function drawName(a) {
+    if (a.kind === 'mini' && a.key !== selected) return;     // 작은 일꾼 이름은 누른 것만(묶음 이름은 부모 밑에)
     const [sx, sy] = toScreen(a.x * T, a.y * T);
-    const text = a.kind === 'session' ? short(a.name, 18) : a.name;
+    const text = a.kind === 'session' ? short(a.name, 18) : short(a.name, 30);
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     const w = ctx.measureText(text).width + 6;
     ctx.fillStyle = '#000a'; ctx.fillRect(sx - w / 2, sy + 2, w, 14);
     ctx.fillStyle = a.kind === 'foreman' ? P.warn : P.label;
     ctx.fillText(text, sx, sy + 3);
+    const n = a.kind === 'session' && a.s ? a.s.subagents_running || 0 : 0;
+    if (n) {
+      const sub = `일꾼 ${n}${a.subLabel ? ' · ' + short(a.subLabel, 22) : ''}${a.subHidden ? ` (+${a.subHidden} 접음)` : ''}`;
+      const w2 = ctx.measureText(sub).width + 6;
+      ctx.fillStyle = '#000a'; ctx.fillRect(sx - w2 / 2, sy + 17, w2, 14);
+      ctx.fillStyle = P.act; ctx.fillText(sub, sx, sy + 18);
+    }
   }
 
   function fmt(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n); }

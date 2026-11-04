@@ -71,8 +71,9 @@ class Sprites {
   }
 
   // 캐릭터 한 프레임 — mode: null · 'stone'(석화, 회색) · 'ghost'(유령, 푸른빛)
-  charFrame(name, kind, dir, f, mode) {
-    const key = `c:${name}:${kind}:${dir}:${f}:${mode || ''}`;
+  // robe: 역할 색(#rrggbb) — 옷(채도 있고 너무 밝지 않은 픽셀)의 색상만 그 색으로 바꾼다(피부 · 외곽선은 그대로)
+  charFrame(name, kind, dir, f, mode, robe = null) {
+    const key = `c:${name}:${kind}:${dir}:${f}:${mode || ''}:${robe || ''}`;
     let c = this.cache.get(key);
     if (c) return c;
     const set = this.chars[name] || this.chars[Object.keys(this.chars)[0]];
@@ -83,9 +84,41 @@ class Sprites {
     if (kind === 'walk') g.drawImage(set.walk, col * 16, (f % 4) * 16, 16, 16, 0, 0, 16, 16);
     else g.drawImage(set.idle, col * 16, 0, 16, 16, 0, 0, 16, 16);
     if (mode) tint(c, mode);
+    else if (robe) recolor(c, robe);
     this.cache.set(key, c);
     return c;
   }
+}
+
+function rgb2hsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  if (mx === mn) return [0, 0, l];
+  const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+function hsl2rgb(h, s, l) {
+  if (!s) return [l * 255, l * 255, l * 255];
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  const f = (t) => { t = (t + 1) % 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; };
+  return [f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255];
+}
+
+// 역할 색 — 옷 픽셀(채도 0.22 이상, 밝기 0.12~0.72)의 색상을 바꾼다. 피부(밝은 살구색)와 검은 외곽선은 남는다
+export function recolor(c, hex) {
+  const [tr, tg, tb] = hexRGBA(hex);
+  const [th, ts] = rgb2hsl(tr, tg, tb);
+  const g = c.getContext('2d');
+  const d = g.getImageData(0, 0, c.width, c.height);
+  for (let i = 0; i < d.data.length; i += 4) {
+    if (!d.data[i + 3]) continue;
+    const [, s, l] = rgb2hsl(d.data[i], d.data[i + 1], d.data[i + 2]);
+    if (s < 0.22 || l < 0.12 || l > 0.72) continue;
+    const [r, gg, b] = hsl2rgb(th, Math.max(0.35, Math.min(1, (s + ts) / 2)), l);
+    d.data[i] = r; d.data[i + 1] = gg; d.data[i + 2] = b;
+  }
+  g.putImageData(d, 0, 0);
 }
 
 function hexRGBA(hex) {
