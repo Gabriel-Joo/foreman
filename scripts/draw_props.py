@@ -91,12 +91,106 @@ def owl_perch():
     return sheet
 
 
+# ── 오피스(2dPig 화풍 — 정면, 밝은 색, 둥근 모서리) ─────────────
+def server_rack():
+    """서버랙 16x32 × 2프레임(LED 깜빡임)."""
+    sheet = Image.new("RGBA", (32, 32), (0, 0, 0, 0))
+    for f in range(2):
+        im, d = canvas(16, 32)
+        d.rounded_rectangle((1, 1, 14, 31), 2, fill="#2b2f3a")
+        d.rectangle((2, 2, 13, 3), fill="#3d4352")
+        for k in range(6):                                           # 서버 6대
+            y = 5 + k * 4
+            d.rectangle((3, y, 12, y + 2), fill="#3d4352")
+            on = (k + f) % 3 != 0
+            d.point((4, y + 1), fill="#5dff8a" if on else "#1f5f35")
+            d.point((6, y + 1), fill="#5aa2ff" if (k + f) % 2 else "#1f3a66")
+            d.line((8, y + 1, 11, y + 1), fill="#262a33")
+        sheet.alpha_composite(im, (f * 16, 0))
+    return sheet
+
+
+def whiteboard():
+    """화이트보드 32x22 — 다리 달린 판, 그래프와 글씨."""
+    im, d = canvas(32, 22)
+    d.rectangle((3, 16, 4, 21), fill="#8a8f99"); d.rectangle((27, 16, 28, 21), fill="#8a8f99")
+    d.rectangle((0, 0, 31, 16), fill="#c3c8d0")
+    d.rectangle((1, 1, 30, 15), fill="#f6f8fa")
+    d.line((3, 12, 8, 8, 13, 10, 18, 4), fill="#2f7de0")             # 그래프
+    for k in range(3):
+        d.line((20, 4 + k * 3, 28, 4 + k * 3), fill="#e0503a" if k == 0 else "#6b7280")
+    d.rectangle((2, 16, 29, 16), fill="#8a8f99")                     # 받침
+    d.point((25, 15), fill="#e0503a"); d.point((27, 15), fill="#2f7de0")
+    return im
+
+
+def copier():
+    """복합기 20x20."""
+    im, d = canvas(20, 20)
+    d.rounded_rectangle((1, 4, 18, 19), 2, fill="#d9dde3")
+    d.rectangle((2, 1, 17, 5), fill="#eef1f4")                       # 뚜껑
+    d.rectangle((3, 8, 10, 10), fill="#2b2f3a")                      # 화면
+    d.point((4, 9), fill="#5dff8a")
+    d.rectangle((12, 8, 16, 9), fill="#9aa0aa")
+    d.rectangle((3, 13, 16, 15), fill="#b8bec7")                     # 용지함
+    d.rectangle((5, 11, 14, 12), fill="#ffffff")                     # 나온 종이
+    return im
+
+
+def bean_bag():
+    """빈백 18x13."""
+    im, d = canvas(18, 13)
+    d.ellipse((0, 3, 17, 12), fill="#b3443a")
+    d.ellipse((2, 1, 13, 9), fill="#d9594c")
+    d.ellipse((4, 2, 9, 5), fill="#ee7a6c")
+    return im
+
+
+def coffee_machine():
+    """커피머신 12x18."""
+    im, d = canvas(12, 18)
+    d.rounded_rectangle((0, 0, 11, 17), 2, fill="#3b3f4a")
+    d.rectangle((2, 2, 9, 4), fill="#5aa2ff")                        # 화면
+    d.rectangle((3, 7, 8, 8), fill="#23262e")                        # 추출구
+    d.rectangle((4, 11, 7, 15), fill="#f4f0e0")                      # 컵
+    d.point((5, 10), fill="#8a5a2b")
+    d.point((10, 3), fill="#5dff8a")
+    return im
+
+
+def build_monitor():
+    """빌드 모니터 26x20 — 받침 달린 큰 화면(상태 색은 렌더러가 덧칠)."""
+    im, d = canvas(26, 20)
+    d.rectangle((11, 15, 14, 18), fill="#5b616e"); d.rectangle((7, 18, 18, 19), fill="#5b616e")
+    d.rounded_rectangle((0, 0, 25, 15), 2, fill="#23262e")
+    d.rectangle((2, 2, 23, 13), fill="#11151c")
+    for k in range(3):
+        d.line((4, 4 + k * 3, 4 + 6 + k * 4, 4 + k * 3), fill="#5dd39e")
+    return im
+
+
+def phone():
+    """휴대폰 5x8 — 라운지에서 누워 폰 보는 사람 손에."""
+    im, d = canvas(5, 8)
+    d.rectangle((0, 0, 4, 7), fill="#23262e")
+    d.rectangle((1, 1, 3, 5), fill="#7fd1ff")
+    d.point((2, 6), fill="#5b616e")
+    return im
+
+
 def main() -> int:
-    magic = OUT / "magic/sprites/foreman"
-    magic.mkdir(parents=True, exist_ok=True)
-    for name, fn in (("round_table", round_table), ("portrait", portrait), ("wax_seal", wax_seal), ("owl_perch", owl_perch)):
-        fn().save(magic / f"{name}.png")
-        print(magic / f"{name}.png")
+    groups = {
+        "magic/sprites/foreman": (("round_table", round_table), ("portrait", portrait), ("wax_seal", wax_seal), ("owl_perch", owl_perch)),
+        "office/sprites/foreman": (("server_rack", server_rack), ("whiteboard", whiteboard), ("copier", copier),
+                                   ("bean_bag", bean_bag), ("coffee_machine", coffee_machine), ("build_monitor", build_monitor),
+                                   ("phone", phone)),
+    }
+    for sub, items in groups.items():
+        out = OUT / sub
+        out.mkdir(parents=True, exist_ok=True)
+        for name, fn in items:
+            fn().save(out / f"{name}.png")
+            print(out / f"{name}.png")
     return 0
 
 
