@@ -43,6 +43,21 @@
     }
   },
 
+  "hq": {
+    "_": "감독실(1단) = 교장실. 벽에 거대한 지도, 현장마다 촛불(작업중 밝게 · 승인 대기 붉게 · 실패 꺼짐+연기 · 쉼 작게 · 없음 꺼짐)",
+    "label": "교장실", "size": { "w": 28, "h": 16 }, "seat": [14.0, 9.9], "floor": "wood",
+    "board": { "style": "map", "x": 3, "y": 0.4, "w": 22, "h": 5.4 },
+    "decor": [
+      { "s": "shelf", "x": 1.2, "y": 6.0 }, { "s": "it_books", "x": 1.4, "y": 6.1, "z": "top" }, { "s": "it_greybooks", "x": 2.3, "y": 6.6, "z": "top" }, { "s": "it_tanbook", "x": 1.4, "y": 7.1, "z": "top" },
+      { "s": "shelf", "x": 24.8, "y": 6.0 }, { "s": "it_redbook", "x": 25.0, "y": 6.1, "z": "top" }, { "s": "it_books", "x": 25.9, "y": 6.6, "z": "top" }, { "s": "it_potions", "x": 25.0, "y": 7.1, "z": "top" },
+      { "s": "table_l", "x": 12.0, "y": 9.4 }, { "s": "table_m", "x": 13.0, "y": 9.4, "n": 2 }, { "s": "table_r", "x": 15.0, "y": 9.4 },
+      { "s": "openbook", "x": 12.2, "y": 9.7, "z": "top" }, { "s": "p_scroll", "x": 15.1, "y": 9.75, "z": "top" }, { "fx": "orb", "x": 14.8, "y": 10.0 },
+      { "fx": "candle", "x": 12.0, "y": 9.9 }, { "fx": "candle", "x": 16.0, "y": 9.9 },
+      { "s": "banner_r", "x": 1.5, "y": 1.0, "z": "wall" }, { "s": "banner_b", "x": 26.0, "y": 1.0, "z": "wall" },
+      { "s": "chair_b", "x": 13.5, "y": 12.4 }, { "s": "barrel", "x": 3.5, "y": 12.0 }, { "s": "chest", "x": 23.5, "y": 12.5 }
+    ]
+  },
+
   "states": {
     "ACTIVE":    { "anim": "walk", "go": "desk" },
     "IDLE":      { "anim": "idle", "go": "hall", "variants": ["sleep", "eat", "read"] },
