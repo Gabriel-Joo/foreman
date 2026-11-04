@@ -1,0 +1,132 @@
+# FOREMAN 승인 정책 (로드맵 5단계, 2026-11-02 사용자 결정으로 좁힘). 바꾸면 브리지를 다시 띄운다.
+#
+# 원칙: **되돌릴 수 없는 것만 ask, 되돌릴 수 있는 것은 allow.** 애매하면(무엇을 지울지 확정할 수 없으면) ask.
+#   ask   되돌릴 수 없는 것 — 승인 창(auto mode의 자동 통과보다 앞선다). 브라우저 · 텔레그램 · 터미널 중 먼저 답한 쪽
+#   allow 되돌릴 수 있는 것 · 읽기 — 승인 창 없이 통과
+#   pass  그 밖 — 브리지는 정하지 않는다. CC가 지금처럼 정한다(auto mode 분류기 · 사용자 설정)
+# 순서: ask 규칙이 하나라도 걸리면 ask → 명령의 모든 조각이 allow 규칙이면 allow → 나머지는 unmatched
+# ask 정규식은 따옴표 안까지 명령 전체에서 찾는다(bash -c '…', vagrant ssh -c '…' 안의 것도).
+# allow는 조각마다 증명한다 — vagrant ssh … -c '…' · bash -c '…'는 안쪽 명령으로 판정
+#
+# 모든 판정(allow · pass 포함)은 event(type=approval_req)로 남는다 — "무엇이 자동으로 통과됐나"를 볼 수 있게.
+# ask와 승인 결과는 로그에도 이유와 함께 남는다.
+
+[defaults]
+mode = "enforce"        # enforce: 판정을 CC에 돌려준다 / observe: 기록만 하고 CC에는 아무것도 돌려주지 않는다
+# 규칙에 없는 도구 호출. "ask"로 하면 auto mode가 자동 통과시키던 평범한 작업(실측 20일 약 9,700건)이 모두 승인 창이 된다
+unmatched = "pass"
+remote_approval = true  # 승인 창이 뜨면(우리 ask든 CC 자체든) 텔레그램으로 알리고 브라우저에서 승인 · 거부를 받는다
+wait_s = 600            # 브라우저 결정을 기다리는 최대 시간. 그동안에도 터미널 승인 창은 그대로 쓸 수 있다
+
+# ── 되돌릴 수 있는 것 · 읽기 — allow ──────────────────────────
+[allow]
+tools = ["Read", "Grep", "Glob"]
+# 편집 · 쓰기 — 작업 트리 안이든 밖이든 allow(덮어쓴 파일은 되돌릴 수 있다는 판단 — 사용자 결정).
+# 비밀 파일 · 보호 설정 파일([sensitive])과 .git/ 안은 ask
+edit = ["Edit", "MultiEdit", "NotebookEdit", "Write"]
+# Bash — &&, ||, ;, | 로 나눈 모든 조각이 아래 중 하나여야 allow. 명령 치환 · 리다이렉트(/dev/null 제외) ·
+# 환경변수 앞붙임이 있으면 allow하지 않는다(무엇을 할지 확실하지 않다)
+bash_git_readonly = ["status", "log", "diff"]
+bash_filters = ["head", "tail", "wc", "grep", "sort", "uniq", "cut"]   # 파이프 뒤에서만
+bash_cd = true
+# CC가 자기 일로 쓰는 곳 — 작업 트리 안으로 친다(계획 · 메모리 파일). 세션 scratchpad는 hook이 알려 준다
+cc_own_paths = ['^~/\.claude/plans/', '^~/\.claude/projects/[^/]+/memory/']
+
+[allow.bash_ops]   # 이름 = 조각 전체에 맞는 정규식 — 되돌릴 수 있는 운영 명령
+"kubectl-적용" = '''^kubectl(\s+(-n|--namespace|--context|-f|--filename|-l|--selector)\s+\S+|\s+--?[\w-]+(=\S+)?)*\s+(apply|create|replace|patch|scale|rollout|set|label|annotate|edit|cordon|uncordon|drain|taint|autoscale)\b'''
+"helm-적용" = '''^helm\s+(install|upgrade|rollback)\b'''
+"argocd-동기화" = '''^argocd\s+app\s+(sync|rollback|set|wait|get|list)\b'''
+"git-push" = '''^git(\s+(-C\s+\S+|--no-pager))*\s+push\b(?!.*(\s-f\b|--force|--delete|\s-d\b|--mirror|\s\+\S|\s:[\w./-]|\s-\w*f\w*\b|--prune\b))'''
+"docker-재시작" = '''^docker(\s+compose(\s+(-f|--file|-p|--project-name)\s+\S+)*)?\s+(stop|restart|start|kill|up|pause|unpause)\b'''
+"docker-compose-down" = '''^docker\s+compose(\s+(-f|--file|-p|--project-name)\s+\S+)*\s+down\b(?!.*(\s-v\b|--volumes|--rmi))'''
+"systemctl-변경" = '''^systemctl(\s+--user)?\s+(start|stop|restart|reload|enable|disable|daemon-reload|status|is-active|is-enabled)\b'''
+
+# ── 되돌릴 수 없는 것 — ask ──────────────────────────────────
+[ask]
+# 작업 트리 밖 삭제(rm, -r 없이도). 세션 scratchpad · CC 계획 · 메모리는 안쪽. 지울 경로에 변수가 있으면 애매 → ask
+delete_outside_worktree = true
+
+[ask.bash]   # 이름 = 정규식(명령 전체에서 찾는다). 이름이 로그 · 이벤트 · 텔레그램에 이유로 나간다
+"rm-재귀" = '''(^|[\s;&|(`'"])rm\s+(-\w*[rR]\w*|--recursive)'''
+"docker-삭제" = '''\bdocker(\s+compose)?\b[^|;&\n]*?\s(rm|rmi|prune|volume\s+rm|network\s+rm)\b|\bdocker\s+compose\b[^|;&\n]*?\sdown\b[^|;&\n]*?(\s-v\b|--volumes|--rmi)'''
+"git-되돌리기" = '''\bgit\b[^|;&\n]*?\s(reset\s+--hard|clean\s+-\w*f|checkout\s+--\s|checkout\s+\.(\s|$)|restore\s|branch\s+-D|stash\s+(drop|clear))'''
+"git-강제push" = '''\bgit\b[^|;&\n]*?\spush\b[^|;&\n]*?(\s-f\b|--force|--delete|\s-d\b|--mirror|\s\+\S|\s:[\w./-]|\s-\w*f\w*\b|--prune\b)'''
+"kubectl-삭제" = '''\bkubectl\b[^|;&\n]*?\sdelete\b'''
+"helm-삭제" = '''\bhelm\s+(uninstall|delete)\b'''
+"argocd-삭제" = '''\bargocd\s+(app\s+delete|repo\s+rm|cluster\s+rm)\b'''
+"DB-파괴" = '''(?i)\b(drop\s+(database|table|schema)|truncate\s+table)\b|\bdelete\s+from\s+[\w.`"]+\s*(;|"|'|$)|\bflush(all|db)\b|\bdropdb\b|\bmysqladmin\b[^|;&\n]*\sdrop\b'''
+# ── 11-03 보강 — 다른 게이트 구현에서 가져온 위험 패턴(우리 환경에 있는 것만, README 3.3 "다른 구현과 비교") ──
+"git-기록파괴" = '''\bgit\b[^|;&\n]*?\s(filter-branch|filter-repo|reflog\s+expire|gc\b[^|;&\n]*--prune=(now|all))\b'''
+"find-삭제" = '''\bfind\b[^|;&\n]*?\s(-delete\b|-exec(dir)?\s+(rm|shred|mv)\b)'''
+"권한-대량변경" = '''\bchmod\b[^|;&\n]*\s0?777\b|\b(chmod|chown)\s+(-\w+\s+)*-\w*R\w*\b[^|;&\n]*\s(/|~|\$HOME)/?(\s|$|;)'''
+"재부팅-종료" = '''(^|[;&|(\n'"]|\bsudo)\s*(reboot|shutdown|poweroff|halt)(\s|$|;)|\bsystemctl\s+(reboot|poweroff|halt|kexec)\b|\binit\s+[06](\s|$)'''
+# pkill · killall은 대상이 CC · tmux · 브리지 · 인프라 프로세스에 걸릴 때만 — 21일 실데이터 17건은 모두 자기가 띄운 스크립트(vite · uvicorn · 실험)를 끄는 것
+"프로세스-대량종료" = '''\bkill\s+(-\w+\s+)*-1(\s|$)|(^|[;&|(\n'"]\s*)(sudo\s+)?(killall|pkill)\b[^;&|\n]*((?<![/\w-])claude(?![\w-])|\bnode\b|\btmux\b|\bttyd\b|\bsshd?\b|docker|containerd|kubelet|qemu|libvirt|mysqld|vagrant|\bbridge\b|\s-u\s|\s-U\s|\s--uid\b)'''
+"디스크-덮어쓰기" = '''>\s*/dev/(sd|nvme|vd)[a-z]|\btruncate\s+(-\w+\s+)*-s\s*0\b|:\(\)\s*\{\s*:\s*\|\s*:\s*&'''
+# 맨 env는 명령 자리(줄 처음 · ; & | 뒤)에서만 — print(env) 같은 해석기 코드 글자는 아니다(11-03 다시 돌려 보기)
+"환경-덤프" = '''(^|[;&|(\n'"]\s*)printenv\b|(^|[;&\n]|&&|\|\|)\s*env\s*($|[|;&>])|/proc/[^/\s]+/environ\b'''
+"원격스크립트-실행" = '''(curl|wget)\b[^|;\n]*\|\s*(sudo\s+)?(ba|z)?sh\b'''
+"디스크-파괴" = '''(^|[\s;&|(`])(dd\s+if=|mkfs|shred\s)|\bvirsh\s+undefine\b|\bvagrant\s+destroy\b'''
+"크론-삭제" = '''\bcrontab\s+-r\b'''
+
+# 위험한 명령의 동사 자리가 변수 · 명령 치환이라 무엇을 할지 확정할 수 없는 것, eval — 애매하면 ask.
+# (명령 어딘가에 $가 있기만 한 것은 아니다 — 과거 데이터로 돌려 보니 heredoc · 반복문에 수백 건 오탐이 났다)
+[ask.ambiguous]
+# git의 -C · -c · --git-dir · --work-tree · --namespace는 다음 토큰이 값(경로 · 설정)이다 — 그 값이 $d여도 동사가 아니다
+# (11-03 오탐: git -C $r log). 값 다음에 오는 토큰이 진짜 동사 자리. 값만 있고 끝나는 git -C $x는 그대로 묻는다
+# (따옴표 없는 $x가 "경로 push --force"로 쪼개질 수 있다)
+verb_re = '''\b(kubectl|helm|argocd|docker(\s+compose)?|virsh|vagrant|crontab)(\s+--?[\w-]+(=\S+)?)*\s+["']?(\$|`)|\beval\s|\bgit(\s+(-C|-c|--git-dir|--work-tree|--namespace)\s+\S+|\s+(?!(-C|-c|--git-dir|--work-tree|--namespace)\s)--?[\w-]+(=\S+)?)*\s+["']?(\$|`)|\bgit(\s+--?[\w-]+(=\S+)?)*\s+-C\s+["']?\$\S*\s*($|[;&|)])'''
+
+# ── 민감한 경로 ────────────────────────────────────────────
+# secret: 읽기 · 쓰기 모두 ask — 비밀이 트랜스크립트에 한번 찍히면 되돌릴 수 없다
+# protect: 쓰기 · 편집만 ask — 이 안전장치(hook)를 끌 수 있는 설정 파일
+# Bash는 heredoc 본문을 빼고, 경로처럼 생긴 토큰(/ · . · ~ 로 시작하거나 / 가 든 것)만 본다.
+# 그리고 그 토큰이 내용을 찍거나 옮기는 명령의 인자일 때만 묻는다 — source ./.env 처럼 환경을 불러오는 것은
+# 비밀을 화면 · 트랜스크립트에 내지 않는다(과거 데이터: 펫퍼민트 76건 중 대부분)
+[sensitive]
+bash_secret_readers = ["cat", "head", "tail", "less", "more", "grep", "egrep", "rg", "awk", "sed", "cut", "sort",
+                       "cp", "mv", "scp", "rsync", "base64", "xxd", "od", "strings", "tar", "zip", "curl", "wget",
+                       "diff", "vim", "nano", "jq", "tee", "echo", "printf", "python", "python3", "node"]
+secret = [
+  '(^|/)\.env(?![\w.-]*\.(example|sample|template|dist)$)(\.[\w.-]+)?$',
+  '(^|/)\.claude/\.credentials\.json$',
+  '(^|/)\.claude/sessions/[^/]+\.key$',
+  '(^|/)\.ssh/',
+  '\.(pem|p12|pfx)$',
+  '(^|/)[^/]*\.key$',
+  '(^|/)(credentials|secrets?)(\.\w+)?$',
+  '(^|/)\.kube/config$',
+  # 11-03 보강 — 다른 구현(protect-secrets · damage-control · PolicyApprovalGate)의 비밀 파일 목록에서
+  '(^|/)\.(netrc|npmrc|pypirc|git-credentials|pgpass|my\.cnf|vault-token)$',
+  '(^|/)\.docker/config\.json$',
+  '(^|/)\.aws/(credentials|config)$',
+  '(^|/)\.gnupg/',
+  '\.(jks|keystore|tfstate)$',
+  '(^|/)[^/]*service-?account[^/]*\.json$',
+]
+# 그중 Edit · Write 도구로 고치는 것은 통과(바뀐 내용이 터미널 · 기록에 보인다) — 대신 텔레그램 "🛡 안전 규칙 파일 수정"(10분에 한 번).
+# Bash로 덮어쓰기(> · tee · sed -i · cp)는 계속 묻는다. 11-03 "늘 Yes": 7일 10번 모두 Edit 도구로 approval.toml
+protect_tool_edit_ok = [
+  '(^|/)AI_programming/foreman/config/(approval|notify)\.toml$',
+]
+protect = [
+  '(^|/)AI_programming/foreman/config/(approval|notify)\.toml$',   # FOREMAN 안전 규칙 · 알림 규칙 자체
+  '(^|/)AI_programming/foreman/scripts/foreman-(hook|decide)\.sh$', # 11-03 — 게이트 자신(hook 스크립트)을 고쳐 끄는 길(PolicyApprovalGate 자기 보호)
+  '(^|/)\.claude\.json$',                                           # CC 전역 설정(MCP 서버 등)
+  '(^|/)\.mcp\.json$',
+  '(^|/)\.claude/settings(\.local)?\.json$',
+  '(^|/)\.gitconfig$',
+  '(^|/)\.(bash|zsh)rc$',
+]
+
+# ── 프로젝트별 ─────────────────────────────────────────────
+# 실행 중인 세션에 곧바로 걸린다(hook은 다음 도구 호출부터 반영 — 3단계 실측).
+# 런슈즈 · 펫퍼민트는 관찰로 시작한다: 기록만 하고 판정을 돌려주지 않는다. 결과를 보고 enforce로 바꾼다
+[projects.runshoes]
+mode = "observe"
+
+[projects.petmint-rag-chatbot]
+mode = "observe"
+
+[projects.foreman]
+mode = "enforce"

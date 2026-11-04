@@ -236,15 +236,19 @@ CC에서 Esc로 중단하면 **Stop hook이 불리지 않는다**(4단계 실측
 
 원래 불편 중 마지막 항목(5단계, [결과](log/stage5_approval_result.md)). PreToolUse hook마다 브리지가 판정한다 — 규칙은 `config/approval.toml`.
 
-**원칙: 되돌릴 수 없는 것만 묻는다.**
+**원칙(11-05 다시 좁힘): 사용자가 실제로 거부할 만한 것만 묻는다** — 이론적 위험이 아니라. 목적은 auto mode에서 흐름이 안 끊기는 것. 그 전 승인 이력 65건 중 실제 작업에서 거부는 0건이었다(유일한 거부는 승인 창 시험). 경위 · 근거는 [결과 — 11-05 다시 좁히기](log/stage5_approval_result.md).
 
 | 판정 | 대상 | CC에서 |
 |---|---|---|
-| `ask` | **되돌릴 수 없는 것** — `rm -r`, `docker rm` · `compose down -v`, `git reset --hard` · `clean -f` · 강제 push, kubectl · helm · argocd **삭제**, DB `DROP` · `TRUNCATE`, `curl … \| sh`, `mkfs` · `dd`, 작업 트리 밖 삭제, 비밀 파일 읽기 · 쓰기(한번 찍히면 되돌릴 수 없다), 안전 규칙 파일 쓰기. **애매하면 ask** — 위험한 명령의 동사가 변수이거나 지울 경로가 변수일 때 | 승인 창 — auto mode의 자동 통과보다 앞선다 |
-| `allow` | **되돌릴 수 있는 것 · 읽기** — `kubectl apply` · `rollout`, `git push`, `docker stop` · `restart`, `systemctl restart`, 파일 편집 · 쓰기(작업 트리 밖 포함), Read · Grep · Glob, `git status · log · diff`. 명령의 모든 조각이 이래야 한다 | 승인 창 없이 통과 |
-| `pass` | 그 밖(`sudo` 포함 — CC는 비밀번호가 없어 어차피 못 한다) | 브리지는 정하지 않는다 — CC(auto mode 분류기 · 사용자 설정)가 지금처럼 |
+| `ask` | **통째로 지우기**(`/` · 시스템 최상위 · 홈 · `~/AI_programming`의 프로젝트 하나 · `~/volumes`의 볼륨 하나 …, `X/*`, 비면 `/`가 되는 `$X/`), **운영 DB 날리기**(foreman-mysql · 클러스터 쪽 `DROP` · `TRUNCATE` · WHERE 없는 `DELETE`), **재부팅 · 종료 · VM 파괴**, **작업 이력 날리기**(`push --force` · `reset --hard` · `clean -f` · `filter-branch`), **비밀 파일을 밖으로 보내기**, **데이터 볼륨 · PVC · 네임스페이스 · helm 릴리스 삭제**, CC · tmux 한꺼번에 끄기, `curl … \| sh`, `crontab -r` | 승인 창 — auto mode의 자동 통과보다 앞선다 |
+| `allow` | **되돌릴 수 있는 것 · 읽기** — `kubectl apply` · `rollout`, `git push`, `docker stop` · `restart`, `systemctl restart`, 파일 편집 · 쓰기(작업 트리 밖 포함), Read · Grep · Glob, `git status · log · diff`. 명령의 모든 조각이 이래야 한다. 규칙 · 설정 파일 편집도 통과 + 텔레그램 🛡 | 승인 창 없이 통과 |
+| `pass` | 그 밖 — `/tmp` · mktemp · 작업 트리 밖의 평범한 삭제, 비밀 파일 읽기 · 복사, 로컬 개발 DB, `kubectl delete pod`, `docker rm`, 해석기 heredoc 안의 글자 … | 브리지는 정하지 않는다 — CC(auto mode 분류기 · 사용자 설정)가 지금처럼 |
 
-과거 20일 도구 호출에 돌려 보면 하루 승인 창이 런슈즈 7.2건, 펫퍼민트 5.0건, 포먼 0.9건이다(처음 규칙은 17.8 · 11.4 · 1.4건).
+21일 다시 돌려 보기(11-05, 도구 호출 18,076개): 하루 승인 창 런슈즈 10.7 → **0.1**, 펫퍼민트 6.8 → **0.2**, 포먼 26.3 → **1.3**. 남은 9건은 모두 거부할 만한 것(운영 DB 비우기 4 · 이력 재작성 2 · PVC · 네임스페이스 삭제 3).
+
+아래 "실행과 글자"부터 "늘 Yes 좁히기"까지는 11-05 전 **엄격한 규칙**에서 오탐을 하나씩 고친 기록이다. 그 장치는 코드에 남아 있고 설정으로 다시 켠다(`[sensitive] mode = "read"` · `protect_mode = "ask"`, `[ask] delete_outside_worktree = true` · `scan_interpreter_heredocs = true`). 시험은 `tests/test_approval.py`(엄격 규칙 = `tests/fixtures/approval_strict.toml`)와 `tests/test_approval_now.py`(지금 기준).
+
+**승인 규칙을 시험할 때**: 판정 함수(`load_policy(...).decide(...)`)를 부르는 코드를 파일로 쓰고 `.venv/bin/python <파일>`로 돌린다 — 위험 명령 글자가 든 코드를 heredoc으로 넘기면 그 명령 자체가 hook에 걸린다. 과거 데이터 다시 돌려 보기는 `scripts/approval-replay.py`.
 
 #### 실행과 글자는 다르다
 

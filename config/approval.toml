@@ -1,6 +1,13 @@
 # FOREMAN 승인 정책 (로드맵 5단계, 2026-11-02 사용자 결정으로 좁힘). 바꾸면 브리지를 다시 띄운다.
 #
-# 원칙: **되돌릴 수 없는 것만 ask, 되돌릴 수 있는 것은 allow.** 애매하면(무엇을 지울지 확정할 수 없으면) ask.
+# 원칙(2026-11-05 다시 좁힘 — log/stage5_approval_result.md "다시 좁히기"):
+#   **사용자가 실제로 거부할 만한 것만 ask.** 이론적 위험이 아니라. 목적은 auto mode에서 흐름이 안 끊기는 것.
+#   그 전 20일 ask 45건 중 실제 작업에서 거부는 0건(유일한 거부 1건은 승인 창 시험).
+#   남긴 것: 홈 · 프로젝트 · 데이터 폴더 통째로 지우기 / 운영 DB 날리기 / 재부팅 · 종료 · VM 파괴 /
+#            작업 이력 날리기(push --force · reset --hard · clean -f · filter-branch) / 비밀 파일을 밖으로 보내기 /
+#            데이터 볼륨 · 네임스페이스 · PVC 지우기 / CC · tmux 대량 종료
+#   뺀 것: /tmp 아래 · mktemp로 만든 것 · 작업 트리 밖 평범한 삭제 · 변수 경로 · 해석기 heredoc 안의 글자 ·
+#          비밀 파일 읽기 · 쓰기 · 규칙 파일 편집(🛡 알림만) · kubectl delete pod 등 복구되는 것 · docker rm · 환경 덤프
 #   ask   되돌릴 수 없는 것 — 승인 창(auto mode의 자동 통과보다 앞선다). 브라우저 · 텔레그램 · 터미널 중 먼저 답한 쪽
 #   allow 되돌릴 수 있는 것 · 읽기 — 승인 창 없이 통과
 #   pass  그 밖 — 브리지는 정하지 않는다. CC가 지금처럼 정한다(auto mode 분류기 · 사용자 설정)
@@ -43,39 +50,42 @@ cc_own_paths = ['^~/\.claude/plans/', '^~/\.claude/projects/[^/]+/memory/']
 
 # ── 되돌릴 수 없는 것 — ask ──────────────────────────────────
 [ask]
-# 작업 트리 밖 삭제(rm, -r 없이도). 세션 scratchpad · CC 계획 · 메모리는 안쪽. 지울 경로에 변수가 있으면 애매 → ask
-delete_outside_worktree = true
+# 11-05: 작업 트리 밖 삭제 · 변수 경로 삭제는 묻지 않는다(지난 ask의 절반 — /tmp · mktemp · scratchpad, 전부 Yes).
+delete_outside_worktree = false
+# 대신 "통째로" 지우기만 — / · 시스템 최상위(/etc …) · 홈과 그 조상 · 아래 폴더 자체와 바로 아래(프로젝트 하나 · 볼륨 하나 · 백업 하나).
+# X/* (내용 전부)도 같다. 변수 경로는 변수 앞의 고정 부분으로 본다(~/AI_programming/$x는 프로젝트 통째). rm -rf $X/ 처럼
+# 비면 / 가 되는 것도(${X:?}로 막았으면 통과). 프로젝트 안의 하위 폴더(.venv · build · node_modules)는 통과
+delete_whole = true
+delete_containers = ["~", "~/AI_programming", "~/volumes", "~/backups", "~/mysql-data", "~/k8s-cluster",
+                     "~/k8s-cluster/backup", "~/ronanlab-infra", "~/.claude", "~/.claude/projects", "~/.ssh", "~/.kube"]
+# 해석기(python · node …) heredoc 본문의 글자로는 묻지 않는다 — 승인 정책을 시험하는 코드의 문자열이 9번 걸려 9번 다 Yes.
+# 셸(bash <<EOF) · SQL(mysql <<EOF) 본문과 실행하는 셸 스크립트 파일은 그대로 본다
+scan_interpreter_heredocs = false
 
 [ask.bash]   # 이름 = 정규식(명령 전체에서 찾는다). 이름이 로그 · 이벤트 · 텔레그램에 이유로 나간다
-"rm-재귀" = '''(^|[\s;&|(`'"])rm\s+(-\w*[rR]\w*|--recursive)'''
-"docker-삭제" = '''\bdocker(\s+compose)?\b[^|;&\n]*?\s(rm|rmi|prune|volume\s+rm|network\s+rm)\b|\bdocker\s+compose\b[^|;&\n]*?\sdown\b[^|;&\n]*?(\s-v\b|--volumes|--rmi)'''
-"git-되돌리기" = '''\bgit\b[^|;&\n]*?\s(reset\s+--hard|clean\s+-\w*f|checkout\s+--\s|checkout\s+\.(\s|$)|restore\s|branch\s+-D|stash\s+(drop|clear))'''
+# 작업 이력 날리기 — 커밋 안 한 변경 · 원격 이력이 사라진다. checkout -- · restore · stash drop · branch -D는 뺐다(작은 범위, 0번 거부)
+"git-이력파괴" = '''\bgit\b[^|;&\n]*?\s(reset\s+--hard|clean\s+-\w*f\w*|filter-branch|filter-repo|reflog\s+expire|gc\b[^|;&\n]*--prune=(now|all))\b'''
 "git-강제push" = '''\bgit\b[^|;&\n]*?\spush\b[^|;&\n]*?(\s-f\b|--force|--delete|\s-d\b|--mirror|\s\+\S|\s:[\w./-]|\s-\w*f\w*\b|--prune\b)'''
-"kubectl-삭제" = '''\bkubectl\b[^|;&\n]*?\sdelete\b'''
-"helm-삭제" = '''\bhelm\s+(uninstall|delete)\b'''
-"argocd-삭제" = '''\bargocd\s+(app\s+delete|repo\s+rm|cluster\s+rm)\b'''
-"DB-파괴" = '''(?i)\b(drop\s+(database|table|schema)|truncate\s+table)\b|\bdelete\s+from\s+[\w.`"]+\s*(;|"|'|$)|\bflush(all|db)\b|\bdropdb\b|\bmysqladmin\b[^|;&\n]*\sdrop\b'''
-# ── 11-03 보강 — 다른 게이트 구현에서 가져온 위험 패턴(우리 환경에 있는 것만, README 3.3 "다른 구현과 비교") ──
-"git-기록파괴" = '''\bgit\b[^|;&\n]*?\s(filter-branch|filter-repo|reflog\s+expire|gc\b[^|;&\n]*--prune=(now|all))\b'''
-"find-삭제" = '''\bfind\b[^|;&\n]*?\s(-delete\b|-exec(dir)?\s+(rm|shred|mv)\b)'''
-"권한-대량변경" = '''\bchmod\b[^|;&\n]*\s0?777\b|\b(chmod|chown)\s+(-\w+\s+)*-\w*R\w*\b[^|;&\n]*\s(/|~|\$HOME)/?(\s|$|;)'''
+# 운영 DB만 — 운영 쪽으로 가는 명령(FOREMAN의 foreman-mysql · 3308, 클러스터 안: kubectl · vagrant ssh · 런슈즈의 mk 래퍼)에서
+# DROP DATABASE · SCHEMA · TABLE, TRUNCATE, WHERE 없는 DELETE FROM, dropdb, FLUSHALL. 로컬 개발 · 시험 DB(runshoes-mysql-dev,
+# v3_probe 같은 것)는 통과 — 21일에 29번, 전부 런슈즈가 개발 DB를 다시 만드는 것이었다
+# 운영 쪽 표시와 파괴 SQL이 **같은 줄**에 있거나, 운영 쪽 줄의 heredoc 본문에 있을 때(운영 덤프를 받아 개발 DB에 넣는 명령은 줄이 다르다)
+"DB-파괴" = '''(?im)(foreman-mysql|-P\s*3308\b|:3308\b|\bkubectl\b|vagrant\s+ssh|\$MK\b|(^|[\s;&|(])mk\b)([^\n]*?|[^\n]*<<[\s\S]*?)(\bdrop\s+(database|schema|table)\b|\btruncate\s+(table\s+)?[`\w]|\bdelete\s+from\s+[\w.`"]+\s*(;|"|'|$)|\bdropdb\b|\bflushall\b)|(\bdrop\s+(database|schema|table)\b|\btruncate\s+table\b|\bdelete\s+from\s+[\w.`"]+\s*(;|"|'|$)|\bflushall\b)[^\n]*(foreman-mysql|-P\s*3308\b|:3308\b|\bkubectl\b|vagrant\s+ssh|\$MK\b|(^|[\s;&|(])mk\b)'''
 "재부팅-종료" = '''(^|[;&|(\n'"]|\bsudo)\s*(reboot|shutdown|poweroff|halt)(\s|$|;)|\bsystemctl\s+(reboot|poweroff|halt|kexec)\b|\binit\s+[06](\s|$)'''
-# pkill · killall은 대상이 CC · tmux · 브리지 · 인프라 프로세스에 걸릴 때만 — 21일 실데이터 17건은 모두 자기가 띄운 스크립트(vite · uvicorn · 실험)를 끄는 것
-"프로세스-대량종료" = '''\bkill\s+(-\w+\s+)*-1(\s|$)|(^|[;&|(\n'"]\s*)(sudo\s+)?(killall|pkill)\b[^;&|\n]*((?<![/\w-])claude(?![\w-])|\bnode\b|\btmux\b|\bttyd\b|\bsshd?\b|docker|containerd|kubelet|qemu|libvirt|mysqld|vagrant|\bbridge\b|\s-u\s|\s-U\s|\s--uid\b)'''
-"디스크-덮어쓰기" = '''>\s*/dev/(sd|nvme|vd)[a-z]|\btruncate\s+(-\w+\s+)*-s\s*0\b|:\(\)\s*\{\s*:\s*\|\s*:\s*&'''
-# 맨 env는 명령 자리(줄 처음 · ; & | 뒤)에서만 — print(env) 같은 해석기 코드 글자는 아니다(11-03 다시 돌려 보기)
-"환경-덤프" = '''(^|[;&|(\n'"]\s*)printenv\b|(^|[;&\n]|&&|\|\|)\s*env\s*($|[|;&>])|/proc/[^/\s]+/environ\b'''
+"디스크·VM-파괴" = '''(^|[\s;&|(`])mkfs|\bdd\b[^|;&\n]*\sof=/dev/(sd|nvme|vd|hd)|>\s*/dev/(sd|nvme|vd)[a-z]|\bvirsh\s+undefine\b|\bvagrant\s+destroy\b'''
+# 데이터가 사라지는 삭제만 — 볼륨 · 네임스페이스 · PVC · PV, helm 릴리스, ArgoCD 앱(cascade). pod · deployment 삭제는 다시 생긴다
+# docker compose down -v는 런슈즈 개발 스택이면 뺀다 — 개발 DB(이름 있는 볼륨 runshoes_runshoes-mysql-dev)를 비우고 다시 띄우는
+# 일상 작업(21일 10번 이상). 그 밖(openwebui_data · ollama_data도 이름 있는 볼륨이다)은 묻는다. FOREMAN · 밀버스 · mysql은 bind mount
+"데이터-삭제" = '''\bdocker\b[^|;&\n]*?\s(volume\s+(rm|prune)|system\s+prune\b[^|;&\n]*--volumes)\b|^(?![\s\S]*runshoes)[\s\S]*\bdocker\s+compose\b[^|;&\n]*?\sdown\b[^|;&\n]*?(\s-v\b|--volumes)|\bkubectl\b[^|;&\n]*?\sdelete\s+(-\S+\s+)*(ns|namespaces?|pvc|persistentvolumeclaims?|pv|persistentvolumes?)\b|\bkubectl\b[^|;&\n]*?\sdelete\b[^|;&\n]*\s--all\b|\bhelm\s+(uninstall|delete)\b|\bargocd\s+(app\s+delete|repo\s+rm|cluster\s+rm)\b'''
+# CC 세션 · tmux · 인프라를 한꺼번에 끄는 것(자기가 띄운 스크립트 끄기는 아니다)
+"프로세스-대량종료" = '''\bkill\s+(-\w+\s+)*-1(\s|$)|(^|[;&|(\n'"]\s*)(sudo\s+)?(killall|pkill)\b[^;&|\n]*((?<![/\w-])claude(?![\w-])|\btmux\b|\bttyd\b|\bsshd?\b|containerd|kubelet|qemu|libvirt|mysqld|vagrant|\s-u\s|\s-U\s|\s--uid\b)|\btmux\s+kill-server\b'''
+"권한-대량변경" = '''\b(chmod|chown)\s+(-\w+\s+)*-\w*R\w*\b[^|;&\n]*\s(/|~|\$HOME)/?(\s|$|;)'''
 "원격스크립트-실행" = '''(curl|wget)\b[^|;\n]*\|\s*(sudo\s+)?(ba|z)?sh\b'''
-"디스크-파괴" = '''(^|[\s;&|(`])(dd\s+if=|mkfs|shred\s)|\bvirsh\s+undefine\b|\bvagrant\s+destroy\b'''
 "크론-삭제" = '''\bcrontab\s+-r\b'''
 
-# 위험한 명령의 동사 자리가 변수 · 명령 치환이라 무엇을 할지 확정할 수 없는 것, eval — 애매하면 ask.
-# (명령 어딘가에 $가 있기만 한 것은 아니다 — 과거 데이터로 돌려 보니 heredoc · 반복문에 수백 건 오탐이 났다)
+# 11-05: 동사 자리가 변수인 운영 명령은 묻지 않는다(1번, Yes). 비우면 꺼진다
 [ask.ambiguous]
-# git의 -C · -c · --git-dir · --work-tree · --namespace는 다음 토큰이 값(경로 · 설정)이다 — 그 값이 $d여도 동사가 아니다
-# (11-03 오탐: git -C $r log). 값 다음에 오는 토큰이 진짜 동사 자리. 값만 있고 끝나는 git -C $x는 그대로 묻는다
-# (따옴표 없는 $x가 "경로 push --force"로 쪼개질 수 있다)
-verb_re = '''\b(kubectl|helm|argocd|docker(\s+compose)?|virsh|vagrant|crontab)(\s+--?[\w-]+(=\S+)?)*\s+["']?(\$|`)|\beval\s|\bgit(\s+(-C|-c|--git-dir|--work-tree|--namespace)\s+\S+|\s+(?!(-C|-c|--git-dir|--work-tree|--namespace)\s)--?[\w-]+(=\S+)?)*\s+["']?(\$|`)|\bgit(\s+--?[\w-]+(=\S+)?)*\s+-C\s+["']?\$\S*\s*($|[;&|)])'''
+verb_re = ""
 
 # ── 민감한 경로 ────────────────────────────────────────────
 # secret: 읽기 · 쓰기 모두 ask — 비밀이 트랜스크립트에 한번 찍히면 되돌릴 수 없다
@@ -84,6 +94,15 @@ verb_re = '''\b(kubectl|helm|argocd|docker(\s+compose)?|virsh|vagrant|crontab)(\
 # 그리고 그 토큰이 내용을 찍거나 옮기는 명령의 인자일 때만 묻는다 — source ./.env 처럼 환경을 불러오는 것은
 # 비밀을 화면 · 트랜스크립트에 내지 않는다(과거 데이터: 펫퍼민트 76건 중 대부분)
 [sensitive]
+# 11-05: mode = "send" — 비밀 파일을 **밖으로 보낼 때만** 묻는다(같은 명령에 비밀 파일과 curl · wget(이 PC · VM 망 밖 URL) ·
+# scp · rsync host: · ssh · nc 등이 같이 있을 때). 찍기 · 옮기기 · 로컬 서비스에 넘기기는 묻지 않는다(13번, 전부 토큰 교체 때 Yes).
+# 화면에 비밀을 내지 않는 것은 승인 창이 아니라 작업 규칙(CLAUDE.md · 메모리)으로 지킨다. "read"로 돌리면 전처럼 찍기도 묻는다
+mode = "send"
+tool_ask = false            # Read · Edit 도구로 비밀 파일 — 묻지 않는다(send 모드와 같은 판단)
+bash_secret_senders = ["curl", "wget", "scp", "rsync", "sftp", "ftp", "ssh", "nc", "ncat", "netcat", "socat", "telnet",
+                       "gh", "http", "https", "aws", "gsutil", "rclone"]
+# protect(아래) 쓰기 — notify: 묻지 않고 텔레그램 🛡 알림(10분에 한 번). 11번 전부 Yes. "ask"로 돌리면 전처럼 묻는다
+protect_mode = "notify"
 bash_secret_readers = ["cat", "head", "tail", "less", "more", "grep", "egrep", "rg", "awk", "sed", "cut", "sort",
                        "cp", "mv", "scp", "rsync", "base64", "xxd", "od", "strings", "tar", "zip", "curl", "wget",
                        "diff", "vim", "nano", "jq", "tee", "echo", "printf", "python", "python3", "node"]

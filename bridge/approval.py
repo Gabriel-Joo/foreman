@@ -69,6 +69,14 @@ class Policy:
     protect_tool_ok: list[re.Pattern[str]] = field(default_factory=list)  # 그중 Edit · Write 도구 편집은 통과(Bash 쓰기는 여전히 ask)
     secret_readers: set[str] = field(default_factory=set)            # Bash에서 비밀 파일을 찍거나 옮기는 명령
     cc_own: list[re.Pattern[str]] = field(default_factory=list)      # CC 자신의 계획 · 메모리 — 안쪽으로 친다
+    # ── 11-05 "실제로 거부할 만한 것만" — 설정으로 켠다(README 3.3, log/stage5) ──
+    delete_protect: bool = False                                      # 홈 · 프로젝트 · 데이터 폴더를 통째로 지울 때만 ask
+    delete_containers: list[str] = field(default_factory=list)       # 이 폴더 자체와 바로 아래 것들이 "통째로"다(펼친 절대 경로)
+    secret_mode: str = "read"                                         # read: 찍기 · 옮기기도 ask / send: 밖으로 보낼 때만
+    secret_senders: set[str] = field(default_factory=set)
+    tool_secret_ask: bool = True                                      # Read · Edit 도구로 비밀 파일 — false면 묻지 않는다
+    protect_mode: str = "ask"                                         # ask / notify: 쓰기도 통과, 텔레그램으로만 알림
+    scan_interp_heredocs: bool = True                                 # false: python · node 등 해석기 heredoc 본문의 글자로 묻지 않는다
     defaults: ProjectPolicy = field(default_factory=ProjectPolicy)
     projects: dict[str, ProjectPolicy] = field(default_factory=dict)
 
@@ -90,9 +98,11 @@ class Policy:
         if tool == "Bash":
             return self._bash(str(inp.get("command") or ""), cwd, scratchpad)
         path = inp.get("file_path") or inp.get("notebook_path") or inp.get("path")
-        if isinstance(path, str) and path and (s := self._match(path, cwd, self.sensitive)):
+        if self.tool_secret_ask and isinstance(path, str) and path and (s := self._match(path, cwd, self.sensitive)):
             return Decision("ask", "민감한-경로", f"{tool}: 비밀이 든 파일({s})")
         if tool in EDIT_TOOLS and isinstance(path, str) and path and (s := self._match(path, cwd, self.protect)):
+            if self.protect_mode == "notify":
+                return Decision("allow", "규칙파일-편집", f"{tool}: 안전 규칙 · 설정 파일 편집 — 묻지 않고 텔레그램으로 알림({s})")
             # 11-03 "늘 Yes"(10번 모두 Edit 도구로 approval.toml) — 바뀐 내용이 터미널 · 기록에 그대로 보이는 도구 편집은
             # 통과시키고 텔레그램으로 알린다(approvals.py). 게이트를 통째로 끌 수 있는 파일(settings.json · hook 스크립트)은 계속 묻는다
             if self._match(path, cwd, self.protect_tool_ok):
@@ -111,33 +121,49 @@ class Policy:
         orig, written = _strip_file_heredocs(cmd)
         # "실행과 글자" 넓히기(11-02) — 실행되지 않는 글자 · 값이 새지 않는 것이 명백한 모양을 검사 전에 지운다(_neutralize)
         scan = _neutralize(orig, scratchpad)
+        if not self.scan_interp_heredocs:
+            # 11-05: python · node 등 해석기로 들어가는 heredoc 본문은 셸 규칙으로 읽지 않는다 — 승인 정책을 시험하는 코드의
+            # 문자열(cases = ["rm -rf …"])이 9번 걸려 9번 다 Yes였다. 셸(bash <<EOF) · SQL(mysql <<EOF) 본문은 그대로 본다
+            scan = _strip_interp_heredocs(scan)
+        rule_file = None
         for target in written:                     # heredoc으로 파일을 쓴다 — 쓰는 곳이 보호 · 비밀 파일이면 ask
-            if (s := self._match(target, cwd, self.protect + self.sensitive)):
-                return Decision("ask", "보호-설정파일", f"Bash: 안전 규칙 · 설정 · 비밀 파일 쓰기({s})")
+            if (s := self._match(target, cwd, self.protect + (self.sensitive if self.secret_mode == "read" else []))):
+                if self.protect_mode != "notify":
+                    return Decision("ask", "보호-설정파일", f"Bash: 안전 규칙 · 설정 · 비밀 파일 쓰기({s})")
+                rule_file = rule_file or s
         if (d := self._ask_patterns(scan)):
             return d
         if self.ambiguous_verb and (m := self.ambiguous_verb.search(scan)):
             return Decision("ask", "애매한-운영명령", f"동사 자리가 변수 · 명령 치환({_short(m.group(0).strip(), 40)}) — 무엇을 할지 확정할 수 없다")
-        for head, tok in _path_tokens(scan):   # 경로 토큰마다(공백 뒤 .env도)
-            if any(s.search(tok) for s in self.sensitive) and (head in self.secret_readers or "@" in tok):
-                return Decision("ask", "민감한-경로", f"Bash: 비밀이 든 파일을 찍거나 옮긴다 — 한번 찍히면 되돌릴 수 없다({head} {_short(tok, 50)})")
-        # 해석기로 들어가는 heredoc(python - <<EOF …)이 비밀 파일 경로를 쥐고 그 파일을 쓰거나 내용을 바로 찍는다.
-        # (11-02 다시 돌려 보기에서 찾은 빈틈: python heredoc으로 .env.db를 쓰는 명령이 어느 규칙에도 걸리지 않았다.
-        #  읽기만 하는 것 — 앱이 설정을 읽는 x = open('.env').read() — 은 5단계 결정대로 묻지 않는다)
-        for m in HEREDOC.finditer(scan):
-            body = m.group("body")
-            if not _SCRIPT_WRITE.search(body):
-                continue
-            for lit in re.findall(r"['\"]([^'\"\n]{1,200})['\"]", body):
-                if any(s.search(os.path.expanduser(lit)) for s in self.sensitive):
-                    return Decision("ask", "민감한-경로", f"Bash: 스크립트가 비밀이 든 파일을 쓰거나 찍는다({_short(lit, 50)})")
+        if self.secret_mode == "send":
+            if (d := self._secret_send(scan)):
+                return d
+        else:
+            for head, tok in _path_tokens(scan):   # 경로 토큰마다(공백 뒤 .env도)
+                if any(s.search(tok) for s in self.sensitive) and (head in self.secret_readers or "@" in tok):
+                    return Decision("ask", "민감한-경로", f"Bash: 비밀이 든 파일을 찍거나 옮긴다 — 한번 찍히면 되돌릴 수 없다({head} {_short(tok, 50)})")
+            # 해석기로 들어가는 heredoc(python - <<EOF …)이 비밀 파일 경로를 쥐고 그 파일을 쓰거나 내용을 바로 찍는다.
+            # (11-02 다시 돌려 보기에서 찾은 빈틈: python heredoc으로 .env.db를 쓰는 명령이 어느 규칙에도 걸리지 않았다.
+            #  읽기만 하는 것 — 앱이 설정을 읽는 x = open('.env').read() — 은 5단계 결정대로 묻지 않는다)
+            for m in HEREDOC.finditer(scan):
+                body = m.group("body")
+                if not _SCRIPT_WRITE.search(body):
+                    continue
+                for lit in re.findall(r"['\"]([^'\"\n]{1,200})['\"]", body):
+                    if any(s.search(os.path.expanduser(lit)) for s in self.sensitive):
+                        return Decision("ask", "민감한-경로", f"Bash: 스크립트가 비밀이 든 파일을 쓰거나 찍는다({_short(lit, 50)})")
         segs = _segments(scan)
         if segs is None:
             if self.delete_outside and re.search(r"(^|[\s;&|(])rm\s", scan):
                 return Decision("ask", "애매한-삭제", "rm이 있는데 명령을 나눌 수 없다(따옴표 등) — 무엇을 지울지 확정할 수 없다")
-            return None
-        if (d := self._segments_ask(segs, cwd, scratchpad, depth)):
+            return Decision("pass", "규칙파일-편집", f"Bash: 안전 규칙 · 설정 파일 쓰기 — 묻지 않고 알림({rule_file})") if rule_file else None
+        notes: list[str] = []
+        if (d := self._segments_ask(segs, cwd, scratchpad, depth, notes, _literal_env(orig))):
             return d
+        rule_file = rule_file or (notes[0] if notes else None)
+        if rule_file:
+            # 규칙 파일을 Bash로 고친다 — 묻지 않는다(pass: 나머지는 CC가 정한다). 대신 텔레그램 🛡 알림(approvals.py)
+            return Decision("pass", "규칙파일-편집", f"Bash: 안전 규칙 · 설정 파일 쓰기 — 묻지 않고 알림({rule_file})")
         if any(x in orig for x in ("$(", "`", "<(", ">(")):
             return None                            # 명령 치환 — 무엇이 실행될지 확실하지 않다. allow하지 않는다(지우기 전 원문으로 본다)
         if self._all_allowed(segs, depth):
@@ -151,14 +177,21 @@ class Policy:
         return None
 
     def _segments_ask(self, segs: list[tuple[str, list[str]]], cwd: str | None, scratchpad: str | None,
-                      depth: int) -> Decision | None:
+                      depth: int, notes: list[str] | None = None, env: dict[str, str] | None = None) -> Decision | None:
+        """notes: protect_mode = notify일 때 보호 파일 쓰기를 묻지 않고 여기 모은다(알림용)."""
         here = cwd
+        notify = self.protect_mode == "notify"
+        notes = notes if notes is not None else []
+        wpats = self.protect + (self.sensitive if self.secret_mode == "read" else [])
         for _sep, seg in segs:
             words = _strip_redirects(seg) if any(REDIRECT.match(t) for t in seg) else seg
             for i, t in enumerate(seg):            # 리다이렉트로 보호 · 비밀 파일에 쓰기
                 if t in (">", ">>", "&>", "1>", "2>") and i + 1 < len(seg) and \
-                        (s := self._match(seg[i + 1], here, self.protect + self.sensitive)):
-                    return Decision("ask", "보호-설정파일", f"Bash: 안전 규칙 · 설정 · 비밀 파일 쓰기({s})")
+                        (s := self._match(seg[i + 1], here, wpats)):
+                    if not notify:
+                        return Decision("ask", "보호-설정파일", f"Bash: 안전 규칙 · 설정 · 비밀 파일 쓰기({s})")
+                    if self._match(seg[i + 1], here, self.protect):
+                        notes.append(s)
             words = [w for w in words if not re.fullmatch(r"[A-Za-z_]\w*=.*", w)] or words
             if not words:
                 continue
@@ -187,18 +220,28 @@ class Policy:
                     targets = args
                 for t in targets:
                     if t and (s := self._match(t, here, self.protect)):
-                        return Decision("ask", "보호-설정파일", f"Bash: 안전 규칙 · 설정 파일 쓰기({base} → {s})")
+                        if not notify:
+                            return Decision("ask", "보호-설정파일", f"Bash: 안전 규칙 · 설정 파일 쓰기({base} → {s})")
+                        notes.append(f"{base} → {s}")
             inner = _inner_command(words)
             if inner is not None and depth < 3:     # bash -c '…' · vagrant ssh … -c '…' — 안쪽 명령으로
                 d = self._bash(inner, None if words[0] == "vagrant" else here, scratchpad, depth + 1)
                 if d and d.verdict == "ask":
                     return d
+                if d and d.rule == "규칙파일-편집":
+                    notes.append(d.reason)
                 continue
             script = _script_path(words)
             if script and depth < 3:                # 스크립트 실행 — 파일 내용을 검사한다
                 body = _read_script(script, here)
                 if body is not None and (d := self._ask_patterns(body)):
                     return Decision("ask", d.rule, f"스크립트 {_short(script, 40)} 안: {d.reason}")
+            if head == "rm" and self.delete_protect:
+                for a in words[1:]:
+                    if a.startswith("-"):
+                        continue
+                    if (why := self._protected_delete(a, here, env or {})):
+                        return Decision("ask", "통째로-삭제", why)
             if head == "rm" and self.delete_outside:
                 for a in words[1:]:
                     if a.startswith("-"):
@@ -273,6 +316,99 @@ class Policy:
             return False
         bad = ("--output", "--ext-diff", "--textconv", "--exec", "-o")
         return not any(t == b or t.startswith(b + "=") for t in seg[i + 1:] for b in bad)
+
+    # ── 11-05 "통째로 지우기" · "비밀을 밖으로" ───────────────────
+    def _is_whole(self, p: str, unknown: bool = False) -> bool:
+        """p를 지우면 '통째로'인가 — / · 시스템 최상위(/etc · /usr …) · 홈 · 그 조상, 지정 폴더(delete_containers) 자체와
+        바로 아래의 **폴더**(프로젝트 하나 · 볼륨 하나). 바로 아래의 파일 하나(~/x.bak)는 아니다. unknown: 있는지 모르는 경로(변수)."""
+        p = os.path.normpath(p)
+        home = os.path.expanduser("~")
+        if p == "/" or (os.path.dirname(p) == "/" and (unknown or os.path.isdir(p))) or _within(home, p):
+            return True                              # / · /etc 같은 최상위 폴더 · /home(홈의 조상) · 홈 자체
+        if any(p == c for c in self.delete_containers):
+            return True
+        return any(os.path.dirname(p) == c for c in self.delete_containers) and (unknown or os.path.isdir(p))
+
+    def _protected_delete(self, a: str, here: str | None, env: dict[str, str] | None = None) -> str | None:
+        """rm 대상 하나 — 통째로 지우는 것이면 이유를, 아니면 None. env: 같은 명령에서 문자 그대로 정한 변수."""
+        tok = re.sub(r"\$\{?HOME\}?(?=/|$)", "~", a)
+        for v, val in (env or {}).items():           # T=/tmp/x && rm -rf $T — 값을 안다
+            tok = re.sub(rf"\$\{{{v}(:\?)?\}}|\${v}(?!\w)", lambda _m, val=val: val, tok)
+        m = re.search(r"\$|`", tok)
+        if m:
+            prefix = tok[:m.start()]
+            # 변수가 비었을 때 — ${X:?}로 막지 않은 변수를 빈 값으로 놓고 남는 경로를 본다.
+            # rm -rf $X/ · $X/* 는 / 를 통째로, $X/cfg 는 /cfg 하나(통째로 아님)
+            if "`" not in tok and "$(" not in tok:
+                empty = re.sub(r"\$\{\w+:\?\}", "\0", tok)
+                empty = re.sub(r"\$\{?\w+\}?", "", empty)
+                if "\0" not in empty and empty.startswith("/") and \
+                        (why := self._protected_delete(empty, here)):
+                    return f"{_short(a, 40)} — 변수가 비면 {why}"
+            if not prefix:
+                return None
+            if not prefix.startswith(("/", "~")) and here is None:
+                return None
+            base = prefix if prefix.endswith("/") else os.path.dirname(prefix)
+            if not base or re.search(r"\s", prefix):
+                return None                          # 상대 경로(작업 폴더 안 $x) · 경로가 아닌 글자(따옴표가 꼬인 조각)
+            p = os.path.normpath(_abs(base.rstrip("/") or "/", here))
+            if self._is_whole(p, unknown=True):
+                return f"{_short(a, 50)} — 변수 값에 따라 {_short(p, 40)} 또는 그 바로 아래를 통째로 지운다"
+            return None
+        if not tok.startswith(("/", "~")) and here is None:
+            return None                              # vagrant ssh 안쪽의 상대 경로 — VM 쪽이라 모른다
+        p = os.path.normpath(_abs(tok, here)) if tok not in ("/",) else "/"
+        last = os.path.basename(p)
+        if any(ch in last for ch in "*?["):
+            p = os.path.dirname(p)                   # X/* — X의 내용 전부
+            if self._is_whole(p) or p in self.delete_containers:
+                return f"{_short(a, 50)} — {_short(p, 40)} 안을 통째로 지운다"
+            return None
+        if tok.endswith("/") and os.path.islink(p.rstrip("/")):
+            p = os.path.realpath(p)
+        if self._is_whole(p):
+            return f"{_short(p, 60)}를 통째로 지운다"
+        return None
+
+    def _secret_send(self, scan: str) -> Decision | None:
+        """비밀 파일을 다루는 명령에 밖으로 보내는 명령이 같이 있다 — 그때만 ask(11-05).
+        찍기 · 옮기기 · 로컬 서비스(브리지 · VM 안 클러스터)에 넘기기는 묻지 않는다. 밖 = curl · wget의 URL이 이 PC · VM 망이 아닌 것,
+        scp · rsync(host:) · ssh(vagrant ssh 아님) · nc · socat · ftp · gh 등."""
+        def secret_in(text: str) -> str | None:
+            for _h, tok in _path_tokens("x " + text):
+                if any(s.search(tok) for s in self.sensitive):
+                    return tok
+            return None
+
+        if not secret_in(scan):
+            return None
+        spans = _seg_spans(scan)
+        for i, (sa, sb, _sep) in enumerate(spans):
+            seg = scan[sa:sb]
+            w = _words(seg) or seg.split()
+            if not w:
+                continue
+            head, h = _head(w)
+            head = os.path.basename(head)
+            if head not in self.secret_senders:
+                continue
+            if head in ("curl", "wget"):
+                urls = [x for x in w[h + 1:] if re.match(r"https?://", x)]
+                hosts = [re.sub(r"^https?://(?:[^@/]+@)?(\[[^\]]+\]|[^/:?#]+).*$", r"\1", x) for x in urls]
+                if not hosts or all(_LOCAL_HOST.match(x) for x in hosts):
+                    continue                         # 브리지 · VM 망(192.168.121/122) — 이 PC 안, 또는 URL이 변수라 모른다
+            if head in ("rsync", "scp") and not any(re.match(r"[\w.-]*@?[\w.-]+:", x) for x in w[h + 1:]):
+                continue                             # 로컬 복사
+            # 비밀이 그 명령의 인자(-d @.env · -T .env · scp .env host: · "$(cat .env)")이거나, 바로 앞 조각이 비밀을 읽어 파이프로 넘긴다.
+            # . ./.env로 불러온 뒤 API를 부르는 것(키를 제 용도로 쓰는 것)은 아니다
+            prev, j = [], i
+            while j > 0 and spans[j][2] in ("|", "|&"):  # 같은 파이프라인의 앞 단계들(cat .env | tr -d x | curl …)
+                j -= 1
+                prev.append(scan[spans[j][0]:spans[j][1]])
+            if (tok := secret_in(seg) or next((t for p in prev if (t := secret_in(p))), None)):
+                return Decision("ask", "비밀-외부전송", f"비밀 파일({_short(tok, 40)})을 밖으로 보낸다({head})")
+        return None
 
     def _match(self, path: str, cwd: str | None, pats: list[re.Pattern[str]]) -> str | None:
         p = _abs(path, cwd)
@@ -539,8 +675,10 @@ def _pipe_hides_value(text: str) -> bool:
 
 
 def _safe_tmp_rm(cmd: str) -> str:
-    """V=$(mktemp -d …) … rm -rf "${V:?}" — 같은 명령에서 V가 mktemp -d로 딱 한 번 정해지고 바뀌지 않으면 그 rm을 자리표시로."""
-    assign = r"(?:^|[\s;&|(]){v}=(\"?)\$\(\s*mktemp\s+-d(?:\s+[^$`;&|()\"'\n]*)?\)\1(?=[\s;&|)]|$)"
+    """V=$(mktemp [-d] …) … rm -rf "${V:?}" / "$V" — 같은 명령에서 V가 mktemp로 딱 한 번 정해지고 바뀌지 않으면 그 rm을 자리표시로.
+    11-05: 파일 mktemp(-d 없이)와 따옴표 친 "$V" · "${V}"도(빈 값이어도 rm -rf "" 는 아무것도 안 지운다), trap '…' 안의 rm도 —
+    curl 쿠키 파일 jar=$(mktemp); trap 'rm -f "$jar"' EXIT 가 세 번 걸려 세 번 다 Yes였다."""
+    assign = r"(?:^|[\s;&|(]){v}=(\"?)\$\(\s*mktemp(?:\s+[^$`;&|()\"'\n]*)?\)\1(?=[\s;&|)]|$)"
     names = {m.group(1) for m in re.finditer(assign.replace("{v}", r"([A-Za-z_]\w*)").replace(r"\1", r"\2"), cmd)}
     for v in sorted(names):
         m = re.search(assign.replace("{v}", re.escape(v)), cmd)
@@ -551,7 +689,8 @@ def _safe_tmp_rm(cmd: str) -> str:
         if re.search(rf"\bfor\s+{v}\b|\bread\b[^;&|\n]*\b{v}\b|\$\{{{v}:?[=+-]|\b(declare|typeset|local|readonly|export|unset)\b[^;&|\n]*\b{v}\b|\beval\b|\bsource\b|(^|\s)\.\s",
                      cmd):
             continue                                # 바꿀 수 있는 길이 있다 — 그대로 검사
-        rm = re.compile(rf"\brm\s+(?:-[rRfv]+\s+)*(?:--\s+)?\"\$\{{{v}:\?\}}\"(?=\s*($|[;&|)\n]))")
+        # 따옴표 없는 $V도 — mktemp 출력에는 공백 · 글롭 문자가 없다(템플릿도 위 assign이 공백 없는 것만 받는다)
+        rm = re.compile(rf"\brm\s+(?:-[rRfv]+\s+)*(?:--\s+)?(\"?)\$(?:\{{{v}(?::\?)?\}}|{v}(?!\w))\1(?=\s*($|[;&|)'\n]))")
         start = m.end()
         cmd = cmd[:start] + rm.sub(" : tmp-rm ", cmd[start:])
     return cmd
@@ -607,14 +746,9 @@ def _blank_literals(cmd: str) -> str:
     return _CURL_DATA.sub(lambda m: m.group(1) + ("'DATA'" if not m.group(2)[1:].startswith("@") else m.group(2)), cmd)
 
 
-def _safe_scratch_rm(cmd: str, scratchpad: str | None) -> str:
-    """세션 스크래치패드 안만 지우는 rm(-r 포함)을 자리표시로(11-03 사용자 요청 — 스크린샷 시험마다 shots/*.png 지우기가 걸렸다).
-    조건: 모든 대상이 스크래치패드 **안쪽**(그 자체는 아님) — 부모 디렉토리를 realpath로 풀어 확인(.. · 심볼릭 링크로 밖을 가리키면 빠진다),
-    글롭은 마지막 조각에만, 변수는 같은 명령에서 문자 그대로의 경로로 딱 한 번 정한 것만 푼다($( ) · 다시 정하기 · read · for 등이면 빠진다).
-    스크래치패드의 부모 /tmp/claude-<uid>는 권한 700 — 다른 계정이 링크를 심을 수 없다."""
-    if not scratchpad:
-        return cmd
-    root = os.path.realpath(scratchpad)
+def _literal_env(cmd: str) -> dict[str, str]:
+    """같은 명령에서 문자 그대로의 값으로 딱 한 번 정한 변수(V=/path · V="~/x"). 다시 정하거나 바꿀 길(for · read · ${V:=} ·
+    declare · eval · source)이 있으면 뺀다 — 그 값으로 경로를 풀어도 되는 것만."""
     env: dict[str, str] = {}
     for m in re.finditer(r"(?:^|[\s;&|(])([A-Za-z_]\w*)=(\"?)([^\s\"'$`;&|()]+)\2(?=[\s;&|)]|$)", cmd):
         env[m.group(1)] = m.group(3)
@@ -623,6 +757,38 @@ def _safe_scratch_rm(cmd: str, scratchpad: str | None) -> str:
                 rf"\bfor\s+{v}\b|\bread\b[^;&|\n]*\b{v}\b|\$\{{{v}:?[=+-]|\b(declare|typeset|local|readonly|export|unset)\b[^;&|\n]*\b{v}\b|\beval\b|\bsource\b",
                 cmd):
             del env[v]
+    return env
+
+
+def claude_tmp_root(p: str | None = None) -> str | None:
+    """CC 임시 공간 /tmp/claude-<uid> — 진짜 디렉토리(링크 아님)이고, 내 것이고, 권한이 700(그룹 · 남 0)일 때만 돌려준다.
+    다른 계정이 먼저 만들어 두었거나 권한이 풀려 있으면 None(예외를 안 쓴다) — 남이 안에 링크를 심을 수 있으면 안전하지 않다."""
+    p = p or f"/tmp/claude-{os.getuid()}"
+    try:
+        st = os.lstat(p)
+    except OSError:
+        return None
+    import stat as _st
+    if not _st.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
+        return None
+    return p
+
+
+def _safe_scratch_rm(cmd: str, scratchpad: str | None, tmp_root: str | None = None) -> str:
+    """CC 임시 공간 안만 지우는 rm(-r 포함)을 자리표시로.
+    11-03: 이 세션 스크래치패드 안만(스크린샷 시험마다 shots/*.png 지우기가 걸렸다).
+    11-05 사용자 요청으로 넓힘: /tmp/claude-<uid> 아래 전부 — 서브에이전트 · 다른 세션의 스크래치패드, mktemp를 거기서 만든 것까지.
+    지난 승인 이력에서 rm-재귀 · 애매한-삭제 거의 전부가 여기였고 전부 Yes였다. 그 폴더 자체를 지우는 건 여전히 묻는다.
+    조건: 모든 대상이 그 안쪽 — 부모 디렉토리를 realpath로 풀어 확인(.. · 심볼릭 링크로 밖을 가리키면 빠진다), 끝이 /면 대상 자체도 realpath로
+    (rm -r link/ 는 링크를 따라간다), 글롭은 마지막 조각에만, 변수는 같은 명령에서 문자 그대로의 경로로 딱 한 번 정한 것만 푼다
+    ($( ) · 다시 정하기 · read · for 등이면 빠진다). 바탕: /tmp/claude-<uid>는 내 것 · 700이라 다른 계정이 링크를 심을 수 없다(claude_tmp_root가 매번 확인)."""
+    roots = [os.path.realpath(r) for r in (scratchpad, tmp_root) if r]
+    if not roots:
+        return cmd
+
+    def within(rp: str) -> bool:
+        return any(rp.startswith(r + os.sep) for r in roots)
+    env = _literal_env(cmd)
 
     def inside(tok: str) -> bool:
         m = re.fullmatch(r"\$\{?([A-Za-z_]\w*)(?::\?)?\}?(/.*)?", tok)
@@ -636,8 +802,11 @@ def _safe_scratch_rm(cmd: str, scratchpad: str | None) -> str:
         parent, last = os.path.split(p)
         if any(ch in parent for ch in "*?[") or not last or last in (".", ".."):
             return False
+        if tok.endswith("/") or tok.endswith("/."):
+            # rm -r dir/ 는 dir가 링크면 따라간다 — 대상 자체를 푼다(글롭이면 풀 수 없으니 빠진다)
+            return not any(ch in last for ch in "*?[") and within(os.path.realpath(p))
         rp = os.path.realpath(parent)
-        return (rp == root or rp.startswith(root + os.sep)) and p != root
+        return any(rp == r or rp.startswith(r + os.sep) for r in roots) and p not in roots
 
     edits = []
     for a, b, _sep in _seg_spans(cmd):
@@ -657,7 +826,7 @@ def _safe_scratch_rm(cmd: str, scratchpad: str | None) -> str:
 
 def _neutralize(cmd: str, scratchpad: str | None = None) -> str:
     try:
-        cmd = _safe_scratch_rm(cmd, scratchpad)
+        cmd = _safe_scratch_rm(cmd, scratchpad, claude_tmp_root())
         # 키 이름만 · 헤더로만은 sed 스크립트 모양을 보므로 검색어 지우기보다 먼저. 리터럴(5)은 맨 먼저
         return _blank_patterns(_safe_tmp_rm(_safe_header_secret(_blank_key_only(_blank_literals(cmd)))))
     except Exception:  # noqa: BLE001 — 지우기가 실패하면 원문 그대로 검사한다(덜 지우는 쪽으로)
@@ -697,6 +866,22 @@ def _strip_file_heredocs(cmd: str) -> tuple[str, list[str]]:
         return m.group("line") + "<<" + m.group("tag") + m.group("rest") + "\n" + m.group("tag")
 
     return HEREDOC.sub(sub, cmd), written
+
+
+_INTERP = re.compile(r"(?:^|[\s;&|(/])(python[\d.]*|node|ruby|perl|php|Rscript|deno|bun|uv\s+run\s+python)\b")
+
+
+def _strip_interp_heredocs(cmd: str) -> str:
+    """해석기(python · node …)로 들어가는 heredoc 본문을 뺀다 — 셸 규칙은 셸 글자에만(11-05).
+    받는 쪽이 셸(bash · sh)이나 SQL(mysql · psql)이면 그대로 둔다. 따옴표 없는 heredoc 본문의 $(…)는 셸이 실행하니 남긴다."""
+    def sub(m: re.Match[str]) -> str:
+        head = m.group("line").split("|")[-1]
+        if not _INTERP.search(head) or re.search(r"\b(bash|sh|zsh|mysql|psql|sqlite3|kubectl|vagrant|ssh)\b", head):
+            return m.group(0)
+        if not m.group(2) and re.search(r"\$\(|`", m.group("body")):
+            return m.group(0)
+        return m.group("line") + "<<" + m.group("tag") + m.group("rest") + "\n" + m.group("tag")
+    return HEREDOC.sub(sub, cmd)
 
 
 def _segments(cmd: str) -> list[tuple[str, list[str]]] | None:
@@ -869,7 +1054,16 @@ def load_policy(path: str | Path) -> Policy:
         protect_tool_ok=[re.compile(rx) for rx in sens.get("protect_tool_edit_ok", [])],
         secret_readers=set(sens.get("bash_secret_readers", [])),
         cc_own=[re.compile(rx) for rx in a.get("cc_own_paths", [])],
+        delete_protect=k.get("delete_whole", False),
+        delete_containers=[os.path.normpath(os.path.expanduser(x)) for x in k.get("delete_containers", [])],
+        secret_mode=sens.get("mode", "read"),
+        secret_senders=set(sens.get("bash_secret_senders", [])),
+        tool_secret_ask=sens.get("tool_ask", True),
+        protect_mode=sens.get("protect_mode", "ask"),
+        scan_interp_heredocs=k.get("scan_interpreter_heredocs", True),
     )
+    if pol.secret_mode not in ("read", "send") or pol.protect_mode not in ("ask", "notify"):
+        raise ValueError("approval.toml: [sensitive] mode는 read/send, protect_mode는 ask/notify")
     pol.defaults = pp(raw.get("defaults", {}), ProjectPolicy())
     for name, d in raw.get("projects", {}).items():
         pol.projects[name] = pp(d, pol.defaults)
