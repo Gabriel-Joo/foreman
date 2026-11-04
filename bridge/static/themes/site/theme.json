@@ -1,0 +1,206 @@
+{
+  "name": "site",
+  "label": "현장",
+  "_comment": "10d 시트 테마 — docs/10_office_design.md 현장 열. 에셋이 가장 부족한 테마라 대부분 직접 그렸다(scripts/draw_props.py — 지게차 · 롤셔터 · 컴프레서 · 기름통 · 공구벽 · 작업대 · 간이침대 · 검사대 · 도면 탁자 · 철제 선반 · 선풍기 · 고깔 · 팔레트 · 트럭 · 게이지 · 안전모 걸이 · 무전기). Ninja Adventure에서 캐릭터 · 크레인 · 컨베이어 · 목재(camp). 바닥(콘크리트) · 벽(철판)은 엔진이 그린다",
+
+  "palette": {
+    "label": "#f4f1e8", "muted": "#b9b4a6",
+    "ok": "#5dd39e", "warn": "#f2c14e", "bad": "#ff6b5b", "act": "#7aa7ff", "frozen": "#c9ced6",
+    "orb": "#ffd27a", "candle": "#ffb347", "glass1": "#ffd27a", "glass2": "#ffffff", "glass3": "#ffd27a",
+    "infraFloor": "#00000030", "lounge": "#3b3a36", "smoke": "#5b5560", "zz": "#ffffff",
+    "wallCap": "#3a4654", "wallEdge": "#7d8fa0", "glassWall": "#ffd27a", "stripeA": "#f2c14e", "stripeB": "#2b2f3a"
+  },
+
+  "layout": {
+    "tile": 16,
+    "room": { "w": 28, "h": 18 },
+    "lounge": { "w": 14, "h": 18 },
+    "gap": 4,
+    "zones": {
+      "foreman_office": { "_": "감독 컨테이너 — 안전모 걸이, 무전기, 커피", "x": 1, "y": 2, "w": 7, "h": 5, "floor": "plate", "seat": [4.4, 4.75] },
+      "store": { "_": "A 자재창고 — 철제선반, 파이프 묶음, 자재 더미", "x": 9, "y": 2, "w": 6, "h": 4, "face": "up",
+                 "seats": [[10.2, 4.6], [12.4, 4.6], [14.0, 5.0]] },
+      "tools": { "_": "C 공구실 — 공구벽, 컴프레서, 기름통", "x": 16, "y": 2, "w": 6, "h": 4, "face": "up",
+                 "seats": [[17.4, 4.4], [19.0, 4.6], [20.6, 4.6]] },
+      "gate": { "_": "G 통로 셔터 — 롤셔터, 지게차, 크레인", "x": 23, "y": 2, "w": 4, "h": 4, "face": "up", "seats": [[24.4, 5.0], [25.6, 5.3]] },
+      "camp": { "_": "F 함바 — 간이침대 2, 선풍기, 커피 · 신문(IDLE)", "x": 1, "y": 8, "w": 7, "h": 5, "floor": "plate",
+                "seats": [[2.6, 9.15, "down"], [2.6, 11.35, "down"], [5.8, 10.6, "down"], [6.6, 12.4, "up"]] },
+      "desks": { "_": "B 작업대 — 철제 작업대 + 바이스(세션의 자리)", "x": 9, "y": 8, "w": 10, "h": 5,
+                 "seats": [[10.6, 8.65, "down"], [12.9, 8.65, "down"], [15.2, 8.65, "down"], [17.5, 8.65, "down"],
+                           [10.6, 11.65, "down"], [12.9, 11.65, "down"], [15.2, 11.65, "down"], [17.5, 11.65, "down"]] },
+      "test": { "_": "D 검사 — 게이지, 합격 · 불합격 램프", "x": 19, "y": 8, "w": 3, "h": 2, "seats": [[20.2, 8.75, "down"]] },
+      "plans": { "_": "E 도면실 — 큰 탁자, 도면, 두루마리통(Agent · 서브에이전트가 모인다)", "x": 22, "y": 8, "w": 5, "h": 5,
+                 "seats": [[23.0, 10.9, "right"], [26.2, 10.9, "left"], [24.6, 9.5, "down"], [24.6, 12.3, "up"]] },
+      "ship": { "_": "H 출하 접수대 — 송장, 도장(git)", "x": 19, "y": 11, "w": 3, "h": 2, "seats": [[20.2, 12.0, "down"]] },
+      "infra": {
+        "y": 14, "h": 3,
+        "jenkins": { "x": 2, "label": "검수대(Jenkins)" },
+        "harbor": { "x": 12, "label": "팔레트(Harbor)" },
+        "argocd": { "x": 21, "label": "트럭(ArgoCD)" }
+      },
+      "lounge_seats": { "x": 2, "y": 3, "cols": 3, "rows": 4, "dx": 4, "dy": 3 }
+    }
+  },
+
+  "spawn": { "zone": "plans" },
+
+  "roles": {
+    "_": "역할 → 안전모 색(11단계). 역할이 없으면 노란 안전모, 감독은 흰 안전모. 미리 보기 ?roles=demo",
+    "mode": "helmet", "default": "#f2c14e", "foreman": "#f4f4f4",
+    "colors": { "lead": "#f4f4f4", "builder": "#2f6fb0", "reviewer": "#c0392b", "researcher": "#2e9e6a", "ops": "#8e44ad" }
+  },
+
+  "hq": {
+    "_": "감독실(1단) = 감독 컨테이너. 공정표 화이트보드 + 현장마다 자석(작업중 파랑 · 쉼 초록 · 승인 · 실패 빨강 · 없음 회색)",
+    "label": "감독 컨테이너", "size": { "w": 28, "h": 16 }, "seat": [14.0, 9.7], "floor": "plate",
+    "board": { "style": "whiteboard", "x": 3, "y": 0.4, "w": 22, "h": 5.4 },
+    "decor": [
+      { "s": "workbench", "x": 12.0, "y": 9.2 }, { "s": "workbench", "x": 14.0, "y": 9.2 },
+      { "s": "radio", "x": 12.6, "y": 9.05, "z": "top" }, { "s": "mug", "x": 15.4, "y": 9.25, "z": "top" }, { "s": "newspaper", "x": 13.3, "y": 9.3, "z": "top" },
+      { "s": "helmet_rack", "x": 1.0, "y": 0.6, "z": "wall" }, { "s": "helmet_rack", "x": 26.0, "y": 0.6, "z": "wall" },
+      { "s": "drum_blue", "x": 2.0, "y": 11.0 }, { "s": "drum_red", "x": 2.8, "y": 11.2 }, { "s": "cone", "x": 24.2, "y": 12.0 }, { "s": "cone", "x": 25.0, "y": 12.2 },
+      { "s": "fan", "x": 18.0, "y": 8.4 }, { "s": "steel_shelf", "x": 23.5, "y": 6.6 }, { "s": "log_stack", "x": 3.0, "y": 7.0 }
+    ]
+  },
+
+  "states": {
+    "ACTIVE":    { "anim": "walk", "go": "desk" },
+    "IDLE":      { "anim": "idle", "go": "camp", "variants": ["lie", "coffee", "news"] },
+    "SUSPENDED": { "anim": "still", "go": "desk", "fx": "stone" },
+    "DORMANT":   { "anim": "stand", "go": "desk", "fx": "ghost", "alpha": 0.5 }
+  },
+
+  "tools": [
+    { "match": "Read|Grep|Glob|NotebookRead", "go": "store", "anim": "read" },
+    { "match": "Edit|Write|MultiEdit|NotebookEdit", "go": "desk", "anim": "hammer" },
+    { "match": "Bash", "target": "\\b(pytest|unittest|node --test|npm (run )?test|go test|mvn test|gradle test|jest|vitest|ruff|mypy|bash -n|py_compile)\\b", "go": "test", "anim": "gauge" },
+    { "match": "Bash", "target": "(^|[;&|(]\\s*)git\\b", "go": "ship", "anim": "seal" },
+    { "match": "Bash|BashOutput|KillShell", "go": "tools", "anim": "wrench" },
+    { "match": "WebFetch|WebSearch", "go": "gate", "anim": "look" },
+    { "match": "Agent|Task", "go": "plans", "anim": "cast", "spawn": true },
+    { "match": "mcp__*", "go": "gate", "anim": "radio" },
+    { "match": "TodoWrite|ExitPlanMode", "go": "desk", "anim": "think" },
+    { "match": "*", "go": "desk", "anim": "hammer" }
+  ],
+
+  "flags": {
+    "approval_pending": { "bubble": "!", "anim": "raise_wand", "priority": 30 },
+    "stuck_turn":       { "bubble": "…", "priority": 20 },
+    "error":            { "fx": "smoke", "priority": 10 }
+  },
+
+  "infra": {
+    "running": { "anim": "work" },
+    "success": { "anim": "idle" },
+    "failed":  { "anim": "idle", "fx": "smoke" },
+    "waiting": { "anim": "idle", "prop": "pause_sign" },
+    "none":    { "anim": "idle", "alpha": 0.6 }
+  },
+
+  "sprites": {
+    "kind": "sheets",
+    "mini_scale": 0.625,
+    "outline": "#1a1620",
+    "sheets": {
+      "camp": "sprites/ninja/camp.png", "crane": "sprites/ninja/crane.png", "conv": "sprites/ninja/conveyor.png",
+      "smoke": "sprites/ninja/smoke.png", "e_alert": "sprites/ninja/emote_alert.png", "e_dots": "sprites/ninja/emote_dots.png",
+      "forklift": "sprites/foreman/forklift.png", "shutter": "sprites/foreman/shutter.png", "compressor": "sprites/foreman/compressor.png",
+      "drum_blue": "sprites/foreman/drum_blue.png", "drum_red": "sprites/foreman/drum_red.png", "tool_wall": "sprites/foreman/tool_wall.png",
+      "workbench": "sprites/foreman/workbench.png", "cot": "sprites/foreman/cot.png", "inspect": "sprites/foreman/inspect_bench.png",
+      "blueprint": "sprites/foreman/blueprint_table.png", "shelf": "sprites/foreman/steel_shelf.png", "fan": "sprites/foreman/fan.png",
+      "cone": "sprites/foreman/cone.png", "pallet": "sprites/foreman/pallet.png", "truck": "sprites/foreman/truck.png",
+      "gauge": "sprites/foreman/gauge.png", "helmets": "sprites/foreman/helmet_rack.png", "radio": "sprites/foreman/radio.png",
+      "mug": "sprites/foreman/mug.png", "news": "sprites/foreman/newspaper.png"
+    },
+    "defs": {
+      "log_stack": ["camp", 17, 29, 30, 19, 1], "timber": ["camp", 2, 113, 44, 14, 1], "stump": ["camp", 18, 82, 28, 28, 1],
+      "lantern": ["camp", 96, 82, 16, 29, 1], "rope": ["camp", 161, 115, 30, 28, 1], "log_up": ["camp", 49, 17, 14, 29, 1],
+      "barrel_s": ["camp", 51, 85, 11, 11, 1],
+      "crane": ["crane", 0, 0, 33, 36, 1], "conveyor": ["conv", 0, 0, 16, 16, 0, 2, 8],
+      "fx_smoke": ["smoke", 0, 0, 32, 32, 0, 6, 10],
+      "e_!": ["e_alert", 0, 0, 14, 13], "e_…": ["e_dots", 0, 0, 14, 13],
+
+      "forklift": ["forklift", 0, 0, 32, 28, 1], "shutter": ["shutter", 0, 0, 32, 32, 1, 2, 0.2], "compressor": ["compressor", 0, 0, 24, 18, 1],
+      "drum_blue": ["drum_blue", 0, 0, 12, 16, 1], "drum_red": ["drum_red", 0, 0, 12, 16, 1], "tool_wall": ["tool_wall", 0, 0, 32, 24, 1],
+      "workbench": ["workbench", 0, 0, 32, 20, 1], "cot": ["cot", 0, 0, 32, 14, 1], "inspect": ["inspect", 0, 0, 28, 22, 1, 2, 0.5],
+      "blueprint": ["blueprint", 0, 0, 36, 22, 1], "steel_shelf": ["shelf", 0, 0, 32, 30, 1], "fan": ["fan", 0, 0, 12, 20, 1],
+      "cone": ["cone", 0, 0, 10, 12, 1], "pallet": ["pallet", 0, 0, 24, 18, 1], "truck": ["truck", 0, 0, 48, 30, 1],
+      "gauge": ["gauge", 0, 0, 10, 10, 1], "helmet_rack": ["helmets", 0, 0, 20, 20, 1], "radio": ["radio", 0, 0, 6, 10, 1],
+      "mug": ["mug", 0, 0, 7, 7, 1], "newspaper": ["news", 0, 0, 10, 8, 1]
+    },
+
+    "room": {
+      "proc": {
+        "floor": { "a": "#8e8d88", "b": "#959490", "grout": "#7a7974", "spot": "#6f6e69", "tile": 2 },
+        "plate": { "a": "#5d6874", "b": "#63707c", "grout": "#4a5560", "spot": "#7d8fa0", "tile": 1 },
+        "wall": { "top": "#3a4654", "face": "#4f6274", "stripe": "#3f5061", "stripes": 4, "rivet": "#7d8fa0", "base": "#2b333d" }
+      }
+    },
+    "decor": [
+      { "_": "감독 컨테이너 — 철판 바닥(구역 바닥), 작업대 책상, 무전기, 안전모 걸이" },
+      { "s": "workbench", "x": 3.4, "y": 4.25 }, { "s": "radio", "x": 3.8, "y": 4.1, "z": "top" }, { "s": "mug", "x": 5.0, "y": 4.3, "z": "top" },
+      { "s": "helmet_rack", "x": 1.4, "y": 0.6, "z": "wall" }, { "s": "fan", "x": 6.4, "y": 2.4 }, { "s": "drum_blue", "x": 1.5, "y": 5.2 },
+      { "fx": "glasswall", "x": 1.0, "y": 2.0, "w": 7.0, "h": 5.0 },
+
+      { "_": "A 자재창고" },
+      { "s": "steel_shelf", "x": 9.0, "y": 1.3 }, { "s": "steel_shelf", "x": 11.1, "y": 1.3 },
+      { "s": "timber", "x": 13.0, "y": 2.9 }, { "s": "log_stack", "x": 13.2, "y": 3.9 },
+
+      { "_": "C 공구실" },
+      { "s": "tool_wall", "x": 16.3, "y": 0.4, "z": "wall" }, { "s": "tool_wall", "x": 18.4, "y": 0.4, "z": "wall" },
+      { "s": "compressor", "x": 16.2, "y": 2.4 }, { "s": "drum_red", "x": 20.3, "y": 2.2 }, { "s": "drum_blue", "x": 21.1, "y": 2.4 },
+      { "s": "workbench", "x": 18.0, "y": 2.6 },
+
+      { "_": "G 통로 셔터" },
+      { "s": "shutter", "x": 23.5, "y": 0.0, "z": "wall" }, { "s": "forklift", "x": 22.8, "y": 3.3 }, { "s": "crane", "x": 24.7, "y": 1.9 }, { "s": "cone", "x": 26.0, "y": 4.7 },
+
+      { "_": "F 함바" },
+      { "s": "cot", "x": 1.4, "y": 8.75 }, { "s": "cot", "x": 1.4, "y": 10.95 },
+      { "s": "stump", "x": 5.0, "y": 10.0 }, { "s": "mug", "x": 5.6, "y": 10.25, "z": "top" }, { "s": "newspaper", "x": 6.0, "y": 10.4, "z": "top" },
+      { "s": "fan", "x": 6.8, "y": 8.3 }, { "s": "lantern", "x": 4.2, "y": 8.0 },
+
+      { "_": "B 작업대 — 두 줄, 자리는 작업대 뒤" },
+      { "s": "workbench", "x": 9.6, "y": 8.2 }, { "s": "workbench", "x": 11.9, "y": 8.2 }, { "s": "workbench", "x": 14.2, "y": 8.2 }, { "s": "workbench", "x": 16.5, "y": 8.2 },
+      { "s": "workbench", "x": 9.6, "y": 11.2 }, { "s": "workbench", "x": 11.9, "y": 11.2 }, { "s": "workbench", "x": 14.2, "y": 11.2 }, { "s": "workbench", "x": 16.5, "y": 11.2 },
+
+      { "_": "D 검사" },
+      { "s": "inspect", "x": 19.4, "y": 8.4 },
+
+      { "_": "E 도면실" },
+      { "s": "blueprint", "x": 23.5, "y": 9.8 }, { "s": "rope", "x": 25.4, "y": 8.0 }, { "s": "log_up", "x": 22.2, "y": 8.0 },
+
+      { "_": "H 출하 접수대" },
+      { "s": "pallet", "x": 19.4, "y": 11.3 }, { "s": "newspaper", "x": 19.8, "y": 11.5, "z": "top" },
+
+      { "_": "출하 라인 위 안전 줄무늬 · 컨베이어" },
+      { "fx": "stripes", "x": 1.0, "y": 13.65, "w": 26.0, "h": 0.3 },
+      { "s": "conveyor", "x": 7.0, "y": 15.3, "n": 4, "z": "floor" }, { "s": "conveyor", "x": 17.0, "y": 15.3, "n": 4, "z": "floor" }
+    ],
+    "infra_decor": {
+      "_": "출하 라인 — 검수대 → 팔레트 → 트럭",
+      "jenkins": [{ "s": "inspect", "x": 0.4, "y": 0.6 }, { "s": "gauge", "x": 2.5, "y": 0.5, "z": "top" }],
+      "harbor": [{ "s": "pallet", "x": 0.3, "y": 0.9 }, { "s": "pallet", "x": 1.8, "y": 0.9 }],
+      "argocd": [{ "s": "truck", "x": 0.2, "y": 0.6 }]
+    },
+    "chars": {
+      "_comment": "Ninja Adventure 일꾼 — 안전모는 렌더러가 그린다(역할 색, 없으면 노랑)",
+      "dir": "../_shared/ninja/chars/",
+      "pool": ["Villager", "Villager2", "Villager3", "Boy", "Hunter", "Woman", "Samurai", "Monk"],
+      "foreman": "OldMan",
+      "infra": { "jenkins": "Inspector", "harbor": "Villager3", "argocd": "Hunter" }
+    },
+    "props": {
+      "read": { "s": "newspaper", "dx": 3, "dy": -8, "bob": 1 },
+      "hammer": { "s": "gauge", "dx": 5, "dy": -9, "bob": 3 },
+      "wrench": { "s": "radio", "dx": 5, "dy": -9, "shake": 2 },
+      "gauge": { "s": "gauge", "dx": 4, "dy": -10, "shake": 1 },
+      "seal": { "s": "newspaper", "dx": 3, "dy": -8, "bob": 2 },
+      "cast": { "s": "newspaper", "dx": 4, "dy": -12, "bob": 2 },
+      "radio": { "s": "radio", "dx": 5, "dy": -12 },
+      "think": { "s": "mug", "dx": 4, "dy": -8 },
+      "coffee": { "s": "mug", "dx": 4, "dy": -8, "bob": 1 },
+      "news": { "s": "newspaper", "dx": 3, "dy": -8 },
+      "raise_wand": { "s": "radio", "dx": 6, "dy": -16 }
+    }
+  }
+}

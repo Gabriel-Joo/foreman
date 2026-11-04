@@ -149,7 +149,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         const f = L.zones.foreman_office;
         const key = 'f:' + room.name;
         upsert(key, { kind: 'foreman', room: room.name, tx: room.x + f.seat[0], ty: room.y + f.seat[1], face: 'down',
-                      act: { anim: 'stand' }, hue: 45, name: '포먼', char: CH.foreman || null });
+                      act: { anim: 'stand' }, hue: 45, name: '포먼', char: CH.foreman || null, role: 'foreman' });
         seen.add(key);
         // 인프라 — 자리(가구)는 늘 있고, 캐릭터는 첫 웹훅으로 등장한 것만(README 2.2 · 8단계)
         const pp = st.pipeline.get(room.name);
@@ -175,7 +175,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 감독실의 포먼(교장) — 늘 자리에 있다
     const hz = (theme.hq && theme.hq.seat) || [14, 8.6];
     upsert('f:_hq', { kind: 'foreman', room: '_hq', tx: world.hq.x + hz[0], ty: world.hq.y + hz[1], face: 'down',
-                      act: { anim: 'stand' }, hue: 45, name: '포먼(감독)', char: CH.foreman || null });
+                      act: { anim: 'stand' }, hue: 45, name: '포먼(감독)', char: CH.foreman || null, role: 'foreman' });
     seen.add('f:_hq');
     for (const k of [...actors.keys()]) if (!seen.has(k)) vanish(k);
     if (selected && !actors.has(selected)) selected = null;
@@ -209,7 +209,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   const ROLE_MODE = (theme.roles && theme.roles.mode) || 'robe';   // robe(옷 색) · lanyard(사원증 끈) · helmet(안전모)
   const DEMO_ROLES = new URLSearchParams(location.search).get('roles') === 'demo' ? Object.keys(ROLES) : null;
   function roleOf(s) { return s.role || (DEMO_ROLES && DEMO_ROLES.length ? DEMO_ROLES[s.id % DEMO_ROLES.length] : null); }
-  function roleColor(role) { return (role && ROLES[role]) || null; }
+  // 역할이 없을 때의 색(현장: 노란 안전모), 포먼(감독)의 색 — 테마가 정한다. 없으면 표시 안 함
+  function roleColor(role) {
+    const R = theme.roles || {};
+    if (role === 'foreman') return R.foreman || null;
+    return (role && ROLES[role]) || R.default || null;
+  }
 
   // 서브에이전트(10c) — 소환 자리: 그 방에 마법진(circle 구역)이 있으면 그 가운데, 없으면 부모 자리
   const MINI_CAP = 10;
@@ -525,6 +530,16 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 엔진이 그리는 빛 — 수정구 · 스테인드글라스 · 촛불(에셋에 없는 것)
   function drawFx(kind, x, y, now, d = {}) {
     const t = now / 1000;
+    if (kind === 'stripes') {
+      // 안전 줄무늬 — 노랑 · 검정 빗금 띠
+      const w = (d.w || 1) * T, h = (d.h || 0.3) * T;
+      ctx.save(); ctx.beginPath(); ctx.rect(x * T, y * T, w, h); ctx.clip();
+      ctx.fillStyle = P.stripeA || '#f2c14e'; ctx.fillRect(x * T, y * T, w, h);
+      ctx.fillStyle = P.stripeB || '#2b2f3a';
+      for (let k = -h; k < w; k += 8) { ctx.beginPath(); ctx.moveTo(x * T + k, y * T + h); ctx.lineTo(x * T + k + 4, y * T + h); ctx.lineTo(x * T + k + 4 + h, y * T); ctx.lineTo(x * T + k + h, y * T); ctx.fill(); }
+      ctx.restore();
+      return;
+    }
     if (kind === 'glasswall') {
       // 유리벽 — 옅은 하늘색 면 + 밝은 테두리, 위쪽 반사광(사람이 비쳐 보인다)
       const w = (d.w || 1) * T, h = (d.h || 1) * T, c = P.glassWall || '#bfe8ff';
@@ -614,6 +629,17 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (anim === 'sleep') py += 4;                                               // 엎드려 잔다 — 머리를 탁자 위로
     if (mode === 'ghost') py += Math.round(Math.sin(a.phase * 0.6) * 1.5) - 2;  // 유령은 떠 있다
     ctx.globalAlpha = act.alpha != null ? act.alpha : 1;
+    if (anim === 'lie' && !a.moving) {
+      // 간이침대에 눕기 — 그림을 옆으로 눕힌다(엔진 흉내). 머리는 왼쪽(베개 쪽)
+      ctx.save();
+      ctx.translate(Math.round(a.x * T), Math.round(a.y * T - 5));
+      ctx.rotate(-Math.PI / 2);
+      ctx.drawImage(c, -c.width / 2, -c.height / 2);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      a.drawH = 10;
+      return;
+    }
     ctx.drawImage(c, px, py);
     // 역할 표시 — 오피스는 사원증 끈, 현장은 안전모 색(마법학교는 위에서 로브 색을 바꿨다)
     const rc = !mode && roleColor(a.role);
@@ -835,8 +861,19 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         const c = { fail: '#e03b2f', alert: '#e03b2f', busy: '#2f7de0', idle: '#2fae5a', empty: '#9aa0a8' }[state];
         ctx.strokeStyle = '#7d8590'; ctx.lineWidth = 1;
         for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.moveTo((s.x + 0.4) * T, (top + 1 + k) * T); ctx.lineTo((s.x + s.w - 0.4) * T, (top + 1 + k) * T); ctx.stroke(); }
-        ctx.fillStyle = c; ctx.beginPath(); ctx.arc(cx * T, (top + 2.5) * T, 5 + (state === 'alert' ? Math.sin(now / 200) * 1.5 : 0), 0, Math.PI * 2); ctx.fill();
+        // 공정 막대(현장마다 고정 모양) — 손으로 그린 공정표 느낌
+        for (let k = 0; k < 3; k++) {
+          const hsh = tileHash(i * 5 + k, 9), len = 0.3 + (hsh % 60) / 100, st0 = ((hsh >>> 8) % 30) / 100;
+          ctx.fillStyle = ['#7fb7ff', '#f2c14e', '#9fd8a8'][k] + 'cc';
+          ctx.fillRect((s.x + 0.5 + st0 * (s.w - 1)) * T, (top + 1.15 + k) * T, len * (s.w - 1.6) * T, 5);
+        }
+        ctx.fillStyle = c; ctx.beginPath(); ctx.arc((s.x + s.w - 0.9) * T, (top + 1.4) * T, 5 + (state === 'alert' ? Math.sin(now / 200) * 1.5 : 0), 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = '#333'; ctx.stroke();
+        // 사람마다 자석 — 작업중 파랑 · 쉼 초록 · 멈춤 회색, 승인 대기는 빨강
+        const st = s.r.stats || {};
+        const mags = [...Array(Math.min(st.pending || 0, 4)).fill('#e03b2f'), ...Array(st.ACTIVE || 0).fill('#2f7de0'), ...Array(st.IDLE || 0).fill('#2fae5a'),
+                      ...Array((st.SUSPENDED || 0) + (st.DORMANT || 0)).fill('#9aa0a8')].slice(0, 10);
+        mags.forEach((mc, k) => { ctx.fillStyle = mc; ctx.beginPath(); ctx.arc((s.x + 0.8 + k * 0.6) * T, (top + 4.2) * T, 3.5, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#0006'; ctx.stroke(); });
       }
       s.hit = { x: s.x, y: s.y, w: s.w, h: bh };
     });

@@ -213,7 +213,7 @@
     },
     "chars": {
       "_comment": "Ninja Adventure — Walk.png(64x64: 열 = 아래 · 위 · 왼 · 오른, 행 = 프레임 4) · Idle.png(64x16). 세션은 id로 고른다",
-      "dir": "sprites/ninja/chars/",
+      "dir": "../_shared/ninja/chars/",
       "pool": ["NinjaMageBlack", "NinjaMageOrange", "SorcererBlack", "SorcererOrange", "Monk", "Monk2", "Princess", "Noble",
                "Woman", "Villager2", "OldMan2", "Shaman"],
       "foreman": "Master",
