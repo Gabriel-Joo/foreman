@@ -58,7 +58,8 @@
       { "s": "table_l", "x": 12.0, "y": 9.4 }, { "s": "table_m", "x": 13.0, "y": 9.4, "n": 2 }, { "s": "table_r", "x": 15.0, "y": 9.4 },
       { "s": "openbook", "x": 12.2, "y": 9.7, "z": "top" }, { "s": "p_scroll", "x": 15.1, "y": 9.75, "z": "top" }, { "fx": "orb", "x": 14.8, "y": 10.0 },
       { "fx": "candle", "x": 12.0, "y": 9.9 }, { "fx": "candle", "x": 16.0, "y": 9.9 },
-      { "s": "banner_r", "x": 1.5, "y": 1.0, "z": "wall" }, { "s": "banner_b", "x": 26.0, "y": 1.0, "z": "wall" },
+      { "s": "portrait", "x": 1.0, "y": 0.2, "z": "wall" }, { "s": "portrait", "x": 25.9, "y": 0.2, "z": "wall" },
+      { "s": "owl", "x": 17.6, "y": 7.9 },
       { "s": "chair_b", "x": 13.5, "y": 12.4 }, { "s": "barrel", "x": 3.5, "y": 12.0 }, { "s": "chest", "x": 23.5, "y": 12.5 }
     ]
   },
@@ -108,6 +109,8 @@
       "book": "sprites/ninja/items/book.png", "scroll": "sprites/ninja/items/scroll.png", "wand": "sprites/ninja/items/wand.png",
       "food": "sprites/ninja/items/food.png", "potion": "sprites/ninja/items/potion.png",
       "circle": "sprites/ninja/fx/circle.png", "smoke": "sprites/ninja/fx/smoke.png", "spark": "sprites/ninja/fx/spark.png",
+      "mf_table": "sprites/foreman/round_table.png", "mf_portrait": "sprites/foreman/portrait.png",
+      "mf_seal": "sprites/foreman/wax_seal.png", "mf_owl": "sprites/foreman/owl_perch.png",
       "e_alert": "sprites/ninja/fx/emote_alert.png", "e_dots": "sprites/ninja/fx/emote_dots.png", "e_q": "sprites/ninja/fx/emote_question.png"
     },
     "defs": {
@@ -135,6 +138,8 @@
       "fount_top": ["x", 64, 0, 16, 16], "fount_mid": ["x", 64, 48, 16, 16, 0, 3, 6], "fount_basin": ["x", 64, 64, 16, 16, 0, 3, 6],
       "door_l": ["x", 16, 240, 16, 32], "door_r": ["x", 64, 240, 16, 32], "door_t": ["x", 32, 224, 32, 16], "door_open": ["x", 80, 240, 32, 32],
 
+      "round_table": ["mf_table", 0, 0, 32, 24, 1], "portrait": ["mf_portrait", 0, 0, 16, 20, 1],
+      "wax_seal": ["mf_seal", 0, 0, 16, 16, 1], "owl": ["mf_owl", 0, 0, 16, 32, 1, 4, 1.5],
       "p_book": ["book", 0, 0, 16, 16], "p_scroll": ["scroll", 0, 0, 14, 14], "p_wand": ["wand", 0, 0, 5, 18],
       "p_food": ["food", 0, 0, 16, 16], "p_potion": ["potion", 0, 0, 9, 11],
       "fx_circle": ["circle", 0, 0, 32, 32, 0, 4, 6], "fx_smoke": ["smoke", 0, 0, 32, 32, 0, 6, 10], "fx_spark": ["spark", 0, 0, 30, 35, 0, 9, 12],
@@ -154,6 +159,7 @@
       { "s": "table_l", "x": 3.5, "y": 4.3 }, { "s": "table_r", "x": 4.5, "y": 4.3 },
       { "s": "openbook", "x": 3.6, "y": 4.6, "z": "top" }, { "fx": "orb", "x": 5.0, "y": 4.85 },
       { "s": "barrel", "x": 6.4, "y": 4.4 }, { "s": "chest", "x": 1.4, "y": 5.0 },
+      { "s": "portrait", "x": 4.0, "y": 0.2, "z": "wall" }, { "s": "owl", "x": 6.5, "y": 1.6 },
 
       { "_": "G 아치 창" },
       { "s": "window", "x": 8.0, "y": 0.4, "z": "wall" }, { "fx": "glass", "x": 8.5, "y": 2.6 },
@@ -193,10 +199,11 @@
 
       { "_": "E 원탁방 — 바닥 마법진 · 기둥" },
       { "s": "fx_circle", "x": 22.5, "y": 8.9, "z": "floor", "scale": 2, "frame": 3, "alpha": 0.45, "pulse": true },
+      { "s": "round_table", "x": 23.5, "y": 9.7 },
       { "s": "column", "x": 22.0, "y": 8.0 }, { "s": "column", "x": 26.2, "y": 8.0 },
 
       { "_": "H 봉인대" },
-      { "s": "smalltable", "x": 8.1, "y": 12.6 }, { "s": "p_scroll", "x": 8.2, "y": 12.45, "z": "top" }, { "fx": "candle", "x": 9.3, "y": 12.9 }
+      { "s": "smalltable", "x": 8.1, "y": 12.6 }, { "s": "wax_seal", "x": 8.15, "y": 12.25, "z": "top" }, { "fx": "candle", "x": 9.3, "y": 12.9 }
     ],
     "infra_decor": {
       "_": "출하 라인 — 봉인 문양 → 보물창고 → 전송 아치. 좌표는 구역 시작(x, infra.y) 기준",
