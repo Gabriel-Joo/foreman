@@ -1,0 +1,207 @@
+{
+  "name": "magic",
+  "label": "마법학교",
+  "_comment": "10d 첫 시트 테마(docs/10_office_design.md 마법학교 열). 렌더러 · 매핑은 office와 같고 이 파일만 다르다. 좌표는 방 안 타일(왼쪽 위, 소수 가능). 에셋 출처 · 라이선스는 저장소 맨 위 LICENSES.md",
+
+  "palette": {
+    "label": "#f3ead8", "muted": "#b6a98f",
+    "ok": "#7bd88f", "warn": "#f5b94a", "bad": "#ff6b5b", "act": "#9bb8ff", "frozen": "#c9ced6",
+    "candle": "#ffb347", "orb": "#9fe3ff", "glass1": "#ff6b8a", "glass2": "#7fd1ff", "glass3": "#ffe27a",
+    "infraFloor": "#00000040", "lounge": "#2a2430", "smoke": "#2b2730", "zz": "#d8e4ff"
+  },
+
+  "layout": {
+    "tile": 16,
+    "room": { "w": 28, "h": 18 },
+    "lounge": { "w": 14, "h": 18 },
+    "gap": 4,
+    "zones": {
+      "foreman_office": { "_": "교장실", "x": 1, "y": 2, "w": 7, "h": 5, "floor": "wood", "seat": [4.5, 4.9] },
+      "library": { "_": "A 서고 — 2층 책장 · 사다리", "x": 9, "y": 2, "w": 7, "h": 4, "face": "up",
+                   "seats": [[10.5, 5.4], [12.5, 5.4], [14.2, 5.4], [11.5, 5.9]] },
+      "window": { "_": "G 아치 창 — 스테인드글라스", "x": 8, "y": 2, "w": 1, "h": 1, "face": "up", "seats": [[8.5, 3.1], [8.0, 3.6]] },
+      "potion": { "_": "C 물약실 — 화로 · 재료 선반 · 유리병", "x": 16, "y": 2, "w": 6, "h": 4, "face": "up",
+                  "seats": [[17.5, 4.1], [19.0, 4.4], [20.5, 4.6]] },
+      "test": { "_": "D 시약대 — 시험관", "x": 23, "y": 2, "w": 4, "h": 4, "face": "down",
+                "seats": [[24.0, 3.3], [25.6, 3.3]] },
+      "desks": { "_": "B 작업대 — 양피지 · 깃펜 · 마법서(세션의 자리)", "x": 10, "y": 8, "w": 11, "h": 4,
+                 "seats": [[11.6, 8.45, "down"], [13.9, 8.45, "down"], [16.2, 8.45, "down"], [18.5, 8.45, "down"],
+                           [11.6, 11.75, "up"], [13.9, 11.75, "up"], [16.2, 11.75, "up"], [18.5, 11.75, "up"]] },
+      "hall": { "_": "F 대강당 — 긴 식탁(IDLE)", "x": 1, "y": 8, "w": 7, "h": 4, "floor": "wood",
+                "seats": [[2.7, 8.45, "down"], [4.5, 8.45, "down"], [6.3, 8.45, "down"],
+                          [2.7, 11.75, "up"], [4.5, 11.75, "up"], [6.3, 11.75, "up"]] },
+      "circle": { "_": "E 원탁방 — 바닥 마법진(Agent)", "x": 22, "y": 8, "w": 5, "h": 5,
+                  "seats": [[23.0, 10.9, "right"], [26.0, 10.9, "left"], [24.5, 9.6, "down"], [24.5, 12.3, "up"]] },
+      "seal": { "_": "H 봉인대 — 밀랍 도장(git)", "x": 8, "y": 12, "w": 2, "h": 2, "face": "up", "seats": [[8.5, 13.8], [9.4, 13.9]] },
+      "infra": {
+        "y": 14, "h": 3,
+        "jenkins": { "x": 2, "label": "봉인 문양(Jenkins)" },
+        "harbor": { "x": 12, "label": "보물창고(Harbor)" },
+        "argocd": { "x": 21, "label": "전송 아치(ArgoCD)" }
+      },
+      "lounge_seats": { "x": 2, "y": 3, "cols": 3, "rows": 4, "dx": 4, "dy": 3 }
+    }
+  },
+
+  "states": {
+    "ACTIVE":    { "anim": "walk", "go": "desk" },
+    "IDLE":      { "anim": "idle", "go": "hall", "variants": ["sleep", "eat", "read"] },
+    "SUSPENDED": { "anim": "still", "go": "desk", "fx": "stone" },
+    "DORMANT":   { "anim": "stand", "go": "desk", "fx": "ghost", "alpha": 0.55 }
+  },
+
+  "tools": [
+    { "match": "Read|Grep|Glob|NotebookRead", "go": "library", "anim": "read" },
+    { "match": "Edit|Write|MultiEdit|NotebookEdit", "go": "desk", "anim": "write" },
+    { "match": "Bash", "target": "\\b(pytest|unittest|node --test|npm (run )?test|go test|mvn test|gradle test|jest|vitest|ruff|mypy|bash -n|py_compile)\\b", "go": "test", "anim": "shake" },
+    { "match": "Bash", "target": "(^|[;&|(]\\s*)git\\b", "go": "seal", "anim": "seal" },
+    { "match": "Bash|BashOutput|KillShell", "go": "potion", "anim": "stir" },
+    { "match": "WebFetch|WebSearch", "go": "window", "anim": "look" },
+    { "match": "Agent|Task", "go": "circle", "anim": "cast", "spawn": true },
+    { "match": "mcp__*", "go": "window", "anim": "look" },
+    { "match": "TodoWrite|ExitPlanMode", "go": "desk", "anim": "think" },
+    { "match": "*", "go": "desk", "anim": "write" }
+  ],
+
+  "flags": {
+    "approval_pending": { "bubble": "!", "anim": "raise_wand", "priority": 30 },
+    "stuck_turn":       { "bubble": "…", "priority": 20 },
+    "error":            { "fx": "smoke", "priority": 10 }
+  },
+
+  "infra": {
+    "running": { "anim": "work" },
+    "success": { "anim": "idle" },
+    "failed":  { "anim": "idle", "fx": "smoke" },
+    "waiting": { "anim": "idle", "prop": "pause_sign" },
+    "none":    { "anim": "idle", "alpha": 0.6 }
+  },
+
+  "sprites": {
+    "kind": "sheets",
+    "_comment": "원본 파일 그대로(sprites/) — 자르기 · 외곽선 · 색조는 렌더러가 불러올 때. outline: Calciumtrice 가구에 1px 진한 외곽선(Ninja · 0x72 화풍에 맞춤)",
+    "outline": "#1a1620",
+    "sheets": {
+      "cm": "sprites/calciumtrice/medieval_interior.png",
+      "x": "sprites/0x72/atlas.png",
+      "book": "sprites/ninja/items/book.png", "scroll": "sprites/ninja/items/scroll.png", "wand": "sprites/ninja/items/wand.png",
+      "food": "sprites/ninja/items/food.png", "potion": "sprites/ninja/items/potion.png",
+      "circle": "sprites/ninja/fx/circle.png", "smoke": "sprites/ninja/fx/smoke.png", "spark": "sprites/ninja/fx/spark.png",
+      "e_alert": "sprites/ninja/fx/emote_alert.png", "e_dots": "sprites/ninja/fx/emote_dots.png", "e_q": "sprites/ninja/fx/emote_question.png"
+    },
+    "defs": {
+      "wood": ["cm", 16, 192, 16, 16],
+      "table_l": ["cm", 96, 176, 16, 48, 1], "table_m": ["cm", 112, 176, 16, 48, 1], "table_r": ["cm", 128, 176, 16, 48, 1],
+      "chair_f": ["cm", 160, 176, 16, 32, 1], "chair_b": ["cm", 208, 176, 16, 32, 1], "stool": ["cm", 160, 208, 16, 16, 1],
+      "barrel": ["cm", 224, 176, 16, 32, 1], "smalltable": ["cm", 240, 192, 16, 16, 1], "chest": ["cm", 256, 184, 16, 24, 1],
+      "shelf": ["cm", 192, 128, 32, 38, 1], "shelf_n": ["cm", 288, 128, 16, 38, 1], "ladder": ["cm", 208, 4, 16, 52, 1],
+      "oven": ["cm", 11, 256, 26, 32, 1], "hearth": ["cm", 96, 288, 48, 32, 1], "anvil": ["cm", 192, 240, 16, 16, 1],
+      "window": ["cm", 48, 28, 16, 22, 1], "openbook": ["cm", 176, 288, 16, 16, 1], "quill": ["cm", 160, 288, 16, 16],
+      "note": ["cm", 176, 240, 16, 16], "mug": ["cm", 176, 224, 16, 16], "crate_g": ["cm", 208, 288, 16, 16, 1],
+      "it_plant": ["cm", 224, 128, 16, 8], "it_basket": ["cm", 240, 136, 16, 8], "it_bottles": ["cm", 272, 128, 16, 8],
+      "it_redbook": ["cm", 272, 144, 16, 8], "it_jars": ["cm", 240, 160, 16, 8], "it_greybooks": ["cm", 256, 160, 16, 8],
+      "it_greenbook": ["cm", 272, 160, 16, 8], "it_potions": ["cm", 224, 168, 16, 8], "it_flask": ["cm", 240, 168, 16, 8],
+      "it_books": ["cm", 256, 168, 16, 8], "it_tanbook": ["cm", 272, 168, 16, 8], "it_redpot": ["cm", 240, 152, 16, 8],
+
+      "floor_1": ["x", 16, 64, 16, 16], "floor_2": ["x", 32, 64, 16, 16], "floor_3": ["x", 48, 64, 16, 16],
+      "floor_4": ["x", 16, 80, 16, 16], "floor_5": ["x", 32, 80, 16, 16], "floor_6": ["x", 48, 80, 16, 16],
+      "floor_7": ["x", 16, 96, 16, 16], "floor_8": ["x", 32, 96, 16, 16],
+      "wall_top": ["x", 32, 0, 16, 16], "wall": ["x", 32, 16, 16, 16],
+      "banner_b": ["x", 32, 32, 16, 16], "banner_r": ["x", 16, 32, 16, 16], "banner_g": ["x", 16, 48, 16, 16], "banner_y": ["x", 32, 48, 16, 16],
+      "column": ["x", 80, 80, 16, 48], "skull": ["x", 288, 432, 16, 16], "crate": ["x", 288, 408, 16, 24],
+      "chest_x": ["x", 304, 416, 16, 16], "flask_g": ["x", 320, 336, 16, 16], "flask_r": ["x", 288, 336, 16, 16],
+      "flask_b": ["x", 304, 336, 16, 16], "flask_y": ["x", 336, 336, 16, 16],
+      "fount_top": ["x", 64, 0, 16, 16], "fount_mid": ["x", 64, 48, 16, 16, 0, 3, 6], "fount_basin": ["x", 64, 64, 16, 16, 0, 3, 6],
+      "door_l": ["x", 16, 240, 16, 32], "door_r": ["x", 64, 240, 16, 32], "door_t": ["x", 32, 224, 32, 16], "door_open": ["x", 80, 240, 32, 32],
+
+      "p_book": ["book", 0, 0, 16, 16], "p_scroll": ["scroll", 0, 0, 14, 14], "p_wand": ["wand", 0, 0, 5, 18],
+      "p_food": ["food", 0, 0, 16, 16], "p_potion": ["potion", 0, 0, 9, 11],
+      "fx_circle": ["circle", 0, 0, 32, 32, 0, 4, 6], "fx_smoke": ["smoke", 0, 0, 32, 32, 0, 6, 10], "fx_spark": ["spark", 0, 0, 30, 35, 0, 9, 12],
+      "e_!": ["e_alert", 0, 0, 14, 13], "e_…": ["e_dots", 0, 0, 14, 13], "e_?": ["e_q", 0, 0, 14, 13]
+    },
+    "_defs": "[시트, x, y, w, h, 외곽선(1), 프레임 수, 초당 프레임] — 프레임은 오른쪽으로 w씩",
+
+    "room": {
+      "floor": ["floor_1", "floor_1", "floor_1", "floor_2", "floor_3", "floor_4", "floor_1", "floor_5", "floor_6", "floor_7", "floor_8", "floor_1"],
+      "wall_top": "wall_top", "wall": "wall", "border": "wall_top",
+      "banners": { "s": ["banner_b", "banner_r", "banner_g", "banner_y"], "every": 6, "from": 3 }
+    },
+    "decor": [
+      { "_": "교장실 — 책장, 책상, 수정구(엔진)" },
+      { "s": "shelf", "x": 1.2, "y": 1.5 }, { "s": "it_books", "x": 1.4, "y": 1.6, "z": "top" }, { "s": "it_redbook", "x": 2.3, "y": 2.1, "z": "top" },
+      { "s": "it_bottles", "x": 1.4, "y": 2.6, "z": "top" }, { "s": "it_plant", "x": 2.3, "y": 2.6, "z": "top" },
+      { "s": "table_l", "x": 3.5, "y": 4.3 }, { "s": "table_r", "x": 4.5, "y": 4.3 },
+      { "s": "openbook", "x": 3.6, "y": 4.6, "z": "top" }, { "fx": "orb", "x": 5.0, "y": 4.85 },
+      { "s": "barrel", "x": 6.4, "y": 4.4 }, { "s": "chest", "x": 1.4, "y": 5.0 },
+
+      { "_": "G 아치 창" },
+      { "s": "window", "x": 8.0, "y": 0.4, "z": "wall" }, { "fx": "glass", "x": 8.5, "y": 2.6 },
+
+      { "_": "A 서고 — 2층 책장(위층은 벽에 겹친다) · 사다리" },
+      { "s": "shelf", "x": 9.0, "y": -0.6, "z": "wall" }, { "s": "shelf", "x": 11.0, "y": -0.6, "z": "wall" }, { "s": "shelf", "x": 13.0, "y": -0.6, "z": "wall" },
+      { "s": "it_greybooks", "x": 9.2, "y": -0.5, "z": "wall" }, { "s": "it_greenbook", "x": 10.1, "y": 0.0, "z": "wall" },
+      { "s": "it_tanbook", "x": 11.2, "y": -0.5, "z": "wall" }, { "s": "it_books", "x": 12.1, "y": 0.0, "z": "wall" },
+      { "s": "it_redbook", "x": 13.2, "y": -0.5, "z": "wall" }, { "s": "it_greybooks", "x": 14.1, "y": 0.5, "z": "wall" },
+      { "s": "shelf", "x": 9.0, "y": 1.7 }, { "s": "shelf", "x": 11.0, "y": 1.7 }, { "s": "shelf", "x": 13.0, "y": 1.7 },
+      { "s": "it_books", "x": 9.2, "y": 1.8, "z": "top" }, { "s": "it_tanbook", "x": 10.1, "y": 2.3, "z": "top" }, { "s": "it_greenbook", "x": 9.2, "y": 2.8, "z": "top" },
+      { "s": "it_greybooks", "x": 11.2, "y": 1.8, "z": "top" }, { "s": "it_redbook", "x": 12.1, "y": 2.3, "z": "top" }, { "s": "it_books", "x": 11.2, "y": 2.8, "z": "top" },
+      { "s": "it_tanbook", "x": 13.2, "y": 1.8, "z": "top" }, { "s": "it_books", "x": 14.1, "y": 2.3, "z": "top" }, { "s": "it_greybooks", "x": 13.2, "y": 2.8, "z": "top" },
+      { "s": "ladder", "x": 15.0, "y": 0.9 },
+
+      { "_": "C 물약실 — 화로, 가마, 마법 샘, 재료" },
+      { "s": "hearth", "x": 16.4, "y": 1.1 }, { "s": "oven", "x": 19.5, "y": 1.1 },
+      { "s": "fount_top", "x": 21.0, "y": 0.0, "z": "wall" }, { "s": "fount_mid", "x": 21.0, "y": 1.0, "z": "wall" }, { "s": "fount_basin", "x": 21.0, "y": 2.0, "z": "floor" },
+      { "s": "smalltable", "x": 16.6, "y": 4.4 }, { "s": "flask_y", "x": 16.6, "y": 3.9, "z": "top" },
+      { "s": "crate_g", "x": 20.6, "y": 4.4 }, { "s": "it_jars", "x": 20.6, "y": 4.2, "z": "top" },
+
+      { "_": "D 시약대 — 플라스크" },
+      { "s": "table_l", "x": 23.2, "y": 2.45 }, { "s": "table_m", "x": 24.2, "y": 2.45 }, { "s": "table_r", "x": 25.2, "y": 2.45 },
+      { "s": "flask_g", "x": 23.3, "y": 2.55, "z": "top" }, { "s": "flask_r", "x": 24.3, "y": 2.5, "z": "top" }, { "s": "flask_b", "x": 25.2, "y": 2.55, "z": "top" },
+
+      { "_": "B 작업대 — 긴 탁자 하나, 앞뒤로 앉는다" },
+      { "s": "table_l", "x": 10.5, "y": 8.0 }, { "s": "table_m", "x": 11.5, "y": 8.0, "n": 8 }, { "s": "table_r", "x": 19.5, "y": 8.0 },
+      { "s": "quill", "x": 11.2, "y": 8.35, "z": "top" }, { "s": "note", "x": 13.5, "y": 8.3, "z": "top" },
+      { "s": "openbook", "x": 15.8, "y": 8.3, "z": "top" }, { "s": "quill", "x": 18.1, "y": 8.35, "z": "top" },
+      { "s": "chair_b", "x": 11.1, "y": 10.7, "n": 4, "dx": 2.3 },
+
+      { "_": "F 대강당 — 긴 식탁, 벤치, 촛불" },
+      { "s": "table_l", "x": 2.0, "y": 8.0 }, { "s": "table_m", "x": 3.0, "y": 8.0, "n": 3 }, { "s": "table_r", "x": 6.0, "y": 8.0 },
+      { "s": "mug", "x": 3.4, "y": 8.3, "z": "top" }, { "s": "mug", "x": 5.6, "y": 8.35, "z": "top" },
+      { "fx": "candle", "x": 4.5, "y": 8.5 }, { "fx": "candle", "x": 2.4, "y": 8.5 }, { "fx": "candle", "x": 6.6, "y": 8.5 },
+      { "s": "chair_b", "x": 2.2, "y": 10.7, "n": 3, "dx": 1.8 },
+
+      { "_": "E 원탁방 — 바닥 마법진 · 기둥" },
+      { "s": "fx_circle", "x": 22.5, "y": 8.9, "z": "floor", "scale": 2, "frame": 3, "alpha": 0.45, "pulse": true },
+      { "s": "column", "x": 22.0, "y": 8.0 }, { "s": "column", "x": 26.2, "y": 8.0 },
+
+      { "_": "H 봉인대" },
+      { "s": "smalltable", "x": 8.1, "y": 12.6 }, { "s": "p_scroll", "x": 8.2, "y": 12.45, "z": "top" }, { "fx": "candle", "x": 9.3, "y": 12.9 }
+    ],
+    "infra_decor": {
+      "_": "출하 라인 — 봉인 문양 → 보물창고 → 전송 아치. 좌표는 구역 시작(x, infra.y) 기준",
+      "jenkins": [{ "s": "fx_circle", "x": 0.4, "y": 0.4, "z": "floor", "frame": 3, "alpha": 0.5 }, { "s": "anvil", "x": 2.6, "y": 1.0 }],
+      "harbor": [{ "s": "chest_x", "x": 0.4, "y": 1.0 }, { "s": "chest_x", "x": 1.3, "y": 1.0 }, { "s": "crate", "x": 2.4, "y": 0.6 }, { "s": "barrel", "x": 3.2, "y": 0.4 }],
+      "argocd": [{ "s": "door_t", "x": 1.0, "y": 0.0 }, { "s": "door_l", "x": 0.0, "y": 0.5 }, { "s": "door_open", "x": 1.0, "y": 0.5 }, { "s": "door_r", "x": 3.0, "y": 0.5 }]
+    },
+    "chars": {
+      "_comment": "Ninja Adventure — Walk.png(64x64: 열 = 아래 · 위 · 왼 · 오른, 행 = 프레임 4) · Idle.png(64x16). 세션은 id로 고른다",
+      "dir": "sprites/ninja/chars/",
+      "pool": ["NinjaMageBlack", "NinjaMageOrange", "SorcererBlack", "SorcererOrange", "Monk", "Monk2", "Princess", "Noble",
+               "Woman", "Villager2", "OldMan2", "Shaman"],
+      "foreman": "Master",
+      "infra": { "jenkins": "Knight", "harbor": "Inspector", "argocd": "Spirit" }
+    },
+    "props": {
+      "_comment": "동작 → 손에 든 것(엔진이 겹친다 — 에셋에 앉기 · 들기 동작이 없어서). dx · dy는 발밑 가운데 기준 px",
+      "read": { "s": "p_book", "dx": 2, "dy": -9, "bob": 1 },
+      "write": { "s": "quill", "dx": 1, "dy": -12, "bob": 2 },
+      "think": { "s": "p_scroll", "dx": 2, "dy": -9 },
+      "shake": { "s": "flask_g", "dx": 2, "dy": -14, "shake": 2 },
+      "stir": { "s": "p_wand", "dx": 5, "dy": -15, "bob": 2 },
+      "cast": { "s": "p_wand", "dx": 5, "dy": -17, "fx": "fx_spark" },
+      "seal": { "s": "p_scroll", "dx": 2, "dy": -9, "bob": 1 },
+      "raise_wand": { "s": "p_wand", "dx": 6, "dy": -20, "fx": "fx_spark" },
+      "eat": { "s": "p_food", "dx": 2, "dy": -9, "bob": 1 }
+    }
+  }
+}

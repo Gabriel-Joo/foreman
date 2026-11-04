@@ -7,6 +7,9 @@
 .tools/
 .run/
 
+# 에셋 원본 압축 · 푼 것(10단계) — 저장소엔 쓰는 시트만 static/themes/<테마>/sprites/에. 출처 · 라이선스는 LICENSES.md
+.assets-raw/
+
 # 파이썬
 .venv/
 __pycache__/

@@ -16,15 +16,27 @@ export function matchTool(pattern, tool) {
   return rx.test(tool);
 }
 
-export function resolveAction(theme, { state, tool, flags } = {}) {
+const _rxCache = new Map();
+function matchTarget(pattern, target) {
+  // 규칙의 target(정규식 문자열)은 도구 대상(Bash 명령 등)에 — 없으면 늘 맞다. 잘못된 정규식은 안 맞는 것으로
+  if (!pattern) return true;
+  let rx = _rxCache.get(pattern);
+  if (rx === undefined) {
+    try { rx = new RegExp(pattern); } catch { rx = null; }
+    _rxCache.set(pattern, rx);
+  }
+  return !!rx && rx.test(target || '');
+}
+
+export function resolveAction(theme, { state, tool, target, flags } = {}) {
   const states = theme.states || {};
   const base = states[state] || states.IDLE || {};
   const out = { ...base, state: state || 'IDLE', source: 'state' };
   if (state === 'ACTIVE' && tool) {
-    const rule = (theme.tools || []).find((r) => matchTool(r.match, tool));
+    const rule = (theme.tools || []).find((r) => matchTool(r.match, tool) && matchTarget(r.target, target));
     if (rule) {
-      const { match, ...rest } = rule;
-      Object.assign(out, rest, { source: `tool:${match}` });
+      const { match, target: t, ...rest } = rule;
+      Object.assign(out, rest, { source: `tool:${match}${t ? ' ~ ' + t.slice(0, 24) : ''}` });
     }
   }
   // 플래그 — 얼어붙은(SUSPENDED) · 잠든(DORMANT) 세션도 승인 대기면 손을 든다(사람이 봐야 하는 것)
