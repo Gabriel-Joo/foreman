@@ -148,10 +148,87 @@ I 출하 라인 (아래 전체)
 - **화풍은 세 무리로 갈린다**: ① Kenney Roguelike(테두리 약함, 음영) ② Kenney Tiny(테두리 없는 단색) ③ Ninja Adventure · Puny · MetroCity(굵은 외곽선 치비). **한 테마 안에서 무리를 섞지 않는다**. OGA factory tileset은 ①에 맞춰 그렸다고 한다
 - 빠진 것을 직접 그릴 때는 그 테마의 팔레트(theme.json `palette`)로 — 지금 도형 렌더러가 이미 그 방식이라 이어진다
 
-### 고를 것(사용자 결정)
+### 고를 것(사용자 결정) — ⚠ 아래 "기준을 넓혀 다시"가 이 절을 대신한다
 
 1. **캐릭터**: (가) Kenney Roguelike 조립식 — 역할 색은 쉽고, 걷기 · 앉기는 엔진 흉내 / (나) Ninja Adventure — 진짜 4방향 걷기, 대신 역할 색은 팔레트 바꾸기, 치비 외곽선 화풍 / (다) 현대 느낌이 꼭 필요하면 MetroCity(달리기만)
 2. **오피스 테마의 구멍**: (가) 직접 그리기(랙 · 모니터 벽 · 유리벽 · 커피머신 — 단순한 것 위주) / (나) 유료 CC0 팩 구입(확인 후) / (다) 오피스를 뒤로 미루고 덮임이 높은 테마부터
 3. **동작**: 앉기 · 눕기 · 들고 있기는 엔진 흉내로 시작하고, 눈에 띄게 어색한 것만 몇 장 직접 그린다(CC0라 덧그림 가능)
 
 다음 단계(결정 뒤): 고른 팩만 받아 시트를 확인 → `static/themes/<테마>/`에 넣고 `LICENSES.md`(팩 · URL · 라이선스 원문) → theme.json `sprites`를 도형에서 시트로.
+
+---
+
+## 기준을 넓혀 다시 (2026-11-05 — CC0 · MIT + CC-BY(SA 아님) + 유료)
+
+> 유료 조건: **공개 GitHub 저장소에 에셋 파일을 넣어도 되고, 상업적 사용이 허용될 것**. 못 맞추면 아무리 좋아도 뺐다. 조사는 팩 페이지 · 라이선스 문구 · 미리보기 이미지까지다. **압축 파일은 받지 않았고 아무것도 사지 않았다.**
+> CC-BY는 출처 표시가 조건이다 → `LICENSES.md`에 팩 · 저자 · URL · 라이선스를 적는다(Antifarea · Redshrike는 opengameart.org 링크까지, Calciumtrice는 "Calciumtrice"로 표기).
+
+### 한 줄 결론
+
+- **마법학교가 제일 덜 고생한다 — 약 80%, 무료(CC0 + CC-BY)만으로.** 오피스 ~65%, 현장 ~50%
+- **유료는 안 사도 된다.** 조건을 통과한 유료 팩은 마법학교를 5~10% 더 채우는 정도이고, 오피스 · 현장의 진짜 구멍(서버랙 · 모니터 벽 · 지게차 · 셔터)을 깔끔하게 덮는 통과 팩은 없다
+- **앉기 · 눕기 · 들기 동작은 허용 라이선스 어디에도 없다**(CC0 · CC-BY · 통과한 유료 전부). 그 동작이 있는 팩(PixelGnome · LimeZu · Mana Seed)은 전부 재배포 금지, LPC는 SA → **엔진 흉내 + 몇 장 직접 그리기**는 바뀌지 않는다
+
+### CC-BY로 늘어난 것
+
+| 팩 | 라이선스 | 크기 · 화풍 | 덮는 것 |
+|---|---|---|---|
+| **Calciumtrice — Medieval Tileset** | CC-BY 3.0 | 16, 3/4, 부드러운 외곽선 · 차분한 색 | **긴 식탁 + 벤치**, 카운터, 병 놓인 벽 선반(시약 선반), **사다리**, 통 · 상자, 목조 벽 · 창. 대장간(화덕 · 모루 · 공구대) |
+| **Calciumtrice — Dungeon Tileset** | CC-BY 3.0 | 같은 화풍 | 돌벽, 깃발(초상화 대신), 촛불 + 책 놓인 탁자, 의자, 궤짝, 횃불, 철문 |
+| Solar Granulation — Office worker sprites | CC-BY 4.0/3.0 | 16, NES 색, 굵은 검은 외곽선 | **직원 4명: 걷기 · 앉아서 타이핑 · 출력 · 정수기에서 마시기** + PC · 정수기. 오피스 작업 동작이 실제로 있는 유일한 허용 팩 |
+| Antifarea(Charles Gabriel) 16×18 캐릭터 | CC-BY 3.0 | 16×18, 4방향 걷기 3프레임 | 걷기 + **마법 시전 자세**(마법사의 "작업" 대신). 크기가 16×18이라 다른 16 캐릭터와 섞으면 키가 다르다 |
+| Redshrike 16×16 indoor baseline | CC-BY 3.0 / OGA-BY | 16, SNES풍 · 진한 색 | 책장 · 러그 · 탁자 · 침대 · 카운터 |
+| Sharm Tiny 16 Basic | CC-BY 4.0/3.0 | 16, DB16 | 작은 집 실내, **누워 있는 캐릭터(정지)** |
+| chierit undersized base | CC-BY 4.0 | 16(32 캔버스), 8방향 | idle · 걷기 · 달리기. **.aseprite 원본 포함** → 자세 추가가 쉽다 |
+| BOFH school/office | CC-BY 3.0 or GPL | 16, 오래된 느낌 | **서버 스택**(오피스 서버랙 후보 중 유일한 16 픽셀아트) |
+| TrueCynder Factory Tiles | CC-BY 3.0 | 16, SF | 철판 바닥 · 벽 · 기계 패널(작다) |
+
+뺀 것: Jerom · Buch Tuxemon · Tatermand 가구 · LPC · SCaydi 연금술 · 컨베이어 벨트(전부 SA 또는 GPL만) / Croomfolk 빈티지 오피스 · Leafy Lemur(32 — 16과 안 섞임) / Clint Bellanger 칸막이(아이소메트릭) / Spaceyyy Cozy Space Station(CC-BY 4.0, 서버랙 · 멀티모니터가 있지만 **미리보기가 벡터풍이고 2026-09 신작** — 마지막 수단)
+
+### 유료 후보 — 통과한 것
+
+| 팩 | 가격 | 라이선스(원문 요약) | 공개 저장소 | 크기 · 화풍 | 덮는 것 |
+|---|---|---|---|---|---|
+| **Kestrelwick Cozy Interiors 16x16** | **$4.99**(앞 조사의 $2.99는 확장팩 가격) | "License: CC0. Commercial use is fine and credit isn't required." | ✅ | 16, 32색, 진한 1px 외곽선, 정면 벽 3/4 | 책장 3종 · 지구본 · 책상 · 펼친 책 · 촛대 · 벽난로(움직임) · 괘종시계 · 4방향 의자 · 상자 · 통, 47타일 벽 오토타일. Tiled 파일 포함. 캐릭터 없음 |
+| Kestrelwick Cozy Interiors Expansion | $2.99 | "CC0 … We kindly ask that you don't re-sell the raw files" — 부탁이지 조건이 아니고, 저장소에 두는 건 재판매가 아니다 | ✅ | 같음 | 가구 추가. **1배에서 알아보기 힘든 소품이 많다**(평면 채색) |
+| Kestrelwick Dungeon Tileset 16x16 | $3.99 | "License: CC0." | ✅ | 같음 | 돌벽 오토타일 · 깃발 · 화로 · 제단 · 포션 · 모루 · 솥 비슷한 것 · 여닫는 궤짝. 해골 · 슬라임 · 박쥐 · 유령 4프레임 |
+| 0x72 DungeonTileset II | 원하는 만큼(0 가능) | itch 라이선스 칸 CC0 1.0 | ✅ | 16, 외곽선 치비 | 던전 벽 · 바닥 · 궤짝 · 플라스크, 기사 · 마법사 · 엘프 idle · 달리기(한쪽 방향 — 뒤집어 씀). 이미 CC0 목록에 있던 것 |
+| 2dPig Pixel Office | 원하는 만큼 | "CC0 or CC Zero", 생성 AI 안 씀 | ✅ | 약 16, 외곽선 치비, 옆에서 본 가구 | **커피머신 · 자판기 · 정수기** · 책상 · 컴퓨터 · 화분 · 달력, 사람 5명(동작 미확인). 작다 |
+| Riclmbr Pixel Zombie Interiors | $9.99 | 설명에 "CC0 license – use it in commercial projects, no credit required" | ✅(라이선스 칸은 비어 있음 — 압축 안 README 확인 필요) | 16, 3/4, 진한 외곽선 · 탁한 색 | 현장 구멍을 제일 많이 덮는다: **지게차 · 팔레트 · 롤셔터 · 창고 랙** · 골판지 상자 · 연구실 실험대. 대신 **피 · 잔해가 바닥과 소품에 박혀 있고**, 정면 · 3/4 소품이 섞였다 |
+| Riclmbr Cute Pixel Decor 1000 | $6.49(세일) | 같음 | ✅(같은 단서) | 파스텔 · 분홍 귀여움 | 빈백 · 커피머신 · 책상 · 책장. **화풍이 오피스 · 현장과 안 맞는다** |
+| Kenney All-in-1 | $19.95 | CC0 1.0 | ✅ | — | 무료 Kenney 팩 묶음일 뿐 — **새로 생기는 게 없다** |
+
+**Riclmbr · Kestrelwick 공통 주의**: 둘 다 itch 라이선스 칸이 비어 있고 CC0는 설명 글에만 있다. 두 계정 모두 **2026-10월 초에 생겼고 평점 · 댓글이 0**이다. Riclmbr는 4주 동안 상품 119개(픽셀 · 로우폴리 3D · "GTA 6 픽셀아트" 섞임)인데 "생성 AI 안 씀"으로 표기 — 그 속도로는 믿기 어렵다(미리보기에 AI 업스케일 흔적은 안 보였다). Kestrelwick은 "AI 도움: 글만, 그림은 코드로 그렸다". **라이선스는 통과지만 독립적으로 확인할 길이 없다.**
+
+**탈락한 유료**(재배포 금지 또는 불명확): LimeZu Modern Interiors/Office · Seliel Mana Seed · Cup Nooble · shubibubi · Kenmi · **Masalimov Pixel Office 32x32($5, 오피스에 가장 잘 맞음)** · **PixelGnome Character(앉기 · 자기 · 들기 있음)** · Szadi · pixel_poem · PixelHole · RGS_Dev · Watersilver · Guardian5 Warehouse("파일 배포 금지") · Oul Studio(라이선스 칸 CC0인데 설명이 재배포 금지 — 충돌이면 탈락) / 불명확: Penzilla(PDF 라이선스) · ElvGames · VectoRaith · Ansimuz · 0x72 Sewers · Mercyssh / CC-BY-ND: samvieten Factory / AI 생성: Cute SCKR · multiplierx
+
+### 테마별 덮임 — 다시 계산
+
+| 테마 | CC0만 | + CC-BY | + 유료(통과한 것) | 남는 구멍 |
+|---|---|---|---|---|
+| **마법학교** | ~60% | **~80%** | ~85~90%(Kestrelwick 3개 ≈ $12) | 2층 책장(2단 쌓기 + Calciumtrice 사다리), 원탁, 부엉이 횃대, 초상화(깃발로 대신), 마법진(엔진이 원 + 빛으로) |
+| 오피스 | ~55% | ~62% | ~68%(2dPig 무료 — 커피머신 · 정수기) | **듀얼 모니터 · 모니터 벽 · 서버랙(LED) · 복합기 · 유리벽 · 창밖 도시** — 오피스의 얼굴이 되는 것들이 그대로 빈다(서버랙은 BOFH 하나, 화풍이 낡음) |
+| 현장 | ~40% | ~45% | ~60%(Riclmbr Zombie, 단 피 · 잔해 · 화풍) / 깨끗한 것만 ~45% | 지게차 · 셔터(Zombie에만), 컴프레서 · 기름통 · 공구벽 · 바이스 · 간이침대 → 약 6개 직접 그림(16px 한 개 30~60분) |
+
+**마법학교로 먼저 만든다.** 무료만으로 가장 높고, 남는 구멍이 "쌓기 · 대체 · 엔진 효과"로 메워지는 종류다. 오피스는 구멍이 핵심 가구 자체라 직접 그리는 양이 가장 많다(사각형 위주라 쉽긴 하다). 현장은 유료를 사도 화풍 문제가 남는다.
+
+**마법학교의 화풍 — 외곽선 무리 하나로**: Calciumtrice(타일 · 가구) + 0x72 · Puny Dungeon(돌벽 · 포션) + Ninja Adventure(캐릭터). 세 팩 다 외곽선 있는 16이라 같은 무리로 묶이지만 **색감은 시트를 받아 나란히 놓고 확인**해야 한다(Calciumtrice는 차분, Ninja는 밝다 — 안 맞으면 테마 팔레트로 색만 맞춘다). Kenney Roguelike(외곽선 약함)는 이 테마에 섞지 않는다.
+
+### 캐릭터 · 동작 — 다시 정한 안
+
+| 항목 | 앞 조사 추천 | 이번 추천 | 이유 |
+|---|---|---|---|
+| 캐릭터 팩 | Kenney Roguelike 조립식(정면 한 장) | **Ninja Adventure(CC0)** | 마법학교 화풍(외곽선 치비)과 맞고, **진짜 4방향 걷기**가 있다. 조립식이 아니라 역할 색은 **팔레트 바꾸기**(로브 색) — 엔진 일, 이미 도형 렌더러가 하는 방식 |
+| 마법사 "작업" 동작 | 소품 겹치기 | 소품 겹치기 + 흔들기 그대로. Antifarea 시전 자세는 크기(16×18)가 달라 안 씀 | |
+| 앉기 | 아래 자르기 | **엔진이 아래를 의자 뒤로 가림** → 어색하면 걷기 프레임 다리를 잘라 2장 직접(CC0라 덧그림 가능) | 허용 팩에 없음 |
+| 눕기 · 자기 | 90° 회전 | 회전 + "Zz" 말풍선 → 어색하면 1장 직접(Sharm Tiny 16 누운 자세 · diamonddmgirl 24×32를 참고만) | 허용 팩에 없음 |
+| 들고 있기 | 손에 소품 겹치기 | 그대로(지팡이 · 책 · 플라스크 — 0x72 · Calciumtrice 아이템) | 허용 팩에 없음 |
+| 오피스 테마(나중) | — | Solar Granulation 직원(타이핑 · 출력 · 마시기)을 그때 검토 | 화풍(NES 굵은 외곽선)이 Ninja와 다르니 테마 단위로 통째 교체 |
+
+### 고를 것(사용자 결정)
+
+1. **마법학교 먼저** — 무료(Calciumtrice CC-BY + 0x72 · Puny · Ninja Adventure CC0)로 시작
+2. **사는 것**: 무료로 먼저 짜 보고 구멍이 눈에 띄면 그때 Kestrelwick Cozy Interiors($4.99)만. Riclmbr는 현장 테마를 만들 때 다시 판단(지금은 비추천 — 계정 신뢰 · 화풍)
+3. **캐릭터 · 동작**: Ninja Adventure + 팔레트 바꾸기, 앉기 · 눕기 · 들기는 엔진 흉내로 시작해 어색한 것만 몇 장 직접
+
+다음 단계(결정 뒤): 고른 무료 팩만 받아 시트를 나란히 놓고 화풍 확인 → `static/themes/magic/` + `LICENSES.md`(CC-BY 출처 표시 포함) → theme.json `sprites`를 도형에서 시트로. 오피스 · 현장은 마법학교로 구조를 검증한 뒤.
