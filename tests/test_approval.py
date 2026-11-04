@@ -1,5 +1,8 @@
-"""승인 정책 판정 — config/approval.toml 그대로.
-되돌릴 수 없는 것은 ask, 되돌릴 수 있는 것은 allow, 나머지는 pass. "실행"과 "글자로 쓰기"를 가른다."""
+"""승인 정책 판정의 장치 — "실행"과 "글자로 쓰기"를 가르기, heredoc · 리터럴 · mktemp · 스크래치패드 처리.
+
+11-05에 config/approval.toml을 "실제로 거부할 만한 것만"으로 좁혔다(tests/test_approval_now.py가 그 기준).
+이 파일은 그 전의 엄격한 규칙(tests/fixtures/approval_strict.toml = 11-05 직전 config)으로 장치를 시험한다 —
+장치는 그대로 남아 있고 설정으로 다시 켤 수 있다([sensitive] mode = "read", protect_mode = "ask" 등)."""
 
 import os
 
@@ -8,7 +11,7 @@ import pytest
 from bridge.approval import load_policy
 
 REPO = "/home/kopo17/AI_programming/foreman"
-POL = load_policy(os.path.join(REPO, "config/approval.toml"))
+POL = load_policy(os.path.join(REPO, "tests/fixtures/approval_strict.toml"))
 
 
 def d(tool, project="foreman", cwd=REPO, scratch=None, **inp):
@@ -379,6 +382,52 @@ def test_scratchpad_rm_passes_but_escapes_ask(tmp_path):
     for c in bad:
         assert d("Bash", scratch=S, command=c).verdict == "ask", c
     assert d("Bash", command=f"rm -rf {S}/shots").verdict == "ask"   # 스크래치패드를 모르면 예외 없음
+
+
+# ── 11-05 /tmp/claude-<uid> 아래 전부(서브에이전트 · 다른 세션 것 포함) ─────
+def test_claude_tmp_rm_passes(tmp_path, monkeypatch):
+    import bridge.approval as ap
+    root = tmp_path / "claude-1000"
+    (root / "proj" / "sess" / "scratchpad").mkdir(parents=True)
+    (root / "tmp.abc").mkdir()
+    out = tmp_path / "outside"
+    out.mkdir()
+    (root / "link").symlink_to(out)
+    root.chmod(0o700)
+    R = str(root)
+    monkeypatch.setattr(ap, "claude_tmp_root", lambda p=None: R)
+    ok = [f"rm -rf {R}/tmp.abc", f"rm -f {R}/proj/sess/scratchpad/shots/*.png", f"rm -rf {R}/itchAJX4 {R}/oga_ext.sh",
+          f'D={R}/tmp.abc; rm -rf "${{D:?}}"', f"rm -rf {R}/proj", f"rm -f {R}/link"]       # 링크 자체만 지운다
+    for c in ok:
+        assert d("Bash", command=c).verdict != "ask", c
+    bad = [f"rm -rf {R}", f"rm -rf {R}/", f"rm -rf {R}/..", f"rm -rf {R}/link/", f"rm -rf {R}/link/*",
+           f"rm -rf {R}/x ~/AI_programming", f"rm -rf {R}/*/deep", f"D={R}; D=/home; rm -rf $D/x",
+           "rm -rf ~/volumes/x", "rm -rf /etc/x", f"rm -rf $(echo {R})/x"]
+    for c in bad:
+        assert d("Bash", command=c).verdict == "ask", c
+
+
+def test_claude_tmp_root_requires_private_dir(tmp_path):
+    from bridge.approval import claude_tmp_root
+    r = tmp_path / "c"
+    r.mkdir()
+    r.chmod(0o700)
+    assert claude_tmp_root(str(r)) == str(r)
+    r.chmod(0o755)
+    assert claude_tmp_root(str(r)) is None                                  # 남이 들어올 수 있으면 예외 없음
+    (tmp_path / "l").symlink_to(r)
+    r.chmod(0o700)
+    assert claude_tmp_root(str(tmp_path / "l")) is None                     # 링크면 예외 없음
+    assert claude_tmp_root(str(tmp_path / "none")) is None
+
+
+def test_mktemp_file_rm_in_trap_passes():
+    c = 'jar=$(mktemp); trap \'rm -f "$jar"\' EXIT; curl -s -c "$jar" https://example.com'
+    assert d("Bash", command=c).verdict != "ask"
+    assert d("Bash", command="x=$(mktemp) && rm -f $x").verdict != "ask"
+    assert d("Bash", command='jar=$(mktemp); jar=/home; rm -rf "$jar"').verdict == "ask"
+    assert d("Bash", command='x=$(mktemp); rm -rf $x/../..').verdict == "ask"
+    assert d("Bash", command='rm -rf "$jar"').verdict == "ask"
 
 
 def test_scratchpad_from_transcript_path():

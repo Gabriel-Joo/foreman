@@ -575,11 +575,11 @@ async def test_pre_tool_use_enforce_and_observe(env):
     mgr, pipe, _ = await _mgr(s)
     out = mgr.pre_tool_use(_p("git status"))
     assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
-    out = mgr.pre_tool_use(_p("kubectl delete -f x.yaml"))
+    out = mgr.pre_tool_use(_p("kubectl delete pvc data-x"))
     assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
-    assert "kubectl-삭제" in out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "데이터-삭제" in out["hookSpecificOutput"]["permissionDecisionReason"]
     assert mgr.pre_tool_use(_p("make build")) is None                         # pass — CC가 정한다
-    assert mgr.pre_tool_use(_p("kubectl delete -f x", cwd="/home/kopo17/AI_programming/runshoes")) is None  # 관찰
+    assert mgr.pre_tool_use(_p("kubectl delete pvc data-x", cwd="/home/kopo17/AI_programming/runshoes")) is None  # 관찰
     await asyncio.sleep(0.3)
     got = [(e.payload["decision"], e.payload["enforced"]) for e in pipe.events]
     assert got == [("allow", True), ("ask", True), ("pass", False), ("ask", False)]   # 자동 통과 · 관찰도 기록
@@ -588,19 +588,19 @@ async def test_pre_tool_use_enforce_and_observe(env):
 async def test_permission_browser_allow_and_deny(env):
     s, _ = env
     mgr, pipe, notif = await _mgr(s)
-    mgr.pre_tool_use(_p("kubectl delete -f x.yaml", tuid="toolu_B1"))
-    task = asyncio.create_task(mgr.permission_request(_p("kubectl delete -f x.yaml", event="PermissionRequest")))
+    mgr.pre_tool_use(_p("kubectl delete pvc data-x", tuid="toolu_B1"))
+    task = asyncio.create_task(mgr.permission_request(_p("kubectl delete pvc data-x", event="PermissionRequest")))
     while not mgr.waiting:
         await asyncio.sleep(0.01)
     aid = next(iter(mgr.waiting))
     assert mgr.decide(aid, "allow", None) == "ok"
     out = await task
     assert out["hookSpecificOutput"]["decision"] == {"behavior": "allow"}
-    assert notif.sent and "🔐 승인 대기 · Bash" in notif.sent[0] and "kubectl-삭제" in notif.sent[0]
+    assert notif.sent and "🔐 승인 대기 · Bash" in notif.sent[0] and "데이터-삭제" in notif.sent[0]
     assert q(s, "SELECT status, decided_by, rule, tool_use_id FROM approval WHERE id = %s", aid) == (
-        ("allowed", "browser", "kubectl-삭제", "toolu_B1"),)
+        ("allowed", "browser", "데이터-삭제", "toolu_B1"),)
     assert mgr.decide(aid, "deny", None) == "gone"                           # 이미 결정됨
-    task = asyncio.create_task(mgr.permission_request(_p("kubectl delete -f x.yaml", event="PermissionRequest")))
+    task = asyncio.create_task(mgr.permission_request(_p("kubectl delete pvc data-x", event="PermissionRequest")))
     while not mgr.waiting:
         await asyncio.sleep(0.01)
     mgr.decide(next(iter(mgr.waiting)), "deny", "운영 배포는 내가 직접 한다")
