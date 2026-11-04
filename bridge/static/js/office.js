@@ -22,7 +22,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       <button id="oMap" class="ghost" title="감독실로(Esc)">${esc((theme.hq && theme.hq.label) || '감독실')}</button>
       <button id="oAll" class="ghost" title="모든 현장을 한눈에">전체</button>
       <span id="oAlerts" class="oalerts"></span>
-      <span class="small muted">테마 ${[['office', '오피스'], ['magic', '마법학교']].map(([k, v]) => k === theme.name ? `<b>${v}</b>` : `<a href="/office?theme=${k}">${v}</a>`).join(' · ')}</span>
+      <span class="small muted">테마 ${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장'], ['plain', '도형']].map(([k, v]) => k === theme.name ? `<b>${v}</b>` : `<a href="/office?theme=${k}">${v}</a>`).join(' · ')}</span>
       <a class="small" href="/">클래식 화면</a>
       <span id="oConn" class="conn"></span>
       <button id="oTok" class="ghost" title="API 토큰">토큰</button>
@@ -206,6 +206,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 역할(로브 · 사원증 끈 · 안전모 색) — 11단계에서 포먼이 캐릭터를 만들면 세션에 role이 온다(지금은 없음).
   // 미리 보기: /office?roles=demo — 세션 id로 돌려 가며 붙인다
   const ROLES = (theme.roles && theme.roles.colors) || {};
+  const ROLE_MODE = (theme.roles && theme.roles.mode) || 'robe';   // robe(옷 색) · lanyard(사원증 끈) · helmet(안전모)
   const DEMO_ROLES = new URLSearchParams(location.search).get('roles') === 'demo' ? Object.keys(ROLES) : null;
   function roleOf(s) { return s.role || (DEMO_ROLES && DEMO_ROLES.length ? DEMO_ROLES[s.id % DEMO_ROLES.length] : null); }
   function roleColor(role) { return (role && ROLES[role]) || null; }
@@ -419,7 +420,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const n = d.n || 1;
     for (let i = 0; i < n; i++) {
       const x = ox + d.x + i * (d.dx || 1), y = oy + d.y;
-      if (d.fx) { sorted.push({ y: y + 0.1, draw: () => drawFx(d.fx, x, y, now) }); continue; }
+      if (d.fx === 'glasswall') { sorted.push({ y: y + (d.h || 1) + 0.05, draw: () => drawFx(d.fx, x, y, now, d) }); continue; }   // 유리벽은 그 구역 앞에
+      if (d.fx) { sorted.push({ y: y + 0.1, draw: () => drawFx(d.fx, x, y, now, d) }); continue; }
       const scale = d.scale || 1;
       const draw = () => {
         if (d.alpha != null) ctx.globalAlpha = d.alpha * (d.pulse ? 0.65 + 0.35 * Math.sin(now / 700) : 1);
@@ -432,12 +434,36 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
   }
 
+  // 바닥 — 시트 타일이거나(room.floor 이름 목록) 테마 색으로 그린 타일(room.proc.floor: 오피스 파란 타일 · 현장 콘크리트)
+  function drawFloor(x0, y0, w, h, spec, salt = 0) {
+    if (spec && typeof spec === 'object' && !Array.isArray(spec)) {
+      const tw = spec.tile || 1, th = spec.tileH || tw;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x0 * T, y0 * T, w * T, h * T); ctx.clip();   // 엇갈린 타일이 구역 밖으로 넘치지 않게
+      ctx.fillStyle = spec.a; ctx.fillRect(x0 * T, y0 * T, w * T, h * T);
+      for (let j = 0; j < h / th; j++) for (let i = 0; i <= w / tw; i++) {
+        const hsh = tileHash(i + salt, j);
+        const off = spec.stagger && j % 2 ? tw / 2 : 0;
+        const px0 = (x0 + i * tw - off) * T, py0 = (y0 + j * th) * T;
+        if (spec.b && hsh % 3 === 0) { ctx.fillStyle = spec.b; ctx.fillRect(Math.max(px0, x0 * T), py0, tw * T, th * T); }
+        if (spec.spot && hsh % 7 === 0) { ctx.fillStyle = spec.spot; ctx.fillRect(px0 + (hsh % 11), py0 + ((hsh >>> 4) % 11), 2, 2); }
+        ctx.fillStyle = spec.grout || '#0003';
+        ctx.fillRect(Math.max(px0, x0 * T), py0, tw * T, 1); ctx.fillRect(px0, py0, 1, th * T);
+      }
+      ctx.restore();
+      return;
+    }
+    const fl = Array.isArray(spec) ? spec : [spec];
+    for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) SP.draw(ctx, fl[tileHash(x0 + i + salt, y0 + j) % fl.length], (x0 + i) * T, (y0 + j) * T);
+  }
+  const FLOOR = (RS.proc && RS.proc.floor) || RS.floor || ['floor_1'];
+
   function drawRoomS(r, now, sorted) {
-    const z = L.zones, fl = RS.floor || ['floor_1'];
-    for (let i = 1; i < r.w - 1; i++) for (let j = 2; j < r.h - 1; j++) SP.draw(ctx, fl[tileHash(i, j) % fl.length], (r.x + i) * T, (r.y + j) * T);
+    const z = L.zones;
+    drawFloor(r.x + 1, r.y + 2, r.w - 2, r.h - 3, FLOOR);
     for (const zz of Object.values(z)) {
       if (!zz || !zz.floor) continue;
-      for (let i = 0; i < zz.w; i++) for (let j = 0; j < zz.h; j++) SP.draw(ctx, zz.floor, (r.x + zz.x + i) * T, (r.y + zz.y + j) * T);
+      drawFloor(r.x + zz.x, r.y + zz.y, zz.w, zz.h, (RS.proc && RS.proc[zz.floor]) || zz.floor, 3);
     }
     // 출하 라인 바닥은 조금 어둡게
     const iz = z.infra;
@@ -462,7 +488,16 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
 
   // 벽 — 위 두 줄은 시트(머리 · 면), 옆 · 아래 테두리는 어두운 두께(위에서 내려다본 벽 윗면)
   function drawWalls(r) {
-    for (let i = 0; i < r.w; i++) {
+    const pw = RS.proc && RS.proc.wall;
+    if (pw) {
+      // 색으로 그린 벽 — 위 띠 + 면 + 가로줄(2dPig 벽 · 현장 철판 벽)
+      ctx.fillStyle = pw.top; ctx.fillRect(r.x * T, r.y * T, r.w * T, T * 0.5);
+      ctx.fillStyle = pw.face; ctx.fillRect(r.x * T, (r.y + 0.5) * T, r.w * T, T * 1.5);
+      ctx.fillStyle = pw.stripe;
+      for (let k = 0; k < (pw.stripes || 3); k++) ctx.fillRect(r.x * T, (r.y + 0.75 + k * 0.4) * T, r.w * T, 1);
+      if (pw.rivet) { ctx.fillStyle = pw.rivet; for (let i = 0; i < r.w; i += 2) ctx.fillRect((r.x + i + 0.5) * T, (r.y + 0.6) * T, 2, 2); }
+      ctx.fillStyle = pw.base || '#0004'; ctx.fillRect(r.x * T, (r.y + 2) * T - 2, r.w * T, 2);
+    } else for (let i = 0; i < r.w; i++) {
       SP.draw(ctx, RS.wall_top, (r.x + i) * T, r.y * T);
       SP.draw(ctx, RS.wall, (r.x + i) * T, (r.y + 1) * T);
     }
@@ -477,8 +512,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
 
   function drawLoungeS(r, now, sorted) {
-    const fl = RS.floor || ['floor_1'];
-    for (let i = 1; i < r.w - 1; i++) for (let j = 2; j < r.h - 1; j++) SP.draw(ctx, fl[tileHash(i + 7, j) % fl.length], (r.x + i) * T, (r.y + j) * T);
+    drawFloor(r.x + 1, r.y + 2, r.w - 2, r.h - 3, FLOOR, 7);
     ctx.fillStyle = P.lounge + '88'; ctx.fillRect((r.x + 1) * T, (r.y + 2) * T, (r.w - 2) * T, (r.h - 3) * T);
     drawWalls(r);
     const z = L.zones.lounge_seats;
@@ -489,8 +523,17 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
 
   // 엔진이 그리는 빛 — 수정구 · 스테인드글라스 · 촛불(에셋에 없는 것)
-  function drawFx(kind, x, y, now) {
+  function drawFx(kind, x, y, now, d = {}) {
     const t = now / 1000;
+    if (kind === 'glasswall') {
+      // 유리벽 — 옅은 하늘색 면 + 밝은 테두리, 위쪽 반사광(사람이 비쳐 보인다)
+      const w = (d.w || 1) * T, h = (d.h || 1) * T, c = P.glassWall || '#bfe8ff';
+      ctx.globalAlpha = 0.10; ctx.fillStyle = c; ctx.fillRect(x * T, y * T, w, h);
+      ctx.globalAlpha = 0.7; ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.strokeRect(x * T + 0.5, y * T + 0.5, w - 1, h - 1);
+      ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.moveTo(x * T + 4, y * T + h - 4); ctx.lineTo(x * T + 14, y * T + h - 14); ctx.stroke();
+      ctx.globalAlpha = 1;
+      return;
+    }
     if (kind === 'orb') {
       const p = 0.6 + 0.4 * Math.sin(t * 2.2);
       glow(x * T, y * T, 10 + p * 4, P.orb, 0.35 * p);
@@ -550,10 +593,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function drawActorS(a, now) {
     if (a.kind === 'mini') {                                  // 부모의 축소판 — 늘 걷는 그림(돌아다닌다)
       const dir = a.dir || 'down';
-      const c = SP.charFrame(a.char, 'walk', dir, Math.floor(a.phase * 0.8) % 4, null, roleColor(a.role));
+      const c = SP.charFrame(a.char, 'walk', dir, Math.floor(a.phase * 0.8) % 4, null, ROLE_MODE === 'robe' ? roleColor(a.role) : null);
       if (!c) return;
-      const sz = Math.round(16 * MINI);
-      ctx.drawImage(c, Math.round(a.x * T - sz / 2), Math.round(a.y * T - sz), sz, sz);
+      const w = Math.round(c.width * MINI), h = Math.round(c.height * MINI);
+      const bob = c.static ? Math.round(Math.abs(Math.sin(a.phase * 1.3)) * 1.5) : 0;
+      ctx.drawImage(c, Math.round(a.x * T - w / 2), Math.round(a.y * T - h) - bob, w, h);
       return;
     }
     const act = a.act || {};
@@ -562,13 +606,27 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const mode = act.fx === 'stone' || act.fx === 'frozen' ? 'stone' : act.fx === 'ghost' ? 'ghost' : null;
     const walking = a.moving || anim === 'work';
     const f = walking && !mode ? Math.floor(a.phase * 0.8) % 4 : 0;
-    const c = SP.charFrame(a.char, walking ? 'walk' : 'idle', dir, f, mode, mode ? null : roleColor(a.role));
+    const c = SP.charFrame(a.char, walking ? 'walk' : 'idle', dir, f, mode, mode || ROLE_MODE !== 'robe' ? null : roleColor(a.role));
     if (!c) return;
-    let px = Math.round(a.x * T - 8), py = Math.round(a.y * T - 16);
+    let px = Math.round(a.x * T - c.width / 2), py = Math.round(a.y * T - c.height);
+    a.drawH = c.height;
+    if (c.static && walking && !mode) py -= Math.round(Math.abs(Math.sin(a.phase * 1.3)) * 2);   // 정면 한 장 — 출렁여서 걷는 흉내
     if (anim === 'sleep') py += 4;                                               // 엎드려 잔다 — 머리를 탁자 위로
     if (mode === 'ghost') py += Math.round(Math.sin(a.phase * 0.6) * 1.5) - 2;  // 유령은 떠 있다
     ctx.globalAlpha = act.alpha != null ? act.alpha : 1;
     ctx.drawImage(c, px, py);
+    // 역할 표시 — 오피스는 사원증 끈, 현장은 안전모 색(마법학교는 위에서 로브 색을 바꿨다)
+    const rc = !mode && roleColor(a.role);
+    if (rc && ROLE_MODE === 'lanyard') {
+      const cx = Math.round(a.x * T), ny = py + Math.round(c.height * 0.42);
+      ctx.fillStyle = rc;
+      for (let k = 0; k < 4; k++) { ctx.fillRect(cx - 3 + Math.floor(k / 1.4), ny + k, 1, 1); ctx.fillRect(cx + 2 - Math.floor(k / 1.4), ny + k, 1, 1); }
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(cx - 1, ny + 4, 3, 3); ctx.fillStyle = rc; ctx.fillRect(cx - 1, ny + 4, 3, 1);
+    } else if (rc && ROLE_MODE === 'helmet') {
+      const hw = Math.round(c.width * 0.62), hx = Math.round(a.x * T - hw / 2), hy = py - 1;
+      ctx.fillStyle = rc; ctx.fillRect(hx, hy, hw, 3); ctx.fillRect(hx - 1, hy + 3, hw + 2, 1);
+      ctx.fillStyle = '#ffffff55'; ctx.fillRect(hx + 1, hy, 2, 1);
+    }
     // 손에 든 것
     const prop = !a.moving && !mode && (theme.sprites.props || {})[anim];
     if (prop) {
@@ -584,7 +642,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 사람 위에 뜨는 것 — 말풍선(이모트) · 연기 · 자는 Zz · 일꾼 수 · 선택 표시(가구에 가리지 않게 마지막에)
   function drawOverlay(a, now) {
     const act = a.act || {};
-    const x = a.x * T, top = a.y * T - 16;
+    const x = a.x * T, top = a.y * T - (a.drawH || 16);
     if (act.fx === 'smoke') drawSmokeS(a.x, a.y - 0.6, now);
     if (act.bubble) {
       const e = 'e_' + act.bubble;
@@ -753,14 +811,25 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         if (i) { ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo((s.x - s.w * 0.15) * T, (top + 2.3) * T); ctx.lineTo((s.x + s.w * 0.15) * T, (top + 2.3) * T); ctx.stroke(); ctx.setLineDash([]); }
         drawSiteCandle(cx, top + 3.3, state, now, i);
       } else if (style === 'monitors') {
-        const c = { fail: P.bad, alert: P.warn, busy: P.act, idle: P.ok, empty: '#2a3140' }[state];
-        rect(s.x + 0.4, top + 0.5, s.w - 0.8, bh - 1.4, '#0c0f15');
-        ctx.globalAlpha = state === 'alert' || state === 'fail' ? 0.55 + 0.45 * Math.sin(now / 250) : 0.85;
-        rect(s.x + 0.6, top + 0.7, s.w - 1.2, bh - 1.8, c);
-        ctx.globalAlpha = 1;
-        // 화면 안 막대 — 작업중 수 · 승인 · 토큰 속도
+        // 모니터 하나 — 어두운 화면, 위 띠가 상태 색(이상이면 깜빡), 안에 작업중 칸 · 토큰 막대 · 아이콘
+        const c = { fail: P.bad, alert: P.warn, busy: P.act, idle: P.ok, empty: '#3a4356' }[state];
         const st = s.r.stats || {};
-        rect(s.x + 0.9, top + bh - 1.6, Math.min(s.w - 1.8, 0.5 * (st.ACTIVE || 0)), 0.3, '#ffffffcc');
+        rect(s.x + 0.4, top + 0.5, s.w - 0.8, bh - 1.4, '#0c0f15');
+        rect(s.x + 0.6, top + 0.7, s.w - 1.2, bh - 1.8, state === 'empty' ? '#121722' : '#0f1a2a');
+        ctx.globalAlpha = state === 'alert' || state === 'fail' ? 0.55 + 0.45 * Math.sin(now / 250) : 1;
+        rect(s.x + 0.6, top + 0.7, s.w - 1.2, 0.35, c);
+        if (state === 'alert' || state === 'fail') { ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.strokeRect((s.x + 0.6) * T, (top + 0.7) * T, (s.w - 1.2) * T, (bh - 1.8) * T); }
+        ctx.globalAlpha = 1;
+        if (state !== 'empty') {
+          for (let k = 0; k < Math.min(8, (st.ACTIVE || 0) + (st.IDLE || 0)); k++)   // 사람 칸 — 작업중은 밝게, 쉼은 어둡게
+            rect(s.x + 0.9 + k * 0.55, top + 1.5, 0.4, 0.4, k < (st.ACTIVE || 0) ? P.act : '#3a4a66');
+          const tok = Math.min(1, Math.log10(1 + (st.tout || 0)) / 6);
+          rect(s.x + 0.9, top + 2.3, (s.w - 1.8) * tok, 0.25, '#5dd39e');                // 오늘 출력 토큰(로그 눈금)
+          ctx.fillStyle = '#5dd39e55';
+          for (let k = 0; k < 10; k++) { const v = (tileHash(k, i) % 100) / 100; ctx.fillRect((s.x + 0.9 + k * (s.w - 1.8) / 10) * T, (top + bh - 1.2 - v * 1.2) * T, 2, v * 1.2 * T); }
+          if (state === 'alert') { ctx.fillStyle = P.warn; ctx.font = 'bold 12px ui-monospace, monospace'; ctx.textAlign = 'right'; ctx.fillText('!', (s.x + s.w - 0.9) * T, (top + 1.9) * T); }
+          if (state === 'fail') { ctx.fillStyle = P.bad; ctx.font = 'bold 12px ui-monospace, monospace'; ctx.textAlign = 'right'; ctx.fillText('✕', (s.x + s.w - 0.9) * T, (top + 1.9) * T); }
+        }
       } else {
         // 화이트보드 + 자석(현장마다) — 이상이면 빨간 자석
         const c = { fail: '#e03b2f', alert: '#e03b2f', busy: '#2f7de0', idle: '#2fae5a', empty: '#9aa0a8' }[state];
@@ -802,8 +871,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
 
   function drawHQS(now, sorted) {
     const q = world.hq;
-    const fl = (HQ.floor && [HQ.floor]) || RS.floor || ['floor_1'];
-    for (let i = 1; i < q.w - 1; i++) for (let j = 2; j < q.h - 1; j++) SP.draw(ctx, fl[tileHash(i, j) % fl.length], (q.x + i) * T, (q.y + j) * T);
+    drawFloor(q.x + 1, q.y + 2, q.w - 2, q.h - 3, (HQ.floor && ((RS.proc && RS.proc[HQ.floor]) || HQ.floor)) || FLOOR, 5);
     drawWalls(q);
     for (const d of HQ.decor || []) if (d.s || d.fx) placeDecor(d, q.x, q.y, now, sorted);
     drawBoard(now);

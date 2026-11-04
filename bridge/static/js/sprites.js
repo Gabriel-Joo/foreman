@@ -26,6 +26,11 @@ export async function loadSprites(theme, baseUrl) {
   const ch = S.chars || {};
   const names = new Set([...(ch.pool || []), ch.foreman, ...Object.values(ch.infra || {})].filter(Boolean));
   const chars = {};
+  if (ch.kind === 'static') {
+    // 정면 한 장뿐인 캐릭터(2dPig) — defs의 사각형. 걷기는 렌더러가 출렁 + 좌우 뒤집기로 흉내
+    for (const n of names) chars[n] = { static: ch.list[n] || S.defs[n] };
+    return new Sprites(S, sheets, chars);
+  }
   await Promise.all([...names].map(async (n) => {
     const dir = new URL(ch.dir + n + '/', baseUrl);
     chars[n] = { walk: await loadImage(new URL('Walk.png', dir)), idle: await loadImage(new URL('Idle.png', dir)) };
@@ -79,6 +84,18 @@ class Sprites {
     const set = this.chars[name] || this.chars[Object.keys(this.chars)[0]];
     if (!set) return null;
     const col = DIRS[dir] ?? 0;
+    if (set.static) {
+      const [sh, x, y, w, h] = set.static;
+      c = canvas(w, h);
+      const g = c.getContext('2d');
+      if (dir === 'left') { g.translate(w, 0); g.scale(-1, 1); }
+      g.drawImage(this.sheets[sh], x, y, w, h, 0, 0, w, h);
+      c.static = true;
+      if (mode) tint(c, mode);
+      else if (robe) recolor(c, robe);
+      this.cache.set(key, c);
+      return c;
+    }
     c = canvas(16, 16);
     const g = c.getContext('2d');
     if (kind === 'walk') g.drawImage(set.walk, col * 16, (f % 4) * 16, 16, 16, 0, 0, 16, 16);

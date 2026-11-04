@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { matchTool, resolveAction, infraAction, groupSubagents, tokenRate } from '../../bridge/static/js/theme.js';
 
-const theme = JSON.parse(readFileSync(new URL('../../bridge/static/themes/office/theme.json', import.meta.url)));
+const theme = JSON.parse(readFileSync(new URL('../../bridge/static/themes/plain/theme.json', import.meta.url)));
 
 test('도구 패턴', () => {
   assert.ok(matchTool('Read|Grep', 'Grep'));
@@ -66,16 +66,35 @@ test('마법학교: 도구 → 구역 9개', () => {
   assert.equal(resolveAction(magic, { state: 'ACTIVE', tool: 'Bash', target: 'pytest', flags: { approval_pending: true } }).anim, 'raise_wand');
 });
 
-test('마법학교: 모든 go에 구역이 있고, 장식 · 소품 · 캐릭터가 정의된 스프라이트를 쓴다', () => {
-  const z = magic.layout.zones, defs = magic.sprites.defs;
-  for (const r of magic.tools) assert.ok(r.go === 'desk' || z[r.go], r.go);
-  for (const st of Object.values(magic.states)) assert.ok(st.go === 'desk' || z[st.go], st.go);
-  for (const d of magic.sprites.decor) if (d.s) assert.ok(defs[d.s], d.s);
-  for (const list of Object.values(magic.sprites.infra_decor)) if (Array.isArray(list)) for (const d of list) assert.ok(defs[d.s], d.s);
-  for (const p of Object.values(magic.sprites.props)) if (p.s) assert.ok(defs[p.s], p.s);
-  for (const def of Object.values(defs)) assert.ok(magic.sprites.sheets[def[0]], def[0]);
-  for (const s of magic.sprites.room.floor) assert.ok(defs[s], s);
-});
+const sheetThemes = ['magic', 'office', 'site'].map((n) => {
+  try { return JSON.parse(readFileSync(new URL(`../../bridge/static/themes/${n}/theme.json`, import.meta.url))); } catch { return null; }
+}).filter(Boolean);
+
+for (const th of sheetThemes) {
+  test(`${th.name}: 모든 go에 구역이 있고, 장식 · 소품 · 캐릭터 · 감독실이 정의된 스프라이트를 쓴다`, () => {
+    const z = th.layout.zones, defs = th.sprites.defs, ch = th.sprites.chars;
+    for (const r of th.tools) assert.ok(r.go === 'desk' || z[r.go], r.go);
+    for (const st of Object.values(th.states)) assert.ok(st.go === 'desk' || z[st.go], st.go);
+    const all = [...th.sprites.decor, ...((th.hq && th.hq.decor) || []), ...Object.values(th.sprites.infra_decor).filter(Array.isArray).flat()];
+    for (const d of all) if (d.s) assert.ok(defs[d.s], d.s);
+    for (const p of Object.values(th.sprites.props)) if (p.s) assert.ok(defs[p.s], p.s);
+    for (const def of Object.values(defs)) assert.ok(th.sprites.sheets[def[0]], def[0]);
+    const fl = th.sprites.room.floor;
+    if (fl) for (const s of fl) assert.ok(defs[s], s); else assert.ok(th.sprites.room.proc.floor, 'proc floor');
+    if (ch.kind === 'static') for (const n of [...ch.pool, ch.foreman, ...Object.values(ch.infra)]) assert.ok(ch.list[n] || defs[n], n);
+    for (const s of Object.values(z)) if (s && s.seats) for (const p of s.seats) assert.ok(p[0] > 0 && p[0] < th.layout.room.w && p[1] > 1 && p[1] < th.layout.room.h, JSON.stringify(p));
+    assert.ok(th.hq && th.hq.board, 'hq.board');
+  });
+
+  test(`${th.name}: 도구 → 구역(테스트 · git은 명령으로)`, () => {
+    const go = (tool, target) => resolveAction(th, { state: 'ACTIVE', tool, target }).go;
+    assert.notEqual(go('Bash', 'pytest -q'), go('Bash', 'ls'));
+    assert.notEqual(go('Bash', 'git status'), go('Bash', 'ls'));
+    assert.notEqual(go('Read'), go('Edit'));
+    assert.ok(z0(th, go('Agent')), 'Agent 구역');
+  });
+}
+function z0(th, name) { return th.layout.zones[name]; }
 
 test('잘못된 target 정규식은 안 맞는 것으로', () => {
   const t = { states: { ACTIVE: { go: 'desk' } }, tools: [{ match: 'Bash', target: '(', go: 'x' }, { match: '*', go: 'y' }] };
