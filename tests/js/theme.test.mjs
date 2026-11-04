@@ -43,3 +43,41 @@ test('인프라 · 서브에이전트 묶기 · 토큰 속도', () => {
   const h = [{ t: 0, v: 100 }, { t: 60e3, v: 150 }, { t: 120e3, v: 20 }, { t: 180e3, v: 70 }];       // 자정에 줄었다
   assert.equal(tokenRate(h, 180e3, 600e3), 100);
 });
+
+// ── 10d 마법학교 — 같은 렌더러, 다른 theme.json. 규칙이 Bash 명령(target)까지 본다 ──
+const magic = JSON.parse(readFileSync(new URL('../../bridge/static/themes/magic/theme.json', import.meta.url)));
+
+test('마법학교: 도구 → 구역 9개', () => {
+  const go = (tool, target) => resolveAction(magic, { state: 'ACTIVE', tool, target }).go;
+  assert.equal(go('Read'), 'library');
+  assert.equal(go('Edit'), 'desk');
+  assert.equal(go('Bash', '.venv/bin/pytest -q tests/'), 'test');
+  assert.equal(go('Bash', 'cd x && node --test tests/js/'), 'test');
+  assert.equal(go('Bash', 'git status --short'), 'seal');
+  assert.equal(go('Bash', 'cd ~/r && git push -q'), 'seal');
+  assert.equal(go('Bash', 'echo "git is fine"'), 'potion');      // 명령 자리의 git만
+  assert.equal(go('Bash', 'ls -la'), 'potion');
+  assert.equal(go('Bash'), 'potion');                            // 대상을 모르면 일반
+  assert.equal(go('WebFetch'), 'window');
+  assert.equal(go('Agent'), 'circle');
+  assert.equal(resolveAction(magic, { state: 'IDLE' }).go, 'hall');
+  assert.equal(resolveAction(magic, { state: 'SUSPENDED' }).fx, 'stone');
+  assert.equal(resolveAction(magic, { state: 'DORMANT' }).fx, 'ghost');
+  assert.equal(resolveAction(magic, { state: 'ACTIVE', tool: 'Bash', target: 'pytest', flags: { approval_pending: true } }).anim, 'raise_wand');
+});
+
+test('마법학교: 모든 go에 구역이 있고, 장식 · 소품 · 캐릭터가 정의된 스프라이트를 쓴다', () => {
+  const z = magic.layout.zones, defs = magic.sprites.defs;
+  for (const r of magic.tools) assert.ok(r.go === 'desk' || z[r.go], r.go);
+  for (const st of Object.values(magic.states)) assert.ok(st.go === 'desk' || z[st.go], st.go);
+  for (const d of magic.sprites.decor) if (d.s) assert.ok(defs[d.s], d.s);
+  for (const list of Object.values(magic.sprites.infra_decor)) if (Array.isArray(list)) for (const d of list) assert.ok(defs[d.s], d.s);
+  for (const p of Object.values(magic.sprites.props)) if (p.s) assert.ok(defs[p.s], p.s);
+  for (const def of Object.values(defs)) assert.ok(magic.sprites.sheets[def[0]], def[0]);
+  for (const s of magic.sprites.room.floor) assert.ok(defs[s], s);
+});
+
+test('잘못된 target 정규식은 안 맞는 것으로', () => {
+  const t = { states: { ACTIVE: { go: 'desk' } }, tools: [{ match: 'Bash', target: '(', go: 'x' }, { match: '*', go: 'y' }] };
+  assert.equal(resolveAction(t, { state: 'ACTIVE', tool: 'Bash', target: 'ls' }).go, 'y');
+});

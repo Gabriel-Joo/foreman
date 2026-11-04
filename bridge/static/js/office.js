@@ -3,6 +3,7 @@
 // 좌표: 월드는 타일 단위로 정하고 px = 타일 × layout.tile. 카메라가 월드 → 화면.
 
 import { resolveAction, infraAction, groupSubagents, tokenRate } from './theme.js';
+import { loadSprites } from './sprites.js';
 
 const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'], ['foreman', '포먼']];
 const RATE_WIN = 10 * 60 * 1000;          // 토큰 속도 창 — 최근 10분
@@ -11,12 +12,16 @@ const SPEED = 3.2;                         // 걷는 속도(타일/초)
 export async function createOffice(root, store, themeUrl = '/static/themes/office/theme.json') {
   const theme = await (await fetch(themeUrl, { cache: 'no-cache' })).json();
   const L = theme.layout, T = L.tile, P = theme.palette;
+  // 10d: 시트 테마면 원본 PNG를 받아 둔다(자르기 · 외곽선 · 색조는 sprites.js). 도형 테마(office)는 그대로
+  const SP = theme.sprites.kind === 'sheets' ? await loadSprites(theme, new URL(themeUrl, location.href)) : null;
+  const CH = (SP && theme.sprites.chars) || {};
 
   root.innerHTML = `
     <header class="otop">
       <span class="brand">FOREMAN</span><span class="muted small">픽셀 오피스 · ${esc(theme.label)}</span>
       <button id="oMap" class="ghost" title="지도로(Esc)">지도</button>
       <span id="oAlerts" class="oalerts"></span>
+      <span class="small muted">테마 ${[['office', '오피스'], ['magic', '마법학교']].map(([k, v]) => k === theme.name ? `<b>${v}</b>` : `<a href="/office?theme=${k}">${v}</a>`).join(' · ')}</span>
       <a class="small" href="/">클래식 화면</a>
       <span id="oConn" class="conn"></span>
       <button id="oTok" class="ghost" title="API 토큰">토큰</button>
@@ -54,22 +59,33 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     return { rooms: out, lounge, w: lx + L.lounge.w, h: L.room.h };
   }
 
+  // 구역 자리 — theme.json의 seats([x, y, 방향?] 목록) · stand(한 점). 자리보다 사람이 많으면 옆으로 조금씩 비켜 선다
+  function zoneSeat(room, name, k) {
+    const z = L.zones[name];
+    if (!z) return null;
+    if (z.seats && z.seats.length) {
+      const s = z.seats[k % z.seats.length], extra = Math.floor(k / z.seats.length);
+      return [room.x + s[0] + extra * 0.45, room.y + s[1] + extra * 0.2, s[2] || z.face];
+    }
+    if (z.stand) return [room.x + z.stand[0], room.y + z.stand[1], z.face];
+    return null;
+  }
   function seat(room, k) {
     if (room.lounge) {
       const z = L.zones.lounge_seats;
-      return [room.x + z.x + (k % z.cols) * z.dx, room.y + z.y + Math.floor(k / z.cols) * z.dy + 1];
+      return [room.x + z.x + (k % z.cols) * z.dx, room.y + z.y + Math.floor(k / z.cols) * z.dy + 1, 'down'];
     }
     const z = L.zones.desks;
+    if (z.seats) return zoneSeat(room, 'desks', k);
     return [room.x + z.x + (k % z.cols) * z.dx + 1, room.y + z.y + Math.floor(k / z.cols) * z.dy + 2];
   }
   function seatCount(room) {
     const z = room.lounge ? L.zones.lounge_seats : L.zones.desks;
-    return z.cols * z.rows;
+    return z.seats ? z.seats.length : z.cols * z.rows;
   }
-  function spot(room, go, deskXY) {
-    const z = L.zones;
-    if (room.lounge || go === 'desk' || !z[go] || !z[go].stand) return deskXY;
-    return [room.x + z[go].stand[0], room.y + z[go].stand[1]];
+  function spot(room, go, deskXY, k) {
+    if (room.lounge || go === 'desk') return deskXY;
+    return zoneSeat(room, go, k) || deskXY;
   }
 
   function rebuild(st) {
@@ -91,12 +107,15 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         room.stats.tin += (s.tokens && s.tokens.today_input) || 0;
         room.stats.tout += (s.tokens && s.tokens.today_output) || 0;
         if (k >= cap) return;
-        const act = resolveAction(theme, { state: s.state, tool: s.activity && s.activity.tool,
-                                           flags: { approval_pending: pending.has(s.id), stuck_turn: !!s.stuck_turn } });
+        let act = resolveAction(theme, { state: s.state, tool: s.activity && s.activity.tool, target: s.activity && s.activity.target,
+                                         flags: { approval_pending: pending.has(s.id), stuck_turn: !!s.stuck_turn } });
+        // 쉬는 모습은 사람마다 다르게(마법학교: 엎드려 자기 · 먹기 · 책) — 플래그가 덮은 동작은 그대로
+        if (act.variants && !act.flag) act = { ...act, anim: act.variants[s.id % act.variants.length] };
         const desk = seat(room, k);
-        const [tx, ty] = spot(room, act.go, desk);
+        const [tx, ty, face] = spot(room, act.go, desk, k);
         const key = 's:' + s.id;
-        upsert(key, { kind: 'session', room: room.name, tx, ty, act, desk, s, hue: hueOf(s.id),
+        upsert(key, { kind: 'session', room: room.name, tx, ty, face, act, desk, s, hue: hueOf(s.id),
+                      char: CH.pool ? CH.pool[s.id % CH.pool.length] : null,
                       name: s.title || s.cc_name || ('세션 ' + s.id) });
         seen.add(key);
       });
@@ -104,8 +123,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         // 포먼 캐릭터 — 자기 세션이 아직 없다(README 2.4 임시 상태). 구석 사무실에 서 있다
         const f = L.zones.foreman_office;
         const key = 'f:' + room.name;
-        upsert(key, { kind: 'foreman', room: room.name, tx: room.x + f.seat[0], ty: room.y + f.seat[1],
-                      act: { anim: 'stand' }, hue: 45, name: '포먼' });
+        upsert(key, { kind: 'foreman', room: room.name, tx: room.x + f.seat[0], ty: room.y + f.seat[1], face: 'down',
+                      act: { anim: 'stand' }, hue: 45, name: '포먼', char: CH.foreman || null });
         seen.add(key);
         // 인프라 — 자리(가구)는 늘 있고, 캐릭터는 첫 웹훅으로 등장한 것만(README 2.2 · 8단계)
         const pp = st.pipeline.get(room.name);
@@ -120,7 +139,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
           if (!present.has(kind) && !(kind === 'harbor' && present.has('jenkins'))) continue;
           const z = L.zones.infra;
           const key = `i:${room.name}:${kind}`;
-          upsert(key, { kind: 'infra', infra: kind, room: room.name, tx: room.x + z[kind].x + 3, ty: room.y + z.y + 2,
+          upsert(key, { kind: 'infra', infra: kind, room: room.name, tx: room.x + z[kind].x + 3, ty: room.y + z.y + 2, face: 'down',
+                        char: (CH.infra && CH.infra[kind]) || null,
                         act: infraAction(theme, status), hue: { jenkins: 0, harbor: 200, argocd: 25 }[kind],
                         name: { jenkins: 'Jenkins', harbor: 'Harbor', argocd: 'ArgoCD' }[kind] });
           seen.add(key);
@@ -182,7 +202,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // ── 그리기 ──────────────────────────────────────────
   function frame(now) {
     if (!running) return;
-    const dt = Math.min(0.1, (now - last) / 1000);
+    // rAF 시각은 그 프레임의 시작이라 앞서 잰 performance.now()보다 이를 수 있다 — 음수 dt면 제자리(d = 0)에서 0/0 = NaN이 됐다
+    const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
     last = now;
     const k = Math.min(1, dt * 6);
     cam.x += (camT.x - cam.x) * k; cam.y += (camT.y - cam.y) * k; cam.s += (camT.s - cam.s) * k;
@@ -190,6 +211,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const dx = a.tx - a.x, dy = a.ty - a.y, d = Math.hypot(dx, dy);
       const step = SPEED * dt;
       a.moving = d > 0.05;
+      if (a.moving) a.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
       if (d <= step) { a.x = a.tx; a.y = a.ty; } else { a.x += dx / d * step; a.y += dy / d * step; }
       a.phase += dt * (a.moving ? 10 : 4);
     }
@@ -198,10 +220,21 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.fillRect(0, 0, W, H);
     ctx.setTransform(cam.s * dpr, 0, 0, cam.s * dpr, (W / 2 - cam.x * cam.s) * dpr, (H / 2 - cam.y * cam.s) * dpr);
     ctx.imageSmoothingEnabled = false;
-    for (const r of world.rooms) drawRoom(r, now);
-    if (world.lounge) drawLounge(world.lounge);
     const list = [...actors.values()].sort((a, b) => a.y - b.y);
-    for (const a of list) drawActor(a, now);
+    if (SP) {
+      // 시트 테마 — 바닥 · 벽은 먼저, 가구와 사람은 발밑(아래 끝) 순서로 함께 그린다: 탁자 뒤에 앉은 사람은 다리가 가려진다(앉기 흉내)
+      const sorted = [];
+      for (const r of world.rooms) drawRoomS(r, now, sorted);
+      if (world.lounge) drawLoungeS(world.lounge, now, sorted);
+      for (const a of list) sorted.push({ y: a.y, draw: () => drawActorS(a, now) });
+      sorted.sort((p, q) => p.y - q.y);
+      for (const it of sorted) it.draw();
+      for (const a of list) drawOverlay(a, now);
+    } else {
+      for (const r of world.rooms) drawRoom(r, now);
+      if (world.lounge) drawLounge(world.lounge);
+      for (const a of list) drawActor(a, now);
+    }
     // 글자는 화면 좌표로(선명하게)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const zoomedIn = view !== 'map';
@@ -289,6 +322,164 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (act.bubble) drawBubble(x, y - 6, act.bubble, act.flag === 'approval_pending' ? P.warn : '#e8e8f0');
     if (a.kind === 'session' && a.s && a.s.subagents_running) drawBubble(x + 10, y + 2, `+${a.s.subagents_running}`, P.act, 7);   // 10c에 축소판 일꾼으로
     if (a.key === selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - 9, y - 3, 18, h + 6); }
+  }
+
+  // ── 시트 테마 그리기(10d) ────────────────────────────
+  const RS = (SP && theme.sprites.room) || {};
+  function tileHash(i, j) { return ((i * 73856093) ^ (j * 19349663)) >>> 0; }
+
+  function spriteBottom(name, y) { const [, h] = SP.size(name); return y + h / T; }
+
+  // 장식 하나 — z: wall · floor는 바로, top(탁자 위)은 탁자 바로 뒤, 그 밖은 발밑 순서로
+  function placeDecor(d, ox, oy, now, sorted) {
+    const n = d.n || 1;
+    for (let i = 0; i < n; i++) {
+      const x = ox + d.x + i * (d.dx || 1), y = oy + d.y;
+      if (d.fx) { sorted.push({ y: y + 0.1, draw: () => drawFx(d.fx, x, y, now) }); continue; }
+      const scale = d.scale || 1;
+      const draw = () => {
+        if (d.alpha != null) ctx.globalAlpha = d.alpha * (d.pulse ? 0.65 + 0.35 * Math.sin(now / 700) : 1);
+        SP.draw(ctx, d.s, x * T, y * T, now, scale, d.frame != null ? d.frame : null);
+        ctx.globalAlpha = 1;
+      };
+      if (d.z === 'wall' || d.z === 'floor') draw();
+      else if (d.z === 'top') sorted.push({ y: y + 3, draw });               // 탁자 · 선반 위 — 받침보다 뒤에
+      else sorted.push({ y: spriteBottom(d.s, y) * 1 - 0.01, draw });
+    }
+  }
+
+  function drawRoomS(r, now, sorted) {
+    const z = L.zones, fl = RS.floor || ['floor_1'];
+    for (let i = 1; i < r.w - 1; i++) for (let j = 2; j < r.h - 1; j++) SP.draw(ctx, fl[tileHash(i, j) % fl.length], (r.x + i) * T, (r.y + j) * T);
+    for (const zz of Object.values(z)) {
+      if (!zz || !zz.floor) continue;
+      for (let i = 0; i < zz.w; i++) for (let j = 0; j < zz.h; j++) SP.draw(ctx, zz.floor, (r.x + zz.x + i) * T, (r.y + zz.y + j) * T);
+    }
+    // 출하 라인 바닥은 조금 어둡게
+    const iz = z.infra;
+    ctx.fillStyle = P.infraFloor; ctx.fillRect((r.x + 1) * T, (r.y + iz.y) * T, (r.w - 2) * T, iz.h * T);
+    drawWalls(r);
+    const b = RS.banners;
+    if (b) for (let i = b.from, k = 0; i < r.w - 1; i += b.every, k++) SP.draw(ctx, b.s[(k + r.x) % b.s.length], (r.x + i) * T, (r.y + 1) * T);
+    for (const d of theme.sprites.decor || []) if (d.s || d.fx) placeDecor(d, r.x, r.y, now, sorted);
+    // 출하 라인 — 구역마다 가구 + 상태 테두리(실패 연기 · Sync 대기 표지)
+    for (const kind of ['jenkins', 'harbor', 'argocd']) {
+      const ox = r.x + iz[kind].x, oy = r.y + iz.y;
+      for (const d of (theme.sprites.infra_decor || {})[kind] || []) placeDecor(d, ox, oy, now, sorted);
+      const st = r['st_' + kind] || 'none';
+      const c = { running: P.act, success: P.ok, failed: P.bad, waiting: P.warn, none: P.muted }[st] || P.muted;
+      ctx.strokeStyle = c; ctx.globalAlpha = st === 'none' ? 0.35 : 0.9; ctx.lineWidth = 1;
+      ctx.strokeRect(ox * T + 0.5, (oy + 0.2) * T + 0.5, 4.5 * T, 2.6 * T);
+      ctx.globalAlpha = 1;
+      if (st === 'waiting') sorted.push({ y: oy + 3, draw: () => drawSign(ox + 2.2, oy + 0.2, '⏸') });
+      if (st === 'failed') sorted.push({ y: oy + 3, draw: () => drawSmokeS(ox + 2, oy + 1.2, now) });
+    }
+  }
+
+  // 벽 — 위 두 줄은 시트(머리 · 면), 옆 · 아래 테두리는 어두운 두께(위에서 내려다본 벽 윗면)
+  function drawWalls(r) {
+    for (let i = 0; i < r.w; i++) {
+      SP.draw(ctx, RS.wall_top, (r.x + i) * T, r.y * T);
+      SP.draw(ctx, RS.wall, (r.x + i) * T, (r.y + 1) * T);
+    }
+    ctx.fillStyle = P.wallCap || '#1c1820';
+    ctx.fillRect(r.x * T, (r.y + 1) * T, T * 0.6, (r.h - 1) * T);
+    ctx.fillRect((r.x + r.w - 0.6) * T, (r.y + 1) * T, T * 0.6, (r.h - 1) * T);
+    ctx.fillRect(r.x * T, (r.y + r.h - 0.6) * T, r.w * T, T * 0.6);
+    ctx.fillStyle = P.wallEdge || '#4a4150';
+    ctx.fillRect((r.x + 0.6) * T, (r.y + 2) * T, 1, (r.h - 2.6) * T);
+    ctx.fillRect((r.x + r.w - 0.6) * T - 1, (r.y + 2) * T, 1, (r.h - 2.6) * T);
+    ctx.fillRect((r.x + 0.6) * T, (r.y + r.h - 0.6) * T - 1, (r.w - 1.2) * T, 1);
+  }
+
+  function drawLoungeS(r, now, sorted) {
+    const fl = RS.floor || ['floor_1'];
+    for (let i = 1; i < r.w - 1; i++) for (let j = 2; j < r.h - 1; j++) SP.draw(ctx, fl[tileHash(i + 7, j) % fl.length], (r.x + i) * T, (r.y + j) * T);
+    ctx.fillStyle = P.lounge + '88'; ctx.fillRect((r.x + 1) * T, (r.y + 2) * T, (r.w - 2) * T, (r.h - 3) * T);
+    drawWalls(r);
+    const z = L.zones.lounge_seats;
+    for (let k = 0; k < z.cols * z.rows; k++) {
+      const sx = r.x + z.x + (k % z.cols) * z.dx, sy = r.y + z.y + Math.floor(k / z.cols) * z.dy + 1;
+      sorted.push({ y: sy + 0.6, draw: () => SP.draw(ctx, 'stool', (sx - 0.5) * T, (sy - 0.4) * T) });
+    }
+  }
+
+  // 엔진이 그리는 빛 — 수정구 · 스테인드글라스 · 촛불(에셋에 없는 것)
+  function drawFx(kind, x, y, now) {
+    const t = now / 1000;
+    if (kind === 'orb') {
+      const p = 0.6 + 0.4 * Math.sin(t * 2.2);
+      glow(x * T, y * T, 10 + p * 4, P.orb, 0.35 * p);
+      ctx.fillStyle = '#d8f6ff'; ctx.beginPath(); ctx.arc(x * T, y * T, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = P.orb; ctx.beginPath(); ctx.arc(x * T - 1, y * T - 1, 1.2, 0, Math.PI * 2); ctx.fill();
+    } else if (kind === 'glass') {
+      const cols = [P.glass1, P.glass2, P.glass3];
+      for (let i = 0; i < 3; i++) {
+        ctx.globalAlpha = 0.16 + 0.06 * Math.sin(t + i);
+        ctx.fillStyle = cols[i]; ctx.fillRect((x - 0.6 + i * 0.4) * T, y * T, 0.4 * T, 1.4 * T);
+      }
+      ctx.globalAlpha = 1;
+    } else if (kind === 'candle') {
+      const f = Math.sin(t * 9 + x * 3) > 0 ? 1 : 0;
+      glow(x * T, (y - 0.15) * T, 9, P.candle, 0.28);
+      ctx.fillStyle = '#efe6cf'; ctx.fillRect(Math.round(x * T) - 1, Math.round(y * T) - 2, 2, 4);
+      ctx.fillStyle = P.candle; ctx.fillRect(Math.round(x * T) - 1, Math.round(y * T) - 4 - f, 2, 2);
+    }
+  }
+  function glow(px, py, rad, color, alpha) {
+    const g = ctx.createRadialGradient(px, py, 0, px, py, rad);
+    g.addColorStop(0, color); g.addColorStop(1, color + '00');
+    ctx.globalAlpha = alpha; ctx.fillStyle = g; ctx.fillRect(px - rad, py - rad, rad * 2, rad * 2); ctx.globalAlpha = 1;
+  }
+  function drawSmokeS(tx, ty, now) {
+    if (SP.has('fx_smoke')) SP.draw(ctx, 'fx_smoke', tx * T - 16, ty * T - 30, now);
+    else drawSmoke(tx, ty, now);
+  }
+
+  // 사람 — Ninja 시트. 걷기는 진짜 프레임, 앉기는 탁자가 가리고, 자기 · 들기 · 석화 · 유령은 엔진 흉내
+  function drawActorS(a, now) {
+    const act = a.act || {};
+    const anim = a.moving ? 'walk' : (act.anim || 'stand');
+    const dir = a.moving ? (a.dir || 'down') : (a.face || 'down');
+    const mode = act.fx === 'stone' || act.fx === 'frozen' ? 'stone' : act.fx === 'ghost' ? 'ghost' : null;
+    const walking = a.moving || anim === 'work';
+    const f = walking && !mode ? Math.floor(a.phase * 0.8) % 4 : 0;
+    const c = SP.charFrame(a.char, walking ? 'walk' : 'idle', dir, f, mode);
+    if (!c) return;
+    let px = Math.round(a.x * T - 8), py = Math.round(a.y * T - 16);
+    if (anim === 'sleep') py += 4;                                               // 엎드려 잔다 — 머리를 탁자 위로
+    if (mode === 'ghost') py += Math.round(Math.sin(a.phase * 0.6) * 1.5) - 2;  // 유령은 떠 있다
+    ctx.globalAlpha = act.alpha != null ? act.alpha : 1;
+    ctx.drawImage(c, px, py);
+    // 손에 든 것
+    const prop = !a.moving && !mode && (theme.sprites.props || {})[anim];
+    if (prop) {
+      const bob = prop.bob ? Math.round(Math.abs(Math.sin(a.phase * 1.5)) * prop.bob) : 0;
+      const sh = prop.shake ? Math.round(Math.sin(a.phase * 6) * prop.shake) : 0;
+      const [pw, ph] = SP.size(prop.s);
+      SP.draw(ctx, prop.s, a.x * T + prop.dx - pw / 2 + sh, a.y * T + prop.dy - ph / 2 - bob, now);
+      if (prop.fx) SP.draw(ctx, prop.fx, a.x * T + prop.dx - 15, a.y * T + prop.dy - 26, now);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // 사람 위에 뜨는 것 — 말풍선(이모트) · 연기 · 자는 Zz · 일꾼 수 · 선택 표시(가구에 가리지 않게 마지막에)
+  function drawOverlay(a, now) {
+    const act = a.act || {};
+    const x = a.x * T, top = a.y * T - 16;
+    if (act.fx === 'smoke') drawSmokeS(a.x, a.y - 0.6, now);
+    if (act.bubble) {
+      const e = 'e_' + act.bubble;
+      if (SP.has(e)) SP.draw(ctx, e, x - 7, top - 13 - Math.round(Math.abs(Math.sin(now / 300)) * 2), now);
+      else drawBubble(x, top - 4, act.bubble, P.warn);
+    }
+    if (!a.moving && act.anim === 'sleep' && !act.flag) {
+      const t = (now / 1400 + (a.phase % 1)) % 1;
+      ctx.globalAlpha = 1 - t; ctx.fillStyle = P.zz; ctx.font = 'bold 7px ui-monospace, monospace'; ctx.textAlign = 'left';
+      ctx.fillText('z', x + 5 + t * 4, top + 2 - t * 8); ctx.globalAlpha = 1;
+    }
+    if (a.kind === 'session' && a.s && a.s.subagents_running) drawBubble(x + 10, top + 4, `+${a.s.subagents_running}`, P.act, 7);   // 10c에 작은 로브로
+    if (a.key === selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - 9, top - 2, 18, 20); }
   }
 
   function drawBubble(x, y, text, color, size = 9) {
@@ -428,7 +619,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   resize();
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
-  return { go, theme, debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: +a.x.toFixed(1), y: +a.y.toFixed(1), tx: a.tx, ty: a.ty, anim: a.act && a.act.anim })) };
+  return { go, theme, debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
+                                                                       anim: a.act && a.act.anim, go: a.act && a.act.go, face: a.face, dir: a.dir, char: a.char })) };
 }
 
 function hueOf(id) { return (id * 47) % 360; }
