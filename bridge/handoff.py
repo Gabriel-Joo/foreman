@@ -890,7 +890,39 @@ class HandoffManager:
         out["schema_lock"] = lock.get("wt") == name
         out["preview"] = await self.previews.get(out["path"]) if self.previews else None
         out["preview_ok"] = bool(self.previews and row.project in self.previews.cmds)
+        if out.get("exists") and await self._role(row.id) == "scribe":
+            out["review"] = await self._scribe_review(row, repo, out)
         return out
+
+    async def _role(self, sid: int) -> str | None:
+        async with self.engine.connect() as c:
+            r = (await c.execute(text("SELECT role FROM character_session WHERE id = :s"), {"s": sid})).first()
+        return r[0] if r else None
+
+    async def _scribe_review(self, row: SessionRow, repo: str, st: dict[str, Any]) -> dict[str, Any] | None:
+        """서기 브랜치 검토(12b) — 근거 확인 · 고친 양. 실패해도 따로 작업 칸은 뜬다."""
+        from bridge import evidence as ev
+        try:
+            return await ev.review(self.engine, repo, st["path"], st["base"], st["branch"], row.id)
+        except Exception as e:  # noqa: BLE001
+            log.warning("서기 검토 실패: %s", type(e).__name__)
+            return {"error": f"검토하지 못했습니다({type(e).__name__})"}
+
+    async def _save_review(self, row: SessionRow, branch: str, rv: dict[str, Any]) -> None:
+        import json as _json
+        async with self.engine.begin() as c:
+            task = (await c.execute(text(
+                "SELECT detail FROM session_action WHERE session_id = :s AND action = 'scribe-task' ORDER BY id DESC LIMIT 1"),
+                {"s": row.id})).first()
+            r = rv.get("revision") or {}
+            await c.execute(text(
+                "INSERT INTO scribe_review (session_id, task, branch, marks, bad, unsupported, draft_lines, revision_lines, detail) "
+                "VALUES (:s, :t, :b, :m, :bad, :u, :d, :r, :x)"),
+                {"s": row.id, "t": ((task[0] or "").split() or [None])[0] if task else None, "b": branch,
+                 "m": rv.get("marks", 0), "bad": rv.get("bad", 0), "u": rv.get("unsupported", 0),
+                 "d": r.get("draft_lines", 0), "r": r.get("revision_lines", 0),
+                 "x": _json.dumps([{k: f[k] for k in ("path", "total", "bad", "unsupported")} for f in rv.get("files", [])],
+                                  ensure_ascii=False)})
 
     async def preview(self, row: SessionRow, on: bool) -> dict[str, Any]:
         """[미리보기 열기] · [닫기] — 끝난 세션이어도 worktree가 남아 있으면 연다(합치기 전에 보려고)."""
@@ -927,6 +959,11 @@ class HandoffManager:
             if not r.get("ok"):
                 raise Refused("세션이 끝나지 않아 멈췄습니다 — " + (r.get("note") or "터미널을 확인해 주세요"))
             ended = {"tmux_closed": r.get("tmux_closed")}
+        rv = None
+        if act == "merge" and await self._role(row.id) == "scribe":   # 합치면 브랜치가 지워진다 — 검토는 먼저(12b)
+            st0 = await wt.status(repo, name)
+            if st0.get("exists"):
+                rv = await self._scribe_review(row, repo, st0)
         if act == "merge":
             res = await wt.merge(repo, name)
         elif act == "discard":
@@ -936,6 +973,12 @@ class HandoffManager:
             raise Refused(f"모르는 조작입니다: {act}")
         if ended is not None:
             res["ended"] = ended
+        if rv and res.get("ok") and not rv.get("error"):
+            try:
+                await self._save_review(row, f"cc/{name}", rv)
+                res["review"] = {k: rv[k] for k in ("marks", "bad", "unsupported", "revision")}
+            except Exception as e:  # noqa: BLE001 — 기록 실패가 합치기를 되돌리지 않는다
+                log.warning("서기 검토 기록 실패: %s", type(e).__name__)
         if res.get("ok") and self.schema and row.project:
             res["schema_unlocked"] = self.schema.release(row.project, name)
         if res.get("ok"):
