@@ -908,11 +908,25 @@ class HandoffManager:
         repo, name = wt.split(row.cwd)
         return bool(name) and await self.previews.stop(os.path.join(repo, wt.WT_DIR, name))
 
-    async def worktree_act(self, row: SessionRow, act: str) -> dict[str, Any]:
-        """merge(사람 승인 — 화면의 확인 창) · discard(커밋까지 버림). 세션이 끝난 뒤에만 — 도는 세션의 바닥을 옮기지 않는다."""
+    async def worktree_act(self, row: SessionRow, act: str, end: bool = False) -> dict[str, Any]:
+        """merge(사람 승인 — 화면의 확인 창) · discard(커밋까지 버림). 세션이 끝난 뒤에만 — 도는 세션의 바닥을 옮기지 않는다.
+        end=True면 살아 있는 세션을 먼저 끝내고 이어서 한다(11-06 — 끝내기 누르고 합치기를 또 찾아 눌러야 했다).
+        합치기는 끝내기 **전에** 커밋 안 된 변경을 본다 — 끝낸 뒤에 알면 그 세션에게 커밋을 시킬 수 없다."""
         repo, name = self._wt_of(row)
+        ended = None
         if row.cc and row.cc in live_sessions(self.sessions_dir):
-            raise Refused("세션이 아직 살아 있습니다. 세션을 끝낸 뒤 합치거나 버릴 수 있습니다")
+            if not end:
+                raise Refused("세션이 아직 살아 있습니다 — [끝내고 합치기] · [끝내고 버리기]로 함께 할 수 있습니다")
+            if act == "merge":
+                st = await wt.status(repo, name)
+                if st.get("dirty"):
+                    files = ", ".join(st["dirty"][:8]) + (" …" if len(st["dirty"]) > 8 else "")
+                    raise Refused(f"커밋 안 된 변경이 {len(st['dirty'])}개 있습니다({files}) — 세션에게 커밋을 시킨 뒤 다시 눌러 주세요."
+                                  " 세션은 끝내지 않았습니다")
+            r = await self.action(row, "exit")
+            if not r.get("ok"):
+                raise Refused("세션이 끝나지 않아 멈췄습니다 — " + (r.get("note") or "터미널을 확인해 주세요"))
+            ended = {"tmux_closed": r.get("tmux_closed")}
         if act == "merge":
             res = await wt.merge(repo, name)
         elif act == "discard":
@@ -920,6 +934,8 @@ class HandoffManager:
             res = {"ok": True, "note": "worktree와 브랜치를 지웠습니다(커밋 안 된 변경 · 합치지 않은 커밋도 함께)."}
         else:
             raise Refused(f"모르는 조작입니다: {act}")
+        if ended is not None:
+            res["ended"] = ended
         if res.get("ok") and self.schema and row.project:
             res["schema_unlocked"] = self.schema.release(row.project, name)
         if res.get("ok"):

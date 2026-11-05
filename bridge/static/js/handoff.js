@@ -85,7 +85,8 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     if (!w) return '';
     if (w.error) return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div class="small bad">${esc(w.error)}</div></div>`;
     if (!w.exists) return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div class="small muted">${esc(w.branch)} — 합쳤거나 버려서 지금은 없습니다.</div></div>`;
-    const why = w.live ? '세션을 끝낸 뒤 합칠 수 있습니다.' : w.dirty.length ? `커밋 안 된 변경 ${w.dirty.length}개 — 그 세션에서 커밋하거나 버려야 합칠 수 있습니다.` : '';
+    const why = w.live ? '세션을 끝내면서 합치거나 버립니다 — 위 「세션」의 [끝내고 합치기] · [끝내고 버리기].'
+      : w.dirty.length ? `커밋 안 된 변경 ${w.dirty.length}개 — 그 세션에서 커밋하거나 버려야 합칠 수 있습니다.` : '';
     return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div>
       <div class="small"><code>${esc(w.branch)}</code> · ${esc(w.base)}보다 커밋 <b>${w.ahead}</b>개 앞${w.behind ? ` · ${esc(w.base)}가 ${w.behind}개 앞서감(합칠 때 rebase)` : ''}${w.dirty.length ? ` · <span class="warn">커밋 안 됨 ${w.dirty.length}</span>` : ''}${w.schema_lock ? ' · <span class="warn">스키마 잠금 보유</span>' : ''}</div>
       ${w.commits.length ? `<details><summary class="small muted">커밋 · 바뀐 파일</summary><pre class="hand-body">${esc(w.commits.join('\n'))}\n\n${esc(w.diffstat.join('\n'))}</pre></details>` : ''}
@@ -94,8 +95,8 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       <div class="hand-btns">
         ${w.preview_ok ? b('wt-preview', '미리보기 열기', true, '', '미리보기 열기 — 이 브랜치의 화면 파일로 새 탭을 엽니다. 데이터와 버튼은 실제 브리지입니다. 없으면 빈 포트로 띄웁니다.') : ''}
         ${w.preview ? b('wt-preview-off', '미리보기 닫기', true, 'ghost', '미리보기 닫기 — 미리보기 서버를 끕니다.') : ''}
-        ${b('wt-merge', '합치기', !w.live && !w.dirty.length, '', `합치기 — ${w.branch}를 ${w.base} 위로 rebase한 뒤 fast-forward로 합치고 worktree를 지웁니다. 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다.`)}
-        ${b('wt-discard', '버리기', !w.live, 'danger', '버리기 — worktree와 브랜치를 지웁니다. 합치지 않은 커밋도 사라집니다.')}
+        ${w.live ? '' : `${b('wt-merge', '합치기', !w.dirty.length, '', `합치기 — ${w.branch}를 ${w.base} 위로 rebase한 뒤 fast-forward로 합치고 worktree를 지웁니다. 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다.`)}
+        ${b('wt-discard', '버리기', true, 'danger', '버리기 — worktree와 브랜치를 지웁니다. 합치지 않은 커밋도 사라집니다.')}`}
       </div></div></div>`;
   }
 
@@ -156,6 +157,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     const docsHint = p0 && p0.status === 'listed' ? '승인할 목록이 있습니다' : p0 && p0.status === 'write_failed' ? '확인 실패 — 봐 주세요'
       : docsBusy ? '도는 중…' : lc0 && lc0.status === 'done' && lc0.lost_total ? `잃은 것 ${lc0.lost_total}` : '';
     const docsOn = docsOpen ?? !!docsBusy;
+    const wtLive = !!(c.worktree && c.worktree.exists && c.worktree.live);   // 살아 있는 따로 작업 — 끝내기를 세 갈래로
     // 요약 카드 머리의 작은 [고치기] — 자주 안 쓰므로 버튼 줄에서 뺐다(11-06, 이력 1번)
     const editLink = ok && mode == null ? b('edit', '고치기', true, 'ghost', '요약 고치기 — 저장된 요약을 직접 고칩니다. 원본은 두고 새 판으로 저장합니다.') : '';
     el.innerHTML = `
@@ -176,7 +178,10 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       <section class="hand">
         <div class="hand-h"><b>세션</b></div>
         <div class="hand-btns">
-          ${b('exit', '세션 끝내기', can.exit, 'danger', '세션 끝내기 — /exit로 세션을 완전히 끝냅니다. FOREMAN이 띄운 tmux 창도 닫습니다.')}
+          ${wtLive ? `${b('wt-end-merge', '끝내고 합치기', can.exit, '', `끝내고 합치기 — 커밋 안 된 변경이 없으면 세션을 끝내고 ${c.worktree.branch}를 ${c.worktree.base}에 합칩니다. 있으면 끝내지 않고 알립니다.`)}
+          ${b('wt-end-discard', '끝내고 버리기', can.exit, 'danger', '끝내고 버리기 — 세션을 끝내고 worktree와 브랜치를 지웁니다. 합치지 않은 커밋도 사라집니다.')}
+          ${b('exit', '그냥 끝내기(나중에 정함)', can.exit, 'ghost', '그냥 끝내기 — 세션만 끝냅니다. worktree는 남고, 이 세션의 [세션] 탭 「따로 작업」에서 나중에 합치거나 버립니다.')}`
+    : b('exit', '세션 끝내기', can.exit, 'danger', '세션 끝내기 — /exit로 세션을 완전히 끝냅니다. FOREMAN이 띄운 tmux 창도 닫습니다.')}
           ${b('more', moreOpen ? '접기 ▴' : '더보기 ▾', true, 'ghost', moreOpen ? '접기 — 작업 중단 · 일시정지 · 다시 시작을 다시 숨깁니다.' : '더보기 — 작업 중단 · 일시정지 · 다시 시작. 드물게 씁니다.')}
           ${moreOpen ? `${b('interrupt', '작업 중단(Esc)', can.interrupt, 'ghost', '작업 중단 — 지금 하는 작업만 멈춥니다(Esc). 세션은 살아 있습니다.')}
             ${b('stop', '일시정지', can.stop, 'ghost', '일시정지 — 세션을 잠시 멈춥니다(Ctrl+Z). 맥락은 그대로이고 [다시 시작]으로 이어 갑니다.')}
@@ -270,17 +275,29 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         return { ok: true, msg: `미리보기를 열었습니다(:${r.port}${r.reused ? ', 이미 돌던 것' : ''}).` };
       });
     }
-    if (act === 'wt-preview-off') return run('미리보기 닫기', () => api('DELETE', `/api/sessions/${id}/preview`).then(() => ({ ok: true, msg: '미리보기를 껐습니다.' })));
-    if (act === 'wt-merge' || act === 'wt-discard') {
+    if (act === 'wt-preview-off') {
+      // 미리보기 탭 안에서 누르면 이 탭을 띄운 서버가 꺼진다(11-06 — 끊긴 채로 남았다). 먼저 알린다
+      if (window.FOREMAN_PREVIEW && !confirm('지금 이 탭이 미리보기입니다. 미리보기를 닫으면 이 탭은 끊깁니다(메인 브리지는 그대로입니다). 닫을까요?')) return;
+      return run('미리보기 닫기', () => api('DELETE', `/api/sessions/${id}/preview`).then(() => ({ ok: true, msg: '미리보기를 껐습니다.' })));
+    }
+    if (act === 'wt-merge' || act === 'wt-discard' || act === 'wt-end-merge' || act === 'wt-end-discard') {
       const w = data.controls.worktree;
+      const end = act.startsWith('wt-end-');
+      const kind = end ? act.slice(7) : act.slice(3);
       let confirmName = '';
+      if (end && kind === 'merge') {
+        if (!confirm(`세션을 끝내고 ${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 커밋 안 된 변경이 있으면 끝내지 않고 알립니다. 충돌이 나면 되돌리고 멈춥니다(세션은 이미 끝난 뒤입니다). push는 하지 않습니다. 진행할까요?`)) return;
+        return run('끝내고 합치기', () => post(`/api/sessions/${id}/worktree`, { action: 'merge', end: true })
+          .then((r) => (r.ok ? { ok: true, msg: '세션을 끝내고 ' + r.note + (r.schema_unlocked ? ' 스키마 잠금도 풀었습니다.' : '') }
+            : { bad: true, msg: '세션은 끝냈습니다. ' + r.note + (r.conflict && r.conflict.length ? ` 충돌 파일: ${r.conflict.join(', ')}` : '') + ' — 「따로 작업」에서 다시 합치거나 버립니다.' })));
+      }
       if (act === 'wt-merge') {
         if (!confirm(`${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다. 합칠까요?`)) return;
       } else {
-        confirmName = prompt(`worktree와 브랜치 ${w.branch}를 지웁니다. 합치지 않은 커밋 ${w.ahead}개${w.dirty.length ? `와 커밋 안 된 변경 ${w.dirty.length}개` : ''}도 사라집니다. 지우려면 이름 "${w.name}"을 적어 주세요.`) || '';
+        confirmName = prompt(`${end ? '세션을 끝내고 ' : ''}worktree와 브랜치 ${w.branch}를 지웁니다. 합치지 않은 커밋 ${w.ahead}개${w.dirty.length ? `와 커밋 안 된 변경 ${w.dirty.length}개` : ''}도 사라집니다. 지우려면 이름 "${w.name}"을 적어 주세요.`) || '';
         if (!confirmName) return;
       }
-      return run(act === 'wt-merge' ? '합치기' : '버리기', () => post(`/api/sessions/${id}/worktree`, { action: act.slice(3), confirm: confirmName })
+      return run(kind === 'merge' ? '합치기' : end ? '끝내고 버리기' : '버리기', () => post(`/api/sessions/${id}/worktree`, { action: kind, confirm: confirmName, end })
         .then((r) => (r.ok ? { ok: true, msg: r.note + (r.schema_unlocked ? ' 스키마 잠금도 풀었습니다.' : '') }
           : { bad: true, msg: r.note + (r.conflict && r.conflict.length ? ` 충돌 파일: ${r.conflict.join(', ')}` : '') })));
     }

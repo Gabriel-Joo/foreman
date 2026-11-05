@@ -30,6 +30,8 @@ async def test_pages_static_and_proxy(tmp_path):
         r = await c.get("/")
         assert r.status_code == 200 and "미리보기 · cc/foreman-2" in r.text and "foremanToken" in r.text
         assert r.text.index("foremanToken") < r.text.index("<title>")          # 모듈보다 먼저 토큰을 받는다
+        # 11-06 — 미리보기 서버가 꺼지면 탭이 알린다(메인 포트로 가는 길), 화면 코드는 미리보기인 것을 안다
+        assert 'window.FOREMAN_PREVIEW={"label": "cc/foreman-2", "mainPort": 8000}' in r.text and "원본 화면 열기" in r.text
         assert (await c.get("/static/js/a.js")).text == "export const v = 'worktree';"
         r = await c.post("/api/echo?q=1", headers={"Authorization": "Bearer T"}, content="hi")
         j = r.json()

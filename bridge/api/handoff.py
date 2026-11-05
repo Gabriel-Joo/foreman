@@ -217,6 +217,7 @@ class NewIn(BaseModel):
 class WorktreeIn(BaseModel):
     action: Literal["merge", "discard"]
     confirm: str = ""                 # 버리기는 worktree 이름을 그대로 적어야 한다(합치지 않은 커밋까지 지운다)
+    end: bool = False                 # 세션이 살아 있으면 먼저 끝낸다(11-06 — 끝내고 합치기 · 끝내고 버리기)
 
 
 @router.get("/spawn/options")
@@ -292,7 +293,7 @@ async def worktree_act(sid: int, body: WorktreeIn, request: Request) -> JSONResp
             name = m._wt_of(row)[1]
             if body.confirm != name:
                 raise Refused(f"버리려면 worktree 이름({name})을 그대로 적어 주세요")
-        r = await m.worktree_act(row, body.action)
+        r = await m.worktree_act(row, body.action, end=body.end)
     except Refused as e:
         return _refused(e)
     return JSONResponse(r)
