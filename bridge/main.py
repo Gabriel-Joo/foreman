@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from bridge.api import approvals as approvals_api, dashboard as dashboard_api, debug, health, hooks, sessions, ws
 from bridge.api import foreman as foreman_api, handoff as handoff_api, terminal as terminal_api, webhooks
 from bridge.api import publish as publish_api
+from bridge.api import scribe as scribe_api
 from bridge.notion import NotionClient, Publisher, load_token
 from bridge.foreman import ForemanDispatcher
 from bridge.handoff import HandoffManager
@@ -259,6 +260,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(sessions.router)
     app.include_router(handoff_api.router)
     app.include_router(publish_api.router)
+    app.include_router(scribe_api.router)
     app.include_router(foreman_api.router)
     app.include_router(approvals_api.router)
     app.include_router(dashboard_api.router)
