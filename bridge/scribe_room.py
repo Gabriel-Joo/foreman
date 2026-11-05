@@ -90,7 +90,7 @@ async def todo(engine: Any, publisher: Any = None) -> dict[str, dict[str, Any]]:
             items.append({"kind": "retro", "title": f"회고 쓰기 — 마지막 회고 뒤 커밋 {rn}개", "why": retros[-1].name})
         later = await _later_count(engine, name, repo)
         if later:
-            items.append({"kind": "later", "title": f"나중에 할 일 정리 — \"나중에\" {later}번", "why": "README가 바뀐 뒤 사람이 미룬 말"})
+            items.append({"kind": "later", "title": f"나중에 할 일 정리 — \"나중에\" {later}번", "why": "지난 정리가 합쳐진 뒤(없으면 처음부터) 사람이 미룬 말"})
         if publisher is not None and name == getattr(publisher, "project", None):
             try:
                 for d in await publisher.list():
@@ -103,22 +103,42 @@ async def todo(engine: Any, publisher: Any = None) -> dict[str, dict[str, Any]]:
     return out
 
 
+LATER_ACT = "scribe-later"     # session_action — 나중에 할 일 정리를 띄울 때 "어디까지 봤나"(detail: until ISO)
+
+
+async def later_since(engine: Any, project: str) -> datetime | None:
+    """나중에 할 일 정리의 기준점 — 지난번 정리 세션이 **합쳐진** 것의 until. 없으면 None(처음부터 전부).
+    11-06: README 마지막 변경을 기준으로 했더니 README가 막 바뀐 뒤라 사람 턴이 0개였다. README는 다른 일로도 자주 바뀐다.
+    버린 정리(합치지 않음)는 세지 않는다 — 다음에 같은 범위를 다시 본다(이미 표에 있는 것은 서기가 뺀다).
+    커밋 0개로 합쳐진 정리는 센다 — 다 봤고 더할 것이 없었다는 뜻이다."""
+    async with engine.connect() as c:
+        rows = (await c.execute(text(
+            "SELECT sa.detail FROM session_action sa JOIN character_session cs ON cs.id = sa.session_id "
+            "JOIN `character` ch ON ch.id = cs.character_id JOIN project p ON p.id = ch.project_id "
+            "WHERE p.name = :p AND sa.action = :a AND sa.ok AND EXISTS (SELECT 1 FROM session_action m "
+            "  WHERE m.session_id = sa.session_id AND m.action = 'wt-merge' AND m.ok) ORDER BY sa.id DESC LIMIT 1"),
+            {"p": project, "a": LATER_ACT})).first()
+    if not rows or not rows[0]:
+        return None
+    try:
+        return datetime.fromisoformat(rows[0].split()[0])
+    except ValueError:
+        return None
+
+
 async def _later_count(engine: Any, project: str, repo: str) -> int:
-    since = _git(repo, "log", "-1", "--format=%cI", "HEAD", "--", "README.md")
-    if not since:
-        return 0
-    when = datetime.fromisoformat(since).astimezone(UTC).replace(tzinfo=None)
-    return len(await later_prompts(engine, project, when))
+    return len(await later_prompts(engine, project, await later_since(engine, project)))
 
 
-async def later_prompts(engine: Any, project: str, since: datetime) -> list[dict[str, Any]]:
+async def later_prompts(engine: Any, project: str, since: datetime | None, limit: int = 300) -> list[dict[str, Any]]:
+    """사람이 "나중에 · 미루"라고 한 턴 — since(UTC) 뒤, None이면 처음부터. 오래된 것부터, limit개까지."""
     async with engine.connect() as c:
         rows = (await c.execute(text(
             "SELECT t.id, t.started_at, t.prompt_text FROM turn t JOIN character_session cs ON cs.id = t.session_id "
             "JOIN `character` ch ON ch.id = cs.character_id JOIN project p ON p.id = ch.project_id "
             "WHERE p.name = :p AND t.origin = 'human' AND cs.hidden_at IS NULL AND t.started_at >= :s ORDER BY t.started_at"),
-            {"p": project, "s": since})).mappings().all()
-    return [dict(r) for r in rows if LATER.search(r["prompt_text"] or "")]
+            {"p": project, "s": since or datetime(2000, 1, 1)})).mappings().all()
+    return [dict(r) for r in rows if LATER.search(r["prompt_text"] or "")][:limit]
 
 
 COMMON = """
@@ -149,7 +169,7 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
 - 사용자 원문 인용 · 날짜 표시는 그대로 둔다"""
     elif task == "later":
         body = f"""할 일: 대화에서 "나중에 하자"고 한 것을 README 「나중에 할 일 (정해 두고 미룬 것)」 표에 넣는다.
-- 재료(저장소 밖, 사람 말 원문): `{e.get('materials') or '(없음)'}` — README가 바뀐 뒤 "나중에 · 미루"가 나온 사람 말
+- 재료(저장소 밖, 사람 말 원문): `{e.get('materials') or '(없음)'}` — 지난 정리가 합쳐진 뒤(없으면 처음부터) "나중에 · 미루"가 나온 사람 말
 - 항목마다 무엇 · 언제 · 조건 · 근거(결과 문서 · log). 이미 한 것은 표에서 뺀다. 그때뿐인 "나중에"(잠깐 뒤에)는 넣지 않는다
 - README.md만 고친다"""
     else:
@@ -182,12 +202,14 @@ async def start(m: Any, engine: Any, project: str, task: str) -> dict[str, Any]:
         period = f"{sc.kst(start_utc)} ~ {sc.kst(now)} KST"
         prompt = sc.retro_prompt(project, period, str(mat), f"log/retro_{day}_{project}.md")
     elif task == "later":
-        since = _git(repo, "log", "-1", "--format=%cI", "HEAD", "--", "README.md")
-        when = datetime.fromisoformat(since).astimezone(UTC).replace(tzinfo=None) if since else now - timedelta(days=3)
+        when = await later_since(engine, project)
         rows = await later_prompts(engine, project, when)
+        if not rows:                       # 빈손으로 Opus 세션을 띄우지 않는다(11-06 — 범위가 비어 사람 턴 0개로 떴다)
+            raise Refused(f"{'지난 정리 뒤로' if when else '지금까지'} \"나중에 · 미루\"라고 한 사람 말이 없습니다 — 띄우지 않았습니다")
         from bridge.mask import Masker
         mk = Masker()
-        lines = [f"# 미룬 말 — {project} ({sc.kst(when)} 뒤, 사람 턴 {len(rows)}개)", ""]
+        lines = [f"# 미룬 말 — {project} ({(sc.kst(when) + ' 뒤') if when else '처음부터'}, 사람 턴 {len(rows)}개)",
+                 "README 「나중에 할 일」 표에 이미 있는 것은 빼고, 이미 한 일도 뺀다(지난 정리를 버렸으면 같은 범위를 다시 본다).", ""]
         for x in rows:
             lines += [f"## [t:{x['id']}] {sc.kst(x['started_at'])}", mk.text(sc._clip(x["prompt_text"], 1500)) or "", ""]
         mat = sc.write(sc.OUT_ROOT / f"{project}_{day}" / "later.md", "\n".join(lines))
@@ -200,4 +222,7 @@ async def start(m: Any, engine: Any, project: str, task: str) -> dict[str, Any]:
             extra["stages"] = ", ".join(stages_without_result(repo)) or "(없음)"
         prompt = task_prompt(task, project, repo, extra)
     res = await m.spawn_new(repo, None, f"서기 — {TASKS[task]['title']}", role="scribe", worktree=True, first_prompt=prompt)
+    if task == "later" and res.get("session_id"):
+        # 어디까지 봤나 — 이 세션이 합쳐지면 다음 정리의 기준점이 된다(later_since)
+        await m._act(res["session_id"], LATER_ACT, res.get("pid"), True, f"{now.isoformat()} 미룬 말 {len(rows)}개")
     return {"task": task, "project": project, **{k: res.get(k) for k in ("tmux", "cc_session_id", "worktree", "note", "injected")}}

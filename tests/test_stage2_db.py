@@ -1196,3 +1196,28 @@ async def test_notion_publish_update_unchanged_archive_and_scope(env, tmp_path):
     assert r4["action"] == "created" and r4["page_id"] != r1["page_id"]
     with pytest.raises(FileNotFoundError):
         await pub.publish("log/retro_커밋안됨.md")
+
+
+async def test_later_since_counts_only_merged_runs(env):
+    """나중에 할 일 정리의 기준점(11-06) — 띄운 정리가 합쳐졌을 때만. 버린 것 · 아직 안 합친 것은 세지 않는다(처음부터)."""
+    from datetime import datetime
+    from sqlalchemy import text as T
+    from bridge import scribe_room as sr
+    s, _main = env
+    await run(s)
+    engine = make_engine(s)
+    ENGINES.append(engine)
+    sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
+    proj = q(s, "SELECT p.name FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
+                "JOIN project p ON p.id = ch.project_id WHERE cs.id = %s", sid)[0][0]
+    assert await sr.later_since(engine, proj) is None
+    async with engine.begin() as c:
+        await c.execute(T("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, :a, 1, :d)"),
+                        {"s": sid, "a": sr.LATER_ACT, "d": "2026-11-06T06:05:00 미룬 말 3개"})
+    assert await sr.later_since(engine, proj) is None                         # 띄웠지만 아직 안 합쳤다
+    async with engine.begin() as c:
+        await c.execute(T("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, 'wt-discard', 1, 'x')"), {"s": sid})
+    assert await sr.later_since(engine, proj) is None                         # 버렸다
+    async with engine.begin() as c:
+        await c.execute(T("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, 'wt-merge', 1, 'x 합칠 커밋이 없어')"), {"s": sid})
+    assert await sr.later_since(engine, proj) == datetime(2026, 11, 6, 6, 5)  # 합쳤다(커밋 0개여도) → 그 뒤부터
