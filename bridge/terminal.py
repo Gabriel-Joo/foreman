@@ -334,14 +334,14 @@ class TerminalManager:
             delay = min(delay * 2, 30.0)
 
     async def _shell_session(self) -> None:
-        """셸 세션 행(type='shell') — 포먼 프로젝트의 포먼에 붙인다. 카드로 보이지 않는다(대시보드는 type='agent'만)."""
+        """셸 세션 행(type='shell', role helper) — 떠돌이 '미분류'에 붙인다(0017: 포먼은 자기 세션을 갖지 않는다, README 2.4).
+        카드로 보이지 않는다(대시보드는 type='agent'만)."""
         assert self.engine is not None
         async with self.engine.begin() as c:
             ch = (await c.execute(text(
-                "SELECT c.id FROM `character` c JOIN project p ON p.id = c.project_id "
-                "WHERE p.name = 'foreman' AND c.current_role = 'foreman' LIMIT 1"))).first()
+                "SELECT id FROM `character` WHERE project_id IS NULL AND name = '미분류' LIMIT 1"))).first()
             if ch is None:
-                log.warning("포먼 캐릭터가 없다 — 셸 기록은 세션 없이 남긴다")
+                log.warning("미분류 캐릭터가 없다(0004) — 셸 기록은 세션 없이 남긴다")
                 return
             self.shell_char_id = ch[0]
             r = (await c.execute(text(
