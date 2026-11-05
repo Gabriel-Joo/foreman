@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { merged, edits, counts, promoteGroup } from '../../bridge/static/js/promote.js';
+import { merged, edits, counts, promoteGroup, inputPick } from '../../bridge/static/js/promote.js';
 
 const ITEMS = [
   { id: 1, kind: '기준', what: '시험 세션은 끝낸 뒤 숨긴다', quote: '', dest: 'CLAUDE.md', section: '작업 규칙', why: 'w', state: 'pending', check: { ok: true } },
@@ -37,4 +37,15 @@ test('쓴 뒤에는 고칠 수 없고 확인 결과를 보인다', () => {
   assert.match(w, /<textarea data-f="what"[^>]* disabled/);
   assert.ok(promoteGroup(null, true, {}, '읽지 못했습니다').includes('읽지 못했습니다'));
   assert.match(promoteGroup(null, false, {}, null), /data-act="prom-req"[^>]*disabled/);
+});
+
+test('같이 넣을 인계 — 여럿이면 말없이 첫째를 고르지 않고, 목록에는 무엇을 넣었는지 보인다', () => {
+  const two = [{ id: 7, title: '받은 것', why: '이 세션이 받은 인계' }, { id: 6, title: '앞 것', why: '같은 프로젝트의 인계' }];
+  const sel = (h) => (h.match(/<option value="([^"]*)" selected/) || [])[1];
+  assert.equal(sel(inputPick(two, null)), '');                         // 고르기 칸이 선택된 채
+  assert.equal(sel(inputPick(two, '6')), '6');
+  assert.equal(sel(inputPick([two[0]], null)), '7');                   // 하나뿐이면 그것
+  const p = { id: 9, status: 'listed', items: [], summary_id: 7, updated_at: new Date().toISOString() };
+  assert.ok(promoteGroup(p, false, {}, null).includes('인계 #7 같이 넣음'));
+  assert.ok(promoteGroup({ ...p, summary_id: null }, false, {}, null).includes('인계 넣지 않음'));
 });

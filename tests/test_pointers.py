@@ -41,7 +41,24 @@ def test_check_and_reads(tmp_path):
     assert ps[3].problem == "파일이 없습니다" and "줄 범위" in ps[4].problem and "찾지 못했습니다" in ps[5].problem
     assert ps[0].commits_since == 0 and not ps[0].stale
     r = ptr.reads(ps[:3], str(repo), [str(repo / "docs" / "a.md"), "/tmp/다른것"])
-    assert r == {"total": 3, "read": 2, "missing": ["CLAUDE.md"]}
+    # 맨 위 CLAUDE.md는 Read 없이도 세션에 들어가 있다 — 읽음으로 세고 auto로 따로 보인다
+    assert r == {"total": 3, "read": 3, "missing": [], "auto": ["CLAUDE.md"]}
+    assert ptr.reads(ps[:1], str(repo), [])["missing"] == ["docs/a.md"]
+
+
+def test_reads_same_file_across_worktrees(tmp_path):
+    """원본과 .worktrees/<이름>의 같은 상대 경로는 같은 파일로 센다(11-06 — 합치기 전 worktree에서 읽은 것)."""
+    main = tmp_path / "foreman"
+    wt = main / ".worktrees" / "foreman-2"
+    for root in (main, wt):
+        (root / "log").mkdir(parents=True)
+        (root / "log" / "c.md").write_text("x\n", encoding="utf-8")
+    ps = ptr.parse("## 읽을 곳\n- `log/c.md` — 결과\n")
+    assert ptr.reads(ps, str(main), [str(wt / "log" / "c.md")])["missing"] == []          # 원본 세션이 worktree 경로로 읽음
+    assert ptr.reads(ps, str(wt), [str(main / "log" / "c.md")])["missing"] == []          # worktree 세션이 원본 경로로 읽음
+    other = main / ".worktrees" / "foreman-3" / "log" / "c.md"
+    assert ptr.reads(ps, str(wt), [str(other)])["missing"] == []                           # 다른 worktree도 같은 저장소
+    assert ptr.reads(ps, str(main), [str(tmp_path / "다른" / "log" / "c.md")])["missing"] == ["log/c.md"]
 
 
 def test_v2_prompts():

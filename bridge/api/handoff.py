@@ -81,7 +81,7 @@ class PromoteEditIn(BaseModel):
 
 
 class PromoteIn(BaseModel):
-    summary_id: int | None = None     # 같이 넣을 인계. 없으면 이 세션이 받은 것 → 쓴 것 → 같은 프로젝트 순으로 첫째
+    summary_id: int | None = None     # 같이 넣을 인계. 없으면 후보가 하나일 때만 그것, 여럿이면 거부(골라야 한다)
     no_input: bool = False            # 인계를 넣지 않는다
 
 

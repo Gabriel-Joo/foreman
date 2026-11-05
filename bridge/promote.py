@@ -360,7 +360,8 @@ class Promoter:
 
     # ── 1/2 목록 ────────────────────────────────────────
     async def request(self, row: ho.SessionRow, summary_id: int | None = None, no_input: bool = False) -> dict[str, Any]:
-        """summary_id를 주면 그 인계를, 안 주면 inputs()의 첫째를 같이 넣는다. no_input이면 넣지 않는다."""
+        """summary_id를 주면 그 인계를 같이 넣는다. no_input이면 넣지 않는다. 둘 다 없으면 후보가 하나일 때만 그것을 쓰고,
+        둘 이상이면 거부한다 — 11-06 첫 사례에서 기본값(받은 인계 #7)이 말없이 들어가 #6을 넣으려던 사람이 헷갈렸다."""
         if await self._busy(row.id) or await self.m._pending(row.id):
             raise Refused("이미 이 세션에 인계 · 옮기기 요청을 기다리는 중입니다")
         diff = None
@@ -368,7 +369,9 @@ class Promoter:
             summary_id = None
         elif summary_id is not None:
             diff = await self._input_body(summary_id)
-        elif cand := await self.inputs(row, 1):
+        elif cand := await self.inputs(row, 2):
+            if len(cand) > 1:
+                raise Refused("같이 넣을 인계가 여럿입니다 — 하나를 고르거나 「인계 넣지 않음」을 골라 주세요")
             summary_id = cand[0]["id"]
             diff = await self._input_body(summary_id)
         req = ho.new_req()

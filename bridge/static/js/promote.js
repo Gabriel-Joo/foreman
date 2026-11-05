@@ -53,13 +53,20 @@ function itemRow(it, m, editable) {
   </div>`;
 }
 
-// 같이 넣을 인계 고르기 — chosen: null이면 첫째(서버 기본과 같다), 'none'이면 넣지 않음, 숫자면 그 인계
-function inputPick(inputs, chosen) {
+// 같이 넣을 인계 고르기 — chosen: null이면 후보가 하나일 때만 그것, 여럿이면 "고르기"(빈 값 — 누르면 막는다),
+// 'none'이면 넣지 않음, 숫자면 그 인계. 여럿일 때 첫째를 말없이 고르지 않는다(11-06 첫 사례에서 #6 대신 #7이 들어갔다)
+export function inputPick(inputs, chosen) {
   if (!inputs || !inputs.length) return '<span class="small muted">같이 넣을 인계 없음</span>';
-  const cur = chosen == null ? String(inputs[0].id) : String(chosen);
+  const cur = chosen != null ? String(chosen) : inputs.length === 1 ? String(inputs[0].id) : '';
   const opt = (v, label, tip) => `<option value="${v}"${cur === String(v) ? ' selected' : ''}${tip ? ` title="${esc(tip)}"` : ''}>${esc(label)}</option>`;
   return `<select id="promIn" class="small" title="같이 넣을 인계 — 그 인계의 「문서와 다른 지금」 절을 목록 요청에 같이 넣습니다.">${
+    inputs.length > 1 ? opt('', `같이 넣을 인계 고르기(${inputs.length}개)`) : ''}${
     inputs.map((x) => opt(x.id, `#${x.id} ${x.title || x.cc} — ${x.why}`, x.diff)).join('')}${opt('none', '인계 넣지 않음')}</select>`;
+}
+
+// 이 목록에 무엇을 같이 넣었나 — 쓰는 사람이 어느 인계로 뽑았는지 바로 보이게
+function inputUsed(p) {
+  return p.summary_id ? ` · 인계 #${esc(String(p.summary_id))} 같이 넣음` : ' · 인계 넣지 않음';
 }
 
 // p = 마지막 옮기기(없으면 null), can = 목록 요청 가능, draft = {id: {칸: 값}}, err = 표를 못 읽은 사유
@@ -67,7 +74,7 @@ export function promoteGroup(p, can, draft, err, inputs = [], chosen = null) {
   const b = (act, label, on, cls = '', tip = '') => `<button type="button" data-act="${act}" class="small ${cls}"${tip ? ` title="${esc(tip)}"` : ''}${on ? '' : ' disabled'}>${label}</button>`;
   const head = `<div class="hand-btns">${b('prom-req', '옮길 것 뽑기', can, '', '옮길 것 뽑기 — 이 대화에서 정했지만 문서에 없는 것을 세션이 목록으로 냅니다. 파일은 고치지 않습니다.')}
     ${can ? inputPick(inputs, chosen) : ''}
-    ${p ? `<span class="small">${esc(STATUS[p.status] || p.status)} · ${ago(p.updated_at || p.created_at)}</span>` : '<span class="small muted">아직 없습니다.</span>'}</div>`;
+    ${p ? `<span class="small">${esc(STATUS[p.status] || p.status)} · ${ago(p.updated_at || p.created_at)}${inputUsed(p)}</span>` : '<span class="small muted">아직 없습니다.</span>'}</div>`;
   if (err) return wrap(head + `<div class="small bad">${esc(err)}</div>`);
   if (!p) return wrap(head);
   let body = '';
