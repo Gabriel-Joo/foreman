@@ -224,6 +224,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const ss = room.sessionIds.map((id) => st.sessions.get(id)).filter(Boolean);
       ss.sort((a, b) => (a.state === 'DORMANT') - (b.state === 'DORMANT') || a.id - b.id);
       const cap = seatCount(room);
+      let scribeN = 0;                 // 이 방의 서기 세션 수 — 둘이면 두 번째는 다음 자리(같은 자리에 겹치지 않게, 11-06)
       // 끝난 세션(DORMANT)은 끝나고 3분 동안만 흐리게 자리에 남았다가 화면에서 사라진다(11-05 사용자 요청).
       // 패널 세션 목록의 "종료된 세션"에는 그대로 있다 — 거기서 골라 [새로 띄우기]. 멈춘 세션(SUSPENDED)은 그대로 보인다
       const shown = ss.filter((s) => !dormantGone(s, room.name));
@@ -265,6 +266,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
             act = { ...act, go: 'scribe', anim: vs === 'WAITING' ? 'wait' : 'read' };
             delete act.variants;
           }
+          if (act.go === 'scribe') seatK = (seatK + scribeN++) % sz.seats.length;
         }
         const desk = seat(room, k);
         let [tx, ty, face] = spot(room, act.go, desk, act.go === 'scribe' ? seatK : k);

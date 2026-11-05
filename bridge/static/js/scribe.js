@@ -39,12 +39,20 @@ export function createScribe(store) {
   function html(room, label) {
     load();
     const tasks = (todo && todo.tasks) || {};
-    const items = (todo && todo.projects && todo.projects[room] && todo.projects[room].items) || [];
+    const pj = (todo && todo.projects && todo.projects[room]) || {};
+    const items = pj.items || [], opened = pj.open || [], blocked = pj.blocked || {};
+    // 동시에 시키기(11-06) — 같은 일 · 같은 파일 · 둘 넘게는 막는다. 막힌 버튼은 끄고 까닭을 호버로(서버도 같은 판단)
+    const go = (k, label = '시키기') => {
+      const why = blocked[k];
+      return `<button type="button" class="small" data-sc-task="${esc(k)}"${busy || why ? ' disabled' : ''} title="${esc(why ? `${(tasks[k] || {}).title || k} — 지금은 시킬 수 없습니다. ${why}` : `${(tasks[k] || {}).title || k} — 서기 세션을 따로 작업(worktree)으로 띄워 맡깁니다. 끝나면 [끝내고 합치기]로 검토해 합칩니다.`)}">${label}</button>`;
+    };
     const todoHtml = items.length ? items.map((x) => `<div class="sc-row"><div class="small"><b>${esc(x.title)}</b> <span class="muted">— ${esc(x.why)}</span></div>
-        ${x.kind !== 'publish' ? `<button type="button" class="small" data-sc-task="${esc(x.kind)}" title="${esc((tasks[x.kind] || {}).title || '')} — 이 일을 서기에게 시킵니다.">시키기</button>` : ''}</div>`).join('')
+        ${x.kind !== 'publish' ? go(x.kind) : ''}</div>`).join('')
       : '<p class="small muted">기계로 센 할 일이 없습니다.</p>';
-    const taskHtml = ORDER.filter((k) => k !== 'publish' && tasks[k]).map((k) => `<div class="sc-row"><div class="small"><b>${esc(tasks[k].title)}</b> <span class="muted">${esc(tasks[k].desc)}</span></div>
-        <button type="button" class="small" data-sc-task="${k}"${busy ? ' disabled' : ''} title="${esc(tasks[k].title)} — 서기 세션을 따로 작업(worktree)으로 띄워 맡깁니다. 끝나면 [끝내고 합치기]로 검토해 합칩니다.">시키기</button></div>`).join('');
+    const openHtml = opened.length ? `<div class="small"><b>열려 있는 일 ${opened.length}</b> <span class="muted">— 합치거나 버리기 전까지(동시에 2개까지, 같은 파일을 고치는 일은 하나씩)</span>${
+      opened.map((o) => `<div class="small">· ${esc((tasks[o.task] || {}).title || o.task)} <span class="muted">세션 ${o.session_id}</span></div>`).join('')}</div>` : '';
+    const taskHtml = openHtml + ORDER.filter((k) => k !== 'publish' && tasks[k]).map((k) => `<div class="sc-row"><div class="small"><b>${esc(tasks[k].title)}</b> <span class="muted">${esc(blocked[k] ? blocked[k] : tasks[k].desc)}</span></div>
+        ${go(k)}</div>`).join('');
     return `<div class="small muted">${esc(label)} · 서기 — 문서 담당. 시킨 일은 따로 작업(worktree) 세션으로 돌고, 끝나면 사람이 diff를 보고 합칩니다.</div>
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}">${esc(note.msg)}</div>` : ''}
       <details class="hand" open><summary title="할 일 — 브리지가 LLM 없이 센 것입니다(커밋은 쌓였는데 README가 그대로 등)."><b>할 일 ${items.length}</b></summary>${todoHtml}</details>
