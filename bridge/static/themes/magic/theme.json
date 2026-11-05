@@ -51,7 +51,7 @@
     "_": "구역 이름표(방 안에서만, 구역 왼쪽 위) — 양피지 쪽지",
     "style": { "bg": "#ead9ae", "fg": "#3b2a1c", "border": "#8a6640", "font": "italic 600 11px Georgia, 'Noto Serif KR', serif", "kind": "parchment" },
     "_zones": "[이름, dx, dy] — 이름표가 사람 자리를 가리지 않게 비켜 둔 것(11-05 window.office.layoutPlan())",
-    "zones": { "foreman_office": "교장실", "library": "서고", "desks": ["작업 책상", -0.4, 0], "potion": "물약실", "test": ["시약대", -0.7, 0],
+    "zones": { "foreman_office": "교장실", "library": "서고", "desks": ["작업 책상", -0.7, 0], "potion": "물약실", "test": ["시약대", -1.0, 0],
                "circle": "원탁방", "hall": "대강당", "window": ["아치 창", -0.3, 1.5], "seal": ["봉인대", 0, -0.3] },
     "_roles": "구역 → 하는 일(설명은 테마 공통, office.js ZONE_ROLE). 이름표에 마우스를 올리면 뜬다",
     "roles": { "foreman_office": "hq", "library": "read", "desks": "edit", "potion": "bash", "test": "test",
@@ -239,16 +239,16 @@
       "infra": { "jenkins": "Knight", "harbor": "Inspector", "argocd": "Spirit" }
     },
     "props": {
-      "_comment": "동작 → 손에 든 것(엔진이 겹친다 — 에셋에 앉기 · 들기 동작이 없어서). dx · dy는 발밑 가운데 기준 px",
-      "read": { "s": "p_book", "dx": 2, "dy": -9, "bob": 1 },
-      "write": { "s": "quill", "dx": 1, "dy": -12, "bob": 2 },
-      "think": { "s": "p_scroll", "dx": 2, "dy": -9 },
-      "shake": { "s": "flask_g", "dx": 2, "dy": -14, "shake": 2 },
-      "stir": { "s": "p_wand", "dx": 5, "dy": -15, "bob": 2 },
-      "cast": { "s": "p_wand", "dx": 5, "dy": -17, "fx": "fx_spark" },
-      "seal": { "s": "p_scroll", "dx": 2, "dy": -9, "bob": 1 },
-      "raise_wand": { "s": "p_wand", "dx": 6, "dy": -20, "fx": "fx_spark" },
-      "eat": { "s": "p_food", "dx": 2, "dy": -9, "bob": 1 }
+      "_comment": "동작 → 곁에 놓는 소품(들지 않는다 — 11-05). 엔진이 앞 탁자 윗면이나 발치 옆에 놓고, 크기는 캐릭터 폭의 절반 이하로 줄인다(placeProp). dx는 놓는 쪽(양수 오른쪽), shake는 흔들기, fx는 소품 위 효과",
+      "read": { "s": "p_book", "dx": 1 },
+      "write": { "s": "quill", "dx": 1 },
+      "think": { "s": "p_scroll", "dx": 1 },
+      "shake": { "s": "flask_g", "dx": 1, "shake": 1 },
+      "stir": { "s": "p_wand", "dx": 1 },
+      "cast": { "s": "p_wand", "dx": 1, "fx": "fx_spark" },
+      "seal": { "s": "p_scroll", "dx": 1 },
+      "raise_wand": { "s": "p_wand", "dx": 1, "fx": "fx_spark" },
+      "eat": { "s": "p_food", "dx": 1 }
     }
   }
 }

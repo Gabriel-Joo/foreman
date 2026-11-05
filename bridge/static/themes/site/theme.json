@@ -52,7 +52,7 @@
     "_": "구역 이름표 — 안전 노랑 표지판(검정 글씨, 빗금 띠)",
     "style": { "bg": "#f2c14e", "fg": "#141414", "border": "#141414", "font": "bold 10px ui-monospace, 'D2Coding', monospace", "kind": "hazard" },
     "_zones": "[이름, dx, dy] — 이름표가 사람 자리를 가리지 않게 비켜 둔 것(11-05 window.office.layoutPlan())",
-    "zones": { "foreman_office": "감독 컨테이너", "store": "자재창고", "desks": ["작업대", -0.1, 0], "tools": "공구실", "test": ["검사대", -0.5, 0],
+    "zones": { "foreman_office": "감독 컨테이너", "store": "자재창고", "desks": ["작업대", -0.4, 0], "tools": "공구실", "test": ["검사대", -0.8, 0],
                "plans": "도면실", "camp": "함바", "gate": "셔터", "ship": ["출하 접수대", 0, 0.9] },
     "_roles": "구역 → 하는 일(설명은 테마 공통, office.js ZONE_ROLE). 이름표에 마우스를 올리면 뜬다",
     "roles": { "foreman_office": "hq", "store": "read", "desks": "edit", "tools": "bash", "test": "test",
@@ -209,17 +209,18 @@
       "infra": { "jenkins": "Inspector", "harbor": "Villager3", "argocd": "Hunter" }
     },
     "props": {
-      "read": { "s": "newspaper", "dx": 3, "dy": -8, "bob": 1 },
-      "hammer": { "s": "gauge", "dx": 5, "dy": -9, "bob": 3 },
-      "wrench": { "s": "radio", "dx": 5, "dy": -9, "shake": 2 },
-      "gauge": { "s": "gauge", "dx": 4, "dy": -10, "shake": 1 },
-      "seal": { "s": "newspaper", "dx": 3, "dy": -8, "bob": 2 },
-      "cast": { "s": "newspaper", "dx": 4, "dy": -12, "bob": 2 },
-      "radio": { "s": "radio", "dx": 5, "dy": -12 },
-      "think": { "s": "mug", "dx": 4, "dy": -8 },
-      "coffee": { "s": "mug", "dx": 4, "dy": -8, "bob": 1 },
-      "news": { "s": "newspaper", "dx": 3, "dy": -8 },
-      "raise_wand": { "s": "radio", "dx": 6, "dy": -16 }
+      "_comment": "동작 → 곁에 놓는 소품(들지 않는다 — 11-05). 엔진이 앞 작업대 윗면이나 발치 옆에 놓고, 크기는 캐릭터 폭의 절반 이하로 줄인다(placeProp). dx는 놓는 쪽(양수 오른쪽), shake는 흔들기",
+      "read": { "s": "newspaper", "dx": 1 },
+      "hammer": { "s": "gauge", "dx": 1 },
+      "wrench": { "s": "radio", "dx": 1, "shake": 1 },
+      "gauge": { "s": "gauge", "dx": 1, "shake": 1 },
+      "seal": { "s": "newspaper", "dx": 1 },
+      "cast": { "s": "newspaper", "dx": 1 },
+      "radio": { "s": "radio", "dx": 1 },
+      "think": { "s": "mug", "dx": 1 },
+      "coffee": { "s": "mug", "dx": 1 },
+      "news": { "s": "newspaper", "dx": 1 },
+      "raise_wand": { "s": "radio", "dx": 1 }
     }
   }
 }
