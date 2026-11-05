@@ -34,7 +34,7 @@ COMMIT_HEAD = "인계 전 결정 기록"
 MAX_ITEMS = 60
 DIFF_SECTION = "문서와 다른 지금"
 
-LIST_PROMPT = """{head} 문서에 남기기 1/2 — 목록만
+LIST_PROMPT = """{head} 대화 결정 문서에 적기 1/2 — 목록만
 이 세션을 넘기기 전에, 이 대화에서 정했지만 아직 저장소 문서 · 메모리에 없는 것을 문서로 옮기려 한다. 이번에는 **목록만** 만든다.
 
 - 파일을 고치거나 커밋하지 마라. 이미 문서에 있는지 확인하려고 읽기 · grep은 해도 된다(이미 있으면 목록에서 뺀다)
@@ -61,7 +61,7 @@ EXTRA_LOSS = """- 아래는 이 세션의 [잃은 것 보기] 점검(#{lid})이 
 {body}
 """
 
-WRITE_PROMPT = """{head} 문서에 남기기 2/2 — 승인한 것만 쓰기
+WRITE_PROMPT = """{head} 대화 결정 문서에 적기 2/2 — 승인한 것만 쓰기
 사람이 패널에서 고치고 승인한 항목이 아래에 있다. **이것만** 써라.
 
 - 항목마다 dest 파일의 section 절에 넣는다. 그 문서의 문체 · 짧기를 따르고, 비슷한 줄이 이미 있으면 고쳐 합친다. 절이 없으면 맞는 자리에 만든다
@@ -436,16 +436,16 @@ class Promoter:
         body, texts, why = await self._wait(row, "FOREMAN-PROMOTE", req, path, offset, prompt_id)
         if body is None:
             await self._save(pid, status="timeout" if "초 안에" in (why or "") else "failed", raw=texts, error=why)
-            self.m._notify(row, f"문서에 남기기 목록 실패 — {why}")
+            self.m._notify(row, f"대화 결정 문서에 적기 — 목록 실패: {why}")
             return
         try:
             items = parse_items(body)
         except Refused as e:
             await self._save(pid, status="failed", raw=texts, error=str(e))
-            self.m._notify(row, f"문서에 남기기 목록 실패 — {e}")
+            self.m._notify(row, f"대화 결정 문서에 적기 — 목록 실패: {e}")
             return
         await self._save(pid, status="listed", items=items, raw=texts)
-        self.m._notify(row, f"문서에 남길 것 {len(items)}개 — 패널 [세션] 탭 「문서 정리」에서 고치고 승인해 주세요")
+        self.m._notify(row, f"문서에 적을 대화 결정 {len(items)}개 — 패널 [세션] 탭 「넘기기 전 정리」에서 고치고 승인해 주세요")
 
     # ── 사람 ────────────────────────────────────────────
     async def edit(self, pid: int, edits: list[dict[str, Any]]) -> dict[str, Any]:
@@ -509,6 +509,6 @@ class Promoter:
         await self._save(pid, status="written" if res["ok"] else "write_failed", result=res, commit_sha=res["commit"],
                          raw=texts, error=None if res["ok"] else "; ".join(res["problems"])[:512])
         if res["ok"]:
-            self.m._notify(row, f"문서에 남기기 끝 — {len(approved)}개, 커밋 {(res['commit'] or '없음')[:8]}")
+            self.m._notify(row, f"대화 결정 문서에 적기 끝 — {len(approved)}개, 커밋 {(res['commit'] or '없음')[:8]}")
         else:
-            self.m._notify(row, "문서에 남기기 확인 실패 — " + "; ".join(res["problems"])[:300])
+            self.m._notify(row, "대화 결정 문서에 적기 — 확인 실패: " + "; ".join(res["problems"])[:300])

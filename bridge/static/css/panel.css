@@ -142,6 +142,10 @@ body { --term-h:0px; }
 .hand-edit-link { float:right; margin:6px 0 0 6px; }
 .hand-edit-link button { padding:0 6px; }
 .hand-docs .hand-group { margin-top:6px; }
+/* 11-06 이름 다시 — 문서 정리의 두 일은 버튼 하나 대신 "이름 · 설명" 줄 + 짧은 버튼 */
+.hand-item { margin:8px 0 4px; }
+.hand-item-h { line-height:1.4; }
+.hand-item-h .muted { display:block; }
 
 /* 11-05 활동 줄 → 도구 입력 · 결과 본문(트랜스크립트에서 그때그때) */
 .feed .f-click { cursor:pointer; }
