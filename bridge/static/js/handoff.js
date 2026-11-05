@@ -10,6 +10,8 @@ const KIND = { snapshot: '지금 요약', handoff: '끝내기 전 인계' };
 
 export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) {
   let sid = null, data = null, mode = null, preview = null, note = null, open = open0;
+  let fmt1 = false;            // 인계 2판이 기본 — 켜면 1판(요약 통째로)
+  el.addEventListener('change', (ev) => { if (ev.target.id === 'hFmt1') fmt1 = ev.target.checked; });
   let timer = null;
 
   const api = async (method, url, body) => {
@@ -64,6 +66,27 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       </div></div></div>`;
   }
 
+  // 인계 2판(11-05) — 「읽을 곳」 기계 확인 결과. 틀린 곳이 있으면 넣지 않는다(서버도 막는다)
+  function pointerList(p) {
+    const rows = (p.pointers || []).map((x) => {
+      const where = x.path ? `${x.path}${x.start ? `:${x.start}${x.end && x.end !== x.start ? '-' + x.end : ''}` : ''}${x.section ? ` 「${x.section}」` : ''}` : x.raw;
+      const mark = !x.ok ? `<span class="bad">✗ ${esc(x.problem)}</span>`
+        : x.stale ? `<span class="warn">⚠ 이 문서 뒤로 커밋 ${x.commits_since}개 — 오래됐을 수 있습니다</span>` : '<span class="ok">✓</span>';
+      return `<div class="small"><code>${esc(where)}</code> ${mark}${x.why ? ` <span class="muted">— ${esc(x.why)}</span>` : ''}</div>`;
+    }).join('');
+    return `<div class="hand-ptrs"><div class="small"><b>읽을 곳 ${(p.pointers || []).length}</b> — 새 세션이 먼저 읽습니다</div>${rows}
+      ${p.blocked ? `<div class="small bad">${esc(p.blocked)}</div>` : ''}</div>`;
+  }
+  // 2판 인계를 받고 시작한 세션 — 읽을 곳을 실제로 Read했나
+  function readsLine(r, can) {
+    if (!r) return '';
+    const all = r.read === r.total;
+    return `<div class="hand-group"><span class="hand-lbl small muted">읽을 곳</span><div class="hand-btns">
+      <span class="small ${all ? 'ok' : 'warn'}">${r.read}/${r.total} 읽음${all ? '' : ` — 안 읽음: ${r.missing.map(esc).join(', ')}`}</span>
+      ${all ? '' : `<button data-act="reads-resend" class="small"${can ? '' : ' disabled'} title="안 읽은 곳 다시 보내기 — 아직 읽지 않은 문서만 다시 보내고, 읽은 뒤 걸리는 규칙을 말하게 합니다.">안 읽은 곳 다시 보내기</button>`}
+    </div></div>`;
+  }
+
   function draw() {
     if (sid == null || !data) { el.innerHTML = ''; return; }
     const c = data.controls, can = c.can, s0 = data.summaries[0], ok = latest();
@@ -83,8 +106,9 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         <div class="row">${b('edit-save', '고친 본 저장', true, '', '저장 — 원본은 두고 고친 본을 새 판으로 저장합니다.')}${b('cancel', '취소', true, 'ghost')}</div>`;
     } else if (mode === 'spawn') {
       main = preview ? `<div class="small">같은 폴더에 새 세션을 띄우고 아래 글을 첫 입력으로 넣습니다.${preview.cut ? ` <span class="warn">길어서 일부 절을 줄였습니다(전체는 ${esc(preview.full_path)}).</span>` : ''}</div>
+        ${preview.v2 ? pointerList(preview) : ''}
         <pre class="hand-body">${esc(preview.text)}</pre>
-        <div class="row">${b('spawn-go', '이 글을 넣고 시작', true)}${b('spawn-bare', '요약 없이 시작', true, 'ghost')}${b('cancel', '취소', true, 'ghost')}</div>`
+        <div class="row">${b('spawn-go', '이 글을 넣고 시작', !preview.blocked, '', preview.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다([요약 고치기]).' : '')}${b('spawn-bare', '요약 없이 시작', true, 'ghost')}${b('cancel', '취소', true, 'ghost')}</div>`
         : `<div class="small">넣을 인계 요약이 없습니다.</div><div class="row">${b('spawn-bare', '요약 없이 새로 띄우기', true)}${b('cancel', '취소', true, 'ghost')}</div>`;
     } else {
       main = sumCard(s0 && s0.status !== 'ok' && ok && s0.id !== ok.id ? s0 : ok || s0) +
@@ -102,7 +126,9 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
           ${b('edit', '요약 고치기', !!ok && mode !== 'edit', '', '요약 고치기 — 저장된 요약을 직접 고칩니다.')}
           ${!c.live ? b('headless', '죽은 세션 요약 받기', can.headless, '', '죽은 세션 요약 받기 — 끝난 세션을 잠깐 불러 요약을 받습니다. 토큰을 씁니다.') : ''}
           ${!c.live ? b('compact', '압축 요약에서', can.compact, '', '압축 요약에서 — 세션이 마지막으로 자동 압축한 요약으로 인계를 만듭니다.') : ''}
+          <label class="small muted" title="요약 통째로(1판) — 켜면 예전처럼 대화 전체를 요약해 넣습니다. 끄면(기본) 짧은 인계 + 새 세션이 직접 읽을 「읽을 곳」입니다."><input type="checkbox" id="hFmt1"${fmt1 ? ' checked' : ''}> 요약 통째로(1판)</label>
         </div></div>
+        ${readsLine(c.reads, can.exit)}
         <div class="hand-group"><span class="hand-lbl small muted">일시정지</span><div class="hand-btns">
           ${b('stop', '일시정지', can.stop, 'ghost', '일시정지 — 세션을 잠시 멈춥니다(Ctrl+Z). 맥락은 그대로이고 [다시 시작]으로 이어 갑니다.')}
           ${b('resume', '다시 시작', can.resume, 'ghost', '다시 시작 — FOREMAN이 일시정지한 세션을 이어서 돌립니다.')}
@@ -125,12 +151,14 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     const act = btn.dataset.act, id = sid;
     const post = (u, body) => api('POST', u, body || {});
     if (act === 'cancel') { mode = null; preview = null; draw(); return; }
-    if (act === 'summary') return run('요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'snapshot', mode: 'live' }).then(() => ({ msg: '요청을 보냈습니다. 세션이 요약을 쓰는 중입니다.' })));
-    if (act === 'summary-end') return run('인계 요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'live' }).then(() => ({ msg: '요청을 보냈습니다. 요약이 오면 확인한 뒤 [세션 끝내기]를 눌러 주세요.' })));
+    const fmt = fmt1 ? 'v1' : 'v2';
+    if (act === 'summary') return run('요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'snapshot', mode: 'live', fmt }).then(() => ({ msg: '요청을 보냈습니다. 세션이 요약을 쓰는 중입니다.' })));
+    if (act === 'summary-end') return run('인계 요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'live', fmt }).then(() => ({ msg: '요청을 보냈습니다. 요약이 오면 확인한 뒤 [세션 끝내기]를 눌러 주세요.' })));
     if (act === 'headless') {
       if (!confirm('끝난 세션을 잠깐 불러 요약을 받습니다. 그 세션의 맥락을 다시 읽느라 토큰을 씁니다. 진행할까요?')) return;
-      return run('죽은 세션 요약', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'headless' }).then(() => ({ msg: '요약을 받는 중입니다. 몇 분 걸릴 수 있습니다.' })));
+      return run('죽은 세션 요약', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'headless', fmt }).then(() => ({ msg: '요약을 받는 중입니다. 몇 분 걸릴 수 있습니다.' })));
     }
+    if (act === 'reads-resend') return run('안 읽은 곳 다시 보내기', () => post(`/api/sessions/${id}/reads/resend`).then((r) => ({ ok: true, msg: `${r.missing.length}곳을 다시 보냈습니다${r.queued ? '(작업이 끝나면 전달됩니다)' : ''}.` })));
     if (act === 'compact') return run('압축 요약에서 만들기', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'compact' }));
     if (act === 'edit') { mode = 'edit'; draw(); return; }
     if (act === 'edit-save') {
