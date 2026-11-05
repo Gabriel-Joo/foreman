@@ -19,6 +19,16 @@
   input, textarea { font:inherit; width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
   input[type=checkbox] { width:auto; }
   .otop { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:6px 14px; border-bottom:1px solid var(--line); flex:none; }
+  /* 11-05 머리말 프로젝트 줄 — 지금 방은 눌린 모양, 승인 대기(노랑 깜빡) · 안 본 새 답(파랑) 점, 숫자 */
+  .oproj { display:flex; gap:3px; align-items:center; flex-wrap:wrap; }
+  .oproj-b { display:inline-flex; gap:5px; align-items:center; padding:3px 9px; border:1px solid var(--line); border-radius:14px; font-size:13px; }
+  .oproj-b.on { background:color-mix(in srgb, var(--act) 22%, var(--bg)); border-color:var(--act); font-weight:700; box-shadow:inset 0 1px 3px rgba(0,0,0,.3); }
+  .oproj-b.pend { border-color:var(--warn); }
+  .oproj-b .pn { font-size:11px; padding:0 5px; border-radius:8px; background:var(--code); color:var(--muted); font-weight:600; }
+  .oproj-b .pn.warn { background:color-mix(in srgb, var(--warn) 25%, var(--bg)); color:var(--warn); }
+  .pdot { display:inline-block; width:7px; height:7px; border-radius:50%; }
+  .pdot.new { background:var(--act); box-shadow:0 0 0 2px color-mix(in srgb, var(--act) 30%, transparent); }
+  .pdot.warn { background:var(--warn); animation:pulse 1.2s infinite; }
   .brand { font-weight:700; letter-spacing:.04em; }
   .oalerts { display:flex; gap:10px; font-size:13px; }
   .oalerts button { padding:1px 8px; }
