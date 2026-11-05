@@ -32,11 +32,23 @@ DROP = {"host", "connection", "keep-alive", "transfer-encoding", "te", "trailer"
         "content-encoding", "proxy-authorization", "proxy-authenticate"}
 
 
-def head_inject(label: str) -> str:
-    """토큰은 주소의 #t=로 받는다(조각은 서버로 안 간다) — 포트가 달라 브라우저 저장소가 따로라서. 받자마자 주소에서 지운다."""
+def head_inject(label: str, main_port: int = 8000) -> str:
+    """토큰은 주소의 #t=로 받는다(조각은 서버로 안 간다) — 포트가 달라 브라우저 저장소가 따로라서. 받자마자 주소에서 지운다.
+    11-06: 미리보기 탭에서 [미리보기 닫기]를 누르면 이 탭을 띄운 서버가 꺼져 "끊김"인 채로 남았다(메인 브리지는 멀쩡했다).
+    그래서 이 서버가 꺼지면 화면을 덮어 알리고 원본 화면으로 가는 길을 준다 — 조용히 끊겨 있지 않게."""
+    gone = ("미리보기 서버가 꺼져 이 탭은 끊겼습니다(미리보기를 닫았거나 세션을 끝냈습니다). 메인 브리지는 그대로 돕니다.")
     return ("<script>(()=>{const m=location.hash.match(/[#&]t=([^&]+)/);if(!m)return;"
             "try{localStorage.setItem('foremanToken',decodeURIComponent(m[1]))}catch(e){}"
             "history.replaceState(null,'',location.pathname+location.search)})()</script>"
+            f"<script>window.FOREMAN_PREVIEW={json.dumps({'label': label, 'mainPort': main_port})};"
+            "(()=>{let miss=0;const main=location.protocol+'//'+location.hostname+':'+window.FOREMAN_PREVIEW.mainPort+'/';"
+            "const show=()=>{if(document.getElementById('fmGone'))return;const d=document.createElement('div');d.id='fmGone';"
+            "d.style.cssText='position:fixed;inset:0;z-index:10000;background:#000c;color:#fff;display:flex;align-items:center;"
+            "justify-content:center;flex-direction:column;gap:12px;font:14px/1.6 system-ui,sans-serif;text-align:center;padding:24px';"
+            f"d.innerHTML={json.dumps(html.escape(gone))}+'<a style=\"color:#fbbf24\" href=\"'+main+'\">원본 화면 열기</a>';"
+            "document.body.appendChild(d)};"
+            "setInterval(()=>{fetch('/static/office.html',{method:'HEAD',cache:'no-store'})"
+            ".then(r=>{miss=r.ok?0:miss+1}).catch(()=>{miss++}).finally(()=>{if(miss>=2)show()})},5000)})()</script>"
             "<style>#fmPreview{position:fixed;left:50%;top:0;transform:translateX(-50%);z-index:9999;pointer-events:none;"
             "background:#b45309;color:#fff;font:600 12px/1.6 system-ui,sans-serif;padding:1px 12px;border-radius:0 0 8px 8px;"
             "opacity:.92;white-space:nowrap}</style>"
@@ -55,7 +67,7 @@ def create_app(static_dir: str | Path, upstream: str, label: str, transport: htt
         await client.aclose()
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=life)
-    inject = head_inject(label)
+    inject = head_inject(label, urlsplit(up).port or 8000)
 
     def page(name: str) -> HTMLResponse:
         s = (static / name).read_text()
