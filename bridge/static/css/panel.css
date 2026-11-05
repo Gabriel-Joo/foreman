@@ -144,6 +144,11 @@ body { --term-h:0px; }
 .hand-docs .hand-group { margin-top:6px; }
 /* 11-06 이름 다시 — 문서 정리의 두 일은 버튼 하나 대신 "이름 · 설명" 줄 + 짧은 버튼 */
 .hand-item { margin:8px 0 4px; }
+/* 12a 서기실 창 — 한 줄에 이름 · 설명, 오른쪽에 버튼 */
+.sc-row { display:flex; gap:8px; align-items:flex-start; justify-content:space-between; margin:5px 0; }
+.sc-row > .small { flex:1; min-width:0; line-height:1.4; }
+.sc-row .hand-btns { margin:0; flex:none; }
+.sc-row > button { flex:none; width:auto; padding:2px 10px; }
 .hand-item-h { line-height:1.4; }
 .hand-item-h .muted { display:block; }
 

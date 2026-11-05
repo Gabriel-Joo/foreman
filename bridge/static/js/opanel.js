@@ -11,6 +11,7 @@ import { approvalCard, handleApprovalClick, sessionKv, modelChip, convoHtml, fee
 import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
 import { mountHandoff } from './handoff.js';
+import { createScribe } from './scribe.js';
 
 const KEY_OPEN = 'foremanPanelOpen', KEY_TAB = 'foremanPanelTab', KEY_MODE = 'foremanPanelMode';
 const KEY_W = { narrow: 'foremanPanelW', wide: 'foremanPanelWideW' };
@@ -70,6 +71,11 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   host.appendChild(el);
   const $ = (id) => el.querySelector('#' + id);
   const hand = mountHandoff($('pHand'), store, { open: true });
+  // 서기실 창(12a) — 서기를 누르면 pSel에 그린다. 버튼은 여기서 한 번만 받는다(다시 그려도 그대로)
+  const scribe = createScribe(store);
+  $('pSel').addEventListener('click', (ev) => {
+    if (target && target.kind === 'scribe') scribe.onClick(ev, target.room, projectLabel(store.state, target.room));
+  });
   mountApprovalHistory($('pHist'), $('pHistHead'), $('pHistBody'), store);
 
   let target = null, targetKey = '', lastSel = undefined;
@@ -418,6 +424,11 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       $('pTitle').textContent = target.name;
       $('pSel').innerHTML = `<div class="small muted">${esc(projectLabel(st, target.room))} · 지금 ${esc(target.status || '기록 없음')}</div>
         ${pipeBlock(st.pipeline.get(target.room)) || '<p class="small muted">파이프라인 기록 없음</p>'}`;
+      return;
+    }
+    if (target && target.kind === 'scribe') {
+      $('pTitle').textContent = `서기 · ${projectLabel(st, target.room)}`;
+      $('pSel').innerHTML = scribe.html(target.room, projectLabel(st, target.room));
       return;
     }
     if (target && target.kind === 'foreman') {
