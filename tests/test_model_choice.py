@@ -29,6 +29,17 @@ def test_missing_file_means_cc_default(tmp_path):
     assert m.choices == [] and m.pick("opus", "coder") is None
 
 
+def test_switch_screen_counts():
+    from bridge.api.sessions import _counts
+    old = "❯ /model sonnet\n  ⎿  Set model to Sonnet 5.5 and saved as your default for new sessions\n"
+    ask = "   Switch model?\n   ❯ 1. Yes, switch to Haiku 5.5\n     2. No, go back\n"
+    assert _counts(None) == (0, 0)
+    assert _counts(old) == (1, 0)                                   # 옛 결과 줄 — 보내기 전 수로 센다
+    assert _counts(old + "❯ /model haiku\n" + ask) == (1, 1)        # 새 확인 창
+    assert _counts(old + ask.replace("❯ 1.", "  1.")) == (1, 0)     # 커서가 Yes에 없으면 고르지 않는다
+    assert _counts(old + "❯ /model haiku\n  ⎿  Set model to Haiku 5.5\n") == (2, 0)
+
+
 def test_repo_config_covers_dispatcher_roles():
     m = Models(DEFAULT_PATH)
     ids = {c["id"] for c in m.choices}

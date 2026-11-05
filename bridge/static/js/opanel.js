@@ -9,6 +9,7 @@
 import { approvalCard, handleApprovalClick, sessionKv, modelChip, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
          sessionName, sessionSub, projectLabel, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN } from './render.js';
 import { stuckTurn } from './store.js';
+import { slashIntent } from './slash.js';
 import { mountHandoff } from './handoff.js';
 
 const KEY_OPEN = 'foremanPanelOpen', KEY_TAB = 'foremanPanelTab', KEY_MODE = 'foremanPanelMode';
@@ -58,7 +59,6 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       <form id="pForm" class="input" hidden>
         <textarea id="pText" rows="3" placeholder="이 세션에 보낼 입력 (Ctrl+Enter로 보냅니다)"></textarea>
         <div class="row prow">
-          <label class="small pcmd" title="슬래시 명령 — 켜면 '/'로 시작하는 입력을 /compact 같은 CC 명령으로 실행합니다. 끄면 글자 그대로 보냅니다."><input id="pCmd" type="checkbox"> / 명령</label>
           <span id="pWhy" class="pwhy small"></span>
           <button id="pSend" type="submit">보내기</button>
         </div>
@@ -200,12 +200,62 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     }
     store.touch('panel');
   });
+  // 모델 바꾸기(11-05) — 머리줄의 모델 표시를 누르면 목록, 고르면 그 세션에 /model <id>
+  const mdlMenu = document.createElement('div');
+  mdlMenu.className = 'mdl-menu'; mdlMenu.hidden = true;
+  document.body.appendChild(mdlMenu);
+  const closeMenu = () => { mdlMenu.hidden = true; };
+  $('pMeta').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-mdl]');
+    if (!b) return;
+    ev.stopPropagation();
+    if (!mdlMenu.hidden) { closeMenu(); return; }
+    const s = store.state.sessions.get(store.state.selected);
+    const m = await store.modelChoices();
+    if (!s || !m) return;
+    const busy = s.state === 'ACTIVE';
+    mdlMenu.innerHTML = `<div class="small muted">이 세션의 모델 — /model을 보냅니다</div>`
+      + m.choices.map((c) => `<button type="button" data-id="${esc(c.id)}" data-label="${esc(c.label)}"${s.model_family === c.id ? ' class="cur"' : ''}>
+          ${esc(c.label)}${s.model_family === c.id ? ' · 지금' : ''}<span class="muted small">${c.note ? ' — ' + esc(c.note) : ''}</span></button>`).join('')
+      + (busy ? '<div class="small warn">작업 중입니다 — 대기열에 들어가 지금 작업이 끝난 뒤 바뀝니다.</div>' : '')
+      + '<div class="small muted">대화가 쌓인 세션은 바꾼 뒤 첫 응답이 전체 대화를 다시 읽느라 느리고 토큰이 더 듭니다(CC가 묻는 확인은 브리지가 대신 답합니다).</div>'
+      + '<div class="small muted">이 세션만 바뀝니다. CC가 /model을 새 세션 기본값으로도 저장하는데, 브리지가 바로 원래대로 되돌립니다.</div>';
+    const r = b.getBoundingClientRect();
+    mdlMenu.style.left = `${Math.max(8, Math.min(r.left, innerWidth - 300))}px`;
+    mdlMenu.style.top = `${r.bottom + 4}px`;
+    mdlMenu.hidden = false;
+  });
+  mdlMenu.addEventListener('click', async (ev) => {
+    const c = ev.target.closest('button[data-id]');
+    if (!c) return;
+    closeMenu();
+    const id = store.state.selected;
+    if (id != null) await store.switchModel(id, c.dataset.id, c.dataset.label);
+  });
+  document.addEventListener('click', (ev) => { if (!mdlMenu.hidden && !mdlMenu.contains(ev.target)) closeMenu(); });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !mdlMenu.hidden) { ev.stopPropagation(); closeMenu(); } }, true);
+  // 바꾸는 중 표시 — 응답 모델이 고른 것과 같아지면(또는 30분이 지나면) 지운다
+  function pendModel(st, s) {
+    const p = st.pendingModel.get(s.id);
+    if (p && (s.model_family === p.model || Date.now() - p.ts > 30 * 60 * 1000)) { st.pendingModel.delete(s.id); return null; }
+    return p || null;
+  }
+
   $('pForm').onsubmit = async (ev) => {
     ev.preventDefault();
     const id = store.state.selected, text = $('pText').value;
     if (!id || !text.trim()) return;
+    // '/'로 시작하면(11-05, 체크박스 대신) — 아는 CC 명령은 실행, 맥락을 날리는 명령은 확인, 모르는 /낱말은 묻고, 경로 · 여러 줄은 글로
+    const si = slashIntent(text);
+    let command = si.kind === 'command';
+    if (si.kind === 'confirm') {
+      if (!confirm(`/${si.name}을(를) 실행할까요? 이 세션의 대화 맥락이 사라지거나 세션이 끝날 수 있습니다.`)) return;
+      command = true;
+    } else if (si.kind === 'ask') {
+      command = confirm(`/${si.name}은(는) 모르는 명령입니다. CC 명령으로 실행할까요?\n[확인] 명령으로 실행 · [취소] 글자 그대로 보내기`);
+    }
     $('pSend').disabled = true;
-    const r = await store.sendInput(id, text, $('pCmd').checked);
+    const r = await store.sendInput(id, text, command);
     $('pSend').disabled = false;
     if (r.ok) { $('pText').value = ''; const c = $('pConvo'); c.scrollTop = c.scrollHeight; }   // 보냈으면 내 글이 보이는 곳으로
   };
@@ -252,7 +302,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const t = s.tokens || {}, stuck = stuckTurn(s);
     const now = s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target || '', 60))}` : (s.state === 'ACTIVE' ? '생각 중' : '');
     put('pMeta', 'meta', `<span class="badge st-${s.state}">${esc(STATE_LABEL[s.state] || s.state)}</span>
-      <span class="muted">${esc(sessionSub(s))}</span>${s.model ? ' ' + modelChip(s) : ''}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
+      <span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
       · <span class="muted">오늘 출력 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn">⚠ 끝 신호 없는 턴</span>' : ''}`);
     $('pMeta').title = `${sessionSub(s)} · ${projectLabel(st, s.project)} · ${(s.cwd || '')}`;
     // 대화 — 바뀔 때만
@@ -268,7 +318,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (tab === 'sess' || switched) {
       put('pInfo', 'info', `<div class="small muted">${esc(projectLabel(st, s.project))} · ${esc((s.cwd || '').replace(/^\/home\/[^/]+/, '~'))}</div>
         ${s.open_turn ? `<div class="small${stuck ? ' warn' : ''}">${stuck ? '⚠ 끝 신호 없는 턴' : '▶ 턴'} ${esc(ORIGIN_LABEL[s.open_turn.origin] || '')} · ${ago(s.open_turn.started_at)} 시작</div>` : ''}
-        ${sessionKv(s)}`);
+        ${sessionKv(s, pendModel(st, s))}`);
     }
     const blocked = !s.injectable;
     $('pText').disabled = blocked; $('pSend').disabled = blocked;

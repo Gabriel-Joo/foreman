@@ -34,6 +34,7 @@ export class Store {
       conn: { status: 'idle', since: null, attempt: 0, nextIn: 0, reason: '' },
       projects: [], sessions: new Map(), approvals: new Map(), selected: null, convo: new Map(),
       generatedAt: null, hiddenDormant: 0, lastInput: null,
+      pendingModel: new Map(),     // 세션 id → { model, label, queued, ts } — /model을 보냈고 아직 응답 모델이 안 바뀜(11-05)
       // 7단계 터미널 패널: enabled · running, requests(Map id → CC가 부탁한 명령), result(마지막 결과), shell(최근 친 명령)
       terminal: { enabled: false, running: false, requests: new Map(), result: null, shell: [], openReq: 0 },
       // 8단계 파이프라인: 프로젝트 이름 → { infra, chains, waiting } (/api/pipeline)
@@ -407,6 +408,27 @@ export class Store {
     if (res.ok) this.convoLater(id);           // 새 턴이든 대기열이든 대화에 내 글이 뜨게
     this.touch('panel');
     return res;
+  }
+  // 모델 바꾸기(11-05) — 그 세션에 /model <id>. 화면은 다음 응답의 모델이 고른 것과 같아질 때까지 "→ 고른 모델"을 보인다
+  async switchModel(id, model, label) {
+    const r = await fetch(`/api/sessions/${id}/model`, { method: 'POST', headers: this.headers(true), body: JSON.stringify({ model }) });
+    const j = await r.json().catch(() => ({}));
+    const ok = r.status === 202 || (r.status === 504 && j.left_in_box === false);
+    const res = r.status === 409 ? { ok: false, msg: `모델을 바꾸지 못했습니다 — ${j.refused}` }
+      : ok ? { ok: true, msg: j.queued ? `${label}(으)로 바꾸기를 대기열에 넣었습니다. 지금 작업이 끝나면 바뀝니다.` : `${label}(으)로 바꿨습니다. 다음 응답부터 적용됩니다.` }
+      : r.status === 504 ? { ok: false, msg: '모델 바꾸기가 제출됐는지 확인하지 못했습니다. 터미널에서 입력 칸을 확인해 주세요.' }
+      : { ok: false, msg: `모델을 바꾸지 못했습니다 (HTTP ${r.status}).` };
+    if (ok || r.status === 504) this.state.pendingModel.set(id, { model, label, queued: !!j.queued, ts: Date.now() });
+    this.state.lastInput = { sessionId: id, ts: Date.now(), ...res };
+    this.touch('panel');
+    return res;
+  }
+  async modelChoices() {           // 고를 수 있는 모델(config/models.toml) — 한 번 받아 둔다
+    if (!this._models) {
+      const r = await fetch('/api/spawn/options', { headers: this.headers() });
+      this._models = r.ok ? ((await r.json()).models || null) : null;
+    }
+    return this._models;
   }
   // ── 터미널 패널 ───────────────────────────────────────
   async terminalSession() {          // 쿠키(Path=/terminal)를 받는다 — iframe이 이걸로 ttyd에 붙는다

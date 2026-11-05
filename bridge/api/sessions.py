@@ -3,7 +3,12 @@
 주입은 거부를 포함해 모두 event(source=bridge, type=input)로 남긴다. 거부 이유는 응답 · 로그 · 이벤트 세 곳에.
 """
 
+import asyncio
+import json
 import logging
+import os
+import re
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -12,7 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from bridge.api.auth import require_api_token
-from bridge.inject import Refused, _status, _tmux_env, deliver
+from bridge.inject import Refused, _status, _tmux_env, deliver, tmux
 from bridge.liveness import live_sessions
 from bridge.mask import Masker
 from bridge.models import EventIn, EventSource, EventStatus, EventType
@@ -88,6 +93,131 @@ async def inject_input(session_id: int, body: InputIn, request: Request) -> JSON
             turn_id=turn_id)
     status = 202 if res["delivered"] else 504
     return JSONResponse(res | {"verified": bool(res["delivered"])}, status_code=status)
+
+
+class ModelIn(BaseModel):
+    model: str = Field(min_length=1, max_length=40)
+
+
+@router.post("/{session_id}/model")
+async def switch_model(session_id: int, body: ModelIn, request: Request) -> JSONResponse:
+    """패널 머리줄의 모델 표시 → 목록에서 고르면 그 세션에 `/model <id>`를 보낸다(11-05 사용자 요청).
+    id는 config/models.toml 목록에 있는 것만(셸 · 입력에 그대로 들어간다). 작업 중이면 대기열에 들어가 지금 일이 끝난 뒤 바뀐다.
+    주의: CC의 /model은 그 세션만이 아니라 CC의 새 세션 기본값까지 저장한다 — 브리지가 띄우는 세션은 --model을 넘겨 영향이 없다."""
+    hm = request.app.state.handoff
+    if not hm.models.valid(body.model):
+        return JSONResponse({"refused": f"고를 수 없는 모델입니다: {body.model}"}, status_code=409)
+    before = _model_setting()
+    # 화면에 앞서 바꾼 기록("Set model to …")이 남아 있을 수 있다 — 보내기 전 수를 세 두고 늘어났을 때만 바뀐 것으로 본다
+    # (11-05: 옛 줄을 새 결과로 잘못 읽어 기본값을 너무 일찍 "되돌렸고", 그 뒤 CC가 저장한 값이 남았다)
+    pane0 = await _pane_of(request, session_id)
+    seen0 = _counts(await _screen(hm.socket, pane0)) if pane0 else (0, 0)
+    resp = await inject_input(session_id, InputIn(text=f"/model {body.model}", command=True), request)
+    if resp.status_code not in (202, 504):
+        return resp
+    res = json.loads(resp.body)
+    async with request.app.state.store.engine.begin() as c:
+        await c.execute(text("UPDATE character_session SET model = :m WHERE id = :i"), {"m": body.model, "i": session_id})
+    # 바로 실행됐으면 몇 초 안에 끝난다. 대기열이면 지금 일이 끝난 뒤 실행되므로 뒤에서(최대 30분) 따라간다
+    if res.get("pane"):
+        if res["pane"] != pane0:
+            seen0 = (0, 0) if pane0 is None else seen0
+        if not res.get("queued") and await _follow(hm.socket, res["pane"], seen0, before, 8):
+            res |= {"verified": True, "switched": True}
+        else:
+            t = asyncio.get_running_loop().create_task(_follow(hm.socket, res["pane"], seen0, before, 30 * 60))
+            _bg.add(t)
+            t.add_done_callback(_bg.discard)
+    return JSONResponse(res, status_code=202 if res.get("switched") or res.get("queued") else resp.status_code)
+
+
+# 대화가 쌓인 세션에서 /model은 "Switch model? … 전체 대화를 다시 읽는다" 확인 창을 띄운다(11-05 실측, CC 2.1.318).
+# 사람이 패널에서 이미 골랐으므로 커서가 "Yes"에 있을 때만 Enter로 고른다
+_SWITCH_ASK = re.compile(r"❯\s*1\.\s*Yes, switch to")
+
+
+async def _pane_of(request: Request, session_id: int) -> str | None:
+    row = await _row(request, session_id)
+    ls = live_sessions(request.app.state.settings.sessions_dir).get(row[1] or "") if row else None
+    te = _tmux_env(ls.pid) if ls else None
+    return te[1] if te else None
+
+
+async def _screen(socket: str, pane: str) -> str | None:
+    """보이는 화면 + 스크롤 기록(위로 밀려난 줄까지 세야 수가 줄지 않는다)."""
+    try:
+        return await tmux(socket, "capture-pane", "-p", "-S", "-3000", "-t", pane)
+    except Refused:
+        return None
+
+
+def _counts(screen: str | None) -> tuple[int, int]:
+    """(바꾼 결과 줄 수, Yes를 고를 수 있는 확인 창 수)."""
+    s = screen or ""
+    return s.count("Set model to"), len(_SWITCH_ASK.findall(s))
+
+
+async def _follow(socket: str, pane: str, seen0: tuple[int, int], before: tuple[bool, Any] | None, secs: float) -> bool:
+    """/model이 실제로 바뀔 때까지 화면을 본다 — 새 확인 창이면 Yes, 새 "Set model to"가 뜨면 CC 기본값을 되돌리고 True.
+    명령은 트랜스크립트에 글과 다른 모양으로 남아 주입의 제출 확인이 못 맞춘다 — 그래서 화면으로 본다."""
+    loop = asyncio.get_running_loop()
+    end = loop.time() + secs
+    asks_done = seen0[1]
+    while loop.time() < end:
+        screen = await _screen(socket, pane)
+        if screen is None:
+            return False                                   # pane이 사라졌다
+        done, asks = _counts(screen)
+        # 바뀐 신호 둘: CC가 설정 파일에 새 기본값을 썼다(가장 확실하다 — 11-05 실측, 대기열에서 실행된 뒤 CC가 화면을
+        # 다시 그려 스크롤 기록이 비었다) 또는 화면에 결과 줄이 늘었다(설정 값이 원래 같은 모델이었을 때)
+        if (before is not None and _model_setting() not in (before, None)) or done > seen0[0]:
+            # CC의 /model은 새 세션 기본값(~/.claude/settings.json "model")까지 저장한다 — 버튼은 "이 세션만"이므로 되돌린다
+            await asyncio.sleep(0.5)
+            _restore_model_setting(before)
+            return True
+        if asks > asks_done and _SWITCH_ASK.search(screen.rsplit("Switch model?", 1)[-1]):
+            await tmux(socket, "send-keys", "-t", pane, "Enter")
+            asks_done = asks
+            log.info("모델 바꾸기 확인 창 — Yes를 골랐다 pane=%s", pane)
+            await asyncio.sleep(1.0)
+            continue
+        await asyncio.sleep(0.5 if secs <= 10 else 2.0)
+    return False
+
+
+CC_SETTINGS = Path.home() / ".claude" / "settings.json"
+_bg: set[asyncio.Task[Any]] = set()
+
+
+def _model_setting() -> tuple[bool, Any] | None:
+    """(키가 있나, 값). 파일을 못 읽으면 None — 그때는 되돌리지 않는다."""
+    try:
+        d = json.loads(CC_SETTINGS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return ("model" in d, d.get("model"))
+
+
+def _restore_model_setting(before: tuple[bool, Any] | None) -> bool:
+    """보내기 전의 "model" 값으로 되돌린다(다른 키는 그대로). 바뀐 게 없으면 False."""
+    if before is None:
+        return False
+    try:
+        d = json.loads(CC_SETTINGS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if ("model" in d, d.get("model")) == before:
+        return False
+    if before[0]:
+        d["model"] = before[1]
+    else:
+        d.pop("model", None)
+    tmp = CC_SETTINGS.with_suffix(".json.foreman-tmp")
+    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.chmod(tmp, CC_SETTINGS.stat().st_mode & 0o777)
+    os.replace(tmp, CC_SETTINGS)
+    log.info("CC 기본 모델을 되돌림 → %s", before[1] if before[0] else "(키 없음)")
+    return True
 
 
 async def _turn_for(request: Request, sid: int, delivered: dict[str, Any] | None) -> int | None:
