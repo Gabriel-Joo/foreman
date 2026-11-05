@@ -648,6 +648,11 @@ class Assembler:
                 # 화면이 "IDLE인데 일이 돈다"를 보이려고 남긴다(11-06 — Sonnet 판정이 도는데 캐릭터가 자고 있었다)
                 bg = isinstance(tur, dict) and len(results) == 1 and (
                     tur.get("backgroundTaskId") or (st.tool_names.get(tuid or "") == "Monitor" and tur.get("taskId")))
+                # TaskStop으로 멈춘 백그라운드는 <task-notification>이 오지 않는다 — 결과의 task_id로 끝을 남긴다
+                # (11-06: 멈춘 시험 스크립트가 "백그라운드 1"로 남아 답을 마친 뒤에도 캐릭터가 기다림으로 보였다)
+                if (isinstance(tur, dict) and len(results) == 1 and tur.get("task_id")
+                        and st.tool_names.get(tuid or "") in ("TaskStop", "KillShell") and not err):
+                    self._bg_end_task(b, st, str(tur["task_id"]), "stopped", ts, tuid)
                 if bg:
                     tool = st.tool_names.get(tuid or "") or "Bash"
                     desc = (st.agent_inputs.get(tuid or "") or {}).get("description")
@@ -758,12 +763,15 @@ class Assembler:
         task, status = tags.get("task-id"), tags.get("status")
         if not task or not status or status == "running":
             return
+        self._bg_end_task(b, st, task, status, ts, tags.get("tool-use-id"))
+
+    def _bg_end_task(self, b: Batch, st: SessionState, task: str, status: str, ts: datetime, tuid: str | None) -> None:
         u = _uuid5(st.id, task, "bg_end")
         # 같은 묶음에 같은 uuid가 둘이면 여러 행 INSERT … ON DUPLICATE가 MySQL 1869로 묶음째 실패한다(11-06 시험) — 묶음 안에서 한 번만
         if any(e["uuid"] == u for e in b.events):
             return
         self._event(b, st, uuid=u, ts=ts, type="bg_end", target=task,
-                    tool_use_id=tags.get("tool-use-id"), status="done", payload={"status": status[:20]})
+                    tool_use_id=tuid, status="done", payload={"status": status[:20]})
 
     async def _notification(self, c: AsyncConnection, st: SessionState, b: Batch, s: str, uid: str, ts: datetime,
                             tid: int) -> None:
