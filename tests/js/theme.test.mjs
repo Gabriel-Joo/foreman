@@ -22,6 +22,21 @@ test('기다림 — IDLE인데 서브에이전트 · 백그라운드가 돌면 W
   assert.equal(resolveAction({ states: { IDLE: { anim: 'sleep' } } }, { state: 'WAITING' }).anim, 'wait');   // 테마에 없어도
 });
 
+test('서기(12a) — 네 테마에 잉크 갈색, 쉴 때는 읽는 구역에서 읽는다(쉼 변형 없음), 일할 때는 도구 규칙 그대로', () => {
+  const want = { plain: 'desk', office: 'library', magic: 'library', site: 'store' };
+  for (const [name, zone] of Object.entries(want)) {
+    const t = JSON.parse(readFileSync(new URL(`../../bridge/static/themes/${name}/theme.json`, import.meta.url)));
+    assert.equal(t.roles.colors.scribe, '#b0713a', name);
+    const idle = resolveAction(t, { state: 'IDLE', role: 'scribe' });
+    assert.equal(idle.go, zone, name);
+    assert.equal(idle.anim, 'read', name);
+    assert.ok(!idle.variants, name);
+    if (zone !== 'desk') assert.ok(t.layout.zones[zone], `${name}: 구역 ${zone}이 있어야 한다`);   // 없는 구역이면 갈 곳이 없다
+    assert.notEqual(resolveAction(t, { state: 'IDLE', role: 'coder' }).source, 'role:coder', name);   // 다른 역할은 그대로
+    assert.equal(resolveAction(t, { state: 'ACTIVE', role: 'scribe', tool: 'Edit' }).source.startsWith('tool:'), true, name);
+  }
+});
+
 const theme = JSON.parse(readFileSync(new URL('../../bridge/static/themes/plain/theme.json', import.meta.url)));
 
 test('도구 패턴', () => {
@@ -120,7 +135,7 @@ test('잘못된 target 정규식은 안 맞는 것으로', () => {
 });
 
 test('역할 색 이름은 DB · 디스패처와 같다(11-05 — 전에는 lead · builder …라 실제 세션 색이 한 번도 안 맞았다)', () => {
-  const ROLES = ['foreman', 'coder', 'inspector', 'cicd', 'helper'];
+  const ROLES = ['foreman', 'coder', 'inspector', 'cicd', 'scribe', 'helper'];   // scribe = 12a 서기(bridge/foreman.py ROLES)
   for (const name of ['office', 'magic', 'site', 'plain']) {
     const t = JSON.parse(readFileSync(new URL(`../../bridge/static/themes/${name}/theme.json`, import.meta.url)));
     assert.deepEqual(Object.keys(t.roles.colors).sort(), [...ROLES].sort(), name);

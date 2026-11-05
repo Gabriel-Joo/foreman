@@ -63,7 +63,8 @@
   "roles": {
     "_": "역할 → 안전모 색. 역할이 없으면 노란 안전모, 감독(foreman)은 흰 안전모. 이름은 DB · 디스패처와 같다(11-05 통일). 미리 보기 ?roles=demo",
     "mode": "helmet", "default": "#f2c14e", "foreman": "#f4f4f4",
-    "colors": { "foreman": "#f4f4f4", "coder": "#2f6fb0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "helper": "#8a8f98" }
+    "colors": { "foreman": "#f4f4f4", "coder": "#2f6fb0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "helper": "#8a8f98" },
+    "idle": { "_": "역할별 쉼 자리(12a) — 서기는 자재창고(도면 읽기). 도면함은 나중에", "scribe": { "go": "store", "anim": "read" } }
   },
 
   "hq": {

@@ -27,7 +27,7 @@ from bridge.liveness import live_sessions
 log = logging.getLogger("foreman.dispatch")
 
 MODES = ("new", "handoff", "attach", "ask")
-ROLES = ("coder", "inspector", "cicd")
+ROLES = ("coder", "inspector", "cicd", "scribe")
 PLAN_TIMEOUT_S = 180.0
 _cache: dict[str, tuple[float, str]] = {}
 
@@ -84,7 +84,10 @@ INSTRUCTIONS = """너는 FOREMAN의 포먼(감독)이다. 사람이 하려는 �
    - "handoff": 끝났거나 오래된 세션의 일을 이어 가야 하면 그 세션의 인계 요약(summary_id)을 쓴다. 요약이 없으면 "new"로 하고 이유에 적는다
    - "new": 새 일
    - "ask": 모호하거나 위험해서 사람이 정해야 할 것이 있을 때(questions에 물을 것)
-3. role — "coder"(고치기 · 만들기) · "inspector"(살펴보기 · 원인 찾기) · "cicd"(빌드 · 배포)
+3. role — "coder"(고치기 · 만들기) · "inspector"(살펴보기 · 원인 찾기) · "cicd"(빌드 · 배포) · "scribe"(서기 — 문서 일)
+   - scribe 일감(docs/12_scribe.md): 회고(retro) · 문서 맞추기(sync) · CLAUDE.md 정리(trim) · 압축 손실 반영(loss) · 포트폴리오
+   - 회고 · 문서 정리 요청이면 scribe. 서기는 따로 작업(worktree)으로 띄우고, 합치기가 사람의 검토다
+   - 회고의 first_prompt에는 기간(KST)을 꼭 적는다. 재료 묶음은 사람이 `python -m bridge.scribe`로 만든 경로를 준다
 4. read_only — 원인 분석 · 조사만이면 true(CC 읽기 전용 모드로 띄운다). 고치는 일이면 false
 5. title — 세션 이름(한국어, 짧게)
 6. first_prompt — 새 세션(또는 attach 세션)에 넣을 첫 글. 한국어로:

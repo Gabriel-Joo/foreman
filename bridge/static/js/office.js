@@ -233,7 +233,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         if (dormantGone(s, room.name)) return;
         const k = slot++;
         if (k >= cap) return;
-        let act = resolveAction(theme, { state: viewState(s), tool: s.activity && s.activity.tool, target: s.activity && s.activity.target,
+        let act = resolveAction(theme, { state: viewState(s), role: roleOf(s), tool: s.activity && s.activity.tool, target: s.activity && s.activity.target,
                                          flags: { approval_pending: pending.has(s.id), stuck_turn: !!s.stuck_turn } });
         // 쉬는 모습은 사람마다 다르게(마법학교: 엎드려 자기 · 먹기 · 책) — 플래그가 덮은 동작은 그대로
         if (act.variants && !act.flag) act = { ...act, anim: act.variants[s.id % act.variants.length] };
