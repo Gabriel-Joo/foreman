@@ -5,6 +5,7 @@
 import { resolveAction, infraAction, groupSubagents, tokenRate } from './theme.js';
 import { loadSprites } from './sprites.js';
 import { createSidePanel } from './opanel.js';
+import { buildGrid, findPath, footprint, RES } from './walk.js';
 
 const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'], ['foreman', '포먼']];
 const RATE_WIN = 10 * 60 * 1000;          // 토큰 속도 창 — 최근 10분
@@ -266,6 +267,71 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     actors.set(key, { ...a, key, x: a.tx, y: a.ty, phase: Math.random() * 6 });
   }
 
+  // ── 걷기(11-05) — 가구를 피해 ㅗ자 복도로. 방마다 배치가 같아 격자는 현장 방 하나 · 라운지 하나(방 안 좌표) ──
+  const WALK_DEBUG = new URLSearchParams(location.search).get('walk') === '1';
+  const CORRIDORS = L.corridors || [];
+  function sizeT(d) { const [w, h] = SP.size(d.s); const sc = d.scale || 1; return [w * sc / T, h * sc / T]; }
+  function obstacles() {
+    const out = [];
+    const add = (d, ox, oy) => {
+      if (d.fx === 'glasswall') {
+        // 유리벽 — 옆 · 아래 테두리만 벽, 아래 가운데에 문(서버룸처럼 안에 자리가 있다). 위는 원래 벽
+        const x = ox + d.x, y = oy + d.y, w = d.w || 1, h = d.h || 1, door = d.door ?? 1.5, th = 0.35;
+        out.push([x, y, th, h], [x + w - th, y, th, h],
+                 [x, y + h - th, (w - door) / 2, th], [x + (w + door) / 2, y + h - th, (w - door) / 2, th]);
+        return;
+      }
+      if (!d.s || d.fx || d.z === 'wall' || d.z === 'floor' || d.z === 'top') return;
+      const [w, h] = sizeT(d);
+      for (let i = 0; i < (d.n || 1); i++) {
+        const f = footprint({ ...d, x: ox + d.x + i * (d.dx || 1), y: oy + d.y }, w, h);
+        if (f) out.push(f);
+      }
+    };
+    for (const d of theme.sprites.decor || []) add(d, 0, 0);
+    const iz = L.zones.infra;
+    for (const kind of ['jenkins', 'harbor', 'argocd']) for (const d of (theme.sprites.infra_decor || {})[kind] || []) add(d, iz[kind].x, iz.y);
+    return out;
+  }
+  // 라운지는 의자(앉는 자리)뿐이라 막을 가구가 없다 — 벽만
+  const GRID = SP ? { room: buildGrid(L.room.w, L.room.h, obstacles(), CORRIDORS), lounge: buildGrid(L.lounge.w, L.lounge.h, []) } : null;
+  function roomOf(a) {
+    if (a.room === '_hq') return null;
+    return a.room == null ? world.lounge : world.rooms.find((r) => r.name === a.room);
+  }
+  // 목표가 바뀌면 길을 새로 찾는다(월드 좌표 점 목록). 작은 일꾼(서브에이전트)은 부모 둘레를 날아다녀 길을 찾지 않는다
+  function routeOf(a) {
+    const key = a.tx + ',' + a.ty;
+    if (a.routeKey === key) return a.route;
+    a.routeKey = key;
+    const r = GRID && a.kind !== 'mini' ? roomOf(a) : null;
+    if (!r) { a.route = [[a.tx, a.ty]]; return a.route; }
+    const g = r.lounge ? GRID.lounge : GRID.room;
+    a.route = findPath(g, a.x - r.x, a.y - r.y, a.tx - r.x, a.ty - r.y).map(([x, y]) => [x + r.x, y + r.y]);
+    return a.route;
+  }
+  function drawWalkDebug() {
+    if (!WALK_DEBUG || !GRID) return;
+    for (const r of [...world.rooms, world.lounge]) {
+      if (!r) continue;
+      const g = r.lounge ? GRID.lounge : GRID.room;
+      for (let i = 0; i < g.cols * g.rows; i++) {
+        const c = i % g.cols, rr = Math.floor(i / g.cols);
+        if (g.block[i]) ctx.fillStyle = '#ff303055';
+        else if (g.cost[i] <= 1) ctx.fillStyle = '#30a0ff33';
+        else continue;
+        ctx.fillRect((r.x + c / RES) * T, (r.y + rr / RES) * T, T / RES, T / RES);
+      }
+    }
+    ctx.strokeStyle = '#ffee00'; ctx.lineWidth = 1;
+    for (const a of actors.values()) {
+      if (!a.route || a.kind === 'mini') continue;
+      ctx.beginPath(); ctx.moveTo(a.x * T, a.y * T);
+      for (const [x, y] of a.route) ctx.lineTo(x * T, y * T);
+      ctx.stroke();
+    }
+  }
+
   // ── 카메라 ──────────────────────────────────────────
   function roomByView() { return [...world.rooms, world.lounge].find((r) => (r.name || '_lounge') === view); }
   function aim() {
@@ -302,11 +368,17 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         if (a.bornAt && now < a.bornAt) continue;              // 아직 소환 중 — 마법진 가운데서 기다린다
         [a.tx, a.ty] = miniTarget(a, now);
       }
-      const dx = a.tx - a.x, dy = a.ty - a.y, d = Math.hypot(dx, dy);
-      const step = SPEED * dt * (a.kind === 'mini' ? 0.8 : 1);
-      a.moving = d > 0.05;
-      if (a.moving) a.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
-      if (d <= step) { a.x = a.tx; a.y = a.ty; } else { a.x += dx / d * step; a.y += dy / d * step; }
+      // 길(점 목록)의 다음 점으로 걷는다 — 점에 닿으면 다음 점, 남은 걸음은 이어서 쓴다
+      const route = routeOf(a);
+      let step = SPEED * dt * (a.kind === 'mini' ? 0.8 : 1);
+      a.moving = false;
+      while (route.length && step > 0) {
+        const [px, py] = route[0];
+        const dx = px - a.x, dy = py - a.y, d = Math.hypot(dx, dy);
+        if (d > 0.05) { a.moving = true; a.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'); }
+        if (d <= step) { a.x = px; a.y = py; step -= d; if (route.length > 1) route.shift(); else break; }
+        else { a.x += dx / d * step; a.y += dy / d * step; step = 0; }
+      }
       a.phase += dt * (a.moving ? 10 : 4);
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -332,6 +404,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       for (const a of list) if (!(a.bornAt && now < a.bornAt)) drawActor(a, now);
     }
     drawSummonsPuffs(now);
+    drawWalkDebug();
     // 글자는 화면 좌표로(선명하게)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const zoomedIn = view !== 'map';
@@ -443,6 +516,26 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
 
   function spriteBottom(name, y) { const [, h] = SP.size(name); return y + h / T; }
 
+  // 탁자 위 소품의 그리는 순서 — 소품 가운데가 들어 있는 받침(같은 목록의 가구) 중 발밑이 가장 아래인 것 바로 다음.
+  // 전에는 y + 3(어림)이라 받침 앞(아래)에 선 사람보다 늦게 그려져 사람 머리 위로 소품이 덮였다(11-05)
+  function topKey(d) {
+    if (d._k != null) return d._k;
+    const list = (theme.sprites.decor || []).includes(d) ? theme.sprites.decor
+      : Object.values(theme.sprites.infra_decor || {}).find((l) => l.includes(d)) || [];
+    const [w, h] = sizeT(d), cx = d.x + w / 2, cy = d.y + h / 2;
+    let best = null;
+    for (const b of list) {
+      if (!b.s || b.fx || b.z) continue;
+      const [bw, bh] = sizeT(b);
+      for (let i = 0; i < (b.n || 1); i++) {
+        const bx = b.x + i * (b.dx || 1);
+        if (cx >= bx && cx <= bx + bw && cy >= b.y && cy <= b.y + bh && (best == null || b.y + bh > best)) best = b.y + bh;
+      }
+    }
+    d._k = best != null ? best - 0.005 : d.y + h + 0.3;   // 받침보다 0.005 뒤 = 받침 발밑(-0.01)보다 뒤, 받침 앞 사람보다 앞
+    return d._k;
+  }
+
   // 장식 하나 — z: wall · floor는 바로, top(탁자 위)은 탁자 바로 뒤, 그 밖은 발밑 순서로
   function placeDecor(d, ox, oy, now, sorted) {
     const n = d.n || 1;
@@ -457,7 +550,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         ctx.globalAlpha = 1;
       };
       if (d.z === 'wall' || d.z === 'floor') draw();
-      else if (d.z === 'top') sorted.push({ y: y + 3, draw });               // 탁자 · 선반 위 — 받침보다 뒤에
+      else if (d.z === 'top') sorted.push({ y: oy + topKey(d), draw });       // 탁자 · 선반 위 — 받침 바로 다음(받침 앞에 선 사람보다는 먼저)
       else sorted.push({ y: spriteBottom(d.s, y) * 1 - 0.01, draw });
     }
   }
@@ -496,6 +589,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 출하 라인 바닥은 조금 어둡게
     const iz = z.infra;
     ctx.fillStyle = P.infraFloor; ctx.fillRect((r.x + 1) * T, (r.y + iz.y) * T, (r.w - 2) * T, iz.h * T);
+    drawCorridors(r);
     drawWalls(r);
     const b = RS.banners;
     if (b) for (let i = b.from, k = 0; i < r.w - 1; i += b.every, k++) SP.draw(ctx, b.s[(k + r.x) % b.s.length], (r.x + i) * T, (r.y + 1) * T);
@@ -513,6 +607,53 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       if (st === 'failed') sorted.push({ y: oy + 3, draw: () => drawSmokeS(ox + 2, oy + 1.2, now) });
     }
   }
+
+  // ㅗ자 복도 — 바닥에 깐 길(마법학교 붉은 융단 · 오피스 회색 카펫 · 현장 초록 보행로 + 노란 선). 사각형이 겹친 곳은 테두리 없이 이어진다
+  function drawCorridors(r) {
+    const cs = RS.corridor;
+    if (!cs || !CORRIDORS.length) return;
+    const px = (v) => v * T, e = 1.5;
+    ctx.fillStyle = cs.a;
+    for (const [x, y, w, h] of CORRIDORS) ctx.fillRect(px(r.x + x), px(r.y + y), px(w), px(h));
+    if (cs.b) {                                            // 결 — 융단 · 카펫은 가로 줄무늬, 보행로는 빗금
+      ctx.fillStyle = cs.b;
+      for (const [x, y, w, h] of CORRIDORS) {
+        ctx.save(); ctx.beginPath(); ctx.rect(px(r.x + x), px(r.y + y), px(w), px(h)); ctx.clip();
+        if (cs.kind === 'walkway') for (let k = -h; k < w; k += 1) { ctx.beginPath(); ctx.moveTo(px(r.x + x + k), px(r.y + y + h)); ctx.lineTo(px(r.x + x + k + h), px(r.y + y)); ctx.lineTo(px(r.x + x + k + h + 0.3), px(r.y + y)); ctx.lineTo(px(r.x + x + k + 0.3), px(r.y + y + h)); ctx.fill(); }
+        else for (let k = 0.25; k < Math.max(w, h); k += 0.5) w >= h ? ctx.fillRect(px(r.x + x), px(r.y + y + (k % h)), px(w), 1) : ctx.fillRect(px(r.x + x + (k % w)), px(r.y + y), 1, px(h));
+        ctx.restore();
+      }
+    }
+    ctx.fillStyle = cs.edge;
+    for (const [x, y, w, h, side] of CORRIDOR_EDGES) {   // 바깥 테두리만(사각형이 맞닿은 곳은 이어진다)
+      const X = px(r.x + x), Y = px(r.y + y);
+      if (side === 't') ctx.fillRect(X, Y, px(w), e); else if (side === 'b') ctx.fillRect(X, Y - e, px(w), e);
+      else if (side === 'l') ctx.fillRect(X, Y, e, px(h)); else ctx.fillRect(X - e, Y, e, px(h));
+    }
+  }
+  // 복도 바깥 테두리 — 사각형 변을 잘게 나눠 바깥쪽이 다른 복도가 아닌 구간만 남긴다(한 번만 계산)
+  const CORRIDOR_EDGES = (() => {
+    const inAny = (x, y) => CORRIDORS.some(([a, b, w, h]) => x > a && x < a + w && y > b && y < b + h);
+    const out = [], S = 0.05, o = 0.02;
+    for (const [x, y, w, h] of CORRIDORS) {
+      const sides = [['t', x, y, w, 0, 0, -o], ['b', x, y + h, w, 0, 0, o], ['l', x, y, 0, h, -o, 0], ['r', x + w, y, 0, h, o, 0]];
+      for (const [side, sx, sy, lw, lh, ox, oy] of sides) {
+        const len = lw || lh;
+        let start = null;
+        for (let t = 0; t <= len + 1e-9; t += S) {
+          const qx = sx + (lw ? t : 0), qy = sy + (lh ? t : 0);
+          const edge = t < len && !inAny(qx + (lw ? S / 2 : 0) + ox, qy + (lh ? S / 2 : 0) + oy);
+          if (edge && start == null) start = t;
+          if ((!edge || t + S > len + 1e-9) && start != null) {
+            const end = edge ? len : t;
+            out.push(lw ? [sx + start, sy, end - start, 0, side] : [sx, sy + start, 0, end - start, side]);
+            start = null;
+          }
+        }
+      }
+    }
+    return out;
+  })();
 
   // 벽 — 위 두 줄은 시트(머리 · 면), 옆 · 아래 테두리는 어두운 두께(위에서 내려다본 벽 윗면)
   function drawWalls(r) {
@@ -566,8 +707,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (kind === 'glasswall') {
       // 유리벽 — 옅은 하늘색 면 + 밝은 테두리, 위쪽 반사광(사람이 비쳐 보인다)
       const w = (d.w || 1) * T, h = (d.h || 1) * T, c = P.glassWall || '#bfe8ff';
+      const door = (d.door ?? 1.5) * T, dl = x * T + (w - door) / 2;   // 아래 가운데 문(걷기 격자와 같은 자리 — 사람이 여기로 드나든다)
       ctx.globalAlpha = 0.10; ctx.fillStyle = c; ctx.fillRect(x * T, y * T, w, h);
-      ctx.globalAlpha = 0.7; ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.strokeRect(x * T + 0.5, y * T + 0.5, w - 1, h - 1);
+      ctx.globalAlpha = 0.7; ctx.strokeStyle = c; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(dl, y * T + h - 0.5); ctx.lineTo(x * T + 0.5, y * T + h - 0.5); ctx.lineTo(x * T + 0.5, y * T + 0.5);
+      ctx.lineTo(x * T + w - 0.5, y * T + 0.5); ctx.lineTo(x * T + w - 0.5, y * T + h - 0.5); ctx.lineTo(dl + door, y * T + h - 0.5);
+      ctx.stroke();
+      ctx.fillStyle = c; ctx.fillRect(dl - 1, y * T + h - 4, 2, 4); ctx.fillRect(dl + door - 1, y * T + h - 4, 2, 4);   // 문설주
       ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.moveTo(x * T + 4, y * T + h - 4); ctx.lineTo(x * T + 14, y * T + h - 14); ctx.stroke();
       ctx.globalAlpha = 1;
       return;
@@ -1138,7 +1285,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   resize();
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
-  return { go, theme, openSession, panel, debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
+  return { go, theme, openSession, panel, actors, debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
                                                                        anim: a.act && a.act.anim, go: a.act && a.act.go, face: a.face, dir: a.dir, char: a.char })) };
 }
 
