@@ -15,6 +15,8 @@
     "room": { "w": 28, "h": 18 },
     "lounge": { "w": 14, "h": 18 },
     "gap": 4,
+    "_corridors": "ㅗ자 복도(설계 docs/10_office_design.md) — 출하 라인 위 가로 띠 + 가운데 세로 틈. 걷는 값이 싸서 사람들이 타고 다닌다(js/walk.js). [x, y, w, h]",
+    "corridors": [[1, 13.2, 26, 1.1], [20.6, 6.2, 1.35, 7.4]],
     "zones": {
       "foreman_office": { "_": "교장실", "x": 1, "y": 2, "w": 7, "h": 5, "floor": "wood", "seat": [4.5, 4.9] },
       "library": { "_": "A 서고 — 2층 책장 · 사다리", "x": 9, "y": 2, "w": 7, "h": 4, "face": "up",
@@ -156,6 +158,7 @@
     "_defs": "[시트, x, y, w, h, 외곽선(1), 프레임 수, 초당 프레임] — 프레임은 오른쪽으로 w씩",
 
     "room": {
+      "corridor": { "a": "#6e2328", "b": "#7a2a2f", "edge": "#c9a14a", "kind": "carpet" },
       "floor": ["floor_1", "floor_1", "floor_1", "floor_2", "floor_3", "floor_4", "floor_1", "floor_5", "floor_6", "floor_7", "floor_8", "floor_1"],
       "wall_top": "wall_top", "wall": "wall", "border": "wall_top",
       "banners": { "s": ["banner_b", "banner_r", "banner_g", "banner_y"], "every": 6, "from": 3 }
