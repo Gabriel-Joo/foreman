@@ -96,8 +96,12 @@ class Page:
             await asyncio.sleep(0.3)
         return False
 
-    async def shot(self, path: Path) -> None:
-        r = await self.call("Page.captureScreenshot", format="png")
+    async def shot(self, path: Path, clip: tuple[float, float, float, float] | None = None, scale: float = 2) -> None:
+        """clip=(x, y, w, h) CSS 픽셀이면 그 부분만 scale배로 — 문맥을 아끼며 자세히 볼 때."""
+        kw: dict = {"format": "png"}
+        if clip:
+            kw["clip"] = {"x": clip[0], "y": clip[1], "width": clip[2], "height": clip[3], "scale": scale}
+        r = await self.call("Page.captureScreenshot", **kw)
         path.write_bytes(base64.b64decode(r["data"]))
 
 
@@ -163,6 +167,10 @@ async def run(a: argparse.Namespace) -> int:
                         f = out / f"{th}_{size}_{view}.png"
                         await p.shot(f)
                         shots.append({"view": view, "went": got, "png": str(f)})
+                        if a.clip:
+                            cf = out / f"{th}_{size}_{view}_clip.png"
+                            await p.shot(cf, tuple(float(v) for v in a.clip.split(",")))  # type: ignore[arg-type]
+                            shots.append({"view": view, "clip": a.clip, "png": str(cf)})
                     base["shots"] = shots
                     base["page_errors"] = p.errors[:]
                     bad += len(p.errors)
@@ -191,6 +199,7 @@ def main() -> None:
     ap.add_argument("--session", help="이 세션 패널을 연 채 찍는다(세션 id)")
     ap.add_argument("--eval", help="화면마다 돌려 결과를 report.json에 남길 JS 식")
     ap.add_argument("--wait", type=float, default=2.0, help="화면을 바꾼 뒤 기다릴 초(캐릭터가 걸어 들어갈 시간)")
+    ap.add_argument("--clip", help="x,y,w,h(CSS 픽셀) — 그 부분만 2배로 한 장 더(<…>_clip.png)")
     ap.add_argument("--out")
     sys.exit(asyncio.run(run(ap.parse_args())))
 

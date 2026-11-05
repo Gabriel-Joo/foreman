@@ -56,6 +56,19 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // ── 상태 ───────────────────────────────────────────
   let world = { rooms: [], lounge: null, w: 0, h: 0 };
   const actors = new Map();            // key → actor
+  // 서기 머리 위 "할 일 N"(12a) — 방(프로젝트) → {items:[{kind, title, why}]}. 브리지가 LLM 없이 센다(/api/scribe/todo)
+  const scribeTodo = new Map();
+  async function loadScribeTodo() {
+    try {
+      const r = await fetch('/api/scribe/todo', { headers: store.headers() });
+      if (!r.ok) return;
+      const j = await r.json();
+      scribeTodo.clear();
+      for (const [k, v] of Object.entries(j.projects || {})) scribeTodo.set(k, v);
+    } catch { /* 못 읽으면 배지만 안 뜬다 */ }
+  }
+  loadScribeTodo();
+  setInterval(loadScribeTodo, 60000);
   const tokHist = new Map();           // 방 이름 → [{t, v, o}]
   let lastSnap = null;
   let view = 'hq';                     // 'hq'(감독실, 1단) | 'map'(전체) | 방 이름(현장, 2단) | '_lounge'
@@ -237,8 +250,24 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
                                          flags: { approval_pending: pending.has(s.id), stuck_turn: !!s.stuck_turn } });
         // 쉬는 모습은 사람마다 다르게(마법학교: 엎드려 자기 · 먹기 · 책) — 플래그가 덮은 동작은 그대로
         if (act.variants && !act.flag) act = { ...act, anim: act.variants[s.id % act.variants.length] };
+        // 서기(12a) — 서기실 안에서만 움직인다. 일할 때 도구에 따라 쓰기(Edit · Write) · 서가(Read · Grep) · 대조대(Bash),
+        // 쉬거나 기다릴 때는 쓰기 자리. 승인 대기 같은 플래그는 그대로 둔다
+        let seatK = k;
+        const sz = L.zones.scribe;
+        if (roleOf(s) === 'scribe' && sz && !act.flag) {
+          const vs = viewState(s);
+          if (vs === 'ACTIVE') {
+            const t = (s.activity && s.activity.tool) || '';
+            seatK = /^(Read|Grep|Glob|WebFetch|WebSearch)$/.test(t) ? 1 : /^(Bash|Monitor)$/.test(t) ? 2 : 0;
+            act = { ...act, go: 'scribe', anim: ['type', 'read', 'think'][seatK] };
+          } else if (vs === 'IDLE' || vs === 'WAITING') {
+            seatK = 0;
+            act = { ...act, go: 'scribe', anim: vs === 'WAITING' ? 'wait' : 'read' };
+            delete act.variants;
+          }
+        }
         const desk = seat(room, k);
-        let [tx, ty, face] = spot(room, act.go, desk, k);
+        let [tx, ty, face] = spot(room, act.go, desk, act.go === 'scribe' ? seatK : k);
         if (plan && plan.handing && plan.handing.sid === s.id) {      // 새 빌드 — 배송 담당에게 일감을 넘기러 간다
           const [hx, hy] = courierHome(room);
           tx = hx + HANDOFF_DX; ty = hy; face = 'left';
@@ -277,6 +306,15 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         upsert(key, { kind: 'foreman', room: room.name, tx: room.x + f.seat[0], ty: room.y + f.seat[1], face: 'down',
                       act: { anim: 'stand' }, hue: 45, name: '포먼', char: CH.foreman || null, role: 'foreman' });
         seen.add(key);
+        // 서기(12a) — 서기실에 늘 있다. 그 방에 살아 있는 서기 세션이 있으면 그 세션 캐릭터가 대신 선다(일 → 끝나면 다시 서기실)
+        const sz = L.zones.scribe;
+        if (sz && sz.seats && !ss.some((s) => roleOf(s) === 'scribe' && s.state !== 'DORMANT')) {
+          const p = sz.seats[0], wkey = 'w:' + room.name;
+          upsert(wkey, { kind: 'scribe', room: room.name, tx: room.x + p[0], ty: room.y + p[1], face: p[2] || 'down',
+                         act: { anim: 'read', go: 'scribe' }, hue: 25, name: '서기', char: (CH.pool && CH.pool[3 % CH.pool.length]) || null,
+                         role: 'scribe', todo: scribeTodo.get(room.name) || null });
+          seen.add(wkey);
+        }
         // 출하 라인 — 단계 이름표의 상태는 배송 담당이 맡은 빌드(없으면 마지막 빌드) 것.
         // 단계마다 서 있던 Jenkins · Harbor · ArgoCD 캐릭터 대신 배송 담당 한 명이 돌아다닌다(11-05 사용자 요청)
         const pp = st.pipeline.get(room.name);
@@ -640,6 +678,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (act.fx === 'smoke') drawSmoke(a.x, a.y - 1.4, now);
     if (act.bubble) drawBubble(x, y - 6, act.bubble, act.flag === 'approval_pending' ? P.warn : '#e8e8f0');
     else if (anim === 'wait' && !act.flag) drawBubble(x, y - 6, '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), P.act, 7);   // 기다림
+    else if (a.kind === 'scribe' && a.todo && a.todo.items && a.todo.items.length) drawBubble(x, y - 6, `할 일 ${a.todo.items.length}`, P.warn, 8);
     if (a.subHidden) drawBubble(x + 10, y + 2, `+${a.subHidden}`, P.act, 7);              // 10명 넘는 서브에이전트는 접는다
     drawCompactMark(a, x + 8, y - 4);
     const rc = roleColor(a.role);
@@ -1507,6 +1546,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (!a.moving && act.anim === 'wait' && !act.flag) {                       // 기다림 — 책상에 서서 "…"이 차오른다
       drawBubble(x, top - 3, '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), P.act, 7);
     }
+    if (a.kind === 'scribe' && a.todo && a.todo.items && a.todo.items.length) {  // 서기 — 할 일 N(누르면 목록)
+      drawBubble(x, top - 3, `할 일 ${a.todo.items.length}`, P.warn, 8);
+    }
     if (a.subHidden) drawBubble(x + 11, top + 4, `+${a.subHidden}`, P.act, 7);      // 10명 넘는 서브에이전트는 접는다
     if (a.key === selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - 9, top - 2, 18, 20); }
   }
@@ -1590,6 +1632,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     web:  { what: '웹 검색', desc: '밖에서 정보를 찾는 곳입니다.' },
     sub:  { what: '보조 호출', desc: '서브에이전트에게 일을 나눠 맡기는 곳입니다.' },
     idle: { what: '대기 중', desc: '할 일이 없을 때 쉬는 곳입니다.' },
+    scribe: { what: '서기실', desc: '서기가 늘 머무는 곳입니다. 서기를 누르면 문서 일을 맡길 수 있습니다.' },
   };
   const INFRA_ROLE = {
     jenkins: { what: '빌드', desc: '커밋을 빌드하고 테스트하는 곳입니다.' },
@@ -1959,6 +2002,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       panel.show({ kind: 'infra', room: a.room, infra: 'courier', name: a.name, status: courierNow(a.plan) });
     } else if (a.kind === 'foreman') {
       panel.show({ kind: 'foreman', room: a.room === '_hq' ? null : a.room });
+    } else if (a.kind === 'scribe') {
+      panel.show({ kind: 'scribe', room: a.room });           // 서기실 — 무엇을 시킬지 고르는 창 · 할 일 · Notion 게시
     }
   }
   // 패널(승인 카드의 "세션" · 세션 목록)에서 고르면 그 현장으로 가서 캐릭터를 고른다
@@ -2040,6 +2085,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         a.plan && a.plan.queue.length ? `<div class="tip-t">대기 ${a.plan.queue.length}개</div>` : ''}<div class="tip-t">누르면 파이프라인이 열립니다.</div>`;
     }
     if (a.kind === 'foreman') return `<div class="tip-h">포먼</div>${tipOf(ZONE_ROLE.hq)}<div class="tip-t">자기 세션은 아직 없습니다.</div>`;
+    if (a.kind === 'scribe') {
+      const t = a.todo;
+      return `<div class="tip-h">서기</div><div class="tip-b">문서 담당 — 회고 · 문서 점검 · README · CLAUDE.md · 나중에 할 일 · Notion 게시</div>${
+        t && t.items && t.items.length ? `<div>할 일 ${t.items.length}개${t.items.slice(0, 3).map((x) => `<div class="tip-s">· ${esc(x.title)}</div>`).join('')}</div>` : ''}
+        <div class="tip-t">누르면 일을 고르는 창이 열립니다.</div>`;
+    }
     return `<div class="tip-h">${esc(a.name || '')}</div>`;
   }
   // 툴팁은 화면 전체가 하나(tip.js) — 이름표 · 캐릭터 · 버튼이 같은 모양 · 같은 지연으로 뜬다(11-05)

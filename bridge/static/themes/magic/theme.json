@@ -26,9 +26,11 @@
                   "seats": [[17.5, 4.1], [19.0, 4.4], [20.5, 4.6]] },
       "test": { "_": "D 시약대 — 시험관", "x": 23, "y": 2, "w": 4, "h": 4, "face": "down",
                 "seats": [[24.0, 3.05], [25.6, 3.05]] },
-      "desks": { "_": "B 작업대 — 양피지 · 깃펜 · 마법서(세션의 자리)", "x": 10, "y": 8, "w": 11, "h": 4,
-                 "seats": [[11.6, 8.45, "down"], [13.9, 8.45, "down"], [16.2, 8.45, "down"], [18.5, 8.45, "down"],
-                           [11.6, 11.75, "up"], [13.9, 11.75, "up"], [16.2, 11.75, "up"], [18.5, 11.75, "up"]] },
+      "desks": { "_": "B 작업대 — 양피지 · 깃펜 · 마법서(세션의 자리). 11-06 8 → 5자리, 오른쪽은 필사실", "x": 10, "y": 8, "w": 7, "h": 4,
+                 "seats": [[11.6, 8.45, "down"], [13.9, 8.45, "down"], [16.2, 8.45, "down"],
+                           [11.6, 11.75, "up"], [13.9, 11.75, "up"]] },
+      "scribe": { "_": "S 필사실(12a 서기) — 쓰기 책상 · 서가 · 대조대. 자리 순서 = 쓰기 · 서가 · 대조", "x": 17.6, "y": 8, "w": 3, "h": 5, "floor": "wood",
+                  "seats": [[18.3, 9.7, "up"], [18.95, 11.2, "right"], [18.3, 12.65, "up"]] },
       "hall": { "_": "F 대강당 — 긴 식탁(IDLE)", "x": 1, "y": 8, "w": 7, "h": 4, "floor": "wood",
                 "seats": [[2.7, 8.45, "down"], [4.5, 8.45, "down"], [6.3, 8.45, "down"],
                           [2.7, 11.75, "up"], [4.5, 11.75, "up"], [6.3, 11.75, "up"]] },
@@ -52,17 +54,17 @@
     "style": { "bg": "#ead9ae", "fg": "#3b2a1c", "border": "#8a6640", "font": "italic 600 11px Georgia, 'Noto Serif KR', serif", "kind": "parchment" },
     "_zones": "[이름, dx, dy] — 이름표가 사람 자리를 가리지 않게 비켜 둔 것(11-05 window.office.layoutPlan())",
     "zones": { "foreman_office": "교장실", "library": "서고", "desks": ["작업 책상", -0.7, 0], "potion": "물약실", "test": ["시약대", -1.0, 0],
-               "circle": "원탁방", "hall": "대강당", "window": ["아치 창", -0.3, 1.5], "seal": ["봉인대", 0, -0.3] },
+               "circle": "원탁방", "hall": "대강당", "window": ["아치 창", -0.3, 1.5], "seal": ["봉인대", 0, -0.3], "scribe": "필사실" },
     "_roles": "구역 → 하는 일(설명은 테마 공통, office.js ZONE_ROLE). 이름표에 마우스를 올리면 뜬다",
     "roles": { "foreman_office": "hq", "library": "read", "desks": "edit", "potion": "bash", "test": "test",
-               "circle": "sub", "hall": "idle", "window": "web", "seal": "git" },
+               "circle": "sub", "hall": "idle", "window": "web", "seal": "git", "scribe": "scribe" },
     "infra": { "title": "봉인실", "jenkins": "봉인 문양 · Jenkins 빌드", "harbor": "보물창고 · Harbor 이미지", "argocd": "전송 아치 · ArgoCD 배포" }
   },
 
   "roles": {
     "_": "역할 → 로브 색. 렌더러가 옷 픽셀의 색상만 바꾼다. 이름은 DB · 디스패처와 같다(11-05 통일). 미리 보기 ?roles=demo",
     "colors": { "foreman": "#d4a72c", "coder": "#3f7fd0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "helper": "#8a8f98" },
-    "idle": { "_": "역할별 쉼 자리(12a) — 서기는 서고에서 읽는다", "scribe": { "go": "library", "anim": "read" } }
+    "idle": { "_": "역할별 쉼 자리(12a) — 서기는 필사실에서 읽는다", "scribe": { "go": "scribe", "anim": "read" } }
   },
 
   "hq": {
@@ -207,10 +209,15 @@
       { "s": "flask_g", "x": 23.3, "y": 2.55, "z": "top" }, { "s": "flask_r", "x": 24.3, "y": 2.5, "z": "top" }, { "s": "flask_b", "x": 25.2, "y": 2.55, "z": "top" },
 
       { "_": "B 작업대 — 긴 탁자 하나, 앞뒤로 앉는다" },
-      { "s": "table_l", "x": 10.5, "y": 8.0 }, { "s": "table_m", "x": 11.5, "y": 8.0, "n": 8 }, { "s": "table_r", "x": 19.5, "y": 8.0 },
+      { "s": "table_l", "x": 10.5, "y": 8.0 }, { "s": "table_m", "x": 11.5, "y": 8.0, "n": 5 }, { "s": "table_r", "x": 16.5, "y": 8.0 },
       { "s": "quill", "x": 11.2, "y": 8.35, "z": "top" }, { "s": "note", "x": 13.5, "y": 8.3, "z": "top" },
-      { "s": "openbook", "x": 15.8, "y": 8.3, "z": "top" }, { "s": "quill", "x": 18.1, "y": 8.35, "z": "top" },
-      { "s": "chair_b", "x": 11.1, "y": 10.7, "n": 4, "dx": 2.3 },
+      { "s": "openbook", "x": 15.8, "y": 8.3, "z": "top" },
+      { "s": "chair_b", "x": 11.1, "y": 10.7, "n": 2, "dx": 2.3 },
+
+      { "_": "S 필사실 — 쓰기 책상(깃펜 · 두루마리) · 서가(책장) · 대조대(펼친 책)" },
+      { "s": "smalltable", "x": 17.8, "y": 8.2 }, { "s": "quill", "x": 17.8, "y": 8.2, "z": "top" },
+      { "s": "shelf_n", "x": 19.55, "y": 8.4 }, { "s": "shelf_n", "x": 19.55, "y": 10.4 },
+      { "s": "smalltable", "x": 17.8, "y": 11.4 }, { "s": "openbook", "x": 17.8, "y": 11.35, "z": "top" },
 
       { "_": "F 대강당 — 긴 식탁, 벤치, 촛불" },
       { "s": "table_l", "x": 2.0, "y": 8.0 }, { "s": "table_m", "x": 3.0, "y": 8.0, "n": 3 }, { "s": "table_r", "x": 6.0, "y": 8.0 },

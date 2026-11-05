@@ -23,7 +23,13 @@ test('기다림 — IDLE인데 서브에이전트 · 백그라운드가 돌면 W
 });
 
 test('서기(12a) — 네 테마에 잉크 갈색, 쉴 때는 읽는 구역에서 읽는다(쉼 변형 없음), 일할 때는 도구 규칙 그대로', () => {
-  const want = { plain: 'desk', office: 'library', magic: 'library', site: 'store' };
+  const want = { plain: 'desk', office: 'scribe', magic: 'scribe', site: 'scribe' };      // 11-06 서기실(필사실 · 문서팀 · 서류실)
+  for (const name of ['office', 'magic', 'site']) {                                        // 책상 5 + 서기실 3(쓰기 · 서가 · 대조), 이름표
+    const t = JSON.parse(readFileSync(new URL(`../../bridge/static/themes/${name}/theme.json`, import.meta.url)));
+    assert.equal(t.layout.zones.desks.seats.length, 5, name);
+    assert.equal(t.layout.zones.scribe.seats.length, 3, name);
+    assert.ok(t.tags.zones.scribe && t.tags.roles.scribe === 'scribe', name);
+  }
   for (const [name, zone] of Object.entries(want)) {
     const t = JSON.parse(readFileSync(new URL(`../../bridge/static/themes/${name}/theme.json`, import.meta.url)));
     assert.equal(t.roles.colors.scribe, '#b0713a', name);
