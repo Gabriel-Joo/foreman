@@ -5,7 +5,7 @@
 // 10b: 승인 카드 · 대화 · 활동 · 세션 정보 · 파이프라인 HTML은 함수로 내보낸다 — 픽셀 화면 옆 패널(opanel.js)도 같은 것을 쓴다.
 
 export const STATE_LABEL = { ACTIVE: '작업 중', IDLE: '대기', SUSPENDED: '정지', DORMANT: '종료' };
-export const ORIGIN_LABEL = { human: '나', task_notification: '완료 알림', subagent_message: '서브에이전트 결과', agent_message: '다른 세션', meta: '시스템' };
+export const ORIGIN_LABEL = { human: '나', task_notification: '완료 알림', subagent_message: '서브에이전트 결과', agent_message: '다른 세션', meta: '시스템', handoff: '인계 요청(FOREMAN)', handoff_in: '인계 넣기(FOREMAN)' };
 const END_LABEL = { stop: '끝남', stop_failure: 'API 오류', interrupted: '중단', session_end: '세션 종료', process_lost: '프로세스 사라짐', merged: '다음 입력에 합쳐짐', no_signal: '신호 없음', abandoned: '끝 신호 없이 버려짐' };
 
 import { stuckTurn } from './store.js';
@@ -42,7 +42,70 @@ export function tok(n) {
 }
 export function promptText(p) {
   if (!p) return '';
-  return p.replace(/^\s*<pasted_content id="[0-9a-f]+">\s*/, '').replace(/\s*<\/pasted_content id="[0-9a-f]+">\s*$/, '').trim();
+  const s = p.replace(/^\s*<pasted_content id="[0-9a-f]+">\s*/, '').replace(/\s*<\/pasted_content id="[0-9a-f]+">\s*$/, '').trim();
+  return unwrapAgent(s);
+}
+
+// CC 내부 포장을 벗긴다(11-05) — 서브에이전트 · 다른 세션 결과는
+//   [Another Claude session sent a message:] <agent-message from="…">\n[Subagent hand-back] …The report follows:\n  (두 칸 들여 쓴 본문)\n</agent-message>
+// 완료 알림은 <task-notification>…<status>…<summary>…[<result>…] — 요약 · 결과만
+export function unwrapAgent(s) {
+  // 여러 개가 한 입력에 붙어 오거나(대기열이 합쳐짐) 길이 제한으로 닫는 태그가 잘려 올 수 있다 — 하나씩, 닫는 태그가 없으면 끝까지
+  if (s.includes('<agent-message from=')) {
+    const re = /(?:Another Claude session sent a message:\s*)?<agent-message from="[^"]*">[ \t]*\n?([\s\S]*?)(?:<\/agent-message>|$)/g;
+    const one = (body) => {
+      const f = body.indexOf('The report follows:');
+      if (/^\s*\[[^\]]*hand-back\]/i.test(body) && f >= 0) body = body.slice(f + 'The report follows:'.length);
+      return body.replace(/^\n/, '').split('\n').map((ln) => ln.replace(/^  /, '')).join('\n').trim();
+    };
+    return s.replace(re, (_, body) => `${one(body)}\n\n`).replace(/\n{3,}/g, '\n\n').trim();
+  }
+  if (/^\s*<task-notification>/.test(s)) {
+    const tag = (k) => { const x = new RegExp(`<${k}>([\\s\\S]*?)</${k}>`).exec(s); return x ? x[1].trim() : ''; };
+    const st = tag('status'), sum = tag('summary'), res = tag('result');
+    return [`[${st || '알림'}] ${sum}`.trim(), res].filter(Boolean).join('\n\n') || s;
+  }
+  return s;
+}
+
+// 가벼운 마크다운 — 터미널처럼 굵게 · 제목 · 코드가 보이게. 먼저 이스케이프하고 그다음 바꾼다(HTML을 통과시키지 않는다)
+export function mdLite(s) {
+  const out = [], parts = String(s || '').split(/^```[^\n]*\n?/m);
+  parts.forEach((p, i) => {
+    if (i % 2) { out.push(`<pre class="md-code">${esc(p.replace(/\n$/, ''))}</pre>`); return; }
+    out.push(esc(p)
+      .replace(/^(#{1,4}) (.+)$/gm, (_, h, t) => `<b class="md-h md-h${h.length}">${t}</b>`)
+      .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+      .replace(/`([^`\n]+)`/g, '<code class="md-i">$1</code>'));
+  });
+  return out.join('');
+}
+
+// 긴 글은 앞부분만 보이고 [전체 보기] — 패널 안에 스크롤을 또 만들지 않는다. 펼친 것은 다시 그려도 펼친 채로
+const OPEN_MSG = new Set();
+const CLAMP_LINES = 14, CLAMP_CHARS = 1400;
+export function longText(key, text_) {
+  const t = String(text_ || '');
+  const long = t.split('\n').length > CLAMP_LINES || t.length > CLAMP_CHARS;
+  if (!long) return `<div class="txt md">${mdLite(t)}</div>`;
+  const open = OPEN_MSG.has(key);
+  return `<div class="txt md clamp${open ? ' open' : ''}" data-mk="${esc(key)}">${mdLite(t)}</div>
+    <button class="more ghost small" data-mk="${esc(key)}">${open ? '접기' : `전체 보기 (${t.length.toLocaleString()}자)`}</button>`;
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (ev) => {
+    const b = ev.target.closest && ev.target.closest('button.more[data-mk]');
+    if (!b) return;
+    const k = b.dataset.mk, box = b.previousElementSibling;
+    if (OPEN_MSG.has(k)) OPEN_MSG.delete(k); else OPEN_MSG.add(k);
+    const open = OPEN_MSG.has(k);
+    if (box) box.classList.toggle('open', open);
+    b.textContent = open ? '접기' : `전체 보기 (${(box ? box.textContent.length : 0).toLocaleString()}자)`;
+  });
+  document.addEventListener('toggle', (ev) => {        // "중간 글" 펼침도 다시 그릴 때 유지(toggle은 버블링하지 않아 capture로)
+    const d = ev.target;
+    if (d && d.dataset && d.dataset.mid) { if (d.open) OPEN_MSG.add(d.dataset.mid); else OPEN_MSG.delete(d.dataset.mid); }
+  }, true);
 }
 export function oneLine(s, n) {
   s = promptText(s).replace(/\s+/g, ' ');
@@ -96,8 +159,9 @@ export function sessionKv(s) {
 export function convoHtml(c) {
   if (!c) return '';
   return (c.error ? `<p class="bad small">${esc(c.error)}</p>` : '') + (c.turns || []).map((x) => `
-      <div class="msg in o-${esc(x.origin)}"><div class="who small muted">${esc(ORIGIN_LABEL[x.origin] || x.origin)} · ${ago(x.started_at)}</div><div class="txt">${esc(promptText(x.prompt)).slice(0, 3000)}</div></div>
-      ${x.reply ? `<div class="msg out"><div class="who small muted">CC${x.end_reason ? ' · ' + esc(END_LABEL[x.end_reason] || x.end_reason) : ' · 진행 중'}${x.tools ? ` · 도구 ${x.tools}` : ''}${x.subagents ? ` · 서브 ${x.subagents}` : ''}</div><div class="txt">${esc(x.reply)}</div></div>`
+      <div class="msg in o-${esc(x.origin)}"><div class="who small muted">${esc(ORIGIN_LABEL[x.origin] || x.origin)} · ${ago(x.started_at)}</div>${longText(`${x.id}i`, promptText(x.prompt))}</div>
+      ${x.reply ? `<div class="msg out"><div class="who small muted">CC${x.end_reason ? ' · ' + esc(END_LABEL[x.end_reason] || x.end_reason) : ' · 진행 중'}${x.tools ? ` · 도구 ${x.tools}` : ''}${x.subagents ? ` · 서브 ${x.subagents}` : ''}</div>${
+        x.mid && x.mid.length ? `<details class="mid"${OPEN_MSG.has(`${x.id}m`) ? ' open' : ''} data-mid="${x.id}m"><summary class="small muted">중간 글 ${x.mid.length}</summary>${x.mid.map((m, i) => `<div class="mid-one">${longText(`${x.id}m${i}`, m)}</div>`).join('')}</details>` : ''}${longText(`${x.id}o`, x.reply)}</div>`
         : (x.end_reason ? `<div class="msg out small muted">${esc(END_LABEL[x.end_reason] || x.end_reason)}${x.tools ? ` · 도구 ${x.tools}` : ''}</div>` : '')}`).join('') + (c.loading ? '<p class="small muted">불러오는 중…</p>' : '');
 }
 

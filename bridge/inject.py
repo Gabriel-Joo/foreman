@@ -153,8 +153,9 @@ def guarded(text: str, command: bool = False) -> tuple[str, bool]:
 
 def recorded_forms(sent: str) -> set[str]:
     """트랜스크립트 user 줄에 남을 모양. 여러 줄 붙여넣기는 <pasted_content id=…>로 감싸이고(정규식으로 확인),
-    탭은 공백 4칸이 된다(실측)."""
-    return {sent.replace("\t", "    ")}
+    탭은 공백 4칸이 된다(실측). 앞뒤 공백 · 빈 줄은 CC가 다듬어 기록한다(11-05 실측: "확인\n" → "확인",
+    끝에 빈 줄 둘인 붙여넣기 → 감싼 안쪽 끝이 한 줄) — 그래서 앞뒤 공백을 빼고 맞댄다."""
+    return {sent.replace("\t", "    ").strip()}
 
 
 _WRAP = re.compile(r'\n\n<pasted_content id="([0-9a-f]+)">\n(.*)\n</pasted_content id="\1">\n', re.S)
@@ -184,11 +185,11 @@ def find_delivery(path: str, offset: int, sent: str) -> dict | None:
         t = d.get("type")
         if t == "user" and not d.get("isMeta"):
             c = (d.get("message") or {}).get("content")
-            if isinstance(c, str) and unwrap(c) in forms:
+            if isinstance(c, str) and unwrap(c).strip() in forms:
                 return {"as": "prompt", "uuid": d.get("uuid"), "prompt_id": d.get("promptId")}
         elif t == "queue-operation" and d.get("operation") == "enqueue":
             c = d.get("content")
-            if isinstance(c, str) and unwrap(c) in forms:
+            if isinstance(c, str) and unwrap(c).strip() in forms:
                 return {"as": "queued"}
     return None
 
@@ -218,8 +219,12 @@ async def paste_and_submit(t: Target, text: str, *, delay_s: float = 0.15, guard
 
 
 async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, transcript: str | None,
-                  command: bool = False, delay_s: float = 0.15, verify_s: float = 6.0) -> dict:
+                  command: bool = False, delay_s: float = 0.15, verify_s: float = 10.0) -> dict:
     """확인 → 보호 → 방법 C → 제출 확인. 거부면 Refused. 결과 dict: queued · guarded · delivered(as/uuid)."""
+    if not text.strip():
+        # 빈칸 · 공백만 — 붙여넣을 것 없이 Enter만 가는 셈이다. 입력 칸에 CC의 프롬프트 제안(회색)이 떠 있으면
+        # Enter가 그 제안을 제출하는지 문서에 없다(11-05) — 사람이 쓰지 않은 글이 실행될 수 있으니 보내지 않는다
+        raise Refused("빈 입력 — 공백 · 줄바꿈만으로는 보내지 않는다")
     t, _ls, busy = await resolve(session_id, sessions_dir)
     send, guarded_ = guarded(text, command)
     offset = os.path.getsize(transcript) if transcript and os.path.exists(transcript) else None
@@ -237,7 +242,24 @@ async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, trans
     out = {"pane": t.pane, "queued": busy or bool(delivered and delivered["as"] == "queued"), "guarded": guarded_,
            "steps": steps, "delivered": delivered, "chars": len(text), "lines": text.count("\n") + 1}
     if transcript and not delivered:
-        # 제출이 확인되지 않았다 — 입력 칸에 남았을 수 있다(실측: 폭 없는 공백 보호에서 Enter가 먹히지 않음).
-        # 사람이 그 pane에 쓰던 글을 지울 수 있으므로 자동으로 비우지 않는다
-        log.warning("주입 제출 확인 안 됨 %s %s(%d자) — 입력 칸에 남았을 수 있다", session_id[:8], t.pane, len(text))
+        # 기록에서 못 찾았다 — 화면의 입력 칸을 직접 본다(11-05). 보낸 글 앞부분이 입력 칸(❯ 줄 아래)에 보이면 남은 것,
+        # 안 보이면 제출된 것(기록 모양이 달라 못 맞췄을 뿐 — 11-05 끝 공백 건이 그랬다). 사람이 쓰던 글일 수 있어 지우지 않는다
+        out["left_in_box"] = await left_in_box(t, send)
+        log.warning("주입 제출 확인 안 됨 %s %s(%d자) — 입력 칸에 %s", session_id[:8], t.pane, len(text),
+                    "남아 있다" if out["left_in_box"] else "없다(제출된 것으로 보임)" if out["left_in_box"] is False else "모름")
     return out
+
+
+async def left_in_box(t: Target, sent: str) -> bool | None:
+    """입력 칸(마지막 ❯ 줄부터 아래)에 보낸 글 앞부분이 보이나. 화면을 못 읽으면 None."""
+    try:
+        screen = await tmux(t.socket, "capture-pane", "-p", "-J", "-t", t.pane)
+    except Refused:
+        return None
+    lines = screen.rstrip("\n").splitlines()
+    idx = max((i for i, ln in enumerate(lines) if ln.lstrip().startswith("❯")), default=None)
+    if idx is None:
+        return None
+    box = re.sub(r"\s+", "", "".join(lines[idx:]))
+    head = re.sub(r"\s+", "", sent.strip())[:20]
+    return bool(head) and head in box

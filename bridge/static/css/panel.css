@@ -21,7 +21,23 @@ table.hist { border-collapse:collapse; margin:6px 0; } table.hist td, table.hist
 .kv > span:nth-child(odd) { color:var(--muted); }
 .convo { max-height:48vh; overflow:auto; display:flex; flex-direction:column; gap:6px; }
 .msg { border-radius:8px; padding:6px 9px; }
-.msg .txt { white-space:pre-wrap; word-break:break-word; max-height:16em; overflow:auto; }
+.msg .txt { white-space:pre-wrap; word-break:break-word; line-height:1.5; }
+/* 긴 글 — 메시지 안에 스크롤을 또 만들지 않고 앞부분 + [전체 보기](11-05) */
+.msg .txt.clamp { max-height:calc(1.5em * 14); overflow:hidden; position:relative; }
+.msg .txt.clamp::after { content:""; position:absolute; left:0; right:0; bottom:0; height:2.2em;
+                         background:linear-gradient(transparent, var(--msg-bg, var(--bg))); }
+.msg .txt.clamp.open { max-height:none; }
+.msg .txt.clamp.open::after { display:none; }
+.msg.in { --msg-bg:var(--code); }
+.msg .more { margin-top:3px; padding:1px 8px; }
+.md .md-h { display:inline-block; margin-top:4px; }
+.md .md-h1, .md .md-h2 { font-size:1.05em; }
+.md .md-code { white-space:pre; overflow-x:auto; background:var(--code); padding:5px 8px; border-radius:5px; margin:4px 0;
+               font:12px/1.45 ui-monospace, monospace; }
+.msg.in .md .md-code { background:var(--bg); }
+.md .md-i { display:inline; padding:0 4px; margin:0; font-size:.92em; max-height:none; white-space:pre-wrap; }
+.msg .mid { margin:2px 0 6px; }
+.msg .mid-one { border-left:2px solid var(--line); padding-left:8px; margin:4px 0; color:var(--muted); }
 .msg.in { background:var(--code); }
 .msg.in.o-human { border-left:3px solid var(--act); }
 .msg.out { border:1px solid var(--line); }
@@ -85,3 +101,16 @@ body { --term-h:0px; }
   .term.open { height:calc(100vh - 50px); }
   .term-req { flex-direction:column; }
 }
+
+/* 11-05 인계 · 세션 조작(handoff.js) */
+.hand { border-top:1px solid var(--line); padding-top:6px; margin-top:6px; }
+.hand > summary { cursor:pointer; }
+.hand-btns { display:flex; gap:5px; flex-wrap:wrap; margin:6px 0; }
+.hand-btns button { padding:2px 8px; }
+.hand-btns button.warn, .hand .row button.warn { border-color:var(--warn); color:var(--warn); }
+.hand-sum { border:1px solid var(--line); border-radius:8px; padding:6px 9px; margin:6px 0; background:var(--card); }
+.hand-body { white-space:pre-wrap; word-break:break-word; font:12px/1.45 ui-monospace, monospace; max-height:40vh; overflow:auto;
+             background:var(--code); padding:6px 8px; border-radius:6px; margin:4px 0; }
+.hand-edit { width:100%; box-sizing:border-box; font:12px/1.45 ui-monospace, monospace; }
+.hand .row { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0; }
+.hand-hist { margin-top:4px; }

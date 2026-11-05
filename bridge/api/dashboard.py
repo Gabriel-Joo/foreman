@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from bridge.api.auth import require_api_token
 from bridge.inject import _status, _tmux_env
@@ -170,14 +170,26 @@ async def conversation(session_id: int, request: Request, limit: int = 15) -> di
             raise HTTPException(404, "세션 없음")
         turns = (await c.execute(text(
             "SELECT t.id, t.seq, t.origin, t.started_at, t.ended_at, t.end_reason, t.duration_ms, "
-            "LEFT(t.prompt_text, 4000), "
+            "LEFT(t.prompt_text, 12000), "
             "(SELECT JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.text')) FROM event e WHERE e.turn_id = t.id "
             " AND e.type = 'assistant_msg' AND e.subagent_id IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.block')) = 'text' "
             " ORDER BY e.id DESC LIMIT 1), "
             "(SELECT COUNT(*) FROM event e WHERE e.turn_id = t.id AND e.type = 'tool_use' AND e.subagent_id IS NULL), "
             "(SELECT COUNT(*) FROM subagent_run sr WHERE sr.spawn_turn_id = t.id) "
             "FROM turn t WHERE t.session_id = :s ORDER BY t.seq DESC LIMIT :n"), {"s": session_id, "n": limit})).all()
+        # 마지막 응답 앞의 중간 글(터미널에는 도구 호출 사이사이 보인다 — 11-05 패널 개선). 턴마다 최근 12개, 각 3000자
+        mid: dict[int, list[str]] = {}
+        ids = [r[0] for r in turns]
+        if ids:
+            rows = (await c.execute(text(
+                "SELECT turn_id, JSON_UNQUOTE(JSON_EXTRACT(payload, '$.text')) FROM event WHERE turn_id IN :ids "
+                "AND type = 'assistant_msg' AND subagent_id IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.block')) = 'text' "
+                "ORDER BY id").bindparams(bindparam("ids", expanding=True)), {"ids": ids})).all()
+            for tid, t_ in rows:
+                if t_:
+                    mid.setdefault(tid, []).append(t_)
     return {"session_id": session_id, "turns": [
         {"id": r[0], "seq": r[1], "origin": r[2], "started_at": _iso(r[3]), "ended_at": _iso(r[4]),
-         "end_reason": r[5], "duration_ms": r[6], "prompt": r[7], "reply": (r[8] or "")[:6000],
+         "end_reason": r[5], "duration_ms": r[6], "prompt": r[7], "reply": (r[8] or "")[:20000],
+         "mid": [x[:3000] for x in mid.get(r[0], [])[:-1][-12:]],
          "tools": r[9], "subagents": r[10]} for r in reversed(turns)]}

@@ -37,7 +37,7 @@
   .odown[hidden] { display:none; }
   .odown b { color:var(--bad); }
 
-  .oside { --side-w:380px; position:relative; flex:none; width:var(--side-w); border-left:1px solid var(--line); background:var(--bg);
+  .oside { --side-w:340px; position:relative; flex:none; width:var(--side-w); border-left:1px solid var(--line); background:var(--bg);
            display:flex; min-height:0; }
   .oside.folded { width:34px; }
   .oside-grip { position:absolute; left:-3px; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:2; }
@@ -59,8 +59,10 @@
   .psel-head { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
   /* 대화 칸이 남은 높이를 채우고 혼자 스크롤한다(최신이 아래). 승인 카드가 많으면 최소 높이에서 멈추고 패널 전체가 스크롤 */
   #pSel { flex:1 0 auto; display:flex; flex-direction:column; gap:4px; }
-  .oside .convo { flex:1 1 0; max-height:none; min-height:180px; }
-  .oside .feed { max-height:24vh; }
+  .oside .convo { flex:1 1 0; max-height:none; min-height:260px; }
+  .oside .msg { font-size:13px; }
+  .oside .feed { max-height:18vh; }
+  .psel-now b { font-weight:600; }
   .oside .input { padding:8px 12px; flex:none; }
   .oside .input textarea { resize:vertical; min-height:3.2em; }
   .plist-h { margin-top:8px; }
@@ -72,7 +74,7 @@
   @media (max-width: 760px) {
     .otop { gap:8px; padding:6px 10px; } .otheme { order:9; width:100%; }
     .obody { flex-direction:column; }
-    .oside { width:auto !important; height:48vh; border-left:0; border-top:1px solid var(--line); }
+    .oside { width:auto !important; height:40vh; border-left:0; border-top:1px solid var(--line); }
     .oside.folded { height:34px; }
     .oside-grip { display:none; }
     .oside-strip { width:100%; height:34px; flex-direction:row; justify-content:center; padding:0; }
