@@ -505,6 +505,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         // 소파 · 침대 같은 "위에 앉는" 가구에 자리 잡은 사람은 그 가구 바로 다음(가구 위에). 걸어가는 동안은 발 위치 순서
         const onIt = !a.moving && Math.abs(a.x - a.tx) < 0.05 && Math.abs(a.y - a.ty) < 0.05 && seatFurniture(a);
         sorted.push({ y: onIt ? Math.max(a.y, onIt.key) : a.y, draw: () => drawActorS(a, now) });
+        const prop = propOf(a);
+        if (prop) {                                                         // 그 동작의 소품 — 앞 탁자 위나 발치에 놓는다
+          const tbl = Math.abs(a.x - a.tx) < 0.05 && Math.abs(a.y - a.ty) < 0.05 ? sleepTable(a) : null;
+          sorted.push({ y: tbl ? tbl.key + 0.002 : (onIt ? Math.max(a.y, onIt.key) : a.y) + 0.001, draw: () => drawPropS(a, prop, tbl, now) });
+        }
         const tbl = !a.moving && a.act && a.act.anim === 'sleep' && sleepTable(a);
         if (tbl) sorted.push({ y: tbl.key, draw: () => {                   // 엎드린 머리를 탁자 위에
           ctx.save(); ctx.beginPath();
@@ -752,12 +757,62 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       for (const [key, v] of Object.entries((theme.tags && theme.tags.zones) || {})) {
         const z = L.zones[key];
         if (!z || z.x == null) continue;
-        const [label, dx = 0, dy = 0] = Array.isArray(v) ? v : [v, 0, 0];
-        out.push({ zone: key, label, x: z.x + 0.1 + dx, y: z.y + 0.08 + dy, w: (padL + ctx.measureText(label).width + 6) / s, h: (fontPx + 7) / s });
+        const [label] = Array.isArray(v) ? v : [v];
+        const p = tagPlace(key, (padL + ctx.measureText(label).width + 6) / s, (fontPx + 7) / s);
+        out.push({ zone: key, label, x: p[0], y: p[1], w: p[2], h: p[3] });
       }
     }
     ctx.restore();
     return out;
+  }
+  // 구역 이름표 자리(11-05) — 이름표는 화면에 같은 크기로 그려서, 창이 작아 배율이 작으면 방 안에서 커진다. 테마에 적은 자리(dx · dy)는
+  // 한 배율에서만 맞았다(1100×700 창에서 사람 몸을 최대 25% 덮음). 이제 지금 배율에서 고른다: 테마 자리 → 구역 네 모서리 → 구역 바로 위
+  // 순서로, 어느 사람 자리(모든 구역의 standSpots, 몸 전체)도 덮지 않는 첫 자리. 없으면 가장 덜 덮는 자리. [x, y, w, h] 방 좌표
+  const TAG_PLACE = new Map();
+  const tagPadL = () => (TAG.kind === 'hazard' ? 9 : TAG.kind === 'sign' ? 7 : 6);
+  function tagW(label) { ctx.save(); ctx.font = TAG.font; const w = ctx.measureText(label).width; ctx.restore(); return (tagPadL() + w + 6) / (cam.s * T); }
+  function tagH() { return (+((TAG.font.match(/(\d+)px/) || [0, 10])[1]) + 7) / (cam.s * T); }
+  function tagPlace(key, w, h) {
+    w = Math.ceil(w * 20) / 20; h = Math.ceil(h * 20) / 20;               // 0.05칸 단위로(확대 중 배율이 계속 바뀐다)
+    const ck = `${key}:${w}:${h}`;
+    if (TAG_PLACE.has(ck)) return TAG_PLACE.get(ck);
+    if (TAG_PLACE.size > 400) TAG_PLACE.clear();
+    const z = L.zones[key], v = ((theme.tags && theme.tags.zones) || {})[key];
+    const [, dx = 0, dy = 0] = Array.isArray(v) ? v : [v, 0, 0];
+    const zw = z.w || 1, zh = z.h || 1;
+    const cands = [[z.x + 0.1 + dx, z.y + 0.08 + dy], [z.x + 0.1, z.y + 0.08], [z.x + zw - w - 0.1, z.y + 0.08],
+                   [z.x + 0.1, z.y + zh - h - 0.08], [z.x + zw - w - 0.1, z.y + zh - h - 0.08], [z.x + 0.1, z.y - h - 0.05]];
+    const [bw, bh] = bodySize();
+    const bodies = standSpots().map((p) => [p.x - bw / 2 + 0.05, p.y - bh, bw - 0.1, bh]);
+    const others = Object.entries((theme.tags && theme.tags.zones) || {}).filter(([k]) => k !== key && L.zones[k] && L.zones[k].x != null)
+      .map(([k, vv]) => { const zz = L.zones[k], [, ox = 0, oy = 0] = Array.isArray(vv) ? vv : [vv, 0, 0]; return [zz.x + 0.1 + ox, zz.y + 0.08 + oy, w, h]; });
+    const rw = L.room ? L.room.w : Infinity, rh = L.room ? L.room.h : Infinity;   // 방 밖으로는 내지 않는다
+    const scoreOf = (x, y) => {
+      const box = [x, y, w, h];
+      const cover = bodies.reduce((m, b) => Math.max(m, areaOf(box, b) / (b[2] * b[3])), 0);
+      const clash = others.some((o) => areaOf(box, o) > 0) ? 0.001 : 0;      // 다른 이름표(테마 자리)와 겹치면 조금 덜 좋게
+      return cover + clash;
+    };
+    let best = null;
+    for (const [x, y] of cands) {
+      const score = scoreOf(x, y);
+      if (!best || score < best.score) best = { score, box: [x, y, w, h] };
+      if (score === 0) break;
+    }
+    if (best.score > 0) {
+      // 후보가 모두 덮으면 — 구역과 둘레 2칸을 0.1칸 간격으로 훑어, 덮지 않는 자리 중 테마 자리에 가장 가까운 곳(없으면 가장 덜 덮는 곳)
+      const [x0, y0] = cands[0];
+      let pick = null;
+      for (let y = Math.max(0.05, z.y - 2); y <= Math.min(rh - h - 0.05, z.y + zh + 2 - h); y += 0.1) {
+        for (let x = Math.max(0.05, z.x - 2); x <= Math.min(rw - w - 0.05, z.x + zw + 2 - w); x += 0.1) {
+          const score = scoreOf(x, y), dist = Math.hypot(x - x0, y - y0);
+          if (!pick || score < pick.score - 1e-9 || (Math.abs(score - pick.score) < 1e-9 && dist < pick.dist)) pick = { score, dist, box: [x, y, w, h] };
+        }
+      }
+      if (pick && pick.score < best.score) best = pick;
+    }
+    TAG_PLACE.set(ck, best.box);
+    return best.box;
   }
   const areaOf = (a, b) => Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0])) *
                            Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]));
@@ -1213,12 +1268,19 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     a._tblKey = key; a._tbl = null;
     const room = world.rooms.find((r) => r.name === a.room);
     if (!room) return null;
-    const px = a.tx - room.x, py = a.ty - room.y;
+    const t = tableAt(a.tx - room.x, a.ty - room.y);
+    if (t) a._tbl = { key: room.y + t.key + 0.003, top: room.y + t.y, clipBottom: room.y + t.y + 0.55,
+                      lx: room.x + t.x, rx: room.x + t.x + t.w, h: t.h };
+    return a._tbl;
+  }
+  // 자리(방 좌표) 바로 앞 탁자 — 자는 사람 머리 · 놓는 소품이 올라간다. 위에 앉는 가구 · 탁자 위 소품은 아니다
+  function tableAt(px, py) {
+    let best = null;
     for (const r of decorRects('room')) {
       if (r.top || SIT_ON.test(r.s) || px < r.x || px > r.x + r.w || r.y < py - 0.8 || r.y > py + 0.6) continue;
-      if (!a._tbl || r.y < a._tbl.top - room.y) a._tbl = { key: room.y + r.key + 0.003, top: room.y + r.y, clipBottom: room.y + r.y + 0.55 };
+      if (!best || r.y < best.y) best = r;
     }
-    return a._tbl;
+    return best;
   }
   function drawActorS(a, now) {
     if (a.kind === 'mini') {                                  // 부모의 축소판 — 늘 걷는 그림(돌아다닌다)
@@ -1272,16 +1334,139 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       ctx.fillStyle = rc; ctx.fillRect(hx, hy, hw, 3); ctx.fillRect(hx - 1, hy + 3, hw + 2, 1);
       ctx.fillStyle = '#ffffff55'; ctx.fillRect(hx + 1, hy, 2, 1);
     }
-    // 손에 든 것
-    const prop = !a.moving && !mode && (theme.sprites.props || {})[anim];
-    if (prop) {
-      const bob = prop.bob ? Math.round(Math.abs(Math.sin(a.phase * 1.5)) * prop.bob) : 0;
-      const sh = prop.shake ? Math.round(Math.sin(a.phase * 6) * prop.shake) : 0;
-      const [pw, ph] = SP.size(prop.s);
-      SP.draw(ctx, prop.s, a.x * T + prop.dx - pw / 2 + sh, a.y * T + prop.dy - ph / 2 - bob, now);
-      if (prop.fx) SP.draw(ctx, prop.fx, a.x * T + prop.dx - 15, a.y * T + prop.dy - 26, now);
-    }
     ctx.globalAlpha = 1;
+  }
+
+  // ── 소품은 들지 않고 놓는다(11-05 사용자 지시) ─────────────────────────────────────────────
+  // 전에는 테마마다 발밑 기준 dx · dy와 원래 크기로 손에 들려, 16px 캐릭터 앞에 16px 책 · 깃펜 · 플라스크가 얼굴 높이에 얹혀
+  // 사람이 안 보였다(마법학교 서고). 이제 사람은 서 있거나 앉아 있기만 하고, 그 동작의 소품은 곁에 놓는다:
+  //  · 앞에 탁자가 있으면(tableAt — 자는 사람 머리를 얹는 그 탁자) 탁자 윗면, 사람 손 쪽으로 조금
+  //  · 없으면 사람 옆 바닥(손 쪽 발치)
+  //  · 크기: 폭 ≤ 캐릭터 폭의 절반, 높이 ≤ 캐릭터 키의 55%(16px 캐릭터 → 8 × 9px). 비율은 지킨다
+  //  · 얼굴 칸(그림 위쪽 FACE_H, 가운데 FACE_W 폭)과 겹치면 손 쪽 바깥으로 민다 — 얼굴은 늘 보인다
+  // 테마 props에는 그림(s) · 손 쪽(dx 부호, 양수 오른쪽) · shake(플라스크 흔들기 등) · fx(소품 위 효과)만 둔다
+  const FACE_H = 0.5, FACE_W = 0.64;
+  function faceBox(cw, ch, cx, foot) {
+    const top = foot - ch;
+    return [cx - Math.ceil(cw * FACE_W / 2), top, Math.ceil(cw * FACE_W), Math.ceil(ch * FACE_H)];
+  }
+  // tbl: { top(px, 탁자 그림 위 끝), h(px), lx, rx(px) } | null. 돌려주는 값은 px 칸 + 어디에 놓였는지
+  function placeProp(prop, cw, ch, cx, foot, tbl, shake = 0) {
+    const [sw, sh] = SP.size(prop.s);
+    const k = Math.min(1, Math.floor(cw * 0.5) / sw, Math.floor(ch * 0.55) / sh);
+    const w = Math.max(2, Math.round(sw * k)), h = Math.max(2, Math.round(sh * k));
+    const side = (prop.dx || 0) < 0 ? -1 : 1;
+    let x, y, on;
+    if (tbl) {
+      on = 'table';
+      x = cx - Math.round(w / 2) + side * Math.round(cw * 0.35);
+      x = Math.max(tbl.lx + 1, Math.min(x, tbl.rx - w - 1));              // 탁자 밖으로 삐져나가지 않게
+      y = tbl.top + Math.min(6, Math.round(tbl.h * 0.45)) - h;            // 바닥이 윗면 위에 닿게
+    } else {
+      on = 'floor';
+      x = side > 0 ? cx + Math.floor(cw / 2) - 1 : cx - Math.ceil(cw / 2) - w + 1;   // 발치 옆
+      y = foot - h;
+    }
+    x += shake;                                                            // 흔들기를 먼저 — 그다음 얼굴 검사
+    const [fx, fy, fw, fh] = faceBox(cw, ch, cx, foot);
+    if (areaOf([x, y, w, h], [fx, fy, fw, fh]) > 0) x = side > 0 ? fx + fw : fx - w;   // 얼굴을 덮으면 옆으로
+    return { x, y, w, h, on, k: +k.toFixed(2) };
+  }
+  function propOf(a) {
+    if (a.kind === 'mini' || a.moving) return null;
+    const act = a.act || {};
+    if (act.fx === 'stone' || act.fx === 'frozen' || act.fx === 'ghost') return null;
+    return (theme.sprites.props || {})[act.anim] || null;
+  }
+  // 놓인 소품 그리기 — 그리기 목록에서 탁자 위면 그 탁자 바로 다음, 바닥이면 사람 바로 다음 순서
+  function drawPropS(a, prop, tbl, now) {
+    const c = SP.charFrame(a.char, 'idle', a.face || 'down', 0, null, null);
+    if (!c) return;
+    const sh = prop.shake ? Math.round(Math.sin(a.phase * 6) * prop.shake) : 0;
+    const t = tbl && { top: tbl.top * T, h: tbl.h * T, lx: tbl.lx * T, rx: tbl.rx * T };
+    const r = placeProp(prop, c.width, c.height, Math.round(a.x * T), Math.round(a.y * T), t, sh);
+    ctx.globalAlpha = (a.act && a.act.alpha != null) ? a.act.alpha : 1;
+    const pc = SP.scaled(prop.s, r.w, r.h, now);
+    if (pc) ctx.drawImage(pc, r.x - pc.pad, r.y - pc.pad);
+    if (prop.fx) { const [fw, fh] = SP.size(prop.fx); SP.draw(ctx, prop.fx, r.x + r.w / 2 - fw / 2, r.y - fh / 2 - 2, now); }
+    ctx.globalAlpha = 1;
+  }
+  // 소품 점검 — ① 모든 테마 캐릭터 × 모든 소품을 바닥 · 탁자(tableAt이 잡는 가장 높은 탁자) 두 경우로 놓아 얼굴 칸과 겹치는지 · 너무 큰지
+  // ② 모든 자리(standSpots)의 실제 앞 탁자 위에 놓아 얼굴 칸과 겹치는지, 자리마다 어디에 놓이는지(탁자 / 바닥).
+  // 화면 시험이 window.office.propAudit()으로 부른다. issues가 빈 배열이면 통과
+  function propAudit() {
+    const issues = [], props = theme.sprites.props || {};
+    const chars = [...new Set([...(CH.pool || []), CH.foreman, ...Object.values(CH.infra || {})].filter(Boolean))];
+    for (const ch of chars) {
+      const c = SP.charFrame(ch, 'idle', 'down', 0, null, null);
+      if (!c) { issues.push({ char: ch, problem: '캐릭터 그림 없음' }); continue; }
+      const face = faceBox(c.width, c.height, 0, c.height);
+      const high = { top: c.height - Math.round(0.8 * T), h: T, lx: -T, rx: T };       // tableAt이 잡는 가장 높은 탁자
+      for (const [anim, prop] of Object.entries(props)) {
+        if (anim.startsWith('_')) continue;
+        if (!SP.has(prop.s)) { issues.push({ char: ch, anim, problem: '소품 그림 없음', s: prop.s }); continue; }
+        for (const tbl of [null, high]) for (const sh of [-(prop.shake || 0), prop.shake || 0]) {
+          const r = placeProp(prop, c.width, c.height, 0, c.height, tbl, sh);
+          const ov = areaOf([r.x, r.y, r.w, r.h], face);
+          if (ov > 0) issues.push({ char: ch, anim, s: prop.s, on: r.on, problem: '얼굴 가림', px: ov });
+          if (r.w > c.width / 2 + 0.5 || r.h > c.height * 0.55 + 0.5) issues.push({ char: ch, anim, s: prop.s, problem: '너무 큼', size: [r.w, r.h], char_size: [c.width, c.height] });
+        }
+      }
+    }
+    // 실제 자리 — 앞 탁자가 잡히는 자리마다 모든 캐릭터 × 소품을 그 탁자 위에 놓아 본다
+    const spots = standSpots().map((p) => ({ ...p, t: tableAt(p.x, p.y) }));
+    for (const p of spots) {
+      if (!p.t) continue;
+      const tb = { top: p.t.y * T, h: p.t.h * T, lx: p.t.x * T, rx: (p.t.x + p.t.w) * T };
+      for (const ch of chars) {
+        const c = SP.charFrame(ch, 'idle', 'down', 0, null, null);
+        if (!c) continue;
+        const cx = Math.round(p.x * T), foot = Math.round(p.y * T), face = faceBox(c.width, c.height, cx, foot);
+        for (const [anim, prop] of Object.entries(props)) {
+          if (anim.startsWith('_') || !SP.has(prop.s)) continue;
+          const r = placeProp(prop, c.width, c.height, cx, foot, tb);
+          const ov = areaOf([r.x, r.y, r.w, r.h], face);
+          if (ov > 0) issues.push({ where: p.where, char: ch, anim, s: prop.s, on: 'table', problem: '얼굴 가림', px: ov });
+        }
+      }
+    }
+    return { issues: issues.filter((x, i, a) => a.findIndex((y) => JSON.stringify(y) === JSON.stringify(x)) === i),
+             spots: spots.map((p) => ({ where: p.where, on: p.t ? 'table' : 'floor', by: p.t ? p.t.s : null })) };
+  }
+  // 소품 견본(디버그) — 줄 = 소품 동작, 칸 = 캐릭터. 실제 그리기와 같은 placeProp · scaled로 그려 PNG data URL을 돌려준다.
+  // 칸마다 왼쪽은 바닥에 놓은 것, 오른쪽은 앞 탁자(회색 띠) 위에 놓은 것. 얼굴 칸은 빨간 테두리(showFace)
+  function propSheet(zoom = 6, showFace = true) {
+    const props = Object.entries(theme.sprites.props || {}).filter(([k]) => !k.startsWith('_'));
+    const chars = [...new Set([...(CH.pool || []), CH.foreman].filter(Boolean))].slice(0, 6);
+    const cell = 56, lab = 46;
+    const cv = document.createElement('canvas');
+    cv.width = (lab + chars.length * cell) * zoom; cv.height = props.length * cell * zoom;
+    const g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false; g.fillStyle = '#d8d4c8'; g.fillRect(0, 0, cv.width, cv.height);
+    g.scale(zoom, zoom);
+    props.forEach(([anim, prop], r) => {
+      g.fillStyle = '#222'; g.font = '6px monospace'; g.textBaseline = 'middle'; g.fillText(anim, 2, r * cell + cell / 2);
+      chars.forEach((ch, i) => {
+        const c = SP.charFrame(ch, 'idle', 'down', 0, null, null);
+        if (!c) return;
+        const foot = r * cell + cell - 6;
+        for (const [j, withTbl] of [[0, false], [1, true]]) {
+          const cx = Math.round(lab + i * cell + 14 + j * 26);
+          g.drawImage(c, Math.round(cx - c.width / 2), foot - c.height);
+          let tbl = null;
+          if (withTbl) {                                                  // 사람 바로 앞 탁자 — 윗면이 몸 아래 40%(layoutAudit이 허용하는 높이). 사람보다 나중에
+            tbl = { top: foot - Math.round(c.height * 0.4), h: T, lx: cx - 12, rx: cx + 12 };
+            g.fillStyle = '#8a7a66'; g.fillRect(tbl.lx, tbl.top, 24, T);
+            g.fillStyle = '#a8977f'; g.fillRect(tbl.lx, tbl.top, 24, 6);
+          }
+          const pr = placeProp(prop, c.width, c.height, cx, foot, tbl);
+          const pc = SP.scaled(prop.s, pr.w, pr.h, 0);
+          if (pc) g.drawImage(pc, pr.x - pc.pad, pr.y - pc.pad);
+          if (showFace) { const f = faceBox(c.width, c.height, cx, foot); g.strokeStyle = '#e0303088'; g.lineWidth = 1 / zoom; g.strokeRect(f[0], f[1], f[2], f[3]); }
+        }
+      });
+    });
+    return cv.toDataURL('image/png');
   }
 
   // 사람 위에 뜨는 것 — 말풍선(이모트) · 연기 · 자는 Zz · 일꾼 수 · 선택 표시(가구에 가리지 않게 마지막에)
@@ -1395,10 +1580,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     for (const [key, v] of Object.entries(names)) {
       const z = L.zones[key];
       if (!z || z.x == null) continue;
-      const [label, dx, dy] = Array.isArray(v) ? v : [v, 0, 0];      // ["아치 창", dx, dy] — 옆 구역 이름표와 겹치면 비켜 둔다
+      const [label] = Array.isArray(v) ? v : [v];                    // ["아치 창", dx, dy] — dx · dy는 첫 후보 자리(tagPlace)
       const role = ZONE_ROLE[((theme.tags && theme.tags.roles) || {})[key]];
       const n0 = HITS.length;
-      const box = drawTag(r.x + z.x + 0.1 + (dx || 0), r.y + z.y + 0.08 + (dy || 0), label, false, null, null, role ? `<div class="tip-h">${esc(label)}</div>${tipOf(role)}` : null);
+      const [tx, ty] = tagPlace(key, tagW(label), tagH());
+      const box = drawTag(r.x + tx, r.y + ty, label, false, null, null, role ? `<div class="tip-h">${esc(label)}</div>${tipOf(role)}` : null);
       if (HITS.length > n0) HITS[HITS.length - 1].zone = key; else HITS.push({ ...box, zone: key, tip: null });   // overTags가 쓴다
       if (!HITS[HITS.length - 1].tip) HITS[HITS.length - 1].tip = `<div class="tip-h">${esc(label)}</div>`;
     }
@@ -1871,7 +2057,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   resize();
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
-  return { go, theme, openSession, panel, actors, audit: () => audit(), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
+  return { go, theme, openSession, panel, actors, audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
                                                                        anim: a.act && a.act.anim, go: a.act && a.act.go, face: a.face, dir: a.dir, char: a.char })) };
 }
 

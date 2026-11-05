@@ -54,8 +54,8 @@
     "_": "구역 이름표 — 흰 사인판 + 파란 띠",
     "style": { "bg": "#ffffffee", "fg": "#1f2430", "border": "#3d9ee6", "font": "600 10px system-ui, 'Noto Sans KR', sans-serif", "kind": "sign" },
     "_zones": "[이름, dx, dy] — 이름표가 사람 자리를 가리지 않게 비켜 둔 것(11-05 window.office.layoutPlan())",
-    "zones": { "foreman_office": "팀장실", "library": "아카이브", "desks": ["워크스테이션", -0.8, 0], "server": "서버룸", "test": ["QA 부스", 0, 1.1],
-               "meeting": "회의실", "lounge": ["라운지", 0, -0.2], "window": ["창가 바", -0.8, 0], "commit": ["커밋 데스크", 1.1, 0] },
+    "zones": { "foreman_office": "팀장실", "library": "아카이브", "desks": ["워크스테이션", -1.2, 0], "server": "서버룸", "test": ["QA 부스", 0, 1.1],
+               "meeting": "회의실", "lounge": ["라운지", 0, -0.5], "window": ["창가 바", -1.1, 0], "commit": ["커밋 데스크", 1.1, 0] },
     "_roles": "구역 → 하는 일(설명은 테마 공통, office.js ZONE_ROLE). 이름표에 마우스를 올리면 뜬다",
     "roles": { "foreman_office": "hq", "library": "read", "desks": "edit", "server": "bash", "test": "test",
                "meeting": "sub", "lounge": "idle", "window": "web", "commit": "git" },
@@ -222,13 +222,14 @@
       "infra": { "jenkins": "pig_b", "harbor": "pig_d", "argocd": "pig_a" }
     },
     "props": {
-      "read": { "s": "paper1", "dx": 4, "dy": -12, "bob": 1 },
-      "think": { "s": "mug", "dx": 4, "dy": -11 },
-      "shake": { "s": "paper2", "dx": 4, "dy": -12, "shake": 1 },
-      "seal": { "s": "paper3", "dx": 4, "dy": -12, "bob": 1 },
-      "cast": { "s": "paper3", "dx": 5, "dy": -16, "bob": 2 },
-      "coffee": { "s": "mug", "dx": 4, "dy": -11, "bob": 1 },
-      "phone": { "s": "p_phone", "dx": 3, "dy": -13 }
+      "_comment": "동작 → 곁에 놓는 소품(들지 않는다 — 11-05). 엔진이 앞 책상 윗면이나 발치 옆에 놓고, 크기는 캐릭터 폭의 절반 이하로 줄인다(placeProp). dx는 놓는 쪽(양수 오른쪽), shake는 흔들기",
+      "read": { "s": "paper1", "dx": 1 },
+      "think": { "s": "mug", "dx": 1 },
+      "shake": { "s": "paper2", "dx": 1, "shake": 1 },
+      "seal": { "s": "paper3", "dx": 1 },
+      "cast": { "s": "paper3", "dx": 1 },
+      "coffee": { "s": "mug", "dx": 1 },
+      "phone": { "s": "p_phone", "dx": 1 }
     }
   }
 }

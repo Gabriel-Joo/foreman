@@ -68,6 +68,33 @@ class Sprites {
     return c;
   }
 
+  // 줄인 그림(11-05 손 소품) — 16px 소품을 8px로 줄이면 가장 가까운 픽셀만 고르는 방식은 점이 빠져 깨진다.
+  // 부드럽게 줄인 뒤 투명도를 반으로 잘라(0 또는 255) 픽셀 그림처럼 또렷한 가장자리로 돌린다. 외곽선은 줄인 뒤 다시 그린다(pad 1)
+  scaled(name, w, h, now = 0) {
+    const src = this.frame(name, now);
+    if (!src) return null;
+    const key = `${w}x${h}`;                                    // 프레임 캔버스(이미 캐시된 것)마다 줄인 그림을 붙여 둔다
+    const per = src._scaled || (src._scaled = new Map());
+    let c = per.get(key);
+    if (c) return c;
+    const p = src.pad || 0;
+    c = canvas(w + 2 * p, h + 2 * p);
+    c.pad = p;
+    const g = c.getContext('2d');
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.drawImage(src, p, p, src.width - 2 * p, src.height - 2 * p, p, p, w, h);
+    const im = g.getImageData(0, 0, c.width, c.height), d = im.data;
+    for (let i = 3; i < d.length; i += 4) {
+      if (d[i] < 110) { d[i] = 0; continue; }
+      const a = d[i] / 255;                                   // 반투명 가장자리에 섞인 색을 원래 밝기로
+      d[i - 3] = Math.min(255, d[i - 3] / a); d[i - 2] = Math.min(255, d[i - 2] / a); d[i - 1] = Math.min(255, d[i - 1] / a); d[i] = 255;
+    }
+    g.putImageData(im, 0, 0);
+    if (p) outline(c, this.outlineColor);
+    per.set(key, c);
+    return c;
+  }
+
   // 그리기 — (px, py)는 월드 px의 왼쪽 위. scale은 정수 배
   draw(ctx, name, px, py, now = 0, scale = 1, fixed = null) {
     const c = this.frame(name, now, fixed);

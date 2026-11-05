@@ -166,6 +166,10 @@ body { --term-h:0px; }
 .ns-dirs { display:flex; flex-wrap:wrap; gap:3px; max-height:170px; overflow:auto; margin:6px 0; }
 .ns-dirs button { padding:1px 7px; }
 .ns-prev { max-height:30vh; }
+/* 라디오 줄 — 동그라미와 글자를 한 줄에 왼쪽부터 붙인다(창이 세로 flex라 label이 꽉 차게 늘어나도 내용은 왼쪽) */
+.ns .ns-opt { display:flex; align-items:center; justify-content:flex-start; gap:6px; align-self:flex-start; cursor:pointer; }
+.ns .ns-opt input[type=radio] { width:auto; margin:0; padding:0; flex:none; }
+.ns .ns-opt.off { opacity:.55; cursor:default; }
 .ns-act { justify-content:flex-end; margin-top:6px; }
 .ns-act #nsMsg { margin-right:auto; }
 
