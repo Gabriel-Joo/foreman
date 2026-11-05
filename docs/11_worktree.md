@@ -16,6 +16,7 @@ README 3.4("한 프로젝트에 캐릭터를 둘 이상 붙이면 같은 파일�
 | 충돌 | rebase가 멈추면 `rebase --abort`로 되돌리고 충돌 파일 목록을 보여 준다. worktree는 그대로 — 세션을 다시 띄워 풀고 커밋한 뒤 다시 합친다 |
 | 막는 것 | 세션이 살아 있으면 합치기 · 버리기 불가. 커밋 안 된 변경이 있으면 합치기 불가(끝내기 확인 창에서 미리 경고). 버리기는 이름을 그대로 적어야 한다 |
 | 스키마 잠금 | `config/worktree.toml` — 프로젝트별 마이그레이션 경로 · 명령. 처음 쓴 세션이 잠금을 갖고, 다른 세션의 같은 시도는 PreToolUse에서 **거부**(승인 모드가 observe인 런슈즈도). 풀림: worktree 세션은 합치기 · 버리기 때, 원본 폴더 세션은 끝날 때, 사람이 `DELETE /api/schema-lock/<프로젝트>` |
+| 잠겨 있을 때(세션의 방침) | 잠금을 가진 앞 세션이 살아 있으면 스키마 변경 없이 할 수 있는 일부터 하고, 스키마가 필요한 단계를 시작할 때 잠금을 다시 본다. 잠금을 가진 세션이 이미 끝났으면(잠금 파일에 이름이 남아 있어도) 가져가 써도 된다 |
 
 API: `POST /api/spawn`의 `worktree`(null · true · false), `POST /api/sessions/{id}/worktree` `{action: merge|discard, confirm}`, `GET /api/schema-lock`.
 
@@ -85,3 +86,7 @@ cmd = "npm --prefix frontend run dev -- --port {port} --strictPort"
 1. A(화면만, 데이터는 지금 브리지)로 시작해도 되나
 2. 미리보기는 버튼을 눌렀을 때만 띄우나(제안), 아니면 worktree 세션을 띄울 때 바로 띄우나
 3. 런슈즈 미리보기(vite)도 이번에 같이 하나, FOREMAN만 먼저 하나(제안: FOREMAN 먼저)
+
+## 3. 같이 도는 세션의 범위
+
+- **UI(화면)를 맡은 세션이 다른 세션과 같이 돌 때는 테마 `roles` · 역할 색 · 패널의 캐릭터 · 역할 표시(`render.js` `sessionMeta`)를 건드리지 않는다.** 역할 · 색은 역할 작업 쪽이 갖는다(사용자 합의 — "테마 `roles` · 역할 색 · 패널의 캐릭터 · 역할 표시(`render.js` `sessionMeta`)는 건드리지 마라")

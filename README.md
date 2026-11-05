@@ -865,6 +865,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 런슈즈 미리보기(vite) | FOREMAN 미리보기가 쓸모 있는지 본 뒤 | `docs/11_worktree.md` |
 | Claude Code와 Codex 같이 쓰기 | 나중 | `log/later_codex_bridge.md` |
 | 9단계 LLM 지표 | 프로메테우스는 펫퍼민트 설계와 상의 뒤 | 로드맵 9 |
+| 인계를 worktree 세션에 넣을 때 그 사실 덧붙이기 — 브리지(`spawn_new`)가 "이 세션은 worktree `<이름>`(브랜치 `cc/<이름>`) — push 안 함 · 브리지 재시작 안 함 · 기록은 새 log 파일"과 CLAUDE.md 「따로 작업」 절을 읽을 곳에 자동으로 | 아직 안 만듦 | `log/handoff_v2_c_result.md` |
 
 ---
 
