@@ -132,7 +132,9 @@ def test_dashboard_snapshot_and_pages(client):
         sid = j["projects"][0]["sessions"][0]["id"]
         c = client.get(f"/api/sessions/{sid}/conversation?limit=2", headers=_auth()).json()
         assert len(c["turns"]) <= 2
-    assert client.get("/").status_code == 200 and b"store.js" in client.get("/").content
+    assert client.get("/").status_code == 200 and b"office.js" in client.get("/").content          # 10b: / 는 픽셀 화면
+    assert client.get("/classic").status_code == 200 and b"render.js" in client.get("/classic").content
+    assert client.get("/static/css/panel.css").status_code == 200
     assert client.get("/debug").status_code == 200
     assert client.get("/static/js/render.js").status_code == 200
 

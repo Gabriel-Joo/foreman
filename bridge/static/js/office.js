@@ -4,6 +4,7 @@
 
 import { resolveAction, infraAction, groupSubagents, tokenRate } from './theme.js';
 import { loadSprites } from './sprites.js';
+import { createSidePanel } from './opanel.js';
 
 const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'], ['foreman', '포먼']];
 const RATE_WIN = 10 * 60 * 1000;          // 토큰 속도 창 — 최근 10분
@@ -18,19 +19,34 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
 
   root.innerHTML = `
     <header class="otop">
-      <span class="brand">FOREMAN</span><span class="muted small">픽셀 오피스 · ${esc(theme.label)}</span>
+      <span class="brand">FOREMAN</span><span class="muted small">${esc(theme.label)}</span>
       <button id="oMap" class="ghost" title="감독실로(Esc)">${esc((theme.hq && theme.hq.label) || '감독실')}</button>
       <button id="oAll" class="ghost" title="모든 현장을 한눈에">전체</button>
       <span id="oAlerts" class="oalerts"></span>
-      <span class="small muted">테마 ${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장'], ['plain', '도형']].map(([k, v]) => k === theme.name ? `<b>${v}</b>` : `<a href="/office?theme=${k}">${v}</a>`).join(' · ')}</span>
-      <a class="small" href="/">클래식 화면</a>
+      <span class="small muted otheme">테마 ${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장'], ['plain', '도형']].map(([k, v]) => k === theme.name ? `<b>${v}</b>` : `<a href="/?theme=${k}">${v}</a>`).join(' · ')}</span>
+      <a class="small" href="/classic" title="카드 목록 화면">클래식</a>
       <span id="oConn" class="conn"></span>
       <button id="oTok" class="ghost" title="API 토큰">토큰</button>
     </header>
-    <div id="oStage" class="ostage"><canvas id="oCv"></canvas></div>
-    <aside id="oInfo" class="oinfo" hidden></aside>`;
+    <div class="obody">
+      <div id="oStage" class="ostage"><canvas id="oCv"></canvas>
+        <div id="oDown" class="odown" role="alert" aria-live="assertive" hidden>
+          <b>⚠ 서버 연결 끊김</b> <span id="oDownWhy" class="small"></span> <span id="oDownNext" class="small muted"></span>
+          <button id="oRetry" class="small">지금 다시 연결</button>
+          <div class="small muted">화면의 캐릭터는 끊기기 전 상태다 — 다시 연결되면 맞춘다</div>
+        </div>
+      </div>
+    </div>
+    <div id="tokDlg" class="overlay"><form class="box" id="tokForm">
+      <h2 class="plain">API 토큰</h2>
+      <p class="muted small">.env.bridge의 FOREMAN_API_TOKEN 값. 이 브라우저에만 저장한다(클래식 화면과 같이 쓴다).</p>
+      <input id="tokInput" type="password" autocomplete="new-password" placeholder="FOREMAN_API_TOKEN 값">
+      <p><button type="submit">연결</button> <button type="button" id="tokCancel" class="ghost">닫기</button> <span id="tokLen" class="small muted"></span></p>
+    </form></div>`;
   const $ = (id) => root.querySelector('#' + id);
   const cv = $('oCv'), ctx = cv.getContext('2d');
+  // 10b: 옆 패널(승인 · 대화 · 입력). 캔버스를 덮지 않고 옆에 붙는다 — 패널을 펴고 접으면 캔버스 크기가 바뀌고 카메라가 다시 맞춘다
+  const panel = createSidePanel(root.querySelector('.obody'), store, { onSelectSession: (sid) => openSession(sid), onClear: () => { selected = null; } });
 
   // ── 상태 ───────────────────────────────────────────
   let world = { rooms: [], lounge: null, w: 0, h: 0 };
@@ -200,7 +216,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (view !== 'map' && view !== 'hq' && !world.rooms.concat(world.lounge).some((r) => (r.name || '_lounge') === view)) view = 'hq';
     aim();
     header(st);
-    info(st);
+    const sa = selected && actors.get(selected);
+    if (sa && sa.kind === 'infra') info();          // 인프라 상태가 바뀌었으면 패널 제목 줄도 바꾼다(세션은 패널이 store를 직접 본다)
+    if (store.state.selected == null && sa && (sa.kind === 'session' || sa.kind === 'mini')) selected = null;   // 패널에서 ✕
   }
 
   // 역할(로브 · 사원증 끈 · 안전모 색) — 11단계에서 포먼이 캐릭터를 만들면 세션에 role이 온다(지금은 없음).
@@ -1010,33 +1028,54 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     $('oConn').textContent = { up: '연결됨', down: '끊김', connecting: '연결 중', auth: '토큰 필요', idle: '연결 전' }[c.status] || c.status;
     const pend = [...st.approvals.values()].filter((a) => a.status === 'pending').length;
     const ig = st.ingest;
-    $('oAlerts').innerHTML = (pend ? `<a class="warn" href="/" title="승인은 클래식 화면에서(10b에 이 화면으로)">❗ 승인 대기 ${pend}</a>` : '') +
-      (ig && !ig.ok ? ` <span class="bad">⚠ 적재 막힘</span>` : '');
+    // 전체 요약(클래식 머리말과 같은 숫자) + 적재가 막히면 무엇이 막혔는지(마우스를 올리면)
+    let active = 0, live = 0, outToday = 0, subs = 0;
+    for (const s of st.sessions.values()) {
+      if (s.state === 'ACTIVE') active++;
+      if (s.state !== 'DORMANT') live++;
+      outToday += (s.tokens && s.tokens.today_output) || 0;
+      subs += s.subagents_running || 0;
+    }
+    const igWhy = !ig ? '' : ig.stalled ? `트랜스크립트 감시 루프가 ${ig.tick_age_s}초째 돌지 않는다`
+      : (ig.stuck || []).map((x) => `${x.session} ${x.minutes}분 · ${x.failures}번 — ${x.error}`).join('\n');
+    $('oAlerts').innerHTML = (pend ? `<button id="oPend" class="ghost warn" title="패널에서 승인 · 거부">❗ 승인 대기 ${pend}</button>` : '') +
+      (ig && !ig.ok ? `<span class="bad" title="${esc(igWhy)}">⚠ ${ig.stalled ? '와처 멈춤' : `적재 막힘 ${(ig.stuck || []).length}개 세션`}</span>` : '') +
+      `<span class="small muted">작업 중 <b>${active}</b>/${live}${subs ? ` · 서브 ${subs}` : ''} · 오늘 출력 ${fmt(outToday)}</span>`;
     $('oMap').disabled = view === 'hq';
     $('oAll').disabled = view === 'map';
+    // 연결 끊김 — 캔버스를 가리지 않는 띠 + 캔버스를 흐리게(보이는 모습이 끊기기 전 것이라는 표시)
+    const down = c.status === 'down';
+    $('oDown').hidden = !down;
+    $('oStage').classList.toggle('offline', down || c.status === 'auth');
+    if (down) {
+      $('oDownWhy').textContent = `${c.reason || '브리지와 연락이 없다'} — ${new Date(c.since).toLocaleTimeString()}부터`;
+      $('oDownNext').textContent = c.nextIn ? `${c.nextIn}초 뒤 다시 연결 (시도 ${c.attempt})` : `연결 중… (시도 ${c.attempt})`;
+    }
+    if (c.status === 'auth') $('tokDlg').classList.add('on');
   }
 
-  function info(st) {
-    const box = $('oInfo');
+  // 고른 캐릭터를 패널에 알린다 — 세션은 store.select(대화를 불러온다), 서브에이전트는 부모 세션, 인프라 · 포먼은 파이프라인 · 세션 목록
+  function info() {
     const a = selected && actors.get(selected);
-    if (!a) { box.hidden = true; return; }
-    box.hidden = false;
-    if (a.kind !== 'session') {
-      const status = a.kind === 'infra' ? (a.act && a.act.status) : '세션 없음(11단계에 캐릭터 재배치)';
-      box.innerHTML = `<b>${esc(a.name)}</b><div class="muted small">${esc(a.room || '')} · ${esc(String(status))}</div>`;
-      return;
+    if (!a) return;
+    const owner = a.kind === 'mini' ? actors.get(a.parent) : a;
+    if (owner && owner.kind === 'session') {
+      if (store.state.selected !== owner.s.id) store.select(owner.s.id);
+      panel.show({ kind: 'session' });
+    } else if (a.kind === 'infra') {
+      const r = world.rooms.find((q) => q.name === a.room), st = r ? r['st_' + a.infra] : 'none';
+      panel.show({ kind: 'infra', room: a.room, infra: a.infra, name: a.name, status: STATUS_KO[st] || st });
+    } else if (a.kind === 'foreman') {
+      panel.show({ kind: 'foreman', room: a.room === '_hq' ? null : a.room });
     }
-    const s = a.s, t = s.tokens || {};
-    const g = groupSubagents(s.subagent_descs || []);
-    box.innerHTML = `
-      <div><b>${esc(a.name)}</b> <span class="badge st-${s.state}">${s.state}</span></div>
-      <div class="small muted">${esc(s.cc_name || '')} · ${esc((s.cwd || '').replace(/^\/home\/[^/]+/, '~'))}</div>
-      <div class="small">지금: ${s.activity && s.state === 'ACTIVE' ? esc(s.activity.tool) + ' ' + esc(short(s.activity.target || '', 80)) : esc(s.state)}</div>
-      <div class="small">동작: ${esc(a.act.anim || '')} @ ${esc(a.act.go || '')} <span class="muted">(${esc(a.act.source || '')}${a.act.flag ? ' · ' + esc(a.act.flag) : ''})</span></div>
-      ${s.open_turn ? `<div class="small">턴: ${esc(short(s.open_turn.prompt || '', 90))}</div>` : ''}
-      ${s.subagents_running ? `<div class="small">서브에이전트 ${s.subagents_running}${g.label ? ' — ' + esc(g.label) : ''}</div>` : ''}
-      <div class="small">토큰 오늘 출력 ${fmt(t.today_output || 0)} · 입력 ${fmt(t.today_input || 0)}</div>
-      <div class="small"><a href="/">대화 · 입력은 클래식 화면에서</a> <span class="muted">(10b에 이 화면으로)</span></div>`;
+  }
+  // 패널(승인 카드의 "세션" · 세션 목록)에서 고르면 그 현장으로 가서 캐릭터를 고른다
+  function openSession(sid) {
+    const key = 's:' + sid, a = actors.get(key);
+    if (a && view !== a.room) { view = a.room || '_lounge'; aim(); header(store.state); }
+    selected = a ? key : null;
+    store.select(sid);
+    panel.show({ kind: 'session' });
   }
 
   // ── 입력 ───────────────────────────────────────────
@@ -1062,17 +1101,34 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const d = Math.hypot(a.x * T - wx, a.y * T - 8 - wy);
       if (d < bd) { bd = d; best = k; }
     }
+    if (!best) return;                   // 빈 바닥을 눌러도 패널은 그대로(입력하던 것을 잃지 않게). 해제는 패널의 ✕
     selected = best;
-    info(store.state);
+    info();
   });
-  function go(v) { view = v; selected = null; aim(); header(store.state); info(store.state); }
+  // 현장을 옮겨도 고른 세션 · 패널은 그대로 둔다
+  function go(v) { view = v; aim(); header(store.state); }
   $('oMap').onclick = () => go('hq');
   $('oAll').onclick = () => go('map');
-  window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') go('hq'); });
-  $('oTok').onclick = () => {
-    const v = prompt('API 토큰(.env.bridge의 FOREMAN_API_TOKEN 값)');
-    if (v) { store.token = v; store.start(); }
+  window.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') return;
+    if (ev.target.closest && ev.target.closest('input, textarea, select')) return;   // 입력 칸에서 친 Esc는 칸이 처리
+    if ($('tokDlg').classList.contains('on')) { $('tokDlg').classList.remove('on'); return; }
+    go('hq');
+  });
+  $('oAlerts').addEventListener('click', (ev) => { if (ev.target.closest('#oPend')) panel.setOpen(true); });
+  $('oRetry').onclick = () => store.retryNow();
+  $('oTok').onclick = () => { $('tokDlg').classList.add('on'); $('tokInput').focus(); };
+  $('tokCancel').onclick = () => $('tokDlg').classList.remove('on');
+  $('tokInput').oninput = () => { const n = $('tokInput').value.trim().replace(/^FOREMAN_API_TOKEN=/, '').length; $('tokLen').textContent = n ? `길이 ${n}` : ''; };
+  $('tokForm').onsubmit = (ev) => {
+    ev.preventDefault();
+    store.token = $('tokInput').value;
+    $('tokInput').value = '';
+    $('tokDlg').classList.remove('on');
+    store.start();
   };
+  // 패널 · 터미널이 펴지고 접히면 무대 크기가 바뀐다 — 창 크기만 보지 않고 무대를 직접 본다
+  new ResizeObserver(() => resize()).observe($('oStage'));
   window.addEventListener('resize', resize);
   document.addEventListener('visibilitychange', () => {
     running = !document.hidden;
@@ -1082,7 +1138,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   resize();
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
-  return { go, theme, debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
+  return { go, theme, openSession, panel, debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
                                                                        anim: a.act && a.act.anim, go: a.act && a.act.go, face: a.face, dir: a.dir, char: a.char })) };
 }
 

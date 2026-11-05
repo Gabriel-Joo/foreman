@@ -2,8 +2,10 @@
 // 10단계 테마 렌더러는 이 파일 대신 같은 state를 받아 캐릭터로 그리면 된다(createRenderer(root, store)만 맞추면 된다).
 // 영역(conn · approvals · grid · panel)마다 state.ver가 바뀐 것만 다시 그린다. 입력 칸 · 스크롤은 다시 그려도 유지한다.
 
-const STATE_LABEL = { ACTIVE: '작업 중', IDLE: '대기', SUSPENDED: '정지', DORMANT: '종료' };
-const ORIGIN_LABEL = { human: '나', task_notification: '완료 알림', subagent_message: '서브에이전트 결과', agent_message: '다른 세션', meta: '시스템' };
+// 10b: 승인 카드 · 대화 · 활동 · 세션 정보 · 파이프라인 HTML은 함수로 내보낸다 — 픽셀 화면 옆 패널(opanel.js)도 같은 것을 쓴다.
+
+export const STATE_LABEL = { ACTIVE: '작업 중', IDLE: '대기', SUSPENDED: '정지', DORMANT: '종료' };
+export const ORIGIN_LABEL = { human: '나', task_notification: '완료 알림', subagent_message: '서브에이전트 결과', agent_message: '다른 세션', meta: '시스템' };
 const END_LABEL = { stop: '끝남', stop_failure: 'API 오류', interrupted: '중단', session_end: '세션 종료', process_lost: '프로세스 사라짐', merged: '다음 입력에 합쳐짐', no_signal: '신호 없음', abandoned: '끝 신호 없이 버려짐' };
 
 import { stuckTurn } from './store.js';
@@ -12,11 +14,11 @@ const ROLE_LABEL = { coder: '코더', foreman: '포먼', cicd: 'CI/CD', inspecto
 
 // 세션을 알아보는 이름 — CC가 붙인 제목 → CC 세션 이름 → 짧은 id. 캐릭터 이름은 아래 줄에(한 캐릭터에 세션 여럿)
 export function sessionName(s) { return s.title || s.cc_name || s.short; }
-function sessionSub(s) {
+export function sessionSub(s) {
   return [s.character, ROLE_LABEL[s.role] || s.role, s.short, s.tmux_pane].filter(Boolean).join(' · ');
 }
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export function ago(ts) {
   if (!ts) return '';
@@ -38,26 +40,108 @@ export function tok(n) {
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
   return String(n);
 }
-function promptText(p) {
+export function promptText(p) {
   if (!p) return '';
   return p.replace(/^\s*<pasted_content id="[0-9a-f]+">\s*/, '').replace(/\s*<\/pasted_content id="[0-9a-f]+">\s*$/, '').trim();
 }
-function oneLine(s, n) {
+export function oneLine(s, n) {
   s = promptText(s).replace(/\s+/g, ' ');
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
-function why(s) {
+export function why(s) {
   if (!s.pid) return '프로세스가 없다';
   if (s.proc === 'T') return '정지(SUSPENDED) — 입력이 셸 명령으로 실행된다';
   if (!s.tmux_pane) return 'tmux 밖 세션 — 주입할 pane이 없다';
   return '';
 }
 
+// ── 두 화면이 같이 쓰는 조각(10b) ──────────────────────────
+export function projectLabel(st, name) { return (st.projects.find((p) => p.name === name) || {}).label || name || '미분류'; }
+
+export function approvalCard(a, st) {      // 버튼은 data-aid · data-act(allow · deny · open) — 누르면 handleApprovalClick
+  const done = a.status !== 'pending';
+  return `<div class="appr ${done ? 'done' : ''}">
+    <div class="appr-main">
+      <div><b>🔐 ${esc(projectLabel(st, a.project))}</b> · ${esc(a.tool)} <span class="muted small">#${a.id} · ${esc(a.rule)}</span></div>
+      ${a.summary ? `<div class="appr-sum">▶ ${esc(a.summary)}</div>` : ''}
+      ${a.summary ? `<details class="small"><summary class="muted">명령 전체</summary><code>${esc(a.target)}</code></details>` : `<code>${esc(a.target)}</code>`}
+      <div class="small muted">${esc(a.reason || '')}${a.error ? ` · <span class="bad">${esc(a.error)}</span>` : ''}</div>
+    </div>
+    <div class="appr-act">${done ? `<span class="small">${esc(a.status)}${a.decided_by ? ' · ' + esc(a.decided_by) : ''}</span>` :
+      `<button data-aid="${a.id}" data-act="allow">승인</button><button data-aid="${a.id}" data-act="deny" class="ghost">거부</button>`}
+      ${a.session_id ? `<button data-aid="${a.id}" data-sid="${a.session_id}" data-act="open" class="ghost small">세션</button>` : ''}</div>
+  </div>`;
+}
+export function handleApprovalClick(ev, store, openSession) {
+  const b = ev.target.closest('button[data-aid]');
+  if (!b) return;
+  const aid = Number(b.dataset.aid);
+  if (b.dataset.act === 'allow') store.decide(aid, 'allow');
+  else if (b.dataset.act === 'deny') {
+    const m = prompt('거부 이유(모델에게 전달된다)', '사용자가 거부');
+    if (m !== null) store.decide(aid, 'deny', m);
+  } else if (b.dataset.act === 'open') openSession(Number(b.dataset.sid));
+}
+
+export function sessionKv(s) {
+  const t = s.tokens || {};
+  return `<div class="small kv">
+      <span>프로세스</span><span>${s.pid ? `${s.pid} (${esc(s.proc)}) · CC ${esc(s.cc_status || '?')}` : '없음'}${s.tmux_pane ? ' · tmux ' + esc(s.tmux_pane) : ''}</span>
+      <span>지금</span><span>${s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target, 120))} (${ago(s.activity.ts)})` : (s.state === 'ACTIVE' ? '생각 중' : STATE_LABEL[s.state])}</span>
+      <span>서브에이전트</span><span>${s.subagents_running ? `${s.subagents_running}개 — ${esc((s.subagent_descs || []).join(', '))}` : '없음'}</span>
+      <span>토큰</span><span>입력(캐시 포함) ${tok(t.input)} · 출력 ${tok(t.output)} · 오늘 입력 ${tok(t.today_input)} · 출력 ${tok(t.today_output)}<br><span class="muted">서브에이전트 입력 ${tok(t.subagent_input)} · 출력 ${tok(t.subagent_output)}(추정)</span></span>
+    </div>`;
+}
+
+export function convoHtml(c) {
+  if (!c) return '';
+  return (c.error ? `<p class="bad small">${esc(c.error)}</p>` : '') + (c.turns || []).map((x) => `
+      <div class="msg in o-${esc(x.origin)}"><div class="who small muted">${esc(ORIGIN_LABEL[x.origin] || x.origin)} · ${ago(x.started_at)}</div><div class="txt">${esc(promptText(x.prompt)).slice(0, 3000)}</div></div>
+      ${x.reply ? `<div class="msg out"><div class="who small muted">CC${x.end_reason ? ' · ' + esc(END_LABEL[x.end_reason] || x.end_reason) : ' · 진행 중'}${x.tools ? ` · 도구 ${x.tools}` : ''}${x.subagents ? ` · 서브 ${x.subagents}` : ''}</div><div class="txt">${esc(x.reply)}</div></div>`
+        : (x.end_reason ? `<div class="msg out small muted">${esc(END_LABEL[x.end_reason] || x.end_reason)}${x.tools ? ` · 도구 ${x.tools}` : ''}</div>` : '')}`).join('') + (c.loading ? '<p class="small muted">불러오는 중…</p>' : '');
+}
+
+// 승인 이력(11-03) — 무엇이 몇 번 걸렸고 다 승인했는지. 늘 Yes만 누르는 규칙은 손볼 후보로 표시. <details>를 열 때만 읽는다
+export function mountApprovalHistory(det, head, body, store) {
+  let histDays = 1, histTimer = null;
+  const OUT = { approved: ['승인', 'ok'], denied: ['거부', 'bad'], unknown: ['모름', 'muted'] };
+  async function loadHist() {
+    try {
+      const r = await fetch(`/api/approvals/history?days=${histDays}`, { headers: store.headers() });
+      if (!r.ok) { body.textContent = `불러오지 못함(${r.status})`; return; }
+      const h = await r.json();
+      const t = h.total;
+      head.textContent = `— ${histDays === 1 ? '오늘' : histDays + '일'} ${t.n}건 · 승인 ${t.approved} · 거부 ${t.denied}${t.unknown ? ' · 모름 ' + t.unknown : ''}`;
+      const yes = h.by_rule.filter((b) => b.always_yes);
+      const rules = h.by_rule.map((b) => `<tr${b.always_yes ? ' class="warn"' : ''}><td>${esc(b.rule)}</td><td>${b.n}</td><td>${b.approved}</td><td>${b.denied}</td><td>${b.unknown}</td><td>${b.always_yes ? '늘 Yes — 규칙 손볼 후보' : ''}</td></tr>`).join('');
+      const items = h.items.slice(0, 30).map((x) => `<li><span class="${OUT[x.outcome][1]}">${OUT[x.outcome][0]}</span> <span class="muted">${ago(x.at)} · ${esc(x.project || '미분류')} · ${esc(x.rule)}</span> ${esc(oneLine(x.summary || '', 140))}</li>`).join('');
+      const obs = h.observe.length ? `<div class="muted">관찰 모드(창을 띄우지 않음)에서 걸렸을 것: ${h.observe.map((o) => `${esc(o.project)} ${esc(o.rule)} ${o.n}`).join(' · ')}</div>` : '';
+      body.innerHTML = `
+        <div class="row"><button class="ghost small" data-days="1">오늘</button><button class="ghost small" data-days="7">7일</button><button class="ghost small" data-days="30">30일</button></div>
+        ${yes.length ? `<div class="warn">늘 Yes: ${yes.map((b) => `${esc(b.rule)} ${b.n}번`).join(' · ')} — 묻는 의미가 없으면 규칙을 고친다</div>` : ''}
+        ${rules ? `<table class="hist"><tr><th>규칙</th><th>걸림</th><th>승인</th><th>거부</th><th>모름</th><th></th></tr>${rules}</table>` : '<div class="muted">걸린 것 없음</div>'}
+        ${obs}<ul class="hist-items">${items}</ul>`;
+    } catch (e) { body.textContent = '불러오지 못함'; }
+  }
+  det.addEventListener('toggle', () => {
+    clearInterval(histTimer);
+    if (det.open) { loadHist(); histTimer = setInterval(loadHist, 60000); }
+  });
+  body.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-days]');
+    if (b) { histDays = Number(b.dataset.days); loadHist(); }
+  });
+}
+
+export function feedHtml(s) {
+  return s.feed.slice().reverse().map((f) => `<div class="f f-${f.kind}"><span class="muted">${new Date(f.ts).toLocaleTimeString()}</span> ${esc(f.text)}</div>`).join('') || '<p class="small muted">이 화면을 연 뒤의 활동이 여기에 쌓인다</p>';
+}
+
 // ── 8단계 파이프라인 — 프로젝트마다 인프라 캐릭터와 최근 체인(커밋 → Jenkins → Harbor → ArgoCD), 깨진 곳은 붉게 ──
 const PIPE_STAGES = [['jenkins', 'Jenkins'], ['harbor', 'Harbor'], ['argocd', 'ArgoCD']];
 const PIPE_MARK = { success: '✓', failed: '✗', running: '…', waiting: '⏸ Sync 대기' };   // waiting — 수동 Sync 앱, 실패 아님(11-03)
 const INFRA_LABEL = { IDLE: '응답', ACTIVE: '일하는 중', STALE: '응답 없음' };
-function pipeBlock(pp) {
+export function pipeBlock(pp) {
   if (!pp) return '';
   const infra = pp.infra.filter((c) => !c.retired);
   if (!infra.length && !pp.chains.length && !pp.waiting.length && !pp.watch && !pp.webhook_broken) return '';
@@ -96,6 +180,7 @@ export function createRenderer(root, store) {
     <header class="top">
       <div class="brand">FOREMAN</div>
       <div id="summary" class="summary"></div>
+      <a class="small" href="/" title="픽셀 화면(마지막에 본 테마)">픽셀 화면</a>
       <div id="conn" class="conn"></div>
       <button id="tokBtn" class="ghost" title="API 토큰">토큰</button>
     </header>
@@ -123,11 +208,11 @@ export function createRenderer(root, store) {
         </form>
       </aside>
     </main>
-    <div id="down" class="down" role="alert" aria-live="assertive"><div class="box">
+    <div id="down" class="overlay" role="alert" aria-live="assertive"><div class="box">
       <h2>서버 연결 끊김</h2><p id="downWhy"></p><p id="downNext"></p>
       <button id="retryNow">지금 다시 연결</button>
     </div></div>
-    <div id="tokDlg" class="down"><form class="box" id="tokForm">
+    <div id="tokDlg" class="overlay"><form class="box" id="tokForm">
       <h2 class="plain">API 토큰</h2>
       <p class="muted small">.env.bridge의 FOREMAN_API_TOKEN 값. 이 브라우저에만 저장한다.</p>
       <input id="tokInput" type="password" autocomplete="new-password" placeholder="FOREMAN_API_TOKEN 값">
@@ -148,45 +233,8 @@ export function createRenderer(root, store) {
     if (card && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); store.select(Number(card.dataset.sid)); }
   });
   $('back').onclick = () => store.select(null);
-  $('approvals').addEventListener('click', (ev) => {
-    const b = ev.target.closest('button[data-aid]');
-    if (!b) return;
-    const aid = Number(b.dataset.aid);
-    if (b.dataset.act === 'allow') store.decide(aid, 'allow');
-    else if (b.dataset.act === 'deny') {
-      const m = prompt('거부 이유(모델에게 전달된다)', '사용자가 거부');
-      if (m !== null) store.decide(aid, 'deny', m);
-    } else if (b.dataset.act === 'open') store.select(Number(b.dataset.sid));
-  });
-  // 승인 이력(11-03) — 무엇이 몇 번 걸렸고 다 승인했는지. 늘 Yes만 누르는 규칙은 손볼 후보로 표시
-  let histDays = 1, histTimer = null;
-  const OUT = { approved: ['승인', 'ok'], denied: ['거부', 'bad'], unknown: ['모름', 'muted'] };
-  async function loadHist() {
-    try {
-      const r = await fetch(`/api/approvals/history?days=${histDays}`, { headers: store.headers() });
-      if (!r.ok) { $('apprHistBody').textContent = `불러오지 못함(${r.status})`; return; }
-      const h = await r.json();
-      const t = h.total;
-      $('apprHistHead').textContent = `— ${histDays === 1 ? '오늘' : histDays + '일'} ${t.n}건 · 승인 ${t.approved} · 거부 ${t.denied}${t.unknown ? ' · 모름 ' + t.unknown : ''}`;
-      const yes = h.by_rule.filter((b) => b.always_yes);
-      const rules = h.by_rule.map((b) => `<tr${b.always_yes ? ' class="warn"' : ''}><td>${esc(b.rule)}</td><td>${b.n}</td><td>${b.approved}</td><td>${b.denied}</td><td>${b.unknown}</td><td>${b.always_yes ? '늘 Yes — 규칙 손볼 후보' : ''}</td></tr>`).join('');
-      const items = h.items.slice(0, 30).map((x) => `<li><span class="${OUT[x.outcome][1]}">${OUT[x.outcome][0]}</span> <span class="muted">${ago(x.at)} · ${esc(x.project || '미분류')} · ${esc(x.rule)}</span> ${esc(oneLine(x.summary || '', 140))}</li>`).join('');
-      const obs = h.observe.length ? `<div class="muted">관찰 모드(창을 띄우지 않음)에서 걸렸을 것: ${h.observe.map((o) => `${esc(o.project)} ${esc(o.rule)} ${o.n}`).join(' · ')}</div>` : '';
-      $('apprHistBody').innerHTML = `
-        <div class="row"><button class="ghost small" data-days="1">오늘</button><button class="ghost small" data-days="7">7일</button><button class="ghost small" data-days="30">30일</button></div>
-        ${yes.length ? `<div class="warn">늘 Yes: ${yes.map((b) => `${esc(b.rule)} ${b.n}번`).join(' · ')} — 묻는 의미가 없으면 규칙을 고친다</div>` : ''}
-        ${rules ? `<table class="hist"><tr><th>규칙</th><th>걸림</th><th>승인</th><th>거부</th><th>모름</th><th></th></tr>${rules}</table>` : '<div class="muted">걸린 것 없음</div>'}
-        ${obs}<ul class="hist-items">${items}</ul>`;
-    } catch (e) { $('apprHistBody').textContent = '불러오지 못함'; }
-  }
-  $('apprHist').addEventListener('toggle', () => {
-    clearInterval(histTimer);
-    if ($('apprHist').open) { loadHist(); histTimer = setInterval(loadHist, 60000); }
-  });
-  $('apprHistBody').addEventListener('click', (ev) => {
-    const b = ev.target.closest('button[data-days]');
-    if (b) { histDays = Number(b.dataset.days); loadHist(); }
-  });
+  $('approvals').addEventListener('click', (ev) => handleApprovalClick(ev, store, (sid) => store.select(sid)));
+  mountApprovalHistory($('apprHist'), $('apprHistHead'), $('apprHistBody'), store);
   $('inputForm').onsubmit = async (ev) => {
     ev.preventDefault();
     const id = store.state.selected, text = $('inputText').value;
@@ -246,21 +294,7 @@ export function createRenderer(root, store) {
 
   function drawApprovals(st) {
     const list = [...st.approvals.values()].sort((a, b) => a.id - b.id);
-    $('approvals').innerHTML = list.map((a) => {
-      const done = a.status !== 'pending';
-      const label = (st.projects.find((p) => p.name === a.project) || {}).label || a.project || '미분류';
-      return `<div class="appr ${done ? 'done' : ''}">
-        <div class="appr-main">
-          <div><b>🔐 ${esc(label)}</b> · ${esc(a.tool)} <span class="muted small">#${a.id} · ${esc(a.rule)}</span></div>
-          ${a.summary ? `<div class="appr-sum">▶ ${esc(a.summary)}</div>` : ''}
-          ${a.summary ? `<details class="small"><summary class="muted">명령 전체</summary><code>${esc(a.target)}</code></details>` : `<code>${esc(a.target)}</code>`}
-          <div class="small muted">${esc(a.reason || '')}${a.error ? ` · <span class="bad">${esc(a.error)}</span>` : ''}</div>
-        </div>
-        <div class="appr-act">${done ? `<span class="small">${esc(a.status)}${a.decided_by ? ' · ' + esc(a.decided_by) : ''}</span>` :
-          `<button data-aid="${a.id}" data-act="allow">승인</button><button data-aid="${a.id}" data-act="deny" class="ghost">거부</button>`}
-          ${a.session_id ? `<button data-aid="${a.id}" data-sid="${a.session_id}" data-act="open" class="ghost small">세션</button>` : ''}</div>
-      </div>`;
-    }).join('');
+    $('approvals').innerHTML = list.map((a) => approvalCard(a, st)).join('');
   }
 
   function card(s, st) {
@@ -312,23 +346,13 @@ export function createRenderer(root, store) {
       $('inputForm').hidden = true;
       return;
     }
-    const t = s.tokens;
     $('panelHead').innerHTML = `<span class="badge st-${s.state}">${s.state}</span> <b>${esc(sessionName(s))}</b><div class="muted small">${esc(sessionSub(s))} · ${esc((s.cwd || '').replace(/^\/home\/[^/]+/, '~'))}</div>`;
-    $('panelInfo').innerHTML = `<div class="small kv">
-      <span>프로세스</span><span>${s.pid ? `${s.pid} (${esc(s.proc)}) · CC ${esc(s.cc_status || '?')}` : '없음'}${s.tmux_pane ? ' · tmux ' + esc(s.tmux_pane) : ''}</span>
-      <span>지금</span><span>${s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target, 120))} (${ago(s.activity.ts)})` : (s.state === 'ACTIVE' ? '생각 중' : STATE_LABEL[s.state])}</span>
-      <span>서브에이전트</span><span>${s.subagents_running ? `${s.subagents_running}개 — ${esc((s.subagent_descs || []).join(', '))}` : '없음'}</span>
-      <span>토큰</span><span>입력(캐시 포함) ${tok(t.input)} · 출력 ${tok(t.output)} · 오늘 입력 ${tok(t.today_input)} · 출력 ${tok(t.today_output)}<br><span class="muted">서브에이전트 입력 ${tok(t.subagent_input)} · 출력 ${tok(t.subagent_output)}(추정)</span></span>
-    </div>`;
-    const c = st.convo.get(s.id);
+    $('panelInfo').innerHTML = sessionKv(s);
     const convo = $('convo');
     const atBottom = convo.scrollHeight - convo.scrollTop - convo.clientHeight < 40 || lastSel !== s.id;
-    convo.innerHTML = !c ? '' : (c.error ? `<p class="bad small">${esc(c.error)}</p>` : '') + (c.turns || []).map((x) => `
-      <div class="msg in o-${esc(x.origin)}"><div class="who small muted">${esc(ORIGIN_LABEL[x.origin] || x.origin)} · ${ago(x.started_at)}</div><div class="txt">${esc(promptText(x.prompt)).slice(0, 3000)}</div></div>
-      ${x.reply ? `<div class="msg out"><div class="who small muted">CC${x.end_reason ? ' · ' + esc(END_LABEL[x.end_reason] || x.end_reason) : ' · 진행 중'}${x.tools ? ` · 도구 ${x.tools}` : ''}${x.subagents ? ` · 서브 ${x.subagents}` : ''}</div><div class="txt">${esc(x.reply)}</div></div>`
-        : (x.end_reason ? `<div class="msg out small muted">${esc(END_LABEL[x.end_reason] || x.end_reason)}${x.tools ? ` · 도구 ${x.tools}` : ''}</div>` : '')}`).join('') + (c && c.loading ? '<p class="small muted">불러오는 중…</p>' : '');
+    convo.innerHTML = convoHtml(st.convo.get(s.id));
     if (atBottom) convo.scrollTop = convo.scrollHeight;
-    $('feed').innerHTML = s.feed.slice().reverse().map((f) => `<div class="f f-${f.kind}"><span class="muted">${new Date(f.ts).toLocaleTimeString()}</span> ${esc(f.text)}</div>`).join('') || '<p class="small muted">이 화면을 연 뒤의 활동이 여기에 쌓인다</p>';
+    $('feed').innerHTML = feedHtml(s);
     $('inputForm').hidden = false;
     const blocked = !s.injectable;
     $('inputText').disabled = blocked; $('sendBtn').disabled = blocked;
