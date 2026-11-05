@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FOREMAN</title>
+<title>FOREMAN · 클래식</title>
+<link rel="stylesheet" href="/static/css/panel.css">
 <style>
   :root { --bg:#fff; --fg:#1d1d1f; --muted:#6e6e73; --line:#d9d9de; --card:#f7f7f9; --code:#f1f1f4;
           --ok:#1a7f37; --bad:#c62828; --warn:#b26a00; --act:#0b62d6; --sel:#0b62d6;
@@ -17,10 +18,6 @@
   button:disabled { opacity:.5; cursor:default; }
   button.ghost { background:transparent; }
   input, textarea { font:inherit; width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
-  code { display:block; white-space:pre-wrap; word-break:break-all; background:var(--code); padding:4px 7px; border-radius:4px; font:12px/1.4 ui-monospace, monospace; margin:3px 0; max-height:6.5em; overflow:auto; }
-  .muted { color:var(--muted); } .small { font-size:12px; } .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
-  .right { margin-left:auto; }
-
   .top { position:sticky; top:0; z-index:5; display:flex; gap:12px; align-items:center; flex-wrap:wrap;
          padding:8px 16px; background:var(--bg); border-bottom:1px solid var(--line); }
   .brand { font-weight:700; letter-spacing:.04em; }
@@ -30,14 +27,7 @@
 
   .approvals { padding:0 16px; display:grid; gap:8px; }
   .approvals:not(:empty) { padding-top:10px; }
-  .appr { display:flex; gap:10px; align-items:flex-start; border:1px solid var(--warn); border-left:5px solid var(--warn); border-radius:8px; padding:8px 10px; background:var(--card); }
-  .appr.done { border-color:var(--line); opacity:.6; }
-  .appr-main { flex:1; min-width:0; }
-  .appr-sum { font-weight:600; margin:2px 0; word-break:break-all; }   /* 무엇을 대상으로(11-03) */
-  .appr-hist { padding:6px 16px 0; } .appr-hist > summary { cursor:pointer; }
-  table.hist { border-collapse:collapse; margin:6px 0; } table.hist td, table.hist th { padding:2px 8px; border-bottom:1px solid var(--line); text-align:left; }
-  .hist-items { margin:6px 0; padding-left:18px; } .hist-items li { margin:2px 0; }
-  .appr-act { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .appr-hist { padding:6px 16px 0; }
 
   .layout { display:grid; grid-template-columns: minmax(0,1fr) minmax(340px, 40%); gap:0; min-height:calc(100vh - 50px); }
   .grid { padding:12px 16px; display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px; align-content:start; }
@@ -55,8 +45,6 @@
   .doing, .turn, .reply { margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .reply { color:var(--muted); }
   .meta { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; align-items:center; }
-  .pill { border:1px solid var(--line); border-radius:10px; padding:0 7px; }
-  .pill.warn { border-color:var(--warn); }
   details.dormant summary { cursor:pointer; margin:4px 0 8px; }
 
   .panel { border-left:1px solid var(--line); display:flex; flex-direction:column; height:calc(100vh - 50px); position:sticky; top:50px; }
@@ -64,67 +52,10 @@
   .panel-head .back { display:none; }
   .panel-body { flex:1; overflow:auto; padding:8px 14px; }
   .panel-body h3 { font-size:13px; margin:14px 0 6px; color:var(--muted); }
-  .kv { display:grid; grid-template-columns:max-content 1fr; gap:3px 10px; }
-  .kv > span:nth-child(odd) { color:var(--muted); }
-  .convo { max-height:48vh; overflow:auto; display:flex; flex-direction:column; gap:6px; }
-  .msg { border-radius:8px; padding:6px 9px; }
-  .msg .txt { white-space:pre-wrap; word-break:break-word; max-height:16em; overflow:auto; }
-  .msg.in { background:var(--code); }
-  .msg.in.o-human { border-left:3px solid var(--act); }
-  .msg.out { border:1px solid var(--line); }
-  .feed { font:12px/1.5 ui-monospace, monospace; max-height:30vh; overflow:auto; }
-  .feed .f { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .feed .f-ask, .feed .f-error { color:var(--warn); }
-  .input { border-top:1px solid var(--line); padding:8px 14px; }
-  .input .row { display:flex; gap:8px; align-items:center; margin-top:6px; flex-wrap:wrap; }
-  .input .row button { margin-left:auto; }
-
-  .down { position:fixed; inset:0; display:none; align-items:center; justify-content:center; padding:16px;
-          background:color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter:blur(2px); z-index:20; }
-  .down.on { display:flex; }
-  .down .box { max-width:420px; width:100%; border:2px solid var(--bad); border-radius:10px; padding:16px 18px; background:var(--bg); }
-  .down h2 { margin:0 0 6px; font-size:17px; color:var(--bad); }
-  .down h2.plain { color:var(--fg); }
-  #tokDlg .box { border-color:var(--line); }
-
-  /* 8단계 파이프라인 — 프로젝트 칸 맨 위. 체인 한 줄: 커밋 → Jenkins → Harbor → ArgoCD, 깨진 곳 붉게 */
-  .pipe { border:1px solid var(--line); border-radius:8px; padding:6px 9px; margin-bottom:8px; display:grid; gap:5px; }
-  .pipe-head { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-  .pill.infra { font-size:11px; }
-  .chain { border-top:1px dashed var(--line); padding-top:4px; }
-  .chain.broke { border-left:3px solid var(--bad); padding-left:6px; }
-  .chain-commit { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .chain-steps { display:flex; gap:4px; align-items:center; flex-wrap:wrap; margin-top:2px; }
-  code.sha { display:inline; padding:0 4px; margin:0; font-size:11px; }
-  .ps { border:1px solid var(--line); border-radius:9px; padding:0 7px; color:inherit; text-decoration:none; white-space:nowrap; }
-  .ps-success { border-color:var(--ok); color:var(--ok); } .ps-failed { border-color:var(--bad); color:var(--bad); background:color-mix(in srgb, var(--bad) 10%, transparent); }
-  .ps-running { border-color:var(--act); color:var(--act); } .ps-none { opacity:.5; }
-  .ps-waiting { border-color:var(--warn); border-style:dashed; color:var(--warn); }   /* 수동 Sync 대기 — 실패(빨강 채움)와 다르게 */
-  .ps-arrow { color:var(--muted); }
-
-  /* 7단계 터미널 패널 — 아래에 붙는다. 닫히면 막대 하나, 열리면 화면 아래 45% */
-  body { --term-h:0px; padding-bottom:var(--term-h); }
+  /* 승인 카드 · 대화 · 활동 · 연결 끊김 · 파이프라인 · 터미널은 /static/css/panel.css(픽셀 화면과 같이 쓴다) */
+  body { padding-bottom:var(--term-h); }
   .layout { min-height:calc(100vh - 50px - var(--term-h)); }
   .panel { height:calc(100vh - 50px - var(--term-h)); }
-  .term { position:fixed; left:0; right:0; bottom:0; z-index:8; background:var(--bg); border-top:1px solid var(--line);
-          display:flex; flex-direction:column; box-shadow:0 -2px 10px rgba(0,0,0,.08); }
-  .term[hidden] { display:none; }
-  .term.open { height:45vh; min-height:260px; }
-  .term-bar { display:flex; gap:10px; align-items:center; height:36px; flex:none; padding:0 12px; overflow:hidden; }
-  .term-bar button { padding:3px 10px; font-weight:600; }
-  .term-last { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:ui-monospace, monospace; }
-  .term-note { flex:none; }
-  .term-reqs { flex:none; display:grid; gap:6px; padding:0 12px; max-height:30%; overflow:auto; }
-  .term-reqs:not(:empty) { padding-bottom:6px; }
-  .term-req { display:flex; gap:10px; align-items:flex-start; border:1px solid var(--warn); border-left:5px solid var(--warn); border-radius:8px; padding:6px 10px; background:var(--card); }
-  .term-req.ok-b { border-color:var(--ok); } .term-req.bad-b { border-color:var(--bad); }
-  .term-req-main { flex:1; min-width:0; }
-  .term-req code { display:inline; padding:1px 5px; }
-  .term-body { flex:1; min-height:0; position:relative; display:none; background:#000; }
-  .term.open .term-body { display:block; }
-  .term-body iframe { border:0; width:100%; height:100%; display:block; }
-  .term-msg { position:absolute; left:12px; top:8px; color:#f0b445; font-size:12px; }
-  .term-msg:empty { display:none; }
 
   /* 휴대폰 — 목록 한 줄, 세션을 고르면 상세가 화면 전체 */
   @media (max-width: 760px) {
@@ -132,15 +63,11 @@
     .layout { grid-template-columns: 1fr; }
     .grid { grid-template-columns:1fr; padding:10px 12px; }
     .approvals { padding:0 12px; }
-    .appr { flex-direction:column; }
     .panel { display:none; }
     .has-sel .panel { display:flex; position:fixed; inset:0; top:0; height:100vh; background:var(--bg); z-index:10; border-left:0; }
     .has-sel .panel-head .back { display:inline-block; }
     .has-sel .grid, .has-sel .approvals { display:none; }
     .convo { max-height:none; }
-    .term-note { display:none; }
-    .term.open { height:calc(100vh - 50px); }
-    .term-req { flex-direction:column; }
   }
 </style>
 </head>

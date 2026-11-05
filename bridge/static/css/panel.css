@@ -1,0 +1,87 @@
+/* 두 화면(/classic 대시보드 · / 픽셀 화면)이 같이 쓰는 조각 — 승인 카드 · 대화 · 활동 · 입력 · 연결 끊김 · 파이프라인 · 터미널(10b에 dashboard.html에서 옮김).
+   색은 각 페이지 :root의 변수(--bg --fg --muted --line --card --code --ok --bad --warn --act)를 쓴다. */
+code { display:block; white-space:pre-wrap; word-break:break-all; background:var(--code); padding:4px 7px; border-radius:4px; font:12px/1.4 ui-monospace, monospace; margin:3px 0; max-height:6.5em; overflow:auto; }
+.muted { color:var(--muted); } .small { font-size:12px; } .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+.right { margin-left:auto; }
+.pill { border:1px solid var(--line); border-radius:10px; padding:0 7px; }
+.pill.warn { border-color:var(--warn); }
+
+/* 승인 */
+.appr { display:flex; gap:10px; align-items:flex-start; border:1px solid var(--warn); border-left:5px solid var(--warn); border-radius:8px; padding:8px 10px; background:var(--card); }
+.appr.done { border-color:var(--line); opacity:.6; }
+.appr-main { flex:1; min-width:0; }
+.appr-sum { font-weight:600; margin:2px 0; word-break:break-all; }   /* 무엇을 대상으로(11-03) */
+.appr-hist > summary { cursor:pointer; }
+table.hist { border-collapse:collapse; margin:6px 0; } table.hist td, table.hist th { padding:2px 8px; border-bottom:1px solid var(--line); text-align:left; }
+.hist-items { margin:6px 0; padding-left:18px; } .hist-items li { margin:2px 0; }
+.appr-act { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+
+/* 세션 정보 · 대화 · 활동 · 입력 */
+.kv { display:grid; grid-template-columns:max-content 1fr; gap:3px 10px; }
+.kv > span:nth-child(odd) { color:var(--muted); }
+.convo { max-height:48vh; overflow:auto; display:flex; flex-direction:column; gap:6px; }
+.msg { border-radius:8px; padding:6px 9px; }
+.msg .txt { white-space:pre-wrap; word-break:break-word; max-height:16em; overflow:auto; }
+.msg.in { background:var(--code); }
+.msg.in.o-human { border-left:3px solid var(--act); }
+.msg.out { border:1px solid var(--line); }
+.feed { font:12px/1.5 ui-monospace, monospace; max-height:30vh; overflow:auto; }
+.feed .f { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.feed .f-ask, .feed .f-error { color:var(--warn); }
+.input { border-top:1px solid var(--line); padding:8px 14px; }
+.input .row { display:flex; gap:8px; align-items:center; margin-top:6px; flex-wrap:wrap; }
+.input .row button { margin-left:auto; }
+.input input[type=checkbox] { width:auto; margin:0 4px 0 0; vertical-align:middle; }
+
+/* 연결 끊김 · 토큰 창 — 전체 화면 창. (예전 이름 .down은 머리말의 "conn down"과 겹쳐 끊김 표시를 숨겼다) */
+.overlay { position:fixed; inset:0; display:none; align-items:center; justify-content:center; padding:16px;
+        background:color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter:blur(2px); z-index:20; }
+.overlay.on { display:flex; }
+.overlay .box { max-width:420px; width:100%; border:2px solid var(--bad); border-radius:10px; padding:16px 18px; background:var(--bg); }
+.overlay h2 { margin:0 0 6px; font-size:17px; color:var(--bad); }
+.overlay h2.plain { color:var(--fg); }
+#tokDlg .box { border-color:var(--line); }
+
+/* 8단계 파이프라인 — 체인 한 줄: 커밋 → Jenkins → Harbor → ArgoCD, 깨진 곳 붉게 */
+.pipe { border:1px solid var(--line); border-radius:8px; padding:6px 9px; margin-bottom:8px; display:grid; grid-template-columns:minmax(0, 1fr); gap:5px; }   /* minmax(0) — 긴 커밋 줄이 칸 밖으로 넘치지 않고 … 로 줄어든다 */
+.pipe-head { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.pill.infra { font-size:11px; }
+.chain { border-top:1px dashed var(--line); padding-top:4px; }
+.chain.broke { border-left:3px solid var(--bad); padding-left:6px; }
+.chain-commit { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chain-steps { display:flex; gap:4px; align-items:center; flex-wrap:wrap; margin-top:2px; }
+code.sha { display:inline; padding:0 4px; margin:0; font-size:11px; }
+.ps { border:1px solid var(--line); border-radius:9px; padding:0 7px; color:inherit; text-decoration:none; white-space:nowrap; }
+.ps-success { border-color:var(--ok); color:var(--ok); } .ps-failed { border-color:var(--bad); color:var(--bad); background:color-mix(in srgb, var(--bad) 10%, transparent); }
+.ps-running { border-color:var(--act); color:var(--act); } .ps-none { opacity:.5; }
+.ps-waiting { border-color:var(--warn); border-style:dashed; color:var(--warn); }   /* 수동 Sync 대기 — 실패(빨강 채움)와 다르게 */
+.ps-arrow { color:var(--muted); }
+
+/* 7단계 터미널 패널 — 아래에 붙는다. 닫히면 막대 하나, 열리면 화면 아래 45%. 높이는 body의 --term-h로 알린다 */
+body { --term-h:0px; }
+.term { position:fixed; left:0; right:0; bottom:0; z-index:8; background:var(--bg); border-top:1px solid var(--line);
+        display:flex; flex-direction:column; box-shadow:0 -2px 10px rgba(0,0,0,.08); }
+.term[hidden] { display:none; }
+.term.open { height:45vh; min-height:260px; }
+.term-bar { display:flex; gap:10px; align-items:center; height:36px; flex:none; padding:0 12px; overflow:hidden; }
+.term-bar button { padding:3px 10px; font-weight:600; }
+.term-last { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:ui-monospace, monospace; }
+.term-note { flex:none; }
+.term-reqs { flex:none; display:grid; gap:6px; padding:0 12px; max-height:30%; overflow:auto; }
+.term-reqs:not(:empty) { padding-bottom:6px; }
+.term-req { display:flex; gap:10px; align-items:flex-start; border:1px solid var(--warn); border-left:5px solid var(--warn); border-radius:8px; padding:6px 10px; background:var(--card); }
+.term-req.ok-b { border-color:var(--ok); } .term-req.bad-b { border-color:var(--bad); }
+.term-req-main { flex:1; min-width:0; }
+.term-req code { display:inline; padding:1px 5px; }
+.term-body { flex:1; min-height:0; position:relative; display:none; background:#000; }
+.term.open .term-body { display:block; }
+.term-body iframe { border:0; width:100%; height:100%; display:block; }
+.term-msg { position:absolute; left:12px; top:8px; color:#f0b445; font-size:12px; }
+.term-msg:empty { display:none; }
+
+@media (max-width: 760px) {
+  .appr { flex-direction:column; }
+  .term-note { display:none; }
+  .term.open { height:calc(100vh - 50px); }
+  .term-req { flex-direction:column; }
+}

@@ -217,11 +217,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # 화면은 비밀값이 없으므로 인증 없이 준다(토큰은 사용자가 페이지에 넣는다). 데이터 API는 모두 토큰이 필요하다
     @app.get("/", include_in_schema=False)
     async def index() -> FileResponse:
-        return FileResponse(STATIC / "dashboard.html")   # 6단계 대시보드
+        return FileResponse(STATIC / "office.html")      # 10단계 픽셀 화면(10b에 / 로 — 승인 · 대화 · 입력 · 터미널이 이 화면에서 된다)
 
     @app.get("/office", include_in_schema=False)
     async def office_page() -> FileResponse:
-        return FileResponse(STATIC / "office.html")   # 10단계 픽셀 오피스(안정되면 / 로 바꾸고 지금 화면은 /classic)
+        return FileResponse(STATIC / "office.html")      # 예전 주소(북마크) — / 와 같다
+
+    @app.get("/classic", include_in_schema=False)
+    async def classic_page() -> FileResponse:
+        return FileResponse(STATIC / "dashboard.html")   # 6단계 카드 대시보드
 
     @app.get("/debug", include_in_schema=False)
     async def debug_page() -> FileResponse:
@@ -233,7 +237,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # 새 terminal.js와 어긋났고, 그 오류로 대시보드 연결이 시작되지 않았다
         resp = await call_next(request)
         p = request.url.path
-        if p in ("/", "/debug", "/office") or p.startswith("/static/"):
+        if p in ("/", "/debug", "/office", "/classic") or p.startswith("/static/"):
             resp.headers["Cache-Control"] = "no-cache"
         return resp
 
