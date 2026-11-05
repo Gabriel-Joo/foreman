@@ -108,6 +108,8 @@ class SessionState:
     detached: bool = False
     transcript_file_id: int | None = None
     title: str | None = None
+    copying: bool = False        # fork · resume가 복사해 온 앞 세션 줄을 지나는 중 — 첫 새 프롬프트까지 건너뛴다(11-05)
+    copy_floor: datetime | None = None   # 복사 구간 직전 이 세션 줄의 시각 — 이보다 이른 user 줄은 복사 줄
     prompt_turns: "OrderedDict[str, int]" = field(default_factory=OrderedDict)
     tool_names: "OrderedDict[str, str]" = field(default_factory=OrderedDict)
     agent_inputs: "OrderedDict[str, dict[str, Any]]" = field(default_factory=OrderedDict)
@@ -367,6 +369,15 @@ class Assembler:
         return tid
 
     @staticmethod
+    async def _copied_line(c: AsyncConnection, st: SessionState, uuid: str) -> bool:
+        """이 줄이 다른 세션에서 복사해 온 줄인가 — 같은 uuid의 이벤트(프롬프트 줄 = start 이벤트)나 턴이 다른 세션에 있다.
+        이벤트도 보는 것은 앞 세션 턴의 prompt_uuid가 비어 있을 수 있어서다(_free_uuid)."""
+        r = (await c.execute(text("SELECT session_id FROM event WHERE uuid = :u"), {"u": uuid})).first()
+        if r is None:
+            r = (await c.execute(text("SELECT session_id FROM turn WHERE prompt_uuid = :u"), {"u": uuid})).first()
+        return r is not None and r[0] != st.id
+
+    @staticmethod
     async def _free_uuid(c: AsyncConnection, uuid: str | None, own: int | None = None) -> str | None:
         """turn.prompt_uuid는 UNIQUE다. 다른 턴이 이미 가진 uuid면 비운다(NULL) — 그 값 하나로 덩어리 전체가 막히면 안 된다
         (11-03: resume · fork 세션이 앞 세션 줄을 uuid째 복사해 와서 06:48부터 한 세션 적재가 몇 시간 막혔다)."""
@@ -538,6 +549,13 @@ class Assembler:
         uid = d.get("uuid") or _uuid5(key.path, off)
         ts = _ts(d.get("timestamp")) if d.get("timestamp") else (st.last_ts or _ts(None))
         par = d.get("parentUuid")
+        if st.copying and t in ("user", "assistant", "system", "attachment"):
+            # 복사 구간 — 앞 세션에 이미 있는 줄이다. 사람 프롬프트 줄만 _main_user가 보고 복사가 끝났는지 가린다
+            # (복사 구간의 turn_duration이 새 세션의 열린 턴을 옛 시각으로 닫거나, 옛 응답이 새 턴에 붙지 않게)
+            content = (d.get("message") or {}).get("content")
+            if t != "user" or (isinstance(content, list) and any(
+                    isinstance(x, dict) and x.get("type") == "tool_result" for x in content)):
+                return
         if t == "user":
             await self._main_user(c, st, b, d, uid, ts, par)
         elif t == "assistant":
@@ -587,7 +605,7 @@ class Assembler:
             self._event(b, st, uuid=uid, ts=ts, type="queued", turn_id=st.open_turn.id if st.open_turn else None,
                         parent_uuid=par, payload={"op": "delivered", "mode": a.get("commandMode"),
                                                   "prompt": self.mask.deep(_text_of(a.get("prompt")) or a.get("prompt"), PREVIEW)})
-        if d.get("timestamp"):
+        if d.get("timestamp") and not st.copying:      # 복사 줄의 옛 시각으로 되돌아가지 않게
             st.last_ts = ts
 
     async def _main_user(self, c: AsyncConnection, st: SessionState, b: Batch, d: dict[str, Any], uid: str,
@@ -622,6 +640,19 @@ class Assembler:
                         "description": inp.get("description") or tur.get("description")})
             return
         s = _text_of(content)
+        if uid and ((st.copying and st.copy_floor and ts < st.copy_floor) or await self._copied_line(c, st, uid)):
+            # resume · fork로 만든 세션이 앞 세션 기록을 uuid째 복사해 시작한다. 그 기록은 원래 세션에 이미 있다 — 건너뛴다.
+            # promptId는 빠진 채(백그라운드 fork, 11-03 bb19f9d2)일 수도, 새 프롬프트의 promptId로 바뀐 채
+            # (claude --fork-session, 11-05 실측)일 수도 있다 — 그래서 promptId가 아니라 uuid로 가린다.
+            # 뒤따르는 복사 줄(응답 · 도구 결과 · turn_duration · 중단 표시)도 첫 새 프롬프트까지 건너뛴다(_main_record).
+            # 복사 줄은 원래 시각을 그대로 갖는다 — 복사 구간 앞의 이 세션 줄(queue-operation 등)보다 이르면, DB에 같은
+            # uuid가 없어도(이벤트를 남기지 않는 같은 턴의 둘째 user 줄) 복사 줄로 본다
+            if not st.copying:
+                st.copy_floor = st.last_ts
+            self.stats.copied_prompts += 1
+            st.copying = True
+            return
+        st.copying = False
         if d.get("isCompactSummary"):
             tid = await self._turn_of_prompt(c, st, pid)
             if tid:
@@ -649,17 +680,11 @@ class Assembler:
                     {"t": self.mask.text(s), "u": await self._free_uuid(c, uid, known), "id": known})
             return
         if not pid and uid:
-            # promptId 없는 사람 줄 — 이 uuid의 턴이 이미 있으면 새 턴을 열지 않는다.
-            #  · 다른 세션의 턴: resume · fork로 만든 세션이 앞 세션 기록을 복사해 시작한다(uuid 그대로, promptId는 빠진 채).
-            #    그 기록은 원래 세션에 이미 있다 — 건너뛴다(뒤따르는 복사 줄의 이벤트도 uuid가 같아 적재 때 겹쳐 버려진다)
-            #  · 같은 세션의 턴: 다시 읽는 중(inode 변경 · 잘림) — 그 턴을 문맥으로
+            # promptId 없는 사람 줄 — 이 uuid의 턴이 이 세션에 이미 있으면 다시 읽는 중(inode 변경 · 잘림) — 그 턴을 문맥으로
+            # (다른 세션의 턴이면 위에서 복사 줄로 걸렀다)
             r = (await c.execute(text("SELECT id, session_id FROM turn WHERE prompt_uuid = :u"), {"u": uid})).first()
-            if r is not None:
-                if r[1] == st.id:
-                    st.open_turn = TurnRef(r[0], None, ts, active=True)
-                else:
-                    self.stats.copied_prompts += 1
-                    st.open_turn = None
+            if r is not None and r[1] == st.id:
+                st.open_turn = TurnRef(r[0], None, ts, active=True)
                 return
         tid = await self._open_turn(c, st, b, pid=pid, uuid=uid, origin=origin, prompt=self.mask.text(s), ts=ts,
                                     by="transcript")
