@@ -38,6 +38,10 @@ def _mgr(monkeypatch, *, dirty, exit_ok=True):
     monkeypatch.setattr(h.wt, "remove", remove)
     m.action = action
     m._act = noop
+
+    async def role(sid):
+        return None                   # 서기가 아니다 — 12b 검토를 건너뛴다
+    m._role = role
     m._stop_preview = noop
     row = SimpleNamespace(id=1, cc="cc1", cwd="/repo/.worktrees/scribe-1", project=None)
     return m, row, calls

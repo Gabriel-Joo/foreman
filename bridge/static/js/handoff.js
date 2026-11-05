@@ -80,6 +80,22 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     return p || null;
   };
 
+  // 서기 브랜치 검토(12b, 11-06) — 근거 표시 확인(LLM 없음) · 근거 없는 줄(의심) · 고친 양. 틀린 근거가 있으면 합치기 전에 빨갛게
+  function reviewBlock(rv) {
+    if (!rv) return '';
+    if (rv.error) return `<div class="small warn">${esc(rv.error)}</div>`;
+    const r = rv.revision || {};
+    const head = `<span class="${rv.bad ? 'bad' : 'ok'}">근거 표시 ${rv.marks}개 — ${rv.bad ? `틀림 ${rv.bad}` : '모두 맞음'}</span>`
+      + `${rv.unsupported ? ` · <span class="warn">근거 없는 줄 ${rv.unsupported}</span>` : ''}`
+      + ` · 고친 양: 초안 ${r.draft_lines || 0}줄${r.revision_lines ? ` → 고침 ${r.revision_lines}줄` : ''}`;
+    const rows = (rv.files || []).map((f) => [
+      ...f.bad.map((b) => `<div class="small bad">✗ ${esc(f.path)}:${b.line} <code>${esc(b.mark)}</code> — ${esc(b.why)}</div>`),
+      ...f.unsupported.slice(0, 8).map((u) => `<div class="small muted">? ${esc(f.path)}:${u.line} ${esc(u.text)}</div>`),
+    ].join('')).join('');
+    return `<div class="small" title="근거 확인 — 서기 글의 [c:커밋] · [log:파일] · [docs:파일] · [t:턴]이 실제로 있는지 기계로 봅니다. 근거 없는 줄은 숫자 · 인용이 있는데 근거 표시가 없는 줄입니다(의심).">${head}</div>
+      ${rows ? `<details${rv.bad ? ' open' : ''}><summary class="small muted">자세히</summary>${rows}</details>` : ''}`;
+  }
+
   // 따로 작업(worktree, 11-05) — 이 세션만의 폴더 · 브랜치. 끝낸 뒤 [합치기](rebase → fast-forward) · [버리기]
   function wtGroup(w, b) {
     if (!w) return '';
@@ -91,6 +107,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       <div class="small"><code>${esc(w.branch)}</code> · ${esc(w.base)}보다 커밋 <b>${w.ahead}</b>개 앞${w.behind ? ` · ${esc(w.base)}가 ${w.behind}개 앞서감(합칠 때 rebase)` : ''}${w.dirty.length ? ` · <span class="warn">커밋 안 됨 ${w.dirty.length}</span>` : ''}${w.schema_lock ? ' · <span class="warn">스키마 잠금 보유</span>' : ''}</div>
       ${w.commits.length ? `<details><summary class="small muted">커밋 · 바뀐 파일</summary><pre class="hand-body">${esc(w.commits.join('\n'))}\n\n${esc(w.diffstat.join('\n'))}</pre></details>` : ''}
       ${why ? `<div class="small muted">${esc(why)}</div>` : ''}
+      ${reviewBlock(w.review)}
       ${w.preview ? `<div class="small ok">미리보기가 :${w.preview.port}에서 돌고 있습니다.</div>` : ''}
       <div class="hand-btns">
         ${w.preview_ok ? b('wt-preview', '미리보기 열기', true, '', '미리보기 열기 — 이 브랜치의 화면 파일로 새 탭을 엽니다. 데이터와 버튼은 실제 브리지입니다. 없으면 빈 포트로 띄웁니다.') : ''}
@@ -285,14 +302,16 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       const end = act.startsWith('wt-end-');
       const kind = end ? act.slice(7) : act.slice(3);
       let confirmName = '';
+      // 서기 글의 근거가 틀렸으면 합치기 전에 한 번 더(12b) — 막지는 않는다, 사람이 정한다
+      const rvWarn = w.review && w.review.bad ? `\n\n주의: 근거 표시 ${w.review.bad}개가 틀렸습니다(없는 커밋 · 파일 · 턴). 「따로 작업」의 「자세히」에서 봅니다. 그래도 합칠까요?` : '';
       if (end && kind === 'merge') {
-        if (!confirm(`세션을 끝내고 ${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 커밋 안 된 변경이 있으면 끝내지 않고 알립니다. 충돌이 나면 되돌리고 멈춥니다(세션은 이미 끝난 뒤입니다). push는 하지 않습니다. 진행할까요?`)) return;
+        if (!confirm(`세션을 끝내고 ${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 커밋 안 된 변경이 있으면 끝내지 않고 알립니다. 충돌이 나면 되돌리고 멈춥니다(세션은 이미 끝난 뒤입니다). push는 하지 않습니다. 진행할까요?${rvWarn}`)) return;
         return run('끝내고 합치기', () => post(`/api/sessions/${id}/worktree`, { action: 'merge', end: true })
           .then((r) => (r.ok ? { ok: true, msg: '세션을 끝내고 ' + r.note + (r.schema_unlocked ? ' 스키마 잠금도 풀었습니다.' : '') }
             : { bad: true, msg: '세션은 끝냈습니다. ' + r.note + (r.conflict && r.conflict.length ? ` 충돌 파일: ${r.conflict.join(', ')}` : '') + ' — 「따로 작업」에서 다시 합치거나 버립니다.' })));
       }
       if (act === 'wt-merge') {
-        if (!confirm(`${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다. 합칠까요?`)) return;
+        if (!confirm(`${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다. 합칠까요?${rvWarn}`)) return;
       } else {
         confirmName = prompt(`${end ? '세션을 끝내고 ' : ''}worktree와 브랜치 ${w.branch}를 지웁니다. 합치지 않은 커밋 ${w.ahead}개${w.dirty.length ? `와 커밋 안 된 변경 ${w.dirty.length}개` : ''}도 사라집니다. 지우려면 이름 "${w.name}"을 적어 주세요.`) || '';
         if (!confirmName) return;
