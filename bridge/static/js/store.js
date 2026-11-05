@@ -100,6 +100,7 @@ export class Store {
     for (const p of j.projects) for (const s of p.sessions) {
       const old = keep.get(s.id);
       s.feed = old ? old.feed : [];
+      s.replyAt = old ? old.replyAt : 0;     // 화면이 받은 "새 답" 시각 — 스냅샷을 다시 받아도 잇는다
       s.replyPreview = old && old.open_turn && s.open_turn && old.open_turn.id === s.open_turn.id ? old.replyPreview : null;
       st.sessions.set(s.id, s);
       if (s.cc_session_id) this.byCc.set(s.cc_session_id, s.id);
@@ -254,6 +255,7 @@ export class Store {
       s.replyPreview = null;
     } else if (s.open_turn && s.open_turn.id === m.turn_id) {
       s.open_turn = null;
+      s.replyAt = Date.now();                  // 새 답이 왔다 — 머리말 프로젝트 줄이 "안 본 답" 점을 붙인다(11-05)
       this.pushFeed(s, m.ts, 'turn', `턴 끝 — ${m.reason}`);
       if (this.state.selected === s.id) this.convoLater(s.id);
     }

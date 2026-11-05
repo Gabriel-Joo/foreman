@@ -31,9 +31,11 @@ test('마크다운 — HTML은 통과시키지 않는다', () => {
   assert.ok(h.includes('<pre class="md-code">a &lt; b</pre>'));
 });
 
-test('긴 글만 접는다', () => {
+test('아주 긴 글(100줄 넘는 것)만 접는다 — 기본은 펼침(11-05)', () => {
   assert.ok(!longText('k1', '짧다').includes('전체 보기'));
-  const long = longText('k2', Array.from({ length: 30 }, (_, i) => `줄 ${i}`).join('\n'));
+  const lines = (n) => Array.from({ length: n }, (_, i) => `줄 ${i}`).join('\n');
+  assert.ok(!longText('k2', lines(60)).includes('전체 보기'));
+  const long = longText('k3', lines(130));
   assert.ok(long.includes('clamp') && long.includes('전체 보기'));
 });
 

@@ -25,6 +25,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       <span class="brand">FOREMAN</span><span class="muted small">${esc(theme.label)}</span>
       <button id="oMap" class="ghost" title="감독실로(Esc)">${esc((theme.hq && theme.hq.label) || '감독실')}</button>
       <button id="oAll" class="ghost" title="모든 현장을 한눈에">전체</button>
+      <nav id="oProj" class="oproj" aria-label="프로젝트"></nav>
       <button id="oNew" class="ghost onew" title="새 세션 — 프로젝트(또는 폴더)를 골라 tmux에서 claude를 띄운다">＋ 세션</button>
       <span id="oAlerts" class="oalerts"></span>
       <span class="small muted otheme">테마 ${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장'], ['plain', '도형']].map(([k, v]) => k === theme.name ? `<b>${v}</b>` : `<a href="/?theme=${k}">${v}</a>`).join(' · ')}</span>
@@ -1291,6 +1292,29 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
 
   // ── 머리말 · 정보 패널 ──────────────────────────────
+  // 머리말 프로젝트 줄(11-05) — 감독실에 나갔다 오지 않고 바로 다른 방으로. 지금 방은 눌린 모양.
+  // 숫자: 작업 중 n · 승인 대기 n. 점: 승인 대기(노랑 깜빡) · 안 본 새 답(파랑) — 그 방을 보면 지워진다
+  const seenAt = new Map();                 // 방 → 마지막으로 본 때(이 화면을 연 때부터 센다)
+  const openedAt = Date.now();
+  function drawProjects(st) {
+    if (!world) return;
+    const rooms = [...world.rooms, ...(world.lounge && world.lounge.sessionIds && world.lounge.sessionIds.length ? [world.lounge] : [])];
+    const now = Date.now();
+    const html = rooms.map((r) => {
+      const key = r.name || '_lounge';
+      if (view === key) seenAt.set(key, now);
+      const ss = (r.sessionIds || []).map((id) => st.sessions.get(id)).filter(Boolean);
+      const act = ss.filter((s) => s.state === 'ACTIVE').length;
+      const pend = (r.stats && r.stats.pending) || 0;
+      const lastReply = Math.max(0, ...ss.map((s) => s.replyAt || 0));
+      const unseen = lastReply > Math.max(openedAt, seenAt.get(key) || 0);
+      const dot = pend ? '<i class="pdot warn"></i>' : unseen ? '<i class="pdot new"></i>' : '';
+      const nums = [act ? `<span class="pn">작업 ${act}</span>` : '', pend ? `<span class="pn warn">승인 ${pend}</span>` : ''].join('');
+      const tip = `${r.label} — ${act ? `작업 중 ${act}` : '작업 중 없음'}${pend ? ` · 승인 대기 ${pend}` : ''}${unseen ? ' · 안 본 새 답' : ''} · 누르면 이 방으로`;
+      return `<button class="ghost oproj-b${view === key ? ' on' : ''}${pend ? ' pend' : ''}" data-room="${esc(key)}" data-tip="${esc(tip)}" aria-pressed="${view === key}">${dot}${esc(r.label)}${nums}</button>`;
+    }).join('');
+    if ($('oProj').innerHTML !== html) $('oProj').innerHTML = html;
+  }
   function header(st) {
     const c = st.conn;
     $('oConn').className = 'conn ' + c.status;
@@ -1312,6 +1336,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       `<span class="small muted">작업 중 <b>${active}</b>/${live}${subs ? ` · 서브 ${subs}` : ''} · 오늘 출력 ${fmt(outToday)}</span>`;
     $('oMap').disabled = view === 'hq';
     $('oAll').disabled = view === 'map';
+    drawProjects(st);
     // 연결 끊김 — 캔버스를 가리지 않는 띠 + 캔버스를 흐리게(보이는 모습이 끊기기 전 것이라는 표시)
     const down = c.status === 'down';
     $('oDown').hidden = !down;
@@ -1438,6 +1463,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function go(v) { view = v; aim(); header(store.state); }
   $('oMap').onclick = () => go('hq');
   $('oAll').onclick = () => go('map');
+  $('oProj').addEventListener('click', (ev) => { const b = ev.target.closest('[data-room]'); if (b) go(b.dataset.room); });
   // + 새 세션(11-05) — 지금 보고 있는 현장을 기본 프로젝트로. 띄우면 그 세션을 골라 패널에 연다
   const newSession = mountNewSession(store, { onCreated: (sid) => setTimeout(() => openSession(sid), 300) });
   $('oNew').onclick = () => newSession.open(view !== 'hq' && view !== 'map' && view !== '_lounge' ? view : null);

@@ -82,7 +82,7 @@ export function mdLite(s) { return renderMarkdown(s); }
 
 // 긴 글은 앞부분만 보이고 [전체 보기] — 패널 안에 스크롤을 또 만들지 않는다. 펼친 것은 다시 그려도 펼친 채로
 const OPEN_MSG = new Set();
-const CLAMP_LINES = 14, CLAMP_CHARS = 1400;
+const CLAMP_LINES = 100, CLAMP_CHARS = 12000;   // 11-05 — 기본은 펼침, 아주 긴 것(100줄 넘는 것)만 접는다(전에는 14줄)
 export function longText(key, text_) {
   const t = String(text_ || '');
   const long = t.split('\n').length > CLAMP_LINES || t.length > CLAMP_CHARS;
