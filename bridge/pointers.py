@@ -111,12 +111,32 @@ async def check(pointers: list[Pointer], repo: str) -> list[Pointer]:
     return pointers
 
 
+WT_DIR = ".worktrees"
+AUTO_LOADED = ("CLAUDE.md",)    # 저장소 맨 위 — CC가 세션 시작 · 압축 뒤에 스스로 넣는다. Read 도구로는 안 읽힌다
+
+
+def _key(repo: str, p: str) -> str:
+    """같은 저장소의 같은 파일이면 같은 열쇠 — 원본 폴더와 `.worktrees/<이름>`을 하나로 본다.
+    11-06: 합치기 전에 worktree 경로로 읽은 c 결과 문서를, 합친 뒤 원본 기준 인계가 "안 읽음"으로 셌다."""
+    f = _resolve(repo, p).resolve()
+    main = Path(str(Path(repo).resolve()).split(f"/{WT_DIR}/")[0])
+    try:
+        parts = f.relative_to(main).parts
+    except ValueError:
+        return str(f)                       # 저장소 밖(메모리 등)은 절대 경로 그대로
+    if len(parts) > 2 and parts[0] == WT_DIR:
+        parts = parts[2:]
+    return "repo:" + "/".join(parts)
+
+
 def reads(pointers: list[Pointer], repo: str, read_targets: list[str]) -> dict[str, Any]:
-    """새 세션의 Read 대상(절대 경로)과 맞댄다 — {total, read, missing: [path]}."""
-    got = {str(Path(t).resolve()) for t in read_targets if t}
+    """새 세션의 Read 대상(절대 경로)과 맞댄다 — {total, read, missing: [path], auto: [path]}.
+    auto는 Read 없이도 세션에 들어가 있는 문서(맨 위 CLAUDE.md) — 읽음으로 세고 따로 보인다(늘 "안 읽음"으로 뜨지 않게)."""
+    got = {_key(repo, t) for t in read_targets if t}
     want = [p for p in pointers if p.path]
-    missing = [p.path for p in want if str(_resolve(repo, p.path).resolve()) not in got]
-    return {"total": len(want), "read": len(want) - len(missing), "missing": missing}
+    auto = [p.path for p in want if _key(repo, p.path) in {"repo:" + n for n in AUTO_LOADED}]
+    missing = [p.path for p in want if p.path not in auto and _key(repo, p.path) not in got]
+    return {"total": len(want), "read": len(want) - len(missing), "missing": missing, "auto": auto}
 
 
 def as_dicts(pointers: list[Pointer]) -> list[dict[str, Any]]:

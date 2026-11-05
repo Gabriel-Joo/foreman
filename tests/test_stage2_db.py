@@ -979,3 +979,18 @@ async def test_promote_list_edit_write_verify(env, monkeypatch, tmp_path):
     await pr.write(r["promotion_id"])
     assert await settle(r["promotion_id"], ("writing",)) == "write_failed"
     assert "other.md" in q(s, "SELECT error FROM promotion WHERE id = %s", r["promotion_id"])[0][0]
+
+    # 같이 넣을 인계가 여럿이면 말없이 첫째를 고르지 않는다(11-06 첫 사례 — #6 대신 #7이 들어갔다)
+    async with engine.begin() as c:
+        await c.execute(T("INSERT INTO summary (session_id, req, kind, source, status, body) "
+                          "VALUES (:s, 'bbbbbb', 'handoff', 'self', 'ok', :b)"), {"s": sid, "b": v2})
+    n = len(sent)
+    try:
+        await pr.request(row)
+        raise AssertionError("여럿인데 골랐다")
+    except h.Refused as e:
+        assert "골라" in str(e) and len(sent) == n                 # 보내지도 않는다
+    reply["fn"] = lambda r: f"<<<FOREMAN-PROMOTE r={r}>>>\n[]\n<<<END r={r}>>>"
+    r2 = await pr.request(row, no_input=True)
+    assert r2["summary_id"] is None
+    assert await settle(r2["promotion_id"], ("requested",)) == "listed"

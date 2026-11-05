@@ -112,7 +112,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     if (!r) return '';
     const all = r.read === r.total;
     return `<div class="hand-group"><span class="hand-lbl small muted">읽을 곳</span><div class="hand-btns">
-      <span class="small ${all ? 'ok' : 'warn'}">${r.read}/${r.total} 읽음${all ? '' : ` — 안 읽음: ${r.missing.map(esc).join(', ')}`}</span>
+      <span class="small ${all ? 'ok' : 'warn'}">${r.read}/${r.total} 읽음${all ? '' : ` — 안 읽음: ${r.missing.map(esc).join(', ')}`}${r.auto && r.auto.length ? ` <span class="muted" title="자동 — 세션이 시작할 때 저절로 들어오는 문서라 읽음으로 셉니다.">(자동: ${r.auto.map(esc).join(', ')})</span>` : ''}</span>
       ${all ? '' : `<button data-act="reads-resend" class="small"${can ? '' : ' disabled'} title="안 읽은 곳 다시 보내기 — 아직 읽지 않은 문서만 다시 보내고, 읽은 뒤 걸리는 규칙을 말하게 합니다.">안 읽은 곳 다시 보내기</button>`}
     </div></div>`;
   }
@@ -184,6 +184,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     if (act === 'cancel') { mode = null; preview = null; editDraft = null; draw(); return; }
     if (act === 'prom-req') {
       const pick = el.querySelector('#promIn'), v = pick ? pick.value : 'none';
+      if (v === '') { note = { bad: true, msg: '같이 넣을 인계를 골라 주세요 — 넣지 않으려면 「인계 넣지 않음」을 고릅니다.' }; draw(); return; }
       const body = v === 'none' ? { no_input: true } : { summary_id: Number(v) };
       return run('옮길 것 뽑기', () => post(`/api/sessions/${id}/promote`, body).then((r) => ({ msg: `요청을 보냈습니다. 세션이 목록을 만드는 중입니다${r.summary_id ? `(인계 #${r.summary_id}의 「문서와 다른 지금」도 같이 넣었습니다)` : ''}.` })));
     }
