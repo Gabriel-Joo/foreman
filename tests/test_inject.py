@@ -80,10 +80,10 @@ async def test_resolve_ok(fake):
 
 
 @pytest.mark.parametrize("change, why", [
-    ({"proc": "T"}, "SUSPENDED"),
+    ({"proc": "T"}, "멈춘 세션"),
     ({"tmux": None}, "tmux 밖"),
-    ({"cmd": "bash"}, "claude가 아니다(bash)"),
-    ({"pane_pid": 999, "ancestors": [100, 50]}, "이 세션의 프로세스가 아니다"),
+    ({"cmd": "bash"}, "claude가 아니라 bash"),
+    ({"pane_pid": 999, "ancestors": [100, 50]}, "이 세션이 아닙니다"),
 ])
 async def test_resolve_refusals(fake, change, why):
     fake.update(change)
@@ -93,7 +93,7 @@ async def test_resolve_refusals(fake, change, why):
 
 async def test_resolve_dead(fake, monkeypatch):
     monkeypatch.setattr(inj, "live_sessions", lambda d: {})
-    with pytest.raises(inj.Refused, match="살아 있는 CC 프로세스가 없다"):
+    with pytest.raises(inj.Refused, match="살아 있는 CC 프로세스가 없습니다"):
         await inj.resolve(SID, "/s")
 
 

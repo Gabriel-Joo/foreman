@@ -13,7 +13,7 @@ export function mountNewSession(store, { onCreated }) {
     <label class="small muted" for="nsWhere">어디서</label>
     <select id="nsWhere"></select>
     <div id="nsPick" class="ns-pick" hidden>
-      <div class="row"><button type="button" id="nsUp" class="ghost small" title="위 폴더">↑</button><code id="nsPath" class="ns-path"></code></div>
+      <div class="row"><button type="button" id="nsUp" class="ghost small" title="위 폴더 — 한 단계 위 폴더로 갑니다.">↑</button><code id="nsPath" class="ns-path"></code></div>
       <div id="nsDirs" class="ns-dirs"></div>
       <div id="nsRecent" class="small"></div>
     </div>
@@ -50,8 +50,8 @@ export function mountNewSession(store, { onCreated }) {
       $('nsPath').textContent = home(j.path, opts.home) + (j.is_repo ? '  (git 저장소)' : '');
       $('nsUp').disabled = !j.parent;
       $('nsUp').dataset.p = j.parent || '';
-      $('nsDirs').innerHTML = j.dirs.map((d) => `<button type="button" class="ghost small" data-d="${esc(d)}">${esc(d)}/</button>`).join('') || '<span class="small muted">하위 폴더 없음</span>';
-    } catch (e) { msg(`폴더를 못 읽음 — ${e.message}`, 'bad'); }
+      $('nsDirs').innerHTML = j.dirs.map((d) => `<button type="button" class="ghost small" data-d="${esc(d)}">${esc(d)}/</button>`).join('') || '<span class="small muted">하위 폴더가 없습니다.</span>';
+    } catch (e) { msg(`폴더를 읽지 못했습니다 — ${e.message}`, 'bad'); }
   }
   $('nsUp').onclick = () => { if ($('nsUp').dataset.p) browse($('nsUp').dataset.p); };
   $('nsDirs').onclick = (ev) => { const b = ev.target.closest('[data-d]'); if (b) browse(cwd.replace(/\/$/, '') + '/' + b.dataset.d); };
@@ -69,17 +69,17 @@ export function mountNewSession(store, { onCreated }) {
     // 같은 프로젝트(떠돌이면 같은 폴더) 요약이 위에
     const list = opts.summaries.slice().sort((a, b) => ((b.project || '') === v) - ((a.project || '') === v));
     $('nsSum').innerHTML = list.map((s) => `<option value="${s.id}">${esc(label(s.project) || '떠돌이')} · ${esc(s.session)} · ${s.chars}자 · ${esc(new Date(s.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }))}</option>`).join('')
-      || '<option value="">넣을 수 있는 인계 요약이 없다</option>';
+      || '<option value="">넣을 수 있는 인계 요약이 없습니다</option>';
     preview();
   }
   async function preview() {
     $('nsHand').hidden = mode() !== 'handoff';
     if (mode() !== 'handoff' || !$('nsSum').value) { $('nsPrev').textContent = ''; return; }
-    $('nsPrev').textContent = '넣을 글을 불러오는 중…';
+    $('nsPrev').textContent = '넣을 글을 불러오는 중입니다…';
     try {
       const j = await api('GET', `/api/summaries/${$('nsSum').value}/injection`);
-      $('nsPrev').textContent = j.text + (j.cut ? `\n\n(길어서 일부 절을 줄였다 — 전체는 ${j.full_path})` : '');
-    } catch (e) { $('nsPrev').textContent = `못 불러옴 — ${e.message}`; }
+      $('nsPrev').textContent = j.text + (j.cut ? `\n\n(길어서 일부 절을 줄였습니다. 전체는 ${j.full_path}에 있습니다.)` : '');
+    } catch (e) { $('nsPrev').textContent = `불러오지 못했습니다 — ${e.message}`; }
   }
   $('nsWhere').onchange = whereChanged;
   $('nsSum').onchange = preview;
@@ -89,23 +89,22 @@ export function mountNewSession(store, { onCreated }) {
   dlg.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !busy) { ev.stopPropagation(); close(); } });
 
   $('nsGo').onclick = async () => {
-    if (busy || !cwd) { if (!cwd) msg('폴더를 고르세요', 'bad'); return; }
+    if (busy || !cwd) { if (!cwd) msg('폴더를 골라 주세요.', 'bad'); return; }
     const summary_id = mode() === 'handoff' && $('nsSum').value ? Number($('nsSum').value) : null;
-    if (mode() === 'handoff' && !summary_id) { msg('넣을 인계 요약이 없다', 'bad'); return; }
+    if (mode() === 'handoff' && !summary_id) { msg('넣을 인계 요약이 없습니다.', 'bad'); return; }
     busy = true; $('nsGo').disabled = true;
-    msg(`tmux 세션을 만들고 claude를 띄우는 중… (${home(cwd, opts.home)})`);
+    msg(`새 세션을 띄우는 중입니다… (${home(cwd, opts.home)})`);
     try {
       const r = await api('POST', '/api/spawn', { cwd, summary_id, title: $('nsTitle').value.trim() || null });
-      const where = `tmux ${r.tmux}`;
       if (r.session_id) {
-        msg(`${where} 띄움${summary_id ? (r.injected ? ' · 인계 넣음' : ' · 인계 못 넣음') : ''}${r.note ? ' — ' + r.note : ''}`, r.note ? 'warn' : 'ok');
+        msg(`새 세션을 띄웠습니다(tmux ${r.tmux}).${summary_id ? (r.injected ? ' 인계를 넣었습니다.' : ' 인계는 넣지 못했습니다.') : ''}${r.note ? ' ' + r.note : ''}`, r.note ? 'warn' : 'ok');
         await store.loadSnapshot();
         if (onCreated) onCreated(r.session_id);
         setTimeout(close, r.note ? 4000 : 900);
       } else {
-        msg(`${where} — ${r.note || '세션을 찾지 못했다'}`, 'warn');
+        msg(r.note || '새 세션을 찾지 못했습니다.', 'warn');
       }
-    } catch (e) { msg(`못 띄움 — ${e.message}`, 'bad'); }
+    } catch (e) { msg(`띄우지 못했습니다 — ${e.message}`, 'bad'); }
     busy = false; $('nsGo').disabled = false;
   };
 
@@ -115,7 +114,7 @@ export function mountNewSession(store, { onCreated }) {
     $('nsTitle').value = '';
     dlg.querySelector('input[value=fresh]').checked = true;
     dlg.classList.add('on');
-    try { opts = await api('GET', '/api/spawn/options'); } catch (e) { msg(`못 불러옴 — ${e.message}`, 'bad'); return; }
+    try { opts = await api('GET', '/api/spawn/options'); } catch (e) { msg(`불러오지 못했습니다 — ${e.message}`, 'bad'); return; }
     $('nsWhere').innerHTML = opts.projects.map((p) => `<option value="${esc(p.name)}">${esc(label(p.name))} — ${esc(home(p.repo, opts.home))}</option>`).join('')
       + '<option value="">프로젝트 없이 — 폴더 고르기(떠돌이)</option>';
     $('nsRecent').innerHTML = opts.recent_cwds.length ? '최근: ' + opts.recent_cwds.slice(0, 8).map((c) => `<button type="button" class="ghost small" data-c="${esc(c)}">${esc(home(c, opts.home))}</button>`).join(' ') : '';

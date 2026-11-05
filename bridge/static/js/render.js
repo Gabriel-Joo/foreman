@@ -111,9 +111,9 @@ export function oneLine(s, n) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 export function why(s) {
-  if (!s.pid) return '프로세스가 없다';
-  if (s.proc === 'T') return '정지(SUSPENDED) — 입력이 셸 명령으로 실행된다';
-  if (!s.tmux_pane) return 'tmux 밖 세션 — 주입할 pane이 없다';
+  if (!s.pid) return '세션이 끝났습니다(프로세스가 없습니다).';
+  if (s.proc === 'T') return '멈춘 세션입니다. 지금 보내면 셸 명령으로 실행되므로 막았습니다.';
+  if (!s.tmux_pane) return 'tmux 밖에서 도는 세션이라 화면에서 보낼 수 없습니다.';
   return '';
 }
 
@@ -140,7 +140,7 @@ export function handleApprovalClick(ev, store, openSession) {
   const aid = Number(b.dataset.aid);
   if (b.dataset.act === 'allow') store.decide(aid, 'allow');
   else if (b.dataset.act === 'deny') {
-    const m = prompt('거부 이유(모델에게 전달된다)', '사용자가 거부');
+    const m = prompt('거부 이유를 적어 주세요. 모델에게 그대로 전달됩니다.', '사용자가 거부했습니다');
     if (m !== null) store.decide(aid, 'deny', m);
   } else if (b.dataset.act === 'open') openSession(Number(b.dataset.sid));
 }
@@ -214,11 +214,11 @@ export function feedHtml(s) {
   return s.feed.slice().reverse().map((f) => {
     const open = f.eid && FEED_OPEN.has(f.eid);
     return `<div class="f f-${f.kind}${f.eid ? ' f-click' : ''}${open ? ' f-open' : ''}"${f.eid ? ` data-eid="${f.eid}" title="눌러서 입력 · 결과 보기"` : ''}><span class="muted">${new Date(f.ts).toLocaleTimeString()}</span> ${f.eid ? `<span class="f-tw">${open ? '▾' : '▸'}</span>` : ''}${esc(f.text)}</div>${open ? toolDetailHtml(FEED_DETAIL.get(f.eid)) : ''}`;
-  }).join('') || '<p class="small muted">활동이 아직 없다</p>';
+  }).join('') || '<p class="small muted">활동이 아직 없습니다.</p>';
 }
 
 function inputHtml(tool, inp) {
-  if (inp == null) return '<div class="small muted">입력을 트랜스크립트에서 찾지 못했다</div>';
+  if (inp == null) return '<div class="small muted">입력을 트랜스크립트에서 찾지 못했습니다.</div>';
   const pre = (t, cls = '') => `<pre class="fd-pre${cls}">${esc(t)}</pre>`;
   const kv = (k) => (inp[k] != null && inp[k] !== '' ? `<div class="small"><span class="muted">${esc(k)}</span> ${esc(String(inp[k]))}</div>` : '');
   switch (tool) {
@@ -329,7 +329,7 @@ export function createRenderer(root, store) {
     </div></div>
     <div id="tokDlg" class="overlay"><form class="box" id="tokForm">
       <h2 class="plain">API 토큰</h2>
-      <p class="muted small">.env.bridge의 FOREMAN_API_TOKEN 값. 이 브라우저에만 저장한다.</p>
+      <p class="muted small">.env.bridge의 FOREMAN_API_TOKEN 값입니다. 이 브라우저에만 저장합니다.</p>
       <input id="tokInput" type="password" autocomplete="new-password" placeholder="FOREMAN_API_TOKEN 값">
       <p><button type="submit">연결</button> <span id="tokLen" class="small muted"></span></p>
     </form></div>`;
@@ -380,7 +380,7 @@ export function createRenderer(root, store) {
     const down = c.status === 'down';
     $('down').classList.toggle('on', down);
     if (down) {
-      $('downWhy').textContent = `${c.reason || '브리지와 연락이 없다'} — ${new Date(c.since).toLocaleTimeString()}부터`;
+      $('downWhy').textContent = `${c.reason || '브리지와 연락이 없습니다'} — ${new Date(c.since).toLocaleTimeString()}부터`;
       $('downNext').textContent = c.nextIn ? `${c.nextIn}초 뒤 다시 연결 (시도 ${c.attempt})` : `연결 중… (시도 ${c.attempt})`;
     }
     if (c.status === 'auth') $('tokDlg').classList.add('on');
@@ -397,7 +397,7 @@ export function createRenderer(root, store) {
     const pending = [...st.approvals.values()].filter((a) => a.status === 'pending').length;
     // 적재(수집기)가 막히면 맨 앞에 — 이 화면이 보여 주는 기록 자체가 멈춘 것이다(11-03)
     const ig = st.ingest;
-    const ingest = !ig ? '' : (ig.stalled ? `<span class="bad" title="트랜스크립트 감시 루프가 ${ig.tick_age_s}초째 돌지 않는다">⚠ 와처 멈춤</span>`
+    const ingest = !ig ? '' : (ig.stalled ? `<span class="bad" title="트랜스크립트 감시가 ${ig.tick_age_s}초째 멈춰 있습니다">⚠ 와처 멈춤</span>`
       : (ig.stuck && ig.stuck.length ? `<span class="bad" title="${esc(ig.stuck.map((x) => `${x.session} ${x.minutes}분 · ${x.failures}번 — ${x.error}`).join('\n'))}">⚠ 적재 막힘 ${ig.stuck.length}개 세션 · ${Math.max(...ig.stuck.map((x) => x.minutes))}분</span>`
       : (ig.skips && ig.skips.length ? `<span class="warn" title="${esc(ig.skips.map((x) => `${x.session} ${x.kind === 'chunk' ? '덩어리' : '줄'} ${x.count} — ${x.reason}`).join('\n'))}">적재 중 버린 줄 있음(24시간)</span>` : '')));
     $('summary').innerHTML = ingest +
@@ -471,7 +471,7 @@ export function createRenderer(root, store) {
     $('inputForm').hidden = false;
     const blocked = !s.injectable;
     $('inputText').disabled = blocked; $('sendBtn').disabled = blocked;
-    $('inputWhy').textContent = blocked ? `보낼 수 없음 — ${why(s)}` : (s.state === 'ACTIVE' ? '일하는 중 — 대기열로 들어간다' : '');
+    $('inputWhy').textContent = blocked ? `보낼 수 없음 — ${why(s)}` : (s.state === 'ACTIVE' ? '작업 중 — 대기열' : '');
     const li = st.lastInput && st.lastInput.sessionId === s.id ? st.lastInput : null;
     $('inputResult').innerHTML = li ? `<span class="${li.ok ? 'ok' : 'bad'}">${esc(li.msg)}${li.guarded ? ' (첫 글자 보호)' : ''}</span>` : '';
     if (lastSel !== s.id) { $('inputText').value = ''; lastSel = s.id; }

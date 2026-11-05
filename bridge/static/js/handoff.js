@@ -26,7 +26,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       const j = await api('GET', `/api/sessions/${want}/handoff`);
       if (want !== sid) return;
       data = j;
-    } catch (e) { note = { bad: true, msg: `불러오지 못함 — ${e.message}` }; }
+    } catch (e) { note = { bad: true, msg: `불러오지 못했습니다 — ${e.message}` }; }
     draw();
     schedule();
   }
@@ -38,7 +38,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
   }
   async function run(label, fn) {
     note = { msg: `${label}…` }; draw();
-    try { const r = await fn(); note = r && r.msg ? r : { ok: true, msg: `${label} — 됨` }; }
+    try { const r = await fn(); note = r && r.msg ? r : { ok: true, msg: `${label} — 마쳤습니다.` }; }
     catch (e) { note = { bad: true, msg: `${label} — ${e.message}` }; }
     await load();
   }
@@ -48,8 +48,8 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
   function draw() {
     if (sid == null || !data) { el.innerHTML = ''; return; }
     const c = data.controls, can = c.can, s0 = data.summaries[0], ok = latest();
-    const b = (act, label, on, cls = '') => `<button data-act="${act}" class="small ${cls}"${on ? '' : ' disabled'}>${label}</button>`;
-    const sumCard = (x) => !x ? '<p class="small muted">아직 인계 요약이 없다.</p>' : `
+    const b = (act, label, on, cls = '', tip = '') => `<button data-act="${act}" class="small ${cls}"${tip ? ` title="${esc(tip)}"` : ''}${on ? '' : ' disabled'}>${label}</button>`;
+    const sumCard = (x) => !x ? '<p class="small muted">아직 인계 요약이 없습니다.</p>' : `
       <div class="hand-sum">
         <div class="small"><b>${esc(KIND[x.kind] || x.kind)}</b> · ${esc(SOURCE[x.source] || x.source)} ·
           <span class="${x.status === 'ok' ? 'ok' : x.status === 'requested' ? '' : 'bad'}">${esc(STATUS[x.status] || x.status)}</span>
@@ -61,35 +61,37 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     let main;
     if (mode === 'edit' && ok) {
       main = `<textarea id="hEdit" rows="14" class="hand-edit">${esc(ok.body)}</textarea>
-        <div class="row">${b('edit-save', '고친 본 저장(새 판)', true)}${b('cancel', '취소', true, 'ghost')}</div>`;
+        <div class="row">${b('edit-save', '고친 본 저장', true, '', '저장 — 원본은 두고 고친 본을 새 판으로 저장합니다.')}${b('cancel', '취소', true, 'ghost')}</div>`;
     } else if (mode === 'spawn') {
-      main = preview ? `<div class="small">새 세션(같은 폴더 · tmux)을 띄우고 아래 글을 첫 입력으로 넣는다${preview.cut ? ` — <span class="warn">길어서 일부 절을 줄였다(전체는 ${esc(preview.full_path)})</span>` : ''}</div>
+      main = preview ? `<div class="small">같은 폴더에 새 세션을 띄우고 아래 글을 첫 입력으로 넣습니다.${preview.cut ? ` <span class="warn">길어서 일부 절을 줄였습니다(전체는 ${esc(preview.full_path)}).</span>` : ''}</div>
         <pre class="hand-body">${esc(preview.text)}</pre>
         <div class="row">${b('spawn-go', '이 글을 넣고 시작', true)}${b('spawn-bare', '요약 없이 시작', true, 'ghost')}${b('cancel', '취소', true, 'ghost')}</div>`
-        : `<div class="small">넣을 인계 요약이 없다.</div><div class="row">${b('spawn-bare', '요약 없이 새로 띄우기', true)}${b('cancel', '취소', true, 'ghost')}</div>`;
+        : `<div class="small">넣을 인계 요약이 없습니다.</div><div class="row">${b('spawn-bare', '요약 없이 새로 띄우기', true)}${b('cancel', '취소', true, 'ghost')}</div>`;
     } else {
       main = sumCard(s0 && s0.status !== 'ok' && ok && s0.id !== ok.id ? s0 : ok || s0) +
         (s0 && ok && s0.id !== ok.id && s0.status !== 'ok' ? `<div class="small muted">이전 저장본 ↓</div>${sumCard(ok)}` : '') +
-        (ok && ok.kind === 'handoff' && can.exit && !ok.injected_at ? `<div class="row">${b('exit-after', '이 요약을 확인했다 — 세션 끝내기', true, 'warn')}</div>` : '');
+        (ok && ok.kind === 'handoff' && can.exit && !ok.injected_at ? `<div class="row">${b('exit-after', '요약을 확인했습니다 — 세션 끝내기', true, 'danger')}</div>` : '');
     }
     const hist = data.summaries.length > 1 ? `<details class="hand-hist"><summary class="small muted">이력 ${data.summaries.length}</summary>${
       data.summaries.map((x) => `<div class="small">#${x.id} ${esc(KIND[x.kind] || x.kind)} · ${esc(SOURCE[x.source] || x.source)} · ${esc(STATUS[x.status] || x.status)} · ${ago(x.created_at)}${x.chars ? ` · ${x.chars}자` : ''}</div>`).join('')}</details>` : '';
     el.innerHTML = `
       <details class="hand"${open ? ' open' : ''}><summary><b>인계 · 세션 조작</b> <span class="small muted">${esc(c.why || (c.live ? '살아 있음' : ''))}${s0 ? ` · 요약 ${esc(STATUS[s0.status] || s0.status)} ${ago(s0.created_at)}` : ''}</span></summary>
-        <div class="hand-btns">
-          ${b('summary', '지금 요약', can.summary)}
-          ${b('summary-end', '요약하고 끝내기', can.summary)}
-          ${b('spawn', '새로 띄우기', can.spawn)}
-          ${b('edit', '고치기', !!ok && mode !== 'edit')}
-        </div>
-        <div class="hand-btns">
-          ${b('exit', '끝내기', can.exit, 'ghost')}
-          ${b('stop', '멈춤', can.stop, 'ghost')}
-          ${b('resume', '되살리기', can.resume, 'ghost')}
-          ${b('interrupt', '작업 중단(Esc)', can.interrupt, 'ghost')}
-          ${!c.live ? b('headless', '죽은 세션 요약 받기', can.headless, 'ghost') : ''}
-          ${b('compact', '압축 요약에서', can.compact && !c.live, 'ghost')}
-        </div>
+        <div class="hand-group"><span class="hand-lbl small muted">인계</span><div class="hand-btns">
+          ${b('summary', '지금 요약', can.summary, '', '지금 요약 — 세션이 지금까지 한 일을 스스로 정리합니다. 세션은 계속 돕니다.')}
+          ${b('summary-end', '요약하고 끝내기', can.summary, '', '요약하고 끝내기 — 요약을 받은 뒤, 확인을 눌러야 세션을 끝냅니다.')}
+          ${b('spawn', '새로 띄우기', can.spawn, '', '새로 띄우기 — 같은 폴더에 새 세션을 띄우고 마지막 요약을 넣습니다.')}
+          ${b('edit', '요약 고치기', !!ok && mode !== 'edit', '', '요약 고치기 — 저장된 요약을 직접 고칩니다.')}
+          ${!c.live ? b('headless', '죽은 세션 요약 받기', can.headless, '', '죽은 세션 요약 받기 — 끝난 세션을 잠깐 불러 요약을 받습니다. 토큰을 씁니다.') : ''}
+          ${!c.live ? b('compact', '압축 요약에서', can.compact, '', '압축 요약에서 — 세션이 마지막으로 자동 압축한 요약으로 인계를 만듭니다.') : ''}
+        </div></div>
+        <div class="hand-group"><span class="hand-lbl small muted">일시정지</span><div class="hand-btns">
+          ${b('stop', '일시정지', can.stop, 'ghost', '일시정지 — 세션을 잠시 멈춥니다(Ctrl+Z). 맥락은 그대로이고 [다시 시작]으로 이어 갑니다.')}
+          ${b('resume', '다시 시작', can.resume, 'ghost', '다시 시작 — FOREMAN이 일시정지한 세션을 이어서 돌립니다.')}
+          ${b('interrupt', '작업 중단(Esc)', can.interrupt, 'ghost', '작업 중단 — 지금 하는 작업만 멈춥니다(Esc). 세션은 살아 있습니다.')}
+        </div></div>
+        <div class="hand-group"><span class="hand-lbl small muted">끝내기</span><div class="hand-btns">
+          ${b('exit', '세션 끝내기', can.exit, 'danger', '세션 끝내기 — /exit로 세션을 완전히 끝냅니다. FOREMAN이 띄운 tmux 창도 닫습니다.')}
+        </div></div>
         ${note ? `<div class="small ${note.bad ? 'bad' : note.ok ? 'ok' : 'muted'}">${esc(note.msg)}</div>` : ''}
         ${main}${hist}
       </details>`;
@@ -103,11 +105,11 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     const act = btn.dataset.act, id = sid;
     const post = (u, body) => api('POST', u, body || {});
     if (act === 'cancel') { mode = null; preview = null; draw(); return; }
-    if (act === 'summary') return run('요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'snapshot', mode: 'live' }).then(() => ({ msg: '요청을 보냈다 — 세션이 쓰는 중' })));
-    if (act === 'summary-end') return run('인계 요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'live' }).then(() => ({ msg: '요청을 보냈다 — 요약이 오면 확인하고 [세션 끝내기]' })));
+    if (act === 'summary') return run('요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'snapshot', mode: 'live' }).then(() => ({ msg: '요청을 보냈습니다. 세션이 요약을 쓰는 중입니다.' })));
+    if (act === 'summary-end') return run('인계 요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'live' }).then(() => ({ msg: '요청을 보냈습니다. 요약이 오면 확인한 뒤 [세션 끝내기]를 눌러 주세요.' })));
     if (act === 'headless') {
-      if (!confirm('죽은 세션을 claude -p --resume으로 불러 요약을 받는다. 그 세션의 컨텍스트를 다시 읽어 토큰을 쓴다. 할까?')) return;
-      return run('죽은 세션 요약', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'headless' }).then(() => ({ msg: '돌리는 중 — 몇 분 걸릴 수 있다' })));
+      if (!confirm('끝난 세션을 잠깐 불러 요약을 받습니다. 그 세션의 맥락을 다시 읽느라 토큰을 씁니다. 진행할까요?')) return;
+      return run('죽은 세션 요약', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'headless' }).then(() => ({ msg: '요약을 받는 중입니다. 몇 분 걸릴 수 있습니다.' })));
     }
     if (act === 'compact') return run('압축 요약에서 만들기', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'compact' }));
     if (act === 'edit') { mode = 'edit'; draw(); return; }
@@ -127,19 +129,22 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       mode = null; preview = null;
       return run('새로 띄우기', async () => {
         const r = await post(`/api/sessions/${id}/spawn`, { summary_id });
-        const where = `tmux ${r.tmux} · 세션 ${(r.cc_session_id || '?').slice(0, 8)}`;
+        const where = `tmux ${r.tmux}`;
         return r.note ? { bad: !r.cc_session_id, msg: `${where} — ${r.note}` }
-          : { ok: true, msg: `${where} 띄움${summary_id ? (r.injected ? ' · 인계 넣음' : ' · 인계 못 넣음') : ''}` };
+          : { ok: true, msg: `새 세션을 띄웠습니다(${where}).${summary_id ? (r.injected ? ' 인계를 넣었습니다.' : ' 인계는 넣지 못했습니다.') : ''}` };
       });
     }
-    const ACT = { exit: '끝내기', 'exit-after': '끝내기', stop: '멈춤', resume: '되살리기', interrupt: '작업 중단' };
+    const ACT = { exit: '세션 끝내기', 'exit-after': '세션 끝내기', stop: '일시정지', resume: '다시 시작', interrupt: '작업 중단' };
+    const DONE = { exit: '세션을 끝냈습니다.', 'exit-after': '세션을 끝냈습니다.', stop: '일시정지했습니다.', resume: '다시 시작했습니다.', interrupt: '작업을 중단했습니다.' };
     if (ACT[act]) {
-      const ask = { exit: '이 세션을 /exit로 끝낸다. 인계 요약 없이 끝내면 맥락은 트랜스크립트에만 남는다. 끝낼까?',
-                    'exit-after': '요약을 확인했으면 이 세션을 /exit로 끝낸다. 끝낼까?',
-                    stop: '이 세션을 멈춘다(Ctrl+Z). 되살리기 전까지 입력 · hook이 안 된다. 멈출까?' }[act];
+      const ask = { exit: '이 세션을 완전히 끝냅니다(/exit). 인계 요약 없이 끝내면 맥락은 기록으로만 남습니다. 끝낼까요?',
+                    'exit-after': '요약을 확인했으면 이 세션을 완전히 끝냅니다(/exit). 끝낼까요?',
+                    stop: '이 세션을 일시정지합니다(Ctrl+Z). [다시 시작]을 누르기 전까지 입력을 받지 않습니다. 멈출까요?' }[act];
       if (ask && !confirm(ask)) return;
       const action = act === 'exit-after' ? 'exit' : act;
-      return run(ACT[act], () => post(`/api/sessions/${id}/action`, { action }).then((r) => (r.ok ? { ok: true, msg: `${ACT[act]} — 됨` } : { bad: true, msg: `${ACT[act]} — ${r.note || '확인 안 됨'}` })));
+      return run(ACT[act], () => post(`/api/sessions/${id}/action`, { action }).then((r) => (r.ok
+        ? { ok: true, msg: DONE[act] + (r.tmux_closed ? ' tmux 창도 닫았습니다.' : '') }
+        : { bad: true, msg: `${ACT[act]} — ${r.note || '확인하지 못했습니다.'}` })));
     }
   });
 

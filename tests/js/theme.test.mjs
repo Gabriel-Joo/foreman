@@ -62,7 +62,7 @@ test('마법학교: 도구 → 구역 9개', () => {
   assert.equal(go('Agent'), 'circle');
   assert.equal(resolveAction(magic, { state: 'IDLE' }).go, 'hall');
   assert.equal(resolveAction(magic, { state: 'SUSPENDED' }).fx, 'stone');
-  assert.equal(resolveAction(magic, { state: 'DORMANT' }).fx, 'ghost');
+  assert.equal(resolveAction(magic, { state: 'DORMANT' }).fx, 'faded');   // 11-05 — 푸른 유령은 얼음(멈춤)과 헷갈려 흐리게만
   assert.equal(resolveAction(magic, { state: 'ACTIVE', tool: 'Bash', target: 'pytest', flags: { approval_pending: true } }).anim, 'raise_wand');
 });
 
