@@ -71,8 +71,30 @@ async def handoff_view(sid: int, request: Request) -> dict[str, Any]:
             out["promotions"] = await m.promote.list(sid)
             out["promote_inputs"] = await m.promote.inputs(row)
         except Exception as e:  # noqa: BLE001 — 표가 없을 때(0020 전)도 인계 칸은 떠야 한다. 화면에 사유를 보인다
-            out["promotions_error"] = f"문서로 옮기기 목록을 읽지 못했습니다({type(e).__name__}) — 마이그레이션 0020을 적용했는지 확인해 주세요"
+            out["promotions_error"] = f"문서로 옮기기 목록을 읽지 못했습니다({type(e).__name__}) — 마이그레이션 0020 · 0021을 적용했는지 확인해 주세요"
+    out["losschecks"], out["losschecks_error"] = [], None
+    lc = getattr(m, "losscheck", None)
+    if lc is not None:
+        try:
+            out["losschecks"] = await lc.list(sid)
+            out["controls"]["losscheck"] = not any(x["status"] == "running" for x in out["losschecks"])
+        except Exception as e:  # noqa: BLE001 — 0021 전에도 인계 칸은 뜬다
+            out["losschecks_error"] = f"잃은 것 점검을 읽지 못했습니다({type(e).__name__}) — 마이그레이션 0021을 적용했는지 확인해 주세요"
     return out
+
+
+# ── 인계 2판 d [잃은 것 보기](11-06, bridge/losscheck.py) ─────────────
+@router.post("/sessions/{sid}/losscheck")
+async def losscheck_start(sid: int, request: Request) -> JSONResponse:
+    """압축 손실 점검 — 트랜스크립트에서 압축 구간별 사람 프롬프트를 뽑아 `claude -p`로 판정한다. 버튼을 누를 때만 돈다."""
+    m = _mgr(request)
+    lc = getattr(m, "losscheck", None)
+    if lc is None:
+        raise HTTPException(503, "잃은 것 보기가 꺼져 있습니다")
+    try:
+        return JSONResponse(await lc.start(await _row(m, sid)), status_code=202)
+    except Refused as e:
+        return _refused(e)
 
 
 # ── 인계 2판 ① 문서로 옮기기(11-05, bridge/promote.py) ──────────────
@@ -82,7 +104,8 @@ class PromoteEditIn(BaseModel):
 
 class PromoteIn(BaseModel):
     summary_id: int | None = None     # 같이 넣을 인계. 없으면 후보가 하나일 때만 그것, 여럿이면 거부(골라야 한다)
-    no_input: bool = False            # 인계를 넣지 않는다
+    no_input: bool = False            # 아무것도 넣지 않는다
+    loss_check_id: int | None = None  # 같이 넣을 [잃은 것 보기] 점검(사라짐 · 약해짐) — 11-06
 
 
 def _prom(m: HandoffManager) -> Any:
@@ -97,7 +120,8 @@ async def promote_request(sid: int, request: Request, body: PromoteIn | None = N
     m = _mgr(request)
     body = body or PromoteIn()
     try:
-        return JSONResponse(await _prom(m).request(await _row(m, sid), body.summary_id, body.no_input), status_code=202)
+        return JSONResponse(await _prom(m).request(await _row(m, sid), body.summary_id, body.no_input, body.loss_check_id),
+                            status_code=202)
     except Refused as e:
         return _refused(e)
 

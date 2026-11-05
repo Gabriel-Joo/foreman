@@ -56,17 +56,19 @@ function itemRow(it, m, editable) {
 // 같이 넣을 인계 고르기 — chosen: null이면 후보가 하나일 때만 그것, 여럿이면 "고르기"(빈 값 — 누르면 막는다),
 // 'none'이면 넣지 않음, 숫자면 그 인계. 여럿일 때 첫째를 말없이 고르지 않는다(11-06 첫 사례에서 #6 대신 #7이 들어갔다)
 export function inputPick(inputs, chosen) {
-  if (!inputs || !inputs.length) return '<span class="small muted">같이 넣을 인계 없음</span>';
+  if (!inputs || !inputs.length) return '<span class="small muted">같이 넣을 것 없음</span>';
   const cur = chosen != null ? String(chosen) : inputs.length === 1 ? String(inputs[0].id) : '';
   const opt = (v, label, tip) => `<option value="${v}"${cur === String(v) ? ' selected' : ''}${tip ? ` title="${esc(tip)}"` : ''}>${esc(label)}</option>`;
-  return `<select id="promIn" class="small" title="같이 넣을 인계 — 그 인계의 「문서와 다른 지금」 절을 목록 요청에 같이 넣습니다.">${
-    inputs.length > 1 ? opt('', `같이 넣을 인계 고르기(${inputs.length}개)`) : ''}${
-    inputs.map((x) => opt(x.id, `#${x.id} ${x.title || x.cc} — ${x.why}`, x.diff)).join('')}${opt('none', '인계 넣지 않음')}</select>`;
+  return `<select id="promIn" class="small" title="같이 넣을 것 — 인계의 「문서와 다른 지금」 절이나 잃은 것 점검의 사라짐 · 약해짐을 목록 요청에 같이 넣습니다.">${
+    inputs.length > 1 ? opt('', `같이 넣을 것 고르기(${inputs.length}개)`) : ''}${
+    inputs.map((x) => opt(x.id, x.kind === 'loss' ? `${x.title} — ${x.why}` : `#${x.id} ${x.title || x.cc} — ${x.why}`, x.diff)).join('')}${opt('none', '넣지 않음')}</select>`;
 }
 
 // 이 목록에 무엇을 같이 넣었나 — 쓰는 사람이 어느 인계로 뽑았는지 바로 보이게
 function inputUsed(p) {
-  return p.summary_id ? ` · 인계 #${esc(String(p.summary_id))} 같이 넣음` : ' · 인계 넣지 않음';
+  if (p.summary_id) return ` · 인계 #${esc(String(p.summary_id))} 같이 넣음`;
+  if (p.loss_check_id) return ` · 잃은 것 점검 #${esc(String(p.loss_check_id))} 같이 넣음`;
+  return ' · 같이 넣은 것 없음';
 }
 
 // p = 마지막 옮기기(없으면 null), can = 목록 요청 가능, draft = {id: {칸: 값}}, err = 표를 못 읽은 사유

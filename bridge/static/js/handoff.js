@@ -4,6 +4,7 @@
 
 import { esc, ago } from './render.js';
 import { promoteGroup, edits as promoteEdits } from './promote.js';
+import { lossGroup } from './losscheck.js';
 
 const SOURCE = { self: '세션이 씀', self_headless: '세션이 씀(죽은 세션, claude -p)', compact: '자동 압축 요약에서', edited: '사람이 고침' };
 const STATUS = { requested: '기다리는 중…', ok: '저장됨', failed: '실패', timeout: '시간 초과' };
@@ -159,6 +160,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
           <label class="small muted" title="요약 통째로(1판) — 켜면 예전처럼 대화 전체를 요약해 넣습니다. 끄면(기본) 짧은 인계 + 새 세션이 직접 읽을 「읽을 곳」입니다."><input type="checkbox" id="hFmt1"${fmt1 ? ' checked' : ''}> 요약 통째로(1판)</label>
         </div></div>
         ${readsLine(c.reads, can.exit)}
+        ${lossGroup((data.losschecks || [])[0] || null, can.losscheck !== false && !!data.losschecks && !data.losschecks_error, data.losschecks_error)}
         ${promoteGroup(prom(), !!can.promote, promDraft, data.promotions_error, data.promote_inputs, promIn)}
         <div class="hand-group"><span class="hand-lbl small muted">일시정지</span><div class="hand-btns">
           ${b('stop', '일시정지', can.stop, 'ghost', '일시정지 — 세션을 잠시 멈춥니다(Ctrl+Z). 맥락은 그대로이고 [다시 시작]으로 이어 갑니다.')}
@@ -184,9 +186,20 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     if (act === 'cancel') { mode = null; preview = null; editDraft = null; draw(); return; }
     if (act === 'prom-req') {
       const pick = el.querySelector('#promIn'), v = pick ? pick.value : 'none';
-      if (v === '') { note = { bad: true, msg: '같이 넣을 인계를 골라 주세요 — 넣지 않으려면 「인계 넣지 않음」을 고릅니다.' }; draw(); return; }
-      const body = v === 'none' ? { no_input: true } : { summary_id: Number(v) };
-      return run('옮길 것 뽑기', () => post(`/api/sessions/${id}/promote`, body).then((r) => ({ msg: `요청을 보냈습니다. 세션이 목록을 만드는 중입니다${r.summary_id ? `(인계 #${r.summary_id}의 「문서와 다른 지금」도 같이 넣었습니다)` : ''}.` })));
+      if (v === '') { note = { bad: true, msg: '같이 넣을 것을 골라 주세요 — 넣지 않으려면 「넣지 않음」을 고릅니다.' }; draw(); return; }
+      const body = v === 'none' ? { no_input: true } : v.startsWith('lc:') ? { loss_check_id: Number(v.slice(3)) } : { summary_id: Number(v) };
+      return run('옮길 것 뽑기', () => post(`/api/sessions/${id}/promote`, body).then((r) => ({ msg: `요청을 보냈습니다. 세션이 목록을 만드는 중입니다${
+        r.summary_id ? `(인계 #${r.summary_id}의 「문서와 다른 지금」도 같이 넣었습니다)` : r.loss_check_id ? `(잃은 것 점검 #${r.loss_check_id}의 사라짐 · 약해짐도 같이 넣었습니다)` : ''}.` })));
+    }
+    if (act === 'loss-run') {
+      if (!confirm('잃은 것 보기 — 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 끝나면 알림이 갑니다. 진행할까요?')) return;
+      return run('잃은 것 보기', () => post(`/api/sessions/${id}/losscheck`).then((r) => ({ msg: `점검을 시작했습니다(#${r.loss_check_id}, ${r.model}). 끝나면 알림이 갑니다.` })));
+    }
+    if (act === 'loss-use') {
+      promIn = 'lc:' + btn.dataset.lc;
+      note = { msg: '[옮길 것 뽑기]의 같이 넣을 것으로 골랐습니다 — [옮길 것 뽑기]를 눌러 주세요.' };
+      draw();
+      return;
     }
     if (act === 'prom-save') {
       const p = prom(), body = { items: promoteEdits(p.items, promDraft) };

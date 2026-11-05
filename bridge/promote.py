@@ -56,6 +56,11 @@ EXTRA_DIFF = """- 아래는 이 일의 인계(#{sid})에 적힌 「{sec}」 절�
 {body}
 """
 
+EXTRA_LOSS = """- 아래는 이 세션의 [잃은 것 보기] 점검(#{lid})이 "압축으로 사라지거나 약해졌다"고 본 것이다(기계 판정 — 틀릴 수 있다).
+  하나씩 판단해 아직 지켜야 하고 문서에 없는 것만 목록에 넣어라. **나중에 바뀐(뒤집힌) 결정은 넣지 마라.** 이미 문서에 있으면 뺀다:
+{body}
+"""
+
 WRITE_PROMPT = """{head} 문서로 옮기기 2/2 — 승인한 것만 쓰기
 사람이 패널에서 고치고 승인한 항목이 아래에 있다. **이것만** 써라.
 
@@ -92,9 +97,12 @@ def diff_section(body: str | None) -> str | None:
     return None
 
 
-def list_prompt(req: str, diff: str | None = None, summary_id: int | None = None) -> str:
-    extra = EXTRA_DIFF.format(sid=summary_id, sec=DIFF_SECTION,
-                              body="\n".join("  > " + ln for ln in diff.splitlines())) if diff else ""
+def list_prompt(req: str, diff: str | None = None, summary_id: int | None = None,
+                loss: str | None = None, loss_id: int | None = None) -> str:
+    quote = lambda t: "\n".join("  > " + ln for ln in t.splitlines())  # noqa: E731
+    extra = EXTRA_DIFF.format(sid=summary_id, sec=DIFF_SECTION, body=quote(diff)) if diff else ""
+    if loss:
+        extra += EXTRA_LOSS.format(lid=loss_id, body=quote(loss))
     return LIST_PROMPT.format(head=ho.REQ_HEAD.format(r=req), r=req, extra=extra)
 
 
@@ -244,7 +252,7 @@ class Promoter:
     async def list(self, sid: int, limit: int = 5) -> list[dict[str, Any]]:
         async with self.m.engine.connect() as c:
             rows = (await c.execute(text(
-                "SELECT id, summary_id, req, status, items, commit_sha, result, error, raw, created_at, updated_at "
+                "SELECT id, summary_id, loss_check_id, req, status, items, commit_sha, result, error, raw, created_at, updated_at "
                 "FROM promotion WHERE session_id = :s ORDER BY id DESC LIMIT :n"), {"s": sid, "n": limit})).mappings().all()
         row = await self.m.session(sid)
         repo = await ho.repo_root(row.cwd if row else None)
@@ -283,17 +291,45 @@ class Promoter:
                 " (ch.project_id IS NOT NULL AND ch.project_id = (SELECT project_id FROM `character` WHERE id = :ch))) "
                 "ORDER BY got DESC, own DESC, s.id DESC LIMIT 30"),
                 {"c": row.cc or "", "s": row.id, "ch": row.character_id or 0})).mappings().all()
-        out = []
+        out = await self._loss_inputs(row)          # 이 세션의 [잃은 것 보기] 결과가 맨 앞(d — 11-06)
         for r in rows:
+            if len(out) >= limit:
+                break
             if not ptr.is_v2(r["body"]) or not (d := diff_section(r["body"])):
                 continue
-            out.append({"id": r["id"], "title": r["title"], "cc": (r["cc_session_id"] or "")[:8],
+            out.append({"id": r["id"], "kind": "summary", "title": r["title"], "cc": (r["cc_session_id"] or "")[:8],
                         "created_at": r["created_at"].isoformat() + "Z" if r["created_at"] else None,
                         "why": "이 세션이 받은 인계" if r["got"] else "이 세션이 쓴 인계" if r["own"] else "같은 프로젝트의 인계",
                         "diff": d[:600]})
-            if len(out) >= limit:
-                break
-        return out
+        return out[:limit]
+
+    async def _loss_inputs(self, row: ho.SessionRow) -> list[dict[str, Any]]:
+        """이 세션의 끝난 [잃은 것 보기] 중 마지막 하나 — 사라짐 · 약해짐이 있을 때만. 값은 "lc:<id>"."""
+        from bridge import losscheck as lc
+        async with self.m.engine.connect() as c:
+            r = (await c.execute(text(
+                "SELECT id, items, created_at FROM loss_check WHERE session_id = :s AND status = 'done' ORDER BY id DESC LIMIT 1"),
+                {"s": row.id})).first()
+        if not r:
+            return []
+        items = json.loads(r[1] or "[]")
+        n = len(lc.lost(items))
+        if not n:
+            return []
+        cnt = lc.summarize(items)
+        return [{"id": f"lc:{r[0]}", "kind": "loss", "loss_check_id": r[0], "title": f"잃은 것 점검 #{r[0]}", "cc": "",
+                 "created_at": r[2].isoformat() + "Z" if r[2] else None,
+                 "why": f"사라짐 {cnt.get('사라짐', 0)} · 약해짐 {cnt.get('약해짐', 0)}", "diff": lc.lost_text(items, 8)[:600]}]
+
+    async def _loss_body(self, lid: int, sid: int) -> str:
+        from bridge import losscheck as lc
+        got = await self.m.losscheck.items_of(lid) if getattr(self.m, "losscheck", None) else None
+        if not got or got[0] != sid:
+            raise Refused(f"잃은 것 점검 #{lid}이 이 세션의 끝난 점검이 아닙니다")
+        body = lc.lost_text(got[1])
+        if not body:
+            raise Refused(f"잃은 것 점검 #{lid}에 사라짐 · 약해짐이 없습니다")
+        return body
 
     async def _input_body(self, summary_id: int) -> str:
         async with self.m.engine.connect() as c:
@@ -359,34 +395,42 @@ class Promoter:
         return None, ho.assistant_text(path, offset), f"{self.wait_s:.0f}초 안에 돌아오지 않았습니다"
 
     # ── 1/2 목록 ────────────────────────────────────────
-    async def request(self, row: ho.SessionRow, summary_id: int | None = None, no_input: bool = False) -> dict[str, Any]:
-        """summary_id를 주면 그 인계를 같이 넣는다. no_input이면 넣지 않는다. 둘 다 없으면 후보가 하나일 때만 그것을 쓰고,
-        둘 이상이면 거부한다 — 11-06 첫 사례에서 기본값(받은 인계 #7)이 말없이 들어가 #6을 넣으려던 사람이 헷갈렸다."""
+    async def request(self, row: ho.SessionRow, summary_id: int | None = None, no_input: bool = False,
+                      loss_check_id: int | None = None) -> dict[str, Any]:
+        """summary_id(인계) 또는 loss_check_id(잃은 것 점검)를 주면 그것을 같이 넣는다. no_input이면 넣지 않는다. 다 없으면
+        후보가 하나일 때만 그것을 쓰고, 둘 이상이면 거부한다 — 11-06 첫 사례에서 기본값(받은 인계 #7)이 말없이 들어가
+        #6을 넣으려던 사람이 헷갈렸다."""
         if await self._busy(row.id) or await self.m._pending(row.id):
             raise Refused("이미 이 세션에 인계 · 옮기기 요청을 기다리는 중입니다")
-        diff = None
+        diff = loss = None
         if no_input:
-            summary_id = None
-        elif summary_id is not None:
-            diff = await self._input_body(summary_id)
-        elif cand := await self.inputs(row, 2):
+            summary_id = loss_check_id = None
+        elif summary_id is None and loss_check_id is None and (cand := await self.inputs(row, 2)):
             if len(cand) > 1:
-                raise Refused("같이 넣을 인계가 여럿입니다 — 하나를 고르거나 「인계 넣지 않음」을 골라 주세요")
-            summary_id = cand[0]["id"]
+                raise Refused("같이 넣을 것이 여럿입니다 — 하나를 고르거나 「넣지 않음」을 골라 주세요")
+            if cand[0].get("kind") == "loss":
+                loss_check_id = cand[0]["loss_check_id"]
+            else:
+                summary_id = cand[0]["id"]
+        if summary_id is not None:
             diff = await self._input_body(summary_id)
+        if loss_check_id is not None:
+            loss = await self._loss_body(loss_check_id, row.id)
         req = ho.new_req()
         async with self.m.engine.begin() as c:
             res = await c.execute(text(
-                "INSERT INTO promotion (session_id, summary_id, req, status) VALUES (:s, :sm, :r, 'requested')"),
-                {"s": row.id, "sm": summary_id, "r": req})
+                "INSERT INTO promotion (session_id, summary_id, loss_check_id, req, status) "
+                "VALUES (:s, :sm, :lc, :r, 'requested')"),
+                {"s": row.id, "sm": summary_id, "lc": loss_check_id, "r": req})
         pid = res.lastrowid
         try:
-            path, offset, prompt_id = await self._send(row, list_prompt(req, diff, summary_id))
+            path, offset, prompt_id = await self._send(row, list_prompt(req, diff, summary_id, loss, loss_check_id))
         except Refused as e:
             await self._save(pid, status="failed", error=f"보내지 못함: {e}")
             raise
         self.m._spawn_task(self._wait_list(row, pid, req, path, offset, prompt_id))
-        return {"promotion_id": pid, "req": req, "status": "requested", "summary_id": summary_id}
+        return {"promotion_id": pid, "req": req, "status": "requested", "summary_id": summary_id,
+                "loss_check_id": loss_check_id}
 
     async def _wait_list(self, row: ho.SessionRow, pid: int, req: str, path: str, offset: int, prompt_id: str | None) -> None:
         body, texts, why = await self._wait(row, "FOREMAN-PROMOTE", req, path, offset, prompt_id)

@@ -47,5 +47,9 @@ test('같이 넣을 인계 — 여럿이면 말없이 첫째를 고르지 않고
   assert.equal(sel(inputPick([two[0]], null)), '7');                   // 하나뿐이면 그것
   const p = { id: 9, status: 'listed', items: [], summary_id: 7, updated_at: new Date().toISOString() };
   assert.ok(promoteGroup(p, false, {}, null).includes('인계 #7 같이 넣음'));
-  assert.ok(promoteGroup({ ...p, summary_id: null }, false, {}, null).includes('인계 넣지 않음'));
+  assert.ok(promoteGroup({ ...p, summary_id: null }, false, {}, null).includes('같이 넣은 것 없음'));
+  assert.ok(promoteGroup({ ...p, summary_id: null, loss_check_id: 3 }, false, {}, null).includes('잃은 것 점검 #3 같이 넣음'));
+  const withLoss = inputPick([{ id: 'lc:3', kind: 'loss', title: '잃은 것 점검 #3', why: '사라짐 2 · 약해짐 1' }, two[0]], 'lc:3');
+  assert.equal(sel(withLoss), 'lc:3');
+  assert.ok(withLoss.includes('잃은 것 점검 #3 — 사라짐 2 · 약해짐 1'));
 });
