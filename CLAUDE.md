@@ -61,7 +61,7 @@
 - 브리지는 tmux `foreman-bridge`에서 돈다. 다시 띄우기: 승인 대기(`/api/dashboard`의 approvals pending)가 없는지 본 뒤
   `tmux kill-session -t foreman-bridge; tmux new-session -d -s foreman-bridge -c ~/AI_programming/foreman 'bash -c ".venv/bin/python -m bridge 2>&1 | tee -a /tmp/foreman-bridge.log"'`(10초 남짓 끊김)
 - CC 세션 tmux: 이 세션 `cc-foreman`, 런슈즈 `cc-runshoes`(11-05 이전). 펫퍼민트는 아직 tmux 밖(pts/7) — 입력 주입 불가
-- 화면 자리 점검(가구 · 소품 · 이름표가 사람을 가리는지): 브라우저 콘솔 `window.office.layoutAudit()`, 자동 재배치 계획 `layoutPlan()`. 테마의 자리 · 가구를 바꾸면 세 테마 모두 0건인지 본다
+- 화면 자리 점검(가구 · 소품 · 이름표가 사람을 가리는지)은 **세션이 직접** 한다: `.venv/bin/python tools/screen.py`(헤드리스 크로미움 — 세 테마 × 세 크기의 `layoutAudit()` · `propAudit()` + PNG, 문제가 있으면 종료 코드 1). `--views hq,map,<현장>` · `--session <id>` · `--base`(미리보기 82xx) · `--eval`. 테마의 자리 · 가구를 바꾸면 세 테마 모두 0건인지 본다. 자동 재배치 계획은 `--eval "window.office.layoutPlan()"`
 - API는 토큰(`.env.bridge`의 `FOREMAN_API_TOKEN`)이 필요하다 — 값은 화면에 찍지 않고 셸 변수로만 쓴다
 
 ## 따로 작업(worktree)에서 일할 때 (11-05, `docs/11_worktree.md`)

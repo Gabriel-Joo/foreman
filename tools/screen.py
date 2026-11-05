@@ -1,0 +1,199 @@
+"""화면 확인 — 헤드리스 크로미움을 CDP로 몰아 픽셀 화면을 점검하고 찍는다(11-06, 사용자: "콘솔에서 돌려 달라고 매번 나한테 하지 말고").
+
+    .venv/bin/python tools/screen.py                                  # 세 테마 × 세 크기 × 포먼 현장
+    .venv/bin/python tools/screen.py --themes magic --sizes 1366x768 --views hq,foreman,map --session 189
+    .venv/bin/python tools/screen.py --base http://127.0.0.1:8201/    # worktree 미리보기 화면
+
+- 테마 × 창 크기 × 화면마다 `window.office.layoutAudit()`(사람이 가구 · 소품 · 이름표에 가려지나) · `propAudit()`(소품 그림) ·
+  `audit()`(고정 안 된 것)을 돌리고 PNG를 찍는다. 결과는 `<out>/report.json`, 사진은 `<out>/<테마>_<크기>_<화면>.png`
+- 브라우저: playwright가 받아 둔 `~/.cache/ms-playwright/chromium_headless_shell-*/…/chrome-headless-shell`(설치 없음)
+- API 토큰은 `.env.bridge`에서 읽어 그 페이지의 localStorage에만 넣는다 — 출력 · 파일에 남기지 않는다
+- 문제가 하나라도 있으면 종료 코드 1(CLAUDE.md: 테마 자리 · 가구를 바꾸면 세 테마 모두 0건)
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import base64
+import glob
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+
+import websockets
+
+REPO = Path(__file__).resolve().parent.parent
+THEMES = ("magic", "office", "site")
+
+
+def chrome_path() -> str:
+    pats = ["~/.cache/ms-playwright/chromium_headless_shell-*/*/chrome-headless-shell",
+            "~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome"]
+    for p in pats:
+        hits = sorted(glob.glob(os.path.expanduser(p)))
+        if hits:
+            return hits[-1]
+    for name in ("chromium", "chromium-browser", "google-chrome"):
+        if shutil.which(name):
+            return shutil.which(name)  # type: ignore[return-value]
+    sys.exit("헤드리스 크로미움을 찾지 못했습니다 — ~/.cache/ms-playwright 아래를 확인해 주세요")
+
+
+def api_token() -> str:
+    for ln in (REPO / ".env.bridge").read_text(encoding="utf-8").splitlines():
+        if ln.startswith("FOREMAN_API_TOKEN="):
+            return ln.split("=", 1)[1].strip().strip('"').strip("'")
+    sys.exit(".env.bridge에 FOREMAN_API_TOKEN이 없습니다")
+
+
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+class Page:
+    def __init__(self, ws: websockets.ClientConnection) -> None:
+        self.ws, self.n, self.errors = ws, 0, []
+
+    async def call(self, method: str, **params: object) -> dict:
+        self.n += 1
+        my = self.n
+        await self.ws.send(json.dumps({"id": my, "method": method, "params": params}))
+        while True:
+            m = json.loads(await self.ws.recv())
+            if m.get("method") == "Runtime.exceptionThrown":         # 페이지의 잡히지 않은 오류도 모은다
+                d = m["params"]["exceptionDetails"]
+                self.errors.append((d.get("exception") or {}).get("description", d.get("text", ""))[:300])
+            if m.get("id") == my:
+                if "error" in m:
+                    raise RuntimeError(m["error"])
+                return m.get("result", {})
+
+    async def ev(self, expr: str) -> object:
+        r = await self.call("Runtime.evaluate", expression=expr, awaitPromise=True, returnByValue=True)
+        if r.get("exceptionDetails"):
+            raise RuntimeError(r["exceptionDetails"].get("exception", {}).get("description") or r["exceptionDetails"])
+        return r["result"].get("value")
+
+    async def wait(self, expr: str, t: float = 20) -> bool:
+        end = time.time() + t
+        while time.time() < end:
+            try:
+                if await self.ev(expr):
+                    return True
+            except RuntimeError:
+                pass
+            await asyncio.sleep(0.3)
+        return False
+
+    async def shot(self, path: Path) -> None:
+        r = await self.call("Page.captureScreenshot", format="png")
+        path.write_bytes(base64.b64decode(r["data"]))
+
+
+VIEW_JS = """(()=>{const v=%s; if(v==='hq'||v==='map'){window.office.go(v); return v}
+  const b=[...document.querySelectorAll('[data-room]')].find(b=>b.dataset.room===v||b.textContent.includes(v));
+  if(b){b.click(); return b.dataset.room} window.office.go(v); return v})()"""
+
+
+async def run(a: argparse.Namespace) -> int:
+    out = Path(a.out or Path.home() / ".foreman" / "screens" / datetime.now().strftime("%Y%m%d_%H%M%S"))
+    out.mkdir(parents=True, exist_ok=True)
+    port = free_port()
+    prof = tempfile.mkdtemp(prefix="fm-screen-")
+    proc = subprocess.Popen([chrome_path(), f"--remote-debugging-port={port}", "--no-sandbox", "--hide-scrollbars",
+                             f"--user-data-dir={prof}", "--window-size=1920,1080", "about:blank"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    report: dict = {"base": a.base, "made": datetime.now().isoformat(timespec="seconds"), "runs": []}
+    bad = 0
+    try:
+        tabs = None
+        for _ in range(60):
+            try:
+                tabs = json.load(urllib.request.urlopen(f"http://127.0.0.1:{port}/json"))
+                break
+            except OSError:
+                await asyncio.sleep(0.2)
+        if not tabs:
+            sys.exit("헤드리스 크로미움이 뜨지 않았습니다")
+        wsurl = next(t for t in tabs if t["type"] == "page")["webSocketDebuggerUrl"]
+        async with websockets.connect(wsurl, max_size=80_000_000) as ws:
+            p = Page(ws)
+            await p.call("Page.enable")
+            await p.call("Runtime.enable")
+            await p.call("Page.navigate", url=a.base)
+            await p.wait("document.readyState==='complete'")
+            await p.ev(f"localStorage.setItem('foremanToken', {json.dumps(api_token())}); 1")
+            for th in a.themes.split(","):
+                for size in a.sizes.split(","):
+                    w, h = (int(x) for x in size.lower().split("x"))
+                    await p.call("Emulation.setDeviceMetricsOverride", width=w, height=h, deviceScaleFactor=1, mobile=False)
+                    await p.call("Page.navigate", url=f"{a.base.rstrip('/')}/office?theme={th}")
+                    if not await p.wait("!!(window.office && window.office.layoutAudit)"):
+                        report["runs"].append({"theme": th, "size": size, "error": "화면이 뜨지 않았습니다"})
+                        bad += 1
+                        continue
+                    await asyncio.sleep(a.wait)
+                    la = await p.ev("window.office.layoutAudit()")
+                    pa = await p.ev("window.office.propAudit()")
+                    au = await p.ev("window.office.audit().filter(x=>!x.fixed)")
+                    base = {"theme": th, "size": size, "layoutAudit": la, "propAudit_issues": (pa or {}).get("issues", []),
+                            "audit_unfixed": au}
+                    n_bad = len(la or []) + len(base["propAudit_issues"])
+                    bad += n_bad
+                    shots = []
+                    for view in a.views.split(","):
+                        got = await p.ev(VIEW_JS % json.dumps(view))
+                        await asyncio.sleep(a.wait)
+                        if a.session:
+                            await p.ev(f"window.office.openSession({int(a.session)}); 1")
+                            await asyncio.sleep(a.wait)
+                        if a.eval:
+                            base.setdefault("eval", {})[view] = await p.ev(a.eval)
+                        f = out / f"{th}_{size}_{view}.png"
+                        await p.shot(f)
+                        shots.append({"view": view, "went": got, "png": str(f)})
+                    base["shots"] = shots
+                    base["page_errors"] = p.errors[:]
+                    bad += len(p.errors)
+                    p.errors.clear()
+                    report["runs"].append(base)
+                    print(f"{th} {size}: layoutAudit {len(la or [])} · propAudit {len(base['propAudit_issues'])} · "
+                          f"audit(고정 안 됨) {len(au or [])} · 페이지 오류 {len(base['page_errors'])} · 사진 {len(shots)}")
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        shutil.rmtree(prof, ignore_errors=True)
+    (out / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"결과 {out}/report.json — 문제 {bad}건")
+    return 1 if bad else 0
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="FOREMAN 픽셀 화면 점검 · 스크린샷(헤드리스 크로미움)")
+    ap.add_argument("--base", default="http://127.0.0.1:8000/")
+    ap.add_argument("--themes", default=",".join(THEMES))
+    ap.add_argument("--sizes", default="1920x1080,1366x768,1024x700")
+    ap.add_argument("--views", default="foreman", help="hq · map · 현장 이름(foreman · runshoes …)을 쉼표로")
+    ap.add_argument("--session", help="이 세션 패널을 연 채 찍는다(세션 id)")
+    ap.add_argument("--eval", help="화면마다 돌려 결과를 report.json에 남길 JS 식")
+    ap.add_argument("--wait", type=float, default=2.0, help="화면을 바꾼 뒤 기다릴 초(캐릭터가 걸어 들어갈 시간)")
+    ap.add_argument("--out")
+    sys.exit(asyncio.run(run(ap.parse_args())))
+
+
+if __name__ == "__main__":
+    main()
