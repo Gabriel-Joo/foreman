@@ -28,9 +28,22 @@ function matchTarget(pattern, target) {
   return !!rx && rx.test(target || '');
 }
 
+// 턴이 끝나도 도는 일 — 서브에이전트 + 백그라운드 Bash · Monitor(11-06)
+export function bgCount(s) {
+  return s ? (s.subagents_running || 0) + ((s.background || []).length) : 0;
+}
+
+// 화면에 그릴 상태 — 서버 상태 값은 늘리지 않고(README 3.11), IDLE인데 자식 일이 돌면 WAITING(기다림)으로 그린다.
+// 11-06: 백그라운드 판정이 도는데 캐릭터가 엎드려 자고 있었다
+export function viewState(s) {
+  return s && s.state === 'IDLE' && bgCount(s) > 0 ? 'WAITING' : s && s.state;
+}
+
+const WAITING_DEFAULT = { anim: 'wait', go: 'desk' };     // 테마에 WAITING이 없으면 — 자는 모습(IDLE 변형)으로 떨어지지 않게
+
 export function resolveAction(theme, { state, tool, target, flags } = {}) {
   const states = theme.states || {};
-  const base = states[state] || states.IDLE || {};
+  const base = states[state] || (state === 'WAITING' ? WAITING_DEFAULT : null) || states.IDLE || {};
   const out = { ...base, state: state || 'IDLE', source: 'state' };
   if (state === 'ACTIVE' && tool) {
     const rule = (theme.tools || []).find((r) => matchTool(r.match, tool) && matchTarget(r.target, target));

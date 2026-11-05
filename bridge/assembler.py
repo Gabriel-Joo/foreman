@@ -607,11 +607,14 @@ class Assembler:
                 st.title = title
         elif t == "queue-operation":
             op = d.get("operation")
+            if op == "enqueue":
+                self._bg_end(b, st, _text_of(d.get("content")) or str(d.get("content") or ""), ts)
             self._event(b, st, uuid=uid, ts=ts, type="queued", turn_id=st.open_turn.id if st.open_turn else None,
                         status="waiting" if op == "enqueue" else None,
                         payload={"op": op, "content": self.mask.deep(_text_of(d.get("content")) or d.get("content"), QUEUE_TEXT)})
         elif t == "attachment" and (d.get("attachment") or {}).get("type") == "queued_command":
             a = d["attachment"]
+            self._bg_end(b, st, _text_of(a.get("prompt")) or str(a.get("prompt") or ""), ts)
             self._event(b, st, uuid=uid, ts=ts, type="queued", turn_id=st.open_turn.id if st.open_turn else None,
                         parent_uuid=par, payload={"op": "delivered", "mode": a.get("commandMode"),
                                                   "prompt": self.mask.deep(_text_of(a.get("prompt")) or a.get("prompt"), QUEUE_TEXT)})
@@ -641,6 +644,16 @@ class Assembler:
                 self._event(b, st, uuid=uid if i == 0 else _uuid5(uid, i), ts=ts, type="tool_result", turn_id=tid,
                             parent_uuid=par, tool_use_id=tuid, tool=st.tool_names.get(tuid or ""),
                             status="error" if err else "done", payload=pl)
+                # 백그라운드 Bash(backgroundTaskId) · Monitor(taskId) — 턴이 끝나도 돈다. 끝은 <task-notification>(_bg_end).
+                # 화면이 "IDLE인데 일이 돈다"를 보이려고 남긴다(11-06 — Sonnet 판정이 도는데 캐릭터가 자고 있었다)
+                bg = isinstance(tur, dict) and len(results) == 1 and (
+                    tur.get("backgroundTaskId") or (st.tool_names.get(tuid or "") == "Monitor" and tur.get("taskId")))
+                if bg:
+                    tool = st.tool_names.get(tuid or "") or "Bash"
+                    desc = (st.agent_inputs.get(tuid or "") or {}).get("description")
+                    self._event(b, st, uuid=_uuid5(st.id, bg, "bg_start"), ts=ts, type="bg_start", turn_id=tid,
+                                tool_use_id=tuid, tool=tool, target=str(bg), status="working",
+                                payload={"description": self.mask.text(str(desc))[:200] if desc else None})
                 # Agent 결과 — 서브에이전트가 떴다(async_launched). 여기서 행을 만들고 이 턴을 spawn_turn으로
                 if isinstance(tur, dict) and tur.get("agentId") and len(results) == 1:
                     inp = st.agent_inputs.get(tuid or "", {})
@@ -736,8 +749,25 @@ class Assembler:
             return "agent_message" if AGENT_MSG in s[:120] else "meta"
         return "human"
 
+    def _bg_end(self, b: Batch, st: SessionState, s: str, ts: datetime) -> None:
+        """백그라운드 작업이 끝났다 — <task-notification>의 status. 같은 알림이 큐(enqueue) · 첨부(queued_command) ·
+        사람 줄 세 곳 중 어디로든 올 수 있어 uuid를 작업 id로 정해 한 번만 남긴다. Monitor의 중간 이벤트는 status가 없다."""
+        if "<task-notification" not in (s or "")[:300]:
+            return
+        tags = {k: v.strip() for k, v in TAG_RE.findall(s)}
+        task, status = tags.get("task-id"), tags.get("status")
+        if not task or not status or status == "running":
+            return
+        u = _uuid5(st.id, task, "bg_end")
+        # 같은 묶음에 같은 uuid가 둘이면 여러 행 INSERT … ON DUPLICATE가 MySQL 1869로 묶음째 실패한다(11-06 시험) — 묶음 안에서 한 번만
+        if any(e["uuid"] == u for e in b.events):
+            return
+        self._event(b, st, uuid=u, ts=ts, type="bg_end", target=task,
+                    tool_use_id=tags.get("tool-use-id"), status="done", payload={"status": status[:20]})
+
     async def _notification(self, c: AsyncConnection, st: SessionState, b: Batch, s: str, uid: str, ts: datetime,
                             tid: int) -> None:
+        self._bg_end(b, st, s, ts)
         tags = {k: v.strip() for k, v in TAG_RE.findall(s)}
         aid = tags.get("task-id")
         if not aid or "tool-use-id" not in tags:
@@ -786,7 +816,8 @@ class Assembler:
                 name, inp, tuid = blk.get("name") or "?", blk.get("input") or {}, blk.get("id")
                 if tuid:
                     st.remember(st.tool_names, tuid, name)
-                    if name == "Agent":
+                    if name == "Agent" or name == "Monitor" or (name == "Bash" and inp.get("run_in_background")):
+                        # Agent는 서브에이전트 행에, 백그라운드 Bash · Monitor는 bg_start 이벤트에 설명을 단다
                         st.remember(st.agent_inputs, tuid, {k2: inp.get(k2) for k2 in
                                                             ("subagent_type", "run_in_background", "description")}, 512)
                 self._event(b, st, uuid=u, ts=ts, type="tool_use", turn_id=tid, parent_uuid=par, message_id=mid,

@@ -86,6 +86,7 @@
   "states": {
     "ACTIVE":    { "anim": "walk", "go": "desk" },
     "IDLE":      { "anim": "idle", "go": "lounge", "variants": ["phone", "coffee", "read"] },
+    "WAITING":   { "anim": "wait", "go": "desk" },
     "SUSPENDED": { "anim": "still", "go": "desk", "fx": "stone" },
     "DORMANT":   { "anim": "stand", "go": "desk", "fx": "faded", "alpha": 0.35 }
   },

@@ -45,6 +45,27 @@ def _cc_name(sessions_dir: Any, pid: int) -> str | None:
         return None
 
 
+def _started(sessions_dir: Any, pid: int) -> datetime | None:
+    """sessions/<pid>.json의 startedAt(ms) — 이 CC 프로세스가 뜬 시각(UTC, tz 없음). 그 전에 띄운 백그라운드는 이미 죽었다."""
+    import json
+    from pathlib import Path
+    try:
+        ms = json.loads(Path(sessions_dir, f"{pid}.json").read_text(encoding="utf-8")).get("startedAt")
+    except (OSError, ValueError):
+        return None
+    return datetime.fromtimestamp(ms / 1000, UTC).replace(tzinfo=None) if isinstance(ms, (int, float)) else None
+
+
+def background_running(rows: list[tuple[Any, ...]], started: datetime | None) -> list[dict[str, Any]]:
+    """bg_start(끝 알림 없는 것) 중 지금 프로세스가 뜬 뒤에 시작한 것만 — [{task, tool, description, since}]."""
+    out = []
+    for task, tool, desc, ts in rows:
+        if started is not None and ts is not None and ts < started:
+            continue
+        out.append({"task": task, "tool": tool, "description": desc, "since": _iso(ts)})
+    return out
+
+
 def invalidate() -> None:
     """세션 상태가 바뀌었다 — 다음 스냅샷은 새로 만든다."""
     _cache["data"] = None
@@ -105,7 +126,17 @@ async def dashboard(request: Request) -> dict[str, Any]:
                 f"SELECT session_id, status, description FROM subagent_run WHERE session_id IN {in_ids} "
                 f"AND status = 'running'"))).all():
             subs.setdefault(sid, []).append(desc)
-        toks = {r[0]: r[1:] for r in (await c.execute(text(
+        # 백그라운드 Bash · Monitor — 시작(bg_start)에 끝(bg_end)이 아직 없는 것. 살아 있는 세션만(11-06)
+        live_ids = [r[0] for r in visible if r[1] in live] or [0]
+        bgs: dict[int, list[tuple[Any, ...]]] = {}
+        for sid_, task, tool, desc, ts in (await c.execute(text(
+                "SELECT s.session_id, s.target, s.tool, JSON_UNQUOTE(JSON_EXTRACT(s.payload, '$.description')), s.ts "
+                "FROM event s WHERE s.session_id IN (" + ",".join(str(int(i)) for i in live_ids) + ") "
+                "AND s.type = 'bg_start' AND s.ts > :cut AND NOT EXISTS (SELECT 1 FROM event e WHERE "
+                "e.session_id = s.session_id AND e.type = 'bg_end' AND e.target = s.target) ORDER BY s.ts"),
+                {"cut": datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24)})).all():
+            bgs.setdefault(sid_, []).append((task, tool, None if desc in (None, "null") else desc, ts))
+        toks ={r[0]: r[1:] for r in (await c.execute(text(
             f"SELECT t.session_id, SUM(m.token_input), SUM(m.token_output), SUM(m.token_cache_read), "
             f"SUM(m.token_cache_creation), SUM(IF(m.created_at >= :today, m.token_output, 0)), "
             f"SUM(IF(m.created_at >= :today, m.token_input + m.token_cache_read + m.token_cache_creation, 0)) "
@@ -161,6 +192,8 @@ async def dashboard(request: Request) -> dict[str, Any]:
                          "subagent": act[3] is not None} if act else None,
             "subagents_running": len(subs.get(sid, [])),
             "subagent_descs": [d for d in subs.get(sid, []) if d][:10],
+            # 턴이 끝나도 도는 일 — 백그라운드 Bash · Monitor. 상태 값은 늘리지 않고(README 3.11) 화면이 "기다림"으로 그린다
+            "background": background_running(bgs.get(sid, []), _started(s.sessions_dir, ls.pid) if ls else None)[:10],
             "tokens": {"input": int(tk[0] or 0) + int(tk[2] or 0) + int(tk[3] or 0), "output": int(tk[1] or 0),
                        "today_output": int(tk[4] or 0), "today_input": int(tk[5] or 0),
                        "subagent_input": int(st_[0] or 0), "subagent_output": int(st_[1] or 0),
