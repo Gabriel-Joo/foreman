@@ -10,6 +10,8 @@
   IDLE       살아 있고 쉬는 중
 """
 
+import asyncio
+import os
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -193,3 +195,53 @@ async def conversation(session_id: int, request: Request, limit: int = 15) -> di
          "end_reason": r[5], "duration_ms": r[6], "prompt": r[7], "reply": (r[8] or "")[:20000],
          "mid": [x[:3000] for x in mid.get(r[0], [])[:-1][-12:]],
          "tools": r[9], "subagents": r[10]} for r in reversed(turns)]}
+
+
+# ── 11-05 활동 줄 · 도구 본문 — 터미널처럼 "무엇을 읽고 무엇이 나왔나". 본문은 DB에 없다 — 누를 때만 트랜스크립트에서 ──
+@router.get("/sessions/{session_id}/activity")
+async def activity(session_id: int, request: Request, limit: int = 40) -> dict[str, Any]:
+    """최근 도구 호출(메인 + 서브에이전트) — 화면을 연 뒤가 아니라 DB에서. 결과 상태는 같은 tool_use_id의 tool_result."""
+    limit = max(1, min(limit, 200))
+    async with request.app.state.store.engine.connect() as c:
+        rows = (await c.execute(text(
+            "SELECT e.id, e.ts, e.tool, e.target, e.subagent_id, e.tool_use_id, "
+            "(SELECT r.status FROM event r WHERE r.session_id = e.session_id AND r.type = 'tool_result' "
+            " AND r.tool_use_id = e.tool_use_id LIMIT 1) "
+            "FROM event e WHERE e.session_id = :s AND e.type = 'tool_use' ORDER BY e.id DESC LIMIT :n"),
+            {"s": session_id, "n": limit})).all()
+    return {"session_id": session_id, "items": [
+        {"id": r[0], "ts": _iso(r[1]), "tool": r[2], "target": (r[3] or "")[:200], "subagent": bool(r[4]),
+         "has_body": bool(r[5]), "status": r[6]} for r in reversed(rows)]}
+
+
+@router.get("/events/{event_id}/detail")
+async def event_detail(event_id: int, request: Request) -> dict[str, Any]:
+    """도구 호출 하나의 입력 전체 · 결과 본문. 비밀값은 가린다(Masker + URL 자격증명)."""
+    from bridge.mask import Masker
+    from bridge.terminal import mask_output
+    from bridge.transcript.lookup import clip_input, clip_text, find_tool_call
+    async with request.app.state.store.engine.connect() as c:
+        r = (await c.execute(text(
+            "SELECT e.type, e.tool_use_id, e.tool, e.subagent_id, "
+            " (SELECT tf.path FROM character_session cs JOIN transcript_file tf ON tf.id = cs.transcript_file_id "
+            "  WHERE cs.id = e.session_id), "
+            " (SELECT tf.path FROM subagent_run sr JOIN transcript_file tf ON tf.agent_id = sr.agent_id "
+            "  WHERE sr.id = e.subagent_id LIMIT 1) "
+            "FROM event e WHERE e.id = :i"), {"i": event_id})).first()
+    if r is None:
+        raise HTTPException(404, "이벤트 없음")
+    etype, tuid, tool, sub_id, main_path, sub_path = r
+    if etype not in ("tool_use", "tool_result") or not tuid:
+        raise HTTPException(400, "도구 호출이 아니다")
+    path = sub_path if sub_id else main_path
+    if not path or not os.path.exists(path):
+        raise HTTPException(410, "트랜스크립트 파일이 없다(지워졌거나 옮겨졌다)")
+    t0 = time.monotonic()
+    found = await asyncio.to_thread(find_tool_call, path, tuid)
+    m = Masker()
+    result, n = clip_text(found["result"])
+    return {"event_id": event_id, "tool": found["name"] or tool, "tool_use_id": tuid,
+            "input": m.deep(clip_input(found["input"])) if found["input"] is not None else None,
+            "result": mask_output(m, result) if result is not None else None, "result_chars": n,
+            "is_error": found["is_error"], "extra": m.deep(found["extra"]), "other_blocks": found["other_blocks"],
+            "found": found["found"], "file": os.path.basename(path), "ms": round((time.monotonic() - t0) * 1000)}

@@ -28,6 +28,13 @@ export function ago(ts) {
   if (s < 86400) return `${Math.floor(s / 3600)}시간 전`;
   return `${Math.floor(s / 86400)}일 전`;
 }
+// 대화의 시각은 "n분 전"이 아니라 시계 — 10초마다 글이 바뀌면 대화를 다시 그려야 해서 읽던 자리 · 고른 글자가 날아간다
+export function clock(ts) {
+  if (!ts) return '';
+  const d = new Date(ts), now = new Date();
+  const hm = d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toDateString() === now.toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
 function since(ts) {
   if (!ts) return '';
   const s = Math.max(0, Math.round((Date.now() - Date.parse(ts)) / 1000));
@@ -159,7 +166,7 @@ export function sessionKv(s) {
 export function convoHtml(c) {
   if (!c) return '';
   return (c.error ? `<p class="bad small">${esc(c.error)}</p>` : '') + (c.turns || []).map((x) => `
-      <div class="msg in o-${esc(x.origin)}"><div class="who small muted">${esc(ORIGIN_LABEL[x.origin] || x.origin)} · ${ago(x.started_at)}</div>${longText(`${x.id}i`, promptText(x.prompt))}</div>
+      <div class="msg in o-${esc(x.origin)}"><div class="who small muted">${esc(ORIGIN_LABEL[x.origin] || x.origin)} · ${clock(x.started_at)}</div>${longText(`${x.id}i`, promptText(x.prompt))}</div>
       ${x.reply ? `<div class="msg out"><div class="who small muted">CC${x.end_reason ? ' · ' + esc(END_LABEL[x.end_reason] || x.end_reason) : ' · 진행 중'}${x.tools ? ` · 도구 ${x.tools}` : ''}${x.subagents ? ` · 서브 ${x.subagents}` : ''}</div>${
         x.mid && x.mid.length ? `<details class="mid"${OPEN_MSG.has(`${x.id}m`) ? ' open' : ''} data-mid="${x.id}m"><summary class="small muted">중간 글 ${x.mid.length}</summary>${x.mid.map((m, i) => `<div class="mid-one">${longText(`${x.id}m${i}`, m)}</div>`).join('')}</details>` : ''}${longText(`${x.id}o`, x.reply)}</div>`
         : (x.end_reason ? `<div class="msg out small muted">${esc(END_LABEL[x.end_reason] || x.end_reason)}${x.tools ? ` · 도구 ${x.tools}` : ''}</div>` : '')}`).join('') + (c.loading ? '<p class="small muted">불러오는 중…</p>' : '');
@@ -197,8 +204,50 @@ export function mountApprovalHistory(det, head, body, store) {
   });
 }
 
+// 활동 줄 — 도구 줄을 누르면 그 호출의 입력 전체 · 결과 본문을 트랜스크립트에서 읽어 바로 아래 펼친다(11-05).
+// 본문은 DB에 없다. 받은 것은 이 탭에만 둔다(FEED_DETAIL), 펼친 줄은 다시 그려도 펼친 채로(FEED_OPEN)
+export const FEED_DETAIL = new Map();     // eid → {loading} | {error} | 응답
+export const FEED_OPEN = new Set();
 export function feedHtml(s) {
-  return s.feed.slice().reverse().map((f) => `<div class="f f-${f.kind}"><span class="muted">${new Date(f.ts).toLocaleTimeString()}</span> ${esc(f.text)}</div>`).join('') || '<p class="small muted">이 화면을 연 뒤의 활동이 여기에 쌓인다</p>';
+  return s.feed.slice().reverse().map((f) => {
+    const open = f.eid && FEED_OPEN.has(f.eid);
+    return `<div class="f f-${f.kind}${f.eid ? ' f-click' : ''}${open ? ' f-open' : ''}"${f.eid ? ` data-eid="${f.eid}" title="눌러서 입력 · 결과 보기"` : ''}><span class="muted">${new Date(f.ts).toLocaleTimeString()}</span> ${f.eid ? `<span class="f-tw">${open ? '▾' : '▸'}</span>` : ''}${esc(f.text)}</div>${open ? toolDetailHtml(FEED_DETAIL.get(f.eid)) : ''}`;
+  }).join('') || '<p class="small muted">활동이 아직 없다</p>';
+}
+
+function inputHtml(tool, inp) {
+  if (inp == null) return '<div class="small muted">입력을 트랜스크립트에서 찾지 못했다</div>';
+  const pre = (t, cls = '') => `<pre class="fd-pre${cls}">${esc(t)}</pre>`;
+  const kv = (k) => (inp[k] != null && inp[k] !== '' ? `<div class="small"><span class="muted">${esc(k)}</span> ${esc(String(inp[k]))}</div>` : '');
+  switch (tool) {
+    case 'Bash': return (inp.description ? `<div class="small muted">${esc(inp.description)}</div>` : '') + pre('$ ' + (inp.command || ''));
+    case 'Read': return kv('file_path') + kv('offset') + kv('limit') + kv('pages');
+    case 'Write': return kv('file_path') + pre(inp.content || '');
+    case 'Edit': return kv('file_path') + (inp.replace_all ? '<div class="small muted">replace_all</div>' : '') +
+      pre(String(inp.old_string || '').split('\n').map((l) => '- ' + l).join('\n'), ' fd-del') +
+      pre(String(inp.new_string || '').split('\n').map((l) => '+ ' + l).join('\n'), ' fd-add');
+    case 'Grep': case 'Glob': return kv('pattern') + kv('path') + kv('glob') + kv('output_mode');
+    case 'WebFetch': return kv('url') + (inp.prompt ? pre(inp.prompt) : '');
+    case 'WebSearch': return kv('query');
+    case 'Agent': case 'Task': return kv('description') + kv('subagent_type') + (inp.prompt ? pre(inp.prompt) : '');
+    default: return pre(JSON.stringify(inp, null, 2));
+  }
+}
+export function toolDetailHtml(d) {
+  if (!d || d.loading) return '<div class="fdet small muted">트랜스크립트에서 읽는 중…</div>';
+  if (d.error) return `<div class="fdet small bad">못 읽음 — ${esc(d.error)}</div>`;
+  const ex = d.extra || {};
+  const res = d.result == null
+    ? `<div class="small muted">${d.found && d.found.result ? '결과 글 없음' : '결과가 아직 없다(도는 중이거나 기록 전)'}</div>`
+    : `<pre class="fd-pre fd-out${d.is_error ? ' fd-err' : ''}">${esc(d.result || '(빈 출력)')}</pre>`;
+  return `<div class="fdet">
+    <div class="fd-h small"><b>${esc(d.tool || '')}</b> 입력</div>${inputHtml(d.tool, d.input)}
+    <div class="fd-h small"><b>결과</b>${d.is_error ? ' <span class="bad">오류</span>' : ''}${d.result_chars ? ` <span class="muted">${d.result_chars.toLocaleString()}자</span>` : ''}${
+      ex.interrupted ? ' <span class="warn">중단됨</span>' : ''}${ex.backgroundTaskId ? ` <span class="muted">백그라운드 ${esc(ex.backgroundTaskId)}</span>` : ''}${
+      ex.file ? ` <span class="muted">${esc(ex.file.filePath || '')} ${ex.file.startLine || 1}~ (${ex.file.numLines || '?'}/${ex.file.totalLines || '?'}줄)</span>` : ''}${
+      d.other_blocks && d.other_blocks.length ? ` <span class="muted">+${esc(d.other_blocks.join(', '))}</span>` : ''}</div>
+    ${res}${ex.stderr ? `<div class="fd-h small bad">stderr</div><pre class="fd-pre fd-err">${esc(ex.stderr)}</pre>` : ''}
+    <div class="small muted">${esc(d.file || '')} · ${d.ms}ms · 비밀값은 가림</div></div>`;
 }
 
 // ── 8단계 파이프라인 — 프로젝트마다 인프라 캐릭터와 최근 체인(커밋 → Jenkins → Harbor → ArgoCD), 깨진 곳은 붉게 ──

@@ -285,7 +285,7 @@ export class Store {
       case 'tool_use':
         if (e.source !== 'transcript') return;
         s.activity = { tool: e.tool, target: e.target || '', ts: e.ts, subagent: !!e.subagent_id };
-        this.pushFeed(s, e.ts, 'tool', `${e.tool}${sub} ${e.target || ''}`);
+        this.pushFeed(s, e.ts, 'tool', `${e.tool}${sub} ${e.target || ''}`, e.id);
         break;
       case 'start':
         if (e.source === 'transcript' && e.target) {
@@ -326,8 +326,9 @@ export class Store {
     this.touch('grid', ...(this.state.selected === s.id ? ['panel'] : []));
   }
 
-  pushFeed(s, ts, kind, text) {
-    s.feed.push({ ts, kind, text: (text || '').slice(0, 300) });
+  pushFeed(s, ts, kind, text, eid = null) {
+    if (eid && s.feed.some((f) => f.eid === eid)) return;      // DB에서 먼저 받은 줄과 겹치지 않게
+    s.feed.push({ ts, kind, text: (text || '').slice(0, 300), eid });
     if (s.feed.length > FEED_MAX) s.feed.splice(0, s.feed.length - FEED_MAX);
   }
 
@@ -335,7 +336,29 @@ export class Store {
   select(id) {
     this.state.selected = id;
     this.touch('panel', 'grid');
-    if (id != null) this.loadConversation(id);
+    if (id != null) { this.loadConversation(id); this.loadActivity(id); }
+  }
+  // 최근 도구 호출을 DB에서(11-05) — 화면을 연 뒤의 것만 쌓이던 "최근 활동"을 처음부터 채운다. 실시간 줄(입력 · 응답 · 턴 끝)은 그 뒤에 이어 붙는다
+  async loadActivity(id) {
+    try {
+      const r = await fetch(`/api/sessions/${id}/activity?limit=${FEED_MAX}`, { headers: this.headers() });
+      if (!r.ok) return;
+      const j = await r.json();
+      const s = this.state.sessions.get(id);
+      if (!s) return;
+      const have = new Set(s.feed.filter((f) => f.eid).map((f) => f.eid));
+      const add = j.items.filter((x) => !have.has(x.id)).map((x) => ({
+        ts: x.ts, kind: x.status === 'error' ? 'error' : 'tool', eid: x.has_body ? x.id : null,
+        text: `${x.tool}${x.subagent ? ' ↳서브' : ''} ${x.target || ''}`.slice(0, 300) }));
+      s.feed = [...add, ...s.feed].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0)).slice(-FEED_MAX);
+      if (this.state.selected === id) this.touch('panel');
+    } catch { /* 화면 편의 — 못 받아도 실시간 줄은 쌓인다 */ }
+  }
+  async eventDetail(eid) {
+    const r = await fetch(`/api/events/${eid}/detail`, { headers: this.headers() });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+    return j;
   }
   convoLater(id) {
     clearTimeout(this.convoSoon.get(id));
