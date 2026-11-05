@@ -22,6 +22,8 @@ from sqlalchemy import bindparam, text
 from bridge.api.auth import require_api_token
 from bridge.inject import _status, _tmux_env
 from bridge.liveness import live_sessions
+from bridge.model_choice import family as model_family
+from bridge.model_choice import label as model_label
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
 
@@ -81,7 +83,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
     async with request.app.state.store.engine.connect() as c:
         rows = (await c.execute(text(
             "SELECT cs.id, cs.cc_session_id, cs.cwd, cs.attached_at, cs.detached_at, ch.name, p.name, "
-            "(SELECT MAX(e.ts) FROM event e WHERE e.session_id = cs.id) AS last_ts, cs.title, cs.role, cs.custom_title "
+            "(SELECT MAX(e.ts) FROM event e WHERE e.session_id = cs.id) AS last_ts, cs.title, cs.role, cs.custom_title, cs.model "
             "FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
             # 셸 세션(7단계 터미널 패널, type='shell')은 캐릭터 카드가 아니다
             # 숨긴 세션(0018, 시험 등)은 카드 · 토큰 집계에서 뺀다 — 지우지는 않았다
@@ -111,12 +113,29 @@ async def dashboard(request: Request) -> dict[str, Any]:
         sub_toks = {r[0]: r[1:] for r in (await c.execute(text(
             f"SELECT session_id, SUM(token_input + token_cache_read + token_cache_creation), SUM(token_output) "
             f"FROM subagent_run WHERE session_id IN {in_ids} GROUP BY session_id"))).all()}
+        # 모델별 토큰(11-05) — 서브에이전트 메시지도 띄운 턴에 붙어 있으므로 message만 묶으면 겹치지 않는다
+        by_model: dict[int, list[dict[str, Any]]] = {}
+        for sid_, model, tin, tout, din, dout in (await c.execute(text(
+                f"SELECT t.session_id, m.model, SUM(m.token_input + m.token_cache_read + m.token_cache_creation), "
+                f"SUM(m.token_output), SUM(IF(m.created_at >= :today, m.token_input + m.token_cache_read + m.token_cache_creation, 0)), "
+                f"SUM(IF(m.created_at >= :today, m.token_output, 0)) "
+                f"FROM message m JOIN turn t ON t.id = m.turn_id WHERE t.session_id IN {in_ids} AND m.model <> '<synthetic>' "
+                f"GROUP BY t.session_id, m.model ORDER BY SUM(m.token_output) DESC"), {"today": today})).all():
+            by_model.setdefault(sid_, []).append({
+                "model": model, "label": model_label(model), "family": model_family(model),
+                "input": int(tin or 0), "output": int(tout or 0), "today_input": int(din or 0), "today_output": int(dout or 0)})
+        # 지금 모델 — 본 대화(서브에이전트 아님)의 마지막 응답. 세션 안에서 /model로 바꾸면 따라간다
+        cur_model = {r[0]: r[1] for r in (await c.execute(text(
+            f"SELECT t.session_id, m.model FROM message m JOIN turn t ON t.id = m.turn_id JOIN ("
+            f"  SELECT t2.session_id, MAX(m2.created_at) mx FROM message m2 JOIN turn t2 ON t2.id = m2.turn_id "
+            f"  WHERE t2.session_id IN {in_ids} AND m2.subagent_id IS NULL AND m2.model <> '<synthetic>' GROUP BY t2.session_id"
+            f") x ON x.session_id = t.session_id AND x.mx = m.created_at WHERE m.subagent_id IS NULL"))).all()}
         appr = (await c.execute(text(
             "SELECT id, session_id, tool, target, rule, reason, created_at, summary FROM approval WHERE status = 'pending' "
             "ORDER BY id"))).all()
         appr_rows = appr
     projects: dict[str | None, list[dict[str, Any]]] = {}
-    for sid, cc, cwd, attached, detached, char, project, last_ts, title, role, custom in visible:
+    for sid, cc, cwd, attached, detached, char, project, last_ts, title, role, custom, model_req in visible:
         ls = live.get(cc)
         cc_status = _status(s.sessions_dir, ls.pid) if ls else None
         te = _tmux_env(ls.pid) if ls else None
@@ -141,7 +160,11 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "subagent_descs": [d for d in subs.get(sid, []) if d][:10],
             "tokens": {"input": int(tk[0] or 0) + int(tk[2] or 0) + int(tk[3] or 0), "output": int(tk[1] or 0),
                        "today_output": int(tk[4] or 0), "today_input": int(tk[5] or 0),
-                       "subagent_input": int(st_[0] or 0), "subagent_output": int(st_[1] or 0)},
+                       "subagent_input": int(st_[0] or 0), "subagent_output": int(st_[1] or 0),
+                       "by_model": by_model.get(sid, [])},
+            # 모델 — model: 지금 쓰는 것(마지막 응답), model_req: 띄울 때 고른 것(입양한 세션 · CC 설정이면 null)
+            "model": cur_model.get(sid), "model_label": model_label(cur_model.get(sid)),
+            "model_family": model_family(cur_model.get(sid)), "model_req": model_req,
             "last_ts": _iso(last_ts), "attached_at": _iso(attached), "detached_at": _iso(detached),
         })
     order = {"ACTIVE": 0, "SUSPENDED": 1, "IDLE": 2, "DORMANT": 3}

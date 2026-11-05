@@ -1,0 +1,16 @@
+# 세션 모델(11-05) — [+ 세션] · 포먼 계획 카드에서 고르는 모델과 역할별 기본값.
+# id는 `claude --model` 값(별칭 opus · sonnet · haiku는 CC가 그때의 최신으로 푼다). 바꾸면 브리지를 다시 띄운다.
+# 실제로 쓴 모델은 트랜스크립트의 메시지마다 남는다(DB message.model) — 화면은 그것을 보인다.
+
+choices = [
+  { id = "opus",   label = "Opus",   note = "가장 잘하지만 비쌉니다" },
+  { id = "sonnet", label = "Sonnet", note = "대부분의 일에 충분합니다" },
+  { id = "haiku",  label = "Haiku",  note = "가볍고 빠른 일" },
+]
+
+# 역할별 기본값. 없는 역할 · 빈 값이면 CC 설정을 따른다(--model 없이 띄운다)
+[defaults]
+coder     = "opus"
+inspector = "sonnet"
+cicd      = "sonnet"
+scribe    = "opus"

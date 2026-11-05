@@ -215,7 +215,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 패널 세션 목록의 "종료된 세션"에는 그대로 있다 — 거기서 골라 [새로 띄우기]. 멈춘 세션(SUSPENDED)은 그대로 보인다
       const shown = ss.filter((s) => !dormantGone(s, room.name));
       room.overflow = Math.max(0, shown.length - cap);
-      room.stats = { ACTIVE: 0, IDLE: 0, SUSPENDED: 0, DORMANT: 0, pending: 0, subs: 0, tin: 0, tout: 0 };
+      room.stats = { ACTIVE: 0, IDLE: 0, SUSPENDED: 0, DORMANT: 0, pending: 0, subs: 0, tin: 0, tout: 0, opus_out: 0, all_out: 0 };
       let slot = 0;
       ss.forEach((s) => {
         room.stats[s.state] = (room.stats[s.state] || 0) + 1;
@@ -223,6 +223,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         room.stats.subs += s.subagents_running || 0;
         room.stats.tin += (s.tokens && s.tokens.today_input) || 0;
         room.stats.tout += (s.tokens && s.tokens.today_output) || 0;
+        // 모델별은 서브에이전트까지 센다(위 tout은 본 대화만) — 비율은 모델별 합끼리 낸다
+        for (const m of (s.tokens && s.tokens.by_model) || []) {
+          room.stats.all_out += m.today_output || 0;
+          if (m.family === 'opus') room.stats.opus_out += m.today_output || 0;
+        }
         if (dormantGone(s, room.name)) return;
         const k = slot++;
         if (k >= cap) return;
@@ -1678,6 +1683,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 토큰 — 지금 어느 방이 쓰고 있나(사용자 요청 11-03). 오늘 누적 + 최근 10분 증가
     const hot = r.rate > 2e6 ? P.bad : r.rate > 3e5 ? P.warn : r.rate > 0 ? P.act : P.muted;
     lines.push([`토큰 오늘 출력 ${fmt(st.tout || 0)} · 입력 ${fmt(st.tin || 0)}`, P.muted, '11px']);
+    // 그중 Opus(11-05 사용자 요청 — 비싼 모델을 어디서 쓰나). 다른 모델이 하나도 없으면 줄이 같아 생략
+    if (st.opus_out && st.opus_out < st.all_out) lines.push([`Opus 출력 ${fmt(st.opus_out)} (서브에이전트 포함 ${Math.round(100 * st.opus_out / st.all_out)}%)`, P.muted, '11px']);
+    else if (st.opus_out) lines.push(['오늘은 전부 Opus', P.muted, '11px']);
     const span = Math.round((r.rateSpan || 0) / 60000);
     lines.push([r.rate ? `최근 ${Math.max(1, Math.min(10, span))}분 +${fmt(r.rate)} (출력 +${fmt(r.rateOut)})`
       : (r.rateSpan || 0) < 60000 ? '최근 사용량 재는 중…(화면을 연 뒤부터)' : `최근 ${Math.min(10, span)}분 사용 없음`,

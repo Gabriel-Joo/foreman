@@ -5,7 +5,7 @@
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const LABEL = { runshoes: '런슈즈', 'petmint-rag-chatbot': '펫퍼민트', foreman: '포먼' };
 const MODE = { new: '새로 시작', handoff: '인계 요약 넣고 시작', attach: '살아 있는 세션에 보내기', ask: '되묻기(시작하지 않음)' };
-const ROLE = { coder: '코더 — 고치기 · 만들기', inspector: '점검 — 살펴보기 · 원인 찾기', cicd: 'CI/CD — 빌드 · 배포' };
+import { ROLE_PICK as ROLE, bindRoleModel, modelOptions } from './modelpick.js';
 
 function headers(json) {
   let t = '';
@@ -70,6 +70,8 @@ function mount(dlg) {
         <input id="fmAttach" value="${esc(p.attach_session ?? '')}" placeholder="방식이 '살아 있는 세션에 보내기'일 때 세션 번호">
         <label class="small muted">역할</label>
         <select id="fmRole">${Object.entries(ROLE).map(([k, v]) => opt(k, p.role, v)).join('')}</select>
+        <label class="small muted" title="모델 — 역할마다 기본값이 있고 바꿀 수 있습니다(config/models.toml).">모델</label>
+        <select id="fmModel">${modelOptions(opts.models, p.model, p.role)}</select>
         <label class="small muted">이름</label>
         <input id="fmTitle" value="${esc(p.title || '')}">
       </div>
@@ -84,6 +86,7 @@ function mount(dlg) {
         <button type="button" id="fmAgain" class="ghost">다시 물어보기</button>
         <button type="button" id="fmGo"${p.mode === 'ask' ? ' disabled title="포먼이 되묻고 있습니다 — 답을 요청에 덧붙여 다시 물어보거나 방식을 바꿔 주세요."' : ''}>이대로 시작</button></div>`;
     $('fmPlan').hidden = false;
+    bindRoleModel($('fmRole'), $('fmModel'), opts.models);
     $('fmProj').onchange = () => { draw({ ...collect(), summary_id: null }); };
     $('fmMode').onchange = () => { $('fmGo').disabled = $('fmMode').value === 'ask'; };
     $('fmAgain').onclick = ask;
@@ -92,7 +95,7 @@ function mount(dlg) {
   function collect() {
     const v = (id) => $(id).value;
     return { ...disp.plan, project: v('fmProj'), mode: v('fmMode'), summary_id: v('fmSum') ? Number(v('fmSum')) : null,
-             attach_session: v('fmAttach') ? Number(v('fmAttach')) : null, role: v('fmRole'), title: v('fmTitle'),
+             attach_session: v('fmAttach') ? Number(v('fmAttach')) : null, role: v('fmRole'), model: v('fmModel') || null, title: v('fmTitle'),
              read_only: $('fmRO').checked, read_only_set: true, worktree: $('fmWT').checked, first_prompt: v('fmFirst') };
   }
   async function start() {
@@ -103,7 +106,7 @@ function mount(dlg) {
     try {
       const r = await api('POST', '/api/foreman/start', { dispatch_id: disp.dispatch_id, plan });
       const ok = r.mode === 'attach' ? (r.injected ? '보냈습니다.' : '보냈지만 제출을 확인하지 못했습니다.')
-        : `새 세션을 띄웠습니다${r.tmux ? `(tmux ${r.tmux})` : ''}.${r.worktree ? ` 따로 작업 ${r.worktree.branch}에서 합니다.` : ''}${r.injected ? ' 첫 글을 넣었습니다.' : ''}`;
+        : `새 세션을 띄웠습니다${r.tmux ? `(tmux ${r.tmux}${r.model ? ' · ' + r.model : ''})` : ''}.${r.worktree ? ` 따로 작업 ${r.worktree.branch}에서 합니다.` : ''}${r.injected ? ' 첫 글을 넣었습니다.' : ''}`;
       $('fmStartMsg').className = `small ${r.note ? 'warn' : 'ok'}`;
       $('fmStartMsg').textContent = ok + (r.note ? ' ' + r.note : '');
       if (r.session_id && window.office) setTimeout(() => { dlg.classList.remove('on'); window.office.openSession(r.session_id); }, r.note ? 4000 : 1200);

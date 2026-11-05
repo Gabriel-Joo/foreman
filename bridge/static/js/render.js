@@ -153,8 +153,20 @@ export function sessionKv(s) {
       <span>프로세스</span><span>${s.pid ? `${s.pid} (${esc(s.proc)}) · CC ${esc(s.cc_status || '?')}` : '없음'}${s.tmux_pane ? ' · tmux ' + esc(s.tmux_pane) : ''}</span>
       <span>지금</span><span>${s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target, 120))} (${ago(s.activity.ts)})` : (s.state === 'ACTIVE' ? '생각 중' : STATE_LABEL[s.state])}</span>
       <span>서브에이전트</span><span>${s.subagents_running ? `${s.subagents_running}개 — ${esc((s.subagent_descs || []).join(', '))}` : '없음'}</span>
+      <span>모델</span><span>${modelChip(s) || '<span class="muted">아직 응답 없음</span>'}${s.model_req ? ` <span class="muted">· 띄울 때 고른 것 ${esc(s.model_req)}</span>` : ''}</span>
       <span>토큰</span><span>입력(캐시 포함) ${tok(t.input)} · 출력 ${tok(t.output)} · 오늘 입력 ${tok(t.today_input)} · 출력 ${tok(t.today_output)}<br><span class="muted">서브에이전트 입력 ${tok(t.subagent_input)} · 출력 ${tok(t.subagent_output)}(추정)</span></span>
+      ${(t.by_model || []).length ? `<span>모델별</span><span>${byModelTable(t.by_model)}</span>` : ''}
     </div>`;
+}
+
+// 모델(11-05) — 지금 쓰는 모델(마지막 응답). Opus는 비싸서 색으로 구분한다
+export function modelChip(s) {
+  return s.model ? `<span class="mdl f-${esc(s.model_family)}" title="모델 — 이 세션이 마지막 응답에 쓴 모델입니다(${esc(s.model)}).">${esc(s.model_label)}</span>` : '';
+}
+// 세션의 모델별 토큰 — 서브에이전트 · CC 내부 호출(제목 붙이기 등)도 각자의 모델로 들어간다
+function byModelTable(rows) {
+  return `<table class="bym small">${rows.map((m) => `<tr><td><span class="mdl f-${esc(m.family)}">${esc(m.label)}</span></td>
+    <td class="n">출력 ${tok(m.output)}</td><td class="n muted">입력 ${tok(m.input)}</td><td class="n">오늘 출력 ${tok(m.today_output)}</td></tr>`).join('')}</table>`;
 }
 
 // 작업 중에 보낸 입력(대기열로 열린 턴에 끼어든 것, 11-05) — 내 글이면 내 말풍선으로, 서브에이전트 결과 · 완료 알림이면 곁가지로

@@ -171,6 +171,18 @@ body { --term-h:0px; }
 .ns .ns-opt input[type=radio] { width:auto; margin:0; padding:0; flex:none; }
 .ns .ns-opt.off { opacity:.55; cursor:default; }
 .ns-act { justify-content:flex-end; margin-top:6px; }
+/* 역할 · 모델 두 칸(11-05) — 좁으면 위아래로 */
+.ns-two { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.ns-two label { display:flex; flex-direction:column; gap:2px; }
+@media (max-width:480px) { .ns-two { grid-template-columns:1fr; } }
+/* 모델 표시 — 패널 머리줄 · [세션] 탭. Opus는 비싸서 눈에 띄게 */
+.mdl { display:inline-block; padding:0 5px; border-radius:4px; border:1px solid var(--line); font-size:11px; line-height:16px; }
+.mdl.f-opus { border-color:#c08a2a; color:#c08a2a; }
+.mdl.f-sonnet { border-color:#3f7fd0; color:#3f7fd0; }
+.mdl.f-haiku { border-color:#2e9e6a; color:#2e9e6a; }
+.bym { border-collapse:collapse; margin-top:2px; }
+.bym td { padding:0 8px 0 0; }
+.bym td.n { text-align:right; font-variant-numeric:tabular-nums; }
 .ns-act #nsMsg { margin-right:auto; }
 
 /* 11-05 툴팁 하나(tip.js) — 이름표 · 캐릭터 · 출하 라인 · 버튼 · 패널이 같은 모양 · 크기 · 위치 · 지연.

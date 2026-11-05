@@ -6,7 +6,7 @@
 // 위를 보고 있으면 그대로 두고 [새 답 ↓]만 띄운다.
 // 너비는 두 가지(좁게 = 픽셀 볼 때, 넓게 = 대화 읽을 때)를 오가고, 각각 끌어서 바꾼 값을 따로 기억한다.
 
-import { approvalCard, handleApprovalClick, sessionKv, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
+import { approvalCard, handleApprovalClick, sessionKv, modelChip, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
          sessionName, sessionSub, projectLabel, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN } from './render.js';
 import { stuckTurn } from './store.js';
 import { mountHandoff } from './handoff.js';
@@ -252,7 +252,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const t = s.tokens || {}, stuck = stuckTurn(s);
     const now = s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target || '', 60))}` : (s.state === 'ACTIVE' ? '생각 중' : '');
     put('pMeta', 'meta', `<span class="badge st-${s.state}">${esc(STATE_LABEL[s.state] || s.state)}</span>
-      <span class="muted">${esc(sessionSub(s))}</span>${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
+      <span class="muted">${esc(sessionSub(s))}</span>${s.model ? ' ' + modelChip(s) : ''}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
       · <span class="muted">오늘 출력 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn">⚠ 끝 신호 없는 턴</span>' : ''}`);
     $('pMeta').title = `${sessionSub(s)} · ${projectLabel(st, s.project)} · ${(s.cwd || '')}`;
     // 대화 — 바뀔 때만

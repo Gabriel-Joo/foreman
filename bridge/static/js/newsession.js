@@ -1,6 +1,8 @@
 // + 새 세션(11-05) — 화면에서 바로 tmux 세션을 만들고 claude를 띄운다(터미널에 가지 않고).
 // 어디서(프로젝트 또는 폴더 고르기 — 떠돌이) · 이름 · 시작(새로 / 인계 요약 넣고 — 넣을 글을 먼저 보여 준다) → [띄우기].
 // 띄우면 브리지가 세션 행을 바로 만들어 첫 입력 전에도 캐릭터가 선다. 폴더 신뢰 창이 뜨면 터미널에서 답하라고 알린다.
+// 역할 · 모델(11-05) — 역할마다 기본 모델이 있고(config/models.toml) 바꿀 수 있다.
+import { ROLE_PICK, bindRoleModel } from './modelpick.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const home = (p, h) => (h && p && p.startsWith(h) ? '~' + p.slice(h.length) : p);
@@ -19,6 +21,10 @@ export function mountNewSession(store, { onCreated }) {
     </div>
     <label class="small muted" for="nsTitle">이름(비우면 CC가 붙이는 제목)</label>
     <input id="nsTitle" maxlength="255" placeholder="예: 펫퍼민트 검색 품질 점검">
+    <div class="ns-two">
+      <label class="small muted">역할<select id="nsRole"></select></label>
+      <label class="small muted" title="모델 — 띄울 때 쓸 모델입니다. 역할마다 기본값이 있고 바꿀 수 있습니다(config/models.toml).">모델<select id="nsModel"></select></label>
+    </div>
     <div class="small muted">시작</div>
     <label class="small ns-opt"><input type="radio" name="nsMode" value="fresh" checked><span>새로 시작</span></label>
     <label class="small ns-opt" id="nsHandOpt"><input type="radio" name="nsMode" value="handoff"><span>인계 요약 넣고 시작</span><span id="nsNoSum" class="muted" hidden> — 넣을 요약이 없습니다</span></label>
@@ -32,7 +38,8 @@ export function mountNewSession(store, { onCreated }) {
   </div>`;
   document.body.appendChild(dlg);
   const $ = (id) => dlg.querySelector('#' + id);
-  let opts = null, cwd = null, busy = false;
+  let opts = null, cwd = null, busy = false, rm = null;
+  $('nsRole').innerHTML = Object.entries(ROLE_PICK).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
 
   const api = async (method, url, body) => {
     const r = await fetch(url, { method, headers: store.headers(!!body), body: body ? JSON.stringify(body) : undefined });
@@ -117,9 +124,10 @@ export function mountNewSession(store, { onCreated }) {
     busy = true; $('nsGo').disabled = true;
     msg(`새 세션을 띄우는 중입니다… (${home(cwd, opts.home)})`);
     try {
-      const r = await api('POST', '/api/spawn', { cwd, summary_id, title: $('nsTitle').value.trim() || null });
+      const r = await api('POST', '/api/spawn', { cwd, summary_id, title: $('nsTitle').value.trim() || null,
+        role: $('nsRole').value, model: $('nsModel').value || null });
       if (r.session_id) {
-        msg(`새 세션을 띄웠습니다(tmux ${r.tmux}).${summary_id ? (r.injected ? ' 인계를 넣었습니다.' : ' 인계는 넣지 못했습니다.') : ''}${r.note ? ' ' + r.note : ''}`, r.note ? 'warn' : 'ok');
+        msg(`새 세션을 띄웠습니다(tmux ${r.tmux}${r.model ? ' · ' + r.model : ''}).${summary_id ? (r.injected ? ' 인계를 넣었습니다.' : ' 인계는 넣지 못했습니다.') : ''}${r.note ? ' ' + r.note : ''}`, r.note ? 'warn' : 'ok');
         await store.loadSnapshot();
         if (onCreated) onCreated(r.session_id);
         setTimeout(close, r.note ? 4000 : 900);
@@ -138,6 +146,9 @@ export function mountNewSession(store, { onCreated }) {
     $('nsSum').value = '';
     dlg.classList.add('on');
     try { opts = await api('GET', '/api/spawn/options'); } catch (e) { msg(`불러오지 못했습니다 — ${e.message}`, 'bad'); return; }
+    $('nsRole').value = 'coder';
+    if (!rm) rm = bindRoleModel($('nsRole'), $('nsModel'), opts.models);
+    rm.reset();
     $('nsWhere').innerHTML = opts.projects.map((p) => `<option value="${esc(p.name)}">${esc(label(p.name))} — ${esc(home(p.repo, opts.home))}</option>`).join('')
       + '<option value="">프로젝트 없이 — 폴더 고르기(떠돌이)</option>';
     $('nsRecent').innerHTML = opts.recent_cwds.length ? '최근: ' + opts.recent_cwds.slice(0, 8).map((c) => `<button type="button" class="ghost small" data-c="${esc(c)}">${esc(home(c, opts.home))}</button>`).join(' ') : '';

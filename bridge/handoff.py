@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from bridge import worktree as wt
 from bridge.inject import Refused, _status, _tmux_env, deliver, resolve, tmux
 from bridge.liveness import _proc_stat, live_sessions
+from bridge.model_choice import Models
 
 log = logging.getLogger("foreman.handoff")
 
@@ -218,6 +219,7 @@ class HandoffManager:
         self._tasks: set[asyncio.Task[Any]] = set()
         self.schema: Any = None             # 스키마 잠금 — 합치기 · 버리기에서 푼다(main.py가 넣는다)
         self.previews: Any = None           # 미리보기(bridge/previews.py) — 끝내기 · 합치기 · 버리기에서 끈다
+        self.models = Models()              # 고를 수 있는 모델 · 역할 기본값(config/models.toml, 11-05)
 
     # ── 조회 ────────────────────────────────────────────
     async def session(self, sid: int) -> SessionRow | None:
@@ -517,20 +519,29 @@ class HandoffManager:
 
     # ── 새로 띄우기 ──────────────────────────────────────
     async def spawn(self, row: SessionRow, summary_id: int | None) -> dict[str, Any]:
-        """세션 패널의 [새로 띄우기] — 그 세션과 같은 폴더로."""
+        """세션 패널의 [새로 띄우기] — 그 세션과 같은 폴더 · 역할 · 모델로(모델은 띄울 때 고른 것, 없으면 역할 기본값)."""
+        async with self.engine.connect() as c:
+            r = (await c.execute(text("SELECT role, model FROM character_session WHERE id = :i"), {"i": row.id})).first()
+        role, model = (r[0], r[1]) if r else (None, None)
         # worktree 세션이면 원본 저장소 기준으로(같은 worktree에 둘이 붙지 않게 — 살아 있는 세션이 있으니 새 worktree가 된다)
-        return await self.spawn_new(wt.split(row.cwd or "")[0] if row.cwd else "", summary_id, None, src_session=row.id)
+        return await self.spawn_new(wt.split(row.cwd or "")[0] if row.cwd else "", summary_id, None, src_session=row.id,
+                                    role=role if role in ROLE_KO else None, model=model)
 
     async def spawn_new(self, cwd: str, summary_id: int | None, title: str | None,
                         src_session: int | None = None, first_prompt: str | None = None,
-                        read_only: bool = False, role: str | None = None, worktree: bool | None = None) -> dict[str, Any]:
+                        read_only: bool = False, role: str | None = None, worktree: bool | None = None,
+                        model: str | None = None) -> dict[str, Any]:
         """+ 버튼 · [새로 띄우기] — tmux 세션을 만들고 그 안에서 claude(resume 아님). 세션 행을 바로 만들어(이름도) 첫 입력 전에도
         화면에 캐릭터가 선다. 인계 요약을 고르면 입력 칸이 뜬 뒤 넣는다. 폴더 신뢰 창이 뜨면 사람이 터미널에서 답할 때까지
         뒤에서 기다렸다가(5분) 이어 한다.
-        worktree — None이면 그 프로젝트에 살아 있는 세션이 있을 때만 따로 작업 자리(git worktree)에서 띄운다(11-05). True · False는 강제."""
+        worktree — None이면 그 프로젝트에 살아 있는 세션이 있을 때만 따로 작업 자리(git worktree)에서 띄운다(11-05). True · False는 강제.
+        model — config/models.toml의 id. 없으면 역할 기본값, 그것도 없으면 CC 설정(--model 없이)."""
         cwd = os.path.realpath(os.path.expanduser(cwd or ""))
         if not cwd or not Path(cwd).is_dir():
             raise Refused(f"폴더가 없습니다: {cwd}")
+        if model and not self.models.valid(model):
+            raise Refused(f"고를 수 없는 모델입니다: {model}")
+        model = self.models.pick(model, role)
         if summary_id is not None:
             await self.injection(summary_id)              # 넣을 수 있는 요약인지 먼저(안 되면 띄우지도 않는다)
         project = self.project_of(cwd)[0] if self.project_of else None
@@ -551,11 +562,14 @@ class HandoffManager:
         await tmux(self.socket, "new-session", "-d", "-s", name, "-c", cwd)
         pane = (await tmux(self.socket, "display-message", "-p", "-t", name, "#{pane_id}")).strip()
         # 읽기 전용(포먼이 "살펴보기만"으로 정한 일 · 자동 기상) — CC plan 모드: 읽기 · 조사만, 고치기 전에 사람 승인
-        await tmux(self.socket, "send-keys", "-t", pane, "-l", self.claude_bin + (" --permission-mode plan" if read_only else ""))
+        await tmux(self.socket, "send-keys", "-t", pane, "-l", self.claude_bin + (f" --model {model}" if model else "")
+                   + (" --permission-mode plan" if read_only else ""))
         await tmux(self.socket, "send-keys", "-t", pane, "Enter")
         out: dict[str, Any] = {"tmux": name, "pane": pane, "cwd": cwd, "project": project, "cc_session_id": None,
-                               "pid": None, "session_id": None, "note": None, "injected": False, "worktree": wt_info}
-        extra = {"first_prompt": first_prompt, "role": role, "worktree_path": wt_info["path"] if wt_info else None}
+                               "pid": None, "session_id": None, "note": None, "injected": False, "worktree": wt_info,
+                               "model": model}
+        extra = {"first_prompt": first_prompt, "role": role, "worktree_path": wt_info["path"] if wt_info else None,
+                 "model": model}
         cc, pid, trust = await self._wait_ready(pane, 45)
         if trust:
             out["note"] = "처음 쓰는 폴더라 신뢰 확인 창이 떴습니다. 터미널(tmux " + name + ")에서 답하면 이어서 " + ("첫 글을 넣습니다." if (summary_id or first_prompt) else "화면에 뜹니다.")
@@ -594,7 +608,7 @@ class HandoffManager:
     async def _finish_spawn(self, name: str, pane: str, cwd: str, summary_id: int | None, title: str | None,
                             src_session: int | None, cc: str | None = None, pid: int | None = None,
                             wait: float = 0, first_prompt: str | None = None, role: str | None = None,
-                            worktree_path: str | None = None) -> dict[str, Any]:
+                            worktree_path: str | None = None, model: str | None = None) -> dict[str, Any]:
         if cc is None:                                    # 신뢰 창 — 사람이 답하기를 기다린다
             loop = asyncio.get_running_loop()
             end = loop.time() + wait
@@ -605,11 +619,11 @@ class HandoffManager:
                 return {"note": "신뢰 확인 창에 답이 없어 그만뒀습니다."}
         sid = await self._ensure_row(cc, cwd, title)
         ch = await self._character_for(cwd, role or "coder")
-        if role or worktree_path or ch:
+        if role or worktree_path or ch or model:
             async with self.engine.begin() as c:
                 await c.execute(text("UPDATE character_session SET role = COALESCE(:r, role), worktree_path = COALESCE(:w, worktree_path), "
-                                     "character_id = COALESCE(:ch, character_id) WHERE id = :i"),
-                                {"r": role[:16] if role else None, "w": worktree_path, "ch": ch, "i": sid})
+                                     "character_id = COALESCE(:ch, character_id), model = COALESCE(:m, model) WHERE id = :i"),
+                                {"r": role[:16] if role else None, "w": worktree_path, "ch": ch, "m": model, "i": sid})
         await self._act(src_session or sid, "spawn", pid, True, f"{name} {pane} cc={cc} 새 세션 행 {sid}")
         if self.on_change:
             self.on_change()
