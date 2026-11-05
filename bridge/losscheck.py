@@ -402,7 +402,7 @@ class LossChecker:
             await self._run_inner(lid, row, path, repo)
         except Exception as e:  # noqa: BLE001 — 어떤 실패든 running으로 남기지 않는다
             await self._save(lid, status="failed", error=f"{type(e).__name__}: {e}")
-            self.m._notify(row, f"잃은 것 보기 실패 — {type(e).__name__}")
+            self.m._notify(row, f"잃은 것 찾기 실패 — {type(e).__name__}")
 
     async def _run_inner(self, lid: int, row: Any, path: str, repo: str) -> None:
         segs = await asyncio.to_thread(extract, path)
@@ -435,10 +435,10 @@ class LossChecker:
         await self._save(lid, status=status, items=self.mask.deep(res["items"]), runs=_runs_view(runs),
                          groups_done=len(runs), cost_usd=round(sum(r["cost_usd"] or 0 for r in runs), 4), error=err or None)
         if status == "failed":
-            self.m._notify(row, f"잃은 것 보기 실패 — {err}")
+            self.m._notify(row, f"잃은 것 찾기 실패 — {err}")
         else:
-            self.m._notify(row, f"잃은 것 보기 끝 — 사라짐 {cnt.get('사라짐', 0)} · 약해짐 {cnt.get('약해짐', 0)}"
-                                f"{' (' + err + ')' if err else ''} — 패널에서 보고 [옮길 것 뽑기]에 넣을 수 있습니다")
+            self.m._notify(row, f"잃은 것 찾기 끝 — 사라짐 {cnt.get('사라짐', 0)} · 약해짐 {cnt.get('약해짐', 0)}"
+                                f"{' (' + err + ')' if err else ''} — 패널 [세션] 탭 「문서 정리」에서 보고 [남길 것 찾기]에 넣을 수 있습니다")
 
     async def list(self, sid: int, limit: int = 3) -> list[dict[str, Any]]:
         from sqlalchemy import text

@@ -429,7 +429,7 @@ class HandoffManager:
         if not row.cc:
             raise Refused("CC 세션 ID가 없습니다")
         if await self._pending(row.id) or await self._promote_busy(row.id):
-            raise Refused("이미 요약 · 문서로 옮기기를 기다리는 중입니다")
+            raise Refused("이미 요약 · 문서에 남기기를 기다리는 중입니다")
         _t, ls, busy = await resolve(row.cc, self.sessions_dir)
         if busy:
             raise Refused("작업 중입니다. 작업이 끝난 뒤에 요약해 주세요(중간에 끼면 작업과 섞입니다)")
