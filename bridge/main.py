@@ -18,6 +18,8 @@ from bridge.api import foreman as foreman_api, handoff as handoff_api, terminal 
 from bridge.foreman import ForemanDispatcher
 from bridge.handoff import HandoffManager
 from bridge.promote import Promoter
+from bridge.losscheck import LossChecker
+from bridge.model_choice import Models
 from bridge.liveness import live_sessions
 from bridge.previews import Previews
 from bridge.schemalock import SchemaLock
@@ -172,6 +174,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                            project_of=(lambda cwd: asm_._project_for(cwd, "")) if asm_ else None)
         # 11-05 — 인계 2판 ① 문서로 옮기기(목록 → 사람 승인 → 세션이 쓰고 커밋 → 브리지가 git으로 확인)
         app.state.handoff.promote = Promoter(app.state.handoff)
+        # 11-06 — 인계 2판 d [잃은 것 보기](압축 손실 점검, claude -p). 모델은 config/models.toml [tasks] losscheck
+        app.state.handoff.losscheck = LossChecker(app.state.handoff, model=Models().task("losscheck"))
+        try:
+            n_ = await app.state.handoff.losscheck.recover()
+            if n_:
+                log.warning("잃은 것 점검 %d개가 돌던 중이었다 — failed로 바꿨다(브리지 재시작)", n_)
+        except Exception as e:  # noqa: BLE001 — 0021 전이면 표가 없다. 브리지는 뜬다
+            log.warning("잃은 것 점검 정리 못 함: %s", type(e).__name__)
         # 11-05 — 스키마 잠금(세션 둘 이상이 한 프로젝트에 붙을 때 DB 스키마는 한 세션만). 합치기 · 버리기에서 푼다
         sd = s.sessions_dir
         app.state.schema_lock = SchemaLock(Path(__file__).resolve().parent.parent / "config" / "worktree.toml",

@@ -23,6 +23,11 @@ class Models:
             pass
         self.choices = [c for c in raw.get("choices") or [] if _ID.match(str(c.get("id", "")))]
         self.defaults = {k: v for k, v in (raw.get("defaults") or {}).items() if self.valid(v)}
+        self.tasks = {k: v for k, v in (raw.get("tasks") or {}).items() if self.valid(v)}
+
+    def task(self, name: str, fallback: str = "sonnet") -> str:
+        """세션이 아닌 `claude -p` 일감의 모델([tasks]). 없거나 목록에 없으면 fallback."""
+        return self.tasks.get(name) or fallback
 
     def valid(self, model: str | None) -> bool:
         return bool(model) and any(c["id"] == model for c in self.choices)

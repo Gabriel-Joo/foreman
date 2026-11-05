@@ -246,6 +246,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         ? '늦었습니다. 앞에서 정한 결정 · 금지가 이미 많이 빠졌을 수 있습니다.'
         : '넘어갈 때입니다. 처음에 정한 것이 빠지기 시작합니다.'}${c.short ? ' 압축 간격도 짧습니다.' : ''}</span>
       ${s.injectable ? '<button type="button" data-cmp="handoff" class="small" title="인계 요약 받기 — 세션이 지금까지를 인계 문서로 씁니다. 받은 뒤 [세션] 탭에서 확인하고 새 세션을 띄웁니다.">인계 요약 받기</button>' : ''}
+      <button type="button" data-cmp="loss" class="small" title="잃은 것 보기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 결과는 [세션] 탭에 나옵니다.">잃은 것 보기</button>
       <button type="button" data-cmp="later" class="ghost small" title="나중에 — 다음 압축까지 이 띠를 숨깁니다.">나중에</button>`;
     put('pCmp', 'cmp', html);
     $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;
@@ -262,6 +263,18 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       try { localStorage.setItem('cmpSnooze:' + s.id, String(s.compact.count)); } catch { /* 저장 못 함 — 이번만 숨긴다 */ }
       $('pCmp').hidden = true;
       store.touch('grid');
+      return;
+    }
+    if (b.dataset.cmp === 'loss') {
+      if (!confirm('잃은 것 보기 — 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 끝나면 알림이 갑니다. 진행할까요?')) return;
+      b.disabled = true;
+      const r = await fetch(`/api/sessions/${s.id}/losscheck`, { method: 'POST', headers: store.headers(true), body: '{}' });
+      const j = await r.json().catch(() => ({}));
+      store.state.lastInput = { sessionId: s.id, ts: Date.now(), ok: r.ok,
+        msg: r.ok ? `잃은 것 점검을 시작했습니다(#${j.loss_check_id}). 진행과 결과는 [세션] 탭 「잃은 것」에 나옵니다.` : `시작하지 못했습니다 — ${j.refused || j.detail || r.status}` };
+      if (r.ok) setTab('sess');
+      b.disabled = false;
+      store.touch('panel');
       return;
     }
     b.disabled = true;

@@ -223,6 +223,11 @@ body { --term-h:0px; }
 .hand-group .hand-btns { margin:2px 0; }
 /* 11-05 문서로 옮기기 — 항목마다 상태 · 어디로 · 문장. 승인은 초록 띠, 빼기는 흐리게 */
 .prom { flex:1; min-width:0; }
+/* 인계 2판 d [잃은 것 보기](11-06) — 사라짐은 빨강 띠, 약해짐은 노랑 띠 */
+.loss { flex:1; min-width:0; }
+.loss-item { border:1px solid var(--line); border-left:3px solid var(--warn); border-radius:6px; padding:4px 8px; margin:4px 0; }
+.loss-item.loss-gone { border-left-color:var(--bad); }
+.loss-list { max-height:360px; overflow:auto; }
 .prom-item { border:1px solid var(--line); border-left:3px solid var(--line); border-radius:6px; padding:4px 8px; margin:4px 0; }
 .prom-item.prom-approved { border-left-color:var(--ok); }
 .prom-item.prom-dropped { opacity:.55; }

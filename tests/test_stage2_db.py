@@ -1036,3 +1036,89 @@ async def test_background_bash_and_monitor_start_end(env):
     rows = [("bgM", "Monitor", "브리지 기다림", t0)]
     assert [x["task"] for x in background_running(rows, None)] == ["bgM"]
     assert background_running(rows, t1) == []                              # 프로세스가 다시 뜬 뒤 — 그 전 작업은 죽었다
+
+
+async def test_losscheck_run_list_recover_and_promote_input(env, monkeypatch, tmp_path):
+    """[잃은 것 보기](d 2부, 11-06) — 시작 → 묶음마다 진행 → 끝 · 목록(사라짐 · 약해짐만), 같은 세션 겹침 막기,
+    브리지 재시작 때 running 정리, 문서로 옮기기(c)의 같이 넣을 것."""
+    from bridge import handoff as h
+    from bridge import losscheck as lc
+    from bridge import promote as pm
+    from sqlalchemy import text as T
+    s, main = env
+    main.write_text("\n".join([
+        user(U(701), "q1", "커밋은 의미 단위로 나눠", origin={"kind": "human"}, ts="2026-10-01T00:00:01.000Z"),
+        user(U(702), "q2", "ttyd는 밖에 열지 마", origin={"kind": "human"}, ts="2026-10-01T00:00:02.000Z"),
+        line(type="user", uuid=U(703), isCompactSummary=True, timestamp="2026-10-01T00:00:03.000Z",
+             message={"role": "user", "content": "요약 0"}),
+        user(U(704), "q3", "압축 뒤 지시", origin={"kind": "human"}, ts="2026-10-01T00:00:04.000Z"),
+    ]) + "\n", encoding="utf-8")
+    await run(s)
+    engine = make_engine(s)
+    ENGINES.append(engine)
+    mgr = h.HandoffManager(engine, s.sessions_dir)
+    mgr.promote = pr = pm.Promoter(mgr)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "CLAUDE.md").write_text("# 규칙\n", encoding="utf-8")
+
+    async def fake_root(cwd):
+        return str(repo)
+    monkeypatch.setattr(h, "repo_root", fake_root)
+    monkeypatch.setattr(lc, "memory_dir", lambda cwd: tmp_path / "없는-메모리")
+    chk = mgr.losscheck = lc.LossChecker(mgr, model="sonnet", root=tmp_path / "lcwork")
+    seen = {}
+    gate = asyncio.Event()
+
+    async def fake_judge(wd, names, n_sum, repo_, req, on_group=None, **kw):
+        seen.update(names=names, n_sum=n_sum, files=sorted(p.name for p in wd.iterdir()), model=kw.get("model"))
+        items = [{"id": "구간0-0-a", "ts": "", "kind": "지시", "quote": "커밋은 의미 단위로 나눠", "gist": "커밋을 의미 단위로",
+                  "status": "사라짐", "where": "", "dropped_at": "summary_00", "missing": "", "why_matters": "w"},
+                 {"id": "구간0-1-a", "ts": "", "kind": "금지", "quote": "ttyd는 밖에 열지 마 MY_TOKEN=" + SECRET,
+                  "gist": "ttyd 외부 노출 금지", "status": "약해짐", "where": "repo:README.md", "dropped_at": "summary_00",
+                  "missing": "이유", "why_matters": ""},
+                 {"id": "구간0-1-b", "ts": "", "kind": "결정", "quote": "", "gist": "옛 결정", "status": "뒤집힘", "where": "",
+                  "dropped_at": None, "missing": "", "why_matters": ""}]
+        runs = [{"group": "prompts_A.md", "prompts": 2, "items": 3, "empty": 0, "skipped": [], "ms": 10, "cost_usd": 0.12,
+                 "usage": {"input_tokens": 5, "output_tokens": 7}, "error": None}]
+        await gate.wait()
+        await on_group(items, runs)
+        return {"items": items, "runs": runs}
+    chk.judge = fake_judge
+    sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
+    row = await mgr.session(sid)
+    r = await chk.start(row)
+    try:
+        await chk.start(row)
+        raise AssertionError("겹쳐 돌렸다")
+    except h.Refused as e:
+        assert "이미" in str(e)
+    gate.set()
+    for _ in range(50):
+        await asyncio.sleep(0.1)
+        if q(s, "SELECT status FROM loss_check WHERE id = %s", r["loss_check_id"])[0][0] != "running":
+            break
+    assert seen["n_sum"] == 1 and [len(i) for _, i in seen["names"]] == [2] and seen["model"] == "sonnet"
+    assert {"prompts_A.md", "summary_00.md", "current_context.md"} <= set(seen["files"])
+    got = (await chk.list(sid))[0]
+    assert got["status"] == "done" and got["prompts"] == 2 and got["groups_done"] == 1 and got["cost_usd"] == 0.12
+    assert got["counts"] == {"사라짐": 1, "약해짐": 1, "뒤집힘": 1}
+    assert [x["status"] for x in got["lost"]] == ["사라짐", "약해짐"]                 # 뒤집힘은 내지 않는다
+    assert SECRET not in json.dumps(got, ensure_ascii=False)                          # 비밀값은 가려서 남긴다
+    assert "usage" not in got["runs"][0] and got["runs"][0]["tokens"] == 12
+    # c — 같이 넣을 것 맨 앞에 이 점검, 넣는 글에 사라짐 · 약해짐만
+    ins = await pr.inputs(row)
+    assert ins[0]["id"] == f"lc:{r['loss_check_id']}" and ins[0]["why"] == "사라짐 1 · 약해짐 1"
+    body = await pr._loss_body(r["loss_check_id"], sid)
+    assert "커밋을 의미 단위로" in body and "옛 결정" not in body
+    assert "뒤집힌) 결정은 넣지 마라" in pm.list_prompt("abc123", loss=body, loss_id=r["loss_check_id"])
+    try:
+        await pr._loss_body(r["loss_check_id"], sid + 999)
+        raise AssertionError("다른 세션의 점검을 넣었다")
+    except h.Refused:
+        pass
+    # 브리지 재시작 — 돌던 것은 failed로
+    async with engine.begin() as c:
+        await c.execute(T("INSERT INTO loss_check (session_id, status) VALUES (:s, 'running')"), {"s": sid})
+    assert await chk.recover() == 1
+    assert (await chk.list(sid))[0]["status"] == "failed"

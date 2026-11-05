@@ -281,7 +281,7 @@ def compare(mine: list[dict[str, Any]], base: list[dict[str, Any]]) -> dict[str,
 
 
 async def judge_all(wd: Path, names: list[tuple[str, list[str]]], n_sum: int, repo: str, req: str,
-                    **kw: Any) -> dict[str, Any]:
+                    on_group: Any = None, **kw: Any) -> dict[str, Any]:
     """묶음마다 판정 — 차례로 돈다(동시에 돌리면 토큰 한도에 같이 걸린다). 하나가 실패해도 나머지는 남긴다.
     묶음마다 건너뛴 프롬프트(skipped)를 센다 — 판정이 조용히 얇아지지 않게."""
     items: list[dict[str, Any]] = []
@@ -302,7 +302,184 @@ async def judge_all(wd: Path, names: list[tuple[str, list[str]]], n_sum: int, re
         runs.append({"group": name, "prompts": len(ids), "items": len(got), "empty": len(empty),
                      "skipped": coverage(ids, got, empty) if r["error"] is None else ids,
                      "ms": r["ms"], "cost_usd": r["cost_usd"], "usage": r["usage"], "error": r["error"]})
+        if on_group:
+            await on_group(items, runs)
     return {"items": items, "runs": runs}
+
+
+# ── 브리지에서 돌리기(2부) ─────────────────────────────────────
+WORK_ROOT = Path.home() / ".foreman" / "losscheck"
+SHOW = 40                      # 화면 · 옮기기 입력에 내는 잃은 것 최대 수
+
+
+def summarize(items: list[dict[str, Any]]) -> dict[str, int]:
+    return dict(Counter(x["status"] for x in items))
+
+
+def lost(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """화면 · c 입력용 — 사라짐 먼저, 그다음 약해짐. 뒤집힘 · 끝남 · 살아 있음은 내지 않는다(되살리면 안 되거나 남아 있다)."""
+    order = {"사라짐": 0, "약해짐": 1}
+    return sorted((x for x in items if x["status"] in LOST), key=lambda x: (order[x["status"]], x["id"]))
+
+
+def lost_text(items: list[dict[str, Any]], limit: int = SHOW) -> str:
+    """문서로 옮기기(c) 목록 요청에 같이 넣을 글 — 항목마다 상태 · 종류 · 요지 · 원문 · 있는 곳."""
+    out = []
+    for x in lost(items)[:limit]:
+        line = f"- [{x['status']} · {x['kind']}] {x['gist']}"
+        if x.get("quote"):
+            line += f"\n  원문: “{x['quote'][:200]}”"
+        if x.get("where"):
+            line += f"\n  있는 곳: {x['where'][:200]}"
+        if x["status"] == "약해짐" and x.get("missing"):
+            line += f"\n  빠진 것: {x['missing'][:200]}"
+        out.append(line)
+    return "\n".join(out)
+
+
+class LossChecker:
+    """HandoffManager에 붙어 DB · 알림을 같이 쓴다(main.py가 handoff.losscheck로 넣는다). 버튼을 누를 때만 돈다."""
+
+    def __init__(self, m: Any, model: str = "sonnet", claude_bin: str = "claude", mask: Any = None,
+                 root: Path = WORK_ROOT) -> None:
+        self.m, self.model, self.claude_bin, self.root = m, model, claude_bin, root
+        if mask is None:
+            from bridge.mask import Masker
+            mask = Masker()
+        self.mask = mask
+        self.judge = judge_all            # 시험에서 바꿔 끼운다
+
+    async def recover(self) -> int:
+        """브리지가 뜰 때 — 돌던 점검은 작업이 같이 죽었다. running으로 남기지 않고 failed로(조용히 멈춘 채 두지 않게)."""
+        from sqlalchemy import text
+        async with self.m.engine.begin() as c:
+            r = await c.execute(text("UPDATE loss_check SET status = 'failed', error = :e WHERE status = 'running'"),
+                                {"e": "브리지가 다시 떠서 멈췄습니다 — 다시 눌러 주세요"})
+        return r.rowcount or 0
+
+    async def _save(self, lid: int, **kw: Any) -> None:
+        from sqlalchemy import text
+        for k in ("items", "runs"):
+            if k in kw and kw[k] is not None and not isinstance(kw[k], str):
+                kw[k] = json.dumps(kw[k], ensure_ascii=False)
+        if kw.get("error"):
+            kw["error"] = kw["error"][:512]
+        cols = ", ".join(f"{k} = :{k}" for k in kw)
+        async with self.m.engine.begin() as c:
+            await c.execute(text(f"UPDATE loss_check SET {cols} WHERE id = :lid"), {**kw, "lid": lid})
+        if self.m.on_change:
+            self.m.on_change()
+
+    async def running(self, sid: int) -> bool:
+        from sqlalchemy import text
+        async with self.m.engine.connect() as c:
+            return (await c.execute(text("SELECT 1 FROM loss_check WHERE session_id = :s AND status = 'running' LIMIT 1"),
+                                    {"s": sid})).first() is not None
+
+    async def start(self, row: Any) -> dict[str, Any]:
+        from sqlalchemy import text
+        from bridge import handoff as ho
+        from bridge.inject import Refused
+        if await self.running(row.id):
+            raise Refused("이미 이 세션의 점검이 돌고 있습니다")
+        path = row.transcript or ho.transcript_path(row.cwd or "", row.cc or "")
+        if not path or not os.path.isfile(path):
+            raise Refused("트랜스크립트를 찾지 못했습니다")
+        repo = await ho.repo_root(row.cwd)
+        if not repo:
+            raise Refused("저장소를 찾지 못했습니다")
+        async with self.m.engine.begin() as c:
+            res = await c.execute(text("INSERT INTO loss_check (session_id, status, model) VALUES (:s, 'running', :m)"),
+                                  {"s": row.id, "m": self.model})
+        lid = res.lastrowid
+        if self.m.on_change:
+            self.m.on_change()
+        self.m._spawn_task(self._run(lid, row, path, repo))
+        return {"loss_check_id": lid, "status": "running", "model": self.model}
+
+    async def _run(self, lid: int, row: Any, path: str, repo: str) -> None:
+        try:
+            await self._run_inner(lid, row, path, repo)
+        except Exception as e:  # noqa: BLE001 — 어떤 실패든 running으로 남기지 않는다
+            await self._save(lid, status="failed", error=f"{type(e).__name__}: {e}")
+            self.m._notify(row, f"잃은 것 보기 실패 — {type(e).__name__}")
+
+    async def _run_inner(self, lid: int, row: Any, path: str, repo: str) -> None:
+        segs = await asyncio.to_thread(extract, path)
+        if len(segs) < 2 or not any(s.prompts for s in segs[:-1]):
+            await self._save(lid, status="failed", segments=len(segs), error="압축된 적이 없습니다 — 볼 것이 없습니다")
+            return
+        md = memory_dir(row.cwd or repo)
+        claude_md = Path(repo, "CLAUDE.md")
+        ctx = context_text(segs, claude_md.read_text(encoding="utf-8") if claude_md.is_file() else "",
+                           {p.name: p.read_text(encoding="utf-8") for p in sorted(md.glob("*.md"))} if md.is_dir() else {})
+        self.root.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.root, 0o700)
+        wd = self.root / str(lid)
+        names = await asyncio.to_thread(write_workdir, wd, segs, ctx)
+        await self._save(lid, workdir=str(wd), segments=len(segs), prompts=sum(len(i) for _, i in names),
+                         groups_total=len(names))
+
+        async def progress(items: list[dict[str, Any]], runs: list[dict[str, Any]]) -> None:
+            await self._save(lid, groups_done=len(runs), items=self.mask.deep(items), runs=_runs_view(runs),
+                             cost_usd=round(sum(r["cost_usd"] or 0 for r in runs), 4))
+
+        res = await self.judge(wd, names, len(segs) - 1, repo, f"lc{lid:04d}"[-6:], on_group=progress,
+                               model=self.model, claude_bin=self.claude_bin)
+        runs = res["runs"]
+        bad = [r for r in runs if r["error"]]
+        skipped = sum(len(r["skipped"]) for r in runs if not r["error"])
+        cnt = summarize(res["items"])
+        err = "; ".join(x for x in [f"묶음 {len(bad)}개 실패" if bad else "", f"건너뛴 프롬프트 {skipped}개" if skipped else ""] if x)
+        status = "failed" if bad and len(bad) == len(runs) else "done"
+        await self._save(lid, status=status, items=self.mask.deep(res["items"]), runs=_runs_view(runs),
+                         groups_done=len(runs), cost_usd=round(sum(r["cost_usd"] or 0 for r in runs), 4), error=err or None)
+        if status == "failed":
+            self.m._notify(row, f"잃은 것 보기 실패 — {err}")
+        else:
+            self.m._notify(row, f"잃은 것 보기 끝 — 사라짐 {cnt.get('사라짐', 0)} · 약해짐 {cnt.get('약해짐', 0)}"
+                                f"{' (' + err + ')' if err else ''} — 패널에서 보고 [옮길 것 뽑기]에 넣을 수 있습니다")
+
+    async def list(self, sid: int, limit: int = 3) -> list[dict[str, Any]]:
+        from sqlalchemy import text
+        async with self.m.engine.connect() as c:
+            rows = (await c.execute(text(
+                "SELECT id, status, model, segments, prompts, groups_total, groups_done, items, runs, cost_usd, error, "
+                "created_at, updated_at FROM loss_check WHERE session_id = :s ORDER BY id DESC LIMIT :n"),
+                {"s": sid, "n": limit})).mappings().all()
+        out = []
+        for r in rows:
+            d = dict(r)
+            items = json.loads(d.pop("items") or "[]")
+            d["runs"] = json.loads(d["runs"] or "[]")
+            d["counts"] = summarize(items)
+            d["lost"] = [{k: x.get(k) for k in ("id", "kind", "status", "gist", "quote", "where", "dropped_at", "missing",
+                                                "why_matters")} for x in lost(items)[:SHOW]]
+            d["lost_total"] = len(lost(items))
+            d["cost_usd"] = float(d["cost_usd"]) if d["cost_usd"] is not None else None
+            for k in ("created_at", "updated_at"):
+                d[k] = d[k].isoformat() + "Z" if d[k] else None
+            out.append(d)
+        return out
+
+    async def items_of(self, lid: int) -> tuple[int, list[dict[str, Any]]] | None:
+        """(session_id, items) — 끝난 점검만."""
+        from sqlalchemy import text
+        async with self.m.engine.connect() as c:
+            r = (await c.execute(text("SELECT session_id, items FROM loss_check WHERE id = :i AND status = 'done'"),
+                                 {"i": lid})).first()
+        return (r[0], json.loads(r[1] or "[]")) if r else None
+
+
+def _runs_view(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """DB에 남길 묶음 기록 — usage 원본은 빼고 토큰 합만."""
+    out = []
+    for r in runs:
+        u = r.get("usage") or {}
+        out.append({k: r.get(k) for k in ("group", "prompts", "items", "empty", "skipped", "ms", "cost_usd", "error")}
+                   | {"tokens": sum(int(u.get(k) or 0) for k in ("input_tokens", "output_tokens", "cache_read_input_tokens",
+                                                                 "cache_creation_input_tokens"))})
+    return out
 
 
 def _main() -> None:
