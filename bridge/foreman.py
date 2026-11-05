@@ -53,6 +53,18 @@ def memory_dir(repo: str) -> Path:
     return Path.home() / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9-]", "-", repo) / "memory"
 
 
+OPS_DOC = Path(__file__).resolve().parent.parent / "docs" / "operations.md"
+
+
+def server_paths() -> str:
+    """서버 공통 경로(클러스터 VM · 매니페스트 · 저장소 · 접속) — 어느 프로젝트 일이든 상황 묶음에 늘 넣는다.
+    11-06: 포먼 CLAUDE.md 정리로 이 표가 docs/operations.md 「1.」로 갔다. 전후 비교에서 계획은 같았지만, "펫퍼민트 파드 보기"처럼
+    포먼 이름이 없는 요청은 정리 전에도 이 표를 못 봐 kubectl 들어가는 법(vagrant ssh m-k8s)이 첫 글에 빠졌다."""
+    body = read_cached(OPS_DOC, 8000) or ""
+    m = re.search(r"^## 1\..*?$(.*?)(?=^## )", body, re.S | re.M)
+    return m.group(1).strip() if m else ""
+
+
 def docs_index(repo: str, cap: int = 60) -> list[str]:
     out = []
     for p in sorted(Path(repo, "docs").glob("*.md"))[:cap]:
@@ -126,6 +138,9 @@ class ForemanDispatcher:
         wanted = [p for p in projs if named(p)] or projs
         live = live_sessions(self.sessions_dir)
         parts = [f"# 지금 시각 {time.strftime('%Y-%m-%d %H:%M')} (KST)", f"# 사람의 요청\n{request}"]
+        sp = server_paths()
+        if sp:
+            parts.append(f"# 서버 공통 경로({OPS_DOC} 「1.」 — 클러스터 · VM · 인프라 일이면 first_prompt에 그대로 옮긴다)\n{sp}")
         async with self.engine.connect() as c:
             for repo, _pid, name, _ch in projs:
                 full = any(p[2] == name for p in wanted)
