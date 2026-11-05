@@ -174,7 +174,7 @@ class Assembler:
         self.sessions: dict[str, SessionState] = {}
         self.subs: dict[str, SubState] = {}
         self.files: dict[str, FileState] = {}
-        self.projects: list[tuple[str, int, str, int]] = []  # (repo_path, project_id, name, 포먼 character_id)
+        self.projects: list[tuple[str, int, str, int]] = []  # (repo_path, project_id, name, 새 세션을 붙일 character_id — 코더, 없으면 포먼)
         self.unassigned_char: int | None = None
         self.stats = Stats()
         # 턴이 닫힌 직후 부르는 함수(session_id, turn_id, reason, by, note) — 4단계 알림. 실시간 모드에서만
@@ -185,8 +185,11 @@ class Assembler:
     # ── 시작 ────────────────────────────────────────────────
     async def load(self) -> None:
         async with self.engine.connect() as c:
+            # 새로 입양하는 세션의 자리 — 그 프로젝트의 코더(0017 재배치 뒤). 코더가 없으면 예전처럼 포먼
             rows = (await c.execute(text(
-                "SELECT p.repo_path, p.id, p.name, c.id FROM project p "
+                "SELECT p.repo_path, p.id, p.name, COALESCE("
+                "(SELECT k.id FROM `character` k WHERE k.project_id = p.id AND k.current_role = 'coder' "
+                " AND k.retired_at IS NULL AND k.name = '코더' LIMIT 1), c.id) FROM project p "
                 "JOIN `character` c ON c.project_id = p.id AND c.current_role = 'foreman'"))).all()
             self.projects = sorted(((r[0], r[1], r[2], r[3]) for r in rows), key=lambda x: -len(x[0]))
             r = (await c.execute(text(

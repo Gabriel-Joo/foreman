@@ -36,6 +36,7 @@ MAX_INJECT = 8000        # 새 세션에 넣는 글 상한
 WAIT_S = 600.0           # 요약이 돌아오기를 기다리는 시간
 HANDOFF_DIR = Path.home() / ".foreman" / "handoff"
 KEEP_FULL = ("진행", "미완", "다음", "주의")      # 분량을 줄일 때도 통째로 넣는 절
+ROLE_KO = {"coder": "코더", "inspector": "점검", "cicd": "CI/CD"}   # 역할 캐릭터 이름(0017 재배치와 같다)
 
 REQUEST_PROMPT = """{head}
 이 세션을 새 세션으로 넘기려고 한다. 새 세션은 이 대화를 전혀 모르고, 아래 인계 문서만 받는다.
@@ -603,10 +604,12 @@ class HandoffManager:
                 await self._act(src_session, "spawn", None, False, f"{name} 신뢰 창에 답이 없어 그만둠")
                 return {"note": "신뢰 확인 창에 답이 없어 그만뒀습니다."}
         sid = await self._ensure_row(cc, cwd, title)
-        if role or worktree_path:
+        ch = await self._character_for(cwd, role or "coder")
+        if role or worktree_path or ch:
             async with self.engine.begin() as c:
-                await c.execute(text("UPDATE character_session SET role = COALESCE(:r, role), worktree_path = COALESCE(:w, worktree_path) "
-                                     "WHERE id = :i"), {"r": role[:16] if role else None, "w": worktree_path, "i": sid})
+                await c.execute(text("UPDATE character_session SET role = COALESCE(:r, role), worktree_path = COALESCE(:w, worktree_path), "
+                                     "character_id = COALESCE(:ch, character_id) WHERE id = :i"),
+                                {"r": role[:16] if role else None, "w": worktree_path, "ch": ch, "i": sid})
         await self._act(src_session or sid, "spawn", pid, True, f"{name} {pane} cc={cc} 새 세션 행 {sid}")
         if self.on_change:
             self.on_change()
@@ -640,6 +643,40 @@ class HandoffManager:
                 if row:
                     self._notify(row, f"새 세션에 인계 넣음 — {name} (세션 {cc[:8]})")
         return out
+
+    async def _character_for(self, cwd: str, role: str) -> int | None:
+        """이 세션을 붙일 캐릭터(11-05 재배치, README 2.3 · 2.4 · 3.4) — 포먼이 채용한다(부모 = 그 프로젝트의 포먼).
+        원본 폴더면 역할 캐릭터("코더" · "점검" · "CI/CD"), worktree면 그 자리의 일꾼("코더 foreman-2" — 합치기 · 버리기 때 퇴장).
+        같은 이름이 퇴장해 있으면 되살린다(이름은 프로젝트 안에서 고유). 프로젝트 밖(떠돌이)은 그대로 둔다."""
+        name0 = ROLE_KO.get(role)
+        if not name0 or not self.project_of:
+            return None
+        project = self.project_of(cwd)[0]
+        if not project:
+            return None
+        wt_name = wt.split(cwd)[1]
+        name = f"{name0} {wt_name}" if wt_name else name0
+        async with self.engine.begin() as c:
+            f = (await c.execute(text("SELECT ch.id, ch.project_id FROM `character` ch JOIN project p ON p.id = ch.project_id "
+                                      "WHERE p.name = :p AND ch.current_role = 'foreman' LIMIT 1"), {"p": project})).first()
+            if not f:
+                return None
+            r = (await c.execute(text("SELECT id FROM `character` WHERE project_id = :pid AND name = :n"),
+                                 {"pid": f[1], "n": name})).first()
+            if r:
+                await c.execute(text("UPDATE `character` SET retired_at = NULL, current_role = :r WHERE id = :i"), {"r": role, "i": r[0]})
+                return r[0]
+            res = await c.execute(text("INSERT INTO `character` (project_id, parent_id, name, current_role, status, kind, spawned_by) "
+                                       "VALUES (:pid, :f, :n, :r, 'DORMANT', 'agent', 'foreman')"),
+                                  {"pid": f[1], "f": f[0], "n": name, "r": role})
+            return res.lastrowid
+
+    async def _retire_wt_characters(self, row: SessionRow, wt_name: str) -> None:
+        """worktree를 합치거나 버리면 그 자리의 일꾼은 퇴장(세션 이력은 남는다)."""
+        async with self.engine.begin() as c:
+            await c.execute(text("UPDATE `character` ch JOIN project p ON p.id = ch.project_id SET ch.retired_at = NOW(3) "
+                                 "WHERE p.name = :p AND ch.name LIKE :n AND ch.retired_at IS NULL"),
+                            {"p": row.project, "n": f"% {wt_name}"})
 
     async def _ensure_row(self, cc: str, cwd: str, title: str | None) -> int:
         """새 CC 세션의 행 — 첫 줄이 기록되기 전에 만들어 둔다(조립기는 같은 cc_session_id 행을 이어 쓴다)."""
@@ -765,6 +802,8 @@ class HandoffManager:
             res["schema_unlocked"] = self.schema.release(row.project, name)
         if res.get("ok"):
             res["preview_stopped"] = await self._stop_preview(row)
+            if row.project:
+                await self._retire_wt_characters(row, name)
         await self._act(row.id, f"wt-{act}", None, bool(res.get("ok")),
                         f"{name} {res.get('note') or ''} {','.join(res.get('conflict') or [])}"[:500])
         if self.on_change:

@@ -848,3 +848,27 @@ async def test_handoff_request_extract_edit_inject_preview(env, monkeypatch):
     assert c["can"]["resume"] is False and "사람이 멈춤" in c["why"]
     await mgr._act(sid, "stop", 4242, True, "시험")
     assert (await mgr.controls(row))["can"]["resume"] is True
+
+
+@pytest.mark.db
+async def test_reassign_role_and_worktree_characters(env):
+    """0017 재배치 · 띄울 때 캐릭터 고르기(11-05) — 새 세션은 포먼이 아니라 역할 캐릭터, worktree는 그 자리의 일꾼."""
+    from bridge import handoff as h
+    s, _ = env
+    asm = await run(s)
+    repo, _pid, name, char = asm.projects[0]
+    foreman, coder = q(s, "SELECT c.id FROM `character` c JOIN project p ON p.id = c.project_id WHERE p.name = %s "
+                          "AND c.current_role = 'foreman'", name)[0][0], char
+    assert q(s, "SELECT name, current_role, parent_id FROM `character` WHERE id = %s", coder) == (("코더", "coder", foreman),)
+    mgr = h.HandoffManager(asm.engine, s.sessions_dir, project_of=lambda cwd: asm._project_for(cwd, ""))
+    assert await mgr._character_for(repo, "coder") == coder                       # 원본 폴더 코더는 하나
+    insp = await mgr._character_for(repo, "inspector")
+    assert q(s, "SELECT name, parent_id, spawned_by FROM `character` WHERE id = %s", insp) == (("점검", foreman, "foreman"),)
+    w = await mgr._character_for(f"{repo}/.worktrees/{name}-2", "coder")
+    assert q(s, "SELECT name FROM `character` WHERE id = %s", w) == ((f"코더 {name}-2",),)
+    row = h.SessionRow(1, None, w, f"{repo}/.worktrees/{name}-2", None, name, None)
+    await mgr._retire_wt_characters(row, f"{name}-2")
+    assert q(s, "SELECT retired_at IS NOT NULL FROM `character` WHERE id = %s", w) == ((1,),)
+    assert await mgr._character_for(f"{repo}/.worktrees/{name}-2", "coder") == w   # 같은 이름이면 되살린다
+    assert q(s, "SELECT retired_at FROM `character` WHERE id = %s", w) == ((None,),)
+    assert await mgr._character_for("/tmp/elsewhere", "coder") is None             # 떠돌이는 그대로
