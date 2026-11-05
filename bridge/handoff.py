@@ -39,7 +39,7 @@ MAX_INJECT = 8000        # 새 세션에 넣는 글 상한
 WAIT_S = 600.0           # 요약이 돌아오기를 기다리는 시간
 HANDOFF_DIR = Path.home() / ".foreman" / "handoff"
 KEEP_FULL = ("진행", "미완", "다음", "주의")      # 분량을 줄일 때도 통째로 넣는 절
-ROLE_KO = {"coder": "코더", "inspector": "점검", "cicd": "CI/CD"}   # 역할 캐릭터 이름(0017 재배치와 같다)
+ROLE_KO = {"coder": "코더", "inspector": "점검", "cicd": "CI/CD", "scribe": "서기"}   # 역할 캐릭터 이름(0017 재배치와 같다, 서기는 12a)
 
 REQUEST_PROMPT = """{head}
 이 세션을 새 세션으로 넘기려고 한다. 새 세션은 이 대화를 전혀 모르고, 아래 인계 문서만 받는다.

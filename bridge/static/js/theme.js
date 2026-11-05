@@ -41,10 +41,17 @@ export function viewState(s) {
 
 const WAITING_DEFAULT = { anim: 'wait', go: 'desk' };     // 테마에 WAITING이 없으면 — 자는 모습(IDLE 변형)으로 떨어지지 않게
 
-export function resolveAction(theme, { state, tool, target, flags } = {}) {
+export function resolveAction(theme, { state, tool, target, flags, role } = {}) {
   const states = theme.states || {};
   const base = states[state] || (state === 'WAITING' ? WAITING_DEFAULT : null) || states.IDLE || {};
   const out = { ...base, state: state || 'IDLE', source: 'state' };
+  // 역할별 쉼 자리(12a) — 서기는 쉬어도 서고에서 읽는다. 쉼 변형(자기 · 먹기)은 섞지 않는다
+  const ri = state === 'IDLE' && role ? ((theme.roles || {}).idle || {})[role] : null;
+  if (ri && ri.go) {
+    const { _, ...r } = ri;
+    Object.assign(out, r, { source: `role:${role}` });
+    delete out.variants;
+  }
   if (state === 'ACTIVE' && tool) {
     const rule = (theme.tools || []).find((r) => matchTool(r.match, tool) && matchTarget(r.target, target));
     if (rule) {

@@ -210,7 +210,8 @@ class NewIn(BaseModel):
     title: str | None = Field(default=None, max_length=255)
     worktree: bool | None = None      # None: 그 프로젝트에 살아 있는 세션이 있으면 따로 작업(worktree)
     model: str | None = Field(default=None, max_length=40)   # config/models.toml id. None이면 역할(coder) 기본값
-    role: Literal["coder", "inspector", "cicd"] | None = None
+    role: Literal["coder", "inspector", "cicd", "scribe"] | None = None
+    first_prompt: str | None = Field(default=None, max_length=20000)   # 첫 입력(12a 서기 일감 등). 인계 요약과 같이 줄 수 없다
 
 
 class WorktreeIn(BaseModel):
@@ -272,8 +273,11 @@ async def list_dirs(path: str = "~", hidden: bool = False) -> dict[str, Any]:
 @router.post("/spawn")
 async def spawn_new(body: NewIn, request: Request) -> JSONResponse:
     try:
+        if body.first_prompt and body.summary_id is not None:
+            raise Refused("첫 입력과 인계 요약은 같이 줄 수 없습니다 — 하나만 골라 주세요")
         return JSONResponse(await _mgr(request).spawn_new(body.cwd, body.summary_id, body.title, worktree=body.worktree,
-                                                          role=body.role, model=body.model or None))
+                                                          role=body.role, model=body.model or None,
+                                                          first_prompt=body.first_prompt or None))
     except Refused as e:
         return _refused(e)
 

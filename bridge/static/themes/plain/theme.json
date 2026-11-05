@@ -67,7 +67,8 @@
 
   "roles": {
     "_": "역할 → 사원증 끈 색. 이름은 DB · 디스패처와 같다(11-05 통일). 미리 보기 ?roles=demo",
-    "colors": { "foreman": "#d4a72c", "coder": "#3f7fd0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "helper": "#8a8f98" }
+    "colors": { "foreman": "#d4a72c", "coder": "#3f7fd0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "helper": "#8a8f98" },
+    "idle": { "_": "역할별 쉼 자리(12a) — 도형 테마는 구역이 없어 자기 책상에서 읽는다", "scribe": { "go": "desk", "anim": "read" } }
   },
 
   "tags": {
