@@ -45,6 +45,22 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
 
   const latest = () => (data ? data.summaries.find((x) => x.status === 'ok') : null);
 
+  // 따로 작업(worktree, 11-05) — 이 세션만의 폴더 · 브랜치. 끝낸 뒤 [합치기](rebase → fast-forward) · [버리기]
+  function wtGroup(w, b) {
+    if (!w) return '';
+    if (w.error) return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div class="small bad">${esc(w.error)}</div></div>`;
+    if (!w.exists) return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div class="small muted">${esc(w.branch)} — 합쳤거나 버려서 지금은 없습니다.</div></div>`;
+    const why = w.live ? '세션을 끝낸 뒤 합칠 수 있습니다.' : w.dirty.length ? `커밋 안 된 변경 ${w.dirty.length}개 — 그 세션에서 커밋하거나 버려야 합칠 수 있습니다.` : '';
+    return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div>
+      <div class="small"><code>${esc(w.branch)}</code> · ${esc(w.base)}보다 커밋 <b>${w.ahead}</b>개 앞${w.behind ? ` · ${esc(w.base)}가 ${w.behind}개 앞서감(합칠 때 rebase)` : ''}${w.dirty.length ? ` · <span class="warn">커밋 안 됨 ${w.dirty.length}</span>` : ''}${w.schema_lock ? ' · <span class="warn">스키마 잠금 보유</span>' : ''}</div>
+      ${w.commits.length ? `<details><summary class="small muted">커밋 · 바뀐 파일</summary><pre class="hand-body">${esc(w.commits.join('\n'))}\n\n${esc(w.diffstat.join('\n'))}</pre></details>` : ''}
+      ${why ? `<div class="small muted">${esc(why)}</div>` : ''}
+      <div class="hand-btns">
+        ${b('wt-merge', '합치기', !w.live && !w.dirty.length, '', `합치기 — ${w.branch}를 ${w.base} 위로 rebase한 뒤 fast-forward로 합치고 worktree를 지웁니다. 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다.`)}
+        ${b('wt-discard', '버리기', !w.live, 'danger', '버리기 — worktree와 브랜치를 지웁니다. 합치지 않은 커밋도 사라집니다.')}
+      </div></div></div>`;
+  }
+
   function draw() {
     if (sid == null || !data) { el.innerHTML = ''; return; }
     const c = data.controls, can = c.can, s0 = data.summaries[0], ok = latest();
@@ -92,6 +108,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         <div class="hand-group"><span class="hand-lbl small muted">끝내기</span><div class="hand-btns">
           ${b('exit', '세션 끝내기', can.exit, 'danger', '세션 끝내기 — /exit로 세션을 완전히 끝냅니다. FOREMAN이 띄운 tmux 창도 닫습니다.')}
         </div></div>
+        ${wtGroup(c.worktree, b)}
         ${note ? `<div class="small ${note.bad ? 'bad' : note.ok ? 'ok' : 'muted'}">${esc(note.msg)}</div>` : ''}
         ${main}${hist}
       </details>`;
@@ -134,13 +151,29 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
           : { ok: true, msg: `새 세션을 띄웠습니다(${where}).${summary_id ? (r.injected ? ' 인계를 넣었습니다.' : ' 인계는 넣지 못했습니다.') : ''}` };
       });
     }
+    if (act === 'wt-merge' || act === 'wt-discard') {
+      const w = data.controls.worktree;
+      let confirmName = '';
+      if (act === 'wt-merge') {
+        if (!confirm(`${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다. 합칠까요?`)) return;
+      } else {
+        confirmName = prompt(`worktree와 브랜치 ${w.branch}를 지웁니다. 합치지 않은 커밋 ${w.ahead}개${w.dirty.length ? `와 커밋 안 된 변경 ${w.dirty.length}개` : ''}도 사라집니다. 지우려면 이름 "${w.name}"을 적어 주세요.`) || '';
+        if (!confirmName) return;
+      }
+      return run(act === 'wt-merge' ? '합치기' : '버리기', () => post(`/api/sessions/${id}/worktree`, { action: act.slice(3), confirm: confirmName })
+        .then((r) => (r.ok ? { ok: true, msg: r.note + (r.schema_unlocked ? ' 스키마 잠금도 풀었습니다.' : '') }
+          : { bad: true, msg: r.note + (r.conflict && r.conflict.length ? ` 충돌 파일: ${r.conflict.join(', ')}` : '') })));
+    }
     const ACT = { exit: '세션 끝내기', 'exit-after': '세션 끝내기', stop: '일시정지', resume: '다시 시작', interrupt: '작업 중단' };
     const DONE = { exit: '세션을 끝냈습니다.', 'exit-after': '세션을 끝냈습니다.', stop: '일시정지했습니다.', resume: '다시 시작했습니다.', interrupt: '작업을 중단했습니다.' };
     if (ACT[act]) {
       const ask = { exit: '이 세션을 완전히 끝냅니다(/exit). 인계 요약 없이 끝내면 맥락은 기록으로만 남습니다. 끝낼까요?',
                     'exit-after': '요약을 확인했으면 이 세션을 완전히 끝냅니다(/exit). 끝낼까요?',
                     stop: '이 세션을 일시정지합니다(Ctrl+Z). [다시 시작]을 누르기 전까지 입력을 받지 않습니다. 멈출까요?' }[act];
-      if (ask && !confirm(ask)) return;
+      const w = data.controls.worktree;
+      const dirtyWarn = (act === 'exit' || act === 'exit-after') && w && w.exists && w.dirty && w.dirty.length
+        ? `\n\n주의: 따로 작업(${w.branch})에 커밋 안 된 변경이 ${w.dirty.length}개 있습니다. 끝내면 합칠 수 없고 버리기만 됩니다. 먼저 세션에게 커밋을 시키는 것이 좋습니다.` : '';
+      if (ask && !confirm(ask + dirtyWarn)) return;
       const action = act === 'exit-after' ? 'exit' : act;
       return run(ACT[act], () => post(`/api/sessions/${id}/action`, { action }).then((r) => (r.ok
         ? { ok: true, msg: DONE[act] + (r.tmux_closed ? ' tmux 창도 닫았습니다.' : '') }

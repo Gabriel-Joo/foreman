@@ -21,6 +21,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from bridge import worktree as wt
 from bridge.inject import Refused, _status, _tmux_env, deliver, resolve, tmux
 from bridge.liveness import _proc_stat, live_sessions
 
@@ -214,6 +215,7 @@ class HandoffManager:
         self.project_of = project_of        # cwd → (프로젝트 이름|None, 캐릭터 id) — 조립기와 같은 규칙(새 세션 행을 미리 만들 때)
         self.wait_s = WAIT_S
         self._tasks: set[asyncio.Task[Any]] = set()
+        self.schema: Any = None             # 스키마 잠금 — 합치기 · 버리기에서 푼다(main.py가 넣는다)
 
     # ── 조회 ────────────────────────────────────────────
     async def session(self, sid: int) -> SessionRow | None:
@@ -284,6 +286,10 @@ class HandoffManager:
             "interrupt": ok_live and busy,
             "spawn": bool(row.cwd and Path(row.cwd).is_dir()),
         }
+        try:
+            out["worktree"] = await self.worktree(row)
+        except Refused as e:
+            out["worktree"] = {"error": str(e)}
         return out
 
     async def _pending(self, sid: int) -> str | None:
@@ -510,14 +516,16 @@ class HandoffManager:
     # ── 새로 띄우기 ──────────────────────────────────────
     async def spawn(self, row: SessionRow, summary_id: int | None) -> dict[str, Any]:
         """세션 패널의 [새로 띄우기] — 그 세션과 같은 폴더로."""
-        return await self.spawn_new(row.cwd or "", summary_id, None, src_session=row.id)
+        # worktree 세션이면 원본 저장소 기준으로(같은 worktree에 둘이 붙지 않게 — 살아 있는 세션이 있으니 새 worktree가 된다)
+        return await self.spawn_new(wt.split(row.cwd or "")[0] if row.cwd else "", summary_id, None, src_session=row.id)
 
     async def spawn_new(self, cwd: str, summary_id: int | None, title: str | None,
                         src_session: int | None = None, first_prompt: str | None = None,
-                        read_only: bool = False, role: str | None = None) -> dict[str, Any]:
+                        read_only: bool = False, role: str | None = None, worktree: bool | None = None) -> dict[str, Any]:
         """+ 버튼 · [새로 띄우기] — tmux 세션을 만들고 그 안에서 claude(resume 아님). 세션 행을 바로 만들어(이름도) 첫 입력 전에도
         화면에 캐릭터가 선다. 인계 요약을 고르면 입력 칸이 뜬 뒤 넣는다. 폴더 신뢰 창이 뜨면 사람이 터미널에서 답할 때까지
-        뒤에서 기다렸다가(5분) 이어 한다."""
+        뒤에서 기다렸다가(5분) 이어 한다.
+        worktree — None이면 그 프로젝트에 살아 있는 세션이 있을 때만 따로 작업 자리(git worktree)에서 띄운다(11-05). True · False는 강제."""
         cwd = os.path.realpath(os.path.expanduser(cwd or ""))
         if not cwd or not Path(cwd).is_dir():
             raise Refused(f"폴더가 없습니다: {cwd}")
@@ -529,14 +537,23 @@ class HandoffManager:
         name, n = base, 2
         while name in existing:
             name, n = f"{base}-{n}", n + 1
+        wt_info = None
+        if worktree is None:
+            worktree = bool(project) and wt.split(cwd)[1] is None and any(
+                self.project_of(ls.cwd)[0] == project for ls in live_sessions(self.sessions_dir).values())
+        if worktree:
+            if wt.split(cwd)[1] is not None or not await wt.is_repo(cwd):
+                raise Refused("따로 작업(worktree)은 저장소 맨 위 폴더에서만 띄울 수 있습니다")
+            wt_info = await wt.create(cwd, name.removeprefix("cc-"))
+            cwd = wt_info["path"]
         await tmux(self.socket, "new-session", "-d", "-s", name, "-c", cwd)
         pane = (await tmux(self.socket, "display-message", "-p", "-t", name, "#{pane_id}")).strip()
         # 읽기 전용(포먼이 "살펴보기만"으로 정한 일 · 자동 기상) — CC plan 모드: 읽기 · 조사만, 고치기 전에 사람 승인
         await tmux(self.socket, "send-keys", "-t", pane, "-l", self.claude_bin + (" --permission-mode plan" if read_only else ""))
         await tmux(self.socket, "send-keys", "-t", pane, "Enter")
         out: dict[str, Any] = {"tmux": name, "pane": pane, "cwd": cwd, "project": project, "cc_session_id": None,
-                               "pid": None, "session_id": None, "note": None, "injected": False}
-        extra = {"first_prompt": first_prompt, "role": role}
+                               "pid": None, "session_id": None, "note": None, "injected": False, "worktree": wt_info}
+        extra = {"first_prompt": first_prompt, "role": role, "worktree_path": wt_info["path"] if wt_info else None}
         cc, pid, trust = await self._wait_ready(pane, 45)
         if trust:
             out["note"] = "처음 쓰는 폴더라 신뢰 확인 창이 떴습니다. 터미널(tmux " + name + ")에서 답하면 이어서 " + ("첫 글을 넣습니다." if (summary_id or first_prompt) else "화면에 뜹니다.")
@@ -574,7 +591,8 @@ class HandoffManager:
 
     async def _finish_spawn(self, name: str, pane: str, cwd: str, summary_id: int | None, title: str | None,
                             src_session: int | None, cc: str | None = None, pid: int | None = None,
-                            wait: float = 0, first_prompt: str | None = None, role: str | None = None) -> dict[str, Any]:
+                            wait: float = 0, first_prompt: str | None = None, role: str | None = None,
+                            worktree_path: str | None = None) -> dict[str, Any]:
         if cc is None:                                    # 신뢰 창 — 사람이 답하기를 기다린다
             loop = asyncio.get_running_loop()
             end = loop.time() + wait
@@ -584,9 +602,10 @@ class HandoffManager:
                 await self._act(src_session, "spawn", None, False, f"{name} 신뢰 창에 답이 없어 그만둠")
                 return {"note": "신뢰 확인 창에 답이 없어 그만뒀습니다."}
         sid = await self._ensure_row(cc, cwd, title)
-        if role:
+        if role or worktree_path:
             async with self.engine.begin() as c:
-                await c.execute(text("UPDATE character_session SET role = :r WHERE id = :i"), {"r": role[:16], "i": sid})
+                await c.execute(text("UPDATE character_session SET role = COALESCE(:r, role), worktree_path = COALESCE(:w, worktree_path) "
+                                     "WHERE id = :i"), {"r": role[:16] if role else None, "w": worktree_path, "i": sid})
         await self._act(src_session or sid, "spawn", pid, True, f"{name} {pane} cc={cc} 새 세션 행 {sid}")
         if self.on_change:
             self.on_change()
@@ -681,13 +700,53 @@ class HandoffManager:
         if not r:
             return False
         try:
-            panes = (await tmux(t.socket, "list-panes", "-t", tname, "-F", "#{pane_current_command}")).split()
-            if any(p == "claude" for p in panes):
-                return False
-            await tmux(t.socket, "kill-session", "-t", tname)
-            return True
+            # 세션 파일이 사라진 직후엔 claude 프로세스가 아직 내려가는 중일 수 있다(11-05 worktree 시험) — 5초까지 기다린다
+            for _ in range(10):
+                panes = (await tmux(t.socket, "list-panes", "-t", tname, "-F", "#{pane_current_command}")).split()
+                if not any(p == "claude" for p in panes):
+                    await tmux(t.socket, "kill-session", "-t", tname)
+                    return True
+                await asyncio.sleep(0.5)
+            return False
         except Refused:
             return False
+
+    # ── 따로 작업(worktree) 합치기 · 버리기(11-05) ──────────────
+    def _wt_of(self, row: SessionRow) -> tuple[str, str]:
+        repo, name = wt.split(row.cwd or "")
+        if not name:
+            raise Refused("따로 작업(worktree)에서 띄운 세션이 아닙니다")
+        return repo, name
+
+    async def worktree(self, row: SessionRow) -> dict[str, Any] | None:
+        if not row.cwd or not wt.split(row.cwd)[1]:
+            return None
+        repo, name = self._wt_of(row)
+        out = await wt.status(repo, name)
+        out["live"] = bool(row.cc and row.cc in live_sessions(self.sessions_dir))
+        lock = (self.schema.state.get(row.project or "") if self.schema else None) or {}
+        out["schema_lock"] = lock.get("wt") == name
+        return out
+
+    async def worktree_act(self, row: SessionRow, act: str) -> dict[str, Any]:
+        """merge(사람 승인 — 화면의 확인 창) · discard(커밋까지 버림). 세션이 끝난 뒤에만 — 도는 세션의 바닥을 옮기지 않는다."""
+        repo, name = self._wt_of(row)
+        if row.cc and row.cc in live_sessions(self.sessions_dir):
+            raise Refused("세션이 아직 살아 있습니다. 세션을 끝낸 뒤 합치거나 버릴 수 있습니다")
+        if act == "merge":
+            res = await wt.merge(repo, name)
+        elif act == "discard":
+            await wt.remove(repo, name, force=True)
+            res = {"ok": True, "note": "worktree와 브랜치를 지웠습니다(커밋 안 된 변경 · 합치지 않은 커밋도 함께)."}
+        else:
+            raise Refused(f"모르는 조작입니다: {act}")
+        if res.get("ok") and self.schema and row.project:
+            res["schema_unlocked"] = self.schema.release(row.project, name)
+        await self._act(row.id, f"wt-{act}", None, bool(res.get("ok")),
+                        f"{name} {res.get('note') or ''} {','.join(res.get('conflict') or [])}"[:500])
+        if self.on_change:
+            self.on_change()
+        return res
 
     async def _resume(self, row: SessionRow) -> dict[str, Any]:
         live = live_sessions(self.sessions_dir).get(row.cc or "")

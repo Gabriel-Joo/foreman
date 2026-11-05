@@ -11,7 +11,10 @@
   * { box-sizing:border-box; }
   html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, -apple-system, "Noto Sans KR", sans-serif; }
   /* 터미널(아래 고정)이 펴지면 --term-h만큼 화면 전체가 줄어든다 — 터미널이 패널 · 캔버스를 덮지 않는다 */
-  #app { display:flex; flex-direction:column; height:calc(100vh - var(--term-h)); }
+  /* 바깥 스크롤은 없다(11-05) — 픽셀 화면은 줌으로 맞추고(aim) 패널 · 터미널 · 창은 각자 안에서 스크롤한다.
+     vh는 가로 스크롤바 · 브라우저 막대에 따라 실제 창보다 커질 수 있어 dvh(실제 보이는 높이)를 쓴다 */
+  html, body { overflow:hidden; }
+  #app { display:flex; flex-direction:column; width:100%; height:calc(100dvh - var(--term-h, 0px)); min-height:0; }
   a { color:var(--act); }
   button { font:inherit; padding:4px 10px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
   button:disabled { opacity:.45; cursor:default; } button.ghost { background:transparent; }
@@ -50,7 +53,7 @@
   .odown[hidden] { display:none; }
   .odown b { color:var(--bad); }
 
-  .oside { --side-w:360px; position:relative; flex:none; width:var(--side-w); border-left:1px solid var(--line); background:var(--bg);
+  .oside { --side-w:360px; position:relative; flex:none; width:var(--side-w); max-width:calc(100vw - 160px); border-left:1px solid var(--line); background:var(--bg);
            display:flex; min-height:0; }
   .oside.folded { width:34px; }
   .oside-grip { position:absolute; left:-3px; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:2; }

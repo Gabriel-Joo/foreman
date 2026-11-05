@@ -17,6 +17,8 @@ from bridge.api import approvals as approvals_api, dashboard as dashboard_api, d
 from bridge.api import foreman as foreman_api, handoff as handoff_api, terminal as terminal_api, webhooks
 from bridge.foreman import ForemanDispatcher
 from bridge.handoff import HandoffManager
+from bridge.liveness import live_sessions
+from bridge.schemalock import SchemaLock
 from bridge.approval import load_policy
 from bridge.approvals import ApprovalManager
 from bridge.api.auth import require_api_token
@@ -154,6 +156,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.handoff = HandoffManager(engine, s.sessions_dir, app.state.notifier,
                                            on_change=dashboard_api.invalidate,
                                            project_of=(lambda cwd: asm_._project_for(cwd, "")) if asm_ else None)
+        # 11-05 — 스키마 잠금(세션 둘 이상이 한 프로젝트에 붙을 때 DB 스키마는 한 세션만). 합치기 · 버리기에서 푼다
+        sd = s.sessions_dir
+        app.state.schema_lock = SchemaLock(Path(__file__).resolve().parent.parent / "config" / "worktree.toml",
+                                           alive=lambda cc: cc in live_sessions(sd))
+        app.state.handoff.schema = app.state.schema_lock
+        if app.state.approvals:
+            app.state.approvals.schema = app.state.schema_lock
         # 11단계 — 포먼 디스패처(사람이 말하면 계획 → 승인하면 시작). 부를 때만 claude -p
         async def _pipe_snap() -> dict:
             pm = app.state.pipeline_mgr

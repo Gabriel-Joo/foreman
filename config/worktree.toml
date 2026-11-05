@@ -1,0 +1,13 @@
+# worktree · 스키마 잠금(11-05, bridge/worktree.py · bridge/schemalock.py)
+#
+# [schema_lock.<프로젝트>] — 이 경로(저장소 · worktree 맨 위 기준)의 파일을 Edit · Write로 쓰거나, 이 정규식에 맞는 명령을 돌리면
+# "스키마를 바꾸는 시도"다. 처음 시도한 세션이 그 프로젝트의 잠금을 갖고, 다른 세션의 같은 시도는 거부한다(승인 모드와 상관없이).
+# 바꾸면 브리지를 다시 띄운다.
+
+[schema_lock.foreman]
+paths = ["migrations/"]
+commands = ['bridge\.db\.migrate']
+
+[schema_lock.runshoes]
+paths = ["backend/src/main/resources/db/migration/"]
+commands = ['\bflyway\w*\b']
