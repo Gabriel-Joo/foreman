@@ -716,6 +716,12 @@ class Assembler:
         # 올 때도 있었다(4단계 실측). 다른 세션의 메시지는 "Another Claude session sent a message: <agent-message …"
         if s.lstrip().startswith("<agent-message"):
             return "subagent_message"
+        # FOREMAN이 넣은 인계 요청 · 인계 글(11-05, bridge/handoff.py) — 여러 줄이라 <pasted_content>로 감싸여 온다
+        head = s.lstrip()[:120]
+        if "[FOREMAN 인계 요청 r=" in head:
+            return "handoff"
+        if "[FOREMAN 인계 r=" in head:
+            return "handoff_in"
         if d.get("isMeta"):
             return "agent_message" if AGENT_MSG in s[:120] else "meta"
         return "human"

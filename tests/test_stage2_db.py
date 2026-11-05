@@ -786,3 +786,65 @@ async def test_ingest_monitor_alerts_once_and_recovers(env):
     mon.check()
     mon.check()
     assert sum("건너뛰었다" in m for _, m in sent) == 1
+
+
+# ── 11-05 세션 인계 — 요청 → 세션이 쓴 표지 → 저장 · 고치기 · 넣을 글, 되살리기는 FOREMAN이 멈춘 것만 ─────────
+async def test_handoff_request_extract_edit_inject_preview(env, monkeypatch):
+    from bridge import handoff as h
+    from bridge.liveness import LiveSession
+    s, main = env
+    await run(s)
+    engine = make_engine(s)
+    ENGINES.append(engine)
+    mgr = h.HandoffManager(engine, s.sessions_dir)
+    mgr.wait_s = 20
+    sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
+    row = await mgr.session(sid)
+    sent = []
+
+    async def fake_resolve(cc, d):
+        return None, LiveSession(4242, cc, "/x", "S"), False
+
+    async def fake_deliver(cc, text_, **kw):
+        sent.append(text_)
+        req = h.REQ_RE.search(text_).group(1)
+        with open(main, "a", encoding="utf-8") as f:     # 세션이 답한 것처럼 — 요청 줄 + 표지 응답
+            f.write("\n" + json.dumps({"type": "user", "message": {"content": text_}}, ensure_ascii=False) + "\n")
+            f.write(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text":
+                    f"<<<FOREMAN-HANDOFF r={req}>>>\n## 다음 할 일\n- 시험\n<<<END r={req}>>>"}]}},
+                    ensure_ascii=False) + "\n")
+        return {"delivered": {"as": "prompt", "prompt_id": None}, "steps": [], "queued": False}
+    monkeypatch.setattr(h, "resolve", fake_resolve)
+    monkeypatch.setattr(h, "deliver", fake_deliver)
+    monkeypatch.setattr(h, "live_sessions", lambda d: {SID: LiveSession(4242, SID, "/x", "S")})
+
+    r = await mgr.request_live(row, "snapshot")
+    assert r["status"] == "requested", r
+    try:
+        await mgr.request_live(row, "snapshot")
+        raise AssertionError("두 번째 요청이 들어갔다")
+    except h.Refused as e:
+        assert "이미" in str(e)
+    for _ in range(40):
+        await asyncio.sleep(0.2)
+        st = q(s, "SELECT status, body FROM summary WHERE id = %s", r["summary_id"])[0]
+        if st[0] != "requested":
+            break
+    assert st == ("ok", "## 다음 할 일\n- 시험")
+    e = await mgr.edit(r["summary_id"], "## 다음 할 일\n- 고친 것")
+    assert q(s, "SELECT source, parent_id FROM summary WHERE id = %s", e["summary_id"]) == (("edited", r["summary_id"]),)
+    assert (await mgr.latest_ok(sid))["id"] == e["summary_id"]
+    inj = await mgr.injection(e["summary_id"])
+    assert inj["text"].startswith(f"[FOREMAN 인계 r={e['req']}]") and "고친 것" in inj["text"] and not inj["cut"]
+
+    # 되살리기 — FOREMAN이 멈춘 기록이 없으면 거부(사람이 멈춘 CC는 건드리지 않는다)
+    monkeypatch.setattr(h, "live_sessions", lambda d: {SID: LiveSession(4242, SID, "/x", "T")})
+    try:
+        await mgr.action(row, "resume")
+        raise AssertionError("사람이 멈춘 세션을 되살렸다")
+    except h.Refused as e2:
+        assert "FOREMAN이 멈춘" in str(e2)
+    c = await mgr.controls(row)
+    assert c["can"]["resume"] is False and "사람이 멈춤" in c["why"]
+    await mgr._act(sid, "stop", 4242, True, "시험")
+    assert (await mgr.controls(row))["can"]["resume"] is True

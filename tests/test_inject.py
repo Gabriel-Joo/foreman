@@ -33,6 +33,23 @@ def test_find_delivery_wrapped_paste_and_tabs(tmp_path):
     assert inj.find_delivery(str(p), 0, "다른 글") is None
 
 
+def test_find_delivery_trailing_blank_lines_trimmed_by_cc(tmp_path):
+    # 11-05 실측: 끝에 줄바꿈이 붙은 입력을 CC가 다듬어 기록 — 제출됐는데 "확인 안 됨"으로 떴다
+    p = tmp_path / "t.jsonl"
+    sent = "첫 줄\n\n둘째 줄\n\n"
+    wrapped = '\n\n<pasted_content id="2c4f">\n첫 줄\n\n둘째 줄\n\n</pasted_content id="2c4f">\n'
+    _write(p, {"type": "user", "uuid": "u1", "promptId": "p1", "message": {"content": wrapped}},
+           {"type": "user", "uuid": "u2", "promptId": "p2", "message": {"content": "확인"}})
+    assert inj.find_delivery(str(p), 0, sent)["uuid"] == "u1"
+    assert inj.find_delivery(str(p), 0, "확인\n")["uuid"] == "u2"
+
+
+async def test_deliver_refuses_blank(monkeypatch):
+    for blank in ("", " ", "\n\n", " \t\n"):
+        with pytest.raises(inj.Refused, match="빈 입력"):
+            await inj.deliver(SID, blank, sessions_dir="/nonexistent", transcript=None)
+
+
 def test_find_delivery_queue_and_offset(tmp_path):
     p = tmp_path / "t.jsonl"
     _write(p, {"type": "user", "uuid": "old", "promptId": "p0", "message": {"content": "바쁠 때"}})
@@ -78,3 +95,18 @@ async def test_resolve_dead(fake, monkeypatch):
     monkeypatch.setattr(inj, "live_sessions", lambda d: {})
     with pytest.raises(inj.Refused, match="살아 있는 CC 프로세스가 없다"):
         await inj.resolve(SID, "/s")
+
+
+async def test_left_in_box(monkeypatch):
+    t = inj.Target("/s", "%1", 1, SID)
+    screens = {}
+
+    async def fake_tmux(socket, *args, **kw):
+        return screens["s"]
+    monkeypatch.setattr(inj, "tmux", fake_tmux)
+    screens["s"] = "● 답\n────\n❯ 기존 발볼 120켤레 검증 시작해라\n────\n  ⏵⏵ auto mode on"     # 회색 제안 — 보낸 글이 아니다
+    assert await inj.left_in_box(t, "이미 들어가 있던 발볼 120켤레를 검증해라.\n\n190개") is False
+    screens["s"] = "❯ 이미 들어가 있던 발볼 120켤레를\n  검증해라.\n────"
+    assert await inj.left_in_box(t, "이미 들어가 있던 발볼 120켤레를 검증해라.") is True
+    screens["s"] = "로딩 중"
+    assert await inj.left_in_box(t, "아무거나") is None

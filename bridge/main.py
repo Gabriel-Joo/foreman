@@ -14,7 +14,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from bridge.api import approvals as approvals_api, dashboard as dashboard_api, debug, health, hooks, sessions, ws
-from bridge.api import terminal as terminal_api, webhooks
+from bridge.api import handoff as handoff_api, terminal as terminal_api, webhooks
+from bridge.handoff import HandoffManager
 from bridge.approval import load_policy
 from bridge.approvals import ApprovalManager
 from bridge.api.auth import require_api_token
@@ -147,6 +148,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                              s.webhook_allow_cidrs)
             elif app.state.pipeline_mgr:
                 log.warning("웹훅 포트를 열지 않음 — FOREMAN_WEBHOOK_TOKEN이 없다")
+        # 11단계 앞당김(11-05) — 세션 인계 · 세션 조작. 알림이 꺼져 있어도 돈다(알림만 빠진다)
+        app.state.handoff = HandoffManager(engine, s.sessions_dir, app.state.notifier,
+                                           on_change=dashboard_api.invalidate)
         log.info("브리지 시작 %s:%d (DB %s:%d, 와처 %s)", s.bind_host, s.bind_port, s.mysql_host, s.mysql_port,
                  "켬" if s.watch_enabled else "끔")
         try:
@@ -182,6 +186,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ws.router)
     app.include_router(hooks.router)
     app.include_router(sessions.router)
+    app.include_router(handoff_api.router)
     app.include_router(approvals_api.router)
     app.include_router(dashboard_api.router)
     app.include_router(terminal_api.api)

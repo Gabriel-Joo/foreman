@@ -3,10 +3,16 @@
 // 조각(승인 카드 · 대화 · 세션 정보 · 파이프라인)은 클래식 화면(render.js)과 같은 함수를 쓴다.
 
 import { approvalCard, handleApprovalClick, sessionKv, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
-         sessionName, sessionSub, projectLabel, why, oneLine, esc, ago, STATE_LABEL, ORIGIN_LABEL } from './render.js';
+         sessionName, sessionSub, projectLabel, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL } from './render.js';
 import { stuckTurn } from './store.js';
+import { mountHandoff } from './handoff.js';
 
-const KEY_OPEN = 'foremanPanelOpen', KEY_W = 'foremanPanelW';
+const KEY_OPEN = 'foremanPanelOpen', KEY_W = 'foremanPanelW', KEY_SECS = 'foremanPanelSecs';
+// 칸별 기본 펼침(11-05 다시 정함) — 대화는 늘 보인다(접을 수 없다). 최근 활동은 터미널의 도구 호출 줄에 해당해 편다.
+// 세션 정보는 핵심 한 줄(지금 · 서브 · 토큰)을 늘 보이게 따로 두고 자세한 표만 접는다. 승인 이력 · 인계는 가끔 보는 것 — 접는다.
+// 사람이 바꾼 펼침은 이 브라우저에 기억한다
+const SEC_DEFAULT = { pInfo: false, pFeed: true, pHist: false, hand: false };
+const DEFAULT_W = 340, MAX_FRAC = 0.4;     // 픽셀 화면을 덮지 않게 — 기본 340px, 창의 40%를 넘지 않는다
 const MIN_W = 280;
 const ls = { get(k) { try { return localStorage.getItem(k); } catch { return null; } },
              set(k, v) { try { localStorage.setItem(k, v); } catch { /* 저장 못 해도 이 탭에서는 된다 */ } } };
@@ -30,6 +36,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       <div id="pBody" class="oside-body">
         <section id="pAppr" class="papprs" aria-label="승인 대기"></section>
         <section id="pSel"></section>
+        <section id="pHand"></section>
         <details id="pHist" class="appr-hist"><summary class="small">승인 이력 <span id="pHistHead" class="muted"></span></summary><div id="pHistBody" class="small"></div></details>
       </div>
       <form id="pForm" class="input" hidden>
@@ -44,6 +51,15 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     </div>`;
   host.appendChild(el);
   const $ = (id) => el.querySelector('#' + id);
+  let secs = { ...SEC_DEFAULT };
+  try { secs = { ...SEC_DEFAULT, ...JSON.parse(ls.get(KEY_SECS) || '{}') }; } catch { /* 기본값 */ }
+  const setSec = (k, v) => { if (secs[k] === v) return; secs[k] = v; ls.set(KEY_SECS, JSON.stringify(secs)); };
+  el.addEventListener('toggle', (ev) => {           // toggle은 버블링하지 않는다 — capture
+    const id = ev.target && ev.target.id;
+    if (id && id in SEC_DEFAULT) setSec(id, ev.target.open);
+  }, true);
+  const hand = mountHandoff($('pHand'), store, { open: secs.hand, onToggle: (v) => setSec('hand', v) });
+  $('pHist').open = secs.pHist;
 
   let target = null, targetKey = '', lastSel = undefined;
   let open = ls.get(KEY_OPEN) !== '0';
@@ -53,8 +69,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   // ── 접기 · 너비 ──────────────────────────────────────
   function applyWidth() {
-    const w = Number(ls.get(KEY_W)) || 380;
-    el.style.setProperty('--side-w', Math.max(MIN_W, Math.min(w, window.innerWidth * 0.6)) + 'px');
+    const w = Number(ls.get(KEY_W)) || DEFAULT_W;
+    el.style.setProperty('--side-w', Math.max(MIN_W, Math.min(w, window.innerWidth * MAX_FRAC)) + 'px');
   }
   function setOpen(v, remember = true) {
     open = v;
@@ -120,21 +136,24 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   function drawSession(st) {
     const s = st.selected != null ? st.sessions.get(st.selected) : null;
-    if (!s) { drawHint(st); return; }
+    if (!s) { hand.setSession(null); drawHint(st); return; }
+    hand.setSession(s.id);
     $('pTitle').textContent = sessionName(s);
     const stuck = stuckTurn(s);
     const keep = $('pConvo');
     const atBottom = !keep || lastSel !== s.id || keep.scrollHeight - keep.scrollTop - keep.clientHeight < 40;
-    const feedOpen = $('pFeed') ? $('pFeed').open : false, infoOpen = $('pInfo') ? $('pInfo').open : false;
+    const t = s.tokens || {};
+    const now = s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target || '', 70))}` : (s.state === 'ACTIVE' ? '생각 중' : esc(STATE_LABEL[s.state] || ''));
     $('pSel').innerHTML = `
       <div class="psel-head"><span class="badge st-${s.state}">${esc(STATE_LABEL[s.state] || s.state)}</span>
         <span class="small muted">${esc(sessionSub(s))} · ${esc(projectLabel(st, s.project))}</span></div>
       <div class="small muted">${esc((s.cwd || '').replace(/^\/home\/[^/]+/, '~'))}</div>
+      <div class="small psel-now">지금 <b>${now}</b>${s.subagents_running ? ` · 서브 ${s.subagents_running}개 돎` : ''} · 오늘 출력 ${tok(t.today_output)}</div>
       ${s.open_turn ? `<div class="small${stuck ? ' warn' : ''}">${stuck ? '⚠ 끝 신호 없는 턴' : '▶ 턴'} ${esc(ORIGIN_LABEL[s.open_turn.origin] || '')} · ${ago(s.open_turn.started_at)} 시작</div>` : ''}
-      <details id="pInfo"${infoOpen ? ' open' : ''}><summary class="small muted">세션 정보 · 토큰</summary>${sessionKv(s)}</details>
+      <details id="pInfo"${secs.pInfo ? ' open' : ''}><summary class="small muted">세션 정보 · 토큰 자세히</summary>${sessionKv(s)}</details>
       <h3>최근 대화</h3>
       <div id="pConvo" class="convo">${convoHtml(st.convo.get(s.id)) || '<p class="small muted">불러오는 중…</p>'}</div>
-      <details id="pFeed"${feedOpen ? ' open' : ''}><summary class="small muted">최근 활동 ${s.feed.length}</summary><div class="feed">${feedHtml(s)}</div></details>`;
+      <details id="pFeed"${secs.pFeed ? ' open' : ''}><summary class="small muted">최근 활동 ${s.feed.length}</summary><div class="feed">${feedHtml(s)}</div></details>`;
     const convo = $('pConvo');
     if (atBottom) convo.scrollTop = convo.scrollHeight;
     else if (keep) convo.scrollTop = keep.scrollTop;
