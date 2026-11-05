@@ -1031,6 +1031,13 @@ async def test_background_bash_and_monitor_start_end(env):
                        turnOrigin="task_notification"))
     ends = q(s, "SELECT target, JSON_UNQUOTE(JSON_EXTRACT(payload, '$.status')) FROM event WHERE type = 'bg_end'")
     assert ends == (("bgB", "completed"),)                                  # 세 곳으로 왔어도 한 번
+    # TaskStop으로 멈추면 알림이 오지 않는다 — 결과의 task_id로 끝(11-06)
+    await _append(s, asm, main,
+                  asst(U(610), "msg_g4", {"type": "tool_use", "id": "toolu_S", "name": "TaskStop", "input": {"task_id": "bgM"}}),
+                  result(U(611), "n1", "toolu_S", '{"message":"Successfully stopped task: bgM"}',
+                         tur={"message": "Successfully stopped task: bgM", "task_id": "bgM", "task_type": "local_bash"}))
+    ends = q(s, "SELECT target, JSON_UNQUOTE(JSON_EXTRACT(payload, '$.status')) FROM event WHERE type = 'bg_end' ORDER BY id")
+    assert ends == (("bgB", "completed"), ("bgM", "stopped"))
     from datetime import datetime
     t0, t1 = datetime(2026, 10, 1, 0, 0, 2), datetime(2026, 10, 1, 0, 0, 9)
     rows = [("bgM", "Monitor", "브리지 기다림", t0)]

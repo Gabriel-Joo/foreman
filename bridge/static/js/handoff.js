@@ -1,6 +1,6 @@
 // 인계 · 세션 조작(11-05, docs/11_handoff.md) — 패널 [세션] 탭의 칸들. 11-06 정리: 자주 쓰는 것만 보이고 나머지는 접는다.
 //   인계(늘 보임)  요약하고 끝내기 · 지금 요약 · 새로 띄우기, 요약 카드(머리에 [고치기]) · 요약 이력 · 읽을 곳
-//   세션(늘 보임)  세션 끝내기, 「더」 안에 작업 중단 · 일시정지 · 다시 시작 / 따로 작업(worktree일 때)
+//   세션(늘 보임)  세션 끝내기, [더보기]를 눌러야 작업 중단 · 일시정지 · 다시 시작 / 따로 작업(worktree일 때)
 //   문서 정리(접힘, 할 일이 있으면 열림)  압축 손실 [잃은 것 찾기] · 문서에 남기기 [남길 것 찾기]
 // 자기 데이터(/api/sessions/{id}/handoff)를 따로 받아 따로 그린다 — 세션 칸이 다시 그려져도 고치던 글이 날아가지 않게.
 
@@ -177,11 +177,10 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         <div class="hand-h"><b>세션</b></div>
         <div class="hand-btns">
           ${b('exit', '세션 끝내기', can.exit, 'danger', '세션 끝내기 — /exit로 세션을 완전히 끝냅니다. FOREMAN이 띄운 tmux 창도 닫습니다.')}
-          <details class="hand-more"${moreOpen ? ' open' : ''}><summary class="small muted" title="더 — 일시정지 · 다시 시작 · 작업 중단. 드물게 씁니다.">더</summary>
-            ${b('interrupt', '작업 중단(Esc)', can.interrupt, 'ghost', '작업 중단 — 지금 하는 작업만 멈춥니다(Esc). 세션은 살아 있습니다.')}
+          ${b('more', moreOpen ? '접기 ▴' : '더보기 ▾', true, 'ghost', moreOpen ? '접기 — 작업 중단 · 일시정지 · 다시 시작을 다시 숨깁니다.' : '더보기 — 작업 중단 · 일시정지 · 다시 시작. 드물게 씁니다.')}
+          ${moreOpen ? `${b('interrupt', '작업 중단(Esc)', can.interrupt, 'ghost', '작업 중단 — 지금 하는 작업만 멈춥니다(Esc). 세션은 살아 있습니다.')}
             ${b('stop', '일시정지', can.stop, 'ghost', '일시정지 — 세션을 잠시 멈춥니다(Ctrl+Z). 맥락은 그대로이고 [다시 시작]으로 이어 갑니다.')}
-            ${b('resume', '다시 시작', can.resume, 'ghost', '다시 시작 — FOREMAN이 일시정지한 세션을 이어서 돌립니다.')}
-          </details>
+            ${b('resume', '다시 시작', can.resume, 'ghost', '다시 시작 — FOREMAN이 일시정지한 세션을 이어서 돌립니다.')}` : ''}
         </div>
         ${wtGroup(c.worktree, b)}
       </section>
@@ -191,7 +190,6 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       </details>`;
     // 그릴 때 open으로 그려도 toggle이 난다 — 그린 상태와 달라질 때만 사람이 바꾼 것으로 기억한다
     el.querySelector('details.hand-docs').addEventListener('toggle', (ev) => { if (ev.target.open !== docsOn) docsOpen = ev.target.open; });
-    el.querySelector('details.hand-more').addEventListener('toggle', (ev) => { moreOpen = ev.target.open; });
   }
 
   el.addEventListener('click', async (ev) => {
@@ -201,6 +199,8 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     const act = btn.dataset.act, id = sid;
     const post = (u, body) => api('POST', u, body || {});
     if (act === 'cancel') { mode = null; preview = null; editDraft = null; draw(); return; }
+    // 더보기 — <details>에 display를 주면 브라우저에 따라 접힌 채로도 펼쳐져 보였다(11-06). 눌렀을 때만 그린다(기본 접힘)
+    if (act === 'more') { moreOpen = !moreOpen; draw(); return; }
     if (act === 'prom-req') {
       const pick = el.querySelector('#promIn'), v = pick ? pick.value : 'none';
       if (v === '') { note = { bad: true, msg: '같이 넣을 것을 골라 주세요 — 넣지 않으려면 「넣지 않음」을 고릅니다.' }; draw(); return; }
