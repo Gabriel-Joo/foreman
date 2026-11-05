@@ -33,11 +33,11 @@
       "test": { "_": "D 검사 — 게이지, 합격 · 불합격 램프", "x": 19, "y": 8, "w": 3, "h": 2, "seats": [[20.2, 8.75, "down"]] },
       "plans": { "_": "E 도면실 — 큰 탁자, 도면, 두루마리통(Agent · 서브에이전트가 모인다)", "x": 22, "y": 8, "w": 5, "h": 5,
                  "seats": [[23.0, 10.9, "right"], [26.2, 10.9, "left"], [24.6, 9.5, "down"], [24.6, 12.3, "up"]] },
-      "ship": { "_": "H 출하 접수대 — 송장, 도장(git)", "x": 19, "y": 11, "w": 3, "h": 2, "seats": [[20.2, 12.0, "down"]] },
+      "ship": { "_": "H 출하 접수대 — 송장, 도장(git)", "x": 19, "y": 11, "w": 3, "h": 2, "seats": [[20.2, 11.9, "down"]] },
       "infra": {
         "y": 14, "h": 3,
         "_stands": "캐릭터 전용 칸(방 좌표) — 단계 구조물 바로 앞, 가구를 두지 않는다. 11-05 window.office.audit()로 찾은 자리(윗몸이 안 가리는 가장 가까운 칸)",
-        "stands": { "jenkins": [4.5, 15.8], "harbor": [14.5, 16.15], "argocd": [24.55, 15.8], "home": [1.0, 16.2] },
+        "stands": { "jenkins": [4.6, 15.8], "harbor": [14.5, 16.15], "argocd": [24.65, 15.8], "home": [1.0, 16.2] },
         "jenkins": { "x": 2, "label": "검수대(Jenkins)" },
         "harbor": { "x": 12, "label": "팔레트(Harbor)" },
         "argocd": { "x": 21, "label": "트럭(ArgoCD)" }
@@ -51,8 +51,9 @@
   "tags": {
     "_": "구역 이름표 — 안전 노랑 표지판(검정 글씨, 빗금 띠)",
     "style": { "bg": "#f2c14e", "fg": "#141414", "border": "#141414", "font": "bold 10px ui-monospace, 'D2Coding', monospace", "kind": "hazard" },
-    "zones": { "foreman_office": "감독 컨테이너", "store": "자재창고", "desks": "작업대", "tools": "공구실", "test": "검사대",
-               "plans": "도면실", "camp": "함바", "gate": "셔터", "ship": "출하 접수대" },
+    "_zones": "[이름, dx, dy] — 이름표가 사람 자리를 가리지 않게 비켜 둔 것(11-05 window.office.layoutPlan())",
+    "zones": { "foreman_office": "감독 컨테이너", "store": "자재창고", "desks": ["작업대", -0.1, 0], "tools": "공구실", "test": ["검사대", -0.5, 0],
+               "plans": "도면실", "camp": "함바", "gate": "셔터", "ship": ["출하 접수대", 0, 0.9] },
     "_roles": "구역 → 하는 일(설명은 테마 공통, office.js ZONE_ROLE). 이름표에 마우스를 올리면 뜬다",
     "roles": { "foreman_office": "hq", "store": "read", "desks": "edit", "tools": "bash", "test": "test",
                "plans": "sub", "camp": "idle", "gate": "web", "ship": "git" },

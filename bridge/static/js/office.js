@@ -538,7 +538,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       for (const a of list) if (a.room === '_hq') drawName(a);
     } else if (zoomedIn) {
       const room = roomByView();
-      if (room && !room.lounge) drawZoneTags(room);
+      if (room && !room.lounge) { drawZoneTags(room); if (SP) overTags(room, list, now); }
       for (const a of list) if (a.room === (view === '_lounge' ? null : view)) drawName(a);
     }
     requestAnimationFrame(frame);
@@ -666,7 +666,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         const x = ox + d.x + i * (d.dx || 1), y = oy + d.y;
         const top = d.z === 'top';
         const key = top ? oy + topKey(d) : y + h - 0.01;
-        out.push({ s: d.s, src, x, y, w, h, key, top, host: top ? d._host : null,
+        out.push({ s: d.s, src, d, ox, oy, x, y, w, h, key, top, host: top ? d._host : null,
                    hostTop: top && d._hostTop != null ? oy + d._hostTop : null,
                    foot: top ? null : footprint({ ...d, x, y }, w, h) });
       }
@@ -726,9 +726,169 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     return issues;
   }
 
+  // ── 자리 배치 점검 · 다시 짜기(11-05 사용자 요청: 겹침을 하나씩 고치지 말고 근본적으로) ─────────────
+  // 사람 자리를 먼저 본다 — 모든 자리에 캐릭터를 세워 머리 · 몸통(몸 위쪽 60%)을 무엇이 가리는지: 나중에 그려지는 가구,
+  // 탁자 위 소품(받침 윗면 위로 솟은 부분), 구역 이름표(몸 전체). 머리만 보이는 것도 가려짐이다.
+  // 괜찮은 것: 앉은 자리에서 탁자가 다리(아래 40%)를 가리는 것, "위에 앉는" 가구(소파 · 침대 — 사람보다 먼저 그린다).
+  function bodySize() {
+    if (bodySize._v) return bodySize._v;
+    let w = 0.9, h = 1.5;
+    for (const ch of (CH.pool || []).slice(0, 8)) {
+      const c = SP.charFrame(ch, 'idle', 'down', 0, null, null);
+      if (c) { w = Math.max(w, c.width / T); h = Math.max(h, c.height / T); }
+    }
+    return (bodySize._v = [Math.min(w, 1.3), Math.min(h, 2.4)]);
+  }
+  // 구역 이름표의 방 좌표 칸 — 이름표는 화면에 같은 크기로 그리므로 칸 크기는 지금 확대 배율에 달렸다(방 하나를 보는 보통 배율로 잰다)
+  function tagRects(where = 'room') {
+    const out = [], fontPx = +((TAG.font.match(/(\d+)px/) || [0, 10])[1]);
+    const padL = TAG.kind === 'hazard' ? 9 : TAG.kind === 'sign' ? 7 : 6, s = cam.s * T;
+    ctx.save(); ctx.font = TAG.font;
+    if (where === 'hq') {
+      const label = HQ.label || '감독실';
+      ctx.font = TAG.font.replace(/(\d+)px/, (m, n) => `${+n + 3}px`);
+      out.push({ zone: 'hq', label, x: 0.3, y: 2.2, w: (padL + ctx.measureText(label).width + 6) / s, h: (fontPx + 10) / s });
+    } else {
+      for (const [key, v] of Object.entries((theme.tags && theme.tags.zones) || {})) {
+        const z = L.zones[key];
+        if (!z || z.x == null) continue;
+        const [label, dx = 0, dy = 0] = Array.isArray(v) ? v : [v, 0, 0];
+        out.push({ zone: key, label, x: z.x + 0.1 + dx, y: z.y + 0.08 + dy, w: (padL + ctx.measureText(label).width + 6) / s, h: (fontPx + 7) / s });
+      }
+    }
+    ctx.restore();
+    return out;
+  }
+  const areaOf = (a, b) => Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0])) *
+                           Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]));
+  function spotProblems(p, rects, tags) {
+    const [bw, bh] = bodySize();
+    const up = [p.x - bw / 2 + 0.05, p.y - bh, bw - 0.1, bh * 0.6], full = [p.x - bw / 2 + 0.05, p.y - bh, bw - 0.1, bh];
+    const out = [];
+    for (const r of rects) {
+      if (r.key <= p.y) continue;                                                  // 사람보다 먼저 그려진다
+      if (!r.top && SIT_ON.test(r.s) && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) continue;   // 위에 앉은 가구
+      const box = r.top && r.hostTop != null ? [r.x, r.y, r.w, Math.max(0, Math.min(r.y + r.h, r.hostTop) - r.y)] : [r.x, r.y, r.w, r.h];
+      const c = areaOf(up, box) / (up[2] * up[3]);
+      if (c > 0.02) out.push({ kind: r.top ? '소품' : '가구', by: r.s, r, cover: +c.toFixed(2) });
+    }
+    for (const t of tags) {
+      const c = areaOf(full, [t.x, t.y, t.w, t.h]) / (full[2] * full[3]);
+      if (c > 0.02) out.push({ kind: '이름표', by: t.label, t, cover: +c.toFixed(2) });
+    }
+    return out;
+  }
+  // 자리 점검 — 모든 자리(구역 좌석 · 책상 · 감독 자리 · 출하 라인 · 대기 · 일감 넘기기 · 감독실)
+  function layoutAudit() {
+    const out = [], rects = decorRects('room'), tags = tagRects('room');
+    for (const p of standSpots()) { const pr = spotProblems(p, rects, tags); if (pr.length) out.push({ where: p.where, at: [p.x, p.y], problems: pr.map(({ kind, by, cover }) => ({ kind, by, cover })) }); }
+    if (HQ.seat) {
+      const p = { where: 'hq.seat', x: HQ.seat[0], y: HQ.seat[1] }, pr = spotProblems(p, decorRects('hq'), tagRects('hq'));
+      if (pr.length) out.push({ where: p.where, at: [p.x, p.y], problems: pr.map(({ kind, by, cover }) => ({ kind, by, cover })) });
+    }
+    return out;
+  }
+  // 자리 다시 짜기 — ① 이름표가 사람 몸을 가리면 이름표를 옮긴다 ② 소품이 가리면 소품을 받침 탁자 위에서 옆으로 ③ 그래도 가리면
+  // 사람 자리를 가장 가까운 깨끗한 곳으로(원래 가구 칸 안에 있던 자리는 그 가구 곁에서, 빈 바닥 자리는 걸을 수 있는 칸에서).
+  // 이 페이지 안의 테마 값을 바꿔 가며 풀고, 바뀐 값만 돌려준다 — theme.json에 옮겨 적는다
+  function layoutPlan() {
+    const before = layoutAudit();
+    const spots = () => standSpots();
+    const blocked = (x, y) => { const g = GRID && GRID.room; if (!g) return false; const c = Math.floor(x * RES), r = Math.floor(y * RES); return c < 0 || r < 0 || c >= g.cols || r >= g.rows || !!g.block[r * g.cols + c]; };
+    const changes = { tags: {}, items: [], seats: {}, stands: {}, unsolved: [] };
+    // ① 이름표
+    for (let pass = 0; pass < 2; pass++) {
+      const tags = tagRects('room');
+      for (const t of tags) {
+        const others = tags.filter((o) => o !== t);
+        const hits = (x, y) => spots().some((p) => spotProblems(p, [], [{ ...t, x, y }]).length) ||
+          others.some((o) => areaOf([x, y, t.w, t.h], [o.x, o.y, o.w, o.h]) > 0);
+        if (!hits(t.x, t.y)) continue;
+        const z = L.zones[t.zone], v = theme.tags.zones[t.zone];
+        const [, dx0 = 0, dy0 = 0] = Array.isArray(v) ? v : [v, 0, 0];
+        let best = null;
+        for (let dy = -0.6; dy <= 1.6; dy += 0.1) for (let dx = -0.8; dx <= 2.4; dx += 0.1) {
+          const x = z.x + 0.1 + dx0 + dx, y = z.y + 0.08 + dy0 + dy;
+          if (x < 0.7 || y < 1.9 || x + t.w > L.room.w - 0.7 || hits(x, y)) continue;
+          const d = Math.hypot(dx, dy * 1.4);
+          if (!best || d < best.d) best = { d, dx: +(dx0 + dx).toFixed(2), dy: +(dy0 + dy).toFixed(2) };
+        }
+        if (best) { theme.tags.zones[t.zone] = [t.label, best.dx, best.dy]; changes.tags[t.zone] = [t.label, best.dx, best.dy]; }
+        else changes.unsolved.push({ tag: t.zone });
+      }
+    }
+    // ② 소품
+    for (const r of decorRects('room').filter((x) => x.top && x.d._hostSpan)) {
+      const covering = () => spots().filter((p) => spotProblems(p, [r], []).length);
+      if (!covering().length) continue;
+      const [s0, s1] = r.d._hostSpan, x0 = r.d.x;
+      let best = null;
+      for (let nx = s0; nx <= s1 - r.w + 1e-9; nx += 0.05) {
+        r.d.x = nx; r.x = r.ox + nx;
+        if (!covering().length && (!best || Math.abs(nx - x0) < Math.abs(best - x0))) best = nx;
+      }
+      r.d.x = best != null ? +best.toFixed(2) : x0; r.x = r.ox + r.d.x;
+      if (best != null) changes.items.push({ s: r.s, src: r.src, from: [x0, r.d.y], to: [r.d.x, r.d.y] });
+    }
+    // ③ 사람 자리
+    const rects = decorRects('room'), tags = tagRects('room');
+    for (const p of spots()) {
+      if (!spotProblems(p, rects, tags).length) continue;
+      const [zone, idx] = p.where.split(/[#.]/);
+      const host = rects.find((r) => !r.top && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h);
+      const sameZone = spots().filter((o) => o.where !== p.where && o.where.split(/[#.]/)[0] === zone);
+      let best = null;
+      for (let ny = p.y - 0.6; ny <= p.y + 1.0 + 1e-9; ny += 0.05) for (let nx = p.x - 1.2; nx <= p.x + 1.2 + 1e-9; nx += 0.05) {
+        const d = Math.hypot(nx - p.x, (ny - p.y) * 1.2);
+        if (best && d >= best.d) continue;
+        if (host ? !(nx >= host.x - 0.3 && nx <= host.x + host.w + 0.3 && ny >= host.y - 0.3 && ny <= host.y + host.h + 0.3) : blocked(nx, ny)) continue;
+        if (sameZone.some((o) => Math.hypot(o.x - nx, o.y - ny) < 0.75)) continue;
+        if (spotProblems({ x: nx, y: ny }, rects, tags).length) continue;
+        best = { d, x: +nx.toFixed(2), y: +ny.toFixed(2) };
+      }
+      if (!best) { changes.unsolved.push({ spot: p.where, at: [p.x, p.y], problems: spotProblems(p, rects, tags).map(({ kind, by, cover }) => ({ kind, by, cover })) }); continue; }
+      if (zone === 'infra') {
+        const z = L.zones.infra; z.stands = z.stands || {};
+        if (idx === 'handoff') { changes.unsolved.push({ spot: p.where, note: '일감 넘기는 자리는 대기 자리 + 1.3칸 — 대기 자리를 옮겨야 한다' }); continue; }
+        z.stands[idx] = [best.x, best.y]; changes.stands[idx] = [best.x, best.y];
+      } else if (idx === 'seat') { L.zones[zone].seat = [best.x, best.y]; changes.seats[zone + '.seat'] = [best.x, best.y]; }
+      else if (idx === 'stand') { L.zones[zone].stand = [best.x, best.y]; changes.seats[zone + '.stand'] = [best.x, best.y]; }
+      else {
+        const s = L.zones[zone].seats[+idx];
+        s[0] = best.x; s[1] = best.y;
+        changes.seats[zone] = L.zones[zone].seats.map((q) => q.slice());
+      }
+    }
+    TOP_RECTS.room = null;
+    return { before, changes, after: layoutAudit() };
+  }
+
   // 탁자 위 소품 덧그리기(11-05) — 탁자 뒤에 앉은 사람은 탁자보다 먼저 그려져야 다리가 가려지는데, 그러면 탁자 위 소품
   // (책 · 머그 · 촛대)이 사람 몸 위로 그려진다. 한 줄 정렬로는 둘 다 만족할 수 없어서, 다 그린 뒤 소품과 겹치는 사람만
   // 소품 자리 안에서 한 번 더 그린다 — 탁자는 다리를 가리고, 소품은 사람 뒤로 간다
+  // 구역 이름표 위로 사람을 덧그린다(11-05) — 이름표는 화면에 같은 크기라 화면이 좁을수록(패널을 넓히면) 방 안에서 커져서,
+  // 이름표 자리를 옮기는 것만으로는 모든 배율에서 사람 자리를 피할 수 없다. 이름표를 그린 뒤 이름표 칸 안의 사람만 한 번 더 —
+  // 이름표는 읽히고, 사람은 어떤 배율에서도 이름표에 가리지 않는다
+  function overTags(room, list, now) {
+    const tags = HITS.filter((h) => h.zone);
+    if (!tags.length) return;
+    const toW = (sx, sy) => [((sx - W / 2) / cam.s + cam.x), ((sy - H / 2) / cam.s + cam.y)];   // 화면 → 월드 픽셀
+    const boxes = tags.map((h) => { const [x0, y0] = toW(h.x, h.y), [x1, y1] = toW(h.x + h.w, h.y + h.h); return [x0, y0, x1 - x0, y1 - y0]; });
+    const [bw, bh] = bodySize();
+    ctx.save();
+    ctx.setTransform(cam.s * dpr, 0, 0, cam.s * dpr, (W / 2 - cam.x * cam.s) * dpr, (H / 2 - cam.y * cam.s) * dpr);
+    for (const a of list) {
+      if (a.room !== room.name || (a.bornAt && now < a.bornAt)) continue;
+      const body = [(a.x - bw / 2) * T, (a.y - bh) * T, bw * T, bh * T];
+      const hit = boxes.filter((b) => areaOf(body, b) > 0);
+      if (!hit.length) continue;
+      ctx.save(); ctx.beginPath();
+      for (const b of hit) ctx.rect(b[0], b[1], b[2], b[3]);
+      ctx.clip(); drawActorS(a, now); ctx.restore();
+    }
+    ctx.restore();
+  }
+
   const TOP_RECTS = {};
   function overTopItems(room, list, now, where = 'room') {
     if (!TOP_RECTS[where]) TOP_RECTS[where] = decorRects(where).filter((r) => r.top);
@@ -758,17 +918,29 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const list = lists.find((l) => l.includes(d)) || [];
     // 받침을 가운데가 아니라 소품의 밑동(아래쪽)으로 찾는다 — 모니터 · PC처럼 키 큰 소품은 가운데가 탁자 윗면보다 위라 못 찾았다
     const [w, h] = sizeT(d), cx = d.x + w / 2, cy = d.y + h * 0.85;
-    let best = null, bestTop = null;
+    let best = null, bestTop = null, span = null;
+    const pieces = [];
     for (const b of list) {
       if (!b.s || b.fx || b.z) continue;
       const [bw, bh] = sizeT(b);
       for (let i = 0; i < (b.n || 1); i++) {
         const bx = b.x + i * (b.dx || 1);
-        if (cx >= bx && cx <= bx + bw && cy >= b.y && cy <= b.y + bh && (best == null || b.y + bh > best)) { best = b.y + bh; bestTop = b.y; }
+        pieces.push([bx, bx + bw, b.y]);
+        if (cx >= bx && cx <= bx + bw && cy >= b.y && cy <= b.y + bh && (best == null || b.y + bh > best)) { best = b.y + bh; bestTop = b.y; span = [bx, bx + bw]; }
+      }
+    }
+    // 받침 탁자의 좌우 끝 — 이어 붙인 조각(왼끝 · 가운데 · 오른끝)까지. 자리 다시 짜기(layoutPlan)가 소품을 이 안에서만 옮긴다
+    if (span) for (let grew = true; grew;) {
+      grew = false;
+      for (const [a0, a1, ay] of pieces) {
+        if (Math.abs(ay - bestTop) > 0.05) continue;
+        if (a1 >= span[0] - 0.06 && a0 < span[0] - 0.01) { span[0] = a0; grew = true; }
+        if (a0 <= span[1] + 0.06 && a1 > span[1] + 0.01) { span[1] = a1; grew = true; }
       }
     }
     // 받침보다 0.005 뒤 = 받침 발밑(-0.01)보다 뒤, 받침 앞 사람보다 앞. 받침을 못 찾으면 제 발밑(audit()이 "받침 없음"으로 알린다)
     d._host = best != null;
+    d._hostSpan = span;
     d._hostTop = bestTop;                                // 받침 윗면 선 — 덧그리기는 이 선 위쪽만(아래는 탁자가 사람을 가리는 자리)
     d._k = best != null ? best - 0.005 : d.y + h - 0.01;
     return d._k;
@@ -1013,10 +1185,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
   }
 
-  // "위에 앉거나 눕는" 가구 — 소파 · 빈백 · 간이침대 · 벤치 · 의자 대신 쓰는 그루터기 등. 자리 점이 이 가구 칸 안이면 사람은 그 가구
-  // 바로 다음에 그린다(가구 위에 앉은/누운 모습). 탁자 · 책상 · 의자는 아니다 — 거기선 탁자가 다리를 가리는 지금 모습이 맞다.
-  // (11-05 — 발 위치 순서로는 소파 · 침대가 나중에 그려져 사람이 뒤로 숨었다: 오피스 라운지 소파, 현장 함바 간이침대)
-  const SIT_ON = /(^|_)(sofa|couch|bean|cot|bed|bench|stump|stool|hammock|futon)(_|\d|$)/i;   // 낱말 단위 — workbench(작업대)는 아니다
+  // "위에 앉거나 눕는" 가구 — 소파 · 빈백 · 간이침대 · 벤치 · 그루터기 · 의자. 자리 점이 이 가구 칸 안이면 사람은 그 가구
+  // 바로 다음에 그린다(가구 위에 앉은/누운 모습). 탁자 · 책상 · 작업대는 아니다 — 거기선 탁자가 다리를 가리는 지금 모습이 맞다.
+  // (11-05 — 발 위치 순서로는 소파 · 침대 · 의자 등받이가 나중에 그려져 사람이 뒤로 숨었다: 오피스 라운지 소파, 현장 함바 간이침대,
+  //  마법학교 책상 · 대강당 아래 줄 — 등을 보이고 의자에 앉은 사람의 몸 절반을 등받이가 가렸다)
+  const SIT_ON = /(^|_)(sofa|couch|bean|cot|bed|bench|stump|stool|hammock|futon|chair)(_|\d|$)/i;   // 낱말 단위 — workbench(작업대)는 아니다
   function seatFurniture(a) {
     const key = `${a.room}:${a.tx}:${a.ty}`;
     if (a._bedKey === key) return a._bed;
@@ -1224,7 +1397,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       if (!z || z.x == null) continue;
       const [label, dx, dy] = Array.isArray(v) ? v : [v, 0, 0];      // ["아치 창", dx, dy] — 옆 구역 이름표와 겹치면 비켜 둔다
       const role = ZONE_ROLE[((theme.tags && theme.tags.roles) || {})[key]];
-      drawTag(r.x + z.x + 0.1 + (dx || 0), r.y + z.y + 0.08 + (dy || 0), label, false, null, null, role ? `<div class="tip-h">${esc(label)}</div>${tipOf(role)}` : null);
+      const n0 = HITS.length;
+      const box = drawTag(r.x + z.x + 0.1 + (dx || 0), r.y + z.y + 0.08 + (dy || 0), label, false, null, null, role ? `<div class="tip-h">${esc(label)}</div>${tipOf(role)}` : null);
+      if (HITS.length > n0) HITS[HITS.length - 1].zone = key; else HITS.push({ ...box, zone: key, tip: null });   // overTags가 쓴다
+      if (!HITS[HITS.length - 1].tip) HITS[HITS.length - 1].tip = `<div class="tip-h">${esc(label)}</div>`;
     }
     // 출하 라인 — 이름 · 세 단계(번호 · 무엇 · 지금 상태) · 단계 사이 화살표
     const iz = L.zones.infra, it = (theme.tags && theme.tags.infra) || {};
@@ -1695,7 +1871,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   resize();
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
-  return { go, theme, openSession, panel, actors, audit: () => audit(), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
+  return { go, theme, openSession, panel, actors, audit: () => audit(), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
                                                                        anim: a.act && a.act.anim, go: a.act && a.act.go, face: a.face, dir: a.dir, char: a.char })) };
 }
 
