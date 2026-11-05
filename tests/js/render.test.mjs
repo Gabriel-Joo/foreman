@@ -25,7 +25,7 @@ test('보통 글은 그대로', () => {
 
 test('마크다운 — HTML은 통과시키지 않는다', () => {
   const h = mdLite('## 제목\n**굵게** `코드` <script>x</script>\n```\na < b\n```');
-  assert.ok(h.includes('<b class="md-h md-h2">제목</b>'));
+  assert.ok(h.includes('<div class="md-h md-h2">제목</div>'));
   assert.ok(h.includes('<b>굵게</b>') && h.includes('<code class="md-i">코드</code>'));
   assert.ok(!h.includes('<script>') && h.includes('&lt;script&gt;'));
   assert.ok(h.includes('<pre class="md-code">a &lt; b</pre>'));

@@ -149,8 +149,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             elif app.state.pipeline_mgr:
                 log.warning("웹훅 포트를 열지 않음 — FOREMAN_WEBHOOK_TOKEN이 없다")
         # 11단계 앞당김(11-05) — 세션 인계 · 세션 조작. 알림이 꺼져 있어도 돈다(알림만 빠진다)
+        asm_ = app.state.assembler
         app.state.handoff = HandoffManager(engine, s.sessions_dir, app.state.notifier,
-                                           on_change=dashboard_api.invalidate)
+                                           on_change=dashboard_api.invalidate,
+                                           project_of=(lambda cwd: asm_._project_for(cwd, "")) if asm_ else None)
         log.info("브리지 시작 %s:%d (DB %s:%d, 와처 %s)", s.bind_host, s.bind_port, s.mysql_host, s.mysql_port,
                  "켬" if s.watch_enabled else "끔")
         try:

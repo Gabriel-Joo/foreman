@@ -102,6 +102,8 @@
     "error":            { "fx": "smoke", "priority": 10 }
   },
 
+  "_courier": "출하 라인 담당 한 명(11-05) — 빌드를 따라 ① → ② → ③ 으로 걸어간다. char가 없으면 sprites.chars.infra.jenkins",
+  "courier": { "name": "출하 반장" },
   "infra": {
     "running": { "anim": "work" },
     "success": { "anim": "idle" },

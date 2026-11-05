@@ -31,8 +31,22 @@ table.hist { border-collapse:collapse; margin:6px 0; } table.hist td, table.hist
 .msg .more { margin-top:3px; padding:1px 8px; }
 /* 펼친 긴 글의 [접기]는 글 끝까지 따라 내려온다 — 다 읽고 위로 찾아 올라가지 않게 */
 .msg .txt.clamp.open + .more { position:sticky; bottom:6px; float:right; background:var(--bg); box-shadow:0 1px 4px rgba(0,0,0,.18); }
-.md .md-h { display:inline-block; margin-top:4px; }
-.md .md-h1, .md .md-h2 { font-size:1.05em; }
+/* 마크다운(md.js) — 블록이 줄바꿈을 맡으므로 pre-wrap을 끈다(전에는 블록 사이에 빈 줄이 겹쳐 생겼다) */
+.msg .txt.md { white-space:normal; }
+.md p { margin:0 0 .55em; } .md p:last-child { margin-bottom:0; }
+.md .md-h { font-weight:700; margin:.7em 0 .3em; }
+.md .md-h:first-child { margin-top:0; }
+.md .md-h1, .md .md-h2 { font-size:1.08em; } .md .md-h3 { font-size:1.02em; } .md .md-h4, .md .md-h5, .md .md-h6 { font-size:1em; color:var(--muted); }
+.md .md-list { margin:.2em 0 .55em; padding-left:1.35em; }
+.md .md-list .md-list { margin:.15em 0; }
+.md li { margin:.12em 0; }
+.md .md-quote { margin:.4em 0; padding:2px 10px; border-left:3px solid var(--line); color:var(--muted); }
+.md .md-hr { border:0; border-top:1px solid var(--line); margin:.7em 0; }
+.md a { color:var(--act); }
+.md .md-tablewrap { overflow-x:auto; margin:.4em 0 .6em; }
+.md .md-table { border-collapse:collapse; font-size:.93em; }
+.md .md-table th, .md .md-table td { border:1px solid var(--line); padding:3px 8px; text-align:left; vertical-align:top; }
+.md .md-table th { background:var(--code); font-weight:600; white-space:nowrap; }
 .md .md-code { white-space:pre; overflow-x:auto; background:var(--code); padding:5px 8px; border-radius:5px; margin:4px 0;
                font:12px/1.45 ui-monospace, monospace; }
 .msg.in .md .md-code { background:var(--bg); }
@@ -136,3 +150,38 @@ body { --term-h:0px; }
           font:11.5px/1.45 ui-monospace, monospace; max-height:45vh; overflow:auto; }
 .fd-del { color:var(--bad); } .fd-add { color:var(--ok); }
 .fd-err { border-left:3px solid var(--bad); }
+
+/* 11-05 세션 이름 고치기 */
+#pTitle.editable { cursor:text; border-bottom:1px dashed transparent; }
+#pTitle.editable:hover { border-bottom-color:var(--muted); }
+.ptitle-edit { display:flex; gap:4px; align-items:center; flex:1; min-width:0; }
+.ptitle-edit input { flex:1; min-width:0; font-weight:600; padding:2px 6px; }
+
+/* 11-05 + 새 세션 창 */
+.overlay .box.ns { border-color:var(--line); max-width:560px; display:flex; flex-direction:column; gap:6px; max-height:90vh; overflow:auto; }
+.ns select, .ns input[type=text], .ns #nsTitle { width:100%; box-sizing:border-box; }
+.ns .row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.ns-pick { border:1px solid var(--line); border-radius:8px; padding:6px 8px; }
+.ns-path { display:inline; margin:0; max-height:none; }
+.ns-dirs { display:flex; flex-wrap:wrap; gap:3px; max-height:170px; overflow:auto; margin:6px 0; }
+.ns-dirs button { padding:1px 7px; }
+.ns-prev { max-height:30vh; }
+.ns-act { justify-content:flex-end; margin-top:6px; }
+.ns-act #nsMsg { margin-right:auto; }
+
+/* 11-05 툴팁 하나(tip.js) — 이름표 · 캐릭터 · 출하 라인 · 버튼 · 패널이 같은 모양 · 크기 · 위치 · 지연.
+   색 · 글꼴은 테마 이름표(--tip-*: 양피지 · 사인판 · 안전 표지판). 없으면 카드 색 */
+.tip { position:fixed; z-index:50; max-width:320px; pointer-events:none; padding:7px 11px 8px; border-radius:6px;
+       background:var(--tip-bg, var(--card)); color:var(--tip-fg, var(--fg)); border:1px solid var(--tip-border, var(--line));
+       box-shadow:0 4px 14px rgba(0,0,0,.35); font:var(--tip-font, 12.5px/1.45 system-ui, sans-serif); font-size:12.5px; line-height:1.45;
+       animation:tipin .12s ease-out; }
+.tip[hidden] { display:none; }
+@keyframes tipin { from { opacity:0; transform:translateY(2px); } to { opacity:1; transform:none; } }
+.tip-h { font-size:11px; opacity:.7; margin-bottom:2px; }
+.tip-b { font-weight:700; }
+.tip-t { opacity:.7; font-size:11.5px; font-weight:400; }
+.tip-s { margin-top:3px; font-weight:700; }
+/* 테마 분위기 — 구조는 같고 장식만 */
+:root[data-tip-kind="sign"] .tip { border-left:4px solid var(--tip-border); }
+:root[data-tip-kind="hazard"] .tip { border:2px solid var(--tip-border); border-left:8px solid var(--tip-border); border-radius:2px; }
+:root[data-tip-kind="parchment"] .tip { border-radius:3px; box-shadow:0 4px 14px rgba(0,0,0,.4), inset 0 0 12px rgba(138,102,64,.25); }

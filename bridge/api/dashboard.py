@@ -81,7 +81,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
     async with request.app.state.store.engine.connect() as c:
         rows = (await c.execute(text(
             "SELECT cs.id, cs.cc_session_id, cs.cwd, cs.attached_at, cs.detached_at, ch.name, p.name, "
-            "(SELECT MAX(e.ts) FROM event e WHERE e.session_id = cs.id) AS last_ts, cs.title, cs.role "
+            "(SELECT MAX(e.ts) FROM event e WHERE e.session_id = cs.id) AS last_ts, cs.title, cs.role, cs.custom_title "
             "FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
             # 셸 세션(7단계 터미널 패널, type='shell')은 캐릭터 카드가 아니다
             "LEFT JOIN project p ON p.id = ch.project_id WHERE cs.cc_session_id IS NOT NULL AND cs.type = 'agent'"))).all()
@@ -114,7 +114,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "ORDER BY id"))).all()
         appr_rows = appr
     projects: dict[str | None, list[dict[str, Any]]] = {}
-    for sid, cc, cwd, attached, detached, char, project, last_ts, title, role in visible:
+    for sid, cc, cwd, attached, detached, char, project, last_ts, title, role, custom in visible:
         ls = live.get(cc)
         cc_status = _status(s.sessions_dir, ls.pid) if ls else None
         te = _tmux_env(ls.pid) if ls else None
@@ -126,7 +126,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "id": sid, "cc_session_id": cc, "short": (cc or "")[:8], "character": char, "project": project,
             # 세션을 알아보는 이름: CC가 붙인 제목(ai-title) → 살아 있으면 CC 세션 이름(예: runshoes-50) → 짧은 id.
             # 캐릭터(포먼 등) · 역할(coder 등)은 따로 — 한 캐릭터에 세션 여럿이 붙어 있다(2단계 입양)
-            "title": title, "cc_name": _cc_name(s.sessions_dir, ls.pid) if ls else None, "role": role,
+            "title": title, "custom_title": custom, "cc_name": _cc_name(s.sessions_dir, ls.pid) if ls else None, "role": role,
             "cwd": cwd, "pid": ls.pid if ls else None, "proc": ls.state if ls else None, "cc_status": cc_status,
             "state": char_state(ls.state if ls else None, cc_status, ot is not None),
             # 열린 턴이 있는데 CC는 일하지 않는다 — 끝 신호 없이 멈춘 턴(숨기지 않고 따로 보인다)
