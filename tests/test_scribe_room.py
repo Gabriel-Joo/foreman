@@ -53,5 +53,16 @@ def test_task_prompts(task):
         sr.task_prompt("publish", "foreman", "/repo")
 
 
+def test_blocked_same_task_same_file_and_cap():
+    """동시에 시키기(11-06) — 같은 일 · 같은 파일 · 둘 넘게는 막고, 파일이 다른 일은 같이 둔다."""
+    trim = {"session_id": 194, "task": "trim", "title": "서기 — CLAUDE.md 정리"}
+    later = {"session_id": 193, "task": "later", "title": "서기 — 나중에 할 일 정리"}
+    assert sr.blocked("later", [trim]) is None                                # CLAUDE.md · docs/ ↔ README.md — 겹치지 않는다
+    assert "이미 열려" in sr.blocked("trim", [trim])
+    assert "README.md" in sr.blocked("readme", [later])                       # README 갱신 ↔ 나중에 할 일 — 같은 파일
+    assert "동시에 2개까지" in sr.blocked("retro", [trim, later])
+    assert sr.blocked("retro", []) is None
+
+
 def test_later_pattern():
     assert sr.LATER.search("이건 나중에 하자") and sr.LATER.search("일단 미루고") and not sr.LATER.search("지금 바로 해")

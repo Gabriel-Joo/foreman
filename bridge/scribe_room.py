@@ -99,11 +99,48 @@ async def todo(engine: Any, publisher: Any = None) -> dict[str, dict[str, Any]]:
                                       "why": "아직 안 올렸습니다" if d["status"] == "new" else "게시 뒤 원본이 바뀌었습니다"})
             except Exception:  # noqa: BLE001 — Notion이 꺼져 있어도 다른 할 일은 센다
                 pass
-        out[name] = {"items": items}
+        opened = await open_tasks(engine, name)
+        out[name] = {"items": items, "open": opened,
+                     "blocked": {k: b for k in TASKS if k != "publish" and (b := blocked(k, opened))}}
     return out
 
 
 LATER_ACT = "scribe-later"     # session_action — 나중에 할 일 정리를 띄울 때 "어디까지 봤나"(detail: until ISO)
+TASK_ACT = "scribe-task"       # session_action — 서기 일을 띄울 때 무슨 일인지(detail: task). 합치거나 버리기 전까지 "열려 있다"
+
+# 동시에 시키기(11-06 판단) — 허용하되 셋을 막는다: 같은 일 · 같은 파일 · 프로젝트당 둘 넘게.
+# worktree는 서로를 못 봐서 충돌은 합칠 때 난다 — 같은 파일을 고치는 두 일이 열려 있으면 뒤의 합치기가 rebase 충돌.
+# 둘까지인 이유: 문서 초안은 사람이 diff를 하나씩 보고 합친다(검토 빚, docs/12_scribe.md 「2.」), 각각 Opus 세션이다
+TOUCHES = {"retro": {"log/retro_"}, "doccheck": {"log/doccheck_"}, "readme": {"README.md"}, "later": {"README.md"},
+           "trim": {"CLAUDE.md", "docs/"}}
+MAX_OPEN = 2
+
+
+async def open_tasks(engine: Any, project: str) -> list[dict[str, Any]]:
+    """열려 있는 서기 일 — 띄웠고 아직 합치지도 버리지도 않은 것(세션이 끝났어도 합치기를 기다리면 열려 있다)."""
+    async with engine.connect() as c:
+        rows = (await c.execute(text(
+            "SELECT sa.session_id, sa.detail, COALESCE(cs.custom_title, cs.title) FROM session_action sa "
+            "JOIN character_session cs ON cs.id = sa.session_id JOIN `character` ch ON ch.id = cs.character_id "
+            "JOIN project p ON p.id = ch.project_id WHERE p.name = :p AND sa.action = :a AND sa.ok AND NOT EXISTS ("
+            "  SELECT 1 FROM session_action m WHERE m.session_id = sa.session_id AND m.action IN ('wt-merge', 'wt-discard') AND m.ok) "
+            "ORDER BY sa.id"), {"p": project, "a": TASK_ACT})).all()
+    return [{"session_id": sid, "task": (d or "").split()[0], "title": t} for sid, d, t in rows if (d or "").split()]
+
+
+def blocked(task: str, opened: list[dict[str, Any]]) -> str | None:
+    """이 일을 지금 시킬 수 없는 까닭(없으면 None) — 화면 버튼과 서버가 같은 판단을 쓴다."""
+    for o in opened:
+        if o["task"] == task:
+            return f"「{TASKS[task]['title']}」이 이미 열려 있습니다(세션 {o['session_id']}) — 합치거나 버린 뒤에 시켜 주세요"
+    for o in opened:
+        common = sorted(TOUCHES.get(task, set()) & TOUCHES.get(o["task"], set()))
+        if common:
+            return (f"「{TASKS.get(o['task'], {}).get('title', o['task'])}」(세션 {o['session_id']})와 같은 파일({', '.join(common)})을 "
+                    "고칩니다 — 합칠 때 충돌합니다. 그 일을 합치거나 버린 뒤에 시켜 주세요")
+    if len(opened) >= MAX_OPEN:
+        return f"서기 일이 이미 {len(opened)}개 열려 있습니다(동시에 {MAX_OPEN}개까지) — 하나를 합치거나 버린 뒤에 시켜 주세요"
+    return None
 
 
 async def later_since(engine: Any, project: str) -> datetime | None:
@@ -188,6 +225,9 @@ async def start(m: Any, engine: Any, project: str, task: str) -> dict[str, Any]:
     repo = r[0] if r else None
     if not repo or not Path(repo, ".git").exists():
         raise Refused("이 프로젝트의 저장소를 찾지 못했습니다")
+    why = blocked(task, await open_tasks(engine, project))
+    if why:
+        raise Refused(why)
     now = datetime.now(UTC).replace(tzinfo=None)
     day = (now + KST).strftime("%Y%m%d")
     extra: dict[str, str] = {}
@@ -222,6 +262,8 @@ async def start(m: Any, engine: Any, project: str, task: str) -> dict[str, Any]:
             extra["stages"] = ", ".join(stages_without_result(repo)) or "(없음)"
         prompt = task_prompt(task, project, repo, extra)
     res = await m.spawn_new(repo, None, f"서기 — {TASKS[task]['title']}", role="scribe", worktree=True, first_prompt=prompt)
+    if res.get("session_id"):
+        await m._act(res["session_id"], TASK_ACT, res.get("pid"), True, task)
     if task == "later" and res.get("session_id"):
         # 어디까지 봤나 — 이 세션이 합쳐지면 다음 정리의 기준점이 된다(later_since)
         await m._act(res["session_id"], LATER_ACT, res.get("pid"), True, f"{now.isoformat()} 미룬 말 {len(rows)}개")
