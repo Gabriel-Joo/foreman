@@ -146,7 +146,15 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       }
     }
     const staged = chains.map((ch) => ({ ch, s: chainStage(ch) })).filter((x) => x.s);
-    const active = staged.filter((x) => x.s.active);
+    // 진행 중으로 보는 것 — 2시간 안에 시작했고, 더 새 빌드(chains는 최신이 앞)가 그 단계를 아직 끝내지 않은 것만.
+    // 끝 알림이 영영 안 온 옛 행이 "배포 진행 중"으로 남아 담당을 붙잡던 것(11-05)을 화면에서도 막는다
+    const STALE_MS = 2 * 3600000;
+    const active = staged.filter((x, i) => {
+      if (!x.s.active) return false;
+      const st = (x.ch.stages || {})[x.s.k === 'harbor' ? 'jenkins' : x.s.k] || {};
+      if (Date.now() - Date.parse(st.started_at || x.ch.at || 0) > STALE_MS) return false;
+      return !staged.slice(0, i).some((y) => y.s.k === x.s.k && !y.s.active);
+    });
     const ho = COURIER.handoff.get(room.name);
     const handing = ho && now < ho.until ? ho : null;
     let at = null, st = 'none', ch = null;
@@ -494,8 +502,15 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       if (world.lounge) drawLoungeS(world.lounge, now, sorted);
       for (const a of list) {
         if (a.bornAt && now < a.bornAt) continue;
-        const lying = !a.moving && a.act && a.act.anim === 'lie' && lieBed(a);   // 누운 사람은 침대 바로 다음(침대 위에)
-        sorted.push({ y: lying ? Math.max(a.y, lying.key) : a.y, draw: () => drawActorS(a, now) });
+        // 소파 · 침대 같은 "위에 앉는" 가구에 자리 잡은 사람은 그 가구 바로 다음(가구 위에). 걸어가는 동안은 발 위치 순서
+        const onIt = !a.moving && Math.abs(a.x - a.tx) < 0.05 && Math.abs(a.y - a.ty) < 0.05 && seatFurniture(a);
+        sorted.push({ y: onIt ? Math.max(a.y, onIt.key) : a.y, draw: () => drawActorS(a, now) });
+        const tbl = !a.moving && a.act && a.act.anim === 'sleep' && sleepTable(a);
+        if (tbl) sorted.push({ y: tbl.key, draw: () => {                   // 엎드린 머리를 탁자 위에
+          ctx.save(); ctx.beginPath();
+          ctx.rect((a.x - 1) * T, (a.y - 2.5) * T, 2 * T, (tbl.clipBottom - a.y + 2.5) * T); ctx.clip();
+          drawActorS(a, now); ctx.restore();
+        } });
       }
       sorted.sort((p, q) => p.y - q.y);
       for (const it of sorted) it.draw();
@@ -998,9 +1013,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
   }
 
-  // 누운 사람의 침대 — 자리 점이 들어 있는 가구(소품 아님). 몸은 침대 가운데(세로는 매트리스 높이), 그리는 순서는 침대 바로 다음
-  // (11-05 — 전에는 발 위치 순서라 침대가 나중에 그려져 사람을 덮었다: "이불이 덮인 것 같다")
-  function lieBed(a) {
+  // "위에 앉거나 눕는" 가구 — 소파 · 빈백 · 간이침대 · 벤치 · 의자 대신 쓰는 그루터기 등. 자리 점이 이 가구 칸 안이면 사람은 그 가구
+  // 바로 다음에 그린다(가구 위에 앉은/누운 모습). 탁자 · 책상 · 의자는 아니다 — 거기선 탁자가 다리를 가리는 지금 모습이 맞다.
+  // (11-05 — 발 위치 순서로는 소파 · 침대가 나중에 그려져 사람이 뒤로 숨었다: 오피스 라운지 소파, 현장 함바 간이침대)
+  const SIT_ON = /(^|_)(sofa|couch|bean|cot|bed|bench|stump|stool|hammock|futon)(_|\d|$)/i;   // 낱말 단위 — workbench(작업대)는 아니다
+  function seatFurniture(a) {
     const key = `${a.room}:${a.tx}:${a.ty}`;
     if (a._bedKey === key) return a._bed;
     a._bedKey = key;
@@ -1009,10 +1026,26 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (!room) return null;
     const px = a.tx - room.x, py = a.ty - room.y;
     for (const r of decorRects('room')) {
-      if (r.top || px < r.x || px > r.x + r.w || py < r.y || py > r.y + r.h) continue;
-      if (!a._bed || r.key > a._bed.key - room.y) a._bed = { lx: room.x + r.x, cx: room.x + r.x + r.w / 2, cy: room.y + r.y + r.h * 0.5, key: room.y + r.key + 0.002 };
+      if (r.top || !SIT_ON.test(r.s) || px < r.x || px > r.x + r.w || py < r.y || py > r.y + r.h) continue;
+      if (!a._bed || r.key > a._bed.key - room.y) a._bed = { s: r.s, lx: room.x + r.x, cx: room.x + r.x + r.w / 2, cy: room.y + r.y + r.h * 0.5, key: room.y + r.key + 0.002 };
     }
     return a._bed;
+  }
+  const lieBed = seatFurniture;
+  // 엎드려 자기(sleep) — 탁자 뒤에 앉아 머리를 탁자 위에 댄다. 탁자가 나중에 그려져 머리까지 가렸다(11-05 마법학교 대강당).
+  // 앞의 탁자를 찾아, 탁자를 그린 뒤 머리 쪽(탁자 윗면 + 0.55칸 위쪽)만 한 번 더 그린다
+  function sleepTable(a) {
+    const key = `s:${a.room}:${a.tx}:${a.ty}`;
+    if (a._tblKey === key) return a._tbl;
+    a._tblKey = key; a._tbl = null;
+    const room = world.rooms.find((r) => r.name === a.room);
+    if (!room) return null;
+    const px = a.tx - room.x, py = a.ty - room.y;
+    for (const r of decorRects('room')) {
+      if (r.top || SIT_ON.test(r.s) || px < r.x || px > r.x + r.w || r.y < py - 0.8 || r.y > py + 0.6) continue;
+      if (!a._tbl || r.y < a._tbl.top - room.y) a._tbl = { key: room.y + r.key + 0.003, top: room.y + r.y, clipBottom: room.y + r.y + 0.55 };
+    }
+    return a._tbl;
   }
   function drawActorS(a, now) {
     if (a.kind === 'mini') {                                  // 부모의 축소판 — 늘 걷는 그림(돌아다닌다)
@@ -1163,7 +1196,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     return { x, y, w, h };
   }
 
-  const STATUS_KO = { running: '진행 중', success: '성공', failed: '실패', waiting: 'Sync 대기', none: '기록 없음' };
+  const STATUS_KO = { running: '진행 중', success: '성공', failed: '실패', waiting: 'Sync 대기', stale: '나중 배포로 대체', none: '기록 없음' };
   // 구역이 하는 일 — 테마마다 이름(비유)은 달라도 설명은 같다(theme.tags.roles: 구역 → 아래 열쇠). 이름표에 마우스를 올리면 뜬다(11-05)
   // 툴팁 글은 짧게 — "무엇" 한 마디 + 한 줄 설명. 화면 글은 "~습니다"로(11-05 사용자 요청: 도구 목록 · 판별 명령은 넣지 않는다)
   const ZONE_ROLE = {

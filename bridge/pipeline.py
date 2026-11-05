@@ -40,7 +40,9 @@ STAGES = ("jenkins", "harbor", "argocd")
 STAGE_LABEL = {"commit": "커밋", "push": "push", "jenkins": "Jenkins 빌드", "harbor": "Harbor 이미지", "argocd": "ArgoCD 배포"}
 TAG_RE = re.compile(r"^[0-9a-f]{12}$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-RANK = {"running": 0, "waiting": 0, "success": 1, "failed": 1}   # 끝난 상태를 running · waiting으로 되돌리지 않는다
+RANK = {"running": 0, "waiting": 0, "success": 1, "failed": 1, "stale": 1}   # 끝난 상태를 running · waiting으로 되돌리지 않는다
+# stale — 끝 알림 없이 남은 진행 중 행을 나중 결과가 대신했다(11-05: ArgoCD running 알림이 revision 없이 와서 "runshoes@?" 행이
+# 따로 생기고, 성공 알림은 진짜 revision 행으로 가서 이틀째 "배포 진행 중"으로 남았다)
 
 
 @dataclass
@@ -697,6 +699,17 @@ class PipelineManager:
                     {"st": status, "step": step if status == "failed" else None, "sha": sha, "tag": tag, "ch": char,
                      "at": at, "url": str(url)[:512] if url else None, "msg": message,
                      "pl": json.dumps(payload, ensure_ascii=False, default=str), "id": bid})
+        if stage == "argocd" and status in ("success", "failed"):
+            # ArgoCD 앱 하나는 한 번에 하나씩 Sync한다 — 이보다 먼저 시작해 아직 진행 중인 행은 이 결과가 대신한다(끝 알림이 영영 안 올 행).
+            # Jenkins는 빌드가 겹쳐 돌 수 있어 하지 않는다
+            async with self.engine.begin() as c:
+                res = await c.execute(text(
+                    "UPDATE build SET status = 'stale', ended_at = :at, "
+                    "message = CONCAT(COALESCE(message, ''), ' [나중 결과가 대신함]') "
+                    "WHERE project_id = :p AND stage = :s AND id <> :id AND status IN ('running', 'waiting') AND started_at < :at"),
+                    {"p": p.project_id, "s": stage, "id": bid, "at": at})
+                if res.rowcount:
+                    log.info("파이프라인 %s %s — 끝 알림 없이 남은 진행 중 %d건을 나중 결과로 닫음", p.name, stage, res.rowcount)
         log.info("파이프라인 %s %s %s → %s%s", p.name, stage, ext, status, f" ({step})" if step else "")
         self._submit(EventIn(source=EventSource.WEBHOOK, type=EventType.BUILD, character_id=infra, tool=stage,
                              target=f"{STAGE_LABEL[stage]} {ext} {status}{' · ' + step if step else ''}",

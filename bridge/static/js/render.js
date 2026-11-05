@@ -254,7 +254,7 @@ export function toolDetailHtml(d) {
 
 // ── 8단계 파이프라인 — 프로젝트마다 인프라 캐릭터와 최근 체인(커밋 → Jenkins → Harbor → ArgoCD), 깨진 곳은 붉게 ──
 const PIPE_STAGES = [['jenkins', 'Jenkins'], ['harbor', 'Harbor'], ['argocd', 'ArgoCD']];
-const PIPE_MARK = { success: '✓', failed: '✗', running: '…', waiting: '⏸ Sync 대기' };   // waiting — 수동 Sync 앱, 실패 아님(11-03)
+const PIPE_MARK = { success: '✓', failed: '✗', running: '…', waiting: '⏸ Sync 대기', stale: '– 나중 배포로 대체' };   // waiting — 수동 Sync 앱, 실패 아님(11-03). stale — 끝 알림 없이 남았던 것(11-05)
 const INFRA_LABEL = { IDLE: '응답', ACTIVE: '일하는 중', STALE: '응답 없음' };
 export function pipeBlock(pp) {
   if (!pp) return '';
