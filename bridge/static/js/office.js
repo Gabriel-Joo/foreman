@@ -182,6 +182,15 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     return s ? [room.x + s[0], room.y + s[1]] : [room.x + Math.max(0.8, z.jenkins.x - 0.6), room.y + z.y + 2.3];
   }
 
+  const DORMANT_SHOW_MS = 3 * 60000;
+  function dormantGone(s, roomName) {
+    if (s.state !== 'DORMANT') return false;
+    const end = Date.parse(s.detached_at || s.last_ts || 0) || 0;
+    const left = end + DORMANT_SHOW_MS - Date.now();
+    if (left > 0) laterRebuild('dormant:' + roomName + ':' + s.id, left + 100);   // 3분이 지나면 다시 그려 지운다
+    return left <= 0;
+  }
+
   function rebuild(st) {
     world = rooms(st);
     const pending = new Map();
@@ -194,14 +203,20 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const ss = room.sessionIds.map((id) => st.sessions.get(id)).filter(Boolean);
       ss.sort((a, b) => (a.state === 'DORMANT') - (b.state === 'DORMANT') || a.id - b.id);
       const cap = seatCount(room);
-      room.overflow = Math.max(0, ss.length - cap);
+      // 끝난 세션(DORMANT)은 끝나고 3분 동안만 흐리게 자리에 남았다가 화면에서 사라진다(11-05 사용자 요청).
+      // 패널 세션 목록의 "종료된 세션"에는 그대로 있다 — 거기서 골라 [새로 띄우기]. 멈춘 세션(SUSPENDED)은 그대로 보인다
+      const shown = ss.filter((s) => !dormantGone(s, room.name));
+      room.overflow = Math.max(0, shown.length - cap);
       room.stats = { ACTIVE: 0, IDLE: 0, SUSPENDED: 0, DORMANT: 0, pending: 0, subs: 0, tin: 0, tout: 0 };
-      ss.forEach((s, k) => {
+      let slot = 0;
+      ss.forEach((s) => {
         room.stats[s.state] = (room.stats[s.state] || 0) + 1;
         room.stats.pending += pending.get(s.id) || 0;
         room.stats.subs += s.subagents_running || 0;
         room.stats.tin += (s.tokens && s.tokens.today_input) || 0;
         room.stats.tout += (s.tokens && s.tokens.today_output) || 0;
+        if (dormantGone(s, room.name)) return;
+        const k = slot++;
         if (k >= cap) return;
         let act = resolveAction(theme, { state: s.state, tool: s.activity && s.activity.tool, target: s.activity && s.activity.target,
                                          flags: { approval_pending: pending.has(s.id), stuck_turn: !!s.stuck_turn } });
@@ -477,7 +492,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       drawHQS(now, sorted);
       for (const r of world.rooms) drawRoomS(r, now, sorted);
       if (world.lounge) drawLoungeS(world.lounge, now, sorted);
-      for (const a of list) if (!(a.bornAt && now < a.bornAt)) sorted.push({ y: a.y, draw: () => drawActorS(a, now) });
+      for (const a of list) {
+        if (a.bornAt && now < a.bornAt) continue;
+        const lying = !a.moving && a.act && a.act.anim === 'lie' && lieBed(a);   // 누운 사람은 침대 바로 다음(침대 위에)
+        sorted.push({ y: lying ? Math.max(a.y, lying.key) : a.y, draw: () => drawActorS(a, now) });
+      }
       sorted.sort((p, q) => p.y - q.y);
       for (const it of sorted) it.draw();
       for (const r of world.rooms) overTopItems(r, list, now);       // 탁자 위 소품이 사람 앞에 그려진 자리만 사람을 덧그린다
@@ -979,6 +998,22 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
   }
 
+  // 누운 사람의 침대 — 자리 점이 들어 있는 가구(소품 아님). 몸은 침대 가운데(세로는 매트리스 높이), 그리는 순서는 침대 바로 다음
+  // (11-05 — 전에는 발 위치 순서라 침대가 나중에 그려져 사람을 덮었다: "이불이 덮인 것 같다")
+  function lieBed(a) {
+    const key = `${a.room}:${a.tx}:${a.ty}`;
+    if (a._bedKey === key) return a._bed;
+    a._bedKey = key;
+    const room = world.rooms.find((r) => r.name === a.room);
+    a._bed = null;
+    if (!room) return null;
+    const px = a.tx - room.x, py = a.ty - room.y;
+    for (const r of decorRects('room')) {
+      if (r.top || px < r.x || px > r.x + r.w || py < r.y || py > r.y + r.h) continue;
+      if (!a._bed || r.key > a._bed.key - room.y) a._bed = { lx: room.x + r.x, cx: room.x + r.x + r.w / 2, cy: room.y + r.y + r.h * 0.5, key: room.y + r.key + 0.002 };
+    }
+    return a._bed;
+  }
   function drawActorS(a, now) {
     if (a.kind === 'mini') {                                  // 부모의 축소판 — 늘 걷는 그림(돌아다닌다)
       const dir = a.dir || 'down';
@@ -1004,9 +1039,13 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (mode === 'ghost') py += Math.round(Math.sin(a.phase * 0.6) * 1.5) - 2;  // 유령은 떠 있다
     ctx.globalAlpha = act.alpha != null ? act.alpha : 1;
     if (anim === 'lie' && !a.moving) {
-      // 간이침대에 눕기 — 그림을 옆으로 눕힌다(엔진 흉내). 머리는 왼쪽(베개 쪽)
+      // 간이침대에 눕기 — 그림을 왼쪽으로 90도 눕힌다(머리가 왼쪽 = 베개 쪽). 자리 점이 아니라 그 아래 침대의 가운데에
+      // 몸을 맞춘다(11-05 — 전에는 자리 점에 그려 몸이 침대 오른쪽 · 위로 반쯤 벗어났다). 그리는 순서는 lieBed().key
+      const bed = lieBed(a);
+      // 누우면 그림 높이가 가로 길이 — 머리(왼쪽 끝)가 베개(침대 왼쪽 끝 + 0.25칸)에 닿게
+      const cx = bed ? Math.min(bed.cx, bed.lx + 0.25 + c.height / T / 2) : a.x, cy = bed ? bed.cy : a.y - 5 / T;
       ctx.save();
-      ctx.translate(Math.round(a.x * T), Math.round(a.y * T - 5));
+      ctx.translate(Math.round(cx * T), Math.round(cy * T));
       ctx.rotate(-Math.PI / 2);
       ctx.drawImage(c, -c.width / 2, -c.height / 2);
       ctx.restore();
@@ -1623,7 +1662,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   resize();
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
-  return { go, theme, openSession, panel, actors, audit: () => audit(), probe: (x, y) => probe(x, y), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
+  return { go, theme, openSession, panel, actors, audit: () => audit(), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
                                                                        anim: a.act && a.act.anim, go: a.act && a.act.go, face: a.face, dir: a.dir, char: a.char })) };
 }
 
