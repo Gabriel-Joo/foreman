@@ -71,7 +71,7 @@ async def handoff_view(sid: int, request: Request) -> dict[str, Any]:
             out["promotions"] = await m.promote.list(sid)
             out["promote_inputs"] = await m.promote.inputs(row)
         except Exception as e:  # noqa: BLE001 — 표가 없을 때(0020 전)도 인계 칸은 떠야 한다. 화면에 사유를 보인다
-            out["promotions_error"] = f"문서에 남기기 목록을 읽지 못했습니다({type(e).__name__}) — 마이그레이션 0020 · 0021을 적용했는지 확인해 주세요"
+            out["promotions_error"] = f"대화 결정 문서에 적기 목록을 읽지 못했습니다({type(e).__name__}) — 마이그레이션 0020 · 0021을 적용했는지 확인해 주세요"
     out["losschecks"], out["losschecks_error"] = [], None
     lc = getattr(m, "losscheck", None)
     if lc is not None:
@@ -90,7 +90,7 @@ async def losscheck_start(sid: int, request: Request) -> JSONResponse:
     m = _mgr(request)
     lc = getattr(m, "losscheck", None)
     if lc is None:
-        raise HTTPException(503, "잃은 것 찾기가 꺼져 있습니다")
+        raise HTTPException(503, "압축으로 잊은 것 찾기가 꺼져 있습니다")
     try:
         return JSONResponse(await lc.start(await _row(m, sid)), status_code=202)
     except Refused as e:
@@ -110,7 +110,7 @@ class PromoteIn(BaseModel):
 
 def _prom(m: HandoffManager) -> Any:
     if m.promote is None:
-        raise HTTPException(503, "문서에 남기기가 꺼져 있습니다")
+        raise HTTPException(503, "대화 결정 문서에 적기가 꺼져 있습니다")
     return m.promote
 
 

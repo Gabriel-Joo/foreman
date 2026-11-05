@@ -207,7 +207,7 @@ def render(project: str, start: datetime, end: datetime, d: dict[str, Any], repo
         cnt = Counter(x.get("status") for x in baseline)
         w(f"세션 161b8e7a 손 점검 {len(baseline)}개 — " + " · ".join(f"{k} {v}" for k, v in cnt.most_common())
           + " [log:foreman_compaction_loss_20261105.md]. 런슈즈 점검은 [log:runshoes_compaction_loss_20261105.md].")
-        w("같은 방식을 기계로 옮긴 [잃은 것 찾기]의 Sonnet 판정 품질은 [log:handoff_v2_d_result.md] — 재현율 0.71 · 정밀도 0.91.")
+        w("같은 방식을 기계로 옮긴 「압축으로 잊은 것 찾기」의 Sonnet 판정 품질은 [log:handoff_v2_d_result.md] — 재현율 0.71 · 정밀도 0.91.")
         w("")
         w("사라짐 · 약해짐(요지 · 있는 곳 · 빠진 요약):")
         for x in baseline:

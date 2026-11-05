@@ -74,7 +74,7 @@ function inputUsed(p) {
 // p = 마지막 옮기기(없으면 null), can = 목록 요청 가능, draft = {id: {칸: 값}}, err = 표를 못 읽은 사유
 export function promoteGroup(p, can, draft, err, inputs = [], chosen = null) {
   const b = (act, label, on, cls = '', tip = '') => `<button type="button" data-act="${act}" class="small ${cls}"${tip ? ` title="${esc(tip)}"` : ''}${on ? '' : ' disabled'}>${label}</button>`;
-  const head = `<div class="hand-btns">${b('prom-req', '남길 것 찾기', can, '', '남길 것 찾기 — 이 대화에서 정했지만 아직 문서에 없는 결정 · 금지 · 기준을 세션이 목록으로 냅니다. 이때는 파일을 고치지 않고, 고쳐서 승인한 것만 [승인한 것 쓰기]로 문서에 씁니다.')}
+  const head = `<div class="hand-btns">${b('prom-req', '목록 뽑기', can, '', '목록 뽑기 — 이 대화에서 정했지만 아직 문서에 없는 결정 · 금지 · 기준을 세션이 목록으로 냅니다. 이때는 파일을 고치지 않고, 고쳐서 승인한 것만 [승인한 것 쓰기]로 문서에 씁니다.')}
     ${can ? inputPick(inputs, chosen) : ''}
     ${p ? `<span class="small">${esc(STATUS[p.status] || p.status)} · ${ago(p.updated_at || p.created_at)}${inputUsed(p)}</span>` : '<span class="small muted">아직 없습니다.</span>'}</div>`;
   if (err) return wrap(head + `<div class="small bad">${esc(err)}</div>`);
@@ -106,5 +106,6 @@ export function promoteGroup(p, can, draft, err, inputs = [], chosen = null) {
 }
 
 function wrap(inner) {
-  return `<div class="hand-group"><span class="hand-lbl small muted" title="문서에 남기기 — 대화에서만 정한 것을 README · docs · CLAUDE.md에 적어 다음 세션이 읽게 합니다.">문서에 남기기</span><div class="prom">${inner}</div></div>`;
+  return `<div class="hand-item"><div class="hand-item-h"><b>대화에서 정한 것 문서에 적기</b> <span class="small muted">대화에서만 정한 결정 · 금지를 README · docs · CLAUDE.md에 적어 다음 세션이 읽게 합니다. 목록 → 고치고 승인 → 커밋.</span></div>
+    <div class="prom">${inner}</div></div>`;
 }

@@ -184,7 +184,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         </div>
         ${wtGroup(c.worktree, b)}
       </section>
-      <details class="hand hand-docs"${docsOn ? ' open' : ''}><summary title="문서 정리 — 대화에서만 정한 것과 압축으로 잊은 것을 찾아 문서에 남깁니다."><b>문서 정리</b> <span class="small muted">대화에서 정한 것을 문서에 남깁니다${docsHint ? ` · <span class="warn">${esc(docsHint)}</span>` : ''}</span></summary>
+      <details class="hand hand-docs"${docsOn ? ' open' : ''}><summary title="넘기기 전 정리 — 세션을 넘기기 전에, 압축으로 잊은 것과 대화에서만 정한 것을 찾아 문서에 적습니다. 문서 정리 · 포트폴리오는 서기실에서 합니다."><b>넘기기 전 정리</b> <span class="small muted">잊은 것 · 대화 결정을 문서에${docsHint ? ` · <span class="warn">${esc(docsHint)}</span>` : ''}</span></summary>
         ${lossGroup(lc0, can.losscheck !== false && !!data.losschecks && !data.losschecks_error, data.losschecks_error)}
         ${promoteGroup(p0, !!can.promote, promDraft, data.promotions_error, data.promote_inputs, promIn)}
       </details>`;
@@ -205,16 +205,16 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       const pick = el.querySelector('#promIn'), v = pick ? pick.value : 'none';
       if (v === '') { note = { bad: true, msg: '같이 넣을 것을 골라 주세요 — 넣지 않으려면 「넣지 않음」을 고릅니다.' }; draw(); return; }
       const body = v === 'none' ? { no_input: true } : v.startsWith('lc:') ? { loss_check_id: Number(v.slice(3)) } : { summary_id: Number(v) };
-      return run('남길 것 찾기', () => post(`/api/sessions/${id}/promote`, body).then((r) => ({ msg: `요청을 보냈습니다. 세션이 목록을 만드는 중입니다${
+      return run('대화 결정 목록 뽑기', () => post(`/api/sessions/${id}/promote`, body).then((r) => ({ msg: `요청을 보냈습니다. 세션이 목록을 만드는 중입니다${
         r.summary_id ? `(인계 #${r.summary_id}의 「문서와 다른 지금」도 같이 넣었습니다)` : r.loss_check_id ? `(잃은 것 점검 #${r.loss_check_id}의 사라짐 · 약해짐도 같이 넣었습니다)` : ''}.` })));
     }
     if (act === 'loss-run') {
-      if (!confirm('잃은 것 찾기 — 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 끝나면 알림이 갑니다. 진행할까요?')) return;
-      return run('잃은 것 찾기', () => post(`/api/sessions/${id}/losscheck`).then((r) => ({ msg: `점검을 시작했습니다(#${r.loss_check_id}, ${r.model}). 끝나면 알림이 갑니다.` })));
+      if (!confirm('압축으로 잊은 것 찾기 — 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 끝나면 알림이 갑니다. 진행할까요?')) return;
+      return run('압축으로 잊은 것 찾기', () => post(`/api/sessions/${id}/losscheck`).then((r) => ({ msg: `점검을 시작했습니다(#${r.loss_check_id}, ${r.model}). 끝나면 알림이 갑니다.` })));
     }
     if (act === 'loss-use') {
       promIn = 'lc:' + btn.dataset.lc;
-      note = { msg: '[남길 것 찾기]에 같이 넣도록 골랐습니다 — 아래 [남길 것 찾기]를 눌러 주세요.' };
+      note = { msg: '「대화 결정 문서에 적기」에 같이 넣도록 골랐습니다 — 아래 [목록 뽑기]를 눌러 주세요.' };
       draw();
       return;
     }
