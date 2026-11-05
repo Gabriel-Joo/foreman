@@ -268,6 +268,7 @@ class HandoffManager:
         self.schema: Any = None             # 스키마 잠금 — 합치기 · 버리기에서 푼다(main.py가 넣는다)
         self.previews: Any = None           # 미리보기(bridge/previews.py) — 끝내기 · 합치기 · 버리기에서 끈다
         self.models = Models()              # 고를 수 있는 모델 · 역할 기본값(config/models.toml, 11-05)
+        self.promote: Any = None            # 문서로 옮기기(bridge/promote.py) — main.py가 넣는다
 
     # ── 조회 ────────────────────────────────────────────
     async def session(self, sid: int) -> SessionRow | None:
@@ -313,7 +314,7 @@ class HandoffManager:
         te = _tmux_env(live.pid) if live else None
         busy = bool(live and _status(self.sessions_dir, live.pid) == "busy")
         stopped_pid = await self._foreman_stopped(row.id)
-        pending = await self._pending(row.id)
+        pending = await self._pending(row.id) or await self._promote_busy(row.id)
         out: dict[str, Any] = {"live": bool(live), "pid": live.pid if live else None, "state": live.state if live else None,
                                "tmux": bool(te), "busy": busy, "pending_req": pending,
                                "foreman_stopped": stopped_pid is not None}
@@ -330,6 +331,7 @@ class HandoffManager:
         ok_live = bool(live and te and live.state != "T")
         out["can"] = {
             "summary": ok_live and not busy and not pending,
+            "promote": ok_live and not busy and not pending and self.promote is not None,
             "headless": not live and bool(row.cc and row.cwd) and not pending,
             "compact": bool(row.transcript),
             "exit": ok_live and not busy,
@@ -352,6 +354,17 @@ class HandoffManager:
                 "SELECT req FROM summary WHERE session_id = :s AND status = 'requested' "
                 "AND created_at > NOW(3) - INTERVAL 15 MINUTE ORDER BY id DESC LIMIT 1"), {"s": sid})).first()
         return r[0] if r else None
+
+    async def _promote_busy(self, sid: int) -> str | None:
+        """문서로 옮기기 요청(목록 · 쓰기)을 기다리는 중이면 "promote" — 인계 요청과 겹쳐 보내지 않는다.
+        표가 아직 없으면(0020 전) 없는 것으로 본다."""
+        if self.promote is None:
+            return None
+        try:
+            return "promote" if await self.promote._busy(sid) else None
+        except Exception as e:  # noqa: BLE001
+            log.warning("문서로 옮기기 상태를 읽지 못함(0020 적용 전?): %s", type(e).__name__)
+            return None
 
     async def _foreman_stopped(self, sid: int) -> int | None:
         """마지막 멈춤 · 되살리기 기록이 FOREMAN의 성공한 멈춤이면 그 pid."""
@@ -415,8 +428,8 @@ class HandoffManager:
         """살아 있는 tmux 세션에 요약을 시킨다. 보내고 바로 돌아오고, 응답은 뒤에서 기다린다."""
         if not row.cc:
             raise Refused("CC 세션 ID가 없습니다")
-        if await self._pending(row.id):
-            raise Refused("이미 요약을 기다리는 중입니다")
+        if await self._pending(row.id) or await self._promote_busy(row.id):
+            raise Refused("이미 요약 · 문서로 옮기기를 기다리는 중입니다")
         _t, ls, busy = await resolve(row.cc, self.sessions_dir)
         if busy:
             raise Refused("작업 중입니다. 작업이 끝난 뒤에 요약해 주세요(중간에 끼면 작업과 섞입니다)")

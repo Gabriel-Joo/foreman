@@ -872,3 +872,110 @@ async def test_reassign_role_and_worktree_characters(env):
     assert await mgr._character_for(f"{repo}/.worktrees/{name}-2", "coder") == w   # 같은 이름이면 되살린다
     assert q(s, "SELECT retired_at FROM `character` WHERE id = %s", w) == ((None,),)
     assert await mgr._character_for("/tmp/elsewhere", "coder") is None             # 떠돌이는 그대로
+
+
+# ── 11-05 인계 2판 ① 문서로 옮기기 — 목록(받은 인계의 「문서와 다른 지금」 같이) → 사람 고침 → 쓰기 → git 확인 ─────────
+async def test_promote_list_edit_write_verify(env, monkeypatch, tmp_path):
+    import subprocess
+    from bridge import handoff as h
+    from bridge import promote as pm
+    from bridge.liveness import LiveSession
+    s, main = env
+    await run(s)
+    engine = make_engine(s)
+    ENGINES.append(engine)
+    mgr = h.HandoffManager(engine, s.sessions_dir)
+    mgr.promote = pr = pm.Promoter(mgr)
+    pr.wait_s = 20
+    sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
+    row = await mgr.session(sid)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    g = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout.strip()  # noqa: E731
+    g("init", "-q", "-b", "main"), g("config", "user.email", "t@t"), g("config", "user.name", "t")
+    (repo / "CLAUDE.md").write_text("## 작업 규칙\n- a\n", encoding="utf-8")
+    g("add", "."), g("commit", "-qm", "처음")
+
+    # 이 세션이 받은 2판 인계 — 그 「문서와 다른 지금」이 목록 요청에 같이 들어가야 한다
+    v2 = "## 지금 상태\n- x\n## 문서와 다른 지금\n- 시험 세션은 끝낸 뒤 숨겨 왔음\n## 읽을 곳\n- `CLAUDE.md` — 규칙"
+    async with engine.begin() as c:
+        from sqlalchemy import text as T
+        await c.execute(T("INSERT INTO summary (session_id, req, kind, source, status, body, injected_cc_session) "
+                          "VALUES (:s, 'aaaaaa', 'handoff', 'self', 'ok', :b, :c)"), {"s": sid, "b": v2, "c": SID})
+    sent, reply = [], {}
+
+    async def fake_resolve(cc, d):
+        return None, LiveSession(4242, cc, "/x", "S"), False
+
+    async def fake_deliver(cc, text_, **kw):
+        sent.append(text_)
+        req = h.REQ_RE.search(text_).group(1)
+        body = reply["fn"](req)
+        with open(main, "a", encoding="utf-8") as f:
+            f.write("\n" + json.dumps({"type": "user", "message": {"content": text_}}, ensure_ascii=False) + "\n")
+            f.write(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": body}]}},
+                               ensure_ascii=False) + "\n")
+        return {"delivered": {"as": "prompt", "prompt_id": None}, "steps": [], "queued": False}
+
+    async def fake_root(cwd):
+        return str(repo)
+    monkeypatch.setattr(pm, "resolve", fake_resolve)
+    monkeypatch.setattr(pm, "deliver", fake_deliver)
+    monkeypatch.setattr(pm, "live_sessions", lambda d: {SID: LiveSession(4242, SID, "/x", "S")})
+    monkeypatch.setattr(pm.ho, "repo_root", fake_root)
+
+    async def settle(pid, wait_for):
+        for _ in range(60):
+            await asyncio.sleep(0.2)
+            st = q(s, "SELECT status FROM promotion WHERE id = %s", pid)[0][0]
+            if st not in wait_for:
+                return st
+        return st
+
+    reply["fn"] = lambda r: (f"<<<FOREMAN-PROMOTE r={r}>>>\n" + json.dumps([
+        {"kind": "기준", "what": "시험 세션은 끝낸 뒤 hidden_reason='test'로 숨긴다", "quote": "", "dest": "CLAUDE.md",
+         "section": "작업 규칙", "why": "매번 지킬 것"},
+        {"kind": "결정", "what": "그때뿐", "dest": "drop"}], ensure_ascii=False) + f"\n<<<END r={r}>>>")
+    r = await pr.request(row)
+    assert r["summary_id"] is not None and "시험 세션은 끝낸 뒤 숨겨 왔음" in sent[-1]
+    try:
+        await mgr.request_live(row, "snapshot")              # 옮기기를 기다리는 동안 인계 요청은 막는다
+        raise AssertionError("겹쳐 보냈다")
+    except h.Refused as e:
+        assert "이미" in str(e)
+    assert await settle(r["promotion_id"], ("requested",)) == "listed"
+    lst = await pr.list(sid)
+    assert [i["state"] for i in lst[0]["items"]] == ["pending", "dropped"] and lst[0]["items"][0]["check"]["ok"]
+    assert (await mgr.latest_ok(sid))["req"] == "aaaaaa"     # 옮기기 목록은 인계 요약으로 섞이지 않는다
+
+    try:
+        await pr.write(r["promotion_id"])
+        raise AssertionError("승인 없이 썼다")
+    except h.Refused as e:
+        assert "승인한 항목이 없습니다" in str(e)
+    await pr.edit(r["promotion_id"], [{"id": 1, "state": "approved", "what": "시험 세션은 끝낸 뒤 숨긴다(test)"}])
+
+    def do_write(req):                                       # 세션이 쓰고 커밋한 것처럼
+        (repo / "CLAUDE.md").write_text("## 작업 규칙\n- a\n- 시험 세션은 끝낸 뒤 숨긴다(test)\n", encoding="utf-8")
+        g("commit", "-qam", "인계 전 결정 기록: 시험 세션 숨김")
+        return f"<<<FOREMAN-PROMOTED r={req}>>>\n" + json.dumps({"commit": g("rev-parse", "HEAD"), "files": ["CLAUDE.md"]}) + f"\n<<<END r={req}>>>"
+    reply["fn"] = do_write
+    w = await pr.write(r["promotion_id"])
+    assert w["approved"] == 1 and '"what": "시험 세션은 끝낸 뒤 숨긴다(test)"' in sent[-1] and "그때뿐" not in sent[-1]
+    assert await settle(r["promotion_id"], ("writing",)) == "written"
+    p = (await pr.list(sid))[0]
+    assert p["result"]["ok"] and p["commit_sha"] == g("rev-parse", "HEAD") and p["result"]["files"] == ["CLAUDE.md"]
+
+    # 다시 써 보면 — 세션이 다른 파일까지 커밋하면 write_failed(조용히 지나가지 않는다)
+    async with engine.begin() as c:
+        await c.execute(T("UPDATE promotion SET status = 'listed' WHERE id = :i"), {"i": r["promotion_id"]})
+
+    def bad_write(req):
+        (repo / "CLAUDE.md").write_text("x\n", encoding="utf-8")
+        (repo / "other.md").write_text("몰래\n", encoding="utf-8")
+        g("add", "."), g("commit", "-qm", "인계 전 결정 기록: 몰래")
+        return f"<<<FOREMAN-PROMOTED r={req}>>>\n{{}}\n<<<END r={req}>>>"
+    reply["fn"] = bad_write
+    await pr.write(r["promotion_id"])
+    assert await settle(r["promotion_id"], ("writing",)) == "write_failed"
+    assert "other.md" in q(s, "SELECT error FROM promotion WHERE id = %s", r["promotion_id"])[0][0]

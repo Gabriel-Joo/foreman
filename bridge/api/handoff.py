@@ -63,7 +63,61 @@ def _refused(e: Refused) -> JSONResponse:
 async def handoff_view(sid: int, request: Request) -> dict[str, Any]:
     m = _mgr(request)
     row = await _row(m, sid)
-    return {"controls": await m.controls(row), "summaries": await m.summaries(sid)}
+    out = {"controls": await m.controls(row), "summaries": await m.summaries(sid), "promotions": [],
+           "promotions_error": None}
+    out["promote_inputs"] = []
+    if m.promote is not None:
+        try:
+            out["promotions"] = await m.promote.list(sid)
+            out["promote_inputs"] = await m.promote.inputs(row)
+        except Exception as e:  # noqa: BLE001 — 표가 없을 때(0020 전)도 인계 칸은 떠야 한다. 화면에 사유를 보인다
+            out["promotions_error"] = f"문서로 옮기기 목록을 읽지 못했습니다({type(e).__name__}) — 마이그레이션 0020을 적용했는지 확인해 주세요"
+    return out
+
+
+# ── 인계 2판 ① 문서로 옮기기(11-05, bridge/promote.py) ──────────────
+class PromoteEditIn(BaseModel):
+    items: list[dict[str, Any]] = Field(max_length=100)
+
+
+class PromoteIn(BaseModel):
+    summary_id: int | None = None     # 같이 넣을 인계. 없으면 이 세션이 받은 것 → 쓴 것 → 같은 프로젝트 순으로 첫째
+    no_input: bool = False            # 인계를 넣지 않는다
+
+
+def _prom(m: HandoffManager) -> Any:
+    if m.promote is None:
+        raise HTTPException(503, "문서로 옮기기가 꺼져 있습니다")
+    return m.promote
+
+
+@router.post("/sessions/{sid}/promote")
+async def promote_request(sid: int, request: Request, body: PromoteIn | None = None) -> JSONResponse:
+    """1/2 — 세션에 "문서에 없는 것" 목록을 시킨다(파일은 안 고친다). 고른 2판 인계의 「문서와 다른 지금」을 같이 넣는다."""
+    m = _mgr(request)
+    body = body or PromoteIn()
+    try:
+        return JSONResponse(await _prom(m).request(await _row(m, sid), body.summary_id, body.no_input), status_code=202)
+    except Refused as e:
+        return _refused(e)
+
+
+@router.put("/promotions/{pid}")
+async def promote_edit(pid: int, body: PromoteEditIn, request: Request) -> JSONResponse:
+    """사람이 고친 칸(what · dest · section · state)만 받는다."""
+    try:
+        return JSONResponse(await _prom(_mgr(request)).edit(pid, body.items))
+    except Refused as e:
+        return _refused(e)
+
+
+@router.post("/promotions/{pid}/write")
+async def promote_write(pid: int, request: Request) -> JSONResponse:
+    """2/2 — 승인한 것만 세션에 보내 쓰고 커밋하게 한다. 끝나면 브리지가 git으로 확인한다."""
+    try:
+        return JSONResponse(await _prom(_mgr(request)).write(pid), status_code=202)
+    except Refused as e:
+        return _refused(e)
 
 
 @router.post("/sessions/{sid}/summary")

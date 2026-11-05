@@ -221,6 +221,15 @@ body { --term-h:0px; }
 .hand-group { display:flex; gap:8px; align-items:flex-start; margin:4px 0; }
 .hand-lbl { flex:none; width:52px; padding-top:5px; }
 .hand-group .hand-btns { margin:2px 0; }
+/* 11-05 문서로 옮기기 — 항목마다 상태 · 어디로 · 문장. 승인은 초록 띠, 빼기는 흐리게 */
+.prom { flex:1; min-width:0; }
+.prom-item { border:1px solid var(--line); border-left:3px solid var(--line); border-radius:6px; padding:4px 8px; margin:4px 0; }
+.prom-item.prom-approved { border-left-color:var(--ok); }
+.prom-item.prom-dropped { opacity:.55; }
+.prom-item input, .prom-item select { font-size:12px; }
+.prom-dest { width:14em; max-width:100%; }
+.prom-sec { width:9em; max-width:100%; }
+.prom-what { width:100%; box-sizing:border-box; font-family:inherit; font-size:12px; line-height:1.45; margin-top:3px; }
 button.danger { border-color:var(--bad); color:var(--bad); }
 button.danger:not(:disabled):hover { background:color-mix(in srgb, var(--bad) 14%, transparent); }
 /* 입력 칸 아래 — [/ 명령] · 상태 · [보내기] 를 칸으로 나누고, 결과는 다음 줄 */
