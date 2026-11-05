@@ -853,6 +853,19 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 
 3번을 일찍 치는 이유는 리스크가 가장 크기 때문이다. 막히면 설계를 바꿔야 하므로 늦게 알수록 손해다.
 
+### 나중에 할 일 (정해 두고 미룬 것)
+
+| 무엇 | 언제 · 조건 | 근거 |
+|---|---|---|
+| 런슈즈 · 펫퍼민트 승인을 관찰(observe) → 차단(enforce)으로 바꿀지 정하기 | 판정 수치가 볼 만큼 쌓이면(11-05 사용자: 아직 아님) | README 3.3, `config/approval.toml` |
+| FOREMAN 배포 systemd 유닛 · 시험 GitHub Actions | 정해 두고 아직 안 만듦(11-03 결정) | README 3.12 |
+| 포먼 디스패처 자동 기상 2 · 3단계 | 1단계를 써 본 뒤 | `docs/11_foreman_dispatch.md` |
+| 런슈즈 실제 인계 | 발볼 검증이 끝난 뒤 | `log/stage11_handoff_result.md` |
+| 펫퍼민트 tmux 이전 | 사용자가 그 세션을 `/exit`할 때 — `--resume`만, `--fork-session` 금지 | `log/stage0_tmux_result.md` |
+| 런슈즈 미리보기(vite) | FOREMAN 미리보기가 쓸모 있는지 본 뒤 | `docs/11_worktree.md` |
+| Claude Code와 Codex 같이 쓰기 | 나중 | `log/later_codex_bridge.md` |
+| 9단계 LLM 지표 | 프로메테우스는 펫퍼민트 설계와 상의 뒤 | 로드맵 9 |
+
 ---
 
 ## 7. 데모 시나리오
