@@ -19,7 +19,20 @@ README 3.4("한 프로젝트에 캐릭터를 둘 이상 붙이면 같은 파일�
 
 API: `POST /api/spawn`의 `worktree`(null · true · false), `POST /api/sessions/{id}/worktree` `{action: merge|discard, confirm}`, `GET /api/schema-lock`.
 
-## 2. 미리보기 브리지 — 설계(승인 전, 아직 안 만듦)
+## 2. 미리보기 브리지
+
+**11-05 사용자 결정**
+- A(화면만 worktree, 데이터는 지금 브리지)로 한다
+- 버튼을 누를 때만 띄운다
+- 런슈즈 vite는 FOREMAN을 써 본 뒤에 한다
+
+→ 만들었다(`bridge/preview.py` · `bridge/previews.py`).
+
+설계 문서와 다른 점
+- 상태는 DB 표 대신 `~/.foreman/previews.json`에 둔다(스키마 잠금과 같은 방식)
+- 미리보기 서버 코드는 원본 저장소 것을 쓰고, 화면 파일만 worktree에서 읽는다
+
+아래는 승인 전 설계 그대로다.
 
 worktree에서 고친 화면은 지금 브리지(원본 폴더의 `bridge/static`)에 안 보인다. 합치기 전에 그 worktree의 화면을 보는 자리가 필요하다.
 

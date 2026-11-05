@@ -18,6 +18,7 @@ from bridge.api import foreman as foreman_api, handoff as handoff_api, terminal 
 from bridge.foreman import ForemanDispatcher
 from bridge.handoff import HandoffManager
 from bridge.liveness import live_sessions
+from bridge.previews import Previews
 from bridge.schemalock import SchemaLock
 from bridge.approval import load_policy
 from bridge.approvals import ApprovalManager
@@ -161,6 +162,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.schema_lock = SchemaLock(Path(__file__).resolve().parent.parent / "config" / "worktree.toml",
                                            alive=lambda cc: cc in live_sessions(sd))
         app.state.handoff.schema = app.state.schema_lock
+        # 11-05 — 미리보기 브리지(worktree 화면 + 지금 브리지 데이터). 버튼을 누를 때만 띄우고 끝내기 · 합치기 · 버리기 때 끈다
+        app.state.handoff.previews = Previews(Path(__file__).resolve().parent.parent / "config" / "worktree.toml",
+                                              app.state.handoff.socket, f"http://{s.bind_host}:{s.bind_port}")
+        try:
+            n = await app.state.handoff.previews.sweep()
+            if n:
+                log.info("주인 없는 미리보기 %d개를 껐다", n)
+        except Exception as e:  # noqa: BLE001 — 정리 실패가 기동을 막지 않는다
+            log.warning("미리보기 정리 실패: %s", e)
         if app.state.approvals:
             app.state.approvals.schema = app.state.schema_lock
         # 11단계 — 포먼 디스패처(사람이 말하면 계획 → 승인하면 시작). 부를 때만 claude -p

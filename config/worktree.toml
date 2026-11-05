@@ -4,6 +4,12 @@
 # "스키마를 바꾸는 시도"다. 처음 시도한 세션이 그 프로젝트의 잠금을 갖고, 다른 세션의 같은 시도는 거부한다(승인 모드와 상관없이).
 # 바꾸면 브리지를 다시 띄운다.
 
+# [preview.<프로젝트>] — 패널 [미리보기 열기]가 띄우는 명령(bridge/previews.py). {py} 원본 저장소의 .venv 파이썬, {repo} · {wt}
+# 폴더, {port} 8200~8299의 빈 포트, {upstream} 지금 브리지, {label} 브랜치 이름. 런슈즈(vite)는 FOREMAN을 써 본 뒤에
+
+[preview.foreman]
+cmd = "{py} -m bridge.preview --port {port} --static {wt}/bridge/static --upstream {upstream} --label {label}"
+
 [schema_lock.foreman]
 paths = ["migrations/"]
 commands = ['bridge\.db\.migrate']

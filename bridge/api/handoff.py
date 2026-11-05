@@ -190,6 +190,25 @@ async def worktree_act(sid: int, body: WorktreeIn, request: Request) -> JSONResp
     return JSONResponse(r)
 
 
+@router.post("/sessions/{sid}/preview")
+async def preview_on(sid: int, request: Request) -> JSONResponse:
+    """[미리보기 열기] — 없으면 띄우고(빈 포트) 있으면 그대로. 화면이 #t=<토큰>을 붙여 새 탭으로 연다."""
+    m = _mgr(request)
+    try:
+        return JSONResponse(await m.preview(await _row(m, sid), True))
+    except Refused as e:
+        return _refused(e)
+
+
+@router.delete("/sessions/{sid}/preview")
+async def preview_off(sid: int, request: Request) -> JSONResponse:
+    m = _mgr(request)
+    try:
+        return JSONResponse(await m.preview(await _row(m, sid), False))
+    except Refused as e:
+        return _refused(e)
+
+
 @router.get("/schema-lock")
 async def schema_lock(request: Request) -> dict[str, Any]:
     sl = getattr(request.app.state, "schema_lock", None)
