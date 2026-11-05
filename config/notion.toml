@@ -1,0 +1,7 @@
+# Notion 게시(12c, 11-06) — bridge/notion.py. 원본은 git 마크다운, Notion은 게시판.
+# 토큰은 저장소 맨 위 .env.notion의 NOTION_TOKEN(내부 통합, 권한 읽기 · 업데이트 · 삽입). 통합은 아래 루트 페이지에만 연결한다 —
+# 그 밖의 페이지는 Notion 권한이 막는다. 바꾸면 브리지를 다시 띄운다.
+
+[foreman]
+root = "40f3218bb52480ec8033dd26aedd17d5"   # 「프로젝트」 > "FOREMAN - AI 에이전트 관제실"(사용자가 만듦, 11-06)
+github = "https://github.com/Gabriel-Joo/foreman"
