@@ -658,6 +658,40 @@ async def test_forked_session_copied_prompt_does_not_block(env):
                 "WHERE t.prompt_uuid = %s", U(1)) == ((SID,),)
 
 
+def _cli_fork_lines() -> list[str]:
+    """claude --fork-session --resume로 만든 세션(11-05 실측 91b57a64): 복사 줄의 promptId가 빠지지 않고 새 프롬프트의
+    promptId(f1)로 바뀐다. 앞에 이 세션의 queue-operation, 복사 구간에 DB에 이벤트가 없는 같은 턴의 둘째 user 줄."""
+    def fork(raw: str, **kw) -> str:
+        return dumps(json.loads(raw) | {"sessionId": SID2} | kw)
+    return [dumps({"type": "queue-operation", "operation": "enqueue", "sessionId": SID2,
+                   "timestamp": "2026-10-01T23:59:00.000Z", "content": "포크한 세션의 새 입력"}),
+            fork(MAIN[0], promptId="f1"), fork(MAIN[1]), fork(MAIN[7]), fork(MAIN[8]),
+            fork(user(U(300), "p1", "같은 턴의 둘째 줄"), promptId="f1"),
+            fork(MAIN[9], promptId="f1"), fork(MAIN[10]), fork(MAIN[11], promptId="f1"), fork(MAIN[12]),
+            fork(user(U(201), "f1", "포크한 세션의 새 입력", origin={"kind": "human"}, ts="2026-10-02T00:00:00.000Z")),
+            fork(asst(U(202), "msg_f1", {"type": "text", "text": "새 답"}, ts="2026-10-02T00:00:01.000Z")),
+            fork(system(U(203), "turn_duration", durationMs=900), timestamp="2026-10-02T00:00:02.000Z")]
+
+
+async def test_cli_fork_copied_lines_with_new_prompt_id(env):
+    s, main = env
+    asm = await run(s)
+    src = q(s, "SELECT id, prompt_text, prompt_uuid, ended_at, end_reason FROM turn ORDER BY id")
+    (main.parent / f"{SID2}.jsonl").write_text("\n".join(_cli_fork_lines()) + "\n", encoding="utf-8")
+    w = Watcher(s, asm)
+    await w.backfill()
+    assert w.failures == {}
+    rows = q(s, "SELECT t.prompt_id, t.prompt_uuid, t.prompt_text, t.end_reason FROM turn t "
+                "JOIN character_session cs ON cs.id = t.session_id WHERE cs.cc_session_id = %s", SID2)
+    # 전에는 첫 복사 줄(첫 지시)이 이 턴을 열어 본문이 옛 프롬프트, prompt_uuid는 겹쳐서 NULL이었다
+    assert rows == (("f1", U(201), "포크한 세션의 새 입력", "stop"),)
+    assert asm.stats.copied_prompts == 4                                # 첫 지시 · 둘째 줄 · 두 번째 · 중단 표시
+    assert q(s, "SELECT id, prompt_text, prompt_uuid, ended_at, end_reason FROM turn ORDER BY id")[:len(src)] == src
+    ev = q(s, "SELECT e.type FROM event e JOIN character_session cs ON cs.id = e.session_id "
+              "WHERE cs.cc_session_id = %s ORDER BY e.id", SID2)
+    assert [r[0] for r in ev] == ["queued", "start", "assistant_msg", "stop"]
+
+
 async def _retry(w: Watcher) -> None:
     for f in w.failures.values():
         f.retry_at = 0
