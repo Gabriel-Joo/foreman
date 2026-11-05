@@ -362,3 +362,31 @@ async def test_argocd_sync_waiting_attaches_to_undeployed_build(env):
         assert q(conn, "SELECT status FROM build WHERE id = %s", out["build"])[0][0] == "success"
     finally:
         await engine.dispose()
+
+
+async def test_argocd_running_without_revision_closed_by_later_result(env):
+    """11-05 실측: ArgoCD running 알림이 revision 없이 와서 "runshoes@?" 행이 따로 생기고, 성공 알림은 진짜 revision 행으로
+    갔다 — running 행이 이틀째 "배포 진행 중"으로 남았다. 나중 결과가 먼저 시작한 진행 중 행을 stale로 닫는다(ArgoCD만)."""
+    s, repo, conn = env
+    t0 = datetime.now(UTC).replace(tzinfo=None, microsecond=0) - timedelta(minutes=30)
+    sha = _commit(repo, "a.txt", t0)
+    _git(repo, "update-ref", "refs/remotes/origin/main", sha)
+    engine = make_engine(s)
+    pm = PipelineManager(engine, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+                         FakeNotifier())
+    try:
+        await pm.start(loops=False)
+        img = [f"harbor.ronanlab.dev/runshoes/runshoes:{sha[:12]}"]
+        await pm.on_jenkins({"job": "runshoes-app", "number": 1, "phase": "completed", "result": "SUCCESS", "commit": sha})
+        t1 = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+        r1 = await pm.on_argocd({"app": "runshoes", "phase": "Running", "images": img, "at": t1})     # revision 없음
+        assert q(conn, "SELECT external_id, status FROM build WHERE id = %s", r1["build"])[0] == ("runshoes@?", "running")
+        await pm.on_argocd({"app": "runshoes", "sync": "Synced", "health": "Healthy", "phase": "Succeeded",
+                            "revision": "9" * 40, "images": img})
+        assert q(conn, "SELECT status FROM build WHERE id = %s", r1["build"])[0][0] == "stale"
+        # Jenkins는 겹쳐 돌 수 있어 닫지 않는다
+        await pm.on_jenkins({"job": "runshoes-app", "number": 2, "phase": "started", "commit": sha})
+        await pm.on_jenkins({"job": "runshoes-app", "number": 3, "phase": "completed", "result": "SUCCESS", "commit": sha})
+        assert q(conn, "SELECT status FROM build WHERE stage = 'jenkins' AND external_id LIKE %s", "%#2")[0][0] == "running"
+    finally:
+        await engine.dispose()
