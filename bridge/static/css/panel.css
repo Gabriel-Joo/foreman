@@ -28,8 +28,9 @@ table.hist { border-collapse:collapse; margin:6px 0; } table.hist td, table.hist
                          background:linear-gradient(transparent, var(--msg-bg, var(--bg))); }
 .msg .txt.clamp.open { max-height:none; }
 .msg .txt.clamp.open::after { display:none; }
-.msg.in { --msg-bg:var(--code); }
 .msg .more { margin-top:3px; padding:1px 8px; }
+/* 펼친 긴 글의 [접기]는 글 끝까지 따라 내려온다 — 다 읽고 위로 찾아 올라가지 않게 */
+.msg .txt.clamp.open + .more { position:sticky; bottom:6px; float:right; background:var(--bg); box-shadow:0 1px 4px rgba(0,0,0,.18); }
 .md .md-h { display:inline-block; margin-top:4px; }
 .md .md-h1, .md .md-h2 { font-size:1.05em; }
 .md .md-code { white-space:pre; overflow-x:auto; background:var(--code); padding:5px 8px; border-radius:5px; margin:4px 0;
@@ -38,9 +39,17 @@ table.hist { border-collapse:collapse; margin:6px 0; } table.hist td, table.hist
 .md .md-i { display:inline; padding:0 4px; margin:0; font-size:.92em; max-height:none; white-space:pre-wrap; }
 .msg .mid { margin:2px 0 6px; }
 .msg .mid-one { border-left:2px solid var(--line); padding-left:8px; margin:4px 0; color:var(--muted); }
-.msg.in { background:var(--code); }
-.msg.in.o-human { border-left:3px solid var(--act); }
-.msg.out { border:1px solid var(--line); }
+/* 11-05 — 내 글과 CC 답이 한눈에 갈리게. 내 글: 오른쪽 말풍선(강조색). CC 답: 왼쪽 카드(초록 띠).
+   그 밖의 입력(서브에이전트 결과 · 완료 알림 · 다른 세션 · 인계)은 점선 테두리의 작은 글 — 대화 흐름의 곁가지 */
+.msg.in { --msg-bg:var(--bg); background:transparent; border:1px dashed var(--line); font-size:.93em; }
+.msg.in .who { font-weight:600; }
+.msg.in.o-human { --msg-bg:color-mix(in srgb, var(--act) 16%, var(--bg)); background:var(--msg-bg); border:0;
+                  margin-left:12%; border-radius:12px 12px 3px 12px; font-size:1em; }
+.msg.in.o-human .who { color:var(--act); }
+.msg.out { --msg-bg:var(--card); background:var(--card); border:1px solid var(--line); border-left:3px solid var(--ok);
+           border-radius:3px 10px 10px 10px; margin-right:2%; }
+.msg.out .who { color:var(--ok); font-weight:600; }
+.msg.out.small { border-left-color:var(--line); background:transparent; }
 .feed { font:12px/1.5 ui-monospace, monospace; max-height:30vh; overflow:auto; }
 .feed .f { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .feed .f-ask, .feed .f-error { color:var(--warn); }
@@ -114,3 +123,16 @@ body { --term-h:0px; }
 .hand-edit { width:100%; box-sizing:border-box; font:12px/1.45 ui-monospace, monospace; }
 .hand .row { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0; }
 .hand-hist { margin-top:4px; }
+
+/* 11-05 활동 줄 → 도구 입력 · 결과 본문(트랜스크립트에서 그때그때) */
+.feed .f-click { cursor:pointer; }
+.feed .f-click:hover { background:var(--code); }
+.feed .f-open { white-space:normal; }
+.feed .f-tw { color:var(--muted); }
+.feed:has(.fdet) { max-height:none; }
+.fdet { border-left:2px solid var(--act); margin:2px 0 8px 6px; padding:4px 0 4px 8px; font-family:inherit; white-space:normal; }
+.fd-h { margin:4px 0 2px; }
+.fd-pre { white-space:pre-wrap; word-break:break-all; background:var(--code); padding:5px 7px; border-radius:5px; margin:2px 0;
+          font:11.5px/1.45 ui-monospace, monospace; max-height:45vh; overflow:auto; }
+.fd-del { color:var(--bad); } .fd-add { color:var(--ok); }
+.fd-err { border-left:3px solid var(--bad); }
