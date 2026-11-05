@@ -135,7 +135,7 @@ async def spawn_options(request: Request) -> dict[str, Any]:
     projects = [{"name": name, "repo": repo} for repo, _pid, name, _ch in (asm.projects if asm else [])]
     async with request.app.state.store.engine.connect() as c:
         cwds = [r[0] for r in (await c.execute(text(
-            "SELECT cwd FROM character_session WHERE cwd IS NOT NULL AND type = 'agent' "
+            "SELECT cwd FROM character_session WHERE cwd IS NOT NULL AND type = 'agent' AND hidden_at IS NULL "
             "GROUP BY cwd ORDER BY MAX(id) DESC LIMIT 12"))).all()]
         sums = (await c.execute(text(
             "SELECT s.id, s.kind, s.source, s.chars, s.created_at, s.session_id, cs.cwd, "

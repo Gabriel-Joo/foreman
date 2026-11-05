@@ -149,7 +149,7 @@ class ForemanDispatcher:
                     "(SELECT MAX(e.ts) FROM event e WHERE e.session_id = cs.id), "
                     "(SELECT LEFT(t.prompt_text, 240) FROM turn t WHERE t.session_id = cs.id AND t.origin = 'human' ORDER BY t.seq DESC LIMIT 1) "
                     "FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id JOIN project p ON p.id = ch.project_id "
-                    "WHERE p.name = :n AND cs.type = 'agent' ORDER BY cs.id DESC LIMIT 25"), {"n": name})).all()
+                    "WHERE p.name = :n AND cs.type = 'agent' AND cs.hidden_at IS NULL ORDER BY cs.id DESC LIMIT 25"), {"n": name})).all()
                 ss = []
                 for sid, cc, title, role, cwd, last, prompt in rows:
                     ls = live.get(cc or "")
