@@ -29,16 +29,17 @@
       "lounge": { "_": "F 라운지 — 소파 · 빈백 · 커피머신(IDLE)", "x": 1, "y": 8, "w": 7, "h": 5, "floor": "wood",
                   "seats": [[2.0, 9.8, "down"], [4.9, 9.8, "down"], [3.6, 12.3, "down"], [1.9, 12.6, "up"], [2.9, 9.8, "down"], [5.8, 9.8, "down"]] },
       "desks": { "_": "B 워크스테이션 — 칸막이 책상 두 줄(세션의 자리)", "x": 9, "y": 8, "w": 6, "h": 5,
-                 "seats": [[10.6, 8.95, "down"], [11.9, 8.95, "down"], [13.2, 8.95, "down"], [14.4, 8.95, "down"],
-                           [10.6, 11.95, "down"], [11.9, 11.95, "down"], [13.2, 11.95, "down"], [14.4, 11.95, "down"]] },
-      "test": { "_": "D QA 부스 — 테스트 모니터, 체크리스트", "x": 16, "y": 8, "w": 3, "h": 2, "seats": [[16.7, 9.15, "down"], [17.9, 9.35, "down"]] },
+                 "_seats": "11-05 window.office.layoutPlan() — 모니터가 얼굴을 가려 한 줄을 0.5칸 앞(아래)으로",
+                 "seats": [[10.6, 9.45, "down"], [11.9, 9.45, "down"], [13.2, 9.45, "down"], [14.4, 9.45, "down"],
+                           [10.6, 12.45, "down"], [11.9, 12.45, "down"], [13.2, 12.45, "down"], [14.4, 12.45, "down"]] },
+      "test": { "_": "D QA 부스 — 테스트 모니터, 체크리스트", "x": 16, "y": 8, "w": 3, "h": 2, "seats": [[16.7, 9.15, "down"], [18.0, 9.75, "down"]] },
       "meeting": { "_": "E 회의실 — 화이트보드, 긴 테이블(Agent · 서브에이전트가 모인다)", "x": 21, "y": 8, "w": 6, "h": 5,
                    "seats": [[23.5, 9.7, "up"], [22.1, 10.95, "down"], [23.4, 10.95, "down"], [24.7, 10.95, "down"], [26.0, 10.95, "down"]] },
       "commit": { "_": "H 커밋 데스크 — 프린터", "x": 16, "y": 11, "w": 3, "h": 2, "seats": [[16.7, 12.2, "down"]] },
       "infra": {
         "y": 14, "h": 3,
         "_stands": "캐릭터 전용 칸(방 좌표) — 단계 구조물 바로 앞, 가구를 두지 않는다. 11-05 window.office.audit()로 찾은 자리(윗몸이 안 가리는 가장 가까운 칸)",
-        "stands": { "jenkins": [4.2, 15.8], "harbor": [14.5, 15.8], "argocd": [23.5, 15.8], "home": [1.0, 16.2] },
+        "stands": { "jenkins": [4.45, 15.8], "harbor": [14.5, 15.8], "argocd": [23.5, 15.8], "home": [1.0, 16.2] },
         "jenkins": { "x": 2, "label": "빌드 모니터(Jenkins)" },
         "harbor": { "x": 12, "label": "저장소(Harbor)" },
         "argocd": { "x": 21, "label": "배포 보드(ArgoCD)" }
@@ -52,8 +53,9 @@
   "tags": {
     "_": "구역 이름표 — 흰 사인판 + 파란 띠",
     "style": { "bg": "#ffffffee", "fg": "#1f2430", "border": "#3d9ee6", "font": "600 10px system-ui, 'Noto Sans KR', sans-serif", "kind": "sign" },
-    "zones": { "foreman_office": "팀장실", "library": "아카이브", "desks": "워크스테이션", "server": "서버룸", "test": "QA 부스",
-               "meeting": "회의실", "lounge": "라운지", "window": "창가 바", "commit": "커밋 데스크" },
+    "_zones": "[이름, dx, dy] — 이름표가 사람 자리를 가리지 않게 비켜 둔 것(11-05 window.office.layoutPlan())",
+    "zones": { "foreman_office": "팀장실", "library": "아카이브", "desks": ["워크스테이션", -0.8, 0], "server": "서버룸", "test": ["QA 부스", 0, 1.1],
+               "meeting": "회의실", "lounge": ["라운지", 0, -0.2], "window": ["창가 바", -0.8, 0], "commit": ["커밋 데스크", 1.1, 0] },
     "_roles": "구역 → 하는 일(설명은 테마 공통, office.js ZONE_ROLE). 이름표에 마우스를 올리면 뜬다",
     "roles": { "foreman_office": "hq", "library": "read", "desks": "edit", "server": "bash", "test": "test",
                "meeting": "sub", "lounge": "idle", "window": "web", "commit": "git" },
@@ -163,7 +165,7 @@
     "decor": [
       { "_": "팀장실 — 유리벽, 책상 + 듀얼 모니터, 화분, 고양이" },
       { "fx": "glasswall", "x": 1.0, "y": 2.0, "w": 7.0, "h": 5.0 },
-      { "s": "table_l", "x": 2.4, "y": 4.4 }, { "s": "monitor_side", "x": 3.1, "y": 3.5, "z": "top" }, { "s": "pc", "x": 4.2, "y": 3.35, "z": "top" },
+      { "s": "table_l", "x": 2.4, "y": 4.4 }, { "s": "monitor_side", "x": 3.0, "y": 3.5, "z": "top" }, { "s": "pc", "x": 4.2, "y": 3.35, "z": "top" },
       { "s": "plant", "x": 6.4, "y": 2.3 }, { "s": "cat", "x": 5.6, "y": 5.4 }, { "s": "calendar", "x": 2.6, "y": 0.7, "z": "wall" },
 
       { "_": "A 아카이브" },

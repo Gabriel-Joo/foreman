@@ -17,6 +17,9 @@
   button:disabled { opacity:.45; cursor:default; } button.ghost { background:transparent; }
   button.small { font-size:12px; padding:2px 8px; }
   input, textarea { font:inherit; width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  /* 체크박스 · 라디오는 글자 칸이 아니다 — 넓이 100%가 걸려 버튼이 가운데로 떨어지고 글자와 떨어졌다(11-05 [+ 세션] 창) */
+  input[type=checkbox], input[type=radio] { width:auto; padding:0; margin:0 6px 0 0; vertical-align:middle; flex:none; }
+  label:has(> input[type=radio]), label:has(> input[type=checkbox]) { display:inline-flex; align-items:center; gap:0; cursor:pointer; }
   input[type=checkbox] { width:auto; }
   .otop { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:6px 14px; border-bottom:1px solid var(--line); flex:none; }
   /* 11-05 머리말 프로젝트 줄 — 지금 방은 눌린 모양, 승인 대기(노랑 깜빡) · 안 본 새 답(파랑) 점, 숫자 */
