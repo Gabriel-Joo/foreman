@@ -868,7 +868,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 런슈즈 실제 인계 | 발볼 검증이 끝난 뒤 | `log/stage11_handoff_result.md` |
 | 펫퍼민트 tmux 이전 | 사용자가 그 세션을 `/exit`할 때 — `--resume`만, `--fork-session` 금지 | `log/stage0_tmux_result.md` |
 | 런슈즈 미리보기(vite) | FOREMAN 미리보기가 쓸모 있는지 본 뒤 | `docs/11_worktree.md` |
-| Claude Code와 Codex 같이 쓰기 | 나중 | `log/later_codex_bridge.md` |
+| Claude Code와 Codex 같이 쓰기 — 일감 떠넘기기(양 많은 반복, Opus 토큰 아끼기) · 다른 모델의 의견(설계 리뷰 · 교차 검증, 같은 모델끼리는 같은 것을 놓친다) | **먼저 같은 일을 Sonnet으로 시켜 비용 · 품질을 본 뒤**, 충분하면 붙이지 않는다(11-06 사용자) | `log/later_codex_bridge.md` |
 | 9단계 LLM 지표 | 프로메테우스는 펫퍼민트 설계와 상의 뒤 | 로드맵 9 |
 | 인계를 worktree 세션에 넣을 때 그 사실 덧붙이기 — 브리지(`spawn_new`)가 "이 세션은 worktree `<이름>`(브랜치 `cc/<이름>`) — push 안 함 · 브리지 재시작 안 함 · 기록은 새 log 파일"과 CLAUDE.md 「따로 작업」 절을 읽을 곳에 자동으로 | 아직 안 만듦 | `log/handoff_v2_c_result.md` |
 
