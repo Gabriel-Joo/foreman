@@ -143,6 +143,7 @@ class Batch:
     turn_msgs: list[dict[str, Any]] = field(default_factory=list)  # WS로 낼 턴 열기·닫기
     closed: list[tuple[int, int, str, str, str | None]] = field(default_factory=list)  # 커밋 뒤 알림(세션, 턴, 이유, 출처, 메모)
     subs_done: set[int] = field(default_factory=set)  # 커밋 뒤 묶음 판정할 세션(서브에이전트가 끝났다)
+    compacts: set[int] = field(default_factory=set)   # 커밋 뒤 압축 알림을 판정할 세션(11-05)
     tool_results: list[tuple[str, Any]] = field(default_factory=list)  # 커밋 뒤 승인 대기에 알릴 (tool_use_id, permissionDecision)
     skipped: list[tuple[int, str]] = field(default_factory=list)  # 너그러운 모드에서 버린 줄 (offset, 이유)
 
@@ -180,6 +181,7 @@ class Assembler:
         # 턴이 닫힌 직후 부르는 함수(session_id, turn_id, reason, by, note) — 4단계 알림. 실시간 모드에서만
         self.on_turn_closed: Any = None
         self.on_subagents_changed: Any = None  # (session_id) — 서브에이전트가 끝났다
+        self.on_compact: Any = None            # (session_id) — 압축이 있었다(11-05 압축 알림). 실시간 모드에서만
         self.on_tool_result: Any = None        # (tool_use_id, permissionDecision) — 5단계 승인 대기(터미널에서 답했다)
 
     # ── 시작 ────────────────────────────────────────────────
@@ -529,6 +531,9 @@ class Assembler:
         if self.live and self.on_subagents_changed:
             for sid in b.subs_done:
                 self.on_subagents_changed(sid)
+        if self.live and self.on_compact:
+            for sid in b.compacts:
+                self.on_compact(sid)
         if self.on_tool_result:
             for tuid, perm in b.tool_results:
                 self.on_tool_result(tuid, perm)
@@ -593,6 +598,7 @@ class Assembler:
                     await c.execute(text("UPDATE turn SET compacted = TRUE WHERE id = :id"), {"id": tid})
                 self._event(b, st, uuid=uid, ts=ts, type="compact", turn_id=tid, parent_uuid=par,
                             payload={"compactMetadata": d.get("compactMetadata")})
+                b.compacts.add(st.id)
         elif t == "ai-title":
             # CC가 붙이는 세션 제목 — 대화가 흘러가며 바뀐다. 같은 제목이 수천 번 반복되므로 바뀔 때만 쓴다
             title = (self.mask.text(str(d.get("aiTitle") or "")) or "").strip()[:255]

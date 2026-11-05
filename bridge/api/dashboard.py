@@ -22,6 +22,7 @@ from sqlalchemy import bindparam, text
 from bridge.api.auth import require_api_token
 from bridge.inject import _status, _tmux_env
 from bridge.liveness import live_sessions
+from bridge.compactwatch import status as compact_status
 from bridge.model_choice import family as model_family
 from bridge.model_choice import label as model_label
 
@@ -124,6 +125,8 @@ async def dashboard(request: Request) -> dict[str, Any]:
             by_model.setdefault(sid_, []).append({
                 "model": model, "label": model_label(model), "family": model_family(model),
                 "input": int(tin or 0), "output": int(tout or 0), "today_input": int(din or 0), "today_output": int(dout or 0)})
+        # 압축 알림(11-05) — 세션별 압축 횟수 · 단계(due 2번 · late 4번, notify.toml [compact])
+        cmp = await compact_status(c, [r[0] for r in visible], request.app.state.compact_rules)
         # 지금 모델 — 본 대화(서브에이전트 아님)의 마지막 응답. 세션 안에서 /model로 바꾸면 따라간다
         cur_model = {r[0]: r[1] for r in (await c.execute(text(
             f"SELECT t.session_id, m.model FROM message m JOIN turn t ON t.id = m.turn_id JOIN ("
@@ -165,6 +168,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
             # 모델 — model: 지금 쓰는 것(마지막 응답), model_req: 띄울 때 고른 것(입양한 세션 · CC 설정이면 null)
             "model": cur_model.get(sid), "model_label": model_label(cur_model.get(sid)),
             "model_family": model_family(cur_model.get(sid)), "model_req": model_req,
+            "compact": cmp.get(sid),
             "last_ts": _iso(last_ts), "attached_at": _iso(attached), "detached_at": _iso(detached),
         })
     order = {"ACTIVE": 0, "SUSPENDED": 1, "IDLE": 2, "DORMANT": 3}
