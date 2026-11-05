@@ -239,6 +239,10 @@ class ForemanDispatcher:
             warn.append(f"모르는 방식 {plan.get('mode')!r} → new"); plan["mode"] = "new"
         if plan.get("role") not in ROLES:
             plan["role"] = "coder"
+        if plan["role"] == "inspector" and not plan.get("read_only") and "read_only_set" not in plan:
+            plan["read_only"] = True      # 점검은 살펴보기 — 고치기 전에 승인(카드에서 끌 수 있다, 끄면 read_only_set)
+            warn.append("역할이 점검이라 읽기 전용으로 시작합니다")
+        plan.pop("read_only_set", None)
         if plan.get("project") not in names and plan["mode"] != "ask":
             warn.append(f"모르는 프로젝트 {plan.get('project')!r} — 사람이 골라 주세요"); plan["mode"] = "ask"
         plan["repo"] = names.get(plan.get("project"))

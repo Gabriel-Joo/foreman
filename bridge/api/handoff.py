@@ -139,14 +139,23 @@ async def spawn_options(request: Request) -> dict[str, Any]:
             "GROUP BY cwd ORDER BY MAX(id) DESC LIMIT 12"))).all()]
         sums = (await c.execute(text(
             "SELECT s.id, s.kind, s.source, s.chars, s.created_at, s.session_id, cs.cwd, "
-            "COALESCE(cs.custom_title, cs.title, LEFT(cs.cc_session_id, 8)), p.name "
+            "COALESCE(cs.custom_title, cs.title, LEFT(cs.cc_session_id, 8)), p.name, LEFT(s.body, 800) "
             "FROM summary s JOIN character_session cs ON cs.id = s.session_id JOIN `character` ch ON ch.id = cs.character_id "
             "LEFT JOIN project p ON p.id = ch.project_id WHERE s.status = 'ok' ORDER BY s.id DESC LIMIT 30"))).all()
     home = os.path.expanduser("~")
     return {"home": home, "projects": projects, "recent_cwds": [x for x in cwds if os.path.isdir(x)],
             "summaries": [{"id": r[0], "kind": r[1], "source": r[2], "chars": r[3],
                            "created_at": r[4].isoformat() + "Z" if r[4] else None, "session_id": r[5], "cwd": r[6],
-                           "session": r[7], "project": r[8]} for r in sums]}
+                           "session": r[7], "project": r[8], "head": _head(r[9])} for r in sums]}
+
+
+def _head(body: str | None) -> str:
+    """요약 본문의 첫 내용 줄 — 고르는 칸에서 세션 제목만으로는 무슨 요약인지 헷갈렸다(11-05 '푸른 고래')."""
+    for ln in (body or "").splitlines():
+        t = ln.strip().lstrip("-*• ").strip()
+        if t and not ln.lstrip().startswith("#"):
+            return t[:160]
+    return ""
 
 
 @router.get("/fs/dirs")

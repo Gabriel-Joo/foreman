@@ -65,7 +65,7 @@ function mount(dlg) {
         <label class="small muted">방식</label>
         <select id="fmMode">${Object.entries(MODE).map(([k, v]) => opt(k, p.mode, v)).join('')}</select>
         <label class="small muted">인계 요약</label>
-        <select id="fmSum">${opt('', p.summary_id, '쓰지 않음')}${sums.map((s) => opt(s.id, p.summary_id, `#${s.id} ${s.session} · ${s.chars}자`)).join('')}</select>
+        <select id="fmSum">${opt('', p.summary_id, '쓰지 않음')}${sums.map((s) => opt(s.id, p.summary_id, `세션 ${s.session_id} · ${s.chars}자 — ${(s.head || s.session || '').slice(0, 50)}`)).join('')}</select>
         <label class="small muted">보낼 세션</label>
         <input id="fmAttach" value="${esc(p.attach_session ?? '')}" placeholder="방식이 '살아 있는 세션에 보내기'일 때 세션 번호">
         <label class="small muted">역할</label>
@@ -93,7 +93,7 @@ function mount(dlg) {
     const v = (id) => $(id).value;
     return { ...disp.plan, project: v('fmProj'), mode: v('fmMode'), summary_id: v('fmSum') ? Number(v('fmSum')) : null,
              attach_session: v('fmAttach') ? Number(v('fmAttach')) : null, role: v('fmRole'), title: v('fmTitle'),
-             read_only: $('fmRO').checked, worktree: $('fmWT').checked, first_prompt: v('fmFirst') };
+             read_only: $('fmRO').checked, read_only_set: true, worktree: $('fmWT').checked, first_prompt: v('fmFirst') };
   }
   async function start() {
     const plan = collect();

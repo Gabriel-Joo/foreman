@@ -67,27 +67,31 @@ export function mountNewSession(store, { onCreated }) {
   }
   // 요약 고르기(11-05) — 전에는 가장 최근 요약이 저절로 골라져 시험용 요약이 그대로 들어갔다. 이제 세션별로 묶어 보여 주고
   // 사람이 직접 골라야 한다(빈 칸이 기본). 넣을 요약이 하나도 없으면 [인계 요약 넣고 시작]을 끈다
+  // 11-05 — 고른 프로젝트의 요약만 센다(떠돌이는 프로젝트 없는 요약만). 전에는 다른 프로젝트 요약 하나로도 켜졌다.
+  // 이름은 세션 제목만으로는 헷갈린다(177은 첫 입력이던 시험 요약으로 CC가 "푸른 고래 인계 시험"이라 제목을 붙였다) — 번호 · 본문 첫 줄을 같이
+  const mine = () => opts.summaries.filter((s) => ($('nsWhere').value === '' ? !s.project : s.project === $('nsWhere').value));
   function fillSummaries() {
-    const v = $('nsWhere').value, keep = $('nsSum').value;
-    const none = !opts.summaries.length;
+    const keep = $('nsSum').value;
+    const list = mine();
+    const none = !list.length;
     const hand = dlg.querySelector('input[value=handoff]');
     hand.disabled = none;
     $('nsHandOpt').classList.toggle('off', none);
     $('nsNoSum').hidden = !none;
     if (none && hand.checked) dlg.querySelector('input[value=fresh]').checked = true;
-    // 세션 하나에 요약이 여럿이면 한 묶음으로. 같은 프로젝트 세션이 위에
+    // 세션 하나에 요약이 여럿이면 한 묶음으로
     const groups = new Map();
-    for (const s of opts.summaries) {
+    for (const s of list) {
       if (!groups.has(s.session_id)) groups.set(s.session_id, { head: s, list: [] });
       groups.get(s.session_id).list.push(s);
     }
-    const order = [...groups.values()].sort((a, b) => ((b.head.project || '') === v) - ((a.head.project || '') === v));
     const when = (t) => new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     const KIND = { snapshot: '지금 요약', handoff: '끝내기 전 인계' };
-    $('nsSum').innerHTML = '<option value="">— 세션을 골라 주세요 —</option>' + order.map((g) =>
-      `<optgroup label="${esc(label(g.head.project) || '떠돌이')} · ${esc(g.head.session)}">${g.list.map((s) =>
-        `<option value="${s.id}">${esc(g.head.session)} — ${esc(KIND[s.kind] || s.kind)}${s.source === 'edited' ? '(고침)' : ''} · ${s.chars}자 · ${esc(when(s.created_at))}</option>`).join('')}</optgroup>`).join('');
-    if (keep && opts.summaries.some((s) => String(s.id) === keep)) $('nsSum').value = keep;
+    const cut = (t, n) => (t && t.length > n ? t.slice(0, n) + '…' : t || '');
+    $('nsSum').innerHTML = '<option value="">— 세션을 골라 주세요 —</option>' + [...groups.values()].map((g) =>
+      `<optgroup label="세션 ${g.head.session_id} · ${esc(cut(g.head.session, 30))}">${g.list.map((s) =>
+        `<option value="${s.id}">${esc(when(s.created_at))} ${esc(KIND[s.kind] || s.kind)}${s.source === 'edited' ? '(고침)' : ''} · ${s.chars}자 — ${esc(cut(s.head, 50))}</option>`).join('')}</optgroup>`).join('');
+    if (keep && list.some((s) => String(s.id) === keep)) $('nsSum').value = keep;
     preview();
   }
   async function preview() {
@@ -109,7 +113,7 @@ export function mountNewSession(store, { onCreated }) {
   $('nsGo').onclick = async () => {
     if (busy || !cwd) { if (!cwd) msg('폴더를 골라 주세요.', 'bad'); return; }
     const summary_id = mode() === 'handoff' && $('nsSum').value ? Number($('nsSum').value) : null;
-    if (mode() === 'handoff' && !summary_id) { msg(opts.summaries.length ? '넣을 요약의 세션을 골라 주세요.' : '넣을 인계 요약이 없습니다.', 'bad'); return; }
+    if (mode() === 'handoff' && !summary_id) { msg(mine().length ? '넣을 요약의 세션을 골라 주세요.' : '이 프로젝트에는 넣을 인계 요약이 없습니다.', 'bad'); return; }
     busy = true; $('nsGo').disabled = true;
     msg(`새 세션을 띄우는 중입니다… (${home(cwd, opts.home)})`);
     try {

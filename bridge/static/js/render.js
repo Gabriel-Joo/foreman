@@ -16,7 +16,9 @@ const ROLE_LABEL = { coder: '코더', foreman: '포먼', cicd: 'CI/CD', inspecto
 // 세션을 알아보는 이름 — CC가 붙인 제목 → CC 세션 이름 → 짧은 id. 캐릭터 이름은 아래 줄에(한 캐릭터에 세션 여럿)
 export function sessionName(s) { return s.custom_title || s.title || s.cc_name || s.short; }   // 사람이 붙인 이름이 먼저(11-05)
 export function sessionSub(s) {
-  return [s.character, ROLE_LABEL[s.role] || s.role, s.short, s.tmux_pane].filter(Boolean).join(' · ');
+  // 캐릭터 이름이 역할 이름으로 시작하면(0017 재배치 — "코더" · "코더 foreman-2") 역할은 다시 쓰지 않는다
+  const role = ROLE_LABEL[s.role] || s.role;
+  return [s.character, s.character && role && s.character.startsWith(role) ? null : role, s.short, s.tmux_pane].filter(Boolean).join(' · ');
 }
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
