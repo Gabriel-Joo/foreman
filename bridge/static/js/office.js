@@ -480,6 +480,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       for (const a of list) if (!(a.bornAt && now < a.bornAt)) sorted.push({ y: a.y, draw: () => drawActorS(a, now) });
       sorted.sort((p, q) => p.y - q.y);
       for (const it of sorted) it.draw();
+      for (const r of world.rooms) overTopItems(r, list, now);       // 탁자 위 소품이 사람 앞에 그려진 자리만 사람을 덧그린다
+      if (world.hq) overTopItems(world.hq, list, now, 'hq');        // 감독실(교장실 · 팀장실 · 감독 컨테이너) 탁자도
       for (const a of list) drawOverlay(a, now);
     } else {
       drawHQShapes(now);
@@ -620,17 +622,22 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
     return out;
   }
-  function decorRects() {
+  // where: 'room'(방 가구 + 출하 라인, 방 좌표) · 'hq'(감독실 가구, 감독실 좌표)
+  function decorRects(where = 'room') {
     const out = [], iz = L.zones.infra;
     const add = (d, ox, oy, src) => {
       if (!d.s || d.fx || d.z === 'wall' || d.z === 'floor') return;
       const [w, h] = sizeT(d);
       for (let i = 0; i < (d.n || 1); i++) {
         const x = ox + d.x + i * (d.dx || 1), y = oy + d.y;
-        const key = d.z === 'top' ? oy + topKey(d) : y + h - 0.01;
-        out.push({ s: d.s, src, x, y, w, h, key, foot: footprint({ ...d, x, y }, w, h) });
+        const top = d.z === 'top';
+        const key = top ? oy + topKey(d) : y + h - 0.01;
+        out.push({ s: d.s, src, x, y, w, h, key, top, host: top ? d._host : null,
+                   hostTop: top && d._hostTop != null ? oy + d._hostTop : null,
+                   foot: top ? null : footprint({ ...d, x, y }, w, h) });
       }
     };
+    if (where === 'hq') { for (const d of HQ.decor || []) add(d, 0, 0, 'hq'); return out; }
     for (const d of theme.sprites.decor || []) add(d, 0, 0, 'decor');
     if (iz) for (const k of ['jenkins', 'harbor', 'argocd']) for (const d of (theme.sprites.infra_decor || {})[k] || []) add(d, iz[k].x, iz.y, 'infra.' + k);
     return out;
@@ -649,40 +656,87 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
     return { body: +body.toFixed(2), head: +head.toFixed(2), inFoot };
   }
+  // 소품이 사람 앞에 그려지는 부분 — 소품 칸 ∩ 사람 몸 ∩ 받침 윗면 선 위쪽(아래쪽은 원래 탁자가 사람을 가린다). [x, y, w, h] | null
+  function topOverlap(r, px, py) {
+    const x0 = Math.max(px - 0.45, r.x), x1 = Math.min(px + 0.45, r.x + r.w);
+    const y0 = Math.max(py - 1.6, r.y), y1 = Math.min(py, r.y + r.h, r.hostTop != null ? r.hostTop : Infinity);
+    return x1 - x0 > 0.05 && y1 - y0 > 0.05 ? [x0, y0, x1 - x0, y1 - y0] : null;
+  }
   function audit() {
-    const rects = decorRects(), issues = [];
-    for (const p of standSpots()) {
-      const body = [p.x - 0.4, p.y - 1.6, 0.8, 0.85];               // 윗몸(머리 · 가슴)
-      for (const r of rects) {
-        const ix = Math.min(body[0] + body[2], r.x + r.w) - Math.max(body[0], r.x);
-        const iy = Math.min(body[1] + body[3], r.y + r.h) - Math.max(body[1], r.y);
-        if (r.key > p.y && ix > 0.15 && iy > 0.15) issues.push({ where: p.where, at: [p.x, p.y], kind: '가림', by: r.s, src: r.src, overlap: +(ix * iy / (body[2] * body[3])).toFixed(2) });
+    const issues = [];
+    const check = (spots, rects) => {
+      for (const p of spots) {
+        const body = [p.x - 0.4, p.y - 1.6, 0.8, 0.85];               // 윗몸(머리 · 가슴)
+        for (const r of rects) {
+          if (r.top) continue;                                        // 소품은 아래에서 따로
+          const ix = Math.min(body[0] + body[2], r.x + r.w) - Math.max(body[0], r.x);
+          const iy = Math.min(body[1] + body[3], r.y + r.h) - Math.max(body[1], r.y);
+          if (r.key > p.y && ix > 0.15 && iy > 0.15) issues.push({ where: p.where, at: [p.x, p.y], kind: '가림', by: r.s, src: r.src, overlap: +(ix * iy / (body[2] * body[3])).toFixed(2) });
+        }
+        for (const r of rects) {
+          const f = r.foot;
+          if (f && p.x > f[0] && p.x < f[0] + f[2] && p.y > f[1] && p.y < f[1] + f[3]) issues.push({ where: p.where, at: [p.x, p.y], kind: '가구 안', by: r.s, src: r.src });
+        }
+        // 탁자 위 소품(z: top)이 사람 앞에 — 받침 윗면 위로 보이는 몸과 겹치고 사람보다 나중에 그려지는 것.
+        // 그림 단계의 덧그리기(overTopItems)가 그 칸만 사람을 다시 그린다(fixed: true)
+        for (const r of rects) {
+          if (!r.top || r.key <= p.y) continue;
+          const o = topOverlap(r, p.x, p.y);
+          if (o) issues.push({ where: p.where, at: [p.x, p.y], kind: '소품 앞', by: r.s, src: r.src, overlap: +(o[2] * o[3] / (0.9 * 1.6)).toFixed(2), fixed: true });
+        }
       }
-      for (const r of rects) {
-        const f = r.foot;
-        if (f && p.x > f[0] && p.x < f[0] + f[2] && p.y > f[1] && p.y < f[1] + f[3]) issues.push({ where: p.where, at: [p.x, p.y], kind: '가구 안', by: r.s, src: r.src });
-      }
-    }
+      for (const r of rects) if (r.top && !r.host) issues.push({ where: r.src, at: [r.x, r.y], kind: '받침 없음', by: r.s, src: r.src });
+    };
+    check(standSpots(), decorRects('room'));
+    if (HQ.seat) check([{ where: 'hq.seat', x: HQ.seat[0], y: HQ.seat[1] }], decorRects('hq'));
     return issues;
+  }
+
+  // 탁자 위 소품 덧그리기(11-05) — 탁자 뒤에 앉은 사람은 탁자보다 먼저 그려져야 다리가 가려지는데, 그러면 탁자 위 소품
+  // (책 · 머그 · 촛대)이 사람 몸 위로 그려진다. 한 줄 정렬로는 둘 다 만족할 수 없어서, 다 그린 뒤 소품과 겹치는 사람만
+  // 소품 자리 안에서 한 번 더 그린다 — 탁자는 다리를 가리고, 소품은 사람 뒤로 간다
+  const TOP_RECTS = {};
+  function overTopItems(room, list, now, where = 'room') {
+    if (!TOP_RECTS[where]) TOP_RECTS[where] = decorRects(where).filter((r) => r.top);
+    const rects = TOP_RECTS[where];
+    if (!rects.length || window.__noTopFix) return;      // __noTopFix — 화면 시험에서 고치기 전 모습과 견줄 때만
+    for (const a of list) {
+      if (a.room !== room.name || (a.bornAt && now < a.bornAt)) continue;
+      const ax = a.x - room.x, ay = a.y - room.y;          // 방(감독실) 좌표
+      const parts = rects.filter((r) => r.key > ay).map((r) => topOverlap(r, ax, ay)).filter(Boolean);
+      if (!parts.length) continue;
+      ctx.save();
+      ctx.beginPath();
+      for (const [x, y, w, h] of parts) ctx.rect((room.x + x) * T, (room.y + y) * T, w * T, h * T);
+      ctx.clip();
+      drawActorS(a, now);
+      ctx.restore();
+    }
   }
 
   // 탁자 위 소품의 그리는 순서 — 소품 가운데가 들어 있는 받침(같은 목록의 가구) 중 발밑이 가장 아래인 것 바로 다음.
   // 전에는 y + 3(어림)이라 받침 앞(아래)에 선 사람보다 늦게 그려져 사람 머리 위로 소품이 덮였다(11-05)
   function topKey(d) {
     if (d._k != null) return d._k;
-    const list = (theme.sprites.decor || []).includes(d) ? theme.sprites.decor
-      : Object.values(theme.sprites.infra_decor || {}).find((l) => l.includes(d)) || [];
-    const [w, h] = sizeT(d), cx = d.x + w / 2, cy = d.y + h / 2;
-    let best = null;
+    // 소품이 들어 있는 목록 — 방 가구 · 출하 라인 · 감독실(theme.hq.decor). 감독실을 빠뜨려서 그 탁자 위 책 · 두루마리가
+    // 받침을 못 찾고 어림값(y + h + 0.3)으로 떨어져 탁자에 앉은 포먼 위로 그려졌다(11-05 사용자 보고)
+    const lists = [theme.sprites.decor || [], ...Object.values(theme.sprites.infra_decor || {}), (theme.hq && theme.hq.decor) || []];
+    const list = lists.find((l) => l.includes(d)) || [];
+    // 받침을 가운데가 아니라 소품의 밑동(아래쪽)으로 찾는다 — 모니터 · PC처럼 키 큰 소품은 가운데가 탁자 윗면보다 위라 못 찾았다
+    const [w, h] = sizeT(d), cx = d.x + w / 2, cy = d.y + h * 0.85;
+    let best = null, bestTop = null;
     for (const b of list) {
       if (!b.s || b.fx || b.z) continue;
       const [bw, bh] = sizeT(b);
       for (let i = 0; i < (b.n || 1); i++) {
         const bx = b.x + i * (b.dx || 1);
-        if (cx >= bx && cx <= bx + bw && cy >= b.y && cy <= b.y + bh && (best == null || b.y + bh > best)) best = b.y + bh;
+        if (cx >= bx && cx <= bx + bw && cy >= b.y && cy <= b.y + bh && (best == null || b.y + bh > best)) { best = b.y + bh; bestTop = b.y; }
       }
     }
-    d._k = best != null ? best - 0.005 : d.y + h + 0.3;   // 받침보다 0.005 뒤 = 받침 발밑(-0.01)보다 뒤, 받침 앞 사람보다 앞
+    // 받침보다 0.005 뒤 = 받침 발밑(-0.01)보다 뒤, 받침 앞 사람보다 앞. 받침을 못 찾으면 제 발밑(audit()이 "받침 없음"으로 알린다)
+    d._host = best != null;
+    d._hostTop = bestTop;                                // 받침 윗면 선 — 덧그리기는 이 선 위쪽만(아래는 탁자가 사람을 가리는 자리)
+    d._k = best != null ? best - 0.005 : d.y + h - 0.01;
     return d._k;
   }
 
