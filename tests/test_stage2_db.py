@@ -1173,6 +1173,13 @@ async def test_notion_publish_update_unchanged_archive_and_scope(env, tmp_path):
     assert [b["type"] for b in fake.blocks[r1["page_id"]]] == ["callout", "bulleted_list_item"]   # 옛 블록은 지웠다
     assert len([c for c in fake.calls if c[0] == "create" and c[2] == "회고"]) == 1           # 묶음 페이지는 한 번만
 
+    # 옮기기 — 루트 아래 다른 묶음 페이지로(목적지도 범위 확인)
+    mv = await pub.move(path, "지난 회고")
+    newsec = fake.pages[r1["page_id"]]["parent"]
+    assert mv["action"] == "moved" and fake.pages[newsec]["title"] == "지난 회고" and fake.pages[newsec]["parent"] == "root"
+    with pytest.raises(nt.OutOfScope):
+        await pub.move("log/retro_없음.md", "회고")
+    await pub.move(path, "회고")
     # 범위 — 우리가 만들지 않은 글은 내리지 않는다
     with pytest.raises(nt.OutOfScope):
         await pub.archive("log/retro_없음.md")

@@ -142,6 +142,12 @@ class FakeNotion:
             out.append({"id": c["_id"]})
         return out
 
+    async def move_page(self, pid, parent):
+        await self.page(pid)
+        await self.page(parent)
+        self.pages[pid]["parent"] = parent
+        self.calls.append(("move", pid, parent))
+
     async def delete_block(self, bid):
         for k, v in self.blocks.items():
             self.blocks[k] = [b for b in v if b["_id"] != bid]
