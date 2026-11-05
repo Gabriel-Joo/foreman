@@ -120,6 +120,8 @@ class NewIn(BaseModel):
     summary_id: int | None = None
     title: str | None = Field(default=None, max_length=255)
     worktree: bool | None = None      # None: 그 프로젝트에 살아 있는 세션이 있으면 따로 작업(worktree)
+    model: str | None = Field(default=None, max_length=40)   # config/models.toml id. None이면 역할(coder) 기본값
+    role: Literal["coder", "inspector", "cicd"] | None = None
 
 
 class WorktreeIn(BaseModel):
@@ -144,6 +146,7 @@ async def spawn_options(request: Request) -> dict[str, Any]:
             "LEFT JOIN project p ON p.id = ch.project_id WHERE s.status = 'ok' ORDER BY s.id DESC LIMIT 30"))).all()
     home = os.path.expanduser("~")
     return {"home": home, "projects": projects, "recent_cwds": [x for x in cwds if os.path.isdir(x)],
+            "models": _mgr(request).models.view(),     # 고를 수 있는 모델 · 역할 기본값(config/models.toml)
             "summaries": [{"id": r[0], "kind": r[1], "source": r[2], "chars": r[3],
                            "created_at": r[4].isoformat() + "Z" if r[4] else None, "session_id": r[5], "cwd": r[6],
                            "session": r[7], "project": r[8], "head": _head(r[9])} for r in sums]}
@@ -178,7 +181,8 @@ async def list_dirs(path: str = "~", hidden: bool = False) -> dict[str, Any]:
 @router.post("/spawn")
 async def spawn_new(body: NewIn, request: Request) -> JSONResponse:
     try:
-        return JSONResponse(await _mgr(request).spawn_new(body.cwd, body.summary_id, body.title, worktree=body.worktree))
+        return JSONResponse(await _mgr(request).spawn_new(body.cwd, body.summary_id, body.title, worktree=body.worktree,
+                                                          role=body.role, model=body.model or None))
     except Refused as e:
         return _refused(e)
 

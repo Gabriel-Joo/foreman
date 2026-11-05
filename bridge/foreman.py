@@ -243,6 +243,8 @@ class ForemanDispatcher:
             plan["read_only"] = True      # 점검은 살펴보기 — 고치기 전에 승인(카드에서 끌 수 있다, 끄면 read_only_set)
             warn.append("역할이 점검이라 읽기 전용으로 시작합니다")
         plan.pop("read_only_set", None)
+        # 모델(11-05) — 포먼(LLM)은 고르지 않는다. 사람이 카드에서 고른 값이 목록에 있으면 그것, 아니면 역할 기본값
+        plan["model"] = self.handoff.models.pick(plan.get("model"), plan["role"])
         if plan.get("project") not in names and plan["mode"] != "ask":
             warn.append(f"모르는 프로젝트 {plan.get('project')!r} — 사람이 골라 주세요"); plan["mode"] = "ask"
         plan["repo"] = names.get(plan.get("project"))
@@ -293,7 +295,7 @@ class ForemanDispatcher:
             out = await self.handoff.spawn_new(plan["repo"], plan.get("summary_id") if plan["mode"] == "handoff" else None,
                                                plan.get("title") or None, first_prompt=plan["first_prompt"],
                                                read_only=bool(plan.get("read_only")), role=plan.get("role"),
-                                               worktree=bool(plan.get("worktree")))
+                                               worktree=bool(plan.get("worktree")), model=plan.get("model"))
             out["mode"] = plan["mode"]
         async with self.engine.begin() as c:
             await c.execute(text("UPDATE dispatch SET edited = :e, status = 'started', started_at = NOW(3), session_id = :s WHERE id = :i"),

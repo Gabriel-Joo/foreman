@@ -42,7 +42,7 @@
 | 브리지(FastAPI, 수집 · API · WS · 알림 · 승인 · 입력 주입 · 인계) | `bridge/` — 시작 `bridge/main.py`, 트랜스크립트 적재 `assembler.py` · `transcript/`, 입력 `inject.py`, 인계 · 세션 조작 `handoff.py`, 파이프라인 `pipeline.py`, 승인 `approval*.py`, 알림 `notify.py` |
 | 화면 | `bridge/static/` — `/` 픽셀 화면(`office.html` · `js/office.js` · `js/opanel.js`), `/classic` 카드 목록(`dashboard.html` · `js/render.js`), 공통 CSS `css/panel.css`, 테마 `themes/<이름>/theme.json`(magic · office · site · plain) |
 | DB(MySQL, 호스트 도커 `127.0.0.1:3308`) | 마이그레이션 `migrations/NNNN_*.sql` — `.venv/bin/python -m bridge.db.migrate` |
-| 설정 | `config/approval.toml` · `notify.toml` · `pipeline.toml`, 비밀은 `.env.bridge` · `.env.telegram`(커밋 안 함) |
+| 설정 | `config/approval.toml` · `notify.toml` · `pipeline.toml` · `worktree.toml` · `models.toml`(세션 모델 · 역할 기본값), 비밀은 `.env.bridge` · `.env.telegram`(커밋 안 함) |
 | 설계 · 브리프 / 결과 | `README.md`, `docs/NN_*.md` / `log/*.md` |
 | 시험 | `.venv/bin/python -m pytest -q`(DB `foreman_test`), `node --test tests/js/` |
 
