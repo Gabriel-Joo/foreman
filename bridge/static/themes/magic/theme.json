@@ -33,10 +33,12 @@
                 "seats": [[2.7, 8.45, "down"], [4.5, 8.45, "down"], [6.3, 8.45, "down"],
                           [2.7, 11.75, "up"], [4.5, 11.75, "up"], [6.3, 11.75, "up"]] },
       "circle": { "_": "E 원탁방 — 바닥 마법진(Agent)", "x": 22, "y": 8, "w": 5, "h": 5,
-                  "seats": [[23.0, 10.9, "right"], [26.0, 10.9, "left"], [24.5, 9.6, "down"], [24.5, 12.3, "up"]] },
+                  "seats": [[23.15, 11.0, "right"], [26.0, 11.0, "left"], [24.5, 9.6, "down"], [24.5, 12.3, "up"]] },
       "seal": { "_": "H 봉인대 — 밀랍 도장(git)", "x": 8, "y": 12, "w": 2, "h": 2, "face": "up", "seats": [[8.5, 13.8], [9.4, 13.9]] },
       "infra": {
         "y": 14, "h": 3,
+        "_stands": "캐릭터 전용 칸(방 좌표) — 단계 구조물 바로 앞, 가구를 두지 않는다. 11-05 window.office.audit()로 찾은 자리(윗몸이 안 가리는 가장 가까운 칸)",
+        "stands": { "jenkins": [4.45, 15.8], "harbor": [14.5, 16.2], "argocd": [23.5, 16.6], "home": [1.0, 16.2] },
         "jenkins": { "x": 2, "label": "봉인 문양(Jenkins)" },
         "harbor": { "x": 12, "label": "보물창고(Harbor)" },
         "argocd": { "x": 21, "label": "전송 아치(ArgoCD)" }
@@ -81,7 +83,7 @@
     "ACTIVE":    { "anim": "walk", "go": "desk" },
     "IDLE":      { "anim": "idle", "go": "hall", "variants": ["sleep", "eat", "read"] },
     "SUSPENDED": { "anim": "still", "go": "desk", "fx": "stone" },
-    "DORMANT":   { "anim": "stand", "go": "desk", "fx": "ghost", "alpha": 0.55 }
+    "DORMANT":   { "anim": "stand", "go": "desk", "fx": "faded", "alpha": 0.35 }
   },
 
   "tools": [

@@ -21,10 +21,10 @@
     "zones": {
       "foreman_office": { "_": "감독 컨테이너 — 안전모 걸이, 무전기, 커피", "x": 1, "y": 2, "w": 7, "h": 5, "floor": "plate", "seat": [4.4, 4.75] },
       "store": { "_": "A 자재창고 — 철제선반, 파이프 묶음, 자재 더미", "x": 9, "y": 2, "w": 6, "h": 4, "face": "up",
-                 "seats": [[10.2, 4.6], [12.4, 4.6], [14.0, 5.0]] },
+                 "seats": [[10.2, 4.6], [12.4, 4.6], [14.0, 5.2]] },
       "tools": { "_": "C 공구실 — 공구벽, 컴프레서, 기름통", "x": 16, "y": 2, "w": 6, "h": 4, "face": "up",
                  "seats": [[17.4, 4.4], [19.0, 4.6], [20.6, 4.6]] },
-      "gate": { "_": "G 통로 셔터 — 롤셔터, 지게차, 크레인", "x": 23, "y": 2, "w": 4, "h": 4, "face": "up", "seats": [[24.4, 5.0], [25.6, 5.3]] },
+      "gate": { "_": "G 통로 셔터 — 롤셔터, 지게차, 크레인", "x": 23, "y": 2, "w": 4, "h": 4, "face": "up", "seats": [[24.4, 5.2], [25.6, 5.3]] },
       "camp": { "_": "F 함바 — 간이침대 2, 선풍기, 커피 · 신문(IDLE)", "x": 1, "y": 8, "w": 7, "h": 5, "floor": "plate",
                 "seats": [[2.6, 9.15, "down"], [2.6, 11.35, "down"], [5.8, 10.6, "down"], [6.6, 12.4, "up"]] },
       "desks": { "_": "B 작업대 — 철제 작업대 + 바이스(세션의 자리)", "x": 9, "y": 8, "w": 10, "h": 5,
@@ -36,6 +36,8 @@
       "ship": { "_": "H 출하 접수대 — 송장, 도장(git)", "x": 19, "y": 11, "w": 3, "h": 2, "seats": [[20.2, 12.0, "down"]] },
       "infra": {
         "y": 14, "h": 3,
+        "_stands": "캐릭터 전용 칸(방 좌표) — 단계 구조물 바로 앞, 가구를 두지 않는다. 11-05 window.office.audit()로 찾은 자리(윗몸이 안 가리는 가장 가까운 칸)",
+        "stands": { "jenkins": [4.5, 15.8], "harbor": [14.5, 16.15], "argocd": [24.55, 15.8], "home": [1.0, 16.2] },
         "jenkins": { "x": 2, "label": "검수대(Jenkins)" },
         "harbor": { "x": 12, "label": "팔레트(Harbor)" },
         "argocd": { "x": 21, "label": "트럭(ArgoCD)" }
@@ -80,7 +82,7 @@
     "ACTIVE":    { "anim": "walk", "go": "desk" },
     "IDLE":      { "anim": "idle", "go": "camp", "variants": ["lie", "coffee", "news"] },
     "SUSPENDED": { "anim": "still", "go": "desk", "fx": "stone" },
-    "DORMANT":   { "anim": "stand", "go": "desk", "fx": "ghost", "alpha": 0.5 }
+    "DORMANT":   { "anim": "stand", "go": "desk", "fx": "faded", "alpha": 0.35 }
   },
 
   "tools": [

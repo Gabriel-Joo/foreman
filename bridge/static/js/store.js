@@ -89,7 +89,7 @@ export class Store {
   // ── 스냅샷 ───────────────────────────────────────────
   async loadSnapshot() {
     const r = await fetch('/api/dashboard', { headers: this.headers() });
-    if (r.status === 401) { this.setConn('auth', '토큰이 맞지 않는다'); return; }
+    if (r.status === 401) { this.setConn('auth', '토큰이 맞지 않습니다'); return; }
     if (!r.ok) return;
     const j = await r.json();
     const st = this.state;
@@ -165,9 +165,9 @@ export class Store {
     };
     sock.onclose = (e) => {
       if (this.ws !== sock) return;
-      if (e.code === 1008) { this.wanted = false; this.setConn('auth', e.reason || '토큰이 맞지 않는다'); return; }
+      if (e.code === 1008) { this.wanted = false; this.setConn('auth', e.reason || '토큰이 맞지 않습니다'); return; }
       if (!this.wanted) return;
-      this.setConn(this.everUp ? 'down' : 'connecting', e.code === 1006 ? '서버가 응답하지 않는다(1006)' : `연결이 닫혔다(${e.code})`);
+      this.setConn(this.everUp ? 'down' : 'connecting', e.code === 1006 ? '서버가 응답하지 않습니다(1006)' : `연결이 닫혔습니다(${e.code})`);
       this.retry();
     };
     clearInterval(this.watchdog);
@@ -395,13 +395,14 @@ export class Store {
   async sendInput(id, text, command) {
     const r = await fetch(`/api/sessions/${id}/input`, { method: 'POST', headers: this.headers(true), body: JSON.stringify({ text, command }) });
     const j = await r.json().catch(() => ({}));
-    const res = r.status === 409 ? { ok: false, msg: `거부 — ${j.refused}` }
-      : r.status === 202 ? { ok: true, msg: j.queued ? '일하는 중이라 대기열로 — 지금 턴에 끼어든다(대화에 "작업 중에 보냄"으로 뜬다)' : '보냈다 — 새 턴', guarded: j.guarded }
+    // 결과 글(11-05) — 잘 갔으면 한 마디("보냈습니다."), 잘못됐을 때만 무엇이 왜인지와 할 일. 내부 동작(기록 확인 등)은 말하지 않는다
+    const res = r.status === 409 ? { ok: false, msg: `보내지 못했습니다 — ${j.refused}` }
+      : r.status === 202 ? { ok: true, msg: j.queued ? '보냈습니다. 작업이 끝나면 이어서 전달됩니다.' : '보냈습니다.' }
       : r.status === 504 ? (j.left_in_box === false
-          ? { ok: true, msg: '보냈다 — 입력 칸은 비었다(기록 확인은 아직 — 대화에 곧 뜬다)' }
-          : j.left_in_box ? { ok: false, msg: '제출 안 됨 — 입력 칸에 글이 남아 있다(터미널에서 Enter 또는 지우기)' }
-          : { ok: false, msg: '제출을 확인하지 못했다 — 터미널에서 입력 칸을 확인' })
-      : { ok: false, msg: `실패 HTTP ${r.status}` };
+          ? { ok: true, msg: '보냈습니다.' }
+          : j.left_in_box ? { ok: false, msg: '제출되지 않았습니다. 입력 칸에 글이 남아 있으니 터미널에서 Enter를 누르거나 지워 주세요.' }
+          : { ok: false, msg: '제출됐는지 확인하지 못했습니다. 터미널에서 입력 칸을 확인해 주세요.' })
+      : { ok: false, msg: `보내지 못했습니다 (HTTP ${r.status}).` };
     this.state.lastInput = { sessionId: id, ts: Date.now(), ...res };
     if (res.ok) this.convoLater(id);           // 새 턴이든 대기열이든 대화에 내 글이 뜨게
     this.touch('panel');
@@ -410,7 +411,7 @@ export class Store {
   // ── 터미널 패널 ───────────────────────────────────────
   async terminalSession() {          // 쿠키(Path=/terminal)를 받는다 — iframe이 이걸로 ttyd에 붙는다
     const r = await fetch('/api/terminal/session', { method: 'POST', headers: this.headers() });
-    if (!r.ok) throw new Error(r.status === 503 ? '터미널 패널이 꺼져 있다' : `HTTP ${r.status}`);
+    if (!r.ok) throw new Error(r.status === 503 ? '터미널 패널이 꺼져 있습니다' : `HTTP ${r.status}`);
     return r.json();
   }
   async terminalDismiss(id) {

@@ -69,12 +69,12 @@ async def inject_input(session_id: int, body: InputIn, request: Request) -> JSON
     pipeline = request.app.state.pipeline
     row = await _row(request, session_id)
     if row is None:
-        raise HTTPException(404, "세션 없음")
+        raise HTTPException(404, "세션이 없습니다")
     sid, cc, char_id, transcript, project, char = row
     payload: dict[str, Any] = {"chars": len(body.text), "lines": body.text.count("\n") + 1, "command": body.command}
     try:
         if not cc:
-            raise Refused("CC 세션 ID가 없다")
+            raise Refused("CC 세션 ID가 없습니다")
         res = await deliver(cc, body.text, sessions_dir=s.sessions_dir, transcript=transcript, command=body.command)
     except Refused as e:
         log.warning("주입 거부 session=%d(%s): %s", sid, (cc or "")[:8], e)

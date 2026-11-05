@@ -43,14 +43,14 @@ class ActionIn(BaseModel):
 def _mgr(request: Request) -> HandoffManager:
     m = getattr(request.app.state, "handoff", None)
     if m is None:
-        raise HTTPException(503, "인계 기능이 꺼져 있다")
+        raise HTTPException(503, "인계 기능이 꺼져 있습니다")
     return m
 
 
 async def _row(m: HandoffManager, sid: int) -> Any:
     row = await m.session(sid)
     if row is None:
-        raise HTTPException(404, "세션 없음")
+        raise HTTPException(404, "세션이 없습니다")
     return row
 
 
@@ -149,9 +149,9 @@ async def list_dirs(path: str = "~", hidden: bool = False) -> dict[str, Any]:
     home = os.path.realpath(os.path.expanduser("~"))
     p = os.path.realpath(os.path.expanduser(path or "~"))
     if not (p == home or p.startswith(home + os.sep)) and not p.startswith("/tmp/"):
-        raise HTTPException(400, "집 폴더 · /tmp 아래만 고를 수 있다")
+        raise HTTPException(400, "집 폴더와 /tmp 아래만 고를 수 있습니다")
     if not os.path.isdir(p):
-        raise HTTPException(404, "폴더가 없다")
+        raise HTTPException(404, "폴더가 없습니다")
     try:
         names = sorted(e.name for e in os.scandir(p) if e.is_dir(follow_symlinks=False) and (hidden or not e.name.startswith(".")))
     except PermissionError:
@@ -177,7 +177,7 @@ async def set_title(sid: int, body: TitleIn, request: Request) -> dict[str, Any]
     async with request.app.state.store.engine.begin() as c:
         res = await c.execute(text("UPDATE character_session SET custom_title = :t WHERE id = :i"), {"t": title, "i": sid})
     if not res.rowcount:
-        raise HTTPException(404, "세션 없음")
+        raise HTTPException(404, "세션이 없습니다")
     dashboard.invalidate()
     return {"id": sid, "custom_title": title}
 

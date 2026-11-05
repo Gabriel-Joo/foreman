@@ -94,9 +94,9 @@ async def tmux(socket: str, *args: str, stdin: bytes | None = None, timeout: flo
             out, err = await proc.communicate(stdin)
     except TimeoutError:
         proc.kill()
-        raise Refused(f"tmux 응답 없음({timeout:g}초): {args[0]}") from None
+        raise Refused(f"tmux가 {timeout:g}초 동안 응답하지 않았습니다({args[0]})") from None
     if proc.returncode != 0:
-        raise Refused(f"tmux {args[0]} 실패: {err.decode(errors='replace').strip()[:200]}")
+        raise Refused(f"tmux {args[0]}에 실패했습니다: {err.decode(errors='replace').strip()[:200]}")
     return out.decode(errors="replace")
 
 
@@ -105,24 +105,24 @@ async def resolve(session_id: str, sessions_dir: str | Path) -> tuple[Target, Li
     live = live_sessions(sessions_dir)
     ls = live.get(session_id)
     if ls is None:
-        raise Refused("살아 있는 CC 프로세스가 없다")
+        raise Refused("세션이 끝났습니다(살아 있는 CC 프로세스가 없습니다)")
     if ls.state == "T":
-        raise Refused("정지된 세션(SUSPENDED, T) — 포그라운드가 셸이라 입력이 명령으로 실행된다")
+        raise Refused("멈춘 세션입니다. 지금 보내면 셸 명령으로 실행되므로 보내지 않았습니다")
     te = _tmux_env(ls.pid)
     if te is None:
-        raise Refused("tmux 밖 세션 — 주입할 pane이 없다")
+        raise Refused("tmux 밖에서 도는 세션이라 보낼 수 없습니다")
     socket, pane = te
     info = (await tmux(socket, "display-message", "-p", "-t", pane,
                        "#{pane_current_command}\t#{pane_pid}\t#{pane_dead}")).strip().split("\t")
     if len(info) != 3:
-        raise Refused(f"pane 정보를 읽지 못했다: {pane}")
+        raise Refused(f"tmux 창 정보를 읽지 못했습니다({pane})")
     cmd, pane_pid, dead = info
     if dead == "1":
-        raise Refused(f"pane이 죽었다: {pane}")
+        raise Refused(f"tmux 창이 닫혀 있습니다({pane})")
     if cmd != "claude":
-        raise Refused(f"pane의 포그라운드가 claude가 아니다({cmd})")
+        raise Refused(f"그 tmux 창에서 지금 claude가 아니라 {cmd}이(가) 돌고 있어 보내지 않았습니다")
     if int(pane_pid) != ls.pid and int(pane_pid) not in _ancestors(ls.pid):
-        raise Refused("그 pane의 claude가 이 세션의 프로세스가 아니다")
+        raise Refused("그 tmux 창의 claude가 이 세션이 아닙니다")
     busy = _status(sessions_dir, ls.pid) == "busy"
     return Target(socket, pane, ls.pid, session_id), ls, busy
 
@@ -224,7 +224,7 @@ async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, trans
     if not text.strip():
         # 빈칸 · 공백만 — 붙여넣을 것 없이 Enter만 가는 셈이다. 입력 칸에 CC의 프롬프트 제안(회색)이 떠 있으면
         # Enter가 그 제안을 제출하는지 문서에 없다(11-05) — 사람이 쓰지 않은 글이 실행될 수 있으니 보내지 않는다
-        raise Refused("빈 입력 — 공백 · 줄바꿈만으로는 보내지 않는다")
+        raise Refused("빈 입력입니다 — 공백이나 줄바꿈만으로는 보내지 않습니다")
     t, _ls, busy = await resolve(session_id, sessions_dir)
     send, guarded_ = guarded(text, command)
     offset = os.path.getsize(transcript) if transcript and os.path.exists(transcript) else None

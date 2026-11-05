@@ -265,13 +265,13 @@ class HandoffManager:
                                "foreman_stopped": stopped_pid is not None}
         why = None
         if not live:
-            why = "프로세스 없음(죽은 세션)"
+            why = "끝난 세션입니다"
         elif live.state == "T":
-            why = "멈춘 세션" + (" — FOREMAN이 멈춤" if stopped_pid else " — 사람이 멈춤(건드리지 않는다)")
+            why = "일시정지된 세션입니다" + (" (FOREMAN이 멈춤)" if stopped_pid else " (사람이 멈춤 — 건드리지 않습니다)")
         elif not te:
-            why = "tmux 밖 세션 — 입력 · 조작 불가"
+            why = "tmux 밖에서 도는 세션이라 화면에서 조작할 수 없습니다"
         elif busy:
-            why = "일하는 중"
+            why = "작업 중입니다"
         out["why"] = why
         ok_live = bool(live and te and live.state != "T")
         out["can"] = {
@@ -354,12 +354,12 @@ class HandoffManager:
     async def request_live(self, row: SessionRow, kind: str = "snapshot") -> dict[str, Any]:
         """살아 있는 tmux 세션에 요약을 시킨다. 보내고 바로 돌아오고, 응답은 뒤에서 기다린다."""
         if not row.cc:
-            raise Refused("CC 세션 ID가 없다")
+            raise Refused("CC 세션 ID가 없습니다")
         if await self._pending(row.id):
-            raise Refused("이미 요약을 기다리는 중이다")
+            raise Refused("이미 요약을 기다리는 중입니다")
         _t, ls, busy = await resolve(row.cc, self.sessions_dir)
         if busy:
-            raise Refused("일하는 중 — 작업이 끝난 뒤에 요약한다(일 중간에 끼면 작업과 섞인다)")
+            raise Refused("작업 중입니다. 작업이 끝난 뒤에 요약해 주세요(중간에 끼면 작업과 섞입니다)")
         sid, req = await self._new_summary(row, kind, "self", "requested")
         path = row.transcript or transcript_path(row.cwd or "", row.cc)
         offset = os.path.getsize(path) if os.path.exists(path) else 0
@@ -416,13 +416,13 @@ class HandoffManager:
     async def request_headless(self, row: SessionRow, kind: str = "handoff") -> dict[str, Any]:
         """죽은 세션 — claude -p --resume <id>로 같은 컨텍스트를 불러 그 세션이 쓴다(fork 아님). 버튼을 누를 때만."""
         if not row.cc or not row.cwd:
-            raise Refused("CC 세션 ID · cwd가 없다")
+            raise Refused("CC 세션 ID나 작업 폴더 정보가 없습니다")
         if row.cc in live_sessions(self.sessions_dir):
-            raise Refused("그 세션을 잡은 살아 있는 프로세스가 있다 — 같은 세션을 두 곳에서 이어 쓰지 않는다")
+            raise Refused("이 세션은 아직 살아 있습니다. 같은 세션을 두 곳에서 이어 쓰지 않도록 막았습니다")
         if await self._pending(row.id):
-            raise Refused("이미 요약을 기다리는 중이다")
+            raise Refused("이미 요약을 기다리는 중입니다")
         if not Path(row.cwd).is_dir():
-            raise Refused(f"cwd가 없다: {row.cwd}")
+            raise Refused(f"작업 폴더가 없습니다: {row.cwd}")
         sid, req = await self._new_summary(row, kind, "self_headless", "requested")
         self._spawn_task(self._run_headless(row, sid, req))
         return {"summary_id": sid, "req": req, "status": "requested"}
@@ -455,10 +455,10 @@ class HandoffManager:
 
     async def from_compact(self, row: SessionRow, kind: str = "handoff") -> dict[str, Any]:
         if not row.transcript:
-            raise Refused("트랜스크립트가 없다")
+            raise Refused("이 세션의 기록 파일이 없습니다")
         body = await asyncio.to_thread(compact_body, row.transcript)
         if not body:
-            raise Refused("자동 압축 요약이 없다(압축된 적 없는 세션)")
+            raise Refused("자동 압축 요약이 없습니다(압축된 적이 없는 세션입니다)")
         sid, req = await self._new_summary(row, kind, "compact", "ok", body=body)
         if self.on_change:
             self.on_change()
@@ -467,10 +467,10 @@ class HandoffManager:
     async def edit(self, summary_id: int, body: str) -> dict[str, Any]:
         src = await self.summary(summary_id)
         if not src:
-            raise Refused("요약 없음")
+            raise Refused("요약이 없습니다")
         row = await self.session(src["session_id"])
         if not row:
-            raise Refused("세션 없음")
+            raise Refused("세션이 없습니다")
         sid, req = await self._new_summary(row, src["kind"], "edited", "ok", body=body.strip(), parent_id=summary_id)
         if self.on_change:
             self.on_change()
@@ -480,7 +480,7 @@ class HandoffManager:
     async def injection(self, summary_id: int) -> dict[str, Any]:
         s = await self.summary(summary_id)
         if not s or s["status"] != "ok" or not s["body"]:
-            raise Refused("넣을 수 있는 요약이 아니다(ok 상태가 아님)")
+            raise Refused("넣을 수 있는 요약이 아닙니다(저장이 끝난 요약만 넣습니다)")
         row = await self.session(s["session_id"])
         src = f"{(row.cc or '')[:8]}" + (f"({row.title})" if row and row.title else "")
         full = HANDOFF_DIR / f"{s['req']}.md"
@@ -519,7 +519,7 @@ class HandoffManager:
         뒤에서 기다렸다가(5분) 이어 한다."""
         cwd = os.path.realpath(os.path.expanduser(cwd or ""))
         if not cwd or not Path(cwd).is_dir():
-            raise Refused(f"폴더가 없다: {cwd}")
+            raise Refused(f"폴더가 없습니다: {cwd}")
         if summary_id is not None:
             await self.injection(summary_id)              # 넣을 수 있는 요약인지 먼저(안 되면 띄우지도 않는다)
         project = self.project_of(cwd)[0] if self.project_of else None
@@ -536,13 +536,13 @@ class HandoffManager:
                                "pid": None, "session_id": None, "note": None, "injected": False}
         cc, pid, trust = await self._wait_ready(pane, 45)
         if trust:
-            out["note"] = "폴더 신뢰 창이 떴다 — 터미널(tmux " + name + ")에서 답하면 이어서 " + ("인계를 넣는다" if summary_id else "화면에 뜬다")
+            out["note"] = "처음 쓰는 폴더라 신뢰 확인 창이 떴습니다. 터미널(tmux " + name + ")에서 답하면 이어서 " + ("인계를 넣습니다." if summary_id else "화면에 뜹니다.")
             self._spawn_task(self._finish_spawn(name, pane, cwd, summary_id, title, src_session, wait=300))
             await self._act(src_session, "spawn", None, True, f"{name} {pane} 신뢰 창 대기")
             return out
         if cc is None:
             await self._act(src_session, "spawn", None, False, f"{name} {pane} CC를 못 찾음")
-            out["note"] = "새 CC 세션을 45초 안에 찾지 못했다 — 터미널에서 확인"
+            out["note"] = "45초 안에 새 세션을 찾지 못했습니다. 터미널에서 확인해 주세요."
             return out
         return out | await self._finish_spawn(name, pane, cwd, summary_id, title, src_session, cc=cc, pid=pid)
 
@@ -579,7 +579,7 @@ class HandoffManager:
                 cc, pid, trust = await self._wait_ready(pane, 20)
             if cc is None:
                 await self._act(src_session, "spawn", None, False, f"{name} 신뢰 창에 답이 없어 그만둠")
-                return {"note": "신뢰 창에 답이 없었다"}
+                return {"note": "신뢰 확인 창에 답이 없어 그만뒀습니다."}
         sid = await self._ensure_row(cc, cwd, title)
         await self._act(src_session or sid, "spawn", pid, True, f"{name} {pane} cc={cc} 새 세션 행 {sid}")
         if self.on_change:
@@ -590,7 +590,7 @@ class HandoffManager:
             r = await self.inject(summary_id, cc, cwd)
             out["injected"] = r["delivered"]
             if not r["delivered"]:
-                out["note"] = "인계 글을 보냈지만 제출이 확인되지 않았다 — 입력 칸을 확인"
+                out["note"] = "인계 글을 보냈지만 제출을 확인하지 못했습니다. 입력 칸을 확인해 주세요."
             else:
                 row = await self.session(sid)
                 if row:
@@ -618,49 +618,72 @@ class HandoffManager:
     # ── 세션 조작 ────────────────────────────────────────
     async def action(self, row: SessionRow, act: str) -> dict[str, Any]:
         if not row.cc:
-            raise Refused("CC 세션 ID가 없다")
+            raise Refused("CC 세션 ID가 없습니다")
         if act == "resume":
             return await self._resume(row)
         t, ls, busy = await resolve(row.cc, self.sessions_dir)
         if act == "interrupt":
             if not busy:
-                raise Refused("일하는 중이 아니다 — 중단할 작업이 없다")
+                raise Refused("작업 중이 아니라 중단할 작업이 없습니다")
             await tmux(t.socket, "send-keys", "-t", t.pane, "Escape")
             await self._act(row.id, "interrupt", ls.pid, True, t.pane)
             return {"ok": True, "pane": t.pane}
         if busy:
-            raise Refused("일하는 중 — 끝난 뒤에(또는 먼저 작업 중단)")
+            raise Refused("작업 중입니다. 작업이 끝난 뒤에 하거나 먼저 [작업 중단]을 눌러 주세요")
         if act == "exit":
+            tname = (await tmux(t.socket, "display-message", "-p", "-t", t.pane, "#{session_name}")).strip()
             res = await deliver(row.cc, "/exit", sessions_dir=self.sessions_dir, transcript=None, command=True)
             gone = await self._wait(lambda: row.cc not in live_sessions(self.sessions_dir), 15)
-            await self._act(row.id, "exit", ls.pid, gone, f"{t.pane} steps={','.join(res['steps'])}")
-            return {"ok": gone, "pane": t.pane, "note": None if gone else "15초 안에 끝나지 않았다 — 터미널 확인"}
+            cleaned = await self._cleanup_tmux(row.id, t, tname) if gone else False
+            await self._act(row.id, "exit", ls.pid, gone, f"{t.pane} {tname} steps={','.join(res['steps'])}{' tmux 정리' if cleaned else ''}")
+            return {"ok": gone, "pane": t.pane, "tmux_closed": cleaned,
+                    "note": None if gone else "15초 안에 끝나지 않았습니다. 터미널을 확인해 주세요."}
         if act == "stop":
             await tmux(t.socket, "send-keys", "-t", t.pane, "C-z")
             stopped = await self._wait(lambda: (_proc_stat(ls.pid) or ("?",))[0] == "T", 5)
             await self._act(row.id, "stop", ls.pid, stopped, t.pane)
-            return {"ok": stopped, "pane": t.pane, "note": None if stopped else "5초 안에 멈추지 않았다"}
-        raise Refused(f"모르는 조작: {act}")
+            return {"ok": stopped, "pane": t.pane, "note": None if stopped else "5초 안에 멈추지 않았습니다."}
+        raise Refused(f"모르는 조작입니다: {act}")
+
+    async def _cleanup_tmux(self, sid: int, t: Any, tname: str) -> bool:
+        """끝낸 세션의 tmux 세션도 닫는다(11-05) — FOREMAN이 띄운 것만(session_action spawn 기록에 그 이름), 그리고 pane에
+        claude가 아니라 셸만 남았을 때. 사람이 만든 tmux(cc-runshoes 등)는 건드리지 않는다."""
+        if not tname:
+            return False
+        async with self.engine.connect() as c:
+            r = (await c.execute(text(
+                "SELECT 1 FROM session_action WHERE action = 'spawn' AND ok AND detail LIKE :d LIMIT 1"),
+                {"d": tname + " %"})).first()
+        if not r:
+            return False
+        try:
+            panes = (await tmux(t.socket, "list-panes", "-t", tname, "-F", "#{pane_current_command}")).split()
+            if any(p == "claude" for p in panes):
+                return False
+            await tmux(t.socket, "kill-session", "-t", tname)
+            return True
+        except Refused:
+            return False
 
     async def _resume(self, row: SessionRow) -> dict[str, Any]:
         live = live_sessions(self.sessions_dir).get(row.cc or "")
         if not live or live.state != "T":
-            raise Refused("멈춘 세션이 아니다")
+            raise Refused("일시정지된 세션이 아닙니다")
         if await self._foreman_stopped(row.id) != live.pid:
-            raise Refused("FOREMAN이 멈춘 세션이 아니다 — 사람이 멈춘 것은 건드리지 않는다")
+            raise Refused("FOREMAN이 멈춘 세션이 아닙니다. 사람이 멈춘 세션은 건드리지 않습니다")
         te = _tmux_env(live.pid)
         if not te:
-            raise Refused("tmux 밖 세션")
+            raise Refused("tmux 밖에서 도는 세션입니다")
         socket, pane = te
         cmd = (await tmux(socket, "display-message", "-p", "-t", pane, "#{pane_current_command}")).strip()
         if cmd == "claude":
-            raise Refused("pane 포그라운드가 이미 claude다")
+            raise Refused("이미 돌고 있습니다")
         # fg는 가장 최근에 멈춘 작업을 되살린다 — 그 셸에 멈춘 작업이 이 claude 하나인지 본다
         await tmux(socket, "send-keys", "-t", pane, "-l", "fg")
         await tmux(socket, "send-keys", "-t", pane, "Enter")
         ok = await self._wait(lambda: (_proc_stat(live.pid) or ("?",))[0] != "T", 5)
         await self._act(row.id, "resume", live.pid, ok, pane)
-        return {"ok": ok, "pane": pane, "note": None if ok else "5초 안에 돌아오지 않았다 — 터미널 확인"}
+        return {"ok": ok, "pane": pane, "note": None if ok else "5초 안에 다시 시작하지 않았습니다. 터미널을 확인해 주세요."}
 
     @staticmethod
     async def _wait(cond: Any, secs: float) -> bool:

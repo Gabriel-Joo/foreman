@@ -28,16 +28,16 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   el.className = 'oside';
   el.setAttribute('aria-label', '패널');
   el.innerHTML = `
-    <div class="oside-grip" title="끌어서 너비 바꾸기 · 두 번 누르면 넓게/좁게"></div>
-    <button id="pStrip" class="oside-strip" title="패널 펴기">
+    <div class="oside-grip" title="너비 — 끌어서 바꿉니다. 두 번 누르면 넓게와 좁게를 오갑니다."></div>
+    <button id="pStrip" class="oside-strip" title="패널 — 접은 패널을 폅니다.">
       <span>◀</span><span id="pStripBadge"></span><span class="oside-vert">패널</span>
     </button>
     <div class="oside-main">
       <div class="oside-bar">
         <b id="pTitle">패널</b><span id="pCount" class="small"></span>
-        <button id="pWide" class="ghost small right" title="대화 읽을 땐 넓게, 픽셀 볼 땐 좁게"></button>
-        <button id="pClear" class="ghost small" title="선택 해제" hidden>✕</button>
-        <button id="pFold" class="ghost small" title="접기 — 픽셀 화면을 넓게">▶</button>
+        <button id="pWide" class="ghost small right" title="너비 — 대화를 읽을 땐 넓게, 픽셀을 볼 땐 좁게 합니다."></button>
+        <button id="pClear" class="ghost small" title="선택 해제 — 고른 세션을 놓습니다." hidden>✕</button>
+        <button id="pFold" class="ghost small" title="접기 — 패널을 접어 픽셀 화면을 넓힙니다.">▶</button>
       </div>
       <div id="pMeta" class="pmeta small" hidden></div>
       <section id="pAppr" class="papprs" aria-label="승인 대기"></section>
@@ -56,13 +56,13 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         </div>
       </div>
       <form id="pForm" class="input" hidden>
-        <textarea id="pText" rows="3" placeholder="이 세션에 보낼 입력 — Ctrl+Enter로 보내기"></textarea>
-        <div class="row">
-          <label class="small"><input id="pCmd" type="checkbox"> '/'를 슬래시 명령으로</label>
-          <span id="pWhy" class="small muted"></span>
+        <textarea id="pText" rows="3" placeholder="이 세션에 보낼 입력 (Ctrl+Enter로 보냅니다)"></textarea>
+        <div class="row prow">
+          <label class="small pcmd" title="슬래시 명령 — 켜면 '/'로 시작하는 입력을 /compact 같은 CC 명령으로 실행합니다. 끄면 글자 그대로 보냅니다."><input id="pCmd" type="checkbox"> / 명령</label>
+          <span id="pWhy" class="pwhy small"></span>
           <button id="pSend" type="submit">보내기</button>
         </div>
-        <div id="pResult" class="small"></div>
+        <div id="pResult" class="presult small"></div>
       </form>
     </div>`;
   host.appendChild(el);
@@ -103,7 +103,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const box = document.createElement('span');
     box.className = 'ptitle-edit';
     box.innerHTML = `<input id="pTitleIn" maxlength="255" placeholder="${esc(s.title || s.cc_name || s.short)}">
-      <button type="button" class="small" data-t="save">저장</button>${s.custom_title ? '<button type="button" class="ghost small" data-t="auto" title="CC가 붙인 제목으로 되돌린다">자동 제목</button>' : ''}`;
+      <button type="button" class="small" data-t="save">저장</button>${s.custom_title ? '<button type="button" class="ghost small" data-t="auto" title="자동 제목 — CC가 붙인 제목으로 되돌립니다.">자동 제목</button>' : ''}`;
     bar.hidden = true;
     bar.after(box);
     const inp = box.querySelector('input');
@@ -117,7 +117,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       const v = val === null ? null : val.trim();
       if (v !== null && v === (s.custom_title || '')) return;
       if (v !== null && !s.custom_title && v === sessionName(s)) return;      // 그대로 눌렀다
-      try { await store.setTitle(s.id, v || null); } catch (e) { $('pTitle').textContent = `이름 저장 실패 — ${e.message}`; }
+      try { await store.setTitle(s.id, v || null); } catch (e) { $('pTitle').textContent = `이름을 저장하지 못했습니다 — ${e.message}`; }
     };
     inp.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') { ev.preventDefault(); done(inp.value); }
@@ -245,7 +245,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     hand.setSession(s.id);
     if (!editingTitle) {
       $('pTitle').textContent = sessionName(s) + (s.custom_title ? '' : ' ');
-      $('pTitle').dataset.tip = `${sessionName(s)} — 눌러서 이름 바꾸기${s.custom_title ? ` (자동 제목: ${s.title || s.cc_name || s.short})` : ''}`;
+      $('pTitle').dataset.tip = `${sessionName(s)} — 눌러서 이름을 바꿉니다.${s.custom_title ? ` 자동 제목은 "${s.title || s.cc_name || s.short}"입니다.` : ''}`;
       $('pTitle').classList.add('editable');
     }
     // 제목 아래 한 줄 — 세션 정보 · 토큰은 여기 작게, 자세한 것은 [세션] 탭
@@ -272,9 +272,13 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     }
     const blocked = !s.injectable;
     $('pText').disabled = blocked; $('pSend').disabled = blocked;
-    $('pWhy').textContent = blocked ? `보낼 수 없음 — ${why(s)}` : (s.state === 'ACTIVE' ? '일하는 중 — 대기열로 들어간다' : '');
-    const li = st.lastInput && st.lastInput.sessionId === s.id ? st.lastInput : null;
-    $('pResult').innerHTML = li ? `<span class="${li.ok ? 'ok' : 'bad'}">${esc(li.msg)}${li.guarded ? ' (첫 글자 보호)' : ''}</span>` : '';
+    // 입력 칸 아래 — 가운데는 세션 상태(짧게), 아래 줄은 보낸 결과(성공은 한 마디, 잘못됐을 때만 자세히)(11-05)
+    const why_ = blocked ? why(s) : '';
+    $('pWhy').textContent = blocked ? '보낼 수 없음' : (s.state === 'ACTIVE' ? '작업 중 — 대기열' : '');
+    $('pWhy').className = `pwhy small${blocked ? ' bad' : s.state === 'ACTIVE' ? ' busy' : ''}`;
+    if (blocked) $('pWhy').dataset.tip = `보낼 수 없음 — ${why_}`; else if (s.state === 'ACTIVE') $('pWhy').dataset.tip = '작업 중 — 지금 보내면 대기열에 들어가 진행 중인 작업에 이어 전달됩니다.'; else delete $('pWhy').dataset.tip;
+    const li = st.lastInput && st.lastInput.sessionId === s.id && Date.now() - st.lastInput.ts < (st.lastInput.ok ? 8000 : 60000) ? st.lastInput : null;
+    $('pResult').innerHTML = blocked ? `<span class="muted">${esc(why_)}</span>` : li ? `<span class="${li.ok ? 'ok' : 'bad'}">${esc(li.msg)}</span>` : '';
     if (switched) { $('pText').value = ''; lastSel = s.id; $('pNew').hidden = true; }
   }
 
@@ -292,8 +296,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       rows.push(`<div class="small muted plist-h">${esc(p.label)}</div>` + ss.map(btn).join('') +
         (dd.length ? `<details class="small" data-k="${esc(p.name)}"><summary class="muted">종료된 세션 ${dd.length}개</summary>${dd.map(btn).join('')}</details>` : ''));
     }
-    if (!names && st.hiddenDormant) rows.push(`<p class="small muted">48시간 넘게 활동 없는 세션 ${st.hiddenDormant}개는 숨김</p>`);
-    return rows.join('') || '<p class="small muted">세션 없음</p>';
+    if (!names && st.hiddenDormant) rows.push(`<p class="small muted">48시간 넘게 활동이 없는 세션 ${st.hiddenDormant}개는 숨겼습니다.</p>`);
+    return rows.join('') || '<p class="small muted">세션이 없습니다.</p>';
   }
 
   function drawHint(st) {
@@ -308,13 +312,13 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     }
     if (target && target.kind === 'foreman') {
       $('pTitle').textContent = target.room ? `포먼 · ${projectLabel(st, target.room)}` : '포먼(감독)';
-      $('pSel').innerHTML = `<p class="small muted">포먼은 아직 자기 세션이 없다(11단계). 아래에서 세션을 고르면 대화 · 입력이 뜬다.</p>
+      $('pSel').innerHTML = `<p class="small muted">포먼은 아직 자기 세션이 없습니다. 아래에서 세션을 고르면 대화와 입력 칸이 열립니다.</p>
         ${target.room ? pipeBlock(st.pipeline.get(target.room)) : ''}
         ${sessionList(st, target.room ? [target.room] : null)}`;
       return;
     }
     $('pTitle').textContent = '패널';
-    $('pSel').innerHTML = `<p class="small muted">캐릭터를 누르면 최근 대화와 입력 칸이 여기 뜬다. 세션을 바로 골라도 된다.</p>${sessionList(st, null)}`;
+    $('pSel').innerHTML = `<p class="small muted">캐릭터를 누르면 최근 대화와 입력 칸이 여기 열립니다. 아래에서 세션을 바로 골라도 됩니다.</p>${sessionList(st, null)}`;
   }
 
   function draw(st) {
