@@ -14,7 +14,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from bridge.api import approvals as approvals_api, dashboard as dashboard_api, debug, health, hooks, sessions, ws
-from bridge.api import handoff as handoff_api, terminal as terminal_api, webhooks
+from bridge.api import foreman as foreman_api, handoff as handoff_api, terminal as terminal_api, webhooks
+from bridge.foreman import ForemanDispatcher
 from bridge.handoff import HandoffManager
 from bridge.approval import load_policy
 from bridge.approvals import ApprovalManager
@@ -153,6 +154,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.handoff = HandoffManager(engine, s.sessions_dir, app.state.notifier,
                                            on_change=dashboard_api.invalidate,
                                            project_of=(lambda cwd: asm_._project_for(cwd, "")) if asm_ else None)
+        # 11단계 — 포먼 디스패처(사람이 말하면 계획 → 승인하면 시작). 부를 때만 claude -p
+        async def _pipe_snap() -> dict:
+            pm = app.state.pipeline_mgr
+            return await pm.snapshot() if pm else {"projects": []}
+        app.state.foreman = ForemanDispatcher(engine, s.sessions_dir, app.state.handoff,
+                                              (lambda: asm_.projects) if asm_ else (lambda: []), _pipe_snap)
         log.info("브리지 시작 %s:%d (DB %s:%d, 와처 %s)", s.bind_host, s.bind_port, s.mysql_host, s.mysql_port,
                  "켬" if s.watch_enabled else "끔")
         try:
@@ -189,6 +196,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(hooks.router)
     app.include_router(sessions.router)
     app.include_router(handoff_api.router)
+    app.include_router(foreman_api.router)
     app.include_router(approvals_api.router)
     app.include_router(dashboard_api.router)
     app.include_router(terminal_api.api)
