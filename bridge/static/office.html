@@ -109,22 +109,6 @@
     .oside-strip > span:first-child { transform:rotate(90deg); }
     .oside-vert { writing-mode:horizontal-tb; }
   }
-  /* 포먼에게 말하기(foremanchat.js) — [+ 세션] 창 맨 위 */
-  .fm { display:flex; flex-direction:column; gap:6px; padding-bottom:10px; margin-bottom:8px; border-bottom:1px solid var(--line, #444); }
-  .fm textarea { width:100%; box-sizing:border-box; resize:vertical; }
-  .fm-row { justify-content:flex-end; align-items:center; gap:8px; }
-  .fm-row > span { flex:1; }
-  .fm-plan { display:flex; flex-direction:column; gap:6px; }
-  .fm-grid { display:grid; grid-template-columns:auto 1fr; gap:4px 8px; align-items:center; }
-  .fm-grid input, .fm-grid select { width:100%; box-sizing:border-box; }
-  #nsDlg select { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
-  #nsDlg .box.ns:has(.fm-manual:not([open])) #nsGo { display:none; }   /* [띄우기]는 "직접 고르기"를 펼쳤을 때만 */
-  .fm-plan input[type=checkbox] { width:auto; }
-  .fm-first { font-family:inherit; min-height:9em; }
-  .fm-q { padding:6px 8px; border-left:3px solid var(--warn, #d9a400); }
-  .fm-manual > summary { cursor:pointer; padding:4px 0; }
-  .fm-manual[open] > summary { margin-bottom:6px; }
-  #nsDlg .box.ns { max-height:90vh; overflow:auto; }
 </style>
 </head>
 <body>
