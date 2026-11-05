@@ -2,7 +2,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { matchTool, resolveAction, infraAction, groupSubagents, tokenRate } from '../../bridge/static/js/theme.js';
+import { matchTool, resolveAction, infraAction, groupSubagents, tokenRate, viewState, bgCount } from '../../bridge/static/js/theme.js';
+
+test('기다림 — IDLE인데 서브에이전트 · 백그라운드가 돌면 WAITING, 자는 모습으로 떨어지지 않는다(11-06)', () => {
+  const s = { state: 'IDLE', subagents_running: 0, background: [{ task: 'b1', tool: 'Bash' }] };
+  assert.equal(bgCount(s), 1);
+  assert.equal(viewState(s), 'WAITING');
+  assert.equal(viewState({ ...s, background: [] }), 'IDLE');
+  assert.equal(viewState({ ...s, background: [], subagents_running: 2 }), 'WAITING');
+  assert.equal(viewState({ ...s, state: 'ACTIVE' }), 'ACTIVE');            // 일하는 중은 그대로
+  assert.equal(viewState({ ...s, state: 'SUSPENDED' }), 'SUSPENDED');      // 멈춘 세션은 멈춤
+  for (const name of ['plain', 'office', 'magic', 'site']) {
+    const t = JSON.parse(readFileSync(new URL(`../../bridge/static/themes/${name}/theme.json`, import.meta.url)));
+    const a = resolveAction(t, { state: 'WAITING', tool: 'Bash' });
+    assert.equal(a.anim, 'wait', name);
+    assert.equal(a.go, 'desk', name);
+    assert.ok(!a.variants, name);                                            // 쉼 변형(엎드려 자기)이 섞이지 않는다
+  }
+  assert.equal(resolveAction({ states: { IDLE: { anim: 'sleep' } } }, { state: 'WAITING' }).anim, 'wait');   // 테마에 없어도
+});
 
 const theme = JSON.parse(readFileSync(new URL('../../bridge/static/themes/plain/theme.json', import.meta.url)));
 

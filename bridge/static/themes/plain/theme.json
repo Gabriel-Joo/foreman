@@ -35,6 +35,7 @@
   "states": {
     "ACTIVE":    { "anim": "walk", "go": "desk" },
     "IDLE":      { "anim": "sit", "go": "desk" },
+    "WAITING":   { "anim": "wait", "go": "desk" },
     "SUSPENDED": { "anim": "still", "go": "desk", "fx": "frozen" },
     "DORMANT":   { "anim": "stand", "go": "desk", "alpha": 0.45 }
   },

@@ -2,7 +2,7 @@
 // 10a: 지도 ↔ 방 줌, 도형 캐릭터, 상태별 모습, 방 배지(작업 · 승인 · 파이프라인 · 토큰). 동작은 theme.json이 정한다(theme.js).
 // 좌표: 월드는 타일 단위로 정하고 px = 타일 × layout.tile. 카메라가 월드 → 화면.
 
-import { resolveAction, infraAction, groupSubagents, tokenRate } from './theme.js';
+import { resolveAction, infraAction, groupSubagents, tokenRate, viewState } from './theme.js';
 import { loadSprites } from './sprites.js';
 import { createSidePanel } from './opanel.js';
 import { mountNewSession } from './newsession.js';
@@ -218,7 +218,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       room.stats = { ACTIVE: 0, IDLE: 0, SUSPENDED: 0, DORMANT: 0, pending: 0, subs: 0, tin: 0, tout: 0, opus_out: 0, all_out: 0 };
       let slot = 0;
       ss.forEach((s) => {
-        room.stats[s.state] = (room.stats[s.state] || 0) + 1;
+        // 기다림(IDLE + 자식 일)은 작업으로 센다 — 현장이 "쉼"으로 보이면 돌고 있는 일을 놓친다(11-06)
+        const vs = viewState(s) === 'WAITING' ? 'ACTIVE' : s.state;
+        room.stats[vs] = (room.stats[vs] || 0) + 1;
         room.stats.pending += pending.get(s.id) || 0;
         room.stats.subs += s.subagents_running || 0;
         room.stats.tin += (s.tokens && s.tokens.today_input) || 0;
@@ -231,7 +233,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         if (dormantGone(s, room.name)) return;
         const k = slot++;
         if (k >= cap) return;
-        let act = resolveAction(theme, { state: s.state, tool: s.activity && s.activity.tool, target: s.activity && s.activity.target,
+        let act = resolveAction(theme, { state: viewState(s), tool: s.activity && s.activity.tool, target: s.activity && s.activity.target,
                                          flags: { approval_pending: pending.has(s.id), stuck_turn: !!s.stuck_turn } });
         // 쉬는 모습은 사람마다 다르게(마법학교: 엎드려 자기 · 먹기 · 책) — 플래그가 덮은 동작은 그대로
         if (act.variants && !act.flag) act = { ...act, anim: act.variants[s.id % act.variants.length] };
@@ -637,6 +639,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.globalAlpha = 1;
     if (act.fx === 'smoke') drawSmoke(a.x, a.y - 1.4, now);
     if (act.bubble) drawBubble(x, y - 6, act.bubble, act.flag === 'approval_pending' ? P.warn : '#e8e8f0');
+    else if (anim === 'wait' && !act.flag) drawBubble(x, y - 6, '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), P.act, 7);   // 기다림
     if (a.subHidden) drawBubble(x + 10, y + 2, `+${a.subHidden}`, P.act, 7);              // 10명 넘는 서브에이전트는 접는다
     drawCompactMark(a, x + 8, y - 4);
     const rc = roleColor(a.role);
@@ -1501,6 +1504,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       ctx.globalAlpha = 1 - t; ctx.fillStyle = P.zz; ctx.font = 'bold 7px ui-monospace, monospace'; ctx.textAlign = 'left';
       ctx.fillText('z', x + 5 + t * 4, top + 2 - t * 8); ctx.globalAlpha = 1;
     }
+    if (!a.moving && act.anim === 'wait' && !act.flag) {                       // 기다림 — 책상에 서서 "…"이 차오른다
+      drawBubble(x, top - 3, '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), P.act, 7);
+    }
     if (a.subHidden) drawBubble(x + 11, top + 4, `+${a.subHidden}`, P.act, 7);      // 10명 넘는 서브에이전트는 접는다
     if (a.key === selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - 9, top - 2, 18, 20); }
   }
@@ -1664,6 +1670,15 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const w2 = ctx.measureText(sub).width + 6;
       ctx.fillStyle = '#000a'; ctx.fillRect(sx - w2 / 2, sy + 17, w2, 14);
       ctx.fillStyle = P.act; ctx.fillText(sub, sx, sy + 18);
+    }
+    // 백그라운드 Bash · Monitor — "IDLE + 백그라운드 n개"(README 3.11). 일꾼 줄이 있으면 그 아래
+    const bg = a.kind === 'session' && a.s ? a.s.background || [] : [];
+    if (bg.length) {
+      const d = bg[0].description || bg[0].tool;
+      const line = `백그라운드 ${bg.length}${d ? ' · ' + short(d, 22) : ''}`;
+      const w3 = ctx.measureText(line).width + 6, y3 = sy + (n ? 32 : 17);
+      ctx.fillStyle = '#000a'; ctx.fillRect(sx - w3 / 2, y3, w3, 14);
+      ctx.fillStyle = P.act; ctx.fillText(line, sx, y3 + 1);
     }
   }
 
@@ -1885,7 +1900,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const key = r.name || '_lounge';
       if (view === key) seenAt.set(key, now);
       const ss = (r.sessionIds || []).map((id) => st.sessions.get(id)).filter(Boolean);
-      const act = ss.filter((s) => s.state === 'ACTIVE').length;
+      const act = ss.filter((s) => s.state === 'ACTIVE' || viewState(s) === 'WAITING').length;
       const pend = (r.stats && r.stats.pending) || 0;
       const lastReply = Math.max(0, ...ss.map((s) => s.replyAt || 0));
       const unseen = lastReply > Math.max(openedAt, seenAt.get(key) || 0);
@@ -1905,7 +1920,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 전체 요약(클래식 머리말과 같은 숫자) + 적재가 막히면 무엇이 막혔는지(마우스를 올리면)
     let active = 0, live = 0, outToday = 0, subs = 0;
     for (const s of st.sessions.values()) {
-      if (s.state === 'ACTIVE') active++;
+      if (s.state === 'ACTIVE' || viewState(s) === 'WAITING') active++;
       if (s.state !== 'DORMANT') live++;
       outToday += (s.tokens && s.tokens.today_output) || 0;
       subs += s.subagents_running || 0;
@@ -2004,9 +2019,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (a.kind === 'session' && a.s) {
       const s = a.s;
       const now = s.state === 'ACTIVE' ? (s.activity ? `${esc(s.activity.tool)} ${esc(short(s.activity.target || '', 70))}` : '생각 중') : '';
-      return `<div class="tip-h">${esc(a.name)}</div><div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[s.state] || s.state)}${
+      const vs = viewState(s), bg = s.background || [];
+      return `<div class="tip-h">${esc(a.name)}</div><div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', WAITING: '기다리는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[vs] || vs)}${
         a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
         s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎</div>` : ''}${
+        bg.length ? `<div>백그라운드 ${bg.length}개 돎${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}</div>`).join('')}</div>` : ''}${
         a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝 신호 없는 턴' }[a.act.flag] || a.act.flag)}</div>` : ''}${
         s.compact && s.compact.level ? `<div class="tip-s">📦 압축 ${s.compact.count}번 — ${s.compact.level === 'late' ? '늦었습니다' : '새 세션으로 넘어갈 때입니다'}</div>` : ''}
         <div class="tip-t">누르면 대화가 열립니다.</div>`;

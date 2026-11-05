@@ -994,3 +994,45 @@ async def test_promote_list_edit_write_verify(env, monkeypatch, tmp_path):
     r2 = await pr.request(row, no_input=True)
     assert r2["summary_id"] is None
     assert await settle(r2["promotion_id"], ("requested",)) == "listed"
+
+
+async def test_background_bash_and_monitor_start_end(env):
+    """백그라운드 Bash · Monitor(11-06) — 결과의 backgroundTaskId · taskId로 bg_start, 끝 알림으로 bg_end.
+    끝 알림은 큐(enqueue) · 첨부(queued_command) · 사람 줄 어디로 와도 한 번만. Monitor 중간 이벤트(status 없음)는 끝이 아니다."""
+    from bridge.api.dashboard import background_running
+    s, main = env
+    for p in (main.parent / SID / "subagents").iterdir():
+        p.unlink()
+    main.write_text("", encoding="utf-8")
+    asm = await run(s)
+    note = lambda task, tu, st: (f"<task-notification>\n<task-id>{task}</task-id>\n<tool-use-id>{tu}</tool-use-id>\n"  # noqa: E731
+                                 + (f"<status>{st}</status>\n" if st else "<event>줄</event>\n") + "</task-notification>")
+    await _append(s, asm, main,
+                  user(U(601), "b1", "돌려", origin={"kind": "human"}),
+                  asst(U(602), "msg_g1", {"type": "tool_use", "id": "toolu_B", "name": "Bash",
+                                          "input": {"command": "sleep 99", "description": "판정 돌리기", "run_in_background": True}}),
+                  result(U(603), "b1", "toolu_B", "started", tur={"stdout": "", "backgroundTaskId": "bgB"}),
+                  asst(U(604), "msg_g2", {"type": "tool_use", "id": "toolu_M", "name": "Monitor",
+                                          "input": {"command": "until x", "description": "브리지 기다림"}}),
+                  result(U(605), "b1", "toolu_M", "started", tur={"taskId": "bgM", "timeoutMs": 60000}),
+                  asst(U(606), "msg_g3", {"type": "tool_use", "id": "toolu_F", "name": "Bash", "input": {"command": "ls"}}),
+                  result(U(607), "b1", "toolu_F", "a b", tur={"stdout": "a b"}),           # 보통 Bash는 아니다
+                  line(type="queue-operation", operation="enqueue", timestamp="2026-10-01T00:00:04.000Z",
+                       content=note("bgM", "toolu_M", None)))                               # Monitor 중간 이벤트
+    rows = q(s, "SELECT type, tool, target, JSON_UNQUOTE(JSON_EXTRACT(payload, '$.description')) FROM event "
+                "WHERE type IN ('bg_start', 'bg_end') ORDER BY id")
+    assert rows == (("bg_start", "Bash", "bgB", "판정 돌리기"), ("bg_start", "Monitor", "bgM", "브리지 기다림"))
+    await _append(s, asm, main,
+                  line(type="queue-operation", operation="enqueue", timestamp="2026-10-01T00:00:05.000Z",
+                       content=note("bgB", "toolu_B", "completed")),
+                  line(type="attachment", uuid=U(608), timestamp="2026-10-01T00:00:05.500Z",
+                       attachment={"type": "queued_command", "prompt": note("bgB", "toolu_B", "completed")}),
+                  user(U(609), "n1", note("bgB", "toolu_B", "completed"), origin={"kind": "task-notification"},
+                       turnOrigin="task_notification"))
+    ends = q(s, "SELECT target, JSON_UNQUOTE(JSON_EXTRACT(payload, '$.status')) FROM event WHERE type = 'bg_end'")
+    assert ends == (("bgB", "completed"),)                                  # 세 곳으로 왔어도 한 번
+    from datetime import datetime
+    t0, t1 = datetime(2026, 10, 1, 0, 0, 2), datetime(2026, 10, 1, 0, 0, 9)
+    rows = [("bgM", "Monitor", "브리지 기다림", t0)]
+    assert [x["task"] for x in background_running(rows, None)] == ["bgM"]
+    assert background_running(rows, t1) == []                              # 프로세스가 다시 뜬 뒤 — 그 전 작업은 죽었다
