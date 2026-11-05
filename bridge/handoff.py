@@ -513,7 +513,8 @@ class HandoffManager:
         return await self.spawn_new(row.cwd or "", summary_id, None, src_session=row.id)
 
     async def spawn_new(self, cwd: str, summary_id: int | None, title: str | None,
-                        src_session: int | None = None) -> dict[str, Any]:
+                        src_session: int | None = None, first_prompt: str | None = None,
+                        read_only: bool = False, role: str | None = None) -> dict[str, Any]:
         """+ 버튼 · [새로 띄우기] — tmux 세션을 만들고 그 안에서 claude(resume 아님). 세션 행을 바로 만들어(이름도) 첫 입력 전에도
         화면에 캐릭터가 선다. 인계 요약을 고르면 입력 칸이 뜬 뒤 넣는다. 폴더 신뢰 창이 뜨면 사람이 터미널에서 답할 때까지
         뒤에서 기다렸다가(5분) 이어 한다."""
@@ -530,21 +531,23 @@ class HandoffManager:
             name, n = f"{base}-{n}", n + 1
         await tmux(self.socket, "new-session", "-d", "-s", name, "-c", cwd)
         pane = (await tmux(self.socket, "display-message", "-p", "-t", name, "#{pane_id}")).strip()
-        await tmux(self.socket, "send-keys", "-t", pane, "-l", self.claude_bin)
+        # 읽기 전용(포먼이 "살펴보기만"으로 정한 일 · 자동 기상) — CC plan 모드: 읽기 · 조사만, 고치기 전에 사람 승인
+        await tmux(self.socket, "send-keys", "-t", pane, "-l", self.claude_bin + (" --permission-mode plan" if read_only else ""))
         await tmux(self.socket, "send-keys", "-t", pane, "Enter")
         out: dict[str, Any] = {"tmux": name, "pane": pane, "cwd": cwd, "project": project, "cc_session_id": None,
                                "pid": None, "session_id": None, "note": None, "injected": False}
+        extra = {"first_prompt": first_prompt, "role": role}
         cc, pid, trust = await self._wait_ready(pane, 45)
         if trust:
-            out["note"] = "처음 쓰는 폴더라 신뢰 확인 창이 떴습니다. 터미널(tmux " + name + ")에서 답하면 이어서 " + ("인계를 넣습니다." if summary_id else "화면에 뜹니다.")
-            self._spawn_task(self._finish_spawn(name, pane, cwd, summary_id, title, src_session, wait=300))
+            out["note"] = "처음 쓰는 폴더라 신뢰 확인 창이 떴습니다. 터미널(tmux " + name + ")에서 답하면 이어서 " + ("첫 글을 넣습니다." if (summary_id or first_prompt) else "화면에 뜹니다.")
+            self._spawn_task(self._finish_spawn(name, pane, cwd, summary_id, title, src_session, wait=300, **extra))
             await self._act(src_session, "spawn", None, True, f"{name} {pane} 신뢰 창 대기")
             return out
         if cc is None:
             await self._act(src_session, "spawn", None, False, f"{name} {pane} CC를 못 찾음")
             out["note"] = "45초 안에 새 세션을 찾지 못했습니다. 터미널에서 확인해 주세요."
             return out
-        return out | await self._finish_spawn(name, pane, cwd, summary_id, title, src_session, cc=cc, pid=pid)
+        return out | await self._finish_spawn(name, pane, cwd, summary_id, title, src_session, cc=cc, pid=pid, **extra)
 
     async def _wait_ready(self, pane: str, secs: float) -> tuple[str | None, int | None, bool]:
         """(cc 세션 id, pid, 신뢰 창이 떴나). 입력 칸(❯)이 뜨고 일하지 않을 때까지."""
@@ -571,7 +574,7 @@ class HandoffManager:
 
     async def _finish_spawn(self, name: str, pane: str, cwd: str, summary_id: int | None, title: str | None,
                             src_session: int | None, cc: str | None = None, pid: int | None = None,
-                            wait: float = 0) -> dict[str, Any]:
+                            wait: float = 0, first_prompt: str | None = None, role: str | None = None) -> dict[str, Any]:
         if cc is None:                                    # 신뢰 창 — 사람이 답하기를 기다린다
             loop = asyncio.get_running_loop()
             end = loop.time() + wait
@@ -581,10 +584,31 @@ class HandoffManager:
                 await self._act(src_session, "spawn", None, False, f"{name} 신뢰 창에 답이 없어 그만둠")
                 return {"note": "신뢰 확인 창에 답이 없어 그만뒀습니다."}
         sid = await self._ensure_row(cc, cwd, title)
+        if role:
+            async with self.engine.begin() as c:
+                await c.execute(text("UPDATE character_session SET role = :r WHERE id = :i"), {"r": role[:16], "i": sid})
         await self._act(src_session or sid, "spawn", pid, True, f"{name} {pane} cc={cc} 새 세션 행 {sid}")
         if self.on_change:
             self.on_change()
         out: dict[str, Any] = {"cc_session_id": cc, "pid": pid, "session_id": sid}
+        if first_prompt:
+            # 포먼이 쓴 첫 글(+ 고른 인계 요약) — 사람이 계획 카드에서 확인 · 고친 글 그대로
+            body = first_prompt
+            if summary_id is not None:
+                inj = await self.injection(summary_id)
+                s = await self.summary(summary_id)
+                if inj["cut"]:
+                    self._write_full(s["req"], s["body"])
+                body += "\n\n" + inj["text"]
+                async with self.engine.begin() as c:
+                    await c.execute(text("UPDATE summary SET injected_cc_session = :c, injected_at = NOW(3) WHERE id = :i"),
+                                    {"c": cc, "i": summary_id})
+            await asyncio.sleep(1.0)
+            r = await deliver(cc, body, sessions_dir=self.sessions_dir, transcript=transcript_path(cwd, cc), verify_s=15.0)
+            out["injected"] = bool(r.get("delivered"))
+            if not out["injected"]:
+                out["note"] = "첫 글을 보냈지만 제출을 확인하지 못했습니다. 입력 칸을 확인해 주세요."
+            return out
         if summary_id is not None:
             await asyncio.sleep(1.0)
             r = await self.inject(summary_id, cc, cwd)
