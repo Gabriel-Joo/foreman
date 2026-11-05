@@ -24,6 +24,7 @@ from bridge.approval import load_policy
 from bridge.approvals import ApprovalManager
 from bridge.api.auth import require_api_token
 from bridge.assembler import Assembler
+from bridge.compactwatch import CompactWatch, load_rules as load_compact_rules
 from bridge.bus import Pipeline
 from bridge.config import Settings, get_settings
 from bridge.db.engine import make_engine
@@ -61,6 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.pipeline = pipeline
         pipeline.start()
         app.state.assembler = app.state.watcher = app.state.notifier = app.state.approvals = None
+        app.state.compact_rules = load_compact_rules(s.notify_config)   # 대시보드 압축 표시 기준(적재가 꺼져 있어도)
         app.state.terminal = None
         app.state.ingest_monitor = None
         watch_task = state_task = health_task = None
@@ -93,6 +95,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     for cb in closed_cbs:
                         cb(*a)
                 asm.on_turn_closed = on_turn_closed
+            # 압축 알림(11-05) — 정한 횟수의 압축 직후 텔레그램. 기준값(notify.toml [compact])은 대시보드 표시에도 쓴다
+            cw = CompactWatch(engine, app.state.notifier, getattr(app.state.notifier, "rules", None), s.notify_config)
+            app.state.compact = cw
+            cw_tasks: set[asyncio.Task[None]] = set()
+
+            def on_compact(sid: int) -> None:
+                t = asyncio.get_running_loop().create_task(cw.on_compact(sid))
+                cw_tasks.add(t)
+                t.add_done_callback(cw_tasks.discard)
+            asm.on_compact = on_compact
             watcher = Watcher(s, asm)
             app.state.assembler, app.state.watcher = asm, watcher
 

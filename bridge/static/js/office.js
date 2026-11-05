@@ -638,6 +638,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (act.fx === 'smoke') drawSmoke(a.x, a.y - 1.4, now);
     if (act.bubble) drawBubble(x, y - 6, act.bubble, act.flag === 'approval_pending' ? P.warn : '#e8e8f0');
     if (a.subHidden) drawBubble(x + 10, y + 2, `+${a.subHidden}`, P.act, 7);              // 10명 넘는 서브에이전트는 접는다
+    drawCompactMark(a, x + 8, y - 4);
     const rc = roleColor(a.role);
     if (rc) { ctx.fillStyle = rc; ctx.fillRect(x - 1, y + sp.head * 1.6, 2, h - sp.head * 1.6 - 2); }   // 역할 — 사원증 끈 색
     if (a.key === selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - 9, y - 3, 18, h + 6); }
@@ -1474,11 +1475,22 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     return cv.toDataURL('image/png');
   }
 
+  // 압축 알림(11-05) — 2번째 압축부터 머리 오른쪽에 📦(4번째부터 빨간 테두리). 패널 띠의 [나중에]로 숨긴 것은 같이 숨긴다
+  function drawCompactMark(a, x, y) {
+    const c = a.kind === 'session' && a.s && a.s.compact;
+    if (!c || !c.level) return;
+    if (window.foremanCompactSnoozed && window.foremanCompactSnoozed(a.s.id, c.count)) return;
+    if (c.level === 'late') { ctx.fillStyle = P.bad; ctx.beginPath(); ctx.arc(x + 4, y - 3, 6, 0, Math.PI * 2); ctx.fill(); }
+    ctx.font = '8px "Noto Color Emoji", "Apple Color Emoji", sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('📦', x, y);
+  }
+
   // 사람 위에 뜨는 것 — 말풍선(이모트) · 연기 · 자는 Zz · 일꾼 수 · 선택 표시(가구에 가리지 않게 마지막에)
   function drawOverlay(a, now) {
     const act = a.act || {};
     const x = a.x * T, top = a.y * T - (a.drawH || 16);
     if (act.fx === 'smoke') drawSmokeS(a.x, a.y - 0.6, now);
+    drawCompactMark(a, x + 7, top + 4);
     if (act.bubble) {
       const e = 'e_' + act.bubble;
       if (SP.has(e)) SP.draw(ctx, e, x - 7, top - 13 - Math.round(Math.abs(Math.sin(now / 300)) * 2), now);
@@ -1995,7 +2007,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       return `<div class="tip-h">${esc(a.name)}</div><div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[s.state] || s.state)}${
         a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
         s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎</div>` : ''}${
-        a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝 신호 없는 턴' }[a.act.flag] || a.act.flag)}</div>` : ''}
+        a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝 신호 없는 턴' }[a.act.flag] || a.act.flag)}</div>` : ''}${
+        s.compact && s.compact.level ? `<div class="tip-s">📦 압축 ${s.compact.count}번 — ${s.compact.level === 'late' ? '늦었습니다' : '새 세션으로 넘어갈 때입니다'}</div>` : ''}
         <div class="tip-t">누르면 대화가 열립니다.</div>`;
     }
     if (a.kind === 'mini') return `<div class="tip-h">서브에이전트</div><div>${esc(a.name)}</div><div class="tip-t">누르면 부모 세션이 열립니다.</div>`;

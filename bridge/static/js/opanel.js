@@ -41,6 +41,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         <button id="pFold" class="ghost small" title="접기 — 패널을 접어 픽셀 화면을 넓힙니다.">▶</button>
       </div>
       <div id="pMeta" class="pmeta small" hidden></div>
+      <div id="pCmp" class="pcmp small" hidden></div>
       <section id="pAppr" class="papprs" aria-label="승인 대기"></section>
       <nav id="pTabs" class="ptabs" hidden>${TABS.map(([k, l]) => `<button data-tab="${k}">${l}<span data-n="${k}"></span></button>`).join('')}</nav>
       <div id="pBody" class="oside-body">
@@ -234,6 +235,46 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   });
   document.addEventListener('click', (ev) => { if (!mdlMenu.hidden && !mdlMenu.contains(ev.target)) closeMenu(); });
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !mdlMenu.hidden) { ev.stopPropagation(); closeMenu(); } }, true);
+  // 압축 알림 띠(11-05, docs/11_handoff_v2.md 3장) — 2번째 압축부터 "넘어갈 때", 4번째부터 "늦었음".
+  // [나중에]는 다음 압축까지 숨긴다(이 브라우저에만 — 압축 횟수로 기억)
+  function drawCompact(s) {
+    const c = s.compact;
+    const snoozed = c && compactSnoozed(s.id, c.count);
+    if (!c || !c.level || snoozed) { $('pCmp').hidden = true; return; }
+    const late = c.level === 'late';
+    const html = `<span class="${late ? 'bad' : 'warn'}">📦 압축 ${c.count}번 — ${late
+        ? '늦었습니다. 앞에서 정한 결정 · 금지가 이미 많이 빠졌을 수 있습니다.'
+        : '넘어갈 때입니다. 처음에 정한 것이 빠지기 시작합니다.'}${c.short ? ' 압축 간격도 짧습니다.' : ''}</span>
+      ${s.injectable ? '<button type="button" data-cmp="handoff" class="small" title="인계 요약 받기 — 세션이 지금까지를 인계 문서로 씁니다. 받은 뒤 [세션] 탭에서 확인하고 새 세션을 띄웁니다.">인계 요약 받기</button>' : ''}
+      <button type="button" data-cmp="later" class="ghost small" title="나중에 — 다음 압축까지 이 띠를 숨깁니다.">나중에</button>`;
+    put('pCmp', 'cmp', html);
+    $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;
+    $('pCmp').hidden = false;
+  }
+  function compactSnoozed(id, count) {
+    try { return Number(localStorage.getItem('cmpSnooze:' + id) || 0) >= count; } catch { return false; }
+  }
+  $('pCmp').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-cmp]');
+    const s = store.state.sessions.get(store.state.selected);
+    if (!b || !s || !s.compact) return;
+    if (b.dataset.cmp === 'later') {
+      try { localStorage.setItem('cmpSnooze:' + s.id, String(s.compact.count)); } catch { /* 저장 못 함 — 이번만 숨긴다 */ }
+      $('pCmp').hidden = true;
+      store.touch('grid');
+      return;
+    }
+    b.disabled = true;
+    const r = await fetch(`/api/sessions/${s.id}/summary`, { method: 'POST', headers: store.headers(true), body: JSON.stringify({ kind: 'handoff', mode: 'live' }) });
+    const j = await r.json().catch(() => ({}));
+    store.state.lastInput = { sessionId: s.id, ts: Date.now(), ok: r.ok,
+      msg: r.ok ? '인계 요약을 요청했습니다. 세션이 쓰는 중입니다 — [세션] 탭에서 확인하고 새 세션을 띄울 수 있습니다.' : `요청하지 못했습니다 — ${j.refused || j.detail || r.status}` };
+    if (r.ok) setTab('sess');
+    b.disabled = false;
+    store.touch('panel');
+  });
+  window.foremanCompactSnoozed = compactSnoozed;     // 픽셀 화면의 📦 표시도 같은 기준으로 숨긴다
+
   // 바꾸는 중 표시 — 응답 모델이 고른 것과 같아지면(또는 30분이 지나면) 지운다
   function pendModel(st, s) {
     const p = st.pendingModel.get(s.id);
@@ -282,6 +323,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   function sessionMode(on) {
     $('pSel').hidden = on; $('pTabs').hidden = !on; $('pMeta').hidden = !on; $('pForm').hidden = !on;
+    if (!on) $('pCmp').hidden = true;
     if (on) setTab(tab);
     else { $('pTabConvo').hidden = $('pTabAct').hidden = $('pTabSess').hidden = true; el.classList.remove('tab-convo'); }
   }
@@ -305,6 +347,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       <span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
       · <span class="muted">오늘 출력 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn">⚠ 끝 신호 없는 턴</span>' : ''}`);
     $('pMeta').title = `${sessionSub(s)} · ${projectLabel(st, s.project)} · ${(s.cwd || '')}`;
+    drawCompact(s);
     // 대화 — 바뀔 때만
     const c = $('pConvo');
     const follow = switched || nearBottom(c);
