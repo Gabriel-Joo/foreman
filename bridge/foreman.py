@@ -260,6 +260,13 @@ class ForemanDispatcher:
             plan["mode"] = "new"
         if plan["mode"] == "handoff" and not plan.get("summary_id"):
             plan["mode"] = "new"
+        # 따로 작업(worktree, 11-05) — 그 프로젝트에 살아 있는 세션이 있으면 기본으로 켠다. 사람이 카드에서 끌 수 있다
+        repo = plan.get("repo")
+        others = [ls for ls in live_sessions(self.sessions_dir).values()
+                  if repo and (ls.cwd == repo or ls.cwd.startswith(repo.rstrip("/") + "/"))]
+        plan["live_here"] = len(others)
+        if plan.get("worktree") is None:
+            plan["worktree"] = bool(others)
         plan["warnings"] = warn + list(plan.get("warnings") or [])
         plan["first_prompt"] = str(plan.get("first_prompt") or "")[:12000]
         plan["title"] = str(plan.get("title") or "")[:120]
@@ -281,7 +288,8 @@ class ForemanDispatcher:
         else:
             out = await self.handoff.spawn_new(plan["repo"], plan.get("summary_id") if plan["mode"] == "handoff" else None,
                                                plan.get("title") or None, first_prompt=plan["first_prompt"],
-                                               read_only=bool(plan.get("read_only")), role=plan.get("role"))
+                                               read_only=bool(plan.get("read_only")), role=plan.get("role"),
+                                               worktree=bool(plan.get("worktree")))
             out["mode"] = plan["mode"]
         async with self.engine.begin() as c:
             await c.execute(text("UPDATE dispatch SET edited = :e, status = 'started', started_at = NOW(3), session_id = :s WHERE id = :i"),

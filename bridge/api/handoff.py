@@ -119,6 +119,12 @@ class NewIn(BaseModel):
     cwd: str = Field(min_length=1, max_length=1024)
     summary_id: int | None = None
     title: str | None = Field(default=None, max_length=255)
+    worktree: bool | None = None      # None: 그 프로젝트에 살아 있는 세션이 있으면 따로 작업(worktree)
+
+
+class WorktreeIn(BaseModel):
+    action: Literal["merge", "discard"]
+    confirm: str = ""                 # 버리기는 worktree 이름을 그대로 적어야 한다(합치지 않은 커밋까지 지운다)
 
 
 @router.get("/spawn/options")
@@ -163,9 +169,38 @@ async def list_dirs(path: str = "~", hidden: bool = False) -> dict[str, Any]:
 @router.post("/spawn")
 async def spawn_new(body: NewIn, request: Request) -> JSONResponse:
     try:
-        return JSONResponse(await _mgr(request).spawn_new(body.cwd, body.summary_id, body.title))
+        return JSONResponse(await _mgr(request).spawn_new(body.cwd, body.summary_id, body.title, worktree=body.worktree))
     except Refused as e:
         return _refused(e)
+
+
+@router.post("/sessions/{sid}/worktree")
+async def worktree_act(sid: int, body: WorktreeIn, request: Request) -> JSONResponse:
+    """따로 작업 합치기(rebase → fast-forward, 충돌이면 되돌리고 멈춤) · 버리기. 사람이 화면에서 확인한 뒤에만 부른다."""
+    m = _mgr(request)
+    row = await _row(m, sid)
+    try:
+        if body.action == "discard":
+            name = m._wt_of(row)[1]
+            if body.confirm != name:
+                raise Refused(f"버리려면 worktree 이름({name})을 그대로 적어 주세요")
+        r = await m.worktree_act(row, body.action)
+    except Refused as e:
+        return _refused(e)
+    return JSONResponse(r)
+
+
+@router.get("/schema-lock")
+async def schema_lock(request: Request) -> dict[str, Any]:
+    sl = getattr(request.app.state, "schema_lock", None)
+    return sl.view() if sl else {}
+
+
+@router.delete("/schema-lock/{project}")
+async def schema_unlock(project: str, request: Request) -> dict[str, Any]:
+    """사람이 잠금을 푼다(잠금을 가진 세션이 스키마 일을 그만뒀을 때)."""
+    sl = getattr(request.app.state, "schema_lock", None)
+    return {"released": bool(sl and sl.release(project))}
 
 
 @router.put("/sessions/{sid}/title")

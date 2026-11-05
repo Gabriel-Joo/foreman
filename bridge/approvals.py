@@ -68,6 +68,7 @@ class ApprovalManager:
         self.by_tool_use: dict[str, int] = {}
         self._tasks: set[asyncio.Task[Any]] = set()
         self._rule_notice: dict[str, float] = {}   # 안전 규칙 파일 도구 편집 알림 — 파일 → 마지막 알린 시각
+        self.schema: Any = None                    # 스키마 잠금(bridge/schemalock.py) — main.py가 넣는다
 
     def _bg(self, coro: Any) -> None:
         t = asyncio.create_task(coro)
@@ -92,6 +93,14 @@ class ApprovalManager:
         tool, inp = p.get("tool_name") or "?", p.get("tool_input") or {}
         project = self._project(p)
         pp = self.policy.for_project(project)
+        # 스키마 잠금 — 다른 세션이 이 프로젝트의 스키마를 바꾸는 중이면 거부. 승인 모드(observe)와 상관없이(11-05 사용자 지시)
+        why_lock = self.schema.check(project, p.get("session_id"), p.get("cwd"), tool, inp) if self.schema else None
+        if why_lock:
+            dec = Decision("deny", "스키마-잠금", why_lock)
+            log.warning("deny %s %s — %s", project, tool, why_lock)
+            self._bg(self._record_pre(p, tool, inp, dec, pp.mode, True, None))
+            return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                           "permissionDecisionReason": f"FOREMAN {why_lock}"}}
         dec = self.policy.decide(tool, inp, p.get("cwd"), p.get("scratchpad_dir") or _scratchpad(p), project)
         enforced = pp.mode == "enforce" and dec.verdict in ("allow", "ask")
         sid = p.get("session_id") or ""

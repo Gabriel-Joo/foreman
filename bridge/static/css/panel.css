@@ -101,7 +101,7 @@ body { --term-h:0px; }
 .term { position:fixed; left:0; right:0; bottom:0; z-index:8; background:var(--bg); border-top:1px solid var(--line);
         display:flex; flex-direction:column; box-shadow:0 -2px 10px rgba(0,0,0,.08); }
 .term[hidden] { display:none; }
-.term.open { height:45vh; min-height:260px; }
+.term.open { height:45dvh; min-height:min(260px, 40dvh); max-height:55dvh; }   /* 작은 창에서도 위에 머리말 · 픽셀 화면이 남게 창 높이 비율로 */
 .term-bar { display:flex; gap:10px; align-items:center; height:36px; flex:none; padding:0 12px; overflow:hidden; }
 .term-bar button { padding:3px 10px; font-weight:600; }
 .term-last { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:ui-monospace, monospace; }
@@ -121,7 +121,7 @@ body { --term-h:0px; }
 @media (max-width: 760px) {
   .appr { flex-direction:column; }
   .term-note { display:none; }
-  .term.open { height:calc(100vh - 50px); }
+  .term.open { height:calc(100dvh - 50px); max-height:none; }   /* 휴대폰 폭 — 터미널이 화면을 거의 다 쓴다(원래 설계) */
   .term-req { flex-direction:column; }
 }
 

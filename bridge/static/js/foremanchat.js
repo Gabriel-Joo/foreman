@@ -74,6 +74,8 @@ function mount(dlg) {
         <input id="fmTitle" value="${esc(p.title || '')}">
       </div>
       <label class="small"><input id="fmRO" type="checkbox"${p.read_only ? ' checked' : ''}> 읽기 전용으로 시작(살펴보기만 — 고치기 전에 승인)</label>
+      <label class="small" title="따로 작업 — 저장소 안 .worktrees/에 이 세션만의 폴더 · 브랜치(cc/…)를 만들어 띄웁니다. 끝낸 뒤 [합치기]로 main에 합칩니다."><input id="fmWT" type="checkbox"${p.worktree ? ' checked' : ''}> 따로 작업(worktree)
+        <span class="muted">${p.live_here ? `— 이 프로젝트에 살아 있는 세션 ${p.live_here}개와 파일이 겹치지 않습니다` : '— 지금 이 프로젝트에 다른 세션이 없습니다'}</span></label>
       <label class="small muted" for="fmFirst">넣을 첫 글${p.summary_id ? ' (고른 인계 요약은 이 뒤에 붙습니다)' : ''}</label>
       <textarea id="fmFirst" rows="10" class="fm-first">${esc(p.first_prompt || '')}</textarea>
       <details class="fm-why"${(p.confidence ?? 1) < 0.7 ? ' open' : ''}><summary class="small">왜 이렇게 판단했나 · 확신도 ${Math.round((p.confidence ?? 0) * 100)}%</summary>
@@ -91,7 +93,7 @@ function mount(dlg) {
     const v = (id) => $(id).value;
     return { ...disp.plan, project: v('fmProj'), mode: v('fmMode'), summary_id: v('fmSum') ? Number(v('fmSum')) : null,
              attach_session: v('fmAttach') ? Number(v('fmAttach')) : null, role: v('fmRole'), title: v('fmTitle'),
-             read_only: $('fmRO').checked, first_prompt: v('fmFirst') };
+             read_only: $('fmRO').checked, worktree: $('fmWT').checked, first_prompt: v('fmFirst') };
   }
   async function start() {
     const plan = collect();
@@ -101,7 +103,7 @@ function mount(dlg) {
     try {
       const r = await api('POST', '/api/foreman/start', { dispatch_id: disp.dispatch_id, plan });
       const ok = r.mode === 'attach' ? (r.injected ? '보냈습니다.' : '보냈지만 제출을 확인하지 못했습니다.')
-        : `새 세션을 띄웠습니다${r.tmux ? `(tmux ${r.tmux})` : ''}.${r.injected ? ' 첫 글을 넣었습니다.' : ''}`;
+        : `새 세션을 띄웠습니다${r.tmux ? `(tmux ${r.tmux})` : ''}.${r.worktree ? ` 따로 작업 ${r.worktree.branch}에서 합니다.` : ''}${r.injected ? ' 첫 글을 넣었습니다.' : ''}`;
       $('fmStartMsg').className = `small ${r.note ? 'warn' : 'ok'}`;
       $('fmStartMsg').textContent = ok + (r.note ? ' ' + r.note : '');
       if (r.session_id && window.office) setTimeout(() => { dlg.classList.remove('on'); window.office.openSession(r.session_id); }, r.note ? 4000 : 1200);
