@@ -1,0 +1,40 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { merged, edits, counts, promoteGroup } from '../../bridge/static/js/promote.js';
+
+const ITEMS = [
+  { id: 1, kind: '기준', what: '시험 세션은 끝낸 뒤 숨긴다', quote: '', dest: 'CLAUDE.md', section: '작업 규칙', why: 'w', state: 'pending', check: { ok: true } },
+  { id: 2, kind: '결정', what: '그때뿐', quote: '', dest: 'drop', section: '', why: '', state: 'dropped', check: { ok: true } },
+  { id: 3, kind: '결정', what: '<b>범위</b>', quote: '건드리지 마라', dest: '../x.md', section: '', why: '', state: 'pending', check: { ok: false, problem: '저장소 맨 위 기준 경로만 됩니다' } },
+];
+
+test('사람이 고친 값만 얹고, 버림은 승인될 수 없다', () => {
+  const d = { 1: { state: 'approved', what: '고침' }, 2: { state: 'approved' } };
+  assert.equal(merged(ITEMS[0], d).what, '고침');
+  assert.equal(merged(ITEMS[1], d).state, 'dropped');
+  assert.deepEqual(edits(ITEMS, d), [{ id: 1, what: '고침', state: 'approved' }]);
+  assert.deepEqual(edits(ITEMS, { 1: { what: ITEMS[0].what } }), []);   // 같은 값은 고침이 아니다
+  assert.deepEqual(counts(ITEMS, d), { pending: 1, approved: 1, dropped: 1 });
+});
+
+test('목록 그리기 — 글은 이스케이프, 틀린 목적지 표시, 저장 전 승인은 쓰기에 세지 않는다', () => {
+  const p = { id: 7, status: 'listed', items: ITEMS, updated_at: new Date().toISOString() };
+  const h = promoteGroup(p, true, { 1: { state: 'approved' } }, null);
+  assert.ok(h.includes('&lt;b&gt;범위') && !h.includes('<b>범위'));
+  assert.ok(h.includes('✗ 저장소 맨 위 기준 경로만 됩니다'));
+  assert.ok(h.includes('승인 1') && h.includes('(저장 전)'));
+  assert.match(h, /data-act="prom-write"[^>]*disabled/);               // 저장된 승인은 0개
+  const saved = { ...p, items: ITEMS.map((x) => (x.id === 1 ? { ...x, state: 'approved' } : x)) };
+  assert.doesNotMatch(promoteGroup(saved, true, {}, null), /data-act="prom-write"[^>]*disabled/);
+});
+
+test('쓴 뒤에는 고칠 수 없고 확인 결과를 보인다', () => {
+  const p = { id: 7, status: 'write_failed', items: [], result: { ok: false, commit: 'abcdef1234', files: ['CLAUDE.md', 'other.md'], problems: ['승인하지 않은 파일도 바뀌었습니다: other.md'] } };
+  const h = promoteGroup(p, false, {}, null);
+  assert.ok(h.includes('✗ 확인 실패') && h.includes('abcdef12') && h.includes('other.md'));
+  const w = promoteGroup({ ...p, status: 'written', items: ITEMS, result: { ok: true, commit: 'abcdef1234', files: ['CLAUDE.md'] } }, false, {}, null);
+  assert.ok(w.includes('✓ 확인했습니다') && !w.includes('prom-save'));
+  assert.match(w, /<textarea data-f="what"[^>]* disabled/);
+  assert.ok(promoteGroup(null, true, {}, '읽지 못했습니다').includes('읽지 못했습니다'));
+  assert.match(promoteGroup(null, false, {}, null), /data-act="prom-req"[^>]*disabled/);
+});

@@ -3,6 +3,7 @@
 // 자기 데이터(/api/sessions/{id}/handoff)를 따로 받아 따로 그린다 — 세션 칸이 다시 그려져도 고치던 글이 날아가지 않게.
 
 import { esc, ago } from './render.js';
+import { promoteGroup, edits as promoteEdits } from './promote.js';
 
 const SOURCE = { self: '세션이 씀', self_headless: '세션이 씀(죽은 세션, claude -p)', compact: '자동 압축 요약에서', edited: '사람이 고침' };
 const STATUS = { requested: '기다리는 중…', ok: '저장됨', failed: '실패', timeout: '시간 초과' };
@@ -11,7 +12,25 @@ const KIND = { snapshot: '지금 요약', handoff: '끝내기 전 인계' };
 export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) {
   let sid = null, data = null, mode = null, preview = null, note = null, open = open0;
   let fmt1 = false;            // 인계 2판이 기본 — 켜면 1판(요약 통째로)
-  el.addEventListener('change', (ev) => { if (ev.target.id === 'hFmt1') fmt1 = ev.target.checked; });
+  // 고치던 값 — 15초마다 새로 그려도 날아가지 않게 따로 든다(요약 고치기 글 · 옮기기 목록 칸)
+  let editDraft = null, promDraft = {}, promId = null, promIn = null;
+  const promField = (t) => {
+    const f = t.dataset && t.dataset.f, row = t.closest && t.closest('.prom-item');
+    if (!f || !row) return false;
+    const id = Number(row.dataset.pid);
+    promDraft[id] = { ...(promDraft[id] || {}), [f]: t.value };
+    return true;
+  };
+  el.addEventListener('change', (ev) => {
+    if (ev.target.id === 'hFmt1') fmt1 = ev.target.checked;
+    else if (ev.target.id === 'promIn') promIn = ev.target.value;
+    // 상태를 고르면 개수 · 버튼을 다시 센다. 글칸은 그리지 않는다(blur 때 다시 그리면 바로 누른 버튼의 click이 사라진다)
+    else if (promField(ev.target) && ev.target.tagName === 'SELECT') draw();
+  });
+  el.addEventListener('input', (ev) => {
+    if (ev.target.id === 'hEdit') editDraft = ev.target.value;
+    else promField(ev.target);
+  });
   let timer = null;
 
   const api = async (method, url, body) => {
@@ -29,13 +48,18 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       if (want !== sid) return;
       data = j;
     } catch (e) { note = { bad: true, msg: `불러오지 못했습니다 — ${e.message}` }; }
+    // 글을 고치는 중이면 다시 그리지 않는다(커서 · 글자 위치를 지킨다). 데이터는 받아 두고 다음 번에 그린다
+    const a = document.activeElement;
+    if (a && el.contains(a) && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT') && a.type !== 'checkbox') { schedule(); return; }
     draw();
     schedule();
   }
   function schedule() {
     clearTimeout(timer);
     if (sid == null) return;
-    const pending = data && (data.controls.pending_req || (data.summaries[0] && data.summaries[0].status === 'requested'));
+    const p0 = data && data.promotions && data.promotions[0];
+    const pending = data && (data.controls.pending_req || (data.summaries[0] && data.summaries[0].status === 'requested')
+      || (p0 && (p0.status === 'requested' || p0.status === 'writing')));
     timer = setTimeout(load, pending ? 3000 : 15000);
   }
   async function run(label, fn) {
@@ -46,6 +70,12 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
   }
 
   const latest = () => (data ? data.summaries.find((x) => x.status === 'ok') : null);
+  // 마지막 옮기기 — 다른 목록으로 바뀌면 고치던 값은 버린다(id가 다른 항목에 얹히지 않게)
+  const prom = () => {
+    const p = data && data.promotions && data.promotions[0];
+    if ((p ? p.id : null) !== promId) { promId = p ? p.id : null; promDraft = {}; }
+    return p || null;
+  };
 
   // 따로 작업(worktree, 11-05) — 이 세션만의 폴더 · 브랜치. 끝낸 뒤 [합치기](rebase → fast-forward) · [버리기]
   function wtGroup(w, b) {
@@ -102,7 +132,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       </div>`;
     let main;
     if (mode === 'edit' && ok) {
-      main = `<textarea id="hEdit" rows="14" class="hand-edit">${esc(ok.body)}</textarea>
+      main = `<textarea id="hEdit" rows="14" class="hand-edit">${esc(editDraft ?? ok.body)}</textarea>
         <div class="row">${b('edit-save', '고친 본 저장', true, '', '저장 — 원본은 두고 고친 본을 새 판으로 저장합니다.')}${b('cancel', '취소', true, 'ghost')}</div>`;
     } else if (mode === 'spawn') {
       main = preview ? `<div class="small">같은 폴더에 새 세션을 띄우고 아래 글을 첫 입력으로 넣습니다.${preview.cut ? ` <span class="warn">길어서 일부 절을 줄였습니다(전체는 ${esc(preview.full_path)}).</span>` : ''}</div>
@@ -129,6 +159,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
           <label class="small muted" title="요약 통째로(1판) — 켜면 예전처럼 대화 전체를 요약해 넣습니다. 끄면(기본) 짧은 인계 + 새 세션이 직접 읽을 「읽을 곳」입니다."><input type="checkbox" id="hFmt1"${fmt1 ? ' checked' : ''}> 요약 통째로(1판)</label>
         </div></div>
         ${readsLine(c.reads, can.exit)}
+        ${promoteGroup(prom(), !!can.promote, promDraft, data.promotions_error, data.promote_inputs, promIn)}
         <div class="hand-group"><span class="hand-lbl small muted">일시정지</span><div class="hand-btns">
           ${b('stop', '일시정지', can.stop, 'ghost', '일시정지 — 세션을 잠시 멈춥니다(Ctrl+Z). 맥락은 그대로이고 [다시 시작]으로 이어 갑니다.')}
           ${b('resume', '다시 시작', can.resume, 'ghost', '다시 시작 — FOREMAN이 일시정지한 세션을 이어서 돌립니다.')}
@@ -150,7 +181,22 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     ev.preventDefault();
     const act = btn.dataset.act, id = sid;
     const post = (u, body) => api('POST', u, body || {});
-    if (act === 'cancel') { mode = null; preview = null; draw(); return; }
+    if (act === 'cancel') { mode = null; preview = null; editDraft = null; draw(); return; }
+    if (act === 'prom-req') {
+      const pick = el.querySelector('#promIn'), v = pick ? pick.value : 'none';
+      const body = v === 'none' ? { no_input: true } : { summary_id: Number(v) };
+      return run('옮길 것 뽑기', () => post(`/api/sessions/${id}/promote`, body).then((r) => ({ msg: `요청을 보냈습니다. 세션이 목록을 만드는 중입니다${r.summary_id ? `(인계 #${r.summary_id}의 「문서와 다른 지금」도 같이 넣었습니다)` : ''}.` })));
+    }
+    if (act === 'prom-save') {
+      const p = prom(), body = { items: promoteEdits(p.items, promDraft) };
+      return run('고친 것 저장', async () => { await api('PUT', `/api/promotions/${p.id}`, body); promDraft = {}; return { ok: true, msg: '저장했습니다.' }; });
+    }
+    if (act === 'prom-write') {
+      const p = prom(), n = p.items.filter((x) => x.state === 'approved').length;
+      if (promoteEdits(p.items, promDraft).length) { note = { bad: true, msg: '고친 것이 저장되지 않았습니다 — 먼저 [고친 것 저장]을 눌러 주세요.' }; draw(); return; }
+      if (!confirm(`승인한 ${n}개를 세션이 문서에 쓰고 「인계 전 결정 기록」으로 커밋합니다. 브리지가 커밋을 확인합니다. 진행할까요?`)) return;
+      return run('승인한 것 쓰기', () => post(`/api/promotions/${p.id}/write`).then(() => ({ msg: '보냈습니다. 세션이 쓰고 커밋하는 중입니다.' })));
+    }
     const fmt = fmt1 ? 'v1' : 'v2';
     if (act === 'summary') return run('요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'snapshot', mode: 'live', fmt }).then(() => ({ msg: '요청을 보냈습니다. 세션이 요약을 쓰는 중입니다.' })));
     if (act === 'summary-end') return run('인계 요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'live', fmt }).then(() => ({ msg: '요청을 보냈습니다. 요약이 오면 확인한 뒤 [세션 끝내기]를 눌러 주세요.' })));
@@ -160,10 +206,10 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     }
     if (act === 'reads-resend') return run('안 읽은 곳 다시 보내기', () => post(`/api/sessions/${id}/reads/resend`).then((r) => ({ ok: true, msg: `${r.missing.length}곳을 다시 보냈습니다${r.queued ? '(작업이 끝나면 전달됩니다)' : ''}.` })));
     if (act === 'compact') return run('압축 요약에서 만들기', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'compact' }));
-    if (act === 'edit') { mode = 'edit'; draw(); return; }
+    if (act === 'edit') { mode = 'edit'; editDraft = null; draw(); return; }
     if (act === 'edit-save') {
       const body = el.querySelector('#hEdit').value;
-      mode = null;
+      mode = null; editDraft = null;
       return run('고친 본 저장', () => api('PUT', `/api/summaries/${latest().id}`, { body }));
     }
     if (act === 'spawn') {
@@ -227,7 +273,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
   return {
     setSession(id) {
       if (id === sid) return;
-      sid = id; data = null; mode = null; preview = null; note = null;
+      sid = id; data = null; mode = null; preview = null; note = null; editDraft = null; promDraft = {}; promId = null; promIn = null;
       el.innerHTML = '';
       clearTimeout(timer);
       if (id != null) load();
