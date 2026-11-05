@@ -55,7 +55,10 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       <div class="small"><code>${esc(w.branch)}</code> · ${esc(w.base)}보다 커밋 <b>${w.ahead}</b>개 앞${w.behind ? ` · ${esc(w.base)}가 ${w.behind}개 앞서감(합칠 때 rebase)` : ''}${w.dirty.length ? ` · <span class="warn">커밋 안 됨 ${w.dirty.length}</span>` : ''}${w.schema_lock ? ' · <span class="warn">스키마 잠금 보유</span>' : ''}</div>
       ${w.commits.length ? `<details><summary class="small muted">커밋 · 바뀐 파일</summary><pre class="hand-body">${esc(w.commits.join('\n'))}\n\n${esc(w.diffstat.join('\n'))}</pre></details>` : ''}
       ${why ? `<div class="small muted">${esc(why)}</div>` : ''}
+      ${w.preview ? `<div class="small ok">미리보기가 :${w.preview.port}에서 돌고 있습니다.</div>` : ''}
       <div class="hand-btns">
+        ${w.preview_ok ? b('wt-preview', '미리보기 열기', true, '', '미리보기 열기 — 이 브랜치의 화면 파일로 새 탭을 엽니다. 데이터와 버튼은 실제 브리지입니다. 없으면 빈 포트로 띄웁니다.') : ''}
+        ${w.preview ? b('wt-preview-off', '미리보기 닫기', true, 'ghost', '미리보기 닫기 — 미리보기 서버를 끕니다.') : ''}
         ${b('wt-merge', '합치기', !w.live && !w.dirty.length, '', `합치기 — ${w.branch}를 ${w.base} 위로 rebase한 뒤 fast-forward로 합치고 worktree를 지웁니다. 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다.`)}
         ${b('wt-discard', '버리기', !w.live, 'danger', '버리기 — worktree와 브랜치를 지웁니다. 합치지 않은 커밋도 사라집니다.')}
       </div></div></div>`;
@@ -151,6 +154,18 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
           : { ok: true, msg: `새 세션을 띄웠습니다(${where}).${summary_id ? (r.injected ? ' 인계를 넣었습니다.' : ' 인계는 넣지 못했습니다.') : ''}` };
       });
     }
+    if (act === 'wt-preview') {
+      // 팝업 차단을 피하려고 누른 순간에 창을 먼저 연다. 포트가 달라 브라우저 저장소가 따로라 토큰은 #t=로 넘긴다(서버로 안 간다)
+      const win = window.open('about:blank', '_blank');
+      return run('미리보기 열기', async () => {
+        let r;
+        try { r = await post(`/api/sessions/${id}/preview`); } catch (e) { if (win) win.close(); throw e; }
+        const url = `${location.protocol}//${location.hostname}:${r.port}/#t=${encodeURIComponent(store.token || '')}`;
+        if (win) win.location.href = url; else window.open(url, '_blank');
+        return { ok: true, msg: `미리보기를 열었습니다(:${r.port}${r.reused ? ', 이미 돌던 것' : ''}).` };
+      });
+    }
+    if (act === 'wt-preview-off') return run('미리보기 닫기', () => api('DELETE', `/api/sessions/${id}/preview`).then(() => ({ ok: true, msg: '미리보기를 껐습니다.' })));
     if (act === 'wt-merge' || act === 'wt-discard') {
       const w = data.controls.worktree;
       let confirmName = '';

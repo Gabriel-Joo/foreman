@@ -216,6 +216,7 @@ class HandoffManager:
         self.wait_s = WAIT_S
         self._tasks: set[asyncio.Task[Any]] = set()
         self.schema: Any = None             # 스키마 잠금 — 합치기 · 버리기에서 푼다(main.py가 넣는다)
+        self.previews: Any = None           # 미리보기(bridge/previews.py) — 끝내기 · 합치기 · 버리기에서 끈다
 
     # ── 조회 ────────────────────────────────────────────
     async def session(self, sid: int) -> SessionRow | None:
@@ -678,6 +679,8 @@ class HandoffManager:
             res = await deliver(row.cc, "/exit", sessions_dir=self.sessions_dir, transcript=None, command=True)
             gone = await self._wait(lambda: row.cc not in live_sessions(self.sessions_dir), 15)
             cleaned = await self._cleanup_tmux(row.id, t, tname) if gone else False
+            if gone:
+                await self._stop_preview(row)             # 세션을 끝내면 미리보기도(다시 보려면 [미리보기 열기])
             await self._act(row.id, "exit", ls.pid, gone, f"{t.pane} {tname} steps={','.join(res['steps'])}{' tmux 정리' if cleaned else ''}")
             return {"ok": gone, "pane": t.pane, "tmux_closed": cleaned,
                     "note": None if gone else "15초 안에 끝나지 않았습니다. 터미널을 확인해 주세요."}
@@ -726,7 +729,25 @@ class HandoffManager:
         out["live"] = bool(row.cc and row.cc in live_sessions(self.sessions_dir))
         lock = (self.schema.state.get(row.project or "") if self.schema else None) or {}
         out["schema_lock"] = lock.get("wt") == name
+        out["preview"] = await self.previews.get(out["path"]) if self.previews else None
+        out["preview_ok"] = bool(self.previews and row.project in self.previews.cmds)
         return out
+
+    async def preview(self, row: SessionRow, on: bool) -> dict[str, Any]:
+        """[미리보기 열기] · [닫기] — 끝난 세션이어도 worktree가 남아 있으면 연다(합치기 전에 보려고)."""
+        if not self.previews:
+            raise Refused("미리보기가 꺼져 있습니다")
+        repo, name = self._wt_of(row)
+        path = os.path.join(repo, wt.WT_DIR, name)
+        if not on:
+            return {"stopped": await self.previews.stop(path)}
+        return await self.previews.start(row.project, path)
+
+    async def _stop_preview(self, row: SessionRow) -> bool:
+        if not (self.previews and row.cwd):
+            return False
+        repo, name = wt.split(row.cwd)
+        return bool(name) and await self.previews.stop(os.path.join(repo, wt.WT_DIR, name))
 
     async def worktree_act(self, row: SessionRow, act: str) -> dict[str, Any]:
         """merge(사람 승인 — 화면의 확인 창) · discard(커밋까지 버림). 세션이 끝난 뒤에만 — 도는 세션의 바닥을 옮기지 않는다."""
@@ -742,6 +763,8 @@ class HandoffManager:
             raise Refused(f"모르는 조작입니다: {act}")
         if res.get("ok") and self.schema and row.project:
             res["schema_unlocked"] = self.schema.release(row.project, name)
+        if res.get("ok"):
+            res["preview_stopped"] = await self._stop_preview(row)
         await self._act(row.id, f"wt-{act}", None, bool(res.get("ok")),
                         f"{name} {res.get('note') or ''} {','.join(res.get('conflict') or [])}"[:500])
         if self.on_change:
