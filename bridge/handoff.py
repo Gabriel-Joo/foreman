@@ -207,10 +207,11 @@ class SessionRow:
 
 class HandoffManager:
     def __init__(self, engine: AsyncEngine, sessions_dir: str | Path, notifier: Any = None, on_change: Any = None,
-                 tmux_socket: str | None = None, claude_bin: str = "claude") -> None:
+                 tmux_socket: str | None = None, claude_bin: str = "claude", project_of: Any = None) -> None:
         self.engine, self.sessions_dir, self.notifier, self.on_change = engine, sessions_dir, notifier, on_change
         self.socket = tmux_socket or f"{os.environ.get('TMUX_TMPDIR', '/tmp')}/tmux-{os.getuid()}/default"
         self.claude_bin = claude_bin
+        self.project_of = project_of        # cwd → (프로젝트 이름|None, 캐릭터 id) — 조립기와 같은 규칙(새 세션 행을 미리 만들 때)
         self.wait_s = WAIT_S
         self._tasks: set[asyncio.Task[Any]] = set()
 
@@ -508,28 +509,56 @@ class HandoffManager:
 
     # ── 새로 띄우기 ──────────────────────────────────────
     async def spawn(self, row: SessionRow, summary_id: int | None) -> dict[str, Any]:
-        if not row.cwd or not Path(row.cwd).is_dir():
-            raise Refused(f"cwd가 없다: {row.cwd}")
+        """세션 패널의 [새로 띄우기] — 그 세션과 같은 폴더로."""
+        return await self.spawn_new(row.cwd or "", summary_id, None, src_session=row.id)
+
+    async def spawn_new(self, cwd: str, summary_id: int | None, title: str | None,
+                        src_session: int | None = None) -> dict[str, Any]:
+        """+ 버튼 · [새로 띄우기] — tmux 세션을 만들고 그 안에서 claude(resume 아님). 세션 행을 바로 만들어(이름도) 첫 입력 전에도
+        화면에 캐릭터가 선다. 인계 요약을 고르면 입력 칸이 뜬 뒤 넣는다. 폴더 신뢰 창이 뜨면 사람이 터미널에서 답할 때까지
+        뒤에서 기다렸다가(5분) 이어 한다."""
+        cwd = os.path.realpath(os.path.expanduser(cwd or ""))
+        if not cwd or not Path(cwd).is_dir():
+            raise Refused(f"폴더가 없다: {cwd}")
         if summary_id is not None:
             await self.injection(summary_id)              # 넣을 수 있는 요약인지 먼저(안 되면 띄우지도 않는다)
-        base = "cc-" + re.sub(r"[^a-z0-9]+", "-", (row.project or "session").lower()).strip("-")
+        project = self.project_of(cwd)[0] if self.project_of else None
+        base = "cc-" + (re.sub(r"[^a-z0-9]+", "-", (project or Path(cwd).name or "session").lower()).strip("-") or "session")
         existing = set((await tmux(self.socket, "list-sessions", "-F", "#{session_name}")).split())
         name, n = base, 2
         while name in existing:
             name, n = f"{base}-{n}", n + 1
-        await tmux(self.socket, "new-session", "-d", "-s", name, "-c", row.cwd)
+        await tmux(self.socket, "new-session", "-d", "-s", name, "-c", cwd)
         pane = (await tmux(self.socket, "display-message", "-p", "-t", name, "#{pane_id}")).strip()
         await tmux(self.socket, "send-keys", "-t", pane, "-l", self.claude_bin)
         await tmux(self.socket, "send-keys", "-t", pane, "Enter")
-        cc, pid, note = None, None, None
+        out: dict[str, Any] = {"tmux": name, "pane": pane, "cwd": cwd, "project": project, "cc_session_id": None,
+                               "pid": None, "session_id": None, "note": None, "injected": False}
+        cc, pid, trust = await self._wait_ready(pane, 45)
+        if trust:
+            out["note"] = "폴더 신뢰 창이 떴다 — 터미널(tmux " + name + ")에서 답하면 이어서 " + ("인계를 넣는다" if summary_id else "화면에 뜬다")
+            self._spawn_task(self._finish_spawn(name, pane, cwd, summary_id, title, src_session, wait=300))
+            await self._act(src_session, "spawn", None, True, f"{name} {pane} 신뢰 창 대기")
+            return out
+        if cc is None:
+            await self._act(src_session, "spawn", None, False, f"{name} {pane} CC를 못 찾음")
+            out["note"] = "새 CC 세션을 45초 안에 찾지 못했다 — 터미널에서 확인"
+            return out
+        return out | await self._finish_spawn(name, pane, cwd, summary_id, title, src_session, cc=cc, pid=pid)
+
+    async def _wait_ready(self, pane: str, secs: float) -> tuple[str | None, int | None, bool]:
+        """(cc 세션 id, pid, 신뢰 창이 떴나). 입력 칸(❯)이 뜨고 일하지 않을 때까지."""
+        cc, pid = None, None
         loop = asyncio.get_running_loop()
-        end = loop.time() + 45
+        end = loop.time() + secs
         while loop.time() < end:
             await asyncio.sleep(1.0)
-            screen = await tmux(self.socket, "capture-pane", "-p", "-t", pane)
+            try:
+                screen = await tmux(self.socket, "capture-pane", "-p", "-t", pane)
+            except Refused:
+                return None, None, False                  # pane이 사라졌다
             if re.search(r"trust (the files in )?this folder|Do you trust", screen, re.I):
-                note = "폴더 신뢰 창 — 터미널에서 답한 뒤 [넣기]"
-                break
+                return None, None, True
             if cc is None:
                 for ls in live_sessions(self.sessions_dir).values():
                     te = _tmux_env(ls.pid)
@@ -537,22 +566,54 @@ class HandoffManager:
                         cc, pid = ls.session_id, ls.pid
                         break
             if cc and "❯" in screen and _status(self.sessions_dir, pid) != "busy":
-                break
-        await self._act(row.id, "spawn", pid, cc is not None, f"{name} {pane} cc={cc or '-'} {note or ''}")
-        out: dict[str, Any] = {"tmux": name, "pane": pane, "cc_session_id": cc, "pid": pid, "note": note,
-                               "injected": False}
-        if cc is None and not note:
-            out["note"] = "새 CC 세션을 45초 안에 찾지 못했다 — 터미널에서 확인"
-            return out
-        if summary_id is not None and cc and not note:
+                return cc, pid, False
+        return cc, pid, False
+
+    async def _finish_spawn(self, name: str, pane: str, cwd: str, summary_id: int | None, title: str | None,
+                            src_session: int | None, cc: str | None = None, pid: int | None = None,
+                            wait: float = 0) -> dict[str, Any]:
+        if cc is None:                                    # 신뢰 창 — 사람이 답하기를 기다린다
+            loop = asyncio.get_running_loop()
+            end = loop.time() + wait
+            while loop.time() < end and cc is None:
+                cc, pid, trust = await self._wait_ready(pane, 20)
+            if cc is None:
+                await self._act(src_session, "spawn", None, False, f"{name} 신뢰 창에 답이 없어 그만둠")
+                return {"note": "신뢰 창에 답이 없었다"}
+        sid = await self._ensure_row(cc, cwd, title)
+        await self._act(src_session or sid, "spawn", pid, True, f"{name} {pane} cc={cc} 새 세션 행 {sid}")
+        if self.on_change:
+            self.on_change()
+        out: dict[str, Any] = {"cc_session_id": cc, "pid": pid, "session_id": sid}
+        if summary_id is not None:
             await asyncio.sleep(1.0)
-            r = await self.inject(summary_id, cc, row.cwd)
+            r = await self.inject(summary_id, cc, cwd)
             out["injected"] = r["delivered"]
             if not r["delivered"]:
                 out["note"] = "인계 글을 보냈지만 제출이 확인되지 않았다 — 입력 칸을 확인"
             else:
-                self._notify(row, f"새 세션에 인계 넣음 — {name} (세션 {cc[:8]})")
+                row = await self.session(sid)
+                if row:
+                    self._notify(row, f"새 세션에 인계 넣음 — {name} (세션 {cc[:8]})")
         return out
+
+    async def _ensure_row(self, cc: str, cwd: str, title: str | None) -> int:
+        """새 CC 세션의 행 — 첫 줄이 기록되기 전에 만들어 둔다(조립기는 같은 cc_session_id 행을 이어 쓴다)."""
+        char = self.project_of(cwd)[1] if self.project_of else None
+        async with self.engine.begin() as c:
+            r = (await c.execute(text("SELECT id FROM character_session WHERE cc_session_id = :c ORDER BY id DESC LIMIT 1"),
+                                 {"c": cc})).first()
+            if r:
+                if title:
+                    await c.execute(text("UPDATE character_session SET custom_title = :t WHERE id = :i"), {"t": title, "i": r[0]})
+                return r[0]
+            if char is None:
+                char = (await c.execute(text("SELECT id FROM `character` WHERE project_id IS NULL ORDER BY id LIMIT 1"))).scalar()
+            res = await c.execute(text(
+                "INSERT INTO character_session (character_id, type, role, cc_session_id, cwd, wake_reason, attached_at, custom_title) "
+                "VALUES (:ch, 'agent', 'coder', :c, :cwd, 'user', NOW(3), :t)"),
+                {"ch": char, "c": cc, "cwd": cwd, "t": (title or "").strip() or None})
+            return res.lastrowid
 
     # ── 세션 조작 ────────────────────────────────────────
     async def action(self, row: SessionRow, act: str) -> dict[str, Any]:

@@ -1,5 +1,6 @@
 """/api — 세션 인계 · 세션 조작(11-05, docs/11_handoff.md). API 토큰이 필요하다. 로직은 bridge/handoff.py."""
 
+import os
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -29,6 +30,10 @@ class SpawnIn(BaseModel):
 class InjectIn(BaseModel):
     cc_session_id: str = Field(min_length=36, max_length=36)
     cwd: str
+
+
+class TitleIn(BaseModel):
+    title: str | None = Field(default=None, max_length=255)   # 빈 글 · null이면 자동 제목(CC가 붙인 것)으로
 
 
 class ActionIn(BaseModel):
@@ -108,6 +113,73 @@ async def spawn(sid: int, body: SpawnIn, request: Request) -> JSONResponse:
         return JSONResponse(await m.spawn(row, body.summary_id))
     except Refused as e:
         return _refused(e)
+
+
+class NewIn(BaseModel):
+    cwd: str = Field(min_length=1, max_length=1024)
+    summary_id: int | None = None
+    title: str | None = Field(default=None, max_length=255)
+
+
+@router.get("/spawn/options")
+async def spawn_options(request: Request) -> dict[str, Any]:
+    """+ 새 세션 창 — 프로젝트(저장소 폴더) · 최근 쓴 폴더 · 넣을 수 있는 인계 요약(최근)."""
+    from sqlalchemy import text
+    asm = request.app.state.assembler
+    projects = [{"name": name, "repo": repo} for repo, _pid, name, _ch in (asm.projects if asm else [])]
+    async with request.app.state.store.engine.connect() as c:
+        cwds = [r[0] for r in (await c.execute(text(
+            "SELECT cwd FROM character_session WHERE cwd IS NOT NULL AND type = 'agent' "
+            "GROUP BY cwd ORDER BY MAX(id) DESC LIMIT 12"))).all()]
+        sums = (await c.execute(text(
+            "SELECT s.id, s.kind, s.source, s.chars, s.created_at, s.session_id, cs.cwd, "
+            "COALESCE(cs.custom_title, cs.title, LEFT(cs.cc_session_id, 8)), p.name "
+            "FROM summary s JOIN character_session cs ON cs.id = s.session_id JOIN `character` ch ON ch.id = cs.character_id "
+            "LEFT JOIN project p ON p.id = ch.project_id WHERE s.status = 'ok' ORDER BY s.id DESC LIMIT 30"))).all()
+    home = os.path.expanduser("~")
+    return {"home": home, "projects": projects, "recent_cwds": [x for x in cwds if os.path.isdir(x)],
+            "summaries": [{"id": r[0], "kind": r[1], "source": r[2], "chars": r[3],
+                           "created_at": r[4].isoformat() + "Z" if r[4] else None, "session_id": r[5], "cwd": r[6],
+                           "session": r[7], "project": r[8]} for r in sums]}
+
+
+@router.get("/fs/dirs")
+async def list_dirs(path: str = "~", hidden: bool = False) -> dict[str, Any]:
+    """폴더 고르기(떠돌이 세션) — 집 폴더 아래의 하위 폴더 이름만. 파일 · 내용은 보지 않는다."""
+    home = os.path.realpath(os.path.expanduser("~"))
+    p = os.path.realpath(os.path.expanduser(path or "~"))
+    if not (p == home or p.startswith(home + os.sep)) and not p.startswith("/tmp/"):
+        raise HTTPException(400, "집 폴더 · /tmp 아래만 고를 수 있다")
+    if not os.path.isdir(p):
+        raise HTTPException(404, "폴더가 없다")
+    try:
+        names = sorted(e.name for e in os.scandir(p) if e.is_dir(follow_symlinks=False) and (hidden or not e.name.startswith(".")))
+    except PermissionError:
+        names = []
+    return {"path": p, "parent": os.path.dirname(p) if p != home else None, "dirs": names[:300],
+            "is_repo": os.path.isdir(os.path.join(p, ".git"))}
+
+
+@router.post("/spawn")
+async def spawn_new(body: NewIn, request: Request) -> JSONResponse:
+    try:
+        return JSONResponse(await _mgr(request).spawn_new(body.cwd, body.summary_id, body.title))
+    except Refused as e:
+        return _refused(e)
+
+
+@router.put("/sessions/{sid}/title")
+async def set_title(sid: int, body: TitleIn, request: Request) -> dict[str, Any]:
+    """사람이 붙인 세션 이름(11-05) — character_session.custom_title. 비우면 자동 제목으로 되돌린다."""
+    from sqlalchemy import text
+    from bridge.api import dashboard
+    title = (body.title or "").strip() or None
+    async with request.app.state.store.engine.begin() as c:
+        res = await c.execute(text("UPDATE character_session SET custom_title = :t WHERE id = :i"), {"t": title, "i": sid})
+    if not res.rowcount:
+        raise HTTPException(404, "세션 없음")
+    dashboard.invalidate()
+    return {"id": sid, "custom_title": title}
 
 
 @router.post("/sessions/{sid}/action")

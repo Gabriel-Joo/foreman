@@ -93,6 +93,43 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (remember) ls.set(KEY_OPEN, v ? '1' : '0');
     if (onToggle) onToggle(v);
   }
+  // 세션 이름 — 제목을 누르면 그 자리에서 고친다(11-05). Enter 저장 · Esc 취소 · [자동 제목]은 CC가 붙인 제목으로
+  let editingTitle = false;
+  $('pTitle').addEventListener('click', () => {
+    const s = target && target.kind === 'session' && store.state.selected != null ? store.state.sessions.get(store.state.selected) : null;
+    if (!s || editingTitle) return;
+    editingTitle = true;
+    const bar = $('pTitle');
+    const box = document.createElement('span');
+    box.className = 'ptitle-edit';
+    box.innerHTML = `<input id="pTitleIn" maxlength="255" placeholder="${esc(s.title || s.cc_name || s.short)}">
+      <button type="button" class="small" data-t="save">저장</button>${s.custom_title ? '<button type="button" class="ghost small" data-t="auto" title="CC가 붙인 제목으로 되돌린다">자동 제목</button>' : ''}`;
+    bar.hidden = true;
+    bar.after(box);
+    const inp = box.querySelector('input');
+    inp.value = s.custom_title || sessionName(s);
+    inp.focus(); inp.select();
+    const done = async (val) => {
+      if (!editingTitle) return;
+      editingTitle = false;
+      box.remove(); bar.hidden = false;
+      if (val === undefined) return;
+      const v = val === null ? null : val.trim();
+      if (v !== null && v === (s.custom_title || '')) return;
+      if (v !== null && !s.custom_title && v === sessionName(s)) return;      // 그대로 눌렀다
+      try { await store.setTitle(s.id, v || null); } catch (e) { $('pTitle').textContent = `이름 저장 실패 — ${e.message}`; }
+    };
+    inp.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); done(inp.value); }
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); done(undefined); }
+    });
+    box.addEventListener('mousedown', (ev) => { if (ev.target.closest('button')) ev.preventDefault(); });   // 버튼을 눌러도 blur가 먼저 저장하지 않게
+    box.addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-t]');
+      if (b) done(b.dataset.t === 'auto' ? null : inp.value);
+    });
+    inp.addEventListener('blur', () => done(inp.value));
+  });
   $('pWide').onclick = () => setMode(mode === 'wide' ? 'narrow' : 'wide');
   $('pFold').onclick = () => setOpen(false);
   $('pStrip').onclick = () => setOpen(true);
@@ -206,8 +243,11 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const switched = lastSel !== s.id;
     if (switched) { sessionMode(true); last.convo = last.feed = last.meta = last.info = ''; }
     hand.setSession(s.id);
-    $('pTitle').textContent = sessionName(s);
-    $('pTitle').title = sessionName(s);
+    if (!editingTitle) {
+      $('pTitle').textContent = sessionName(s) + (s.custom_title ? '' : ' ');
+      $('pTitle').dataset.tip = `${sessionName(s)} — 눌러서 이름 바꾸기${s.custom_title ? ` (자동 제목: ${s.title || s.cc_name || s.short})` : ''}`;
+      $('pTitle').classList.add('editable');
+    }
     // 제목 아래 한 줄 — 세션 정보 · 토큰은 여기 작게, 자세한 것은 [세션] 탭
     const t = s.tokens || {}, stuck = stuckTurn(s);
     const now = s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target || '', 60))}` : (s.state === 'ACTIVE' ? '생각 중' : '');
@@ -258,6 +298,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   function drawHint(st) {
     lastSel = undefined;
+    $('pTitle').classList.remove('editable'); delete $('pTitle').dataset.tip;
     $('pClear').hidden = !target;
     if (target && target.kind === 'infra') {
       $('pTitle').textContent = target.name;

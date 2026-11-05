@@ -5,6 +5,8 @@
 import { resolveAction, infraAction, groupSubagents, tokenRate } from './theme.js';
 import { loadSprites } from './sprites.js';
 import { createSidePanel } from './opanel.js';
+import { mountNewSession } from './newsession.js';
+import { showTip, hideTip, themeTips, attachDomTips } from './tip.js';
 import { buildGrid, findPath, footprint, RES } from './walk.js';
 
 const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'], ['foreman', '포먼']];
@@ -23,6 +25,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       <span class="brand">FOREMAN</span><span class="muted small">${esc(theme.label)}</span>
       <button id="oMap" class="ghost" title="감독실로(Esc)">${esc((theme.hq && theme.hq.label) || '감독실')}</button>
       <button id="oAll" class="ghost" title="모든 현장을 한눈에">전체</button>
+      <button id="oNew" class="ghost onew" title="새 세션 — 프로젝트(또는 폴더)를 골라 tmux에서 claude를 띄운다">＋ 세션</button>
       <span id="oAlerts" class="oalerts"></span>
       <span class="small muted otheme">테마 ${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장'], ['plain', '도형']].map(([k, v]) => k === theme.name ? `<b>${v}</b>` : `<a href="/?theme=${k}">${v}</a>`).join(' · ')}</span>
       <a class="small" href="/classic" title="카드 목록 화면">클래식</a>
@@ -30,7 +33,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       <button id="oTok" class="ghost" title="API 토큰">토큰</button>
     </header>
     <div class="obody">
-      <div id="oStage" class="ostage"><canvas id="oCv"></canvas><div id="oTip" class="otip" hidden></div>
+      <div id="oStage" class="ostage"><canvas id="oCv"></canvas>
         <div id="oDown" class="odown" role="alert" aria-live="assertive" hidden>
           <b>⚠ 서버 연결 끊김</b> <span id="oDownWhy" class="small"></span> <span id="oDownNext" class="small muted"></span>
           <button id="oRetry" class="small">지금 다시 연결</button>
@@ -110,12 +113,75 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     return zoneSeat(room, go, k) || deskXY;
   }
 
+  // ── 출하 라인 — 배송 담당 한 명(11-05) ─────────────────
+  // 평소엔 라인 맨 앞 자기 자리. 새 빌드가 보이면 그 커밋을 한 세션 캐릭터가 걸어와 일감을 넘기고(6초), 배송 담당이
+  // ① 빌드 → ② 이미지 → ③ 배포 중 지금 단계 앞으로 걸어간다. 끝나면(성공) 배포 앞에 잠깐 있다가 제자리, 실패면 그 단계에 30분.
+  // 한 방에 빌드가 여럿이면 가장 오래된 진행 중인 것을 맡고 나머지는 자기 자리 옆 "대기 n". 방마다 따로.
+  const COURIER = { seen: new Set(), primed: false, handoff: new Map(), timers: new Map() };
+  const HANDOFF_MS = 6000, DONE_LINGER_MS = 25000, FAIL_STAY_MS = 30 * 60000;
+  function chainStage(ch) {
+    const s = ch.stages || {}, j = s.jenkins || {}, a = s.argocd || {};
+    const pushy = /push|harbor|이미지/i.test(j.step || '');
+    if (a.status === 'running' || a.status === 'waiting') return { k: 'argocd', st: a.status, active: true };
+    if (a.status === 'failed') return { k: 'argocd', st: 'failed', end: Date.parse(a.ended_at || ch.at) };
+    if (a.status === 'success') return { k: 'argocd', st: 'success', end: Date.parse(a.ended_at || ch.at) };
+    if (j.status === 'running') return { k: pushy ? 'harbor' : 'jenkins', st: 'running', active: true };
+    if (j.status === 'failed') return { k: pushy ? 'harbor' : 'jenkins', st: 'failed', end: Date.parse(j.ended_at || ch.at) };
+    if (j.status === 'success') {                          // 이미지가 올라갔고 배포를 기다린다 — 30분까지는 진행 중으로 본다
+      const end = Date.parse(j.ended_at || ch.at);
+      return Date.now() - end < FAIL_STAY_MS ? { k: 'harbor', st: 'running', active: true } : { k: 'harbor', st: 'success', end };
+    }
+    return null;
+  }
+  function courierPlan(room, pp) {
+    const chains = (pp && pp.chains) || [], now = Date.now();
+    for (const ch of chains) {
+      if (COURIER.seen.has(ch.head)) continue;
+      COURIER.seen.add(ch.head);
+      const sid = ch.commits && ch.commits[0] && ch.commits[0].session_id;
+      if (COURIER.primed && sid) {                         // 새 빌드 — 커밋한 세션이 일감을 넘기러 온다
+        COURIER.handoff.set(room.name, { sid, until: now + HANDOFF_MS });
+        laterRebuild(room.name, HANDOFF_MS + 50);
+      }
+    }
+    const staged = chains.map((ch) => ({ ch, s: chainStage(ch) })).filter((x) => x.s);
+    const active = staged.filter((x) => x.s.active);
+    const ho = COURIER.handoff.get(room.name);
+    const handing = ho && now < ho.until ? ho : null;
+    let at = null, st = 'none', ch = null;
+    if (active.length) { const x = active[active.length - 1]; at = x.s.k; st = x.s.st; ch = x.ch; }   // chains는 최신이 앞 — 가장 오래된 것
+    else if (staged.length) {
+      const x = staged[0];
+      if (x.s.st === 'failed' && now - x.s.end < FAIL_STAY_MS) { at = x.s.k; st = 'failed'; ch = x.ch; laterRebuild(room.name, FAIL_STAY_MS - (now - x.s.end) + 50); }
+      else if (x.s.st === 'success' && now - x.s.end < DONE_LINGER_MS) { at = x.s.k; st = 'success'; ch = x.ch; laterRebuild(room.name, DONE_LINGER_MS - (now - x.s.end) + 50); }
+    }
+    if (handing) at = null;                                // 일감을 받는 동안은 제자리
+    return { at, st, ch, handing, queue: active.slice(0, -1).map((x) => x.ch) };
+  }
+  const STAGE_KO = { jenkins: '① 빌드', harbor: '② 이미지', argocd: '③ 배포' };
+  function courierNow(p) {
+    if (!p) return '쉬는 중';
+    if (p.handing) return '일감 받는 중';
+    if (!p.at) return '쉬는 중 — 진행 중인 빌드 없음';
+    return `${STAGE_KO[p.at]} ${({ running: '진행 중', waiting: 'Sync 대기', success: '✓ 끝', failed: '✗ 실패' })[p.st] || ''}`;
+  }
+  function laterRebuild(key, ms) {
+    clearTimeout(COURIER.timers.get(key));
+    COURIER.timers.set(key, setTimeout(() => store.touch('grid'), Math.min(ms, 2 ** 31 - 1)));
+  }
+  function courierHome(room) {
+    const z = L.zones.infra;
+    return [room.x + Math.max(0.8, z.jenkins.x - 0.6), room.y + z.y + 2.3];
+  }
+
   function rebuild(st) {
     world = rooms(st);
     const pending = new Map();
     for (const a of st.approvals.values()) if (a.status === 'pending' && a.session_id != null) pending.set(a.session_id, (pending.get(a.session_id) || 0) + 1);
     const seen = new Set();
     for (const room of [...world.rooms, world.lounge]) {
+      const plan = !room.lounge && L.zones.infra ? courierPlan(room, st.pipeline.get(room.name)) : null;
+      room.courier = plan;
       // 세션 — 깨어 있는 것 먼저 자리를 준다. 자리가 모자라면 배지에 "+N"
       const ss = room.sessionIds.map((id) => st.sessions.get(id)).filter(Boolean);
       ss.sort((a, b) => (a.state === 'DORMANT') - (b.state === 'DORMANT') || a.id - b.id);
@@ -134,11 +200,16 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         // 쉬는 모습은 사람마다 다르게(마법학교: 엎드려 자기 · 먹기 · 책) — 플래그가 덮은 동작은 그대로
         if (act.variants && !act.flag) act = { ...act, anim: act.variants[s.id % act.variants.length] };
         const desk = seat(room, k);
-        const [tx, ty, face] = spot(room, act.go, desk, k);
+        let [tx, ty, face] = spot(room, act.go, desk, k);
+        if (plan && plan.handing && plan.handing.sid === s.id) {      // 새 빌드 — 배송 담당에게 일감을 넘기러 간다
+          const [hx, hy] = courierHome(room);
+          tx = hx + 1.3; ty = hy; face = 'left';
+          act = { ...act, anim: 'idle', handoff: true };
+        }
         const key = 's:' + s.id;
         const char = CH.pool ? CH.pool[s.id % CH.pool.length] : null;
         upsert(key, { kind: 'session', room: room.name, tx, ty, face, act, desk, s, hue: hueOf(s.id), char, role: roleOf(s),
-                      name: s.title || s.cc_name || ('세션 ' + s.id) });
+                      name: s.custom_title || s.title || s.cc_name || ('세션 ' + s.id) });
         seen.add(key);
         // 서브에이전트 — 부모의 축소판. 10명까지 보이고 나머지는 +N(10c). 새로 생기면 원탁방 마법진에서 소환, 끝나면 연기
         const n = s.subagents_running || 0;
@@ -168,23 +239,27 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         upsert(key, { kind: 'foreman', room: room.name, tx: room.x + f.seat[0], ty: room.y + f.seat[1], face: 'down',
                       act: { anim: 'stand' }, hue: 45, name: '포먼', char: CH.foreman || null, role: 'foreman' });
         seen.add(key);
-        // 인프라 — 자리(가구)는 늘 있고, 캐릭터는 첫 웹훅으로 등장한 것만(README 2.2 · 8단계)
+        // 출하 라인 — 단계 이름표의 상태는 배송 담당이 맡은 빌드(없으면 마지막 빌드) 것.
+        // 단계마다 서 있던 Jenkins · Harbor · ArgoCD 캐릭터 대신 배송 담당 한 명이 돌아다닌다(11-05 사용자 요청)
         const pp = st.pipeline.get(room.name);
         room.pipe = pp || null;
-        const chain = pp && pp.chains && pp.chains[0];
+        const chain = (plan && plan.ch) || (pp && pp.chains && pp.chains[0]);
         const stages = (chain && chain.stages) || {};
-        const present = new Set(((pp && pp.infra) || []).filter((c) => !c.retired).map((c) => c.kind));
         for (const kind of ['jenkins', 'harbor', 'argocd']) {
           let status = stages[kind] && stages[kind].status;
           if (kind === 'harbor' && !status && stages.jenkins) status = stages.jenkins.status === 'failed' && stages.jenkins.step !== '빌드·push' ? 'success' : stages.jenkins.status;
           room['st_' + kind] = status || 'none';
-          if (!present.has(kind) && !(kind === 'harbor' && present.has('jenkins'))) continue;
-          const z = L.zones.infra;
-          const key = `i:${room.name}:${kind}`;
-          upsert(key, { kind: 'infra', infra: kind, room: room.name, tx: room.x + z[kind].x + 3, ty: room.y + z.y + 2, face: 'down',
-                        char: (CH.infra && CH.infra[kind]) || null,
-                        act: infraAction(theme, status), hue: { jenkins: 0, harbor: 200, argocd: 25 }[kind],
-                        name: { jenkins: 'Jenkins', harbor: 'Harbor', argocd: 'ArgoCD' }[kind] });
+        }
+        if (plan) {
+          const z = L.zones.infra, key = `c:${room.name}`;
+          const [hx, hy] = courierHome(room);
+          const at = plan.at;
+          const tx = at ? room.x + z[at].x + 3 : hx, ty = at ? room.y + z.y + 2 : hy;
+          const c = theme.courier || {};
+          upsert(key, { kind: 'courier', room: room.name, tx, ty, face: 'down',
+                        char: c.char || (CH.infra && (CH.infra.courier || CH.infra.jenkins)) || null,
+                        act: plan.handing ? { anim: 'idle', status: 'handoff' } : at ? infraAction(theme, plan.st) : { anim: 'idle', status: 'idle' },
+                        hue: 30, name: c.name || '배송 담당', plan });
           seen.add(key);
         }
       }
@@ -218,7 +293,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     aim();
     header(st);
     const sa = selected && actors.get(selected);
-    if (sa && sa.kind === 'infra') info();          // 인프라 상태가 바뀌었으면 패널 제목 줄도 바꾼다(세션은 패널이 store를 직접 본다)
+    if (sa && (sa.kind === 'infra' || sa.kind === 'courier')) info();          // 인프라 상태가 바뀌었으면 패널 제목 줄도 바꾼다(세션은 패널이 store를 직접 본다)
+    COURIER.primed = true;                        // 첫 그리기 뒤부터 새로 보이는 빌드만 "일감 넘기기"
     if (store.state.selected == null && sa && (sa.kind === 'session' || sa.kind === 'mini')) selected = null;   // 패널에서 ✕
   }
 
@@ -414,7 +490,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       drawHQCards();
       const hqName = (theme.hq && theme.hq.label) || '감독실';
       drawTag(world.hq.x + 0.3, world.hq.y + 2.2, hqName, true, null, null,
-        `<div class="otip-h">${esc(hqName)}</div><b>감독실</b><div>현장(프로젝트)마다 지금 상태를 한눈에 — 현황판의 칸을 누르면 그 현장으로 들어간다</div>`);
+        `<div class="tip-h">${esc(hqName)}</div><div class="tip-b">감독실</div><div>현장(프로젝트)마다 지금 상태를 한눈에 — 현황판의 칸을 누르면 그 현장으로 들어간다</div>`);
       for (const a of list) if (a.room === '_hq') drawName(a);
     } else if (zoomedIn) {
       const room = roomByView();
@@ -496,7 +572,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.fillStyle = act.fx === 'frozen' ? '#dff3ff' : '#f1c9a5';
     ctx.beginPath(); ctx.arc(x, y + sp.head, sp.head, 0, Math.PI * 2); ctx.fill();
     if (a.kind === 'foreman') { ctx.fillStyle = '#f2c14e'; ctx.fillRect(x - 5, y - 1, 10, 2); }       // 포먼 표시(모자 띠)
-    if (a.kind === 'infra') { ctx.fillStyle = '#ff9f1c'; ctx.fillRect(x - 6, y - 1, 12, 3); }           // 안전모
+    if (a.kind === 'infra' || a.kind === 'courier') { ctx.fillStyle = '#ff9f1c'; ctx.fillRect(x - 6, y - 1, 12, 3); }           // 안전모
     // 손 · 소품
     ctx.fillStyle = body;
     if (anim === 'type' && !a.moving) { const j = Math.sin(a.phase * 3) > 0 ? 1 : 0; ctx.fillRect(x - 6, y + 9 + j, 3, 2); ctx.fillRect(x + 3, y + 9 + (1 - j), 3, 2); }
@@ -877,6 +953,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
 
   // ── 구역 이름표(화면 좌표 — 줌과 상관없이 작고 선명하게) ─────
   const TAG = (theme.tags && theme.tags.style) || { bg: '#000000cc', fg: '#ffffff', border: '#ffffff55', font: '600 10px system-ui, sans-serif', kind: 'sign' };
+  themeTips(theme.tags && theme.tags.style);     // 툴팁 색 · 글꼴도 이름표를 따른다(양피지 · 사인판 · 안전 표지판). 구조 · 크기 · 지연은 같다
+  attachDomTips();
   // (wx, wy) 월드 타일 → 그 자리에 이름표 하나. big: 감독실 이름처럼 조금 크게. dot: 앞에 붙는 상태 색
   function drawTag(wx, wy, text, big = false, dot = null, sub = null, tip = null) {
     const box = drawTagBox(wx, wy, text, big, dot, sub);
@@ -914,7 +992,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.font = font; ctx.fillStyle = TAG.fg; ctx.fillText(text, cx, y + h / 2 + 0.5);
     if (sub) {                                                       // 상태 — 이름표 바탕 위에서 읽히게 글자색, 앞에 구분선
       ctx.fillStyle = TAG.fg; ctx.globalAlpha = 0.35; ctx.fillRect(cx + tw + 4, y + 3, 1, h - 6); ctx.globalAlpha = 1;
-      ctx.font = TAG.font.replace(/^(italic )?\d*\s*/, 'bold '); ctx.fillStyle = TAG.fg; ctx.fillText(sub, cx + tw + 8, y + h / 2 + 0.5);
+      // 실패는 빨강 글자(✗), 그 밖은 이름표 글자색 — 성공 ✓ 은 앞의 초록 점이 이미 말한다
+      ctx.font = TAG.font.replace(/^(italic )?\d*\s*/, 'bold '); ctx.fillStyle = sub.startsWith('✗') ? '#d23b3b' : TAG.fg;
+      ctx.fillText(sub, cx + tw + 8, y + h / 2 + 0.5);
     }
     return { x, y, w, h };
   }
@@ -937,7 +1017,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     harbor:  { what: '이미지 저장', tools: 'Harbor', desc: '빌드된 컨테이너 이미지가 올라가 보관되는 곳' },
     argocd:  { what: '배포', tools: 'ArgoCD', desc: '저장된 새 이미지가 클러스터(k8s)에 배포되는 곳. 수동 Sync 앱은 "Sync 대기"로 멈춰 있다' },
   };
-  const tipOf = (r) => r && `<b>${r.what}</b>${r.tools ? ` <span class="otip-t">${r.tools}</span>` : ''}<div>${r.desc}</div>`;
+  const tipOf = (r) => r && `<div class="tip-b">${r.what}${r.tools ? ` <span class="tip-t">${r.tools}</span>` : ''}</div><div>${r.desc}</div>`;
   let HITS = [];                     // 이번 프레임에 그린 이름표 자리(화면 좌표) — 마우스를 올리면 설명
   function drawZoneTags(r) {
     const names = (theme.tags && theme.tags.zones) || {};
@@ -946,20 +1026,32 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       if (!z || z.x == null) continue;
       const [label, dx, dy] = Array.isArray(v) ? v : [v, 0, 0];      // ["아치 창", dx, dy] — 옆 구역 이름표와 겹치면 비켜 둔다
       const role = ZONE_ROLE[((theme.tags && theme.tags.roles) || {})[key]];
-      drawTag(r.x + z.x + 0.1 + (dx || 0), r.y + z.y + 0.08 + (dy || 0), label, false, null, null, role ? `<div class="otip-h">${esc(label)}</div>${tipOf(role)}` : null);
+      drawTag(r.x + z.x + 0.1 + (dx || 0), r.y + z.y + 0.08 + (dy || 0), label, false, null, null, role ? `<div class="tip-h">${esc(label)}</div>${tipOf(role)}` : null);
     }
     // 출하 라인 — 이름 · 세 단계(번호 · 무엇 · 지금 상태) · 단계 사이 화살표
     const iz = L.zones.infra, it = (theme.tags && theme.tags.infra) || {};
     if (!iz) return;
     if (it.title) drawTag(r.x + 1.1, r.y + iz.y - 0.6, it.title, false, null, null,
-      `<div class="otip-h">${esc(it.title)}</div><b>출하 라인</b><div>커밋 → ① 빌드(Jenkins) → ② 이미지 저장(Harbor) → ③ 배포(ArgoCD). 단계마다 지금 상태가 이름표 오른쪽에 붙는다</div>`);
+      `<div class="tip-h">${esc(it.title)}</div><div class="tip-b">출하 라인</div><div>커밋 → ① 빌드(Jenkins) → ② 이미지 저장(Harbor) → ③ 배포(ArgoCD). 담당 한 명이 빌드를 따라 단계 앞으로 걸어간다 — 서 있는 자리가 지금 단계</div>`);
+    // 한 방에 빌드가 여럿 — 담당은 가장 오래된 것을 맡고, 나머지는 담당 자리 옆에 줄 선다
+    const q = r.courier && r.courier.queue;
+    if (q && q.length) {
+      const [hx, hy] = courierHome(r);
+      drawTag(hx - 0.6, hy - 2.6, `대기 ${q.length}`, false, P.warn, null,
+        `<div class="tip-h">출하 대기</div><div class="tip-b">빌드 ${q.length}개가 줄 서 있다</div>${q.map((ch) => {
+          const c = ch.commits && ch.commits[0];
+          return `<div class="tip-t">${esc(ch.short)} ${esc(short((c && c.subject) || '', 60))}</div>`;
+        }).join('')}`);
+    }
     const kinds = ['jenkins', 'harbor', 'argocd'];
     kinds.forEach((kind, i) => {
       const st = r['st_' + kind] || 'none';
-      const col = { running: P.act, success: P.ok, failed: P.bad, waiting: P.warn, none: P.muted }[st] || P.muted;
+      // 평소(기록 없음)엔 아무 표시도 없다 — "기록 없음"이라고 쓰면 뭔가 잘못된 것처럼 보였다(11-05). 성공 ✓ · 실패 ✗ 빨강
+      const col = { running: P.act, success: P.ok, failed: P.bad, waiting: P.warn }[st] || null;
+      const mark = { running: '진행 중', success: '✓', failed: '✗ 실패', waiting: 'Sync 대기' }[st] || null;
       const label = `${'①②③'[i]} ${it[kind] || (iz[kind] && iz[kind].label) || kind}`;
-      drawTag(r.x + iz[kind].x + 0.1, r.y + iz.y + 0.25, label, false, col, STATUS_KO[st] || st,
-        `<div class="otip-h">${esc(label)}</div>${tipOf(INFRA_ROLE[kind])}<div class="otip-s">지금: ${esc(STATUS_KO[st] || st)}</div>`);
+      drawTag(r.x + iz[kind].x + 0.1, r.y + iz.y + 0.25, label, false, col, mark,
+        `<div class="tip-h">${esc(label)}</div>${tipOf(INFRA_ROLE[kind])}${st !== 'none' ? `<div class="tip-s">마지막 빌드: ${esc(STATUS_KO[st] || st)}</div>` : ''}`);
       if (i < kinds.length - 1) {                                     // 다음 단계로 화살표
         const [ax, ay] = toScreen((r.x + iz[kind].x + 4.7) * T, (r.y + iz.y + 1.5) * T);
         const [bx] = toScreen((r.x + iz[kinds[i + 1]].x - 0.1) * T, 0);
@@ -1242,6 +1334,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     } else if (a.kind === 'infra') {
       const r = world.rooms.find((q) => q.name === a.room), st = r ? r['st_' + a.infra] : 'none';
       panel.show({ kind: 'infra', room: a.room, infra: a.infra, name: a.name, status: STATUS_KO[st] || st });
+    } else if (a.kind === 'courier') {
+      panel.show({ kind: 'infra', room: a.room, infra: 'courier', name: a.name, status: courierNow(a.plan) });
     } else if (a.kind === 'foreman') {
       panel.show({ kind: 'foreman', room: a.room === '_hq' ? null : a.room });
     }
@@ -1304,44 +1398,49 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (a.kind === 'session' && a.s) {
       const s = a.s;
       const now = s.state === 'ACTIVE' ? (s.activity ? `${esc(s.activity.tool)} ${esc(short(s.activity.target || '', 70))}` : '생각 중') : '';
-      return `<div class="otip-h">${esc(a.name)}</div><b>${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[s.state] || s.state)}</b>${
-        a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}${now ? `<div>${now}</div>` : ''}${
+      return `<div class="tip-h">${esc(a.name)}</div><div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[s.state] || s.state)}${
+        a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
         s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎</div>` : ''}${
-        a.act && a.act.flag ? `<div class="otip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝 신호 없는 턴' }[a.act.flag] || a.act.flag)}</div>` : ''}
-        <div class="otip-t">누르면 대화 · 입력</div>`;
+        a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝 신호 없는 턴' }[a.act.flag] || a.act.flag)}</div>` : ''}
+        <div class="tip-t">누르면 대화 · 입력</div>`;
     }
-    if (a.kind === 'mini') return `<div class="otip-h">서브에이전트</div><div>${esc(a.name)}</div><div class="otip-t">누르면 부모 세션</div>`;
+    if (a.kind === 'mini') return `<div class="tip-h">서브에이전트</div><div>${esc(a.name)}</div><div class="tip-t">누르면 부모 세션</div>`;
     if (a.kind === 'infra') {
       const r = world.rooms.find((q) => q.name === a.room), st = r ? r['st_' + a.infra] : 'none';
-      return `<div class="otip-h">${esc(a.name)}</div>${tipOf(INFRA_ROLE[a.infra])}<div class="otip-s">지금: ${esc(STATUS_KO[st] || st)}</div>`;
+      return `<div class="tip-h">${esc(a.name)}</div>${tipOf(INFRA_ROLE[a.infra])}<div class="tip-s">지금: ${esc(STATUS_KO[st] || st)}</div>`;
     }
-    if (a.kind === 'foreman') return `<div class="otip-h">포먼</div>${tipOf(ZONE_ROLE.hq)}<div class="otip-t">자기 세션은 아직 없다(11단계)</div>`;
-    return `<div class="otip-h">${esc(a.name || '')}</div>`;
+    if (a.kind === 'courier') {
+      const ch = a.plan && a.plan.ch, c = ch && ch.commits && ch.commits[0];
+      return `<div class="tip-h">${esc(a.name)}</div><div class="tip-b">출하 라인 담당</div><div>커밋을 받아 ① 빌드 → ② 이미지 → ③ 배포로 옮긴다. 지금 있는 자리가 지금 단계다</div>
+        <div class="tip-s">${esc(courierNow(a.plan))}</div>${c ? `<div class="tip-t">${esc(c.short)} ${esc(short(c.subject || '', 70))}</div>` : ''}${
+        a.plan && a.plan.queue.length ? `<div class="tip-t">대기 ${a.plan.queue.length}개</div>` : ''}<div class="tip-t">누르면 파이프라인</div>`;
+    }
+    if (a.kind === 'foreman') return `<div class="tip-h">포먼</div>${tipOf(ZONE_ROLE.hq)}<div class="tip-t">자기 세션은 아직 없다(11단계)</div>`;
+    return `<div class="tip-h">${esc(a.name || '')}</div>`;
   }
-  const tipEl = $('oTip');
+  // 툴팁은 화면 전체가 하나(tip.js) — 이름표 · 캐릭터 · 버튼이 같은 모양 · 같은 지연으로 뜬다(11-05)
   cv.addEventListener('mousemove', (ev) => {
     const r = cv.getBoundingClientRect();
     const px = ev.clientX - r.left, py = ev.clientY - r.top;
     const hit = HITS.find((h) => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h);
-    let html = hit ? hit.tip : null, onActor = false;
+    let html = hit ? hit.tip : null, key = hit ? 'tag:' + hit.x + ':' + hit.y : null, onActor = false;
     if (!html && view !== 'map') {
       const [wx, wy] = toWorld(px, py);
       const a = actorAt(wx, wy);
-      if (a) { html = actorTip(a); onActor = true; }
+      if (a) { html = actorTip(a); key = 'actor:' + a.key; onActor = true; }
     }
     cv.style.cursor = onActor ? 'pointer' : '';
-    if (!html) { tipEl.hidden = true; return; }
-    if (tipEl.innerHTML !== html) tipEl.innerHTML = html;
-    tipEl.hidden = false;
-    const sw = cv.clientWidth, tw = tipEl.offsetWidth, th = tipEl.offsetHeight;
-    tipEl.style.left = Math.min(px + 14, sw - tw - 6) + 'px';
-    tipEl.style.top = (py + 18 + th > cv.clientHeight ? py - th - 10 : py + 18) + 'px';
+    if (!html) { hideTip(); return; }
+    showTip(html, ev.clientX, ev.clientY, key);
   });
-  cv.addEventListener('mouseleave', () => { tipEl.hidden = true; cv.style.cursor = ''; });
+  cv.addEventListener('mouseleave', () => { hideTip(); cv.style.cursor = ''; });
   // 현장을 옮겨도 고른 세션 · 패널은 그대로 둔다
   function go(v) { view = v; aim(); header(store.state); }
   $('oMap').onclick = () => go('hq');
   $('oAll').onclick = () => go('map');
+  // + 새 세션(11-05) — 지금 보고 있는 현장을 기본 프로젝트로. 띄우면 그 세션을 골라 패널에 연다
+  const newSession = mountNewSession(store, { onCreated: (sid) => setTimeout(() => openSession(sid), 300) });
+  $('oNew').onclick = () => newSession.open(view !== 'hq' && view !== 'map' && view !== '_lounge' ? view : null);
   window.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Escape') return;
     if (ev.target.closest && ev.target.closest('input, textarea, select')) return;   // 입력 칸에서 친 Esc는 칸이 처리

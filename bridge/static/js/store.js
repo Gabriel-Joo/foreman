@@ -357,6 +357,16 @@ export class Store {
       if (this.state.selected === id) this.touch('panel');
     } catch { /* 화면 편의 — 못 받아도 실시간 줄은 쌓인다 */ }
   }
+  // 사람이 붙인 세션 이름(11-05) — null이면 자동 제목(CC가 붙인 것)으로
+  async setTitle(id, title) {
+    const r = await fetch(`/api/sessions/${id}/title`, { method: 'PUT', headers: this.headers(true), body: JSON.stringify({ title }) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    const s = this.state.sessions.get(id);
+    if (s) s.custom_title = j.custom_title;
+    this.touch('grid', 'panel');
+    return j;
+  }
   async eventDetail(eid) {
     const r = await fetch(`/api/events/${eid}/detail`, { headers: this.headers() });
     const j = await r.json().catch(() => ({}));

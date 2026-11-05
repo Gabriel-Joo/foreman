@@ -9,11 +9,12 @@ export const ORIGIN_LABEL = { human: '나', task_notification: '완료 알림', 
 const END_LABEL = { stop: '끝남', stop_failure: 'API 오류', interrupted: '중단', session_end: '세션 종료', process_lost: '프로세스 사라짐', merged: '다음 입력에 합쳐짐', no_signal: '신호 없음', abandoned: '끝 신호 없이 버려짐' };
 
 import { stuckTurn } from './store.js';
+import { renderMarkdown } from './md.js';
 
 const ROLE_LABEL = { coder: '코더', foreman: '포먼', cicd: 'CI/CD', inspector: '점검', helper: '도우미', infra: '인프라' };
 
 // 세션을 알아보는 이름 — CC가 붙인 제목 → CC 세션 이름 → 짧은 id. 캐릭터 이름은 아래 줄에(한 캐릭터에 세션 여럿)
-export function sessionName(s) { return s.title || s.cc_name || s.short; }
+export function sessionName(s) { return s.custom_title || s.title || s.cc_name || s.short; }   // 사람이 붙인 이름이 먼저(11-05)
 export function sessionSub(s) {
   return [s.character, ROLE_LABEL[s.role] || s.role, s.short, s.tmux_pane].filter(Boolean).join(' · ');
 }
@@ -76,17 +77,8 @@ export function unwrapAgent(s) {
 }
 
 // 가벼운 마크다운 — 터미널처럼 굵게 · 제목 · 코드가 보이게. 먼저 이스케이프하고 그다음 바꾼다(HTML을 통과시키지 않는다)
-export function mdLite(s) {
-  const out = [], parts = String(s || '').split(/^```[^\n]*\n?/m);
-  parts.forEach((p, i) => {
-    if (i % 2) { out.push(`<pre class="md-code">${esc(p.replace(/\n$/, ''))}</pre>`); return; }
-    out.push(esc(p)
-      .replace(/^(#{1,4}) (.+)$/gm, (_, h, t) => `<b class="md-h md-h${h.length}">${t}</b>`)
-      .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
-      .replace(/`([^`\n]+)`/g, '<code class="md-i">$1</code>'));
-  });
-  return out.join('');
-}
+// 11-05 — 표 · 목록 · 들여 쓴 코드블록을 못 읽어 깨지던 것을 블록 단위 파서(md.js)로 바꿈
+export function mdLite(s) { return renderMarkdown(s); }
 
 // 긴 글은 앞부분만 보이고 [전체 보기] — 패널 안에 스크롤을 또 만들지 않는다. 펼친 것은 다시 그려도 펼친 채로
 const OPEN_MSG = new Set();
