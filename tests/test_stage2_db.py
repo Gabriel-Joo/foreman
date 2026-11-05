@@ -1129,3 +1129,63 @@ async def test_losscheck_run_list_recover_and_promote_input(env, monkeypatch, tm
         await c.execute(T("INSERT INTO loss_check (session_id, status) VALUES (:s, 'running')"), {"s": sid})
     assert await chk.recover() == 1
     assert (await chk.list(sid))[0]["status"] == "failed"
+
+
+async def test_notion_publish_update_unchanged_archive_and_scope(env, tmp_path):
+    """Notion 게시(12c, 11-06) — main에 커밋된 원본만, 처음은 「회고」 아래 새 페이지, 같은 내용은 건너뜀, 바뀌면 같은 페이지 갈아 끼우기,
+    내리기는 우리가 만든 페이지만 · 루트 아래일 때만. Notion에서 지워졌으면 새로 만든다."""
+    import subprocess
+    from bridge import notion as nt
+    from tests.test_notion import FakeNotion
+    s, _main = env
+    engine = make_engine(s)
+    ENGINES.append(engine)
+    repo = tmp_path / "repo"
+    (repo / "log").mkdir(parents=True)
+    g = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout.strip()  # noqa: E731
+    g("init", "-q", "-b", "main"), g("config", "user.email", "t@t"), g("config", "user.name", "t")
+    f = repo / "log" / "retro_20261105_foreman.md"
+    f.write_text("# 11-05 회고\n\n- 하나 [c:abc1234] [t:9]\n  - 둘\n", encoding="utf-8")
+    g("add", "."), g("commit", "-qm", "retro")
+    fake = FakeNotion()
+    pub = nt.Publisher(engine, fake, "root", str(repo))
+    path = "log/retro_20261105_foreman.md"
+
+    r1 = await pub.publish(path, "11-06 05:00")
+    assert r1["action"] == "created" and fake.pages[r1["page_id"]]["title"] == "11-05 회고"
+    sec = fake.pages[r1["page_id"]]["parent"]
+    assert fake.pages[sec]["title"] == "회고" and fake.pages[sec]["parent"] == "root"        # 루트 > 회고 > 글
+    top = fake.blocks[r1["page_id"]]
+    assert top[0]["type"] == "callout" and "사본" in nt.plain(top[0]["callout"]["rich_text"])  # 맨 위 안내
+    assert len(fake.blocks[top[1]["_id"]]) == 1                                              # 중첩 목록은 만든 뒤 붙였다
+    assert "9" not in nt.plain(top[1]["bulleted_list_item"]["rich_text"])                    # 턴 번호 뺐다
+
+    assert (await pub.publish(path))["action"] == "unchanged"                                # 같은 내용은 건너뛴다
+    f.write_text("# 11-05 회고(고침)\n\n- 바뀐 줄\n", encoding="utf-8")
+    assert (await pub.publish(path))["action"] == "unchanged"                                # 커밋 전 — main 원본만 본다
+    lst = await pub.list()
+    assert lst[0]["path"] == path and lst[0]["changed"] is False
+    g("commit", "-qam", "retro 고침")
+    assert (await pub.list())[0]["changed"] is True                                         # 원본이 바뀜
+    r3 = await pub.publish(path)
+    assert r3["action"] == "updated" and r3["page_id"] == r1["page_id"]                      # 같은 페이지 · 같은 URL
+    assert fake.pages[r1["page_id"]]["title"] == "11-05 회고(고침)"
+    assert [b["type"] for b in fake.blocks[r1["page_id"]]] == ["callout", "bulleted_list_item"]   # 옛 블록은 지웠다
+    assert len([c for c in fake.calls if c[0] == "create" and c[2] == "회고"]) == 1           # 묶음 페이지는 한 번만
+
+    # 범위 — 우리가 만들지 않은 글은 내리지 않는다
+    with pytest.raises(nt.OutOfScope):
+        await pub.archive("log/retro_없음.md")
+    # 사람이 Notion에서 그 페이지를 범위 밖으로 옮겼다 — 내리지 않는다
+    fake.pages[r1["page_id"]]["parent"] = "other"
+    with pytest.raises(nt.OutOfScope):
+        await pub.archive(path)
+    assert ("archive", r1["page_id"]) not in fake.calls
+    fake.pages[r1["page_id"]]["parent"] = sec
+    assert (await pub.archive(path))["action"] == "archived" and fake.pages[r1["page_id"]]["archived"]
+    # 휴지통으로 간 뒤 다시 게시하면 새 페이지
+    g("commit", "-q", "--allow-empty", "-m", "빈")
+    r4 = await pub.publish(path)
+    assert r4["action"] == "created" and r4["page_id"] != r1["page_id"]
+    with pytest.raises(FileNotFoundError):
+        await pub.publish("log/retro_커밋안됨.md")

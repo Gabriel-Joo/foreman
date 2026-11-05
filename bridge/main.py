@@ -15,6 +15,8 @@ from fastapi.staticfiles import StaticFiles
 
 from bridge.api import approvals as approvals_api, dashboard as dashboard_api, debug, health, hooks, sessions, ws
 from bridge.api import foreman as foreman_api, handoff as handoff_api, terminal as terminal_api, webhooks
+from bridge.api import publish as publish_api
+from bridge.notion import NotionClient, Publisher, load_token
 from bridge.foreman import ForemanDispatcher
 from bridge.handoff import HandoffManager
 from bridge.promote import Promoter
@@ -182,6 +184,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.warning("잃은 것 점검 %d개가 돌던 중이었다 — failed로 바꿨다(브리지 재시작)", n_)
         except Exception as e:  # noqa: BLE001 — 0021 전이면 표가 없다. 브리지는 뜬다
             log.warning("잃은 것 점검 정리 못 함: %s", type(e).__name__)
+        # 11-06 — Notion 게시(12c). 토큰(.env.notion)이 없으면 꺼 두고 사유를 보인다. 토큰 값은 찍지 않는다
+        app.state.publisher, app.state.publisher_off = None, None
+        root_dir = Path(__file__).resolve().parent.parent
+        try:
+            import tomllib
+            ncfg = tomllib.loads((root_dir / "config" / "notion.toml").read_text(encoding="utf-8")).get("foreman") or {}
+            tok = load_token(root_dir / ".env.notion")
+            if not ncfg.get("root"):
+                app.state.publisher_off = "config/notion.toml에 루트 페이지가 없습니다"
+            elif not tok:
+                app.state.publisher_off = "Notion 토큰이 없습니다 — .env.notion에 NOTION_TOKEN을 넣고 브리지를 다시 띄워 주세요"
+            else:
+                app.state.publisher = Publisher(engine, NotionClient(tok), ncfg["root"], str(root_dir),
+                                                gh=ncfg.get("github") or "https://github.com/Gabriel-Joo/foreman")
+        except OSError as e:
+            app.state.publisher_off = f"Notion 설정을 읽지 못했습니다({type(e).__name__})"
         # 11-05 — 스키마 잠금(세션 둘 이상이 한 프로젝트에 붙을 때 DB 스키마는 한 세션만). 합치기 · 버리기에서 푼다
         sd = s.sessions_dir
         app.state.schema_lock = SchemaLock(Path(__file__).resolve().parent.parent / "config" / "worktree.toml",
@@ -240,6 +258,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(hooks.router)
     app.include_router(sessions.router)
     app.include_router(handoff_api.router)
+    app.include_router(publish_api.router)
     app.include_router(foreman_api.router)
     app.include_router(approvals_api.router)
     app.include_router(dashboard_api.router)
