@@ -180,6 +180,9 @@ body { --term-h:0px; }
 .mdl.f-opus { border-color:#c08a2a; color:#c08a2a; }
 .mdl.f-sonnet { border-color:#3f7fd0; color:#3f7fd0; }
 .mdl.f-haiku { border-color:#2e9e6a; color:#2e9e6a; }
+/* 인계 2판 — 읽을 곳 확인(11-05) */
+.hand-ptrs { border:1px solid var(--line); border-radius:6px; padding:4px 8px; margin:4px 0; display:flex; flex-direction:column; gap:2px; }
+.hand-ptrs code { font-size:11px; }
 /* 압축 알림 띠(11-05) — 머리줄 아래 */
 .pcmp { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:4px 8px; margin:2px 0; border-radius:6px; border:1px solid var(--warn); }
 .pcmp.late { border-color:var(--bad); }

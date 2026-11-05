@@ -21,6 +21,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from bridge import pointers as ptr
 from bridge import worktree as wt
 from bridge.inject import Refused, _status, _tmux_env, deliver, resolve, tmux
 from bridge.liveness import _proc_stat, live_sessions
@@ -32,7 +33,8 @@ REQ_HEAD = "[FOREMAN 인계 요청 r={r}]"
 IN_HEAD = "[FOREMAN 인계 r={r}]"
 REQ_RE = re.compile(r"\[FOREMAN 인계 요청 r=([0-9a-f]{6})\]")
 IN_RE = re.compile(r"\[FOREMAN 인계 r=([0-9a-f]{6})\]")
-MAX_BODY = 4000          # 요약을 시킬 때의 분량
+MAX_BODY = 4000          # 요약을 시킬 때의 분량(1판)
+MAX_BODY_V2 = 2500       # 2판 — 문서에 없는 것만
 MAX_INJECT = 8000        # 새 세션에 넣는 글 상한
 WAIT_S = 600.0           # 요약이 돌아오기를 기다리는 시간
 HANDOFF_DIR = Path.home() / ".foreman" / "handoff"
@@ -64,6 +66,41 @@ REQUEST_PROMPT = """{head}
 (문서 · 로그 · 메모리 경로)
 <<<END r={r}>>>"""
 
+# 인계 2판(11-05, docs/11_handoff_v2.md) — 요약은 짧게 · 문서에 없는 것만, 나머지는 「읽을 곳」으로 넘긴다.
+# 근거: 압축 손실 점검 두 번 — 잃은 지시의 대부분은 대화에서만 정한 것이었고, 문서에 적힌 것은 읽으면 되살아났다
+REQUEST_PROMPT_V2 = """{head}
+이 세션을 새 세션으로 넘기려고 한다. 새 세션은 이 대화를 모른다. 인계 문서는 **짧게, 문서에 없는 것만** 쓰고,
+나머지는 새 세션이 직접 읽을 「읽을 곳」으로 넘긴다(요약은 기억에서 나와 빠지지만 문서는 남아 있다).
+
+- 파일을 고치거나 커밋 · 배포하지 마라. 정확히 쓰려고 git status · git log · 문서 읽기는 해도 된다
+- 이 대화에서 정했는데 아직 어느 문서에도 없는 결정 · 금지 · 기준이 있으면 "문서와 다른 지금"에 적고, 끝에 "문서로 옮길 것"으로 따로 알려라
+- 「읽을 곳」은 이 일을 이어 가는 데 꼭 읽어야 할 곳만(보통 3~8개). 한 줄에 하나, 이 모양 그대로:
+  - `경로` — 왜(무엇에 필요한지)        예: - `docs/11_handoff.md` — 인계 흐름 전체
+  - `경로:시작-끝` — 왜                  예: - `docs/01a_catalog_sources.md:40-60` — 스펙 출처 우선순위
+  - `경로` 「절 이름」 — 왜              예: - `CLAUDE.md` 「작업 규칙」 — 금지 항목
+  경로는 저장소 맨 위 기준. 실제로 있는 파일 · 줄 · 절만(브리지가 확인하고, 틀리면 넣지 않는다)
+- {max_body}자 안. 아래 형식 그대로, 마지막 응답에 한 번만 써라(표지 줄 두 개를 글자 그대로):
+
+<<<FOREMAN-HANDOFF r={r}>>>
+## 지금 상태
+(어디까지 왔나 — 브랜치 · 마지막 커밋 해시 · 돌고 있는 것. 5~8줄)
+## 다음 할 일
+(순서대로 3~5개)
+## 걸려 있는 것
+(승인 대기 · 서브에이전트 · 타이머 · 커밋 안 한 변경 · 사람이 하기로 한 것. 없으면 "없음")
+## 문서와 다른 지금
+(문서에는 X인데 지금은 Y — 문서를 아직 못 고친 것만. 없으면 "없음")
+## 읽을 곳
+- `경로` — 왜
+<<<END r={r}>>>"""
+
+INJECT_PROMPT_V2 = """{head} 직전 세션 {src}의 인계다. 너는 이 일을 이어받는 새 세션이다.
+**먼저 아래 「읽을 곳」을 모두 Read로 읽어라**(줄 범위가 있으면 그 범위, 절 이름이 있으면 그 절). 다 읽은 뒤
+(1) 각 문서에서 이 일에 걸리는 규칙 · 결정을 2줄씩 (2) 「문서와 다른 지금」을 어떻게 다룰지를 말하고
+(3) 「다음 할 일」을 시작하기 전에 사용자의 확인을 기다려라. 읽었는지는 브리지가 확인한다.
+
+{body}"""
+
 INJECT_PROMPT = """{head} 직전 세션 {src}의 인계 요약이다. 너는 이 일을 이어받는 새 세션이다.
 읽고 나서 (1) 이해한 것을 5줄 안으로 말하고 (2) "다음 할 일"을 시작하기 전에 사용자의 확인을 기다려라.
 
@@ -74,7 +111,9 @@ def new_req() -> str:
     return secrets.token_hex(3)
 
 
-def request_prompt(req: str) -> str:
+def request_prompt(req: str, fmt: str = "v2") -> str:
+    if fmt == "v2":
+        return REQUEST_PROMPT_V2.format(head=REQ_HEAD.format(r=req), r=req, max_body=MAX_BODY_V2)
     return REQUEST_PROMPT.format(head=REQ_HEAD.format(r=req), r=req, max_body=MAX_BODY)
 
 
@@ -147,12 +186,21 @@ def fit_body(body: str, limit: int = MAX_INJECT, full_path: str | None = None) -
 
 
 def inject_prompt(req: str, src: str, body: str) -> str:
-    return INJECT_PROMPT.format(head=IN_HEAD.format(r=req), src=src, body=body)
+    tpl = INJECT_PROMPT_V2 if ptr.is_v2(body) else INJECT_PROMPT
+    return tpl.format(head=IN_HEAD.format(r=req), src=src, body=body)
 
 
 def transcript_path(cwd: str, cc_session_id: str) -> str:
     """CC가 쓰는 자리 — ~/.claude/projects/<cwd의 영숫자 밖 글자를 -로>/<id>.jsonl(실측: '/' '_' → '-')."""
     return str(Path.home() / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9-]", "-", cwd) / f"{cc_session_id}.jsonl")
+
+
+async def repo_root(cwd: str | None) -> str | None:
+    """그 폴더가 속한 git 저장소 맨 위(worktree면 그 worktree). 저장소가 아니면 cwd 그대로."""
+    if not cwd or not Path(cwd).is_dir():
+        return None
+    top = await ptr._git(cwd, "rev-parse", "--show-toplevel")
+    return top or cwd
 
 
 def compact_body(path: str | Path) -> str | None:
@@ -294,6 +342,8 @@ class HandoffManager:
             out["worktree"] = await self.worktree(row)
         except Refused as e:
             out["worktree"] = {"error": str(e)}
+        # 2판 인계를 받고 시작한 세션 — 「읽을 곳」을 실제로 읽었나(11-05)
+        out["reads"] = await self.handoff_reads(row)
         return out
 
     async def _pending(self, sid: int) -> str | None:
@@ -361,7 +411,7 @@ class HandoffManager:
         t.add_done_callback(done)
 
     # ── 요약 받기 ────────────────────────────────────────
-    async def request_live(self, row: SessionRow, kind: str = "snapshot") -> dict[str, Any]:
+    async def request_live(self, row: SessionRow, kind: str = "snapshot", fmt: str = "v2") -> dict[str, Any]:
         """살아 있는 tmux 세션에 요약을 시킨다. 보내고 바로 돌아오고, 응답은 뒤에서 기다린다."""
         if not row.cc:
             raise Refused("CC 세션 ID가 없습니다")
@@ -374,7 +424,7 @@ class HandoffManager:
         path = row.transcript or transcript_path(row.cwd or "", row.cc)
         offset = os.path.getsize(path) if os.path.exists(path) else 0
         try:
-            res = await deliver(row.cc, request_prompt(req), sessions_dir=self.sessions_dir, transcript=path)
+            res = await deliver(row.cc, request_prompt(req, fmt), sessions_dir=self.sessions_dir, transcript=path)
         except Refused as e:
             await self._finish(sid, "failed", None, None, f"보내지 못함: {e}")
             raise
@@ -423,7 +473,7 @@ class HandoffManager:
             r = (await c.execute(text("SELECT ended_at FROM turn WHERE id = :i"), {"i": turn_id})).first()
         return bool(r and r[0])
 
-    async def request_headless(self, row: SessionRow, kind: str = "handoff") -> dict[str, Any]:
+    async def request_headless(self, row: SessionRow, kind: str = "handoff", fmt: str = "v2") -> dict[str, Any]:
         """죽은 세션 — claude -p --resume <id>로 같은 컨텍스트를 불러 그 세션이 쓴다(fork 아님). 버튼을 누를 때만."""
         if not row.cc or not row.cwd:
             raise Refused("CC 세션 ID나 작업 폴더 정보가 없습니다")
@@ -434,14 +484,14 @@ class HandoffManager:
         if not Path(row.cwd).is_dir():
             raise Refused(f"작업 폴더가 없습니다: {row.cwd}")
         sid, req = await self._new_summary(row, kind, "self_headless", "requested")
-        self._spawn_task(self._run_headless(row, sid, req))
+        self._spawn_task(self._run_headless(row, sid, req, fmt))
         return {"summary_id": sid, "req": req, "status": "requested"}
 
-    async def _run_headless(self, row: SessionRow, sid: int, req: str) -> None:
+    async def _run_headless(self, row: SessionRow, sid: int, req: str, fmt: str = "v2") -> None:
         env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "TMUX_PANE")}
         try:
             p = await asyncio.create_subprocess_exec(
-                self.claude_bin, "-p", "--resume", row.cc or "", "--output-format", "text", request_prompt(req),
+                self.claude_bin, "-p", "--resume", row.cc or "", "--output-format", "text", request_prompt(req, fmt),
                 cwd=row.cwd, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE, env=env)
             try:
@@ -495,8 +545,53 @@ class HandoffManager:
         src = f"{(row.cc or '')[:8]}" + (f"({row.title})" if row and row.title else "")
         full = HANDOFF_DIR / f"{s['req']}.md"
         body, cut = fit_body(s["body"], MAX_INJECT, str(full))
-        return {"summary_id": summary_id, "text": inject_prompt(s["req"], src, body), "cut": cut,
-                "full_path": str(full) if cut else None, "chars": len(s["body"])}
+        out = {"summary_id": summary_id, "text": inject_prompt(s["req"], src, body), "cut": cut,
+               "full_path": str(full) if cut else None, "chars": len(s["body"]), "v2": ptr.is_v2(s["body"]),
+               "pointers": [], "blocked": None}
+        if out["v2"]:
+            # 2판 — 읽을 곳을 기계로 확인한다. 틀린 곳(없는 파일 · 줄 · 절)이 있으면 넣지 않는다(요약을 고치면 된다)
+            repo = await repo_root(row.cwd if row else None)
+            ps = await ptr.check(ptr.parse(s["body"]), repo or "")
+            out["pointers"] = ptr.as_dicts(ps)
+            bad = [p for p in ps if not p.ok]
+            if not ps:
+                out["blocked"] = "「읽을 곳」이 비었습니다 — 요약을 고쳐 읽을 곳을 넣어 주세요"
+            elif bad:
+                out["blocked"] = "읽을 곳이 틀렸습니다 — " + "; ".join(f"{p.path or p.raw}: {p.problem}" for p in bad)
+        return out
+
+    async def ensure_injectable(self, summary_id: int) -> dict[str, Any]:
+        inj = await self.injection(summary_id)
+        if inj["blocked"]:
+            raise Refused(inj["blocked"])
+        return inj
+
+    async def handoff_reads(self, row: SessionRow) -> dict[str, Any] | None:
+        """이 세션이 2판 인계를 받고 시작했으면 — 「읽을 곳」을 실제로 Read했나(도구 이벤트로 맞댄다)."""
+        if not row.cc:
+            return None
+        async with self.engine.connect() as c:
+            s = (await c.execute(text(
+                "SELECT id, body FROM summary WHERE injected_cc_session = :c ORDER BY injected_at DESC LIMIT 1"),
+                {"c": row.cc})).first()
+            if not s or not ptr.is_v2(s[1]):
+                return None
+            targets = [r[0] for r in (await c.execute(text(
+                "SELECT target FROM event WHERE session_id = :i AND type = 'tool_use' AND tool = 'Read'"),
+                {"i": row.id})).all()]
+        repo = await repo_root(row.cwd)
+        return {"summary_id": s[0]} | ptr.reads(ptr.parse(s[1]), repo or "", targets)
+
+    async def resend_reads(self, row: SessionRow) -> dict[str, Any]:
+        """안 읽은 곳만 다시 — 그 세션에 "아직 읽지 않은 곳"을 보낸다."""
+        r = await self.handoff_reads(row)
+        if not r or not r["missing"]:
+            raise Refused("다시 보낼 곳이 없습니다(2판 인계를 받은 세션이 아니거나 모두 읽었습니다)")
+        msg = ("[FOREMAN 인계] 「읽을 곳」 중 아직 읽지 않은 곳이 있다. 지금 Read로 읽고, 각각 이 일에 걸리는 규칙 · 결정을 "
+               "2줄씩 말해라:\n" + "\n".join(f"- `{p}`" for p in r["missing"]))
+        res = await deliver(row.cc or "", msg, sessions_dir=self.sessions_dir,
+                            transcript=row.transcript or transcript_path(row.cwd or "", row.cc or ""))
+        return {"delivered": bool(res.get("delivered")), "queued": res.get("queued"), "missing": r["missing"]}
 
     def _write_full(self, req: str, body: str) -> None:
         HANDOFF_DIR.mkdir(parents=True, exist_ok=True)
@@ -505,7 +600,7 @@ class HandoffManager:
         p.chmod(0o600)
 
     async def inject(self, summary_id: int, cc_session_id: str, cwd: str) -> dict[str, Any]:
-        inj = await self.injection(summary_id)
+        inj = await self.ensure_injectable(summary_id)
         s = await self.summary(summary_id)
         if inj["cut"]:
             self._write_full(s["req"], s["body"])
@@ -543,7 +638,7 @@ class HandoffManager:
             raise Refused(f"고를 수 없는 모델입니다: {model}")
         model = self.models.pick(model, role)
         if summary_id is not None:
-            await self.injection(summary_id)              # 넣을 수 있는 요약인지 먼저(안 되면 띄우지도 않는다)
+            await self.ensure_injectable(summary_id)      # 넣을 수 있는 요약인지 먼저(안 되면 띄우지도 않는다 — 2판은 읽을 곳 확인까지)
         project = self.project_of(cwd)[0] if self.project_of else None
         base = "cc-" + (re.sub(r"[^a-z0-9]+", "-", (project or Path(cwd).name or "session").lower()).strip("-") or "session")
         existing = set((await tmux(self.socket, "list-sessions", "-F", "#{session_name}")).split())
@@ -632,7 +727,7 @@ class HandoffManager:
             # 포먼이 쓴 첫 글(+ 고른 인계 요약) — 사람이 계획 카드에서 확인 · 고친 글 그대로
             body = first_prompt
             if summary_id is not None:
-                inj = await self.injection(summary_id)
+                inj = await self.ensure_injectable(summary_id)
                 s = await self.summary(summary_id)
                 if inj["cut"]:
                     self._write_full(s["req"], s["body"])

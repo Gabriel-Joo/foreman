@@ -17,6 +17,7 @@ router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
 class SummaryIn(BaseModel):
     kind: Literal["snapshot", "handoff"] = "snapshot"
     mode: Literal["live", "headless", "compact"] = "live"
+    fmt: Literal["v1", "v2"] = "v2"   # v2 = 짧은 인계 + 읽을 곳(11-05, docs/11_handoff_v2.md), v1 = 요약 통째로
 
 
 class EditIn(BaseModel):
@@ -71,9 +72,9 @@ async def make_summary(sid: int, body: SummaryIn, request: Request) -> JSONRespo
     row = await _row(m, sid)
     try:
         if body.mode == "live":
-            r = await m.request_live(row, body.kind)
+            r = await m.request_live(row, body.kind, body.fmt)
         elif body.mode == "headless":
-            r = await m.request_headless(row, body.kind)
+            r = await m.request_headless(row, body.kind, body.fmt)
         else:
             r = await m.from_compact(row, body.kind)
     except Refused as e:
@@ -93,6 +94,16 @@ async def edit_summary(summary_id: int, body: EditIn, request: Request) -> JSONR
 async def injection_preview(summary_id: int, request: Request) -> JSONResponse:
     try:
         return JSONResponse(await _mgr(request).injection(summary_id))
+    except Refused as e:
+        return _refused(e)
+
+
+@router.post("/sessions/{sid}/reads/resend")
+async def resend_reads(sid: int, request: Request) -> JSONResponse:
+    """2판 인계를 받은 세션이 「읽을 곳」 중 안 읽은 곳만 다시 보낸다(11-05)."""
+    m = _mgr(request)
+    try:
+        return JSONResponse(await m.resend_reads(await _row(m, sid)), status_code=202)
     except Refused as e:
         return _refused(e)
 
@@ -143,7 +154,9 @@ async def spawn_options(request: Request) -> dict[str, Any]:
             "SELECT s.id, s.kind, s.source, s.chars, s.created_at, s.session_id, cs.cwd, "
             "COALESCE(cs.custom_title, cs.title, LEFT(cs.cc_session_id, 8)), p.name, LEFT(s.body, 800) "
             "FROM summary s JOIN character_session cs ON cs.id = s.session_id JOIN `character` ch ON ch.id = cs.character_id "
-            "LEFT JOIN project p ON p.id = ch.project_id WHERE s.status = 'ok' ORDER BY s.id DESC LIMIT 30"))).all()
+            # 숨긴 세션(시험 등)의 요약은 고르는 칸에 내지 않는다 — 11-05 '푸른 고래' 같은 혼동
+            "LEFT JOIN project p ON p.id = ch.project_id WHERE s.status = 'ok' AND cs.hidden_at IS NULL "
+            "ORDER BY s.id DESC LIMIT 30"))).all()
     home = os.path.expanduser("~")
     return {"home": home, "projects": projects, "recent_cwds": [x for x in cwds if os.path.isdir(x)],
             "models": _mgr(request).models.view(),     # 고를 수 있는 모델 · 역할 기본값(config/models.toml)
