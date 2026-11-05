@@ -50,6 +50,9 @@
     "style": { "bg": "#ead9ae", "fg": "#3b2a1c", "border": "#8a6640", "font": "italic 600 11px Georgia, 'Noto Serif KR', serif", "kind": "parchment" },
     "zones": { "foreman_office": "교장실", "library": "서고", "desks": "작업 책상", "potion": "물약실", "test": "시약대",
                "circle": "원탁방", "hall": "대강당", "window": ["아치 창", -0.3, 1.3], "seal": "봉인대" },
+    "_roles": "구역 → 하는 일(설명은 테마 공통, office.js ZONE_ROLE). 이름표에 마우스를 올리면 뜬다",
+    "roles": { "foreman_office": "hq", "library": "read", "desks": "edit", "potion": "bash", "test": "test",
+               "circle": "sub", "hall": "idle", "window": "web", "seal": "git" },
     "infra": { "title": "봉인실", "jenkins": "봉인 문양 · Jenkins 빌드", "harbor": "보물창고 · Harbor 이미지", "argocd": "전송 아치 · ArgoCD 배포" }
   },
 

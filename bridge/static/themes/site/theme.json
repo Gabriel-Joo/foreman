@@ -51,6 +51,9 @@
     "style": { "bg": "#f2c14e", "fg": "#141414", "border": "#141414", "font": "bold 10px ui-monospace, 'D2Coding', monospace", "kind": "hazard" },
     "zones": { "foreman_office": "감독 컨테이너", "store": "자재창고", "desks": "작업대", "tools": "공구실", "test": "검사대",
                "plans": "도면실", "camp": "함바", "gate": "셔터", "ship": "출하 접수대" },
+    "_roles": "구역 → 하는 일(설명은 테마 공통, office.js ZONE_ROLE). 이름표에 마우스를 올리면 뜬다",
+    "roles": { "foreman_office": "hq", "store": "read", "desks": "edit", "tools": "bash", "test": "test",
+               "plans": "sub", "camp": "idle", "gate": "web", "ship": "git" },
     "infra": { "title": "출하장", "jenkins": "검수대 · Jenkins 빌드", "harbor": "팔레트 · Harbor 이미지", "argocd": "트럭 · ArgoCD 배포" }
   },
 

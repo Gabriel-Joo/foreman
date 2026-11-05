@@ -30,7 +30,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       <button id="oTok" class="ghost" title="API 토큰">토큰</button>
     </header>
     <div class="obody">
-      <div id="oStage" class="ostage"><canvas id="oCv"></canvas>
+      <div id="oStage" class="ostage"><canvas id="oCv"></canvas><div id="oTip" class="otip" hidden></div>
         <div id="oDown" class="odown" role="alert" aria-live="assertive" hidden>
           <b>⚠ 서버 연결 끊김</b> <span id="oDownWhy" class="small"></span> <span id="oDownNext" class="small muted"></span>
           <button id="oRetry" class="small">지금 다시 연결</button>
@@ -407,11 +407,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     drawWalkDebug();
     // 글자는 화면 좌표로(선명하게)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    HITS = [];
     const zoomedIn = view !== 'map';
     for (const r of [...world.rooms, world.lounge]) drawBadge(r, zoomedIn);
     if (view === 'hq') {
       drawHQCards();
-      drawTag(world.hq.x + 0.3, world.hq.y + 2.2, (theme.hq && theme.hq.label) || '감독실', true);
+      const hqName = (theme.hq && theme.hq.label) || '감독실';
+      drawTag(world.hq.x + 0.3, world.hq.y + 2.2, hqName, true, null, null,
+        `<div class="otip-h">${esc(hqName)}</div><b>감독실</b><div>현장(프로젝트)마다 지금 상태를 한눈에 — 현황판의 칸을 누르면 그 현장으로 들어간다</div>`);
       for (const a of list) if (a.room === '_hq') drawName(a);
     } else if (zoomedIn) {
       const room = roomByView();
@@ -875,7 +878,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // ── 구역 이름표(화면 좌표 — 줌과 상관없이 작고 선명하게) ─────
   const TAG = (theme.tags && theme.tags.style) || { bg: '#000000cc', fg: '#ffffff', border: '#ffffff55', font: '600 10px system-ui, sans-serif', kind: 'sign' };
   // (wx, wy) 월드 타일 → 그 자리에 이름표 하나. big: 감독실 이름처럼 조금 크게. dot: 앞에 붙는 상태 색
-  function drawTag(wx, wy, text, big = false, dot = null, sub = null) {
+  function drawTag(wx, wy, text, big = false, dot = null, sub = null, tip = null) {
+    const box = drawTagBox(wx, wy, text, big, dot, sub);
+    if (tip) HITS.push({ ...box, tip });
+    return box;
+  }
+  function drawTagBox(wx, wy, text, big, dot, sub) {
     const [sx, sy] = toScreen(wx * T, wy * T);
     const font = big ? TAG.font.replace(/(\d+)px/, (m, n) => `${+n + 3}px`) : TAG.font;
     ctx.font = font; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -912,24 +920,46 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
 
   const STATUS_KO = { running: '진행 중', success: '성공', failed: '실패', waiting: 'Sync 대기', none: '기록 없음' };
+  // 구역이 하는 일 — 테마마다 이름(비유)은 달라도 설명은 같다(theme.tags.roles: 구역 → 아래 열쇠). 이름표에 마우스를 올리면 뜬다(11-05)
+  const ZONE_ROLE = {
+    hq:   { what: '감독 자리', tools: '', desc: '포먼 자리. 감독실에서는 현장마다의 상태를 현황판으로 본다' },
+    read: { what: '파일 읽기', tools: 'Read · Grep · Glob', desc: '코드 · 문서를 읽거나 찾을 때 여기로 온다' },
+    edit: { what: '코드 수정', tools: 'Edit · Write', desc: '파일을 고치거나 새로 쓸 때. 할 일 정리(TodoWrite)와 그 밖의 도구도 여기서' },
+    bash: { what: '명령 실행', tools: 'Bash', desc: '셸 명령을 돌릴 때(테스트 · git은 따로)' },
+    test: { what: '테스트 실행', tools: 'Bash — pytest · node --test · jest · ruff · mypy …', desc: '테스트 · 린트 · 문법 검사를 돌릴 때' },
+    git:  { what: 'git 작업', tools: 'Bash — git …', desc: '커밋 · 푸시 · 이력 보기 등 git 명령' },
+    web:  { what: '웹 검색', tools: 'WebSearch · WebFetch · MCP', desc: '밖에서 정보를 찾거나 페이지를 열 때, 외부 도구(MCP)를 쓸 때' },
+    sub:  { what: '보조 호출', tools: 'Agent(서브에이전트)', desc: '서브에이전트를 띄우는 곳. 작은 일꾼이 여기서 생겨나 부모 둘레에서 일한다' },
+    idle: { what: '대기 중', tools: '', desc: '할 일이 없을 때 쉬는 곳. 입력을 받으면 다시 자리로 간다' },
+  };
+  const INFRA_ROLE = {
+    jenkins: { what: '빌드', tools: 'Jenkins', desc: '푸시한 커밋이 빌드 · 테스트되는 곳. 실패하면 여기서 멈춘다' },
+    harbor:  { what: '이미지 저장', tools: 'Harbor', desc: '빌드된 컨테이너 이미지가 올라가 보관되는 곳' },
+    argocd:  { what: '배포', tools: 'ArgoCD', desc: '저장된 새 이미지가 클러스터(k8s)에 배포되는 곳. 수동 Sync 앱은 "Sync 대기"로 멈춰 있다' },
+  };
+  const tipOf = (r) => r && `<b>${r.what}</b>${r.tools ? ` <span class="otip-t">${r.tools}</span>` : ''}<div>${r.desc}</div>`;
+  let HITS = [];                     // 이번 프레임에 그린 이름표 자리(화면 좌표) — 마우스를 올리면 설명
   function drawZoneTags(r) {
     const names = (theme.tags && theme.tags.zones) || {};
     for (const [key, v] of Object.entries(names)) {
       const z = L.zones[key];
       if (!z || z.x == null) continue;
       const [label, dx, dy] = Array.isArray(v) ? v : [v, 0, 0];      // ["아치 창", dx, dy] — 옆 구역 이름표와 겹치면 비켜 둔다
-      drawTag(r.x + z.x + 0.1 + (dx || 0), r.y + z.y + 0.08 + (dy || 0), label);
+      const role = ZONE_ROLE[((theme.tags && theme.tags.roles) || {})[key]];
+      drawTag(r.x + z.x + 0.1 + (dx || 0), r.y + z.y + 0.08 + (dy || 0), label, false, null, null, role ? `<div class="otip-h">${esc(label)}</div>${tipOf(role)}` : null);
     }
     // 출하 라인 — 이름 · 세 단계(번호 · 무엇 · 지금 상태) · 단계 사이 화살표
     const iz = L.zones.infra, it = (theme.tags && theme.tags.infra) || {};
     if (!iz) return;
-    if (it.title) drawTag(r.x + 1.1, r.y + iz.y - 0.6, it.title);
+    if (it.title) drawTag(r.x + 1.1, r.y + iz.y - 0.6, it.title, false, null, null,
+      `<div class="otip-h">${esc(it.title)}</div><b>출하 라인</b><div>커밋 → ① 빌드(Jenkins) → ② 이미지 저장(Harbor) → ③ 배포(ArgoCD). 단계마다 지금 상태가 이름표 오른쪽에 붙는다</div>`);
     const kinds = ['jenkins', 'harbor', 'argocd'];
     kinds.forEach((kind, i) => {
       const st = r['st_' + kind] || 'none';
       const col = { running: P.act, success: P.ok, failed: P.bad, waiting: P.warn, none: P.muted }[st] || P.muted;
       const label = `${'①②③'[i]} ${it[kind] || (iz[kind] && iz[kind].label) || kind}`;
-      drawTag(r.x + iz[kind].x + 0.1, r.y + iz.y + 0.25, label, false, col, STATUS_KO[st] || st);
+      drawTag(r.x + iz[kind].x + 0.1, r.y + iz.y + 0.25, label, false, col, STATUS_KO[st] || st,
+        `<div class="otip-h">${esc(label)}</div>${tipOf(INFRA_ROLE[kind])}<div class="otip-s">지금: ${esc(STATUS_KO[st] || st)}</div>`);
       if (i < kinds.length - 1) {                                     // 다음 단계로 화살표
         const [ax, ay] = toScreen((r.x + iz[kind].x + 4.7) * T, (r.y + iz.y + 1.5) * T);
         const [bx] = toScreen((r.x + iz[kinds[i + 1]].x - 0.1) * T, 0);
@@ -1252,6 +1282,62 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     selected = best;
     info();
   });
+  // ── 마우스를 올리면(11-05) — 이름표는 그 구역이 하는 일, 캐릭터는 이름 · 지금 하는 일. 누르지 않아도 보인다 ──
+  function actorAt(wx, wy) {
+    let best = null, bd = 1.4 * T;
+    for (const [k, a] of actors) {
+      if (view !== 'map' && a.room !== (view === '_lounge' ? null : view) && !(view === 'hq' && a.room === '_hq')) continue;
+      const d = Math.hypot(a.x * T - wx, a.y * T - 8 - wy);
+      if (d < bd) { bd = d; best = a; }
+    }
+    return best;
+  }
+  function actorTip(a) {
+    const roleKey = (r) => ((theme.tags && theme.tags.roles) || {})[r];
+    const zoneName = (go) => {                     // 지금 가 있는 구역의 이름표 · 하는 일
+      const key = go === 'desk' ? 'desks' : go;
+      const v = ((theme.tags && theme.tags.zones) || {})[key];
+      const nm = Array.isArray(v) ? v[0] : v;
+      const role = ZONE_ROLE[roleKey(key)];
+      return nm ? `${esc(nm)}${role ? ` — ${esc(role.what)}` : ''}` : '';
+    };
+    if (a.kind === 'session' && a.s) {
+      const s = a.s;
+      const now = s.state === 'ACTIVE' ? (s.activity ? `${esc(s.activity.tool)} ${esc(short(s.activity.target || '', 70))}` : '생각 중') : '';
+      return `<div class="otip-h">${esc(a.name)}</div><b>${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[s.state] || s.state)}</b>${
+        a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}${now ? `<div>${now}</div>` : ''}${
+        s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎</div>` : ''}${
+        a.act && a.act.flag ? `<div class="otip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝 신호 없는 턴' }[a.act.flag] || a.act.flag)}</div>` : ''}
+        <div class="otip-t">누르면 대화 · 입력</div>`;
+    }
+    if (a.kind === 'mini') return `<div class="otip-h">서브에이전트</div><div>${esc(a.name)}</div><div class="otip-t">누르면 부모 세션</div>`;
+    if (a.kind === 'infra') {
+      const r = world.rooms.find((q) => q.name === a.room), st = r ? r['st_' + a.infra] : 'none';
+      return `<div class="otip-h">${esc(a.name)}</div>${tipOf(INFRA_ROLE[a.infra])}<div class="otip-s">지금: ${esc(STATUS_KO[st] || st)}</div>`;
+    }
+    if (a.kind === 'foreman') return `<div class="otip-h">포먼</div>${tipOf(ZONE_ROLE.hq)}<div class="otip-t">자기 세션은 아직 없다(11단계)</div>`;
+    return `<div class="otip-h">${esc(a.name || '')}</div>`;
+  }
+  const tipEl = $('oTip');
+  cv.addEventListener('mousemove', (ev) => {
+    const r = cv.getBoundingClientRect();
+    const px = ev.clientX - r.left, py = ev.clientY - r.top;
+    const hit = HITS.find((h) => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h);
+    let html = hit ? hit.tip : null, onActor = false;
+    if (!html && view !== 'map') {
+      const [wx, wy] = toWorld(px, py);
+      const a = actorAt(wx, wy);
+      if (a) { html = actorTip(a); onActor = true; }
+    }
+    cv.style.cursor = onActor ? 'pointer' : '';
+    if (!html) { tipEl.hidden = true; return; }
+    if (tipEl.innerHTML !== html) tipEl.innerHTML = html;
+    tipEl.hidden = false;
+    const sw = cv.clientWidth, tw = tipEl.offsetWidth, th = tipEl.offsetHeight;
+    tipEl.style.left = Math.min(px + 14, sw - tw - 6) + 'px';
+    tipEl.style.top = (py + 18 + th > cv.clientHeight ? py - th - 10 : py + 18) + 'px';
+  });
+  cv.addEventListener('mouseleave', () => { tipEl.hidden = true; cv.style.cursor = ''; });
   // 현장을 옮겨도 고른 세션 · 패널은 그대로 둔다
   function go(v) { view = v; aim(); header(store.state); }
   $('oMap').onclick = () => go('hq');

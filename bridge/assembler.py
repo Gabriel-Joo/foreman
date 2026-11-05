@@ -47,6 +47,7 @@ INTERRUPT = "[Request interrupted by user"
 AGENT_MSG = "Another Claude session sent a message"
 TEXT_CLIP = 2000      # tool_use 입력의 문자열 하나
 PREVIEW = 500         # 큐 · 알림 미리보기
+QUEUE_TEXT = 20_000   # 작업 중에 보낸 입력(대기열) — 턴이 되지 않고 열린 턴에 끼어든다. 대화 패널이 이것을 내 글로 보여 준다(11-05)
 ERR_PREVIEW = 300     # 오류 tool_result 앞부분
 FROM_RE = re.compile(r'<agent-message from="([^"]+)"')
 TAG_RE = re.compile(r"<(task-id|tool-use-id|status|summary|subagent_tokens|tool_uses|duration_ms)>(.*?)</\1>", re.S)
@@ -599,12 +600,12 @@ class Assembler:
             op = d.get("operation")
             self._event(b, st, uuid=uid, ts=ts, type="queued", turn_id=st.open_turn.id if st.open_turn else None,
                         status="waiting" if op == "enqueue" else None,
-                        payload={"op": op, "content": self.mask.deep(_text_of(d.get("content")) or d.get("content"), PREVIEW)})
+                        payload={"op": op, "content": self.mask.deep(_text_of(d.get("content")) or d.get("content"), QUEUE_TEXT)})
         elif t == "attachment" and (d.get("attachment") or {}).get("type") == "queued_command":
             a = d["attachment"]
             self._event(b, st, uuid=uid, ts=ts, type="queued", turn_id=st.open_turn.id if st.open_turn else None,
                         parent_uuid=par, payload={"op": "delivered", "mode": a.get("commandMode"),
-                                                  "prompt": self.mask.deep(_text_of(a.get("prompt")) or a.get("prompt"), PREVIEW)})
+                                                  "prompt": self.mask.deep(_text_of(a.get("prompt")) or a.get("prompt"), QUEUE_TEXT)})
         if d.get("timestamp") and not st.copying:      # 복사 줄의 옛 시각으로 되돌아가지 않게
             st.last_ts = ts
 

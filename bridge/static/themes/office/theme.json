@@ -52,6 +52,9 @@
     "style": { "bg": "#ffffffee", "fg": "#1f2430", "border": "#3d9ee6", "font": "600 10px system-ui, 'Noto Sans KR', sans-serif", "kind": "sign" },
     "zones": { "foreman_office": "팀장실", "library": "아카이브", "desks": "워크스테이션", "server": "서버룸", "test": "QA 부스",
                "meeting": "회의실", "lounge": "라운지", "window": "창가 바", "commit": "커밋 데스크" },
+    "_roles": "구역 → 하는 일(설명은 테마 공통, office.js ZONE_ROLE). 이름표에 마우스를 올리면 뜬다",
+    "roles": { "foreman_office": "hq", "library": "read", "desks": "edit", "server": "bash", "test": "test",
+               "meeting": "sub", "lounge": "idle", "window": "web", "commit": "git" },
     "infra": { "title": "배포 파이프", "jenkins": "빌드 모니터 · Jenkins 빌드", "harbor": "저장소 · Harbor 이미지", "argocd": "배포 보드 · ArgoCD 배포" }
   },
 

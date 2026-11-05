@@ -163,10 +163,20 @@ export function sessionKv(s) {
     </div>`;
 }
 
+// 작업 중에 보낸 입력(대기열로 열린 턴에 끼어든 것, 11-05) — 내 글이면 내 말풍선으로, 서브에이전트 결과 · 완료 알림이면 곁가지로
+function queuedHtml(x) {
+  return (x.queued || []).map((q, i) => {
+    const raw = promptText(q.text);
+    const o = /^\s*(<task-notification|<agent-message|Another Claude session)/.test(q.text.replace(/^\s*<pasted_content[^>]*>\s*/, ''))
+      ? (/<task-notification/.test(q.text) ? 'task_notification' : 'subagent_message') : 'human';
+    const who = o === 'human' ? '나 · 작업 중에 보냄' : `${ORIGIN_LABEL[o]} · 작업 중에 옴`;
+    return `<div class="msg in o-${o} o-queued"><div class="who small muted">${esc(who)} · ${clock(q.ts)}</div>${longText(`${x.id}q${i}`, raw)}</div>`;
+  }).join('');
+}
 export function convoHtml(c) {
   if (!c) return '';
   return (c.error ? `<p class="bad small">${esc(c.error)}</p>` : '') + (c.turns || []).map((x) => `
-      <div class="msg in o-${esc(x.origin)}"><div class="who small muted">${esc(ORIGIN_LABEL[x.origin] || x.origin)} · ${clock(x.started_at)}</div>${longText(`${x.id}i`, promptText(x.prompt))}</div>
+      <div class="msg in o-${esc(x.origin)}"><div class="who small muted">${esc(ORIGIN_LABEL[x.origin] || x.origin)} · ${clock(x.started_at)}</div>${longText(`${x.id}i`, promptText(x.prompt))}</div>${queuedHtml(x)}
       ${x.reply ? `<div class="msg out"><div class="who small muted">CC${x.end_reason ? ' · ' + esc(END_LABEL[x.end_reason] || x.end_reason) : ' · 진행 중'}${x.tools ? ` · 도구 ${x.tools}` : ''}${x.subagents ? ` · 서브 ${x.subagents}` : ''}</div>${
         x.mid && x.mid.length ? `<details class="mid"${OPEN_MSG.has(`${x.id}m`) ? ' open' : ''} data-mid="${x.id}m"><summary class="small muted">중간 글 ${x.mid.length}</summary>${x.mid.map((m, i) => `<div class="mid-one">${longText(`${x.id}m${i}`, m)}</div>`).join('')}</details>` : ''}${longText(`${x.id}o`, x.reply)}</div>`
         : (x.end_reason ? `<div class="msg out small muted">${esc(END_LABEL[x.end_reason] || x.end_reason)}${x.tools ? ` · 도구 ${x.tools}` : ''}</div>` : '')}`).join('') + (c.loading ? '<p class="small muted">불러오는 중…</p>' : '');

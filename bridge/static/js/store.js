@@ -300,6 +300,9 @@ export class Store {
         break;
       case 'subagent_start': s.subagents_running = (s.subagents_running || 0) + 1; this.pushFeed(s, e.ts, 'sub', '서브에이전트 시작'); break;
       case 'subagent_stop': s.subagents_running = Math.max(0, (s.subagents_running || 0) - 1); this.pushFeed(s, e.ts, 'sub', '서브에이전트 끝'); break;
+      case 'queued':                           // 작업 중에 보낸 글이 열린 턴에 끼어들었다 — 대화에 내 글로 뜨게 다시 읽는다(11-05)
+        if (this.state.selected === s.id) this.convoLater(s.id);
+        return;
       case 'input': {
         const pl = e.payload || {};
         this.pushFeed(s, e.ts, 'input', pl.refused ? `주입 거부: ${pl.refused}` : `주입${pl.queued ? '(대기열)' : ''}: ${e.target || ''}`);
@@ -381,13 +384,14 @@ export class Store {
     const r = await fetch(`/api/sessions/${id}/input`, { method: 'POST', headers: this.headers(true), body: JSON.stringify({ text, command }) });
     const j = await r.json().catch(() => ({}));
     const res = r.status === 409 ? { ok: false, msg: `거부 — ${j.refused}` }
-      : r.status === 202 ? { ok: true, msg: j.queued ? '대기열에 넣었다(세션이 일하는 중)' : '보냈다 — 새 턴', guarded: j.guarded }
+      : r.status === 202 ? { ok: true, msg: j.queued ? '일하는 중이라 대기열로 — 지금 턴에 끼어든다(대화에 "작업 중에 보냄"으로 뜬다)' : '보냈다 — 새 턴', guarded: j.guarded }
       : r.status === 504 ? (j.left_in_box === false
           ? { ok: true, msg: '보냈다 — 입력 칸은 비었다(기록 확인은 아직 — 대화에 곧 뜬다)' }
           : j.left_in_box ? { ok: false, msg: '제출 안 됨 — 입력 칸에 글이 남아 있다(터미널에서 Enter 또는 지우기)' }
           : { ok: false, msg: '제출을 확인하지 못했다 — 터미널에서 입력 칸을 확인' })
       : { ok: false, msg: `실패 HTTP ${r.status}` };
     this.state.lastInput = { sessionId: id, ts: Date.now(), ...res };
+    if (res.ok) this.convoLater(id);           // 새 턴이든 대기열이든 대화에 내 글이 뜨게
     this.touch('panel');
     return res;
   }
