@@ -181,6 +181,7 @@ async def conversation(session_id: int, request: Request, limit: int = 15) -> di
             "FROM turn t WHERE t.session_id = :s ORDER BY t.seq DESC LIMIT :n"), {"s": session_id, "n": limit})).all()
         # 마지막 응답 앞의 중간 글(터미널에는 도구 호출 사이사이 보인다 — 11-05 패널 개선). 턴마다 최근 12개, 각 3000자
         mid: dict[int, list[str]] = {}
+        queued: dict[int, list[dict[str, Any]]] = {}
         ids = [r[0] for r in turns]
         if ids:
             rows = (await c.execute(text(
@@ -190,10 +191,20 @@ async def conversation(session_id: int, request: Request, limit: int = 15) -> di
             for tid, t_ in rows:
                 if t_:
                     mid.setdefault(tid, []).append(t_)
+            # 작업 중에 보낸 입력 — 새 턴이 되지 않고 대기열로 열린 턴에 끼어든다(queued_command attachment, op=delivered).
+            # 전에는 대화 패널이 턴의 첫 프롬프트만 보여서 이 글들이 아예 안 보였다(11-05 사용자 보고)
+            qrows = (await c.execute(text(
+                "SELECT turn_id, ts, JSON_UNQUOTE(JSON_EXTRACT(payload, '$.prompt')) FROM event WHERE turn_id IN :ids "
+                "AND type = 'queued' AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.op')) = 'delivered' ORDER BY ts, id"
+            ).bindparams(bindparam("ids", expanding=True)), {"ids": ids})).all()
+            for tid, ts_, p in qrows:
+                if p and p != "null":
+                    queued.setdefault(tid, []).append({"ts": _iso(ts_), "text": p})
     return {"session_id": session_id, "turns": [
         {"id": r[0], "seq": r[1], "origin": r[2], "started_at": _iso(r[3]), "ended_at": _iso(r[4]),
          "end_reason": r[5], "duration_ms": r[6], "prompt": r[7], "reply": (r[8] or "")[:20000],
          "mid": [x[:3000] for x in mid.get(r[0], [])[:-1][-12:]],
+         "queued": queued.get(r[0], [])[-20:],
          "tools": r[9], "subagents": r[10]} for r in reversed(turns)]}
 
 
