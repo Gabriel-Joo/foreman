@@ -1,5 +1,7 @@
-// 인계 · 세션 조작(11-05, docs/11_handoff.md) — 패널의 한 칸. 지금 요약 · 요약하고 끝내기 · 끝내기 · 멈춤 · 되살리기 · 작업 중단 ·
-// 죽은 세션 요약 · 압축 요약에서 · 새로 띄우기(넣을 글을 먼저 보여주고 확인받는다) · 요약 고치기 · 이력.
+// 인계 · 세션 조작(11-05, docs/11_handoff.md) — 패널 [세션] 탭의 칸들. 11-06 정리: 자주 쓰는 것만 보이고 나머지는 접는다.
+//   인계(늘 보임)  요약하고 끝내기 · 지금 요약 · 새로 띄우기, 요약 카드(머리에 [고치기]) · 요약 이력 · 읽을 곳
+//   세션(늘 보임)  세션 끝내기, 「더」 안에 작업 중단 · 일시정지 · 다시 시작 / 따로 작업(worktree일 때)
+//   문서 정리(접힘, 할 일이 있으면 열림)  압축 손실 [잃은 것 찾기] · 문서에 남기기 [남길 것 찾기]
 // 자기 데이터(/api/sessions/{id}/handoff)를 따로 받아 따로 그린다 — 세션 칸이 다시 그려져도 고치던 글이 날아가지 않게.
 
 import { esc, ago } from './render.js';
@@ -12,7 +14,8 @@ const KIND = { snapshot: '지금 요약', handoff: '끝내기 전 인계' };
 
 export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) {
   let sid = null, data = null, mode = null, preview = null, note = null, open = open0;
-  let fmt1 = false;            // 인계 2판이 기본 — 켜면 1판(요약 통째로)
+  // 접는 칸을 사람이 열고 닫은 것 — 다시 그려도 그대로(null이면 저절로: 문서 정리는 할 일이 있을 때만 연다)
+  let docsOpen = null, moreOpen = false;
   // 고치던 값 — 15초마다 새로 그려도 날아가지 않게 따로 든다(요약 고치기 글 · 옮기기 목록 칸)
   let editDraft = null, promDraft = {}, promId = null, promIn = null;
   const promField = (t) => {
@@ -23,8 +26,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     return true;
   };
   el.addEventListener('change', (ev) => {
-    if (ev.target.id === 'hFmt1') fmt1 = ev.target.checked;
-    else if (ev.target.id === 'promIn') promIn = ev.target.value;
+    if (ev.target.id === 'promIn') promIn = ev.target.value;
     // 상태를 고르면 개수 · 버튼을 다시 센다. 글칸은 그리지 않는다(blur 때 다시 그리면 바로 누른 버튼의 click이 사라진다)
     else if (promField(ev.target) && ev.target.tagName === 'SELECT') draw();
   });
@@ -134,47 +136,62 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     let main;
     if (mode === 'edit' && ok) {
       main = `<textarea id="hEdit" rows="14" class="hand-edit">${esc(editDraft ?? ok.body)}</textarea>
-        <div class="row">${b('edit-save', '고친 본 저장', true, '', '저장 — 원본은 두고 고친 본을 새 판으로 저장합니다.')}${b('cancel', '취소', true, 'ghost')}</div>`;
+        <div class="row">${b('edit-save', '고친 본 저장', true, '', '저장 — 원본은 두고 고친 본을 새 판으로 저장합니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 고친 것을 버리고 요약 카드로 돌아갑니다.')}</div>`;
     } else if (mode === 'spawn') {
       main = preview ? `<div class="small">같은 폴더에 새 세션을 띄우고 아래 글을 첫 입력으로 넣습니다.${preview.cut ? ` <span class="warn">길어서 일부 절을 줄였습니다(전체는 ${esc(preview.full_path)}).</span>` : ''}</div>
         ${preview.v2 ? pointerList(preview) : ''}
         <pre class="hand-body">${esc(preview.text)}</pre>
-        <div class="row">${b('spawn-go', '이 글을 넣고 시작', !preview.blocked, '', preview.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다([요약 고치기]).' : '')}${b('spawn-bare', '요약 없이 시작', true, 'ghost')}${b('cancel', '취소', true, 'ghost')}</div>`
-        : `<div class="small">넣을 인계 요약이 없습니다.</div><div class="row">${b('spawn-bare', '요약 없이 새로 띄우기', true)}${b('cancel', '취소', true, 'ghost')}</div>`;
+        <div class="row">${b('spawn-go', '이 글을 넣고 시작', !preview.blocked, '', preview.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다(요약 카드의 [고치기]).' : '이 글을 넣고 시작 — 같은 폴더에 새 세션을 띄우고 위 글을 첫 입력으로 넣습니다.')}${b('spawn-bare', '요약 없이 시작', true, 'ghost', '요약 없이 시작 — 같은 폴더에 빈 새 세션만 띄웁니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 띄우지 않고 돌아갑니다.')}</div>`
+        : `<div class="small">넣을 인계 요약이 없습니다.</div><div class="row">${b('spawn-bare', '요약 없이 새로 띄우기', true, '', '요약 없이 새로 띄우기 — 같은 폴더에 빈 새 세션만 띄웁니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 띄우지 않고 돌아갑니다.')}</div>`;
     } else {
       main = sumCard(s0 && s0.status !== 'ok' && ok && s0.id !== ok.id ? s0 : ok || s0) +
         (s0 && ok && s0.id !== ok.id && s0.status !== 'ok' ? `<div class="small muted">이전 저장본 ↓</div>${sumCard(ok)}` : '') +
-        (ok && ok.kind === 'handoff' && can.exit && !ok.injected_at ? `<div class="row">${b('exit-after', '요약을 확인했습니다 — 세션 끝내기', true, 'danger')}</div>` : '');
+        (ok && ok.kind === 'handoff' && can.exit && !ok.injected_at ? `<div class="row">${b('exit-after', '요약을 확인했습니다 — 세션 끝내기', true, 'danger', '세션 끝내기 — 위 인계 요약을 확인했으면 이 세션을 /exit로 끝냅니다. 요약은 남고 [새로 띄우기]로 넣을 수 있습니다.')}</div>` : '');
     }
-    const hist = data.summaries.length > 1 ? `<details class="hand-hist"><summary class="small muted">이력 ${data.summaries.length}</summary>${
+    const hist = data.summaries.length > 1 ? `<details class="hand-hist"><summary class="small muted">요약 이력 ${data.summaries.length}</summary>${
       data.summaries.map((x) => `<div class="small">#${x.id} ${esc(KIND[x.kind] || x.kind)} · ${esc(SOURCE[x.source] || x.source)} · ${esc(STATUS[x.status] || x.status)} · ${ago(x.created_at)}${x.chars ? ` · ${x.chars}자` : ''}</div>`).join('')}</details>` : '';
+    // 문서 정리 — 평소엔 접고, 사람이 할 일(목록 승인 · 쓰기 확인)이나 도는 점검이 있으면 연다(사람이 닫으면 그대로)
+    const p0 = prom(), lc0 = (data.losschecks || [])[0] || null;
+    const docsBusy = (p0 && ['requested', 'listed', 'writing', 'write_failed'].includes(p0.status)) || (lc0 && lc0.status === 'running');
+    const docsHint = p0 && p0.status === 'listed' ? '승인할 목록이 있습니다' : p0 && p0.status === 'write_failed' ? '확인 실패 — 봐 주세요'
+      : docsBusy ? '도는 중…' : lc0 && lc0.status === 'done' && lc0.lost_total ? `잃은 것 ${lc0.lost_total}` : '';
+    const docsOn = docsOpen ?? !!docsBusy;
+    // 요약 카드 머리의 작은 [고치기] — 자주 안 쓰므로 버튼 줄에서 뺐다(11-06, 이력 1번)
+    const editLink = ok && mode == null ? b('edit', '고치기', true, 'ghost', '요약 고치기 — 저장된 요약을 직접 고칩니다. 원본은 두고 새 판으로 저장합니다.') : '';
     el.innerHTML = `
-      <details class="hand"${open ? ' open' : ''}><summary><b>인계 · 세션 조작</b> <span class="small muted">${esc(c.why || (c.live ? '살아 있음' : ''))}${s0 ? ` · 요약 ${esc(STATUS[s0.status] || s0.status)} ${ago(s0.created_at)}` : ''}</span></summary>
-        <div class="hand-group"><span class="hand-lbl small muted">인계</span><div class="hand-btns">
+      <section class="hand">
+        <div class="hand-h"><b>인계</b> <span class="small muted">${esc(c.why || (c.live ? '살아 있음' : ''))}${s0 ? ` · 요약 ${esc(STATUS[s0.status] || s0.status)} ${ago(s0.created_at)}` : ''}</span></div>
+        <div class="hand-btns">
+          ${b('summary-end', '요약하고 끝내기', can.summary, '', '요약하고 끝내기 — 세션이 다음 세션에 넘길 인계를 씁니다. 받은 요약을 확인한 뒤 [세션 끝내기]를 눌러야 끝납니다.')}
           ${b('summary', '지금 요약', can.summary, '', '지금 요약 — 세션이 지금까지 한 일을 스스로 정리합니다. 세션은 계속 돕니다.')}
-          ${b('summary-end', '요약하고 끝내기', can.summary, '', '요약하고 끝내기 — 요약을 받은 뒤, 확인을 눌러야 세션을 끝냅니다.')}
-          ${b('spawn', '새로 띄우기', can.spawn, '', '새로 띄우기 — 같은 폴더에 새 세션을 띄우고 마지막 요약을 넣습니다.')}
-          ${b('edit', '요약 고치기', !!ok && mode !== 'edit', '', '요약 고치기 — 저장된 요약을 직접 고칩니다.')}
-          ${!c.live ? b('headless', '죽은 세션 요약 받기', can.headless, '', '죽은 세션 요약 받기 — 끝난 세션을 잠깐 불러 요약을 받습니다. 토큰을 씁니다.') : ''}
-          ${!c.live ? b('compact', '압축 요약에서', can.compact, '', '압축 요약에서 — 세션이 마지막으로 자동 압축한 요약으로 인계를 만듭니다.') : ''}
-          <label class="small muted" title="요약 통째로(1판) — 켜면 예전처럼 대화 전체를 요약해 넣습니다. 끄면(기본) 짧은 인계 + 새 세션이 직접 읽을 「읽을 곳」입니다."><input type="checkbox" id="hFmt1"${fmt1 ? ' checked' : ''}> 요약 통째로(1판)</label>
-        </div></div>
-        ${readsLine(c.reads, can.exit)}
-        ${lossGroup((data.losschecks || [])[0] || null, can.losscheck !== false && !!data.losschecks && !data.losschecks_error, data.losschecks_error)}
-        ${promoteGroup(prom(), !!can.promote, promDraft, data.promotions_error, data.promote_inputs, promIn)}
-        <div class="hand-group"><span class="hand-lbl small muted">일시정지</span><div class="hand-btns">
-          ${b('stop', '일시정지', can.stop, 'ghost', '일시정지 — 세션을 잠시 멈춥니다(Ctrl+Z). 맥락은 그대로이고 [다시 시작]으로 이어 갑니다.')}
-          ${b('resume', '다시 시작', can.resume, 'ghost', '다시 시작 — FOREMAN이 일시정지한 세션을 이어서 돌립니다.')}
-          ${b('interrupt', '작업 중단(Esc)', can.interrupt, 'ghost', '작업 중단 — 지금 하는 작업만 멈춥니다(Esc). 세션은 살아 있습니다.')}
-        </div></div>
-        <div class="hand-group"><span class="hand-lbl small muted">끝내기</span><div class="hand-btns">
-          ${b('exit', '세션 끝내기', can.exit, 'danger', '세션 끝내기 — /exit로 세션을 완전히 끝냅니다. FOREMAN이 띄운 tmux 창도 닫습니다.')}
-        </div></div>
-        ${wtGroup(c.worktree, b)}
+          ${b('spawn', '새로 띄우기', can.spawn, '', '새로 띄우기 — 같은 폴더에 새 세션을 띄우고 마지막 요약을 넣습니다. 넣을 글을 먼저 보여 줍니다.')}
+          ${!c.live ? b('headless', '죽은 세션 요약 받기', can.headless, 'ghost', '죽은 세션 요약 받기 — 끝난 세션을 잠깐 불러 요약을 받습니다. 그 세션의 맥락을 다시 읽느라 토큰을 씁니다.') : ''}
+          ${!c.live ? b('compact', '압축 요약에서', can.compact, 'ghost', '압축 요약에서 — 끝난 세션이 마지막으로 자동 압축한 요약으로 인계를 만듭니다. 토큰을 쓰지 않습니다.') : ''}
+        </div>
         ${note ? `<div class="small ${note.bad ? 'bad' : note.ok ? 'ok' : 'muted'}">${esc(note.msg)}</div>` : ''}
+        ${editLink ? `<div class="hand-edit-link">${editLink}</div>` : ''}
         ${main}${hist}
+        ${readsLine(c.reads, can.exit)}
+      </section>
+      <section class="hand">
+        <div class="hand-h"><b>세션</b></div>
+        <div class="hand-btns">
+          ${b('exit', '세션 끝내기', can.exit, 'danger', '세션 끝내기 — /exit로 세션을 완전히 끝냅니다. FOREMAN이 띄운 tmux 창도 닫습니다.')}
+          <details class="hand-more"${moreOpen ? ' open' : ''}><summary class="small muted" title="더 — 일시정지 · 다시 시작 · 작업 중단. 드물게 씁니다.">더</summary>
+            ${b('interrupt', '작업 중단(Esc)', can.interrupt, 'ghost', '작업 중단 — 지금 하는 작업만 멈춥니다(Esc). 세션은 살아 있습니다.')}
+            ${b('stop', '일시정지', can.stop, 'ghost', '일시정지 — 세션을 잠시 멈춥니다(Ctrl+Z). 맥락은 그대로이고 [다시 시작]으로 이어 갑니다.')}
+            ${b('resume', '다시 시작', can.resume, 'ghost', '다시 시작 — FOREMAN이 일시정지한 세션을 이어서 돌립니다.')}
+          </details>
+        </div>
+        ${wtGroup(c.worktree, b)}
+      </section>
+      <details class="hand hand-docs"${docsOn ? ' open' : ''}><summary title="문서 정리 — 대화에서만 정한 것과 압축으로 잊은 것을 찾아 문서에 남깁니다."><b>문서 정리</b> <span class="small muted">대화에서 정한 것을 문서에 남깁니다${docsHint ? ` · <span class="warn">${esc(docsHint)}</span>` : ''}</span></summary>
+        ${lossGroup(lc0, can.losscheck !== false && !!data.losschecks && !data.losschecks_error, data.losschecks_error)}
+        ${promoteGroup(p0, !!can.promote, promDraft, data.promotions_error, data.promote_inputs, promIn)}
       </details>`;
-    el.querySelector('details.hand').addEventListener('toggle', (ev) => { open = ev.target.open; if (onToggle) onToggle(open); });
+    // 그릴 때 open으로 그려도 toggle이 난다 — 그린 상태와 달라질 때만 사람이 바꾼 것으로 기억한다
+    el.querySelector('details.hand-docs').addEventListener('toggle', (ev) => { if (ev.target.open !== docsOn) docsOpen = ev.target.open; });
+    el.querySelector('details.hand-more').addEventListener('toggle', (ev) => { moreOpen = ev.target.open; });
   }
 
   el.addEventListener('click', async (ev) => {
@@ -188,16 +205,16 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       const pick = el.querySelector('#promIn'), v = pick ? pick.value : 'none';
       if (v === '') { note = { bad: true, msg: '같이 넣을 것을 골라 주세요 — 넣지 않으려면 「넣지 않음」을 고릅니다.' }; draw(); return; }
       const body = v === 'none' ? { no_input: true } : v.startsWith('lc:') ? { loss_check_id: Number(v.slice(3)) } : { summary_id: Number(v) };
-      return run('옮길 것 뽑기', () => post(`/api/sessions/${id}/promote`, body).then((r) => ({ msg: `요청을 보냈습니다. 세션이 목록을 만드는 중입니다${
+      return run('남길 것 찾기', () => post(`/api/sessions/${id}/promote`, body).then((r) => ({ msg: `요청을 보냈습니다. 세션이 목록을 만드는 중입니다${
         r.summary_id ? `(인계 #${r.summary_id}의 「문서와 다른 지금」도 같이 넣었습니다)` : r.loss_check_id ? `(잃은 것 점검 #${r.loss_check_id}의 사라짐 · 약해짐도 같이 넣었습니다)` : ''}.` })));
     }
     if (act === 'loss-run') {
-      if (!confirm('잃은 것 보기 — 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 끝나면 알림이 갑니다. 진행할까요?')) return;
-      return run('잃은 것 보기', () => post(`/api/sessions/${id}/losscheck`).then((r) => ({ msg: `점검을 시작했습니다(#${r.loss_check_id}, ${r.model}). 끝나면 알림이 갑니다.` })));
+      if (!confirm('잃은 것 찾기 — 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 끝나면 알림이 갑니다. 진행할까요?')) return;
+      return run('잃은 것 찾기', () => post(`/api/sessions/${id}/losscheck`).then((r) => ({ msg: `점검을 시작했습니다(#${r.loss_check_id}, ${r.model}). 끝나면 알림이 갑니다.` })));
     }
     if (act === 'loss-use') {
       promIn = 'lc:' + btn.dataset.lc;
-      note = { msg: '[옮길 것 뽑기]의 같이 넣을 것으로 골랐습니다 — [옮길 것 뽑기]를 눌러 주세요.' };
+      note = { msg: '[남길 것 찾기]에 같이 넣도록 골랐습니다 — 아래 [남길 것 찾기]를 눌러 주세요.' };
       draw();
       return;
     }
@@ -211,7 +228,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       if (!confirm(`승인한 ${n}개를 세션이 문서에 쓰고 「인계 전 결정 기록」으로 커밋합니다. 브리지가 커밋을 확인합니다. 진행할까요?`)) return;
       return run('승인한 것 쓰기', () => post(`/api/promotions/${p.id}/write`).then(() => ({ msg: '보냈습니다. 세션이 쓰고 커밋하는 중입니다.' })));
     }
-    const fmt = fmt1 ? 'v1' : 'v2';
+    const fmt = 'v2';           // 1판(요약 통째로) 고르기는 11-06에 뺐다 — 2판이 생긴 뒤 한 번도 안 썼다. API는 v1도 받는다
     if (act === 'summary') return run('요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'snapshot', mode: 'live', fmt }).then(() => ({ msg: '요청을 보냈습니다. 세션이 요약을 쓰는 중입니다.' })));
     if (act === 'summary-end') return run('인계 요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'live', fmt }).then(() => ({ msg: '요청을 보냈습니다. 요약이 오면 확인한 뒤 [세션 끝내기]를 눌러 주세요.' })));
     if (act === 'headless') {

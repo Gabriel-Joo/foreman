@@ -54,6 +54,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         <div id="pTabSess" class="ptab" hidden>
           <div id="pInfo"></div>
           <section id="pHand"></section>
+          <details id="pKvBox" class="hand"><summary title="세션 정보 · 토큰 — 프로세스 · 지금 하는 일 · 서브에이전트 · 모델 · 토큰(모델별)."><b>세션 정보 · 토큰</b> <span id="pKvHead" class="small muted"></span></summary><div id="pKv"></div></details>
           <details id="pHist" class="appr-hist"><summary class="small">승인 이력 <span id="pHistHead" class="muted"></span></summary><div id="pHistBody" class="small"></div></details>
         </div>
       </div>
@@ -246,7 +247,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         ? '늦었습니다. 앞에서 정한 결정 · 금지가 이미 많이 빠졌을 수 있습니다.'
         : '넘어갈 때입니다. 처음에 정한 것이 빠지기 시작합니다.'}${c.short ? ' 압축 간격도 짧습니다.' : ''}</span>
       ${s.injectable ? '<button type="button" data-cmp="handoff" class="small" title="인계 요약 받기 — 세션이 지금까지를 인계 문서로 씁니다. 받은 뒤 [세션] 탭에서 확인하고 새 세션을 띄웁니다.">인계 요약 받기</button>' : ''}
-      <button type="button" data-cmp="loss" class="small" title="잃은 것 보기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 결과는 [세션] 탭에 나옵니다.">잃은 것 보기</button>
+      <button type="button" data-cmp="loss" class="small" title="잃은 것 찾기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 결과는 [세션] 탭 「문서 정리」에 나옵니다.">잃은 것 찾기</button>
       <button type="button" data-cmp="later" class="ghost small" title="나중에 — 다음 압축까지 이 띠를 숨깁니다.">나중에</button>`;
     put('pCmp', 'cmp', html);
     $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;
@@ -266,12 +267,12 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       return;
     }
     if (b.dataset.cmp === 'loss') {
-      if (!confirm('잃은 것 보기 — 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 끝나면 알림이 갑니다. 진행할까요?')) return;
+      if (!confirm('잃은 것 찾기 — 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 끝나면 알림이 갑니다. 진행할까요?')) return;
       b.disabled = true;
       const r = await fetch(`/api/sessions/${s.id}/losscheck`, { method: 'POST', headers: store.headers(true), body: '{}' });
       const j = await r.json().catch(() => ({}));
       store.state.lastInput = { sessionId: s.id, ts: Date.now(), ok: r.ok,
-        msg: r.ok ? `잃은 것 점검을 시작했습니다(#${j.loss_check_id}). 진행과 결과는 [세션] 탭 「잃은 것」에 나옵니다.` : `시작하지 못했습니다 — ${j.refused || j.detail || r.status}` };
+        msg: r.ok ? `잃은 것 점검을 시작했습니다(#${j.loss_check_id}). 진행과 결과는 [세션] 탭 「문서 정리」에 나옵니다.` : `시작하지 못했습니다 — ${j.refused || j.detail || r.status}` };
       if (r.ok) setTab('sess');
       b.disabled = false;
       store.touch('panel');
@@ -372,9 +373,12 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     $('pTabs').querySelector('[data-n="act"]').textContent = s.feed.length ? ` ${s.feed.length}` : '';
     if (tab === 'act' || switched) put('pFeed', 'feed', feedHtml(s));
     if (tab === 'sess' || switched) {
+      // 11-06 정리 — 위에는 어디서 무엇을 하는지 한 줄, 표(프로세스 · 모델 · 토큰)는 아래 접는 칸으로
       put('pInfo', 'info', `<div class="small muted">${esc(projectLabel(st, s.project))} · ${esc((s.cwd || '').replace(/^\/home\/[^/]+/, '~'))}</div>
-        ${s.open_turn ? `<div class="small${stuck ? ' warn' : ''}">${stuck ? '⚠ 끝 신호 없는 턴' : '▶ 턴'} ${esc(ORIGIN_LABEL[s.open_turn.origin] || '')} · ${ago(s.open_turn.started_at)} 시작</div>` : ''}
-        ${sessionKv(s, pendModel(st, s))}`);
+        ${s.open_turn ? `<div class="small${stuck ? ' warn' : ''}">${stuck ? '⚠ 끝 신호 없는 턴' : '▶ 턴'} ${esc(ORIGIN_LABEL[s.open_turn.origin] || '')} · ${ago(s.open_turn.started_at)} 시작</div>` : ''}`);
+      put('pKv', 'kv', sessionKv(s, pendModel(st, s)));
+      const t_ = s.tokens || {};
+      $('pKvHead').textContent = `${s.model_label || ''}${s.model_label ? ' · ' : ''}오늘 출력 ${tok(t_.today_output)}`;
     }
     const blocked = !s.injectable;
     $('pText').disabled = blocked; $('pSend').disabled = blocked;
