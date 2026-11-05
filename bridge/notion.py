@@ -297,6 +297,10 @@ class NotionClient:
     async def archive_page(self, pid: str) -> None:
         await self._call("PATCH", f"/pages/{pid}", {"archived": True})
 
+    async def move_page(self, pid: str, parent: str) -> None:
+        """부모 바꾸기 — 11-06 실제로 확인(POST /pages/{id}/move)."""
+        await self._call("POST", f"/pages/{pid}/move", {"parent": {"type": "page_id", "page_id": parent}})
+
     async def children(self, bid: str) -> list[dict[str, Any]]:
         out, cur = [], None
         while True:
@@ -468,6 +472,18 @@ class Publisher:
         await self.c.archive_page(row["notion_page_id"])
         await self._save(path, status="archived")
         return {"path": path, "action": "archived", "page_id": row["notion_page_id"]}
+
+    async def move(self, path: str, section: str) -> dict[str, Any]:
+        """옮기기 — 우리가 만든 글을 루트 아래 다른 묶음 페이지로. 글과 목적지 둘 다 지금 루트 아래여야 한다."""
+        row = await self._row(path)
+        if not row or row["status"] != "published" or not row["notion_page_id"]:
+            raise OutOfScope("게시한 기록이 없는 글입니다 — 우리가 만든 페이지만 옮깁니다")
+        await self.scope.require(row["notion_page_id"])
+        dest = await self._section(section)
+        await self.scope.require(dest)
+        await self.c.move_page(row["notion_page_id"], dest)
+        await self._save(path, parent_page_id=dest)
+        return {"path": path, "action": "moved", "page_id": row["notion_page_id"], "section": section}
 
     async def list(self) -> list[dict[str, Any]]:
         """게시할 수 있는 글(main의 log/retro_*.md) + 게시 기록. 원본이 게시 뒤에 바뀌었으면 changed."""
