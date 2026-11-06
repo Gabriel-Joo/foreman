@@ -1,0 +1,276 @@
+{
+ "title": "구역 옮겨 다니기",
+ "source": "record",
+ "note": "실제 턴 5762의 도구 순서(구역이 바뀌는 곳만) — 간격은 한 걸음 2.6초로",
+ "snapshot": {
+  "generated_at": "@+0",
+  "projects": [
+   {
+    "name": "runshoes",
+    "label": "런슈즈",
+    "sessions": [
+     {
+      "id": 901,
+      "cc_session_id": "demo-0901",
+      "short": "demo0901",
+      "character": "코더",
+      "project": "runshoes",
+      "title": "카탈로그 정리",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/runshoes",
+      "pid": 10901,
+      "proc": "S",
+      "cc_status": "idle",
+      "state": "IDLE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": null,
+      "activity": null,
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   },
+   {
+    "name": "petmint-rag-chatbot",
+    "label": "펫퍼민트",
+    "sessions": [
+     {
+      "id": 902,
+      "cc_session_id": "demo-0902",
+      "short": "demo0902",
+      "character": "코더",
+      "project": "petmint-rag-chatbot",
+      "title": "평가셋 재검수",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/petmint-rag-chatbot",
+      "pid": 10902,
+      "proc": "S",
+      "cc_status": "idle",
+      "state": "IDLE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": null,
+      "activity": null,
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   },
+   {
+    "name": "foreman",
+    "label": "포먼",
+    "sessions": [
+     {
+      "id": 951,
+      "cc_session_id": "demo-0951",
+      "short": "demo0951",
+      "character": "코더",
+      "project": "foreman",
+      "title": "코더 — 화면 고침",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/foreman",
+      "pid": 10951,
+      "proc": "S",
+      "cc_status": "busy",
+      "state": "ACTIVE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": {
+       "id": 9510,
+       "origin": "human",
+       "started_at": "@-30000",
+       "prompt": "시연"
+      },
+      "activity": {
+       "tool": "Edit",
+       "target": "",
+       "ts": "@-1000",
+       "subagent": false
+      },
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   }
+  ],
+  "approvals": [],
+  "hidden_dormant": 0,
+  "terminal": {
+   "enabled": false
+  },
+  "ingest": null
+ },
+ "steps": [
+  {
+   "at": 400,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "tool_use",
+     "tool": "Edit",
+     "target": "",
+     "status": null,
+     "turn_id": 9510,
+     "session_id": 951,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+400",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 3000,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "tool_use",
+     "tool": "Bash",
+     "target": "ls",
+     "status": null,
+     "turn_id": 9510,
+     "session_id": 951,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+3000",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 5600,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "tool_use",
+     "tool": "Bash",
+     "target": "pytest -q",
+     "status": null,
+     "turn_id": 9510,
+     "session_id": 951,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+5600",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 8200,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "tool_use",
+     "tool": "Bash",
+     "target": "ls",
+     "status": null,
+     "turn_id": 9510,
+     "session_id": 951,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+8200",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 10800,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "tool_use",
+     "tool": "Bash",
+     "target": "pytest -q",
+     "status": null,
+     "turn_id": 9510,
+     "session_id": 951,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+10800",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 13400,
+   "end": true
+  }
+ ]
+}

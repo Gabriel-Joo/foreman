@@ -54,6 +54,8 @@
 
 ### 3-1. 문과 열쇠
 
+![승인 카드 — 위험한 명령은 규칙(rm-재귀)에 걸려 사람이 「승인」해야 돈다. 카드에 무엇을 대상으로 하는지 한 줄과 걸린 규칙이 보인다 〔실제 기록 재생 — 11-02 승인 시스템 시험〕](img/08_placement_approval_card.png)
+
 ```mermaid
 flowchart LR
   subgraph OUT["밖"]

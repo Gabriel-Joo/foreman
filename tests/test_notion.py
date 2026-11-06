@@ -161,7 +161,7 @@ class FakeNotion:
 
     async def upload_file(self, name, data, content_type="image/png"):
         self.n += 1
-        self.calls.append(("upload", name, len(data)))
+        self.calls.append(("upload", name, len(data), content_type))
         return f"f{self.n}"
 
     async def move_page(self, pid, parent):
@@ -222,6 +222,32 @@ def test_digest_changes_when_only_image_changes(tmp_path):
     assert nt.content_digest(str(tmp_path), "portfolio/01_a.md", body) != d1       # 본문은 같고 사진만 바뀜
     plain = "# 글\n\n- 사진 없음\n"
     assert nt.content_digest(str(tmp_path), "portfolio/01_a.md", plain) == __import__("hashlib").sha256(plain.encode()).hexdigest()
+
+
+def test_uploads_gif_webm_and_size_limit(tmp_path):
+    import asyncio
+    import subprocess
+    g = lambda *a: subprocess.run(["git", "-C", str(tmp_path), *a], check=True, capture_output=True)  # noqa: E731
+    g("init", "-q", "-b", "main")
+    (tmp_path / "portfolio" / "img").mkdir(parents=True)
+    (tmp_path / "portfolio" / "img" / "a.gif").write_bytes(b"G" * 100)
+    (tmp_path / "portfolio" / "img" / "b.webm").write_bytes(b"W" * 10)
+    g("add", "."), g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "1")
+    _, bs = nt.md_to_blocks("![움직임](img/a.gif)\n\n![영상](img/b.webm)\n", nt.Ctx("portfolio/01.md", links=False))
+    fake = FakeNotion()
+    out = asyncio.run(nt.resolve_uploads(fake, str(tmp_path), bs, limit=1000))
+    assert [b["type"] for b in out] == ["image", "video"]                                   # WebM은 동영상 블록
+    assert [c[3] for c in fake.calls if c[0] == "upload"] == ["image/gif", "video/webm"]     # GIF를 jpeg로 보내지 않는다
+    try:
+        asyncio.run(nt.resolve_uploads(FakeNotion(), str(tmp_path), bs, limit=50))
+        raise AssertionError("한도를 넘는 파일을 보냈다")
+    except nt.OutOfScope as e:
+        assert "Notion 파일 한도" in str(e)
+
+
+def test_image_caption_with_brackets():
+    _, bs = nt.md_to_blocks("![패널의 [대화] 탭 〔실제 화면〕](img/a.png)\n", nt.Ctx("portfolio/01.md", links=False))
+    assert bs[0]["type"] == "image" and nt.plain(bs[0]["image"]["caption"]) == "패널의 [대화] 탭 〔실제 화면〕"
 
 
 def test_mermaid_keeps_language():

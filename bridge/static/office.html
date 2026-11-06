@@ -135,8 +135,10 @@
   const theme = THEMES.includes(asked) ? asked : THEMES.includes(saved) ? saved : 'office';
   try { localStorage.setItem('foremanTheme', theme); } catch { /* 위와 같다 */ }
   createOffice(document.getElementById('app'), store, `/static/themes/${theme}/theme.json`)
-    .then((o) => {
+    .then(async (o) => {
       window.office = o;
+      const demo = new URLSearchParams(location.search).get('demo');   // 시연 재생(13) — 실제 연결을 열지 않는다
+      if (demo) { const { runDemo } = await import('/static/js/demo.js'); return runDemo(store, demo); }
       if (store.token) store.start();
       else document.getElementById('tokDlg').classList.add('on');
     })

@@ -89,10 +89,14 @@ export class Store {
 
   // ── 스냅샷 ───────────────────────────────────────────
   async loadSnapshot() {
+    if (this.demo) return;                    // 시연 재생 중(13, demo.js) — 실제 데이터로 덮지 않는다
     const r = await fetch('/api/dashboard', { headers: this.headers() });
     if (r.status === 401) { this.setConn('auth', '토큰이 맞지 않습니다'); return; }
     if (!r.ok) return;
-    const j = await r.json();
+    this.applySnapshot(await r.json());
+  }
+  // 스냅샷(/api/dashboard 모양)을 상태에 넣는다 — 시연 재생은 대본의 스냅샷을 여기로 넣는다(같은 코드)
+  applySnapshot(j) {
     const st = this.state;
     const keep = st.sessions;
     st.sessions = new Map();
@@ -121,6 +125,7 @@ export class Store {
     this.touch('grid', 'approvals', 'panel', 'term');
   }
   async loadPipeline() {
+    if (this.demo) return;
     const r = await fetch('/api/pipeline', { headers: this.headers() });
     if (!r.ok) return;
     const j = await r.json();
@@ -128,7 +133,7 @@ export class Store {
     this.touch('pipe');
   }
   scheduleSnapshot(ms = 800) {
-    if (this.snapSoon) return;
+    if (this.snapSoon || this.demo) return;
     this.snapSoon = setTimeout(() => { this.snapSoon = null; this.loadSnapshot().catch(() => {}); }, ms);
   }
   projectOf(sessionId) { const s = this.state.sessions.get(sessionId); return s ? s.project : null; }
