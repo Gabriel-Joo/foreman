@@ -20,6 +20,7 @@ MARK = re.compile(r"\[(?P<k>c|t|log|docs):(?P<v>[^\]\s]+)\]")
 CLAIM = re.compile(r"\d|“|”|\"[^\"]{4,}\"|「[^」]{2,}」")      # 숫자 · 인용이 있는 줄 — 근거가 있어야 할 줄
 # 사진 줄(![설명](경로))도 뺀다 — 설명의 근거는 사진 자체다(11-06 「한눈에」 의심 2개가 둘 다 사진 설명이었고 사진과 맞았다)
 SKIP_LINE = re.compile(r"^\s*(#|>|\||```|---|!\[|\s*$)")
+XREF = re.compile(r"→\s*「[^」]*」")
 
 
 async def _git(repo: str, *args: str) -> tuple[int, str]:
@@ -57,7 +58,8 @@ async def check_text(body: str, root: str, engine: Any = None) -> dict[str, Any]
             continue
         found = [(m["k"], m["v"]) for m in MARK.finditer(ln)]
         marks += [(i, k, v) for k, v in found]
-        if not found and not SKIP_LINE.match(ln) and CLAIM.search(ln) and len(ln.strip()) > 20:
+        # "→ 「다른 글 제목」"은 글 안내라 주장이 아니다(11-06 포트폴리오 02 · 05의 의심이 둘 다 이것)
+        if not found and not SKIP_LINE.match(ln) and CLAIM.search(XREF.sub("", ln)) and len(ln.strip()) > 20:
             unsupported.append({"line": i, "text": ln.strip()[:160]})
     bad = []
     commits: dict[str, bool] = {}
