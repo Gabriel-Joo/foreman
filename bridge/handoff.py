@@ -274,7 +274,7 @@ class HandoffManager:
     async def session(self, sid: int) -> SessionRow | None:
         async with self.engine.connect() as c:
             r = (await c.execute(text(
-                "SELECT cs.id, cs.cc_session_id, cs.character_id, cs.cwd, tf.path, p.name, cs.title "
+                "SELECT cs.id, cs.cc_session_id, cs.character_id, cs.cwd, tf.path, p.name, COALESCE(cs.custom_title, cs.title) "
                 "FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
                 "LEFT JOIN project p ON p.id = ch.project_id LEFT JOIN transcript_file tf ON tf.id = cs.transcript_file_id "
                 "WHERE cs.id = :id"), {"id": sid})).first()
@@ -725,6 +725,8 @@ class HandoffManager:
             if cc is None:
                 await self._act(src_session, "spawn", None, False, f"{name} 신뢰 창에 답이 없어 그만둠")
                 return {"note": "신뢰 확인 창에 답이 없어 그만뒀습니다."}
+        if not (title or "").strip() and summary_id is not None:
+            title = await self._inherited_title(summary_id)
         sid = await self._ensure_row(cc, cwd, title)
         ch = await self._character_for(cwd, role or "coder")
         if role or worktree_path or ch or model:
@@ -799,6 +801,14 @@ class HandoffManager:
             await c.execute(text("UPDATE `character` ch JOIN project p ON p.id = ch.project_id SET ch.retired_at = NOW(3) "
                                  "WHERE p.name = :p AND ch.name LIKE :n AND ch.retired_at IS NULL"),
                             {"p": row.project, "n": f"% {wt_name}"})
+
+    async def _inherited_title(self, summary_id: int) -> str | None:
+        """인계로 띄운 새 세션은 원 세션에 사람이 붙인 이름을 물려받는다(11-06 — 인계 · 새 세션마다 행이 새로 생겨
+        이름이 자동 제목으로 "돌아간" 것처럼 보였다). 이름을 따로 주면 그것이 이긴다."""
+        async with self.engine.connect() as c:
+            return (await c.execute(text(
+                "SELECT cs.custom_title FROM summary s JOIN character_session cs ON cs.id = s.session_id WHERE s.id = :i"),
+                {"i": summary_id})).scalar()
 
     async def _ensure_row(self, cc: str, cwd: str, title: str | None) -> int:
         """새 CC 세션의 행 — 첫 줄이 기록되기 전에 만들어 둔다(조립기는 같은 cc_session_id 행을 이어 쓴다)."""

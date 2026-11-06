@@ -681,7 +681,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (act.fx === 'smoke') drawSmoke(a.x, a.y - 1.4, now);
     if (act.bubble) drawBubble(x, y - 6, act.bubble, act.flag === 'approval_pending' ? P.warn : '#e8e8f0');
     else if (anim === 'wait' && !act.flag) drawBubble(x, y - 6, '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), P.act, 7);   // 기다림
-    else if (a.kind === 'scribe' && a.todo && a.todo.items && a.todo.items.length) drawBubble(x, y - 6, `할 일 ${a.todo.items.length}`, P.warn, 8);
+    else if (a.kind === 'scribe' && a.todo && a.todo.items && a.todo.items.length) drawBubble(x, y - 6, `할 일 ${a.todo.items.length}`, P.warn, TODO_PX / cam.s);
     if (a.subHidden) drawBubble(x + 10, y + 2, `+${a.subHidden}`, P.act, 7);              // 10명 넘는 서브에이전트는 접는다
     drawCompactMark(a, x + 8, y - 4);
     const rc = roleColor(a.role);
@@ -1550,7 +1550,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       drawBubble(x, top - 3, '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), P.act, 7);
     }
     if (a.kind === 'scribe' && a.todo && a.todo.items && a.todo.items.length) {  // 서기 — 할 일 N(누르면 목록)
-      placeBubble(a, x, top, `할 일 ${a.todo.items.length}`, P.warn, 8);
+      placeBubble(a, x, top, `할 일 ${a.todo.items.length}`, P.warn, TODO_PX / cam.s);
     }
     if (a.subHidden) drawBubble(x + 11, top + 4, `+${a.subHidden}`, P.act, 7);      // 10명 넘는 서브에이전트는 접는다
     if (a.key === selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - 9, top - 2, 18, 20); }
@@ -1559,18 +1559,20 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 이름표를 피하는 말풍선(11-06 — 서기실에서 "할 일 2"가 구역 이름표를 덮었다). 이름표는 사람 위 글보다 나중에 화면 좌표로 그려서,
   // 지난 프레임의 이름표 칸(HITS)을 월드 픽셀로 바꿔 머리 위 → 오른쪽 → 왼쪽 → 발밑 순으로 안 겹치는 첫 자리에 둔다(없으면 가장 덜 겹치는 곳)
   const BUBBLES = new Map();
+  // 서기 "할 일 N"은 화면 px로 고정(11-06 — 월드 8px이 줌 2.5~3배로 20px 넘게 커져 다른 글씨보다 훨씬 컸다)
+  const TODO_PX = 11;
   function tagBoxesW() {
     const toW = (sx, sy) => [((sx - W / 2) / cam.s + cam.x), ((sy - H / 2) / cam.s + cam.y)];
     return HITS.filter((h) => h.zone).map((h) => { const [x0, y0] = toW(h.x, h.y), [x1, y1] = toW(h.x + h.w, h.y + h.h); return [x0, y0, x1 - x0, y1 - y0]; });
   }
   function placeBubble(a, x, top, text, color, size) {
     ctx.font = `bold ${size}px ui-monospace, monospace`;
-    const w = Math.max(10, ctx.measureText(text).width + 6), h = size + 4, feet = a.y * T;
+    const pad = size * 0.25, w = Math.max(size, ctx.measureText(text).width + size * 0.7), h = size + 2 * pad, feet = a.y * T;
     const spots = [[x, top - 3], [x + 8 + w / 2, top + 8], [x - 8 - w / 2, top + 8], [x, feet + size + 5]];
     const boxes = tagBoxesW();
     let best = null;
     for (const [bx, by] of spots) {
-      const r = [bx - w / 2, by - size - 2, w, h], cover = boxes.reduce((s, b) => s + areaOf(r, b), 0);
+      const r = [bx - w / 2, by - size - pad, w, h], cover = boxes.reduce((s, b) => s + areaOf(r, b), 0);
       if (!best || cover < best.cover) best = { bx, by, r, cover };
       if (!cover) break;
     }
@@ -1580,10 +1582,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function bubbleAudit() {                       // 이름표에 걸친 말풍선 — tools/screen.py --eval 'window.office.bubbleAudit()'
     return [...BUBBLES.entries()].filter(([k, b]) => b.cover > 0 && actors.has(k)).map(([key, b]) => ({ key, ...b }));
   }
+  // size는 월드 px(줌만큼 커진다). 여백은 글씨에 비례 — size 9에서 예전(위아래 2 · 좌우 3)과 같다
   function drawBubble(x, y, text, color, size = 9) {
     ctx.font = `bold ${size}px ui-monospace, monospace`;
-    const w = Math.max(10, ctx.measureText(text).width + 6);
-    ctx.fillStyle = color; ctx.fillRect(x - w / 2, y - size - 2, w, size + 4);
+    const pad = size * 0.25, w = Math.max(size, ctx.measureText(text).width + size * 0.7);
+    ctx.fillStyle = color; ctx.fillRect(x - w / 2, y - size - pad, w, size + 2 * pad);
     ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(text, x, y - size / 2);
   }
@@ -1599,7 +1602,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
 
   // ── 구역 이름표(화면 좌표 — 줌과 상관없이 작고 선명하게) ─────
-  const TAG = (theme.tags && theme.tags.style) || { bg: '#000000cc', fg: '#ffffff', border: '#ffffff55', font: '600 10px system-ui, sans-serif', kind: 'sign' };
+  const TAG = (theme.tags && theme.tags.style) || { bg: '#000000cc', fg: '#ffffff', border: '#ffffff55', font: '600 12px system-ui, sans-serif', kind: 'sign' };
   themeTips(theme.tags && theme.tags.style);     // 툴팁 색 · 글꼴도 이름표를 따른다(양피지 · 사인판 · 안전 표지판). 구조 · 크기 · 지연은 같다
   attachDomTips();
   // (wx, wy) 월드 타일 → 그 자리에 이름표 하나. big: 감독실 이름처럼 조금 크게. dot: 앞에 붙는 상태 색
@@ -1728,26 +1731,28 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 끝난 세션(DORMANT)과 멈춘 세션(SUSPENDED)이 그림만으로는 헷갈렸다(11-05) — 이름 뒤에 글로 붙인다
     const suffix = a.kind === 'session' && a.s ? ({ DORMANT: ' · 끝남', SUSPENDED: ' · 멈춤' }[a.s.state] || '') : '';
     const text = (a.kind === 'session' ? short(a.name, 18) : short(a.name, 30)) + suffix;
-    ctx.font = '11px system-ui, sans-serif';
+    // 11-06 글씨 키움(11 → 13px) — 줄 높이 NH, 줄 사이 1px
+    const NH = 16;
+    ctx.font = '13px system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     const w = ctx.measureText(text).width + 6;
-    ctx.fillStyle = '#000a'; ctx.fillRect(sx - w / 2, sy + 2, w, 14);
+    ctx.fillStyle = '#000a'; ctx.fillRect(sx - w / 2, sy + 2, w, NH);
     ctx.fillStyle = a.kind === 'foreman' ? P.warn : P.label;
     ctx.fillText(text, sx, sy + 3);
     const n = a.kind === 'session' && a.s ? a.s.subagents_running || 0 : 0;
     if (n) {
       const sub = `일꾼 ${n}${a.subLabel ? ' · ' + short(a.subLabel, 22) : ''}${a.subHidden ? ` (+${a.subHidden} 접음)` : ''}`;
       const w2 = ctx.measureText(sub).width + 6;
-      ctx.fillStyle = '#000a'; ctx.fillRect(sx - w2 / 2, sy + 17, w2, 14);
-      ctx.fillStyle = P.act; ctx.fillText(sub, sx, sy + 18);
+      ctx.fillStyle = '#000a'; ctx.fillRect(sx - w2 / 2, sy + 3 + NH, w2, NH);
+      ctx.fillStyle = P.act; ctx.fillText(sub, sx, sy + 4 + NH);
     }
     // 백그라운드 Bash · Monitor — "IDLE + 백그라운드 n개"(README 3.11). 일꾼 줄이 있으면 그 아래
     const bg = a.kind === 'session' && a.s ? a.s.background || [] : [];
     if (bg.length) {
       const d = bg[0].description || bg[0].tool;
       const line = `백그라운드 ${bg.length}${d ? ' · ' + short(d, 22) : ''}`;
-      const w3 = ctx.measureText(line).width + 6, y3 = sy + (n ? 32 : 17);
-      ctx.fillStyle = '#000a'; ctx.fillRect(sx - w3 / 2, y3, w3, 14);
+      const w3 = ctx.measureText(line).width + 6, y3 = sy + 3 + NH * (n ? 2 : 1) + (n ? 1 : 0);
+      ctx.fillStyle = '#000a'; ctx.fillRect(sx - w3 / 2, y3, w3, NH);
       ctx.fillStyle = P.act; ctx.fillText(line, sx, y3 + 1);
     }
   }
@@ -1765,42 +1770,44 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     return 'empty';
   }
 
+  // 현장 카드 글씨(11-06 키움: 11 → 13px, 제목 13 → 15px, 줄 간격 15 → CARD_LH)
+  const CARD_LH = 18;
   function badgeLines(r) {
     const st = r.stats || {};
     const lines = [];
-    lines.push([`${r.label}`, P.label, 'bold 13px']);
-    lines.push([`작업 ${st.ACTIVE || 0} · 쉼 ${st.IDLE || 0}${st.SUSPENDED ? ' · 멈춤 ' + st.SUSPENDED : ''}${st.subs ? ' · 일꾼 ' + st.subs : ''}${r.overflow ? ' · 자리 밖 +' + r.overflow : ''}`, P.muted, '11px']);
-    if (st.pending) lines.push([`❗ 승인 대기 ${st.pending}`, P.warn, 'bold 12px']);
+    lines.push([`${r.label}`, P.label, 'bold 15px']);
+    lines.push([`작업 ${st.ACTIVE || 0} · 쉼 ${st.IDLE || 0}${st.SUSPENDED ? ' · 멈춤 ' + st.SUSPENDED : ''}${st.subs ? ' · 일꾼 ' + st.subs : ''}${r.overflow ? ' · 자리 밖 +' + r.overflow : ''}`, P.muted, '13px']);
+    if (st.pending) lines.push([`❗ 승인 대기 ${st.pending}`, P.warn, 'bold 14px']);
     const pp = r.pipe;
     const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
-    if (broke) lines.push([`🔥 파이프라인 실패 · ${broke}`, P.bad, 'bold 11px']);
-    else if (r.st_argocd === 'waiting') lines.push(['⏸ Sync 대기', P.warn, '11px']);
-    if (pp && pp.webhook_broken) lines.push(['⚠ 웹훅 끊김 의심', P.bad, '11px']);
-    if (pp && pp.watch && pp.watch.state !== 'ok') lines.push([`⚠ 빌드 알림 ${pp.watch.state === 'missing' ? '없음' : '늦음'}`, pp.watch.state === 'missing' ? P.bad : P.warn, '11px']);
+    if (broke) lines.push([`🔥 파이프라인 실패 · ${broke}`, P.bad, 'bold 13px']);
+    else if (r.st_argocd === 'waiting') lines.push(['⏸ Sync 대기', P.warn, '13px']);
+    if (pp && pp.webhook_broken) lines.push(['⚠ 웹훅 끊김 의심', P.bad, '13px']);
+    if (pp && pp.watch && pp.watch.state !== 'ok') lines.push([`⚠ 빌드 알림 ${pp.watch.state === 'missing' ? '없음' : '늦음'}`, pp.watch.state === 'missing' ? P.bad : P.warn, '13px']);
     // 토큰 — 지금 어느 방이 쓰고 있나(사용자 요청 11-03). 오늘 누적 + 최근 10분 증가
     const hot = r.rate > 2e6 ? P.bad : r.rate > 3e5 ? P.warn : r.rate > 0 ? P.act : P.muted;
-    lines.push([`토큰 오늘 출력 ${fmt(st.tout || 0)} · 입력 ${fmt(st.tin || 0)}`, P.muted, '11px']);
+    lines.push([`토큰 오늘 출력 ${fmt(st.tout || 0)} · 입력 ${fmt(st.tin || 0)}`, P.muted, '13px']);
     // 그중 Opus(11-05 사용자 요청 — 비싼 모델을 어디서 쓰나). 다른 모델이 하나도 없으면 줄이 같아 생략
-    if (st.opus_out && st.opus_out < st.all_out) lines.push([`Opus 출력 ${fmt(st.opus_out)} (서브에이전트 포함 ${Math.round(100 * st.opus_out / st.all_out)}%)`, P.muted, '11px']);
-    else if (st.opus_out) lines.push(['오늘은 전부 Opus', P.muted, '11px']);
+    if (st.opus_out && st.opus_out < st.all_out) lines.push([`Opus 출력 ${fmt(st.opus_out)} (서브에이전트 포함 ${Math.round(100 * st.opus_out / st.all_out)}%)`, P.muted, '13px']);
+    else if (st.opus_out) lines.push(['오늘은 전부 Opus', P.muted, '13px']);
     const span = Math.round((r.rateSpan || 0) / 60000);
     lines.push([r.rate ? `최근 ${Math.max(1, Math.min(10, span))}분 +${fmt(r.rate)} (출력 +${fmt(r.rateOut)})`
       : (r.rateSpan || 0) < 60000 ? '최근 사용량 재는 중…(화면을 연 뒤부터)' : `최근 ${Math.min(10, span)}분 사용 없음`,
-      hot, r.rate ? 'bold 11px' : '11px']);
+      hot, r.rate ? 'bold 13px' : '13px']);
     const border = st.pending || broke ? P.warn : hot;
     return { lines, border, thick: r.rate > 3e5 || st.pending };
   }
 
-  function drawCard(r, bx, by, w, minW = 160, maxW = 300) {
+  function drawCard(r, bx, by, w, minW = 190, maxW = 360) {
     const { lines, border, thick } = badgeLines(r);
     w = Math.max(minW, Math.min(w, maxW));
-    const h = lines.length * 15 + 8;
+    const h = lines.length * CARD_LH + 8;
     ctx.fillStyle = '#0d0f14e6'; ctx.fillRect(bx, by, w, h);
     ctx.strokeStyle = border; ctx.lineWidth = thick ? 2 : 1;
     ctx.strokeRect(bx + 0.5, by + 0.5, w - 1, h - 1);
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    const maxc = Math.max(18, Math.floor((w - 12) / 6.2));
-    lines.forEach(([t, c, f], i) => { ctx.font = `${f} system-ui, sans-serif`; ctx.fillStyle = c; ctx.fillText(short(t, maxc), bx + 6, by + 5 + i * 15); });
+    const maxc = Math.max(18, Math.floor((w - 12) / 7.4));
+    lines.forEach(([t, c, f], i) => { ctx.font = `${f} system-ui, sans-serif`; ctx.fillStyle = c; ctx.fillText(short(t, maxc), bx + 6, by + 5 + i * CARD_LH); });
     return { x: bx, y: by, w, h };
   }
 
@@ -1808,7 +1815,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (view === 'hq' || (zoomedIn && (r.name || '_lounge') !== view)) { r.badge = null; return; }   // 안 그린 배지는 클릭도 안 받는다
     const [sx, sy] = toScreen(r.x * T, r.y * T);
     const [ex] = toScreen((r.x + r.w) * T, 0);
-    const h = badgeLines(r).lines.length * 15 + 8;
+    const h = badgeLines(r).lines.length * CARD_LH + 8;
     r.badge = drawCard(r, sx, Math.max(4, sy - h - 6), ex - sx);
   }
 
@@ -1832,9 +1839,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 현황판 위 이름 — 지도 위 땅 · 모니터 위
       const [lx, ly] = toScreen((s.x + s.w / 2) * T, (s.y + 0.35) * T);
       const st = siteState(s.r);
-      ctx.font = 'bold 13px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.font = 'bold 15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       const tw = ctx.measureText(s.r.label).width + 10;
-      ctx.fillStyle = '#000000aa'; ctx.fillRect(lx - tw / 2, ly, tw, 18);
+      ctx.fillStyle = '#000000aa'; ctx.fillRect(lx - tw / 2, ly, tw, 20);
       ctx.fillStyle = st === 'fail' ? P.bad : st === 'alert' ? P.warn : P.label;
       ctx.fillText(s.r.label + (st === 'alert' ? ' ❗' : st === 'fail' ? ' 🔥' : ''), lx, ly + 2);
     }
