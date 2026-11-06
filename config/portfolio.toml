@@ -20,46 +20,55 @@ sources = ["docs/10_office_design.md", "log/stage10_office_result.md", "log/stag
 screenshots = true
 
 [[topic]]
-slug = "02_context_loss"
+slug = "02_ui"
+title = "패널과 화면 문장 — 어떻게 쓰게 만들었나"
+about = "01이 그 화면을 어떻게 그렸나라면 이 글은 사람이 그 화면을 어떻게 쓰게 만들었나(11-06 사용자). 다룰 것 — ① 패널은 대화가 주인공(탭 · 말풍선 · 스크롤 따라가기 · 넓게/좁게) ② [세션] 탭 정리 — 실제로 누른 이력을 근거로 늘 보일 것과 접을 것을 가름 ③ 화면 글 규칙(\"~습니다\", 툴팁은 \"무엇 — 한 줄\", 확인 창 문구) ④ 보이게 · 알리게 하는 장치(압축 띠 · 겹침 띠 · 승인 카드 · 읽을 곳 확인 · 인계 뒤 바뀐 것) ⑤ 화면이 길을 숨긴 일(끝난 세션이 3분 뒤 사라져 [합치기]에 닿을 수 없었던 것 → 서기실 [세션 열기]) ⑥ 읽기 좋게(글씨 크기 두 번 키우기 · 좁은 창 줄바꿈 · 이름 비켜 그리기) ⑦ 터미널 패널(ttyd) · 클래식 대시보드와 같은 코드 · worktree 화면 미리보기 ⑧ 사람 이름이 이긴다(세션 이름). 픽셀 그리기 자체는 01이 다루니 겹치지 않게"
+sources = ["log/stage6_dashboard_result.md", "log/stage11_session_tab_result.md", "log/stage10_office_result.md", "log/stage7_terminal_result.md",
+           "log/ui_font_title_20261106.md", "log/portfolio_publish_20261106.md", "log/handoff_verify_20261106.md", "log/overlap_alert_20261106.md",
+           "bridge/static/js/opanel.js", "bridge/static/js/handoff.js", "CLAUDE.md"]
+screenshots = true
+
+[[topic]]
+slug = "03_context_loss"
 title = "압축 손실을 재고 메우기"
 about = "자동 압축으로 에이전트가 잊는 지시를 재고(손 점검 · 기계 판정), 인계 · 문서화로 메운 과정"
 sources = ["log/runshoes_compaction_loss_20261105.md", "log/foreman_compaction_loss_20261105.md", "docs/11_handoff.md",
            "docs/11_handoff_v2.md", "log/handoff_v2_result.md", "log/handoff_v2_c_result.md", "log/handoff_v2_d_result.md"]
 
 [[topic]]
-slug = "03_agent_control"
+slug = "04_agent_control"
 title = "에이전트 관제 — 상태 · 승인 · 입력"
 about = "세션 상태를 어떻게 판정하고, 무엇을 묻고(승인), 어떻게 말을 넣는지"
 sources = ["README.md", "log/stage2_transcript_result.md", "log/stage5_approval_result.md", "log/stage11_handoff_result.md",
            "log/stage10_background_waiting_result.md"]
 
 [[topic]]
-slug = "04_dispatcher"
+slug = "05_dispatcher"
 title = "포먼 디스패처 — 같은 일을 하는 세션을 알아채기"
 about = "사람의 요청을 받아 새로 띄울지 · 이어 갈지 · 이미 하는 세션에 붙일지 고르는 판단"
 sources = ["docs/11_foreman_dispatch.md", "log/stage11_foreman_dispatch_result.md", "docs/11_worktree.md", "log/stage11_worktree_result.md"]
 
 [[topic]]
-slug = "05_scribe"
+slug = "06_scribe"
 title = "서기 — 근거가 확인되는 문서"
 about = "AI가 쓴 문서를 근거 표시 · 기계 확인 · 사람 합치기로 믿을 수 있게 만든 과정"
 sources = ["docs/12_scribe.md", "docs/style_guide.md", "log/stage12_scribe_result.md"]
 
 [[topic]]
-slug = "06_observability"
+slug = "07_observability"
 title = "관찰 파이프라인 — 조용한 고장을 잡는다"
 about = "hook · 트랜스크립트 적재 · 턴 판정, 그리고 CI/CD 인과 체인으로 조용한 고장을 드러낸 방법"
 sources = ["README.md", "log/01_kickoff_result.md", "log/stage1_bridge_db_result.md", "log/stage2_transcript_result.md",
            "log/stage4_notify_result.md", "log/stage8_cicd_result.md"]
 
 [[topic]]
-slug = "07_placement"
+slug = "08_placement"
 title = "배치와 보안 판단"
 about = "브리지 · DB를 클러스터 밖에 둔 이유, 외부 노출을 하지 않은 이유, 비밀값 · 권한을 구조로 막은 방법"
 sources = ["README.md", "docs/02_cloudflare_tunnel.md", "log/stage1_bridge_db_result.md", "log/stage7_terminal_result.md"]
 
 [[topic]]
-slug = "08_models_cost"
+slug = "09_models_cost"
 title = "모델 고르기와 비용"
 about = "Opus · Sonnet을 어디에 쓰는지, 정답과 맞대 모델을 정한 방법과 토큰 숫자"
 sources = ["log/stage12_model_choice_result.md", "log/handoff_v2_d_result.md", "log/later_codex_bridge.md"]
