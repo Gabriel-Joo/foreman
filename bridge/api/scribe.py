@@ -20,6 +20,7 @@ _cache: dict[str, Any] = {"at": 0.0, "data": None}
 class StartIn(BaseModel):
     project: str = Field(min_length=1, max_length=64)
     task: str = Field(min_length=1, max_length=16)
+    topic: str | None = Field(default=None, max_length=40)     # 포트폴리오 쓰기의 주제(config/portfolio.toml slug)
 
 
 @router.get("/todo")
@@ -40,7 +41,7 @@ async def scribe_start(body: StartIn, request: Request) -> JSONResponse:
     if m is None:
         raise HTTPException(503, "세션 띄우기가 꺼져 있습니다")
     try:
-        r = await sr.start(m, request.app.state.store.engine, body.project, body.task)
+        r = await sr.start(m, request.app.state.store.engine, body.project, body.task, body.topic)
     except Refused as e:
         return JSONResponse({"refused": str(e)}, status_code=409)
     _cache["data"] = None

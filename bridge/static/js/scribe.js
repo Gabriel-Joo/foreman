@@ -33,7 +33,7 @@ export function createScribe(store) {
       ].join(' ');
       return `<div class="sc-row"><div class="small"><code>${esc(d.path)}</code> ${st}${d.commit ? ` <span class="muted">· 커밋 ${esc(d.commit)}</span>` : ''}${d.updated_at ? ` <span class="muted">· ${ago(d.updated_at)}</span>` : ''}</div><div class="hand-btns">${btns}</div></div>`;
     }).join('');
-    return rows || '<p class="small muted">게시할 글이 없습니다(main의 log/retro_*.md).</p>';
+    return rows || '<p class="small muted">게시할 글이 없습니다(main의 log/retro_*.md · portfolio/*.md).</p>';
   }
 
   function html(room, label) {
@@ -50,13 +50,18 @@ export function createScribe(store) {
         ${x.kind !== 'publish' ? go(x.kind) : ''}</div>`).join('')
       : '<p class="small muted">기계로 센 할 일이 없습니다.</p>';
     const openHtml = opened.length ? `<div class="small"><b>열려 있는 일 ${opened.length}</b> <span class="muted">— 합치거나 버리기 전까지(동시에 2개까지, 같은 파일을 고치는 일은 하나씩)</span>${
-      opened.map((o) => `<div class="small">· ${esc((tasks[o.task] || {}).title || o.task)} <span class="muted">세션 ${o.session_id}</span></div>`).join('')}</div>` : '';
+      opened.map((o) => `<div class="small">· ${esc((tasks[o.task] || {}).title || o.task)}${o.topic ? ` — ${esc(o.topic)}` : ''} <span class="muted">세션 ${o.session_id}</span></div>`).join('')}</div>` : '';
     const taskHtml = openHtml + ORDER.filter((k) => k !== 'publish' && tasks[k]).map((k) => `<div class="sc-row"><div class="small"><b>${esc(tasks[k].title)}</b> <span class="muted">${esc(blocked[k] ? blocked[k] : tasks[k].desc)}</span></div>
         ${go(k)}</div>`).join('');
+    // 포트폴리오 쓰기(12c, 11-06) — 주제마다 따로 연다(다른 주제는 다른 파일이라 동시에 둘까지 된다). 주제는 config/portfolio.toml
+    const tps = pj.topics || [];
+    const tpHtml = tps.length && tasks.portfolio ? `<details class="hand"><summary title="포트폴리오 쓰기 — 주제를 골라 서기가 portfolio/에 씁니다. 바깥 독자용이라 저장소 링크 없이 게시됩니다."><b>포트폴리오 쓰기</b> <span class="muted">${tps.filter((t) => t.written).length}/${tps.length} 씀</span></summary>${
+      tps.map((t) => `<div class="sc-row"><div class="small"><b>${esc(t.title)}</b> ${t.written ? '<span class="ok">씀</span>' : '<span class="muted">안 씀</span>'} <span class="muted">— ${esc(t.blocked || t.about)}</span></div>
+        <button type="button" class="small" data-sc-task="portfolio" data-topic="${esc(t.slug)}" data-name="${esc(t.title)}"${busy || t.blocked ? ' disabled' : ''} title="${esc(t.blocked ? `포트폴리오 쓰기 — 지금은 시킬 수 없습니다. ${t.blocked}` : `포트폴리오 쓰기 — 「${t.title}」을 서기에게 맡깁니다. ${t.written ? '이미 쓴 글을 고쳐 씁니다.' : '새로 씁니다.'}`)}">${t.written ? '고쳐 쓰기' : '쓰기'}</button></div>`).join('')}</details>` : '';
     return `<div class="small muted">${esc(label)} · 서기 — 문서 담당. 시킨 일은 따로 작업(worktree) 세션으로 돌고, 끝나면 사람이 diff를 보고 합칩니다.</div>
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}">${esc(note.msg)}</div>` : ''}
       <details class="hand" open><summary title="할 일 — 브리지가 LLM 없이 센 것입니다(커밋은 쌓였는데 README가 그대로 등)."><b>할 일 ${items.length}</b></summary>${todoHtml}</details>
-      <details class="hand" open><summary title="시킬 일 — 고르면 서기 세션이 뜹니다."><b>시킬 일</b></summary>${taskHtml}</details>
+      <details class="hand" open><summary title="시킬 일 — 고르면 서기 세션이 뜹니다."><b>시킬 일</b></summary>${taskHtml}${tpHtml}</details>
       <details class="hand" open><summary title="Notion 게시 — 원본은 git 마크다운, Notion은 게시판입니다. 버튼을 눌러야만 올라갑니다."><b>Notion 게시</b></summary>${pubBlock(room)}</details>`;
   }
 
@@ -65,10 +70,11 @@ export function createScribe(store) {
     if (!t && !p) return;
     ev.preventDefault();
     if (t) {
-      const k = t.dataset.scTask, name = ((todo && todo.tasks) || {})[k]?.title || k;
+      const k = t.dataset.scTask, topic = t.dataset.topic || null;
+      const name = (((todo && todo.tasks) || {})[k]?.title || k) + (topic ? ` — ${t.dataset.name || topic}` : '');
       if (!confirm(`${label}의 서기에게 「${name}」을 맡깁니다. 서기 세션이 따로 작업(worktree)으로 뜨고(Opus), 끝나면 [끝내고 합치기]로 검토해 합칩니다. 진행할까요?`)) return;
       busy = true; note = { msg: `「${name}」 — 서기 세션을 띄우는 중입니다…` }; store.touch('panel');
-      const r = await fetch('/api/scribe/start', { method: 'POST', headers: store.headers(true), body: JSON.stringify({ project: room, task: k }) });
+      const r = await fetch('/api/scribe/start', { method: 'POST', headers: store.headers(true), body: JSON.stringify({ project: room, task: k, topic }) });
       const j = await r.json().catch(() => ({}));
       busy = false;
       note = r.ok ? { msg: `「${name}」 — 서기 세션을 띄웠습니다(tmux ${j.tmux || '?'}). 서기실에서 일합니다.` } : { bad: true, msg: `띄우지 못했습니다 — ${j.refused || j.detail || r.status}` };

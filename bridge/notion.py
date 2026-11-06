@@ -41,9 +41,10 @@ class OutOfScope(Exception):
 
 # ── 변환기(마크다운 → Notion 블록) ─────────────────────────────
 class Ctx:
-    """링크를 풀 때 쓰는 것 — 원본 경로와 게시한 커밋."""
-    def __init__(self, path: str = "", commit: str = "HEAD", gh: str = GH) -> None:
-        self.path, self.commit, self.gh = path, commit, gh
+    """링크를 풀 때 쓰는 것 — 원본 경로와 게시한 커밋. links=False(포트폴리오)면 커밋 · 파일 · 저장소 안 링크를 글자로만 둔다 —
+    저장소가 비공개라 읽는 사람에게는 404다(11-06 사용자 결정)."""
+    def __init__(self, path: str = "", commit: str = "HEAD", gh: str = GH, links: bool = True) -> None:
+        self.path, self.commit, self.gh, self.links = path, commit, gh, links
 
     def blob(self, rel: str) -> str:
         return f"{self.gh}/blob/{self.commit}/{rel}"
@@ -103,12 +104,15 @@ def inline(text: str, ctx: Ctx) -> list[dict[str, Any]]:
         elif m["ev"]:
             k, v = m["evk"], m["evv"]
             if k == "c":
-                out += _rt(v, code=True, link=f"{ctx.gh}/commit/{v}")
+                out += _rt(v, code=True, link=f"{ctx.gh}/commit/{v}" if ctx.links else None)
             else:                                   # log · docs — 파일(줄 범위 · 절은 떼고 파일만 잇는다)
                 f = re.split(r"[:#]", v)[0]
-                out += _rt(f"{k}/{f}", code=True, link=ctx.blob(f"{k}/{f}"))
+                out += _rt(f"{k}/{f}", code=True, link=ctx.blob(f"{k}/{f}") if ctx.links else None)
         elif m["link"]:
-            out += _rt(m["ltext"], link=ctx.resolve(m["lhref"]))
+            href = ctx.resolve(m["lhref"])
+            if href and not ctx.links and href.startswith(ctx.gh):
+                href = None                         # 저장소 안 파일 링크 — 포트폴리오에서는 글자만
+            out += _rt(m["ltext"], link=href)
         pos = m.end()
     if pos < len(text):
         out += _rt(text[pos:])
@@ -174,6 +178,18 @@ def md_to_blocks(md: str, ctx: Ctx | None = None) -> tuple[str | None, list[dict
             else:
                 kind = "heading_" + str(min(max(level - 1, 1), 3))    # ## → h1 · ### → h2 · #### 이상 → h3
                 blocks.append(_block(kind, inline(text, ctx)))
+            i += 1
+            continue
+        img = re.match(r"^!\[(?P<cap>[^\]]*)\]\((?P<src>[^)\s]+)\)$", s)
+        if img:                                     # 그림 — 저장소 안 PNG는 게시할 때 파일로 올린다(_upload), 바깥 주소는 그대로
+            flush_para()
+            src = img["src"]
+            cap = inline(img["cap"], ctx) if img["cap"] else []
+            if re.match(r"https?://", src):
+                blocks.append({"object": "block", "type": "image", "image": {"type": "external", "external": {"url": src}, "caption": cap}})
+            else:
+                rel = str(PurePosixPath(ctx.path).parent / src) if ctx.path else src
+                blocks.append({"object": "block", "type": "image", "_upload": os.path.normpath(rel), "image": {"caption": cap}})
             i += 1
             continue
         if re.match(r"^(-{3,}|\*{3,}|_{3,})$", s):
@@ -311,8 +327,32 @@ class NotionClient:
                 return out
             cur = d.get("next_cursor")
 
-    async def append(self, bid: str, children: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return (await self._call("PATCH", f"/blocks/{bid}/children", {"children": children})).get("results", [])
+    async def append(self, bid: str, children: list[dict[str, Any]], after: str | None = None) -> list[dict[str, Any]]:
+        body: dict[str, Any] = {"children": children}
+        if after:
+            body["after"] = after                   # 그 블록 바로 뒤에 — 자리를 지키며 갈아 끼울 때
+        res = (await self._call("PATCH", f"/blocks/{bid}/children", body)).get("results", [])
+        if after:                                   # 응답이 부모의 자식 전체로 올 수도 있다 — 새로 만든 것만 골라 돌려준다
+            ids = [r["id"] for r in res]
+            k = ids.index(after) + 1 if after in ids else 0
+            return res[k:k + len(children)]
+        return res[-len(children):] if len(res) > len(children) else res
+
+    async def update_block(self, bid: str, block: dict[str, Any]) -> None:
+        """블록 내용만 고친다 — 블록 id가 그대로라 사람이 바꿔 둔 보기(mermaid 미리보기)가 남는다(11-06 확인)."""
+        t = block["type"]
+        await self._call("PATCH", f"/blocks/{bid}", {t: {k: v for k, v in block[t].items() if k != "children"}})
+
+    async def upload_file(self, name: str, data: bytes, content_type: str = "image/png") -> str:
+        """파일 올리기(11-06 확인) — 만들기 → 보내기. 그림 블록에 {"type": "file_upload", "file_upload": {"id": …}}로 붙인다."""
+        import httpx
+        meta = await self._call("POST", "/file_uploads", {"filename": name, "content_type": content_type})
+        h = {k: v for k, v in self._h.items() if k != "Content-Type"}
+        async with httpx.AsyncClient(timeout=60) as hc:
+            r = await hc.post(f"{API}/file_uploads/{meta['id']}/send", headers=h, files={"file": (name, data, content_type)})
+        if r.status_code >= 400:
+            raise NotionError(r.status_code, str((r.json() if r.content else {}).get("message"))[:300])
+        return meta["id"]
 
     async def delete_block(self, bid: str) -> None:
         await self._call("DELETE", f"/blocks/{bid}")
@@ -354,7 +394,7 @@ class Scope:
 
 
 # ── 게시기 ──────────────────────────────────────────────────
-SECTIONS = (("log/retro_", "회고"),)          # 원본 경로 앞부분 → 루트 아래 묶음 페이지. 그 밖은 "문서"
+SECTIONS = (("log/retro_", "회고"), ("portfolio/", "포트폴리오"))   # 원본 경로 앞부분 → 루트 아래 묶음 페이지. 그 밖은 "문서"
 
 
 def section_of(path: str) -> str:
@@ -364,8 +404,8 @@ def section_of(path: str) -> str:
 def git_show(repo: str, path: str) -> tuple[str, str]:
     """(본문, 그 파일을 마지막으로 바꾼 커밋 짧은 해시) — main HEAD에 커밋된 것만."""
     p = PurePosixPath(path)
-    if p.is_absolute() or ".." in p.parts or p.suffix != ".md" or not str(p).startswith(("log/", "docs/")):
-        raise OutOfScope("log/ · docs/ 아래 .md만 게시합니다")
+    if p.is_absolute() or ".." in p.parts or p.suffix != ".md" or not str(p).startswith(("log/", "docs/", "portfolio/")):
+        raise OutOfScope("log/ · docs/ · portfolio/ 아래 .md만 게시합니다")
     r = subprocess.run(["git", "-C", repo, "show", f"HEAD:{path}"], capture_output=True, text=True, timeout=15)
     if r.returncode != 0:
         raise FileNotFoundError(f"main에 커밋된 {path}가 없습니다 — 합친 뒤에 게시해 주세요")
@@ -389,16 +429,122 @@ def _strip_children(b: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, A
     return {**b, b["type"]: inner}, kids
 
 
-async def append_tree(client: Any, parent: str, blocks: list[dict[str, Any]]) -> int:
+async def append_tree(client: Any, parent: str, blocks: list[dict[str, Any]], after: str | None = None) -> int:
+    """블록들을 붙인다(자식은 만든 뒤 붙인다). after를 주면 그 블록 바로 뒤에 차례로."""
     n = 0
     for k in range(0, len(blocks), CHUNK):
         part = [_strip_children(b) for b in blocks[k:k + CHUNK]]
-        made = await client.append(parent, [b for b, _ in part])
+        made = await client.append(parent, [b for b, _ in part], after=after)
         n += len(part)
         for (_, kids), m in zip(part, made, strict=False):
             if kids:
                 n += await append_tree(client, m["id"], kids)
+        if after and made:
+            after = made[-1]["id"]
     return n
+
+
+# ── 다시 게시 — 자리를 지키며 갈아 끼우기(11-06) ──────────────
+# 모두 지우고 새로 붙이면 사람이 바꿔 둔 보기(mermaid 미리보기)가 날아간다. API로는 그 보기를 정할 수 없다(code에 caption ·
+# language · rich_text뿐). 블록 내용만 고치면 id가 그대로라 보기가 남는다 — 자리마다 같은 종류면 고치고, 다르면 그 하나만 바꾼다
+UPDATABLE = {"paragraph", "heading_1", "heading_2", "heading_3", "bulleted_list_item", "numbered_list_item", "quote", "code",
+             "callout", "to_do", "table_row"}
+
+
+def _norm_rt(rt: list[dict[str, Any]]) -> list[tuple[Any, ...]]:
+    out = []
+    for t in rt or []:
+        tx = t.get("text") or {}
+        a = t.get("annotations") or {}
+        out.append((tx.get("content", t.get("plain_text", "")), (tx.get("link") or {}).get("url"),
+                    bool(a.get("bold")), bool(a.get("code"))))
+    return out
+
+
+def _same(old: dict[str, Any], new: dict[str, Any]) -> bool:
+    t = new["type"]
+    o, n = old.get(t) or {}, new.get(t) or {}
+    if t == "table_row":
+        return [_norm_rt(c) for c in o.get("cells", [])] == [_norm_rt(c) for c in n.get("cells", [])]
+    return _norm_rt(o.get("rich_text")) == _norm_rt(n.get("rich_text")) and o.get("language") == n.get("language")
+
+
+async def sync_children(client: Any, parent: str, new: list[dict[str, Any]], stats: dict[str, int] | None = None) -> dict[str, int]:
+    """parent의 자식을 new에 맞춘다 — 같은 자리 · 같은 종류면 내용만(같으면 그대로), 다르면 그 블록만 바꾼다.
+    맨 앞 블록부터 다르면 붙일 자리가 없어 전부 갈아 끼운다(reset)."""
+    st = stats if stats is not None else {"kept": 0, "updated": 0, "replaced": 0, "added": 0, "deleted": 0, "reset": 0}
+    old = await client.children(parent)
+    anchor: str | None = None
+    for i, nb in enumerate(new):
+        if i >= len(old):
+            st["added"] += len(new) - i
+            await append_tree(client, parent, new[i:], after=anchor)
+            return st
+        ob, t = old[i], nb["type"]
+        if ob["type"] == t and t in UPDATABLE:
+            body, kids = _strip_children(nb)
+            if _same(ob, body):
+                st["kept"] += 1
+            else:
+                await client.update_block(ob["id"], body)
+                st["updated"] += 1
+            if kids or ob.get("has_children"):
+                await sync_children(client, ob["id"], kids, st)
+            anchor = ob["id"]
+        elif ob["type"] == t == "table" and (ob.get("table") or {}).get("table_width") == nb["table"]["table_width"]:
+            await sync_children(client, ob["id"], nb["table"]["children"], st)
+            anchor = ob["id"]
+        elif ob["type"] == t == "divider":
+            st["kept"] += 1
+            anchor = ob["id"]
+        elif anchor is None:
+            for b in old:                           # 맨 앞부터 달라 붙일 자리가 없다 — 전부 갈아 끼운다
+                await client.delete_block(b["id"])
+            st["reset"] += 1
+            st["deleted"] += len(old)
+            st["added"] += len(new)
+            await append_tree(client, parent, new)
+            return st
+        else:
+            await client.delete_block(ob["id"])
+            await append_tree(client, parent, [nb], after=anchor)
+            got = await client.children(parent)     # 새로 만든 블록 id — anchor 바로 뒤
+            ids = [b["id"] for b in got]
+            anchor = ids[ids.index(anchor) + 1] if anchor in ids and ids.index(anchor) + 1 < len(ids) else anchor
+            st["replaced"] += 1
+    for ob in old[len(new):]:
+        await client.delete_block(ob["id"])
+        st["deleted"] += 1
+    return st
+
+
+def git_bytes(repo: str, path: str) -> bytes:
+    p = PurePosixPath(path)
+    if p.is_absolute() or ".." in p.parts or p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".gif") or not str(p).startswith(("portfolio/", "docs/", "log/")):
+        raise OutOfScope(f"그림은 저장소 안 portfolio/ · docs/ · log/의 PNG · JPG만 올립니다: {path}")
+    r = subprocess.run(["git", "-C", repo, "show", f"HEAD:{path}"], capture_output=True, timeout=15)
+    if r.returncode != 0:
+        raise FileNotFoundError(f"main에 커밋된 그림 {path}가 없습니다")
+    return r.stdout
+
+
+async def resolve_uploads(client: Any, repo: str, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """그림 자리(_upload)를 파일로 올려 그림 블록으로 — 게시할 때마다 올린다(그림이 바뀌었을 수 있다)."""
+    out = []
+    for b in blocks:
+        if "_upload" in b:
+            data = git_bytes(repo, b["_upload"])
+            ctype = "image/png" if b["_upload"].lower().endswith(".png") else "image/jpeg"
+            fid = await client.upload_file(PurePosixPath(b["_upload"]).name, data, ctype)
+            b = {"object": "block", "type": "image",
+                 "image": {"type": "file_upload", "file_upload": {"id": fid}, "caption": b["image"].get("caption", [])}}
+        else:
+            t = b["type"]
+            kids = (b.get(t) or {}).get("children")
+            if kids and t != "table":
+                b = {**b, t: {**b[t], "children": await resolve_uploads(client, repo, kids)}}
+        out.append(b)
+    return out
 
 
 class Publisher:
@@ -437,23 +583,25 @@ class Publisher:
     async def publish(self, path: str, when: str = "") -> dict[str, Any]:
         body, commit = git_show(self.repo, path)
         digest = hashlib.sha256(body.encode()).hexdigest()
-        ctx = Ctx(path, commit or "HEAD", self.gh)
+        portfolio = path.startswith("portfolio/")      # 바깥 사람이 읽는 글 — 저장소 링크 없이, 맨 위 "사본" 안내 없이(11-06)
+        ctx = Ctx(path, commit or "HEAD", self.gh, links=not portfolio)
         title, blocks = md_to_blocks(body, ctx)
         title = title or PurePosixPath(path).stem
-        blocks = [header_block(path, commit or "HEAD", ctx, when)] + blocks
+        if not portfolio:
+            blocks = [header_block(path, commit or "HEAD", ctx, when)] + blocks
         row = await self._row(path)
         if row and row["status"] == "published" and row["notion_page_id"]:
             pid = row["notion_page_id"]
             if await self.scope.under_root(pid):
                 if row["content_hash"] == digest:
                     return {"path": path, "action": "unchanged", "page_id": pid, "url": row["url"], "commit": commit}
-                for ch in await self.c.children(pid):          # 내용 갈아 끼우기 — 같은 페이지 · 같은 URL
-                    await self.c.delete_block(ch["id"])
+                blocks = await resolve_uploads(self.c, self.repo, blocks)
+                st = await sync_children(self.c, pid, blocks)    # 같은 페이지 · 같은 URL, 바뀐 블록만(mermaid 미리보기가 남는다)
                 await self.c.set_title(pid, title)
-                n = await append_tree(self.c, pid, blocks)
                 await self._save(path, kind="doc", title=title, commit_sha=commit, content_hash=digest, status="published", error=None)
-                return {"path": path, "action": "updated", "page_id": pid, "url": row["url"], "commit": commit, "blocks": n}
+                return {"path": path, "action": "updated", "page_id": pid, "url": row["url"], "commit": commit, "sync": st}
             # Notion에서 지워졌거나 범위 밖으로 옮겨졌다 — 그 페이지는 두고 새로 만든다
+        blocks = await resolve_uploads(self.c, self.repo, blocks)
         parent = await self._section(section_of(path))
         await self.scope.require(parent)
         p = await self.c.create_page(parent, title, [])
@@ -488,8 +636,8 @@ class Publisher:
     async def list(self) -> list[dict[str, Any]]:
         """게시할 수 있는 글(main의 log/retro_*.md) + 게시 기록. 원본이 게시 뒤에 바뀌었으면 changed."""
         from sqlalchemy import text
-        files = subprocess.run(["git", "-C", self.repo, "ls-files", "log/retro_*.md"], capture_output=True, text=True,
-                               timeout=15).stdout.split()
+        files = subprocess.run(["git", "-C", self.repo, "ls-files", "log/retro_*.md", "portfolio/*.md"], capture_output=True,
+                               text=True, timeout=15).stdout.split()
         async with self.e.connect() as c:
             rows = {r["path"]: dict(r) for r in (await c.execute(text(
                 "SELECT path, title, status, url, commit_sha, content_hash, updated_at FROM doc_publish "

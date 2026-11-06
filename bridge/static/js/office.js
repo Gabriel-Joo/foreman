@@ -568,6 +568,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       for (const it of sorted) it.draw();
       for (const r of world.rooms) overTopItems(r, list, now);       // 탁자 위 소품이 사람 앞에 그려진 자리만 사람을 덧그린다
       if (world.hq) overTopItems(world.hq, list, now, 'hq');        // 감독실(교장실 · 팀장실 · 감독 컨테이너) 탁자도
+      BUBBLES.clear();
       for (const a of list) drawOverlay(a, now);
     } else {
       drawHQShapes(now);
@@ -1549,12 +1550,36 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       drawBubble(x, top - 3, '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), P.act, 7);
     }
     if (a.kind === 'scribe' && a.todo && a.todo.items && a.todo.items.length) {  // 서기 — 할 일 N(누르면 목록)
-      drawBubble(x, top - 3, `할 일 ${a.todo.items.length}`, P.warn, 8);
+      placeBubble(a, x, top, `할 일 ${a.todo.items.length}`, P.warn, 8);
     }
     if (a.subHidden) drawBubble(x + 11, top + 4, `+${a.subHidden}`, P.act, 7);      // 10명 넘는 서브에이전트는 접는다
     if (a.key === selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - 9, top - 2, 18, 20); }
   }
 
+  // 이름표를 피하는 말풍선(11-06 — 서기실에서 "할 일 2"가 구역 이름표를 덮었다). 이름표는 사람 위 글보다 나중에 화면 좌표로 그려서,
+  // 지난 프레임의 이름표 칸(HITS)을 월드 픽셀로 바꿔 머리 위 → 오른쪽 → 왼쪽 → 발밑 순으로 안 겹치는 첫 자리에 둔다(없으면 가장 덜 겹치는 곳)
+  const BUBBLES = new Map();
+  function tagBoxesW() {
+    const toW = (sx, sy) => [((sx - W / 2) / cam.s + cam.x), ((sy - H / 2) / cam.s + cam.y)];
+    return HITS.filter((h) => h.zone).map((h) => { const [x0, y0] = toW(h.x, h.y), [x1, y1] = toW(h.x + h.w, h.y + h.h); return [x0, y0, x1 - x0, y1 - y0]; });
+  }
+  function placeBubble(a, x, top, text, color, size) {
+    ctx.font = `bold ${size}px ui-monospace, monospace`;
+    const w = Math.max(10, ctx.measureText(text).width + 6), h = size + 4, feet = a.y * T;
+    const spots = [[x, top - 3], [x + 8 + w / 2, top + 8], [x - 8 - w / 2, top + 8], [x, feet + size + 5]];
+    const boxes = tagBoxesW();
+    let best = null;
+    for (const [bx, by] of spots) {
+      const r = [bx - w / 2, by - size - 2, w, h], cover = boxes.reduce((s, b) => s + areaOf(r, b), 0);
+      if (!best || cover < best.cover) best = { bx, by, r, cover };
+      if (!cover) break;
+    }
+    BUBBLES.set(a.key, { room: a.room, text, rect: best.r.map((v) => Math.round(v)), cover: Math.round(best.cover) });
+    drawBubble(best.bx, best.by, text, color, size);
+  }
+  function bubbleAudit() {                       // 이름표에 걸친 말풍선 — tools/screen.py --eval 'window.office.bubbleAudit()'
+    return [...BUBBLES.entries()].filter(([k, b]) => b.cover > 0 && actors.has(k)).map(([key, b]) => ({ key, ...b }));
+  }
   function drawBubble(x, y, text, color, size = 9) {
     ctx.font = `bold ${size}px ui-monospace, monospace`;
     const w = Math.max(10, ctx.measureText(text).width + 6);
@@ -2148,7 +2173,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   resize();
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
-  return { go, theme, openSession, panel, actors, audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
+  return { go, theme, openSession, panel, actors, audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bubbleAudit: () => bubbleAudit(), layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
                                                                        anim: a.act && a.act.anim, go: a.act && a.act.go, face: a.face, dir: a.dir, char: a.char })) };
 }
 
