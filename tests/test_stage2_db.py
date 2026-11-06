@@ -1213,6 +1213,18 @@ async def test_notion_publish_update_unchanged_archive_and_scope(env, tmp_path):
     assert (await pub.archive_section("포트폴리오"))["action"] == "archived"                  # 비었으니 내린다
     with pytest.raises(nt.OutOfScope):
         await pub.archive_section("회고")                                                     # 아래에 다시 게시한 회고(r4)가 남았다
+    # 사이에 끼운 새 주제 — 다시 세우면 번호순으로 루트 끝에 차례로 붙는다(페이지 id 그대로)
+    (repo / "portfolio" / "00_5_mid.md").write_text("# 끼운 글\n\n- 가운데\n", encoding="utf-8")
+    g("add", "."), g("commit", "-qm", "mid")
+    pm = await pub.publish("portfolio/00_5_mid.md")
+    fake.calls.clear()
+    ro = await pub.reorder_portfolio()
+    assert ro["order"] == ["portfolio/00_5_mid.md", "portfolio/00_overview.md", "portfolio/01_loss.md"]
+    back = [c[1] for c in fake.calls if c[0] == "move" and c[2] == "root"]
+    assert back == [pm["page_id"], p0["page_id"], p1["page_id"]]                              # 번호(파일 이름)순으로 되돌림
+    assert all(fake.pages[x]["parent"] == "root" for x in back)
+    assert [k["child_page"]["title"] for k in await fake.children(fake.pages[back[0]]["parent"]) if k["type"] == "child_page"
+            and k["child_page"]["title"] == "정렬 중"] == []                                    # 임시 묶음은 내렸다
 
 
 async def test_later_since_counts_only_merged_runs(env):

@@ -12,46 +12,54 @@ sources = ["README.md", "docs/10_office_design.md", "docs/11_foreman_dispatch.md
 screenshots = true
 
 [[topic]]
-slug = "01_context_loss"
+slug = "01_pixel_office"
+title = "픽셀 오피스 — 그 화면을 어떻게 만들었나"
+about = "00에서 보여 준 화면을 어떻게 만들었나(11-06 사용자: 주제 여덟이 전부 시스템 쪽이었다). 다룰 것 — ① 왜 픽셀 오피스인가: 표로 보면 안 보이는 것을 공간으로 ② 테마 셋(현장 · 오피스 · 마법학교)을 같은 데이터로 그리는 구조 — 배치 · 매핑 JSON을 엔진에서 분리 ③ CC0 에셋 찾기와 라이선스 가리기 ④ 에셋에 없는 동작(앉기 · 눕기 · 들기 · 작업 동작)을 엔진이 흉내 낸 것 ⑤ 가구 · 소품 · 이름표가 캐릭터를 가리는 문제를 점검 도구(layoutAudit · propAudit · nameAudit · tools/screen.py)로 푼 것 ⑥ 길찾기와 복도 ⑦ 비유 정하기(현장 · 오피스 · 마법학교). 세 테마를 나란히 보여 주는 사진이 있으면 좋다"
+sources = ["docs/10_office_design.md", "log/stage10_office_result.md", "log/stage10_background_waiting_result.md", "LICENSES.md",
+           "bridge/static/themes", "bridge/static/js/office.js", "tools/screen.py", "log/ui_font_title_20261106.md"]
+screenshots = true
+
+[[topic]]
+slug = "02_context_loss"
 title = "압축 손실을 재고 메우기"
 about = "자동 압축으로 에이전트가 잊는 지시를 재고(손 점검 · 기계 판정), 인계 · 문서화로 메운 과정"
 sources = ["log/runshoes_compaction_loss_20261105.md", "log/foreman_compaction_loss_20261105.md", "docs/11_handoff.md",
            "docs/11_handoff_v2.md", "log/handoff_v2_result.md", "log/handoff_v2_c_result.md", "log/handoff_v2_d_result.md"]
 
 [[topic]]
-slug = "02_agent_control"
+slug = "03_agent_control"
 title = "에이전트 관제 — 상태 · 승인 · 입력"
 about = "세션 상태를 어떻게 판정하고, 무엇을 묻고(승인), 어떻게 말을 넣는지"
 sources = ["README.md", "log/stage2_transcript_result.md", "log/stage5_approval_result.md", "log/stage11_handoff_result.md",
            "log/stage10_background_waiting_result.md"]
 
 [[topic]]
-slug = "03_dispatcher"
+slug = "04_dispatcher"
 title = "포먼 디스패처 — 같은 일을 하는 세션을 알아채기"
 about = "사람의 요청을 받아 새로 띄울지 · 이어 갈지 · 이미 하는 세션에 붙일지 고르는 판단"
 sources = ["docs/11_foreman_dispatch.md", "log/stage11_foreman_dispatch_result.md", "docs/11_worktree.md", "log/stage11_worktree_result.md"]
 
 [[topic]]
-slug = "04_scribe"
+slug = "05_scribe"
 title = "서기 — 근거가 확인되는 문서"
 about = "AI가 쓴 문서를 근거 표시 · 기계 확인 · 사람 합치기로 믿을 수 있게 만든 과정"
 sources = ["docs/12_scribe.md", "docs/style_guide.md", "log/stage12_scribe_result.md"]
 
 [[topic]]
-slug = "05_observability"
+slug = "06_observability"
 title = "관찰 파이프라인 — 조용한 고장을 잡는다"
 about = "hook · 트랜스크립트 적재 · 턴 판정, 그리고 CI/CD 인과 체인으로 조용한 고장을 드러낸 방법"
 sources = ["README.md", "log/01_kickoff_result.md", "log/stage1_bridge_db_result.md", "log/stage2_transcript_result.md",
            "log/stage4_notify_result.md", "log/stage8_cicd_result.md"]
 
 [[topic]]
-slug = "06_placement"
+slug = "07_placement"
 title = "배치와 보안 판단"
 about = "브리지 · DB를 클러스터 밖에 둔 이유, 외부 노출을 하지 않은 이유, 비밀값 · 권한을 구조로 막은 방법"
 sources = ["README.md", "docs/02_cloudflare_tunnel.md", "log/stage1_bridge_db_result.md", "log/stage7_terminal_result.md"]
 
 [[topic]]
-slug = "07_models_cost"
+slug = "08_models_cost"
 title = "모델 고르기와 비용"
 about = "Opus · Sonnet을 어디에 쓰는지, 정답과 맞대 모델을 정한 방법과 토큰 숫자"
 sources = ["log/stage12_model_choice_result.md", "log/handoff_v2_d_result.md", "log/later_codex_bridge.md"]

@@ -651,6 +651,25 @@ class Publisher:
         await self._save(path, parent_page_id=dest)
         return {"path": path, "action": "moved", "page_id": row["notion_page_id"], "section": section}
 
+    async def reorder_portfolio(self) -> dict[str, Any]:
+        """포트폴리오를 번호(파일 이름)순으로 다시 세운다(11-06 — 사이에 새 주제를 끼웠다). Notion은 만든 · 옮긴 순서로 쌓고
+        API로 자리를 정할 수 없어서, 모두 임시 묶음 「정렬 중」으로 옮겼다가 번호순으로 루트에 되돌린다(페이지 · URL · 블록 그대로)."""
+        from sqlalchemy import text
+        async with self.e.connect() as c:
+            rows = (await c.execute(text(
+                "SELECT path, notion_page_id FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' "
+                "AND path LIKE :pre ORDER BY path"), {"p": self.project, "pre": "portfolio/%"})).all()
+        for _, pid in rows:
+            await self.scope.require(pid)
+        tmp = await self._section("정렬 중")
+        for _, pid in rows:
+            await self.c.move_page(pid, tmp)
+        for path, pid in rows:
+            await self.c.move_page(pid, self.root)
+            await self._save(path, parent_page_id=self.root)
+        await self.archive_section("정렬 중")
+        return {"action": "reordered", "order": [r[0] for r in rows]}
+
     async def archive_section(self, name: str) -> dict[str, Any]:
         """묶음 페이지(「회고」 · 「포트폴리오」) 내리기 — 우리가 만든 것이고, 그 아래에 살아 있는 페이지가 없을 때만(11-06)."""
         key = f"@section/{name}"
