@@ -62,6 +62,8 @@ flowchart TD
 
 ### 3-2. 승인 — hook 두 개로 가로채기
 
+![승인 규칙에 걸린 명령 — 패널에 승인 카드가 뜨고 머리말에 「승인 대기 1」, 허용되면 카드가 처리됨으로 바뀌고 세션이 다시 일한다 〔실제 기록 재생 — 11-02 승인 시스템 시험의 실제 승인(규칙 rm-재귀, 브라우저에서 허용)〕](img/04_agent_control_approval.gif)
+
 ```mermaid
 sequenceDiagram
   participant CC as CC 세션 (auto mode)

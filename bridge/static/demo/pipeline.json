@@ -1,0 +1,549 @@
+{
+ "title": "출하 라인",
+ "source": "record",
+ "note": "실제 런슈즈 빌드 #68의 단계 순서(빌드 4분 26초 · 배포 4초) — 몇 초로 줄였다. 커밋 제목은 시연용",
+ "snapshot": {
+  "generated_at": "@+0",
+  "projects": [
+   {
+    "name": "runshoes",
+    "label": "런슈즈",
+    "sessions": [
+     {
+      "id": 901,
+      "cc_session_id": "demo-0901",
+      "short": "demo0901",
+      "character": "코더",
+      "project": "runshoes",
+      "title": "카탈로그 정리",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/runshoes",
+      "pid": 10901,
+      "proc": "S",
+      "cc_status": "idle",
+      "state": "IDLE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": null,
+      "activity": null,
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     },
+     {
+      "id": 961,
+      "cc_session_id": "demo-0961",
+      "short": "demo0961",
+      "character": "코더",
+      "project": "runshoes",
+      "title": "코더 — 카탈로그",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/runshoes",
+      "pid": 10961,
+      "proc": "S",
+      "cc_status": "busy",
+      "state": "ACTIVE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": {
+       "id": 9610,
+       "origin": "human",
+       "started_at": "@-30000",
+       "prompt": "시연"
+      },
+      "activity": {
+       "tool": "Bash",
+       "target": "git status",
+       "ts": "@-1000",
+       "subagent": false
+      },
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   },
+   {
+    "name": "petmint-rag-chatbot",
+    "label": "펫퍼민트",
+    "sessions": [
+     {
+      "id": 902,
+      "cc_session_id": "demo-0902",
+      "short": "demo0902",
+      "character": "코더",
+      "project": "petmint-rag-chatbot",
+      "title": "평가셋 재검수",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/petmint-rag-chatbot",
+      "pid": 10902,
+      "proc": "S",
+      "cc_status": "idle",
+      "state": "IDLE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": null,
+      "activity": null,
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   },
+   {
+    "name": "foreman",
+    "label": "포먼",
+    "sessions": []
+   }
+  ],
+  "approvals": [],
+  "hidden_dormant": 0,
+  "terminal": {
+   "enabled": false
+  },
+  "ingest": null
+ },
+ "pipeline": {
+  "runshoes": {
+   "project": "runshoes",
+   "infra": [
+    {
+     "id": 6,
+     "name": "Jenkins",
+     "kind": "jenkins",
+     "status": "IDLE",
+     "last_seen_at": "2026-11-06T07:29:57Z",
+     "retired": false
+    },
+    {
+     "id": 8,
+     "name": "ArgoCD",
+     "kind": "argocd",
+     "status": "IDLE",
+     "last_seen_at": "2026-11-06T07:29:57Z",
+     "retired": false
+    }
+   ],
+   "waiting": [],
+   "watch": null,
+   "webhook_broken": false,
+   "chains": [
+    {
+     "head": "0000000000000000000000000000000000000000",
+     "short": "00000000",
+     "commits": [],
+     "broke": null,
+     "at": "@-7200000",
+     "stages": {
+      "jenkins": {
+       "status": "success",
+       "started_at": "@-7300000",
+       "ended_at": "@-7250000"
+      },
+      "argocd": {
+       "status": "success",
+       "started_at": "@-7240000",
+       "ended_at": "@-7200000"
+      }
+     }
+    }
+   ]
+  }
+ },
+ "steps": [
+  {
+   "at": 1200,
+   "pipeline": {
+    "runshoes": {
+     "project": "runshoes",
+     "infra": [
+      {
+       "id": 6,
+       "name": "Jenkins",
+       "kind": "jenkins",
+       "status": "IDLE",
+       "last_seen_at": "2026-11-06T07:29:57Z",
+       "retired": false
+      },
+      {
+       "id": 8,
+       "name": "ArgoCD",
+       "kind": "argocd",
+       "status": "IDLE",
+       "last_seen_at": "2026-11-06T07:29:57Z",
+       "retired": false
+      }
+     ],
+     "waiting": [],
+     "watch": null,
+     "webhook_broken": false,
+     "chains": [
+      {
+       "head": "6722aac71a3bcb089c5ef7ff08878cb939b35bdb",
+       "short": "6722aac7",
+       "commits": [
+        {
+         "sha": "6722aac71a3bcb089c5ef7ff08878cb939b35bdb",
+         "short": "6722aac7",
+         "subject": "카탈로그 숫자 고침",
+         "session_id": 961,
+         "title": "코더",
+         "character": "코더",
+         "author": "demo"
+        }
+       ],
+       "stages": {
+        "jenkins": {
+         "status": "running",
+         "step": "Test",
+         "ext": "runshoes-app#68",
+         "url": null,
+         "message": null,
+         "started_at": "@+1200"
+        }
+       },
+       "broke": null,
+       "at": "@+1200"
+      },
+      {
+       "head": "0000000000000000000000000000000000000000",
+       "short": "00000000",
+       "commits": [],
+       "broke": null,
+       "at": "@-7200000",
+       "stages": {
+        "jenkins": {
+         "status": "success",
+         "started_at": "@-7300000",
+         "ended_at": "@-7250000"
+        },
+        "argocd": {
+         "status": "success",
+         "started_at": "@-7240000",
+         "ended_at": "@-7200000"
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "at": 9000,
+   "pipeline": {
+    "runshoes": {
+     "project": "runshoes",
+     "infra": [
+      {
+       "id": 6,
+       "name": "Jenkins",
+       "kind": "jenkins",
+       "status": "IDLE",
+       "last_seen_at": "2026-11-06T07:29:57Z",
+       "retired": false
+      },
+      {
+       "id": 8,
+       "name": "ArgoCD",
+       "kind": "argocd",
+       "status": "IDLE",
+       "last_seen_at": "2026-11-06T07:29:57Z",
+       "retired": false
+      }
+     ],
+     "waiting": [],
+     "watch": null,
+     "webhook_broken": false,
+     "chains": [
+      {
+       "head": "6722aac71a3bcb089c5ef7ff08878cb939b35bdb",
+       "short": "6722aac7",
+       "commits": [
+        {
+         "sha": "6722aac71a3bcb089c5ef7ff08878cb939b35bdb",
+         "short": "6722aac7",
+         "subject": "카탈로그 숫자 고침",
+         "session_id": 961,
+         "title": "코더",
+         "character": "코더",
+         "author": "demo"
+        }
+       ],
+       "stages": {
+        "jenkins": {
+         "status": "running",
+         "step": "Push to Harbor",
+         "ext": "runshoes-app#68",
+         "url": null,
+         "message": null,
+         "started_at": "@+1200"
+        }
+       },
+       "broke": null,
+       "at": "@+1200"
+      },
+      {
+       "head": "0000000000000000000000000000000000000000",
+       "short": "00000000",
+       "commits": [],
+       "broke": null,
+       "at": "@-7200000",
+       "stages": {
+        "jenkins": {
+         "status": "success",
+         "started_at": "@-7300000",
+         "ended_at": "@-7250000"
+        },
+        "argocd": {
+         "status": "success",
+         "started_at": "@-7240000",
+         "ended_at": "@-7200000"
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "at": 12500,
+   "pipeline": {
+    "runshoes": {
+     "project": "runshoes",
+     "infra": [
+      {
+       "id": 6,
+       "name": "Jenkins",
+       "kind": "jenkins",
+       "status": "IDLE",
+       "last_seen_at": "2026-11-06T07:29:57Z",
+       "retired": false
+      },
+      {
+       "id": 8,
+       "name": "ArgoCD",
+       "kind": "argocd",
+       "status": "IDLE",
+       "last_seen_at": "2026-11-06T07:29:57Z",
+       "retired": false
+      }
+     ],
+     "waiting": [],
+     "watch": null,
+     "webhook_broken": false,
+     "chains": [
+      {
+       "head": "6722aac71a3bcb089c5ef7ff08878cb939b35bdb",
+       "short": "6722aac7",
+       "commits": [
+        {
+         "sha": "6722aac71a3bcb089c5ef7ff08878cb939b35bdb",
+         "short": "6722aac7",
+         "subject": "카탈로그 숫자 고침",
+         "session_id": 961,
+         "title": "코더",
+         "character": "코더",
+         "author": "demo"
+        }
+       ],
+       "stages": {
+        "jenkins": {
+         "status": "success",
+         "step": null,
+         "ext": "runshoes-app#68",
+         "url": null,
+         "message": null,
+         "started_at": "@+1200",
+         "ended_at": "@+12500"
+        },
+        "argocd": {
+         "status": "running",
+         "step": null,
+         "ext": "runshoes",
+         "url": null,
+         "message": null,
+         "started_at": "@+12600"
+        }
+       },
+       "broke": null,
+       "at": "@+12600"
+      },
+      {
+       "head": "0000000000000000000000000000000000000000",
+       "short": "00000000",
+       "commits": [],
+       "broke": null,
+       "at": "@-7200000",
+       "stages": {
+        "jenkins": {
+         "status": "success",
+         "started_at": "@-7300000",
+         "ended_at": "@-7250000"
+        },
+        "argocd": {
+         "status": "success",
+         "started_at": "@-7240000",
+         "ended_at": "@-7200000"
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "at": 15000,
+   "pipeline": {
+    "runshoes": {
+     "project": "runshoes",
+     "infra": [
+      {
+       "id": 6,
+       "name": "Jenkins",
+       "kind": "jenkins",
+       "status": "IDLE",
+       "last_seen_at": "2026-11-06T07:29:57Z",
+       "retired": false
+      },
+      {
+       "id": 8,
+       "name": "ArgoCD",
+       "kind": "argocd",
+       "status": "IDLE",
+       "last_seen_at": "2026-11-06T07:29:57Z",
+       "retired": false
+      }
+     ],
+     "waiting": [],
+     "watch": null,
+     "webhook_broken": false,
+     "chains": [
+      {
+       "head": "6722aac71a3bcb089c5ef7ff08878cb939b35bdb",
+       "short": "6722aac7",
+       "commits": [
+        {
+         "sha": "6722aac71a3bcb089c5ef7ff08878cb939b35bdb",
+         "short": "6722aac7",
+         "subject": "카탈로그 숫자 고침",
+         "session_id": 961,
+         "title": "코더",
+         "character": "코더",
+         "author": "demo"
+        }
+       ],
+       "stages": {
+        "jenkins": {
+         "status": "success",
+         "step": null,
+         "ext": "runshoes-app#68",
+         "url": null,
+         "message": null,
+         "started_at": "@+1200",
+         "ended_at": "@+12500"
+        },
+        "argocd": {
+         "status": "success",
+         "step": null,
+         "ext": "runshoes",
+         "url": null,
+         "message": "successfully synced",
+         "started_at": "@+12600",
+         "ended_at": "@+15000"
+        }
+       },
+       "broke": null,
+       "at": "@+15000"
+      },
+      {
+       "head": "0000000000000000000000000000000000000000",
+       "short": "00000000",
+       "commits": [],
+       "broke": null,
+       "at": "@-7200000",
+       "stages": {
+        "jenkins": {
+         "status": "success",
+         "started_at": "@-7300000",
+         "ended_at": "@-7250000"
+        },
+        "argocd": {
+         "status": "success",
+         "started_at": "@-7240000",
+         "ended_at": "@-7200000"
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "at": 18000,
+   "end": true
+  }
+ ]
+}

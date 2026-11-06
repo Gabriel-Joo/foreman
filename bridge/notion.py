@@ -181,7 +181,8 @@ def md_to_blocks(md: str, ctx: Ctx | None = None) -> tuple[str | None, list[dict
                 blocks.append(_block(kind, inline(text, ctx)))
             i += 1
             continue
-        img = re.match(r"^!\[(?P<cap>[^\]]*)\]\((?P<src>[^)\s]+)\)$", s)
+        # 설명 안의 [버튼] 같은 대괄호도 받는다(11-06 — `[^\]]*`이면 「[대화] 탭」 설명의 사진이 글 문단으로 조용히 바뀌었다)
+        img = re.match(r"^!\[(?P<cap>.*)\]\((?P<src>[^)\s]+)\)$", s)
         if img:                                     # 그림 — 저장소 안 PNG는 게시할 때 파일로 올린다(_upload), 바깥 주소는 그대로
             flush_para()
             src = img["src"]
@@ -543,29 +544,38 @@ def content_digest(repo: str, path: str, body: str) -> str:
 
 def git_bytes(repo: str, path: str) -> bytes:
     p = PurePosixPath(path)
-    if p.is_absolute() or ".." in p.parts or p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".gif") or not str(p).startswith(("portfolio/", "docs/", "log/")):
-        raise OutOfScope(f"그림은 저장소 안 portfolio/ · docs/ · log/의 PNG · JPG만 올립니다: {path}")
+    if p.is_absolute() or ".." in p.parts or p.suffix.lower() not in CTYPES or not str(p).startswith(("portfolio/", "docs/", "log/")):
+        raise OutOfScope(f"그림은 저장소 안 portfolio/ · docs/ · log/의 PNG · JPG · GIF · WebM만 올립니다: {path}")
     r = subprocess.run(["git", "-C", repo, "show", f"HEAD:{path}"], capture_output=True, timeout=15)
     if r.returncode != 0:
         raise FileNotFoundError(f"main에 커밋된 그림 {path}가 없습니다")
     return r.stdout
 
 
-async def resolve_uploads(client: Any, repo: str, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """그림 자리(_upload)를 파일로 올려 그림 블록으로 — 게시할 때마다 올린다(그림이 바뀌었을 수 있다)."""
+CTYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webm": "video/webm"}
+
+
+async def resolve_uploads(client: Any, repo: str, blocks: list[dict[str, Any]], limit: int | None = None) -> list[dict[str, Any]]:
+    """그림 자리(_upload)를 파일로 올려 그림 블록으로 — 게시할 때마다 올린다(그림이 바뀌었을 수 있다).
+    형식은 확장자로(11-06 — GIF를 image/jpeg로 보내고 있었다), .webm은 동영상 블록. limit(워크스페이스 파일 한도)를 넘으면
+    보내지 않고 거부한다 — Notion에서 처음 알면 그 글이 반쯤 올라간 채로 남는다(13, 무료 5MB)."""
     out = []
     for b in blocks:
         if "_upload" in b:
             data = git_bytes(repo, b["_upload"])
-            ctype = "image/png" if b["_upload"].lower().endswith(".png") else "image/jpeg"
-            fid = await client.upload_file(PurePosixPath(b["_upload"]).name, data, ctype)
-            b = {"object": "block", "type": "image",
-                 "image": {"type": "file_upload", "file_upload": {"id": fid}, "caption": b["image"].get("caption", [])}}
+            if limit and len(data) > limit:
+                raise OutOfScope(f"{b['_upload']}가 {len(data) / 1e6:.1f}MB로 Notion 파일 한도 {limit / 1e6:.1f}MB를 넘습니다 — "
+                                 "줄여서(tools/screen.py --colors · --every · --clip) 다시 커밋해 주세요")
+            ext = PurePosixPath(b["_upload"]).suffix.lower()
+            fid = await client.upload_file(PurePosixPath(b["_upload"]).name, data, CTYPES.get(ext, "image/png"))
+            kind = "video" if ext == ".webm" else "image"
+            b = {"object": "block", "type": kind,
+                 kind: {"type": "file_upload", "file_upload": {"id": fid}, "caption": b["image"].get("caption", [])}}
         else:
             t = b["type"]
             kids = (b.get(t) or {}).get("children")
             if kids and t != "table":
-                b = {**b, t: {**b[t], "children": await resolve_uploads(client, repo, kids)}}
+                b = {**b, t: {**b[t], "children": await resolve_uploads(client, repo, kids, limit)}}
         out.append(b)
     return out
 
@@ -591,6 +601,16 @@ class Publisher:
         async with self.e.begin() as c:
             await c.execute(text(f"INSERT INTO doc_publish ({', '.join(cols)}) VALUES ({', '.join(':' + k for k in cols)}) "
                                  f"ON DUPLICATE KEY UPDATE {upd}"), {"project": self.project, "path": path, **kw})
+
+    async def _upload_limit(self) -> int | None:
+        """워크스페이스 파일 한도(바이트) — GET /users/me의 bot.workspace_limits(11-06 확인: 5,242,880). 못 읽으면 None(검사 없이)."""
+        if not hasattr(self, "_limit"):
+            try:
+                me = await self.c._call("GET", "/users/me")
+                self._limit = ((me.get("bot") or {}).get("workspace_limits") or {}).get("max_file_upload_size_in_bytes")
+            except Exception:  # noqa: BLE001 — 가짜 클라이언트 · 권한 없음 — 한도 검사만 건너뛴다
+                self._limit = None
+        return self._limit
 
     async def _section(self, name: str) -> str:
         """루트 아래 묶음 페이지(「회고」 등) — 없거나 지워졌으면 만든다. 기록 경로는 `@section/<이름>`."""
@@ -628,13 +648,13 @@ class Publisher:
                 if row["content_hash"] == digest:
                     return {"path": path, "action": "unchanged", "page_id": pid, "url": row["url"], "commit": commit,
                             "title": title}
-                blocks = await resolve_uploads(self.c, self.repo, blocks)
+                blocks = await resolve_uploads(self.c, self.repo, blocks, await self._upload_limit())
                 st = await sync_children(self.c, pid, blocks)    # 같은 페이지 · 같은 URL, 바뀐 블록만(mermaid 미리보기가 남는다)
                 await self.c.set_title(pid, title)
                 await self._save(path, kind="doc", title=title, commit_sha=commit, content_hash=digest, status="published", error=None)
                 return {"path": path, "action": "updated", "page_id": pid, "url": row["url"], "commit": commit, "sync": st}
             # Notion에서 지워졌거나 범위 밖으로 옮겨졌다 — 그 페이지는 두고 새로 만든다
-        blocks = await resolve_uploads(self.c, self.repo, blocks)
+        blocks = await resolve_uploads(self.c, self.repo, blocks, await self._upload_limit())
         parent = self.root if portfolio else await self._section(section_of(path))
         await self.scope.require(parent, not_root=not portfolio)
         p = await self.c.create_page(parent, title, [])

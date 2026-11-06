@@ -1,0 +1,376 @@
+{
+ "title": "서브에이전트 소환 · 끝",
+ "source": "record",
+ "note": "실제 턴 5823의 서브에이전트 4개 — 일한 시간은 줄였다",
+ "snapshot": {
+  "generated_at": "@+0",
+  "projects": [
+   {
+    "name": "runshoes",
+    "label": "런슈즈",
+    "sessions": [
+     {
+      "id": 901,
+      "cc_session_id": "demo-0901",
+      "short": "demo0901",
+      "character": "코더",
+      "project": "runshoes",
+      "title": "카탈로그 정리",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/runshoes",
+      "pid": 10901,
+      "proc": "S",
+      "cc_status": "idle",
+      "state": "IDLE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": null,
+      "activity": null,
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   },
+   {
+    "name": "petmint-rag-chatbot",
+    "label": "펫퍼민트",
+    "sessions": [
+     {
+      "id": 902,
+      "cc_session_id": "demo-0902",
+      "short": "demo0902",
+      "character": "코더",
+      "project": "petmint-rag-chatbot",
+      "title": "평가셋 재검수",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/petmint-rag-chatbot",
+      "pid": 10902,
+      "proc": "S",
+      "cc_status": "idle",
+      "state": "IDLE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": null,
+      "activity": null,
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   },
+   {
+    "name": "foreman",
+    "label": "포먼",
+    "sessions": [
+     {
+      "id": 952,
+      "cc_session_id": "demo-0952",
+      "short": "demo0952",
+      "character": "코더",
+      "project": "foreman",
+      "title": "코더 — 조사 맡김",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/foreman",
+      "pid": 10952,
+      "proc": "S",
+      "cc_status": "busy",
+      "state": "ACTIVE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": {
+       "id": 9520,
+       "origin": "human",
+       "started_at": "@-30000",
+       "prompt": "시연"
+      },
+      "activity": {
+       "tool": "Agent",
+       "target": "",
+       "ts": "@-1000",
+       "subagent": false
+      },
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   }
+  ],
+  "approvals": [],
+  "hidden_dormant": 0,
+  "terminal": {
+   "enabled": false
+  },
+  "ingest": null
+ },
+ "steps": [
+  {
+   "at": 300,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "tool_use",
+     "tool": "Agent",
+     "target": "",
+     "status": null,
+     "turn_id": 9520,
+     "session_id": 952,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+300",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 900,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "subagent_start",
+     "tool": null,
+     "target": "",
+     "status": null,
+     "turn_id": 9520,
+     "session_id": 952,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+900",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 1020,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "subagent_start",
+     "tool": null,
+     "target": "",
+     "status": null,
+     "turn_id": 9520,
+     "session_id": 952,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+1020",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 1140,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "subagent_start",
+     "tool": null,
+     "target": "",
+     "status": null,
+     "turn_id": 9520,
+     "session_id": 952,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+1140",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 1260,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "subagent_start",
+     "tool": null,
+     "target": "",
+     "status": null,
+     "turn_id": 9520,
+     "session_id": 952,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+1260",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 4200,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "subagent_stop",
+     "tool": null,
+     "target": "",
+     "status": null,
+     "turn_id": 9520,
+     "session_id": 952,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+4200",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 4700,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "subagent_stop",
+     "tool": null,
+     "target": "",
+     "status": null,
+     "turn_id": 9520,
+     "session_id": 952,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+4700",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 5200,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "subagent_stop",
+     "tool": null,
+     "target": "",
+     "status": null,
+     "turn_id": 9520,
+     "session_id": 952,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+5200",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 5700,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "subagent_stop",
+     "tool": null,
+     "target": "",
+     "status": null,
+     "turn_id": 9520,
+     "session_id": 952,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+5700",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 6500,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "tool_use",
+     "tool": "Edit",
+     "target": "",
+     "status": null,
+     "turn_id": 9520,
+     "session_id": 952,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+6500",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 7800,
+   "end": true
+  }
+ ]
+}

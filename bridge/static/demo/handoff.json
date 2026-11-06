@@ -1,0 +1,311 @@
+{
+ "title": "압축 띠 → 인계 뒤 바뀐 것",
+ "source": "script",
+ "note": "대본 — 인계 본문은 시연 글, 「인계 뒤 바뀐 것」 네 줄은 11-06 실제 사례(r=690cec)",
+ "snapshot": {
+  "generated_at": "@+0",
+  "projects": [
+   {
+    "name": "runshoes",
+    "label": "런슈즈",
+    "sessions": [
+     {
+      "id": 901,
+      "cc_session_id": "demo-0901",
+      "short": "demo0901",
+      "character": "코더",
+      "project": "runshoes",
+      "title": "카탈로그 정리",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/runshoes",
+      "pid": 10901,
+      "proc": "S",
+      "cc_status": "idle",
+      "state": "IDLE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": null,
+      "activity": null,
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   },
+   {
+    "name": "petmint-rag-chatbot",
+    "label": "펫퍼민트",
+    "sessions": [
+     {
+      "id": 902,
+      "cc_session_id": "demo-0902",
+      "short": "demo0902",
+      "character": "코더",
+      "project": "petmint-rag-chatbot",
+      "title": "평가셋 재검수",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/petmint-rag-chatbot",
+      "pid": 10902,
+      "proc": "S",
+      "cc_status": "idle",
+      "state": "IDLE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": null,
+      "activity": null,
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   },
+   {
+    "name": "foreman",
+    "label": "포먼",
+    "sessions": [
+     {
+      "id": 981,
+      "cc_session_id": "demo-0981",
+      "short": "demo0981",
+      "character": "코더",
+      "project": "foreman",
+      "title": "코더 — 인계 2판",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/foreman",
+      "pid": 10981,
+      "proc": "S",
+      "cc_status": "busy",
+      "state": "ACTIVE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": {
+       "id": 9810,
+       "origin": "human",
+       "started_at": "@-30000",
+       "prompt": "시연"
+      },
+      "activity": {
+       "tool": "Edit",
+       "target": "",
+       "ts": "@-1000",
+       "subagent": false
+      },
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": {
+       "count": 2,
+       "last_ts": "@-20000",
+       "level": "due",
+       "short": false,
+       "gaps": []
+      },
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   }
+  ],
+  "approvals": [],
+  "hidden_dormant": 0,
+  "terminal": {
+   "enabled": false
+  },
+  "ingest": null
+ },
+ "api": {
+  "/api/sessions/981/handoff": {
+   "controls": {
+    "live": true,
+    "pid": 11981,
+    "state": "S",
+    "tmux": true,
+    "busy": false,
+    "pending_req": null,
+    "foreman_stopped": false,
+    "why": "살아 있음",
+    "can": {
+     "summary": true,
+     "promote": true,
+     "headless": false,
+     "compact": false,
+     "exit": true,
+     "stop": true,
+     "resume": false,
+     "interrupt": true,
+     "spawn": true
+    },
+    "worktree": null,
+    "reads": null,
+    "losscheck": true
+   },
+   "summaries": [
+    {
+     "id": 77,
+     "kind": "handoff",
+     "source": "self",
+     "status": "ok",
+     "created_at": "@-5280000",
+     "chars": 161,
+     "body": "## 지금 상태\n- worktree foreman-2에서 c를 만들었다. 아직 합치지 않았다\n## 다음 할 일\n1. 합친 뒤 첫 실제 사례로 확인\n## 문서와 다른 지금\n- 순서는 c → d → 12a\n## 읽을 곳\n- `docs/11_handoff_v2.md:115-138` — d 설계",
+     "raw": null,
+     "error": null,
+     "injected_at": null,
+     "injected_cc_session": null
+    }
+   ],
+   "promotions": [],
+   "promotions_error": null,
+   "promote_inputs": [],
+   "losschecks": [],
+   "losschecks_error": null
+  },
+  "/api/summaries/77/injection": {
+   "summary_id": 77,
+   "text": "[FOREMAN 인계 r=690cec] 직전 세션의 인계다. 너는 이 일을 이어받는 새 세션이다.\n**먼저 아래 「읽을 곳」을 모두 Read로 읽어라** …\n\n## 인계 뒤 바뀐 것 (브리지가 git · 잠금으로 확인)\n- 인계를 쓴 지 1시간 28분 지났습니다.\n- worktree `foreman-2`(브랜치 `cc/foreman-2`)는 지금 없습니다 — 인계 때 커밋 edcd41a은 `main`에 합쳐졌습니다.\n- `main`에 인계 뒤 커밋이 7개 생겼습니다: 겹침 알림 / 사람이 붙인 세션 이름이 항상 이기게 / 글씨 한 번 더 키움 외 4개\n- 스키마 잠금이 세션 65d05e2c(worktree foreman-2)에서 세션 5a3b93e0로 바뀌었습니다.\n\n## 지금 상태\n- worktree foreman-2에서 c를 만들었다. 아직 합치지 않았다\n## 다음 할 일\n1. 합친 뒤 첫 실제 사례로 확인\n## 문서와 다른 지금\n- 순서는 c → d → 12a\n## 읽을 곳\n- `docs/11_handoff_v2.md:115-138` — d 설계",
+   "cut": false,
+   "full_path": null,
+   "chars": 161,
+   "v2": true,
+   "pointers": [
+    {
+     "path": "docs/11_handoff_v2.md",
+     "start": 115,
+     "end": 138,
+     "section": null,
+     "why": "d 설계",
+     "raw": "",
+     "ok": true,
+     "problem": null,
+     "commits_since": 0,
+     "stale": false
+    }
+   ],
+   "blocked": null,
+   "state": {},
+   "drift": [
+    "인계를 쓴 지 1시간 28분 지났습니다.",
+    "worktree `foreman-2`(브랜치 `cc/foreman-2`)는 지금 없습니다 — 인계 때 커밋 edcd41a은 `main`에 합쳐졌습니다.",
+    "`main`에 인계 뒤 커밋이 7개 생겼습니다: 겹침 알림 / 사람이 붙인 세션 이름이 항상 이기게 / 글씨 한 번 더 키움 외 4개",
+    "스키마 잠금이 세션 65d05e2c(worktree foreman-2)에서 세션 5a3b93e0로 바뀌었습니다."
+   ]
+  },
+  "/api/sessions/981/conversation": {
+   "session_id": 981,
+   "turns": [
+    {
+     "id": 98100,
+     "seq": 1,
+     "origin": "human",
+     "started_at": "@-120000",
+     "ended_at": "@-90000",
+     "end_reason": "stop",
+     "duration_ms": 30000,
+     "prompt": "c 만들어 줘",
+     "reply": "c를 만들었습니다. 시험 393개가 통과했습니다.",
+     "mid": [],
+     "queued": [],
+     "tools": 6,
+     "subagents": 0
+    },
+    {
+     "id": 98101,
+     "seq": 2,
+     "origin": "human",
+     "started_at": "@-60000",
+     "ended_at": "@-30000",
+     "end_reason": "stop",
+     "duration_ms": 30000,
+     "prompt": "인계 요약 써 줘",
+     "reply": "인계 요약을 저장했습니다.",
+     "mid": [],
+     "queued": [],
+     "tools": 6,
+     "subagents": 0
+    }
+   ]
+  }
+ },
+ "steps": [
+  {
+   "at": 300,
+   "js": "window.office.openSession(981)"
+  },
+  {
+   "at": 3000,
+   "js": "document.querySelector('#pTabs [data-tab=sess]').click()"
+  },
+  {
+   "at": 5200,
+   "js": "document.querySelector('#pHand button[data-act=spawn]').click()"
+  },
+  {
+   "at": 6400,
+   "js": "const b=document.querySelector('#pHand .hand-drift'); if(b) b.scrollIntoView({block:'start'})"
+  },
+  {
+   "at": 11000,
+   "end": true
+  }
+ ]
+}

@@ -110,6 +110,81 @@ VIEW_JS = """(()=>{const v=%s; if(v==='hq'||v==='map'){window.office.go(v); retu
   if(b){b.click(); return b.dataset.room} window.office.go(v); return v})()"""
 
 
+FFMPEG = sorted(glob.glob(os.path.expanduser("~/.cache/ms-playwright/ffmpeg-*/ffmpeg-linux")))
+
+
+async def record(p: Page, a: argparse.Namespace, out: Path, report: dict) -> int:
+    """녹화(13, docs/13_demo_capture.md) — 시연 대본(`/office?demo=<이름>`)을 틀고 초당 fps장 JPEG(clip)를 찍어 GIF(+ WebM)로.
+    --record - 이면 대본 없이 실제 화면(시연용이 아니다 — 캡션은 〔실제 화면〕). 테마를 여럿 주면 차례로 이어 찍는다(V4 테마 전환).
+    끝은 --secs(테마마다) 또는 대본의 끝(window.demoState.done). 결과가 --max-mb를 넘으면 실패(Notion 파일 한도 5MB)."""
+    name = a.name or (a.record if a.record != "-" else "live")
+    frames = out / f"{name}_frames"
+    frames.mkdir(parents=True, exist_ok=True)
+    demo = a.record != "-"
+    if demo:                                            # 시연은 실제 /api에 닿지 않게 토큰을 지운다(demo.js도 /api를 막는다)
+        await p.ev("localStorage.removeItem('foremanToken'); 1")
+    w, h = (int(x) for x in a.sizes.split(",")[0].lower().split("x"))
+    await p.call("Emulation.setDeviceMetricsOverride", width=w, height=h, deviceScaleFactor=1, mobile=False)
+    kw: dict = {"format": "jpeg", "quality": 90}
+    if a.clip:
+        x, y, cw, ch = (float(v) for v in a.clip.split(","))
+        kw["clip"] = {"x": x, "y": y, "width": cw, "height": ch, "scale": a.scale}
+    n, bad, info = 0, 0, []
+    for th in a.themes.split(","):
+        url = f"{a.base.rstrip('/')}/office?theme={th}" + (f"&demo={a.record}&hold=1" if demo else "")
+        await p.call("Page.navigate", url=url)
+        if not await p.wait("!!(window.office && window.office.layoutAudit)"):
+            print(f"{th}: 화면이 뜨지 않았습니다")
+            return 1
+        if demo and not await p.wait("!!(window.demoState && (window.demoState.ready || window.demoState.error))"):
+            print(f"{th}: 대본을 읽지 못했습니다")
+            return 1
+        if a.views:
+            await p.ev(VIEW_JS % json.dumps(a.views.split(",")[0]))
+        await asyncio.sleep(a.lead)                     # 카메라 · 캐릭터가 자리를 잡는 동안 — 대본은 아직 멈춰 있다(hold)
+        if demo:
+            await p.ev("window.demoStart && window.demoStart(); 1")
+        t0, k = time.time(), 0
+        while True:
+            el = time.time() - t0
+            if (a.secs and el >= a.secs) or el >= a.max_secs:
+                break
+            if not a.secs and demo and await p.ev("window.demoState.done"):
+                break
+            r = await p.call("Page.captureScreenshot", **kw)
+            (frames / f"f{n:05d}.jpg").write_bytes(base64.b64decode(r["data"]))
+            n, k = n + 1, k + 1
+            await asyncio.sleep(max(0.0, t0 + k / a.fps - time.time()))
+        st = await p.ev("window.demoState || null") if demo else None
+        if st and st.get("error"):
+            print(f"{th}: 대본 오류 — {st['error']}")
+            bad += 1
+        info.append({"theme": th, "frames": k, "secs": round(time.time() - t0, 1), "source": (st or {}).get("source", "live")})
+    bad += len(p.errors)
+    gif = out / f"{name}.gif"
+    r = subprocess.run(["python3", "-I", str(REPO / "tools" / "frames_to_gif.py"), str(frames), str(gif), "--fps", str(a.fps),
+                        "--colors", str(a.colors), "--every", str(a.every)] + (["--width", str(a.gif_width)] if a.gif_width else []),
+                       capture_output=True, text=True)
+    print((r.stdout or r.stderr).strip())
+    made = [gif] if r.returncode == 0 else []
+    if a.webm and FFMPEG:                                # Playwright ffmpeg — VP9 · WebM만, JPEG를 파이프로만 받는다
+        webm = out / f"{name}.webm"
+        cat = b"".join(f.read_bytes() for f in sorted(frames.glob("f*.jpg")))
+        subprocess.run([FFMPEG[-1], "-hide_banner", "-loglevel", "error", "-y", "-f", "image2pipe", "-framerate", str(a.fps),
+                        "-c:v", "mjpeg", "-i", "pipe:0", "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "36", "-pix_fmt", "yuv420p",
+                        str(webm)], input=cat, check=False)
+        if webm.exists():
+            made.append(webm)
+    for f in made:
+        mb = f.stat().st_size / 1e6
+        over = mb > a.max_mb
+        bad += int(over)
+        print(f"{f.name} {mb:.2f}MB" + (f" — {a.max_mb}MB를 넘습니다(Notion 파일 한도 5MB): --gif-width · --every · --colors를 줄여 다시" if over else ""))
+    report["record"] = {"name": name, "frames": n, "themes": info, "files": [{"path": str(f), "mb": round(f.stat().st_size / 1e6, 2)} for f in made],
+                        "page_errors": p.errors[:]}
+    return bad or (0 if made else 1)
+
+
 async def run(a: argparse.Namespace) -> int:
     out = Path(a.out or Path.home() / ".foreman" / "screens" / datetime.now().strftime("%Y%m%d_%H%M%S"))
     out.mkdir(parents=True, exist_ok=True)
@@ -138,7 +213,9 @@ async def run(a: argparse.Namespace) -> int:
             await p.call("Page.navigate", url=a.base)
             await p.wait("document.readyState==='complete'")
             await p.ev(f"localStorage.setItem('foremanToken', {json.dumps(api_token())}); 1")
-            for th in a.themes.split(","):
+            if a.record:                                   # 녹화(13) — 점검 대신
+                bad += await record(p, a, out, report)
+            for th in ([] if a.record else a.themes.split(",")):
                 for size in a.sizes.split(","):
                     w, h = (int(x) for x in size.lower().split("x"))
                     await p.call("Emulation.setDeviceMetricsOverride", width=w, height=h, deviceScaleFactor=1, mobile=False)
@@ -206,6 +283,19 @@ def main() -> None:
     ap.add_argument("--wait", type=float, default=2.0, help="화면을 바꾼 뒤 기다릴 초(캐릭터가 걸어 들어갈 시간)")
     ap.add_argument("--clip", help="x,y,w,h(CSS 픽셀) — 그 부분만 2배로 한 장 더(<…>_clip.png)")
     ap.add_argument("--out")
+    # 녹화(13) — 예: --record pipeline --themes office --sizes 1366x768 --views runshoes --clip 60,135,890,570 --gif-width 640
+    ap.add_argument("--record", help="시연 대본 이름(bridge/static/demo/<이름>.json) — '-'면 대본 없이 실제 화면")
+    ap.add_argument("--name", help="결과 파일 이름(기본: 대본 이름)")
+    ap.add_argument("--fps", type=float, default=10)
+    ap.add_argument("--secs", type=float, default=0, help="테마마다 찍을 초(0이면 대본이 끝날 때까지)")
+    ap.add_argument("--max-secs", type=float, default=60)
+    ap.add_argument("--lead", type=float, default=2.5, help="찍기 전 기다릴 초 — 카메라 · 캐릭터가 자리를 잡는 시간(대본은 그동안 멈춤)")
+    ap.add_argument("--scale", type=float, default=1, help="--clip 배율(녹화)")
+    ap.add_argument("--gif-width", type=int, default=0)
+    ap.add_argument("--colors", type=int, default=128, help="GIF 색 수 — 11-06 V2 비교: 64 이하는 작은 소품 색이 빠진다")
+    ap.add_argument("--every", type=int, default=1, help="GIF에 n장마다 한 장")
+    ap.add_argument("--webm", action="store_true", help="WebM도(5MB 넘는 긴 장면용)")
+    ap.add_argument("--max-mb", type=float, default=5.0)
     sys.exit(asyncio.run(run(ap.parse_args())))
 
 

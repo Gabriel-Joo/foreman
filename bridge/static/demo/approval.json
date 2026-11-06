@@ -1,0 +1,273 @@
+{
+ "title": "승인 요청 → 처리",
+ "source": "record",
+ "note": "실제 승인 1(11-02 승인 시스템 시험, 규칙 rm-재귀, 브라우저에서 allowed) — 명령은 실제 그대로(시험용)",
+ "snapshot": {
+  "generated_at": "@+0",
+  "projects": [
+   {
+    "name": "runshoes",
+    "label": "런슈즈",
+    "sessions": [
+     {
+      "id": 901,
+      "cc_session_id": "demo-0901",
+      "short": "demo0901",
+      "character": "코더",
+      "project": "runshoes",
+      "title": "카탈로그 정리",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/runshoes",
+      "pid": 10901,
+      "proc": "S",
+      "cc_status": "idle",
+      "state": "IDLE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": null,
+      "activity": null,
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   },
+   {
+    "name": "petmint-rag-chatbot",
+    "label": "펫퍼민트",
+    "sessions": [
+     {
+      "id": 902,
+      "cc_session_id": "demo-0902",
+      "short": "demo0902",
+      "character": "코더",
+      "project": "petmint-rag-chatbot",
+      "title": "평가셋 재검수",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/petmint-rag-chatbot",
+      "pid": 10902,
+      "proc": "S",
+      "cc_status": "idle",
+      "state": "IDLE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": null,
+      "activity": null,
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   },
+   {
+    "name": "foreman",
+    "label": "포먼",
+    "sessions": [
+     {
+      "id": 953,
+      "cc_session_id": "demo-0953",
+      "short": "demo0953",
+      "character": "코더",
+      "project": "foreman",
+      "title": "코더 — 정리",
+      "custom_title": null,
+      "cc_name": null,
+      "role": "coder",
+      "cwd": "/demo/foreman",
+      "pid": 10953,
+      "proc": "S",
+      "cc_status": "busy",
+      "state": "ACTIVE",
+      "stuck_turn": false,
+      "injectable": true,
+      "tmux_pane": null,
+      "open_turn": {
+       "id": 9530,
+       "origin": "human",
+       "started_at": "@-30000",
+       "prompt": "시연"
+      },
+      "activity": {
+       "tool": "Bash",
+       "target": "ls",
+       "ts": "@-1000",
+       "subagent": false
+      },
+      "subagents_running": 0,
+      "subagent_descs": [],
+      "background": [],
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "today_output": 0,
+       "today_input": 0,
+       "subagent_input": 0,
+       "subagent_output": 0,
+       "by_model": []
+      },
+      "model": "claude-opus-5-5",
+      "model_label": "Opus 5.5",
+      "model_family": "opus",
+      "model_req": "opus",
+      "compact": null,
+      "overlap": null,
+      "last_ts": "@-1000",
+      "attached_at": "@-600000",
+      "detached_at": null
+     }
+    ]
+   }
+  ],
+  "approvals": [],
+  "hidden_dormant": 0,
+  "terminal": {
+   "enabled": false
+  },
+  "ingest": null
+ },
+ "steps": [
+  {
+   "at": 300,
+   "js": "window.office.openSession(953)"
+  },
+  {
+   "at": 1500,
+   "msg": {
+    "type": "approval",
+    "op": "pending",
+    "approval": {
+     "id": 9001,
+     "session_id": 953,
+     "tool": "Bash",
+     "target": "rm -r junk-a",
+     "rule": "rm-재귀",
+     "reason": "운영 명령: rm -r",
+     "created_at": "@+1500",
+     "summary": "rm -r junk-a — 시험용 폴더 지우기"
+    }
+   }
+  },
+  {
+   "at": 6000,
+   "msg": {
+    "type": "approval",
+    "op": "resolved",
+    "approval": {
+     "id": 9001,
+     "session_id": 953,
+     "tool": "Bash",
+     "target": "rm -r junk-a",
+     "rule": "rm-재귀",
+     "reason": "운영 명령: rm -r",
+     "created_at": "@+1500",
+     "summary": "rm -r junk-a — 시험용 폴더 지우기",
+     "status": "allowed",
+     "decided_by": "browser"
+    }
+   }
+  },
+  {
+   "at": 6600,
+   "msg": {
+    "type": "event",
+    "event": {
+     "id": null,
+     "source": "transcript",
+     "type": "tool_use",
+     "tool": "Bash",
+     "target": "ls",
+     "status": null,
+     "turn_id": 9530,
+     "session_id": 953,
+     "subagent_id": null,
+     "project": null,
+     "ts": "@+6600",
+     "summary": null
+    }
+   }
+  },
+  {
+   "at": 9500,
+   "end": true
+  }
+ ],
+ "api": {
+  "/api/sessions/953/conversation": {
+   "session_id": 953,
+   "turns": [
+    {
+     "id": 95300,
+     "seq": 1,
+     "origin": "human",
+     "started_at": "@-120000",
+     "ended_at": "@-90000",
+     "end_reason": "stop",
+     "duration_ms": 30000,
+     "prompt": "시험 폴더 정리해 줘",
+     "reply": "남은 시험 폴더를 확인했습니다. junk-a를 지우겠습니다.",
+     "mid": [],
+     "queued": [],
+     "tools": 6,
+     "subagents": 0
+    },
+    {
+     "id": 95301,
+     "seq": 2,
+     "origin": "human",
+     "started_at": "@-60000",
+     "ended_at": null,
+     "end_reason": null,
+     "duration_ms": null,
+     "prompt": "지워 줘",
+     "reply": null,
+     "mid": [],
+     "queued": [],
+     "tools": 6,
+     "subagents": 0
+    }
+   ]
+  }
+ }
+}
