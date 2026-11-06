@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
 
 class PublishIn(BaseModel):
     path: str = Field(min_length=4, max_length=255)
-    action: Literal["publish", "archive", "move"] = "publish"
+    action: Literal["publish", "archive", "move", "reorder"] = "publish"   # reorder — 포트폴리오를 번호순으로 다시 세움(path는 "portfolio/")
     section: str | None = Field(default=None, max_length=100)   # move — 루트 아래 묶음 페이지 이름(없으면 만든다)
 
 
@@ -44,7 +44,9 @@ async def publish_do(body: PublishIn, request: Request) -> JSONResponse:
     try:
         if body.action == "move" and not body.section:
             return JSONResponse({"refused": "옮길 묶음 페이지 이름이 없습니다"}, status_code=409)
-        if body.action == "archive" and body.path.startswith("@section/"):     # 묶음 페이지(비었을 때만, 11-06)
+        if body.action == "reorder":
+            r = await p.reorder_portfolio()
+        elif body.action == "archive" and body.path.startswith("@section/"):     # 묶음 페이지(비었을 때만, 11-06)
             r = await p.archive_section(body.path.split("/", 1)[1])
         else:
             r = await (p.publish(body.path, when) if body.action == "publish" else p.archive(body.path) if body.action == "archive"
