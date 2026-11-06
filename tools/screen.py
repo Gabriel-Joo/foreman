@@ -5,7 +5,7 @@
     .venv/bin/python tools/screen.py --base http://127.0.0.1:8201/    # worktree 미리보기 화면
 
 - 테마 × 창 크기 × 화면마다 `window.office.layoutAudit()`(사람이 가구 · 소품 · 이름표에 가려지나) · `propAudit()`(소품 그림) ·
-  `audit()`(고정 안 된 것)을 돌리고 PNG를 찍는다. 결과는 `<out>/report.json`, 사진은 `<out>/<테마>_<크기>_<화면>.png`
+  `audit()`(고정 안 된 것)을 돌리고, 화면마다 `nameAudit()`(사람 이름이 구역 이름표 · 다른 이름과 겹치나, 11-06)를 세고 PNG를 찍는다. 결과는 `<out>/report.json`, 사진은 `<out>/<테마>_<크기>_<화면>.png`
 - 브라우저: playwright가 받아 둔 `~/.cache/ms-playwright/chromium_headless_shell-*/…/chrome-headless-shell`(설치 없음)
 - API 토큰은 `.env.bridge`에서 읽어 그 페이지의 localStorage에만 넣는다 — 출력 · 파일에 남기지 않는다
 - 문제가 하나라도 있으면 종료 코드 1(CLAUDE.md: 테마 자리 · 가구를 바꾸면 세 테마 모두 0건)
@@ -162,6 +162,10 @@ async def run(a: argparse.Namespace) -> int:
                         if a.session:
                             await p.ev(f"window.office.openSession({int(a.session)}); 1")
                             await asyncio.sleep(a.wait)
+                        # 이름 ↔ 구역 이름표 · 다른 이름 겹침(11-06) — 화면마다(이름은 그 화면에 그린 것만), 비켜도 남은 것
+                        na = await p.ev("window.office.nameAudit ? window.office.nameAudit() : []") or []
+                        base.setdefault("nameAudit", {})[view] = na
+                        bad += len(na)
                         if a.eval:
                             base.setdefault("eval", {})[view] = await p.ev(a.eval)
                         f = out / f"{th}_{size}_{view}.png"
@@ -176,7 +180,8 @@ async def run(a: argparse.Namespace) -> int:
                     bad += len(p.errors)
                     p.errors.clear()
                     report["runs"].append(base)
-                    print(f"{th} {size}: layoutAudit {len(la or [])} · propAudit {len(base['propAudit_issues'])} · "
+                    n_names = sum(len(v) for v in base.get("nameAudit", {}).values())
+                    print(f"{th} {size}: layoutAudit {len(la or [])} · nameAudit {n_names} · propAudit {len(base['propAudit_issues'])} · "
                           f"audit(고정 안 됨) {len(au or [])} · 페이지 오류 {len(base['page_errors'])} · 사진 {len(shots)}")
     finally:
         proc.terminate()

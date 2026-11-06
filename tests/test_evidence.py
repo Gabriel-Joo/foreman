@@ -33,6 +33,7 @@ def test_check_text_marks_and_unsupported(tmp_path):
 ```
 코드 [c:zzz] 99
 ```
+![감독실 — 프로젝트 셋과 라운지, 세 단계 길](img/00_overview_hq.png)
 """
     out = asyncio.run(ev.check_text(body, str(r)))
     assert out["total"] == 6 and out["ok"] == 3
