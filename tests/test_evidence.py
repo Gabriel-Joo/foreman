@@ -34,6 +34,7 @@ def test_check_text_marks_and_unsupported(tmp_path):
 코드 [c:zzz] 99
 ```
 ![감독실 — 프로젝트 셋과 라운지, 세 단계 길](img/00_overview_hq.png)
+전체 구조는 → 「한눈에 — FOREMAN이 무엇인가」, 입력은 → 「에이전트 관제」에 있다.
 """
     out = asyncio.run(ev.check_text(body, str(r)))
     assert out["total"] == 6 and out["ok"] == 3
