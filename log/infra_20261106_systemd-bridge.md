@@ -48,7 +48,7 @@
 
 - 유닛 끄기: `systemctl --user disable --now foreman-bridge`
 - linger 끄기: `loginctl disable-linger kopo17`
-- 수동 실행으로 돌아가기: 유닛을 끈 뒤 운영 문서 3번의 tmux 명령(단, 세션 이름 충돌을 먼저 해결할 것)
+- 수동 실행으로 돌아가기: 유닛을 끈 뒤 `.venv/bin/python -m bridge`를 tmux 세션(이름은 겹치지 않게)에서 직접 띄운다(운영 문서 3번의 옛 tmux 명령은 11-06 후속에서 지웠다)
 
 ## 후속 (11-06 같은 날)
 
