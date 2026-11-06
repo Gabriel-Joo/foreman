@@ -44,8 +44,11 @@ async def publish_do(body: PublishIn, request: Request) -> JSONResponse:
     try:
         if body.action == "move" and not body.section:
             return JSONResponse({"refused": "옮길 묶음 페이지 이름이 없습니다"}, status_code=409)
-        r = await (p.publish(body.path, when) if body.action == "publish" else p.archive(body.path) if body.action == "archive"
-                   else p.move(body.path, body.section or ""))
+        if body.action == "archive" and body.path.startswith("@section/"):     # 묶음 페이지(비었을 때만, 11-06)
+            r = await p.archive_section(body.path.split("/", 1)[1])
+        else:
+            r = await (p.publish(body.path, when) if body.action == "publish" else p.archive(body.path) if body.action == "archive"
+                       else p.move(body.path, body.section or ""))
     except OutOfScope as e:
         return JSONResponse({"refused": str(e)}, status_code=409)
     except FileNotFoundError as e:

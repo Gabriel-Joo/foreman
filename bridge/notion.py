@@ -402,6 +402,13 @@ def section_of(path: str) -> str:
     return next((name for pre, name in SECTIONS if path.startswith(pre)), "문서")
 
 
+def portfolio_title(path: str, title: str) -> str:
+    """포트폴리오는 루트 바로 아래에 번호 붙은 제목으로(11-06 사용자 결정) — portfolio/00_overview.md → "00 한눈에 — …".
+    번호는 파일 이름 앞(config/portfolio.toml의 slug)."""
+    num = PurePosixPath(path).stem.split("_", 1)[0]
+    return f"{num} {title}" if num.isdigit() and not title.startswith(num + " ") else title
+
+
 def git_show(repo: str, path: str) -> tuple[str, str]:
     """(본문, 그 파일을 마지막으로 바꾼 커밋 짧은 해시) — main HEAD에 커밋된 것만."""
     p = PurePosixPath(path)
@@ -588,14 +595,24 @@ class Publisher:
         ctx = Ctx(path, commit or "HEAD", self.gh, links=not portfolio)
         title, blocks = md_to_blocks(body, ctx)
         title = title or PurePosixPath(path).stem
-        if not portfolio:
+        if portfolio:
+            title = portfolio_title(path, title)
+        else:
             blocks = [header_block(path, commit or "HEAD", ctx, when)] + blocks
         row = await self._row(path)
         if row and row["status"] == "published" and row["notion_page_id"]:
             pid = row["notion_page_id"]
             if await self.scope.under_root(pid):
+                # 포트폴리오는 루트 바로 아래(11-06 — 「포트폴리오」 묶음을 없앴다). 예전 자리에 있으면 옮긴다(옮긴 순서대로 쌓인다)
+                if portfolio and norm(row["parent_page_id"] or "") != self.root:
+                    await self.c.move_page(pid, self.root)
+                    await self._save(path, parent_page_id=self.root)
+                if row["title"] != title:
+                    await self.c.set_title(pid, title)
+                    await self._save(path, title=title)
                 if row["content_hash"] == digest:
-                    return {"path": path, "action": "unchanged", "page_id": pid, "url": row["url"], "commit": commit}
+                    return {"path": path, "action": "unchanged", "page_id": pid, "url": row["url"], "commit": commit,
+                            "title": title}
                 blocks = await resolve_uploads(self.c, self.repo, blocks)
                 st = await sync_children(self.c, pid, blocks)    # 같은 페이지 · 같은 URL, 바뀐 블록만(mermaid 미리보기가 남는다)
                 await self.c.set_title(pid, title)
@@ -603,8 +620,8 @@ class Publisher:
                 return {"path": path, "action": "updated", "page_id": pid, "url": row["url"], "commit": commit, "sync": st}
             # Notion에서 지워졌거나 범위 밖으로 옮겨졌다 — 그 페이지는 두고 새로 만든다
         blocks = await resolve_uploads(self.c, self.repo, blocks)
-        parent = await self._section(section_of(path))
-        await self.scope.require(parent)
+        parent = self.root if portfolio else await self._section(section_of(path))
+        await self.scope.require(parent, not_root=not portfolio)
         p = await self.c.create_page(parent, title, [])
         pid = norm(p["id"])
         n = await append_tree(self.c, pid, blocks)
@@ -634,15 +651,31 @@ class Publisher:
         await self._save(path, parent_page_id=dest)
         return {"path": path, "action": "moved", "page_id": row["notion_page_id"], "section": section}
 
+    async def archive_section(self, name: str) -> dict[str, Any]:
+        """묶음 페이지(「회고」 · 「포트폴리오」) 내리기 — 우리가 만든 것이고, 그 아래에 살아 있는 페이지가 없을 때만(11-06)."""
+        key = f"@section/{name}"
+        row = await self._row(key)
+        if not row or row["status"] != "published" or not row["notion_page_id"]:
+            raise OutOfScope(f"「{name}」 묶음 페이지 기록이 없습니다")
+        pid = row["notion_page_id"]
+        await self.scope.require(pid)
+        left = [k for k in await self.c.children(pid) if k.get("type") == "child_page"]
+        if left:
+            raise OutOfScope(f"「{name}」 아래에 페이지가 {len(left)}개 남아 있습니다 — 먼저 옮기거나 내려 주세요")
+        await self.c.archive_page(pid)
+        await self._save(key, status="archived")
+        return {"path": key, "action": "archived", "page_id": pid}
+
     async def list(self) -> list[dict[str, Any]]:
-        """게시할 수 있는 글(main의 log/retro_*.md) + 게시 기록. 원본이 게시 뒤에 바뀌었으면 changed."""
+        """게시할 수 있는 글(main의 portfolio/*.md) + 그 게시 기록. 원본이 게시 뒤에 바뀌었으면 changed.
+        회고는 11-06부터 Notion에 두지 않는다(포트폴리오 8편이 바깥 판 — git에만 남긴다)."""
         from sqlalchemy import text
-        files = subprocess.run(["git", "-C", self.repo, "ls-files", "log/retro_*.md", "portfolio/*.md"], capture_output=True,
+        files = subprocess.run(["git", "-C", self.repo, "ls-files", "portfolio/*.md"], capture_output=True,
                                text=True, timeout=15).stdout.split()
         async with self.e.connect() as c:
             rows = {r["path"]: dict(r) for r in (await c.execute(text(
                 "SELECT path, title, status, url, commit_sha, content_hash, updated_at FROM doc_publish "
-                "WHERE project = :p AND kind = 'doc'"), {"p": self.project})).mappings().all()}
+                "WHERE project = :p AND kind = 'doc' AND path LIKE :pre"), {"p": self.project, "pre": "portfolio/%"})).mappings().all()}
         out = []
         for f in sorted(set(files) | set(rows)):
             r = rows.get(f)
