@@ -2,7 +2,7 @@
 // 압축으로 사라지거나 약해진 지시 · 결정을 `claude -p`(설정: config/models.toml [tasks] losscheck)가 판정한다.
 // 화면에는 사라짐 · 약해짐만 보인다. [옮길 것 뽑기에 넣기]로 문서로 옮기기(c)의 입력이 된다 — 되살리기 전 사람이 마지막 관문이다.
 
-import { esc, ago } from './render.js';
+import { esc, ago, keep } from './render.js';
 
 const STATUS = { running: '도는 중…', done: '끝', failed: '실패' };
 
@@ -38,7 +38,7 @@ export function lossGroup(lc, can, err) {
       ${lc.lost_total ? b('loss-use', '문서에 적기로 넘기기', true, '문서에 적기로 넘기기 — 이 목록을 아래 「대화에서 정한 것 문서에 적기」에 같이 넣습니다. 세션이 아직 문서에 없는 것만 고르고, 사람이 승인한 것만 씁니다.', ` data-lc="${lc.id}"`) : ''}</div>`;
     body += '<div class="small muted">기계 판정입니다 — 놓친 것이 있을 수 있고, 나중에 바뀐(뒤집힌) 결정이 섞일 수 있습니다. 문서에 넣기 전에 아래 「대화에서 정한 것 문서에 적기」에서 사람이 확인합니다.</div>';
     if (lc.lost && lc.lost.length) {
-      body += `<details class="loss-list"><summary class="small">잃은 것 ${lc.lost_total}${lc.lost_total > lc.lost.length ? `(앞 ${lc.lost.length}개)` : ''}</summary>${lc.lost.map(item).join('')}</details>`;
+      body += `<details class="loss-list"${keep(`loss:${lc.id}:list`)}><summary class="small">잃은 것 ${lc.lost_total}${lc.lost_total > lc.lost.length ? `(앞 ${lc.lost.length}개)` : ''}</summary>${lc.lost.map(item).join('')}</details>`;
     }
   }
   return `<div class="hand-item"><div class="hand-item-h"><b>압축으로 잊은 지시 · 결정 찾기</b> <span class="small muted">자동 압축 때마다 앞에서 정한 것이 빠집니다. 무엇이 빠졌는지 찾습니다.</span></div>

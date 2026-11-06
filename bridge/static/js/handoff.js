@@ -4,7 +4,7 @@
 //   문서 정리(접힘, 할 일이 있으면 열림)  압축 손실 [잃은 것 찾기] · 문서에 남기기 [남길 것 찾기]
 // 자기 데이터(/api/sessions/{id}/handoff)를 따로 받아 따로 그린다 — 세션 칸이 다시 그려져도 고치던 글이 날아가지 않게.
 
-import { esc, ago } from './render.js';
+import { esc, ago, keep } from './render.js';
 import { promoteGroup, edits as promoteEdits } from './promote.js';
 import { lossGroup } from './losscheck.js';
 
@@ -93,7 +93,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       ...f.unsupported.slice(0, 8).map((u) => `<div class="small muted">? ${esc(f.path)}:${u.line} ${esc(u.text)}</div>`),
     ].join('')).join('');
     return `<div class="small" title="근거 확인 — 서기 글의 [c:커밋] · [log:파일] · [docs:파일] · [t:턴]이 실제로 있는지 기계로 봅니다. 근거 없는 줄은 숫자 · 인용이 있는데 근거 표시가 없는 줄입니다(의심).">${head}</div>
-      ${rows ? `<details${rv.bad ? ' open' : ''}><summary class="small muted">자세히</summary>${rows}</details>` : ''}`;
+      ${rows ? `<details${keep(`hand:${sid}:review`, !!rv.bad)}><summary class="small muted">자세히</summary>${rows}</details>` : ''}`;
   }
 
   // 따로 작업(worktree, 11-05) — 이 세션만의 폴더 · 브랜치. 끝낸 뒤 [합치기](rebase → fast-forward) · [버리기]
@@ -105,7 +105,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       : w.dirty.length ? `커밋 안 된 변경 ${w.dirty.length}개 — 그 세션에서 커밋하거나 버려야 합칠 수 있습니다.` : '';
     return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div>
       <div class="small"><code>${esc(w.branch)}</code> · ${esc(w.base)}보다 커밋 <b>${w.ahead}</b>개 앞${w.behind ? ` · ${esc(w.base)}가 ${w.behind}개 앞서감(합칠 때 rebase)` : ''}${w.dirty.length ? ` · <span class="warn">커밋 안 됨 ${w.dirty.length}</span>` : ''}${w.schema_lock ? ' · <span class="warn">스키마 잠금 보유</span>' : ''}</div>
-      ${w.commits.length ? `<details><summary class="small muted">커밋 · 바뀐 파일</summary><pre class="hand-body">${esc(w.commits.join('\n'))}\n\n${esc(w.diffstat.join('\n'))}</pre></details>` : ''}
+      ${w.commits.length ? `<details${keep(`hand:${sid}:wt-commits`)}><summary class="small muted">커밋 · 바뀐 파일</summary><pre class="hand-body">${esc(w.commits.join('\n'))}\n\n${esc(w.diffstat.join('\n'))}</pre></details>` : ''}
       ${why ? `<div class="small muted">${esc(why)}</div>` : ''}
       ${reviewBlock(w.review)}
       ${w.preview ? `<div class="small ok">미리보기가 :${w.preview.port}에서 돌고 있습니다.</div>` : ''}
@@ -156,7 +156,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
           · ${ago(x.created_at)}${x.chars ? ` · ${x.chars.toLocaleString()}자` : ''}${x.injected_at ? ` · <span class="ok">새 세션 ${esc((x.injected_cc_session || '').slice(0, 8))}에 넣음</span>` : ''}</div>
         ${x.error ? `<div class="small bad">${esc(x.error)}</div>` : ''}
         ${x.body ? `<pre class="hand-body">${esc(x.body)}</pre>` : ''}
-        ${!x.body && x.raw ? `<details><summary class="small muted">응답 원문</summary><pre class="hand-body">${esc(x.raw)}</pre></details>` : ''}
+        ${!x.body && x.raw ? `<details${keep(`hand:sum:${x.id}:raw`)}><summary class="small muted">응답 원문</summary><pre class="hand-body">${esc(x.raw)}</pre></details>` : ''}
       </div>`;
     let main;
     if (mode === 'edit' && ok) {
@@ -174,7 +174,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         (s0 && ok && s0.id !== ok.id && s0.status !== 'ok' ? `<div class="small muted">이전 저장본 ↓</div>${sumCard(ok)}` : '') +
         (ok && ok.kind === 'handoff' && can.exit && !ok.injected_at ? `<div class="row">${b('exit-after', '요약을 확인했습니다 — 세션 끝내기', true, 'danger', '세션 끝내기 — 위 인계 요약을 확인했으면 이 세션을 /exit로 끝냅니다. 요약은 남고 [새로 띄우기]로 넣을 수 있습니다.')}</div>` : '');
     }
-    const hist = data.summaries.length > 1 ? `<details class="hand-hist"><summary class="small muted">요약 이력 ${data.summaries.length}</summary>${
+    const hist = data.summaries.length > 1 ? `<details class="hand-hist"${keep(`hand:${sid}:hist`)}><summary class="small muted">요약 이력 ${data.summaries.length}</summary>${
       data.summaries.map((x) => `<div class="small">#${x.id} ${esc(KIND[x.kind] || x.kind)} · ${esc(SOURCE[x.source] || x.source)} · ${esc(STATUS[x.status] || x.status)} · ${ago(x.created_at)}${x.chars ? ` · ${x.chars}자` : ''}</div>`).join('')}</details>` : '';
     // 문서 정리 — 평소엔 접고, 사람이 할 일(목록 승인 · 쓰기 확인)이나 도는 점검이 있으면 연다(사람이 닫으면 그대로)
     const p0 = prom(), lc0 = (data.losschecks || [])[0] || null;

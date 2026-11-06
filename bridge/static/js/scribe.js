@@ -1,7 +1,7 @@
 // 서기실 창(12a, 11-06) — 서기를 누르면 패널에 뜬다. 할 일(기계로 센 것) · 시킬 일 여섯 · Notion 게시.
 // 시킬 일은 worktree 서기 세션을 띄운다(합치기가 사람의 검토). Notion 게시는 세션 없이 [게시] 버튼(bridge/notion.py).
 
-import { esc, ago } from './render.js';
+import { esc, ago, keep } from './render.js';
 
 const ORDER = ['retro', 'doccheck', 'readme', 'trim', 'later', 'publish'];
 
@@ -56,14 +56,14 @@ export function createScribe(store) {
         ${go(k)}</div>`).join('');
     // 포트폴리오 쓰기(12c, 11-06) — 주제마다 따로 연다(다른 주제는 다른 파일이라 동시에 둘까지 된다). 주제는 config/portfolio.toml
     const tps = pj.topics || [];
-    const tpHtml = tps.length && tasks.portfolio ? `<details class="hand"><summary title="포트폴리오 쓰기 — 주제를 골라 서기가 portfolio/에 씁니다. 바깥 독자용이라 저장소 링크 없이 게시됩니다."><b>포트폴리오 쓰기</b> <span class="muted">${tps.filter((t) => t.written).length}/${tps.length} 씀</span></summary>${
+    const tpHtml = tps.length && tasks.portfolio ? `<details class="hand"${keep(`scribe:${room}:portfolio`)}><summary title="포트폴리오 쓰기 — 주제를 골라 서기가 portfolio/에 씁니다. 바깥 독자용이라 저장소 링크 없이 게시됩니다."><b>포트폴리오 쓰기</b> <span class="muted">${tps.filter((t) => t.written).length}/${tps.length} 씀</span></summary>${
       tps.map((t) => `<div class="sc-row"><div class="small"><b>${esc(t.title)}</b> ${t.written ? '<span class="ok">씀</span>' : '<span class="muted">안 씀</span>'} <span class="muted">— ${esc(t.blocked || t.about)}</span></div>
         <button type="button" class="small" data-sc-task="portfolio" data-topic="${esc(t.slug)}" data-name="${esc(t.title)}"${busy || t.blocked ? ' disabled' : ''} title="${esc(t.blocked ? `포트폴리오 쓰기 — 지금은 시킬 수 없습니다. ${t.blocked}` : `포트폴리오 쓰기 — 「${t.title}」을 서기에게 맡깁니다. ${t.written ? '이미 쓴 글을 고쳐 씁니다.' : '새로 씁니다.'}`)}">${t.written ? '고쳐 쓰기' : '쓰기'}</button></div>`).join('')}</details>` : '';
     return `<div class="small muted">${esc(label)} · 서기 — 문서 담당. 시킨 일은 따로 작업(worktree) 세션으로 돌고, 끝나면 사람이 diff를 보고 합칩니다.</div>
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}">${esc(note.msg)}</div>` : ''}
-      <details class="hand" open><summary title="할 일 — 브리지가 LLM 없이 센 것입니다(커밋은 쌓였는데 README가 그대로 등)."><b>할 일 ${items.length}</b></summary>${todoHtml}</details>
-      <details class="hand" open><summary title="시킬 일 — 고르면 서기 세션이 뜹니다."><b>시킬 일</b></summary>${taskHtml}${tpHtml}</details>
-      <details class="hand" open><summary title="Notion 게시 — 원본은 git 마크다운, Notion은 게시판입니다. 버튼을 눌러야만 올라갑니다."><b>Notion 게시</b></summary>${pubBlock(room)}</details>`;
+      <details class="hand"${keep(`scribe:${room}:todo`, true)}><summary title="할 일 —브리지가 LLM 없이 센 것입니다(커밋은 쌓였는데 README가 그대로 등)."><b>할 일 ${items.length}</b></summary>${todoHtml}</details>
+      <details class="hand"${keep(`scribe:${room}:tasks`, true)}><summary title="시킬 일 —고르면 서기 세션이 뜹니다."><b>시킬 일</b></summary>${taskHtml}${tpHtml}</details>
+      <details class="hand"${keep(`scribe:${room}:publish`, true)}><summary title="Notion 게시 —원본은 git 마크다운, Notion은 게시판입니다. 버튼을 눌러야만 올라갑니다."><b>Notion 게시</b></summary>${pubBlock(room)}</details>`;
   }
 
   async function onClick(ev, room, label, openSession) {

@@ -207,6 +207,23 @@ def test_portfolio_title_number():
     assert nt.portfolio_title("portfolio/extra.md", "번외") == "번외"
 
 
+def test_digest_changes_when_only_image_changes(tmp_path):
+    import subprocess
+    g = lambda *a: subprocess.run(["git", "-C", str(tmp_path), *a], check=True, capture_output=True)  # noqa: E731
+    g("init", "-q", "-b", "main")
+    (tmp_path / "portfolio" / "img").mkdir(parents=True)
+    body = "# 글\n\n![사진](img/a.png)\n"
+    (tmp_path / "portfolio" / "01_a.md").write_text(body, encoding="utf-8")
+    (tmp_path / "portfolio" / "img" / "a.png").write_bytes(b"one")
+    g("add", "."), g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "1")
+    d1 = nt.content_digest(str(tmp_path), "portfolio/01_a.md", body)
+    (tmp_path / "portfolio" / "img" / "a.png").write_bytes(b"two")
+    g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "2")
+    assert nt.content_digest(str(tmp_path), "portfolio/01_a.md", body) != d1       # 본문은 같고 사진만 바뀜
+    plain = "# 글\n\n- 사진 없음\n"
+    assert nt.content_digest(str(tmp_path), "portfolio/01_a.md", plain) == __import__("hashlib").sha256(plain.encode()).hexdigest()
+
+
 def test_mermaid_keeps_language():
     _, bs = nt.md_to_blocks("```mermaid\nflowchart LR\n  A --> B\n```\n")
     assert bs[0]["code"]["language"] == "mermaid" and "A --> B" in nt.plain(bs[0]["code"]["rich_text"])
