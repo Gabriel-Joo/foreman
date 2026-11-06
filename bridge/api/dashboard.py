@@ -111,7 +111,9 @@ async def dashboard(request: Request) -> dict[str, Any]:
             # 숨긴 세션(0018, 시험 등)은 카드 · 토큰 집계에서 뺀다 — 지우지는 않았다
             "LEFT JOIN project p ON p.id = ch.project_id WHERE cs.cc_session_id IS NOT NULL AND cs.type = 'agent' "
             "AND cs.hidden_at IS NULL"))).all()
-        visible = [r for r in rows if (r[1] in live) or (r[7] and r[7] >= cut)]
+        # 합치지 않은 worktree가 남은 세션은 오래돼도 남긴다(11-06) — 빠지면 그 세션 패널의 [합치기] · [버리기]에 닿을 길이 없다
+        visible = [r for r in rows if (r[1] in live) or (r[7] and r[7] >= cut)
+                   or (r[2] and "/.worktrees/" in r[2] and os.path.isdir(r[2]))]
         ids = [r[0] for r in visible] or [0]
         in_ids = "(" + ",".join(str(int(i)) for i in ids) + ")"
         open_turns = {r[0]: r[1:] for r in (await c.execute(text(
