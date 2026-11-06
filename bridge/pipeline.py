@@ -70,6 +70,7 @@ class PipeRules:
     attribute_window_s: float = 300
     infra_poll_s: float = 60
     stale_after: int = 3
+    infra_alert_after: int = 5        # 연달아 이만큼 응답 없음 → 텔레그램(종류마다 한 번). 11-06 정전 뒤 Jenkins가 죽어 있어도 화면 STALE뿐이었다
     retire_after_h: float = 24
     ingress: str = "http://192.168.122.240"
     # 빠진 알림 찾기(11-03) — push 뒤 시작 알림이 없으면 warn_s에 화면 노란색, alert_s에 텔레그램. 시작했는데 끝 알림이 없으면 end_s
@@ -89,6 +90,7 @@ def load_pipeline(path: str | Path) -> PipeRules:
     g, i, w = raw.get("git", {}), raw.get("infra", {}), raw.get("watch", {})
     r = PipeRules(git_poll_s=g.get("poll_s", 20), attribute_window_s=g.get("attribute_window_s", 300),
                   infra_poll_s=i.get("poll_s", 60), stale_after=i.get("stale_after", 3),
+                  infra_alert_after=i.get("alert_after", 5),
                   retire_after_h=i.get("retire_after_h", 24), ingress=i.get("ingress", "http://192.168.122.240"),
                   watch_warn_s=w.get("started_warn_s", 180), watch_alert_s=w.get("started_alert_s", 1020),
                   watch_end_s=w.get("completed_alert_s", 2100), hook_break_after=w.get("webhook_break_after", 2))
@@ -155,6 +157,14 @@ def webhook_broken(causes: list[str | None], n: int = 2) -> bool:
     손으로 누른 빌드(manual)는 건너뛴다(웹훅과 무관)."""
     seq = [c for c in causes if c in ("webhook", "poll")]
     return len(seq) > n and all(c == "poll" for c in seq[:n]) and "webhook" in seq[n:]
+
+
+def infra_alert(ok: bool, fails: int, alerted: bool, after: int) -> str | None:
+    """인프라 종류 하나의 이번 폴링 결과 → 보낼 알림. fails는 이번 것까지 센 연속 무응답 수.
+    down = 연달아 after번 응답 없음(처음 한 번), up = 알렸던 것이 다시 응답. 그 밖에는 None."""
+    if ok:
+        return "up" if alerted else None
+    return "down" if fails >= after and not alerted else None
 
 
 def harbor_items(body: dict[str, Any]) -> list[dict[str, Any]]:
@@ -265,6 +275,11 @@ class PipelineManager:
         self._pending: dict[str, dict[str, Any]] = {}     # 프로젝트 → {head, short, subject, at, state, alerted}
         self._end_alerted: set[int] = set()               # 끝 알림 없음을 알린 build id
         self._hook_broken: dict[str, bool] = {}
+        # 인프라 자체가 죽은 것(종류마다 — Jenkins 하나를 두 프로젝트가 쓴다). 메모리 상태 — 브리지를 다시 띄우면 다시 센다
+        self._kind_fails: dict[str, int] = {}
+        self._down_since: dict[str, datetime] = {}
+        self._down_alerted: set[str] = set()
+        self._down_why: dict[str, str] = {}
 
     # ── 수명 ──
     async def start(self, loops: bool = True) -> None:
@@ -416,8 +431,12 @@ class PipelineManager:
             if state == "missing" and not pend["alerted"]:
                 pend["alerted"] = True
                 mins = int((now - pend["at"]).total_seconds() // 60)
+                down = self._down_since.get("jenkins")
+                why = (f"\nJenkins 자체가 {int((now - down).total_seconds() // 60)}분째 응답 없음"
+                       f"({self._down_why.get('jenkins', '?')})" if down else "")
                 self._send(p, f"⚠ 빌드 알림 없음 — push {pend['short']} \"{pend['subject'][:80]}\" 뒤 {mins}분째 "
-                              f"Jenkins 시작 알림이 없다. Jenkins 확인\nhttps://jenkins.ronanlab.dev/job/{p.jenkins_job}/")
+                              f"Jenkins 시작 알림이 없다. Jenkins 확인{why}\n"
+                              f"https://jenkins.ronanlab.dev/job/{p.jenkins_job}/")
 
     async def _check_hook(self, p: PipeProject) -> None:
         """새 빌드마다 — 최근 빌드 원인으로 웹훅 끊김 · 복구를 판단한다(바뀔 때 한 번 알린다)."""
@@ -564,6 +583,7 @@ class PipelineManager:
         if not chars:
             return
         ok: dict[str, bool] = {}
+        why: dict[str, str] = {}
         async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as cl:
             for kind in {r[1] for r in chars}:
                 d = self.rules.infra.get(kind)
@@ -572,10 +592,14 @@ class PipelineManager:
                 try:
                     r = await cl.get(self.rules.ingress.rstrip("/") + d.health, headers={"Host": d.host})
                     ok[kind] = r.status_code < 500
-                except httpx.HTTPError:
+                    why[kind] = f"HTTP {r.status_code}"
+                except httpx.HTTPError as e:
                     ok[kind] = False
+                    why[kind] = type(e).__name__
         now = _now()
+        self._alert_infra(ok, why, chars, now)
         changed = False
+        retired_kinds: set[str] = set()
         for cid, kind, status, seen, _retired, pname in chars:
             if kind not in ok:
                 continue
@@ -596,9 +620,46 @@ class PipelineManager:
                 elif status == "STALE" and seen and now - seen > timedelta(hours=self.rules.retire_after_h):
                     await c.execute(text("UPDATE `character` SET retired_at = :t WHERE id = :id"), {"t": now, "id": cid})
                     log.warning("인프라 캐릭터 퇴장: %s %s", pname, kind)
+                    retired_kinds.add(kind)
                     changed = True
+        for kind in sorted(retired_kinds):
+            # 퇴장하면 폴링도 멈춘다 — 조용히 사라지지 않게 한 번 더 알린다
+            d = self.rules.infra[kind]
+            self._send_infra(f"⚠ {d.name} {self.rules.retire_after_h:g}시간째 응답 없음 — 화면에서 퇴장, 이제 생존을 "
+                             f"폴링하지 않는다(웹훅이 오면 돌아온다). 그대로 두면 다음 알림은 push 뒤 '빌드 알림 없음'뿐이다")
         if changed:
             self._changed(None)
+
+    def _alert_infra(self, ok: dict[str, bool], why: dict[str, str], chars: Any, now: datetime) -> None:
+        """인프라 자체가 죽은 것을 알린다 — 종류마다 한 번(두 프로젝트가 같은 Jenkins를 쓴다), 돌아오면 한 번."""
+        for kind, good in ok.items():
+            n = 0 if good else self._kind_fails.get(kind, 0) + 1
+            self._kind_fails[kind] = n
+            if good:
+                self._down_since.pop(kind, None)
+            else:
+                self._down_since.setdefault(kind, now)
+                self._down_why[kind] = why.get(kind, "?")
+            act = infra_alert(good, n, kind in self._down_alerted, self.rules.infra_alert_after)
+            d = self.rules.infra[kind]
+            if act == "down":
+                self._down_alerted.add(kind)
+                users = ", ".join(sorted({r[5] for r in chars if r[1] == kind}))
+                mins = int((now - self._down_since[kind]).total_seconds() // 60)
+                hint = {"jenkins": "kubectl get pods -n jenkins"}.get(kind, f"kubectl get pods -A | grep {kind}")
+                self._send_infra(f"⚠ {d.name} 응답 없음 — 연달아 {n}번({mins}분째, {why.get(kind, '?')}). "
+                                 f"쓰는 프로젝트: {users}. 이 동안 push해도 빌드 · 알림이 없다. {hint} 확인")
+            elif act == "up":
+                self._down_alerted.discard(kind)
+                self._send_infra(f"✅ {d.name} 다시 응답")
+
+    def _send_infra(self, msg: str) -> None:
+        """프로젝트에 묶이지 않은 인프라 알림 — 포먼 이름으로 보낸다(프로젝트 규칙이 꺼져 있어도 보낸다)."""
+        log.warning("인프라 알림: %s", msg)
+        if self.notifier is None:
+            return
+        rule = self.notifier.rules.for_project("foreman")
+        self.notifier.send_direct("foreman", "pipeline", None, f"{(rule and rule.prefix) or '[포먼]'} {msg}")
 
     # ── 웹훅 ──
     async def on_jenkins(self, body: dict[str, Any]) -> dict[str, Any]:

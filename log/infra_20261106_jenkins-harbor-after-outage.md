@@ -33,7 +33,32 @@
 1. **지금 되살리기**: `kubectl delete pod -n jenkins jenkins-0` — StatefulSet이 새 UID로 다시 만들어 emptyDir이 비고 init이 통과한다. `jenkins_home`은 PVC(`jenkins`, local-path)라 유지된다. 어차피 지금 Jenkins는 내려가 있다
 2. **다음 정전에 재발 막기**(ronanlab-infra 소관): values에서 init 스크립트를 덮어 `cp -i` 줄이 실패해도 넘어가게(`|| true`) 하거나 `plugin-dir`를 매번 비우게, 또는 이 줄을 고친 차트 버전으로 올리기
 
-## 조용한 고장인가
+## 조치 (사용자 지시 — 1번만, 2번은 README 「나중에 할 일」)
 
-- Jenkins가 내려가 있는 동안 push해도 빌드 · 알림이 없다. FOREMAN은 빌드 알림을 웹훅으로만 받으므로 "알림이 안 온다"로만 드러난다 — CLAUDE.md의 "push 뒤 빌드 알림이 없으면 Jenkins 확인" 경우다
-- 정전 뒤 파드 상태 점검(Ready가 아닌 파드)을 감시 항목에 넣을지는 따로 정할 일
+- `kubectl delete pod -n jenkins jenkins-0`: UID `53a7a27f…` → `b015c4fb…`. init 통과, **3분 뒤 2/2 Running**. 클러스터에 Running · Completed가 아닌 파드 0개
+
+## 조용한 고장 — FOREMAN이 Jenkins가 죽은 것을 잡았나
+
+조사 전 코드(`bridge/pipeline.py`)에서 Jenkins가 죽은 것이 드러나는 길은 셋이었다.
+
+| 길 | 오늘 실제 | 빈틈 |
+|---|---|---|
+| 인프라 캐릭터 생존 폴링(60초, `/login`을 ingress로, 3번 연속 무응답 → STALE) | 12:33:48 runshoes · petmint의 Jenkins 캐릭터 STALE — **journal 한 줄 + 화면 상태뿐** | 텔레그램 없음. 24시간 STALE이면 퇴장 → 폴링 대상에서 빠져 **화면에서도 사라지고** 웹훅이 와야 돌아온다 |
+| 빠진 알림 찾기(push 뒤 3분 노란색, 17분 텔레그램) | push가 없어 아무 일 없음 | **push가 있어야만** 동작. 와도 17분 늦고, "Jenkins 자체가 죽었다"는 말이 없다 |
+| 웹훅 끊김 감지(폴링 원인 빌드 연속 2번) | 해당 없음 | 빌드가 **돌아야** 판정한다 — Jenkins가 죽으면 영원히 조용하다 |
+
+### 넣은 것
+
+- `[infra] alert_after = 5`: 인프라 **종류마다** 연달아 5번(5분) 응답이 없으면 텔레그램 한 번 — `[포먼] ⚠ Jenkins 응답 없음 — 연달아 5번(4분째, HTTP 503). 쓰는 프로젝트: petmint-rag-chatbot, runshoes. 이 동안 push해도 빌드 · 알림이 없다. kubectl get pods -n jenkins 확인`. 돌아오면 `✅ Jenkins 다시 응답`
+  - 종류마다(프로젝트마다가 아니라): Jenkins 하나를 두 프로젝트가 쓴다 — 프로젝트마다 보내면 같은 말이 두 번 간다. 그래서 포먼 이름(`[포먼]`)으로 보낸다
+  - 5번: STALE(3번)보다 늦게. helm 재시작(11-03 실측 42초)으로 알림이 가지 않게
+- 퇴장할 때도 한 번 알린다(이제 폴링하지 않는다는 것) — 조용히 사라지지 않게
+- push 뒤 "빌드 알림 없음" 알림에 Jenkins가 죽어 있으면 `Jenkins 자체가 N분째 응답 없음(HTTP 503)`을 덧붙인다
+- 시험: `test_infra_alert`(순수 판정) · `test_infra_down_alerts_once_per_kind`(두 프로젝트 · 한 번만 · 회복 · 잠깐 끊김은 무시). 전체 433 통과
+
+### 판단 · 한계
+
+- 상태는 메모리다(빠진 알림 찾기와 같음) — 브리지를 다시 띄우면 다시 센다. Jenkins가 죽은 채 브리지가 다시 뜨면 5분 뒤 다시 알린다
+- 인프라 캐릭터는 첫 웹훅 때 생긴다 — 캐릭터가 없는(웹훅을 한 번도 받지 않은) 인프라는 폴링하지 않는다. 지금 셋 다 있다
+- 여전히 못 잡는 것: Jenkins는 살아 있는데 **다른 파드**(harbor-jobservice 같은)가 죽은 것. 오늘 jobservice는 스스로 풀렸지만, "Ready가 아닌 파드"를 감시하려면 kubectl(호스트에 없음) 또는 클러스터 안 조회 경로가 필요하다 — 이번 범위 밖
+- **worktree 세션이라 브리지를 다시 띄우지 않았다** — 합친 뒤 원본 세션이 다시 띄워야 켜진다(`config/pipeline.toml` · 브리지 코드 변경)

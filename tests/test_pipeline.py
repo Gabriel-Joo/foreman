@@ -16,8 +16,8 @@ from bridge.config import Settings
 from bridge.db.engine import make_engine
 from bridge.db.migrate import main as migrate_main
 from bridge.mask import Masker
-from bridge.pipeline import (PipelineManager, argocd_status, build_cause, harbor_items, image_tag, jenkins_status,
-                             load_pipeline, commit_match, other_repo, watch_state, webhook_broken)
+from bridge.pipeline import (PipelineManager, argocd_status, build_cause, harbor_items, image_tag, infra_alert,
+                             jenkins_status, load_pipeline, commit_match, other_repo, watch_state, webhook_broken)
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -47,6 +47,39 @@ def test_watch_state():
     assert watch_state(180, 180, 1020) == "late"
     assert watch_state(1019, 180, 1020) == "late"
     assert watch_state(1020, 180, 1020) == "missing"
+
+
+def test_infra_alert():
+    assert infra_alert(False, 4, False, 5) is None            # 아직 — helm 재시작 정도는 넘긴다
+    assert infra_alert(False, 5, False, 5) == "down"
+    assert infra_alert(False, 9, True, 5) is None             # 한 번만
+    assert infra_alert(True, 0, True, 5) == "up"
+    assert infra_alert(True, 0, False, 5) is None             # 알린 적 없으면 회복도 안 알린다
+
+
+def test_infra_down_alerts_once_per_kind():
+    """11-06 정전: Jenkins가 죽어 있는데 화면 STALE뿐이었다 — 종류마다 한 번 알리고(두 프로젝트가 같은 Jenkins), 돌아오면 한 번."""
+    notifier = FakeNotifier()
+    pm = PipelineManager(None, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+                         notifier)
+    chars = [(1, "jenkins", "IDLE", None, None, "runshoes"), (2, "jenkins", "IDLE", None, None, "petmint-rag-chatbot"),
+             (3, "harbor", "IDLE", None, None, "runshoes")]
+    t = datetime(2026, 11, 6, 3, 30)
+    for i in range(7):
+        pm._alert_infra({"jenkins": False, "harbor": True}, {"jenkins": "HTTP 503"}, chars, t + timedelta(minutes=i))
+    assert len(notifier.sent) == 1
+    proj, _, msg = notifier.sent[0]
+    assert proj == "foreman" and msg.startswith("[포먼] ⚠ Jenkins 응답 없음")
+    assert "HTTP 503" in msg and "petmint-rag-chatbot, runshoes" in msg and "4분째" in msg
+    assert "jenkins" in pm._down_since and "harbor" not in pm._down_since
+    pm._alert_infra({"jenkins": True, "harbor": True}, {}, chars, t + timedelta(minutes=8))
+    assert len(notifier.sent) == 2 and "Jenkins 다시 응답" in notifier.sent[1][2]
+    assert "jenkins" not in pm._down_since
+    # 잠깐 끊김(4번 이하)은 알리지 않는다
+    for i in range(4):
+        pm._alert_infra({"jenkins": False}, {"jenkins": "ConnectError"}, chars, t + timedelta(minutes=10 + i))
+    pm._alert_infra({"jenkins": True}, {}, chars, t + timedelta(minutes=15))
+    assert len(notifier.sent) == 2
 
 
 def test_harbor_items():
