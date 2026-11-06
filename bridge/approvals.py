@@ -199,6 +199,13 @@ class ApprovalManager:
                 outcome, message = await fut
         except TimeoutError:
             outcome, message = "timeout", None
+            # 시간 초과도 알린다(11-06 사용자: 화면을 계속 보고 있지 않다) — 이제 터미널 승인 창만 남는다
+            if self.notifier:
+                rule_ = self.notifier.rules.for_project(project)
+                self.notifier.send_direct(project, "appr_to", sess_id, "\n".join([
+                    f"{rule_.prefix if rule_ else '[미분류]'} ⏰ 승인 대기 시간이 지났습니다 · {tool}",
+                    *([f"▶ {summary}"] if summary else [_short(target, 120)]),
+                    f"{int(pp.wait_s // 60)}분 동안 답이 없어 화면 승인을 닫았습니다. 이제 그 세션의 터미널에서만 답할 수 있습니다"]))
         finally:
             self.waiting.pop(aid, None)
             if tuid:

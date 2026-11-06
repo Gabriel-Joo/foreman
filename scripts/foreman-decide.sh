@@ -10,7 +10,7 @@ TOKEN="$(sed -n 's/^FOREMAN_HOOK_TOKEN=//p' "$REPO/.env.bridge" 2>/dev/null)"
 [ -n "$TOKEN" ] || exit 0
 case "${1:-}" in
   pre)        url="$BASE/hooks/pre";        max=4 ;;
-  permission) url="$BASE/hooks/permission"; max=880 ;;
+  permission) url="$BASE/hooks/permission"; max=3630 ;;   # 브리지 wait_s(3600)보다 길고 CC hook timeout(3660)보다 짧게
   *) exit 0 ;;
 esac
 out="$(curl -sS -f -m "$max" -X POST -H 'Content-Type: application/json' \
