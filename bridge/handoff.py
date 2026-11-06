@@ -21,6 +21,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from bridge import handoff_state as hs
 from bridge import pointers as ptr
 from bridge import worktree as wt
 from bridge.inject import Refused, _status, _tmux_env, deliver, resolve, tmux
@@ -384,14 +385,33 @@ class HandoffManager:
 
     async def _new_summary(self, row: SessionRow, kind: str, source: str, status: str, **kw: Any) -> tuple[int, str]:
         req = new_req()
+        # 인계 검증(11-06) — 만들 때의 git · 잠금 상태. 고친 요약은 원본의 상태를 물려받는다(내용이 그때 기준이다)
+        state = kw["state"] if "state" in kw else await self._snapshot(row)
         async with self.engine.begin() as c:
             res = await c.execute(text(
-                "INSERT INTO summary (character_id, session_id, req, kind, source, status, body, chars, raw, error, parent_id) "
-                "VALUES (:ch, :s, :r, :k, :src, :st, :b, :n, :raw, :e, :par)"),
+                "INSERT INTO summary (character_id, session_id, req, kind, source, status, body, state, chars, raw, error, parent_id) "
+                "VALUES (:ch, :s, :r, :k, :src, :st, :b, :state, :n, :raw, :e, :par)"),
                 {"ch": row.character_id, "s": row.id, "r": req, "k": kind, "src": source, "st": status,
-                 "b": kw.get("body"), "n": len(kw["body"]) if kw.get("body") else None, "raw": kw.get("raw"),
+                 "b": kw.get("body"), "state": json.dumps(state, ensure_ascii=False) if state else None,
+                 "n": len(kw["body"]) if kw.get("body") else None, "raw": kw.get("raw"),
                  "e": kw.get("error"), "par": kw.get("parent_id")})
         return res.lastrowid, req
+
+    async def _snapshot(self, row: SessionRow) -> dict[str, Any] | None:
+        try:
+            return await hs.snapshot(row.cwd, row.project, self.schema)
+        except Exception as e:  # noqa: BLE001 — 상태를 못 적어도 요약은 만든다(넣을 때 "확인 못 함"으로 보인다)
+            log.warning("인계 상태 기록 실패 session=%s: %s", row.id, type(e).__name__)
+            return None
+
+    @staticmethod
+    def _json(v: Any) -> Any:
+        if v is None or isinstance(v, (dict, list)):
+            return v
+        try:
+            return json.loads(v)
+        except ValueError:
+            return None
 
     async def _finish(self, summary_id: int, status: str, body: str | None, raw: str | None, error: str | None,
                       turn_id: int | None = None) -> None:
@@ -544,7 +564,8 @@ class HandoffManager:
         row = await self.session(src["session_id"])
         if not row:
             raise Refused("세션이 없습니다")
-        sid, req = await self._new_summary(row, src["kind"], "edited", "ok", body=body.strip(), parent_id=summary_id)
+        sid, req = await self._new_summary(row, src["kind"], "edited", "ok", body=body.strip(), parent_id=summary_id,
+                                           state=self._json(src.get("state")))
         if self.on_change:
             self.on_change()
         return {"summary_id": sid, "req": req, "status": "ok"}
@@ -558,9 +579,19 @@ class HandoffManager:
         src = f"{(row.cc or '')[:8]}" + (f"({row.title})" if row and row.title else "")
         full = HANDOFF_DIR / f"{s['req']}.md"
         body, cut = fit_body(s["body"], MAX_INJECT, str(full))
-        out = {"summary_id": summary_id, "text": inject_prompt(s["req"], src, body), "cut": cut,
+        # 인계 검증(11-06) — 만들 때 상태와 지금을 비교해 "인계 뒤 바뀐 것"을 본문 앞에 붙인다(미리보기 · 넣기 같은 글)
+        state = self._json(s.get("state"))
+        try:
+            dr = await hs.drift(state, row.project if row else None, self.schema,
+                                [p.path for p in ptr.parse(s["body"]) if p.path] if ptr.is_v2(s["body"]) else None)
+        except Exception as e:  # noqa: BLE001 — 비교 실패를 숨기지 않는다: 그 사실을 줄로 붙인다
+            log.warning("인계 비교 실패 summary=%s: %s", summary_id, type(e).__name__)
+            dr = [f"인계 뒤 바뀐 것을 확인하지 못했습니다({type(e).__name__}) — 지금 상태를 직접 확인하라."]
+        if state is None:
+            dr = ["이 인계에는 만들 때의 상태 기록이 없습니다(11-06 이전 인계) — 「지금 상태」가 맞는지 git · 잠금으로 직접 확인하라."]
+        out = {"summary_id": summary_id, "text": inject_prompt(s["req"], src, hs.block(dr) + body), "cut": cut,
                "full_path": str(full) if cut else None, "chars": len(s["body"]), "v2": ptr.is_v2(s["body"]),
-               "pointers": [], "blocked": None}
+               "pointers": [], "blocked": None, "state": state, "drift": dr}
         if out["v2"]:
             # 2판 — 읽을 곳을 기계로 확인한다. 틀린 곳(없는 파일 · 줄 · 절)이 있으면 넣지 않는다(요약을 고치면 된다)
             repo = await repo_root(row.cwd if row else None)
@@ -585,7 +616,7 @@ class HandoffManager:
             return None
         async with self.engine.connect() as c:
             s = (await c.execute(text(
-                "SELECT id, body FROM summary WHERE injected_cc_session = :c ORDER BY injected_at DESC LIMIT 1"),
+                "SELECT id, body, drift FROM summary WHERE injected_cc_session = :c ORDER BY injected_at DESC LIMIT 1"),
                 {"c": row.cc})).first()
             if not s or not ptr.is_v2(s[1]):
                 return None
@@ -593,7 +624,8 @@ class HandoffManager:
                 "SELECT target FROM event WHERE session_id = :i AND type = 'tool_use' AND tool = 'Read'"),
                 {"i": row.id})).all()]
         repo = await repo_root(row.cwd)
-        return {"summary_id": s[0]} | ptr.reads(ptr.parse(s[1]), repo or "", targets)
+        # drift — 넣을 때 붙인 "인계 뒤 바뀐 것"(11-06). 받은 세션 패널에 보인다
+        return {"summary_id": s[0], "drift": self._json(s[2]) or []} | ptr.reads(ptr.parse(s[1]), repo or "", targets)
 
     async def resend_reads(self, row: SessionRow) -> dict[str, Any]:
         """안 읽은 곳만 다시 — 그 세션에 "아직 읽지 않은 곳"을 보낸다."""
@@ -621,9 +653,9 @@ class HandoffManager:
                             transcript=transcript_path(cwd, cc_session_id), verify_s=15.0)
         if res.get("delivered"):
             async with self.engine.begin() as c:
-                await c.execute(text("UPDATE summary SET injected_cc_session = :c, injected_at = NOW(3) WHERE id = :i"),
-                                {"c": cc_session_id, "i": summary_id})
-        return {"delivered": bool(res.get("delivered")), "queued": res.get("queued"), "cut": inj["cut"]}
+                await c.execute(text("UPDATE summary SET injected_cc_session = :c, injected_at = NOW(3), drift = :d WHERE id = :i"),
+                                {"c": cc_session_id, "i": summary_id, "d": json.dumps(inj["drift"], ensure_ascii=False)})
+        return {"delivered": bool(res.get("delivered")), "queued": res.get("queued"), "cut": inj["cut"], "drift": inj["drift"]}
 
     # ── 새로 띄우기 ──────────────────────────────────────
     async def spawn(self, row: SessionRow, summary_id: int | None) -> dict[str, Any]:

@@ -128,14 +128,21 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     return `<div class="hand-ptrs"><div class="small"><b>읽을 곳 ${(p.pointers || []).length}</b> — 새 세션이 먼저 읽습니다</div>${rows}
       ${p.blocked ? `<div class="small bad">${esc(p.blocked)}</div>` : ''}</div>`;
   }
+  // 인계 검증(11-06) — 만들 때 상태와 지금이 다르면 넣는 글 앞에 붙는 "인계 뒤 바뀐 것"
+  function driftList(d, head) {
+    if (!d || !d.length) return `<div class="small ok">✓ ${esc(head)} — 인계를 쓴 뒤 바뀐 것이 없습니다(git · 스키마 잠금).</div>`;
+    return `<div class="hand-drift"><div class="small warn"><b>⚠ ${esc(head)} ${d.length}</b> — 받은 세션이 「지금 상태」를 다시 판단하도록 글 앞에 붙습니다.</div>
+      ${d.map((x) => `<div class="small">· ${esc(x)}</div>`).join('')}</div>`;
+  }
   // 2판 인계를 받고 시작한 세션 — 읽을 곳을 실제로 Read했나
   function readsLine(r, can) {
     if (!r) return '';
     const all = r.read === r.total;
+    const drift = r.drift && r.drift.length ? `<div class="hand-group"><span class="hand-lbl small muted">바뀐 것</span><div>${driftList(r.drift, '받을 때 인계 뒤 바뀐 것')}</div></div>` : '';
     return `<div class="hand-group"><span class="hand-lbl small muted">읽을 곳</span><div class="hand-btns">
       <span class="small ${all ? 'ok' : 'warn'}">${r.read}/${r.total} 읽음${all ? '' : ` — 안 읽음: ${r.missing.map(esc).join(', ')}`}${r.auto && r.auto.length ? ` <span class="muted" title="자동 — 세션이 시작할 때 저절로 들어오는 문서라 읽음으로 셉니다.">(자동: ${r.auto.map(esc).join(', ')})</span>` : ''}</span>
       ${all ? '' : `<button data-act="reads-resend" class="small"${can ? '' : ' disabled'} title="안 읽은 곳 다시 보내기 — 아직 읽지 않은 문서만 다시 보내고, 읽은 뒤 걸리는 규칙을 말하게 합니다.">안 읽은 곳 다시 보내기</button>`}
-    </div></div>`;
+    </div></div>${drift}`;
   }
 
   function draw() {
@@ -157,6 +164,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         <div class="row">${b('edit-save', '고친 본 저장', true, '', '저장 — 원본은 두고 고친 본을 새 판으로 저장합니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 고친 것을 버리고 요약 카드로 돌아갑니다.')}</div>`;
     } else if (mode === 'spawn') {
       main = preview ? `<div class="small">같은 폴더에 새 세션을 띄우고 아래 글을 첫 입력으로 넣습니다.${preview.cut ? ` <span class="warn">길어서 일부 절을 줄였습니다(전체는 ${esc(preview.full_path)}).</span>` : ''}</div>
+        ${driftList(preview.drift, '인계 뒤 바뀐 것')}
         ${preview.v2 ? pointerList(preview) : ''}
         <pre class="hand-body">${esc(preview.text)}</pre>
         <div class="row">${b('spawn-go', '이 글을 넣고 시작', !preview.blocked, '', preview.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다(요약 카드의 [고치기]).' : '이 글을 넣고 시작 — 같은 폴더에 새 세션을 띄우고 위 글을 첫 입력으로 넣습니다.')}${b('spawn-bare', '요약 없이 시작', true, 'ghost', '요약 없이 시작 — 같은 폴더에 빈 새 세션만 띄웁니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 띄우지 않고 돌아갑니다.')}</div>`

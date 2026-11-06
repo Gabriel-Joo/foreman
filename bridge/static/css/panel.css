@@ -236,7 +236,8 @@ body { --term-h:0px; }
 .hand-group { display:flex; gap:8px; align-items:flex-start; margin:4px 0; }
 .hand-lbl { flex:none; width:68px; padding-top:5px; }
 .hand-group .hand-btns { margin:2px 0; min-width:0; }
-.hand-btns > span { min-width:0; overflow-wrap:anywhere; }   /* 11-06 긴 파일 경로가 좁은 패널 밖으로 밀려 나갔다 */
+.hand-btns > span { min-width:0; overflow-wrap:anywhere; }
+.hand-drift { border-left:3px solid var(--warn); padding:2px 0 2px 8px; margin:4px 0; overflow-wrap:anywhere; }   /* 11-06 인계 뒤 바뀐 것 */   /* 11-06 긴 파일 경로가 좁은 패널 밖으로 밀려 나갔다 */
 /* 11-05 문서로 옮기기 — 항목마다 상태 · 어디로 · 문장. 승인은 초록 띠, 빼기는 흐리게 */
 .prom { flex:1; min-width:0; }
 /* 인계 2판 d [잃은 것 보기](11-06) — 사라짐은 빨강 띠, 약해짐은 노랑 띠 */
