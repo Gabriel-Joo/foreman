@@ -49,3 +49,9 @@
 - 유닛 끄기: `systemctl --user disable --now foreman-bridge`
 - linger 끄기: `loginctl disable-linger kopo17`
 - 수동 실행으로 돌아가기: 유닛을 끈 뒤 운영 문서 3번의 tmux 명령(단, 세션 이름 충돌을 먼저 해결할 것)
+
+## 후속 (11-06 같은 날)
+
+- `docs/operations.md` 3번: tmux `kill-session` 명령을 지우고 `systemctl --user restart foreman-bridge`로 바꿨다.
+- tmux 이름 변경(`foreman-bridge` → `cc-foreman`)은 **보류**: `cc-foreman` 세션이 이미 있었다(12:32 생성, bash 패널, 제가 만든 것 아님). 남의 세션은 건드리지 않았다. 이 세션은 아직 `foreman-bridge` 안에서 돈다.
+- `cc-foreman-2`(12:36, worktree `foreman-2`의 claude)도 제가 만든 것이 아니다.
