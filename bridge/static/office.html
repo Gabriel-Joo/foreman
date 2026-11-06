@@ -9,17 +9,17 @@
   :root { --bg:#111214; --fg:#e8e8ea; --muted:#9a9aa0; --line:#2e2f33; --card:#1a1b1e; --code:#202125;
           --ok:#4ade80; --bad:#f87171; --warn:#f0b445; --act:#5aa2ff; }
   * { box-sizing:border-box; }
-  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:15px/1.45 system-ui, -apple-system, "Noto Sans KR", sans-serif; }
-  /* 글씨 크기(11-06 사용자: "전체적으로 너무 작아") — 대화는 아주 살짝(+1px), 그 밖(탭 · 버튼 · 정보 줄 · 라벨 · 머리말 · 툴팁)은 +2px 안팎 */
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui, -apple-system, "Noto Sans KR", sans-serif; }
+  /* 글씨 크기(11-06 사용자: "전체적으로 너무 작아", 두 번) — 처음보다 대화는 +2px, 그 밖(탭 · 버튼 · 정보 줄 · 라벨 · 머리말 · 툴팁)은 +4px 안팎 */
   /* 터미널(아래 고정)이 펴지면 --term-h만큼 화면 전체가 줄어든다 — 터미널이 패널 · 캔버스를 덮지 않는다 */
   /* 바깥 스크롤은 없다(11-05) — 픽셀 화면은 줌으로 맞추고(aim) 패널 · 터미널 · 창은 각자 안에서 스크롤한다.
      vh는 가로 스크롤바 · 브라우저 막대에 따라 실제 창보다 커질 수 있어 dvh(실제 보이는 높이)를 쓴다 */
   html, body { overflow:hidden; }
   #app { display:flex; flex-direction:column; width:100%; height:calc(100dvh - var(--term-h, 0px)); min-height:0; }
   a { color:var(--act); }
-  button { font:inherit; padding:4px 10px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+  button { font:inherit; font-size:17px; padding:4px 10px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
   button:disabled { opacity:.45; cursor:default; } button.ghost { background:transparent; }
-  button.small { font-size:14px; padding:2px 8px; }
+  button.small { font-size:16px; padding:2px 8px; }
   input, textarea { font:inherit; width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
   /* 체크박스 · 라디오는 글자 칸이 아니다 — 넓이 100%가 걸려 버튼이 가운데로 떨어지고 글자와 떨어졌다(11-05 [+ 세션] 창) */
   input[type=checkbox], input[type=radio] { width:auto; padding:0; margin:0 6px 0 0; vertical-align:middle; flex:none; }
@@ -28,20 +28,20 @@
   .otop { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:6px 14px; border-bottom:1px solid var(--line); flex:none; }
   /* 11-05 머리말 프로젝트 줄 — 지금 방은 눌린 모양, 승인 대기(노랑 깜빡) · 안 본 새 답(파랑) 점, 숫자 */
   .oproj { display:flex; gap:3px; align-items:center; flex-wrap:wrap; }
-  .oproj-b { display:inline-flex; gap:5px; align-items:center; padding:3px 9px; border:1px solid var(--line); border-radius:14px; font-size:15px; }
+  .oproj-b { display:inline-flex; gap:5px; align-items:center; padding:3px 9px; border:1px solid var(--line); border-radius:14px; font-size:17px; }
   .oproj-b.on { background:color-mix(in srgb, var(--act) 22%, var(--bg)); border-color:var(--act); font-weight:700; box-shadow:inset 0 1px 3px rgba(0,0,0,.3); }
   .oproj-b.pend { border-color:var(--warn); }
-  .oproj-b .pn { font-size:13px; padding:0 5px; border-radius:8px; background:var(--code); color:var(--muted); font-weight:600; }
+  .oproj-b .pn { font-size:15px; padding:0 5px; border-radius:8px; background:var(--code); color:var(--muted); font-weight:600; }
   .oproj-b .pn.warn { background:color-mix(in srgb, var(--warn) 25%, var(--bg)); color:var(--warn); }
   .pdot { display:inline-block; width:7px; height:7px; border-radius:50%; }
   .pdot.new { background:var(--act); box-shadow:0 0 0 2px color-mix(in srgb, var(--act) 30%, transparent); }
   .pdot.warn { background:var(--warn); animation:pulse 1.2s infinite; }
   .brand { font-weight:700; letter-spacing:.04em; }
-  .oalerts { display:flex; gap:10px; font-size:15px; }
+  .oalerts { display:flex; gap:10px; font-size:17px; }
   .oalerts button { padding:1px 8px; }
-  .conn { margin-left:auto; font-size:14px; padding:2px 8px; border-radius:10px; border:1px solid var(--line); }
+  .conn { margin-left:auto; font-size:16px; padding:2px 8px; border-radius:10px; border:1px solid var(--line); }
   .conn.up { color:var(--ok); } .conn.down, .conn.auth { color:var(--bad); border-color:var(--bad); }
-  .badge { font-size:13px; padding:1px 6px; border-radius:8px; border:1px solid var(--line); white-space:nowrap; }
+  .badge { font-size:15px; padding:1px 6px; border-radius:8px; border:1px solid var(--line); white-space:nowrap; }
   .st-ACTIVE { color:var(--act); } .st-IDLE { color:var(--ok); } .st-SUSPENDED { color:#9fd8ff; } .st-DORMANT { color:var(--muted); }
 
   /* 무대 + 옆 패널. 패널은 덮지 않고 옆에 선다 — 무대가 좁아지면 카메라가 다시 맞춘다 */
@@ -62,15 +62,15 @@
   .oside-strip { display:none; width:34px; border:0; border-radius:0; background:var(--card); padding:8px 0; flex-direction:column; align-items:center; gap:8px; }
   .oside.folded .oside-strip { display:flex; }
   .oside.folded .oside-main { display:none; }
-  .oside-vert { writing-mode:vertical-rl; font-size:14px; color:var(--muted); letter-spacing:.2em; }
-  .oside-badge { display:inline-block; min-width:20px; padding:1px 5px; border-radius:10px; background:var(--warn); color:#111; font-size:13px; font-weight:700; animation:pulse 1.4s infinite; }
+  .oside-vert { writing-mode:vertical-rl; font-size:16px; color:var(--muted); letter-spacing:.2em; }
+  .oside-badge { display:inline-block; min-width:20px; padding:1px 5px; border-radius:10px; background:var(--warn); color:#111; font-size:15px; font-weight:700; animation:pulse 1.4s infinite; }
   @keyframes pulse { 50% { opacity:.55; } }
   .oside-main { flex:1; min-width:0; display:flex; flex-direction:column; }
   .oside-bar { display:flex; gap:8px; align-items:center; padding:7px 10px; border-bottom:1px solid var(--line); flex:none; }
   .oside-bar b { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .oside-bar button { flex:none; white-space:nowrap; }   /* 11-06 글씨를 키우자 좁은 패널에서 "넓게"가 두 줄로 꺾였다 */
   .oside-body { flex:1; min-height:0; overflow:auto; padding:6px 12px 10px; display:flex; flex-direction:column; gap:6px; }
-  .oside-body h3 { font-size:14px; margin:8px 0 2px; color:var(--muted); }
+  .oside-body h3 { font-size:16px; margin:8px 0 2px; color:var(--muted); }
   .papprs { display:grid; gap:6px; }
   .papprs:empty { display:none; }
   .papprs .appr { flex-direction:column; gap:4px; }
@@ -80,20 +80,20 @@
   /* 11-05 다시 짬 — 대화가 주인공. 제목 줄 · 한 줄 정보 · (승인 대기) · 탭 다음은 입력 칸 위까지 전부 대화 */
   .pmeta { padding:3px 10px 5px; border-bottom:1px solid var(--line); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:none; }
   .pmeta[hidden] { display:none; }
-  .pmeta .badge { font-size:13px; }
+  .pmeta .badge { font-size:15px; }
   .oside > .oside-main > .papprs { padding:6px 10px; border-bottom:1px solid var(--line); max-height:45vh; overflow:auto; flex:none; }
   .ptabs { display:flex; gap:2px; padding:4px 8px 0; border-bottom:1px solid var(--line); flex:none; }
   .ptabs[hidden] { display:none; }
-  .ptabs button { border:0; border-bottom:2px solid transparent; border-radius:0; background:none; padding:4px 10px; color:var(--muted); font-size:15px; }
+  .ptabs button { border:0; border-bottom:2px solid transparent; border-radius:0; background:none; padding:4px 10px; color:var(--muted); font-size:17px; }
   .ptabs button.on { color:var(--fg); border-bottom-color:var(--act); font-weight:600; }
   .ptab[hidden] { display:none; }
   .oside.tab-convo .oside-body { overflow:hidden; padding:0; }
   .ptab-convo { flex:1; min-height:0; display:flex; flex-direction:column; position:relative; }
   .oside .convo { flex:1 1 0; max-height:none; min-height:0; overflow:auto; padding:10px 12px 14px; gap:10px; scroll-behavior:auto; }
-  .oside .msg { font-size:14.5px; }
-  .oside.wide .msg { font-size:15px; }
+  .oside .msg { font-size:15.5px; }
+  .oside.wide .msg { font-size:16px; }
   .pnew { position:absolute; left:50%; bottom:10px; transform:translateX(-50%); border-radius:14px; padding:3px 12px;
-          background:var(--act); color:#fff; border:0; box-shadow:0 2px 8px rgba(0,0,0,.25); font-size:14px; }
+          background:var(--act); color:#fff; border:0; box-shadow:0 2px 8px rgba(0,0,0,.25); font-size:16px; }
   .pnew[hidden] { display:none; }
   .oside .feed { max-height:none; }
   .oside .input { padding:8px 12px; flex:none; }

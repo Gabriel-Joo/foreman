@@ -51,7 +51,7 @@
 
   "tags": {
     "_": "구역 이름표(방 안에서만, 구역 왼쪽 위) — 양피지 쪽지",
-    "style": { "bg": "#ead9ae", "fg": "#3b2a1c", "border": "#8a6640", "font": "italic 600 13px Georgia, 'Noto Serif KR', serif", "kind": "parchment" },
+    "style": { "bg": "#ead9ae", "fg": "#3b2a1c", "border": "#8a6640", "font": "italic 600 15px Georgia, 'Noto Serif KR', serif", "kind": "parchment" },
     "_zones": "[이름, dx, dy] — 이름표가 사람 자리를 가리지 않게 비켜 둔 것(11-05 window.office.layoutPlan())",
     "zones": { "foreman_office": "교장실", "library": "서고", "desks": ["작업 책상", -0.7, 0], "potion": "물약실", "test": ["시약대", -1.0, 0],
                "circle": "원탁방", "hall": "대강당", "window": ["아치 창", -0.3, 1.5], "seal": ["봉인대", 0, -0.3], "scribe": "필사실" },

@@ -55,7 +55,7 @@
 
   "tags": {
     "_": "구역 이름표 — 흰 사인판 + 파란 띠",
-    "style": { "bg": "#ffffffee", "fg": "#1f2430", "border": "#3d9ee6", "font": "600 12px system-ui, 'Noto Sans KR', sans-serif", "kind": "sign" },
+    "style": { "bg": "#ffffffee", "fg": "#1f2430", "border": "#3d9ee6", "font": "600 14px system-ui, 'Noto Sans KR', sans-serif", "kind": "sign" },
     "_zones": "[이름, dx, dy] — 이름표가 사람 자리를 가리지 않게 비켜 둔 것(11-05 window.office.layoutPlan())",
     "zones": { "foreman_office": "팀장실", "library": "아카이브", "desks": ["워크스테이션", -1.2, 0], "server": "서버룸", "test": ["QA 부스", 0, 1.1],
                "meeting": "회의실", "lounge": ["라운지", 0, -0.5], "window": ["창가 바", -1.1, 0], "commit": ["커밋 데스크", 1.1, 0], "scribe": "문서팀" },
