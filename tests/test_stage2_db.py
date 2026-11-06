@@ -1163,10 +1163,8 @@ async def test_notion_publish_update_unchanged_archive_and_scope(env, tmp_path):
     assert (await pub.publish(path))["action"] == "unchanged"                                # 같은 내용은 건너뛴다
     f.write_text("# 11-05 회고(고침)\n\n- 바뀐 줄\n", encoding="utf-8")
     assert (await pub.publish(path))["action"] == "unchanged"                                # 커밋 전 — main 원본만 본다
-    lst = await pub.list()
-    assert lst[0]["path"] == path and lst[0]["changed"] is False
+    assert all(not x["path"].startswith("log/") for x in await pub.list())                  # 회고는 게시 목록에 없다(11-06)
     g("commit", "-qam", "retro 고침")
-    assert (await pub.list())[0]["changed"] is True                                         # 원본이 바뀜
     r3 = await pub.publish(path)
     assert r3["action"] == "updated" and r3["page_id"] == r1["page_id"]                      # 같은 페이지 · 같은 URL
     assert fake.pages[r1["page_id"]]["title"] == "11-05 회고(고침)"
@@ -1196,6 +1194,25 @@ async def test_notion_publish_update_unchanged_archive_and_scope(env, tmp_path):
     assert r4["action"] == "created" and r4["page_id"] != r1["page_id"]
     with pytest.raises(FileNotFoundError):
         await pub.publish("log/retro_커밋안됨.md")
+
+    # 포트폴리오(11-06) — 묶음 없이 루트 바로 아래, 번호 붙은 제목. 예전 「포트폴리오」 아래 페이지는 다시 게시할 때 루트로 옮긴다
+    (repo / "portfolio").mkdir()
+    (repo / "portfolio" / "00_overview.md").write_text("# 한눈에\n\n- 무엇\n", encoding="utf-8")
+    (repo / "portfolio" / "01_loss.md").write_text("# 압축 손실\n\n- 숫자\n", encoding="utf-8")
+    g("add", "."), g("commit", "-qm", "portfolio")
+    p0 = await pub.publish("portfolio/00_overview.md")
+    assert p0["action"] == "created" and fake.pages[p0["page_id"]]["parent"] == "root"
+    assert fake.pages[p0["page_id"]]["title"] == "00 한눈에"
+    oldsec = await pub._section("포트폴리오")                                                 # 예전 자리를 흉내 낸다
+    p1 = await pub.publish("portfolio/01_loss.md")
+    fake.pages[p1["page_id"]]["parent"] = oldsec
+    await pub._save("portfolio/01_loss.md", parent_page_id=oldsec, title="압축 손실")
+    again = await pub.publish("portfolio/01_loss.md")
+    assert again["action"] == "unchanged" and fake.pages[p1["page_id"]]["parent"] == "root"   # 내용이 같아도 옮기고
+    assert fake.pages[p1["page_id"]]["title"] == "01 압축 손실"                               # 제목도 고친다
+    assert (await pub.archive_section("포트폴리오"))["action"] == "archived"                  # 비었으니 내린다
+    with pytest.raises(nt.OutOfScope):
+        await pub.archive_section("회고")                                                     # 아래에 다시 게시한 회고(r4)가 남았다
 
 
 async def test_later_since_counts_only_merged_runs(env):

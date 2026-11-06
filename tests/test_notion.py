@@ -131,7 +131,10 @@ class FakeNotion:
         self.calls.append(("archive", pid))
 
     async def children(self, bid):
-        return [{**b, "id": b["_id"], "has_children": bool(self.blocks.get(b["_id"]))} for b in self.blocks.get(bid, [])]
+        # 실제 Notion처럼 하위 페이지도 child_page 블록으로 돌려준다(휴지통 간 것은 빼고) — 묶음 페이지 내리기가 본다
+        subs = [{"type": "child_page", "id": pid, "child_page": {"title": p["title"]}, "has_children": False}
+                for pid, p in self.pages.items() if p["parent"] == bid and not p["archived"]]
+        return [{**b, "id": b["_id"], "has_children": bool(self.blocks.get(b["_id"]))} for b in self.blocks.get(bid, [])] + subs
 
     async def append(self, bid, children, after=None):
         out = []
@@ -196,6 +199,12 @@ def test_portfolio_mode_no_repo_links_and_image_placeholder():
     assert links.count(None) == len(links) - 1 and {"url": "https://example.com/"} in links   # 저장소 링크는 글자만, 바깥은 그대로
     assert bs[1]["type"] == "image" and bs[1]["_upload"] == "portfolio/img/office.png"
     assert nt.plain(bs[1]["image"]["caption"]) == "화면 — 마법학교"
+
+
+def test_portfolio_title_number():
+    assert nt.portfolio_title("portfolio/00_overview.md", "한눈에 — FOREMAN이 무엇인가") == "00 한눈에 — FOREMAN이 무엇인가"
+    assert nt.portfolio_title("portfolio/07_models_cost.md", "07 모델 고르기와 비용") == "07 모델 고르기와 비용"   # 두 번 붙이지 않는다
+    assert nt.portfolio_title("portfolio/extra.md", "번외") == "번외"
 
 
 def test_mermaid_keeps_language():

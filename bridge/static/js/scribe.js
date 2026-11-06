@@ -33,7 +33,7 @@ export function createScribe(store) {
       ].join(' ');
       return `<div class="sc-row"><div class="small"><code>${esc(d.path)}</code> ${st}${d.commit ? ` <span class="muted">· 커밋 ${esc(d.commit)}</span>` : ''}${d.updated_at ? ` <span class="muted">· ${ago(d.updated_at)}</span>` : ''}</div><div class="hand-btns">${btns}</div></div>`;
     }).join('');
-    return rows || '<p class="small muted">게시할 글이 없습니다(main의 log/retro_*.md · portfolio/*.md).</p>';
+    return rows || '<p class="small muted">게시할 글이 없습니다(main의 portfolio/*.md — 회고는 git에만 둡니다).</p>';
   }
 
   function html(room, label) {
