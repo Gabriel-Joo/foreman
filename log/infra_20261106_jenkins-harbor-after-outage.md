@@ -62,3 +62,25 @@
 - 인프라 캐릭터는 첫 웹훅 때 생긴다 — 캐릭터가 없는(웹훅을 한 번도 받지 않은) 인프라는 폴링하지 않는다. 지금 셋 다 있다
 - 여전히 못 잡는 것: Jenkins는 살아 있는데 **다른 파드**(harbor-jobservice 같은)가 죽은 것. 오늘 jobservice는 스스로 풀렸지만, "Ready가 아닌 파드"를 감시하려면 kubectl(호스트에 없음) 또는 클러스터 안 조회 경로가 필요하다 — 이번 범위 밖
 - **worktree 세션이라 브리지를 다시 띄우지 않았다** — 합친 뒤 원본 세션이 다시 띄워야 켜진다(`config/pipeline.toml` · 브리지 코드 변경)
+
+## 같은 조사를 두 세션이 했다 — 포먼이 왜 안 걸렀나
+
+| 시각(UTC) | 일 |
+|---|---|
+| 03:36:54 | 세션 198(이 세션, worktree `foreman-2`) spawn — `session_action` spawn, **`dispatch` 행 없음** |
+| 03:37:02 | 198 첫 프롬프트: jenkins-0 Unknown · harbor-jobservice 원인 조사 |
+| 03:38:05 | 원본 세션 197(브리지 systemd 복구 중)의 2번째 프롬프트에 **같은 조사**가 함께 들어감(tmux 이름 고치기와 한 덩어리) |
+| 03:38:10 ~ 03:38:51 | 197도 노드 → jenkins describe → init 로그 → 볼륨 순으로 같은 조사(도구 호출 5번) |
+
+못 거른 까닭:
+1. **겹침 확인은 디스패처에만 있고, 디스패처는 세션을 새로 띄울 때만 돈다**(`bridge/foreman.py` `attach` — "같은 일을 이미 하는 살아 있는 세션이 있으면 그쪽으로"). 겹침은 **이미 있는 세션에 넣은 입력**(197의 03:38 프롬프트)으로 생겼다. 살아 있는 세션에 들어가는 입력은 어느 길(패널 입력 · tmux 직접)이든 다른 세션과 맞대 보지 않는다
+2. 198도 디스패처를 거치지 않았다(`dispatch` 행 0) — 디스패처는 [+ 세션]에서 포먼에게 말할 때만 돈다. 거쳤더라도 그때(03:36) 197은 systemd 복구 중이라 겹침이 없었다 → `new`가 맞는 판단이었다
+3. 그래서 지금 구조로는 **"먼저 띄운 세션의 일을, 나중에 다른 세션에 다시 시키는 것"**은 어디서도 보지 않는다
+
+고칠 방향(만들지 않았다): 사람 입력이 들어올 때(UserPromptSubmit hook은 모든 세션에 걸려 있다) 같은 프로젝트의 다른 살아 있는 세션의 최근 요청과 맞대 보기 — 드문 낱말(`jenkins-0` · `harbor-jobservice` 같은 식별자) 겹침으로 싸게 거르고, 걸리면 화면 · 텔레그램으로 "세션 197이 03:37부터 같은 조사 중" 알림. 막지는 않는다(일부러 둘에 시킬 수 있다)
+
+## 그 밖에 본 것 (보고만 — 런슈즈 · 클러스터 저장소 소관)
+
+- **런슈즈 파드 startup probe 실패**: 부팅 직후 `runshoes-mysql-0`과 동시에 떠서 Flyway가 `Communications link failure`로 앱 시작 실패 → 재시작 3번 → 03:33:20 `Started RunshoesApplication`, 지금 2/2 Running. harbor-jobservice와 같은 **기동 순서 경합**, 저절로 풀림. 막으려면 런슈즈 쪽에서 DB 대기(init 컨테이너 · 연결 재시도)
+- **`runshoes-mysql-dev`(호스트 docker)**: Exited(0), `restart=no`, 끝난 시각 `2026-11-06T00:30:07Z` = **09:30 KST — 서버가 꺼지기 2분 전**. 앞 기록(`infra_20261106_systemd-bridge.md`)의 "00:30에 멈춤"은 UTC를 KST로 읽은 것이다. exit 0 · OOM 아님 → 종료 신호로 정상 멈춘 것, restart 정책이 없어서 다시 안 뜸. 개발용(compose 기본 restart=no, 11-02 기록과 같음). 되살릴지 · restart 정책은 런슈즈 저장소에서
+- **DNS `Nameserver limits were exceeded`**(kube-system · metallb의 hostNetwork 파드에서 계속): VM의 systemd-resolved에 nameserver가 6개 — `resolved.conf`의 `4.2.2.1 4.2.2.2 208.67.220.220`(박스 이미지, 2024-01) + `resolved.conf.d/dns.conf`(10-13 추가, `8.8.8.8 1.1.1.1`로 보임) + DHCP `192.168.121.1`. kubelet은 3개까지만 넣고 나머지를 버린다고 경고한다. **재부팅 때문이 아니라 10-13부터 있던 경고**, 앞 3개로 이름 풀이는 된다. 지우려면 VM의 resolved 설정을 3개 이하로(k8s-cluster 쪽 일). 그대로 둬도 동작 영향은 확인된 것 없음
