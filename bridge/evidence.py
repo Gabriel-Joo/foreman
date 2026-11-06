@@ -18,7 +18,8 @@ from sqlalchemy import text
 
 MARK = re.compile(r"\[(?P<k>c|t|log|docs):(?P<v>[^\]\s]+)\]")
 CLAIM = re.compile(r"\d|“|”|\"[^\"]{4,}\"|「[^」]{2,}」")      # 숫자 · 인용이 있는 줄 — 근거가 있어야 할 줄
-SKIP_LINE = re.compile(r"^\s*(#|>|\||```|---|\s*$)")
+# 사진 줄(![설명](경로))도 뺀다 — 설명의 근거는 사진 자체다(11-06 「한눈에」 의심 2개가 둘 다 사진 설명이었고 사진과 맞았다)
+SKIP_LINE = re.compile(r"^\s*(#|>|\||```|---|!\[|\s*$)")
 
 
 async def _git(repo: str, *args: str) -> tuple[int, str]:

@@ -580,7 +580,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     drawWalkDebug();
     // 글자는 화면 좌표로(선명하게)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    HITS = [];
+    HITS = []; NAMES = [];
     const zoomedIn = view !== 'map';
     for (const r of [...world.rooms, world.lounge]) drawBadge(r, zoomedIn);
     if (view === 'hq') {
@@ -592,7 +592,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     } else if (zoomedIn) {
       const room = roomByView();
       if (room && !room.lounge) { drawZoneTags(room); if (SP) overTags(room, list, now); }
-      for (const a of list) if (a.room === (view === '_lounge' ? null : view)) drawName(a);
+      const here = list.filter((a) => a.room === (view === '_lounge' ? null : view));
+      markCrowd(here);
+      for (const a of here) drawName(a);
     }
     requestAnimationFrame(frame);
   }
@@ -1725,37 +1727,84 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     });
   }
 
+  // 붐비는 사람(11-06) — 발밑 기본 자리끼리 겹치면 둘 다 이름의 끝부분만 쓴다(「서기 — 포트폴리오 쓰기: 포먼 디스패처」 → 「포먼 디스패처」).
+  // 먼저 그린 사람이 긴 이름으로 자리를 다 차지해 둘째가 갈 데가 없었다(오피스 1024 필사실)
+  const nameTail = (s) => { const m = String(s || '').split(/:\s|\s—\s/); return m[m.length - 1] || s; };
+  function markCrowd(as) {
+    ctx.font = '15px system-ui, sans-serif';
+    const bx = as.filter((a) => !(a.kind === 'mini' && a.key !== selected)).map((a) => {
+      const [sx, sy] = toScreen(a.x * T, a.y * T), w = ctx.measureText(short(a.name, 18)).width + 6;
+      a.crowd = false;
+      return [a, [sx - w / 2, sy + 2, w, 18]];
+    });
+    for (let i = 0; i < bx.length; i++) for (let j = i + 1; j < bx.length; j++) {
+      if (areaOf(bx[i][1], bx[j][1]) > 0) bx[i][0].crowd = bx[j][0].crowd = true;
+    }
+  }
   function drawName(a) {
     if (a.kind === 'mini' && a.key !== selected) return;     // 작은 일꾼 이름은 누른 것만(묶음 이름은 부모 밑에)
     const [sx, sy] = toScreen(a.x * T, a.y * T);
     // 끝난 세션(DORMANT)과 멈춘 세션(SUSPENDED)이 그림만으로는 헷갈렸다(11-05) — 이름 뒤에 글로 붙인다
     const suffix = a.kind === 'session' && a.s ? ({ DORMANT: ' · 끝남', SUSPENDED: ' · 멈춤' }[a.s.state] || '') : '';
-    const text = (a.kind === 'session' ? short(a.name, 18) : short(a.name, 30)) + suffix;
+    const base = a.crowd && a.kind === 'session' ? nameTail(a.name) : a.name;
+    const text = (a.kind === 'session' ? short(base, 18) : short(base, 30)) + suffix;
     // 11-06 글씨 키움(11 → 15px, 두 번) — 줄 높이 NH, 줄 사이 1px
     const NH = 18;
     ctx.font = '15px system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    const w = ctx.measureText(text).width + 6;
-    ctx.fillStyle = '#000a'; ctx.fillRect(sx - w / 2, sy + 2, w, NH);
-    ctx.fillStyle = a.kind === 'foreman' ? P.warn : P.label;
-    ctx.fillText(text, sx, sy + 3);
+    const lines = [[text, a.kind === 'foreman' ? P.warn : P.label]];
     const n = a.kind === 'session' && a.s ? a.s.subagents_running || 0 : 0;
-    if (n) {
-      const sub = `일꾼 ${n}${a.subLabel ? ' · ' + short(a.subLabel, 22) : ''}${a.subHidden ? ` (+${a.subHidden} 접음)` : ''}`;
-      const w2 = ctx.measureText(sub).width + 6;
-      ctx.fillStyle = '#000a'; ctx.fillRect(sx - w2 / 2, sy + 3 + NH, w2, NH);
-      ctx.fillStyle = P.act; ctx.fillText(sub, sx, sy + 4 + NH);
-    }
+    if (n) lines.push([`일꾼 ${n}${a.subLabel ? ' · ' + short(a.subLabel, 22) : ''}${a.subHidden ? ` (+${a.subHidden} 접음)` : ''}`, P.act]);
     // 백그라운드 Bash · Monitor — "IDLE + 백그라운드 n개"(README 3.11). 일꾼 줄이 있으면 그 아래
     const bg = a.kind === 'session' && a.s ? a.s.background || [] : [];
     if (bg.length) {
       const d = bg[0].description || bg[0].tool;
-      const line = `백그라운드 ${bg.length}${d ? ' · ' + short(d, 22) : ''}`;
-      const w3 = ctx.measureText(line).width + 6, y3 = sy + 3 + NH * (n ? 2 : 1) + (n ? 1 : 0);
-      ctx.fillStyle = '#000a'; ctx.fillRect(sx - w3 / 2, y3, w3, NH);
-      ctx.fillStyle = P.act; ctx.fillText(line, sx, y3 + 1);
+      lines.push([`백그라운드 ${bg.length}${d ? ' · ' + short(d, 22) : ''}`, P.act]);
     }
+    // 구역 이름표 · 앞서 그린 이름과 겹치면 비켜 그린다(11-06 — 글씨를 키우자 오피스 1024에서 서버룸 사람 이름이 「서버룸」을 덮었다).
+    // 후보: 발밑(기본) → 겹친 칸의 아래 · 왼쪽 · 오른쪽. 사람에게서 멀어지지 않게 두 줄 높이 · 이름 폭 안에서만.
+    // 그래도 겹치면 이름을 앞 10자로 줄여 한 번 더(나란히 앉은 서기 둘의 긴 이름)
+    const others = [...HITS.map((h) => [h.x, h.y, h.w, h.h]), ...NAMES.map((m) => m.rect)];
+    const place = (ls) => {
+      const ws = ls.map(([t]) => ctx.measureText(t).width + 6), mw = Math.max(...ws), bh = ls.length * (NH + 1) - 1;
+      const cover = (cx, top) => others.reduce((s, o) => s + areaOf([cx - mw / 2, top, mw, bh], o), 0);
+      let best = { cx: sx, top: sy + 2, c: cover(sx, sy + 2), ws, mw, bh, ls };
+      if (!best.c) return best;
+      // 좌우 한 이름 폭 · 아래 두 줄 · 머리 위 안을 8px 격자로 훑는다. 안 겹치는 자리가 있으면 그중 가장 가까운 곳,
+      // 없으면 겹친 넓이×2 + 거리가 가장 작은 곳(넓이만 보면 조금 덜 겹치려고 머리 위 왼쪽 끝까지 갔다)
+      const head = sy - Math.round(1.9 * T * cam.s) - bh - 2;
+      const tops = [sy + 2, sy + 2 + (NH + 1), sy + 2 + 2 * (NH + 1), head];
+      const score = (c, cx, top) => (c ? 100000 + 2 * c : 0) + Math.hypot(cx - sx, top - sy - 2);
+      const cands = [];
+      for (const top of tops) for (let dx = -mw; dx <= mw; dx += 8) cands.push([sx + dx, top]);
+      for (const o of others) {          // 겹친 칸의 바로 아래 · 왼쪽 · 오른쪽(격자가 놓치는 딱 맞는 자리)
+        if (!areaOf([sx - mw / 2, sy + 2, mw, bh], o)) continue;
+        cands.push([sx, o[1] + o[3] + 2], [o[0] - mw / 2 - 2, sy + 2], [o[0] + o[2] + mw / 2 + 2, sy + 2]);
+      }
+      let bs = score(best.c, best.cx, best.top);
+      for (const [cx, top] of cands) {
+        if (Math.abs(cx - sx) > mw || (top > sy && top - (sy + 2) > NH * 2 + 4)) continue;
+        const c = cover(cx, top), s = score(c, cx, top);
+        if (s < bs) { best = { ...best, cx, top, c }; bs = s; }
+      }
+      return best;
+    };
+    let best = place(lines);
+    if (best.c && text.length > 11) {
+      const alt = place([[short(nameTail(a.name), 10) + suffix, lines[0][1]], ...lines.slice(1)]);
+      if (alt.c < best.c) best = alt;
+    }
+    const { ws, mw, bh } = best;
+    best.ls.forEach(([t, col], i) => {
+      const y = best.top + i * (NH + 1);
+      ctx.fillStyle = '#000a'; ctx.fillRect(best.cx - ws[i] / 2, y, ws[i], NH);
+      ctx.fillStyle = col; ctx.fillText(t, best.cx, y + 1);
+    });
+    NAMES.push({ key: a.key, name: best.ls[0][0], rect: [best.cx - mw / 2, best.top, mw, bh].map(Math.round), cover: Math.round(best.c) });
   }
+  // 이름이 구역 이름표 · 다른 이름과 겹친 것(비켜도 남은 것) — tools/screen.py가 세 테마 × 세 크기로 센다(11-06)
+  let NAMES = [];
+  function nameAudit() { return NAMES.filter((m) => m.cover > 0); }
 
   function fmt(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n); }
 
@@ -2188,7 +2237,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   resize();
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
-  return { go, theme, openSession, panel, actors, audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bubbleAudit: () => bubbleAudit(), layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
+  return { go, theme, openSession, panel, actors, audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(), layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
                                                                        anim: a.act && a.act.anim, go: a.act && a.act.go, face: a.face, dir: a.dir, char: a.char })) };
 }
 
