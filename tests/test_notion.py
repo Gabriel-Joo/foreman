@@ -198,6 +198,11 @@ def test_portfolio_mode_no_repo_links_and_image_placeholder():
     assert nt.plain(bs[1]["image"]["caption"]) == "화면 — 마법학교"
 
 
+def test_mermaid_keeps_language():
+    _, bs = nt.md_to_blocks("```mermaid\nflowchart LR\n  A --> B\n```\n")
+    assert bs[0]["code"]["language"] == "mermaid" and "A --> B" in nt.plain(bs[0]["code"]["rich_text"])
+
+
 def test_sync_keeps_block_ids_and_replaces_only_changed():
     """다시 게시 — 같은 자리 · 같은 종류면 내용만 고쳐 id가 남는다(mermaid 미리보기 보존), 바뀐 종류는 그 하나만."""
     f = FakeNotion(see_all=True)

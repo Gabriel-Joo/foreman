@@ -26,7 +26,8 @@ GH = "https://github.com/Gabriel-Joo/foreman"
 
 CODE_LANG = {"py": "python", "python": "python", "js": "javascript", "mjs": "javascript", "javascript": "javascript",
              "ts": "typescript", "sh": "shell", "bash": "shell", "shell": "shell", "sql": "sql", "json": "json", "toml": "plain text",
-             "yaml": "yaml", "yml": "yaml", "html": "html", "css": "css", "md": "markdown", "markdown": "markdown", "": "plain text"}
+             "yaml": "yaml", "yml": "yaml", "html": "html", "css": "css", "md": "markdown", "markdown": "markdown", "": "plain text",
+             "mermaid": "mermaid"}   # 11-06 — 빠져 있어 plain text로 올라갔다. mermaid여야 Notion이 [미리보기]로 그림을 그린다
 
 
 class NotionError(Exception):
