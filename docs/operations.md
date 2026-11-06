@@ -52,3 +52,4 @@
 - 브리지 밖 알림(백업 실패 등): `.venv/bin/python -m bridge.telegram "제목" "줄" …`
 - 토큰 · chat_id는 저장소 맨 위 `.env.telegram`(권한 600, `.gitignore`의 `.env*`)
 - 접두어: `[런슈즈]` · `[펫퍼민트]` · `[포먼]`. 토큰은 FOREMAN의 `.env.telegram` 하나다(11-02 결정)
+- 겹침 알림(11-06, `bridge/overlap.py`, `notify.toml [overlap]`): 사람 입력(UserPromptSubmit)이 같은 프로젝트의 살아 있는 다른 세션이 최근 3시간에 받은 요청과 드문 낱말로 겹치면 텔레그램(`kind = 'overlap'`) + 패널 띠 🔁. 막지 않는다. 포먼의 서기 일감은 맞대지 않는다. 같은 두 세션은 1시간에 한 번
