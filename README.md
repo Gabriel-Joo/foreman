@@ -875,6 +875,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | `cleanupPeriodDays`(지금 120일)와 `event` 보관 기간을 함께 다시 정하기 — 기간이 지나면 요약만 남기고 원본을 지운다 | 브리지 적재가 안정되면(11-02 사용자). 보관 정리 코드는 아직 없다 | README 5장 「보관 정책」 |
 | Jenkins 실패 상세(스테이지별 로그)를 읽는 보정 — matrix-auth로 진짜 읽기 전용 토큰을 만들어 더하기 | 실패 상세가 필요해지면(11-03 사용자: "지금은 안 만들어"). 플러그인 · JCasC는 인프라 저장소 세션의 일 | `log/stage8_cicd_result.md` |
 | Jenkins 차트 init의 `yes n \| cp -i …`(`set -e`)가 같은 파드 재기동 때 실패하는 것 막기 — values에서 init 스크립트를 덮어 `\|\| true`, 또는 `plugin-dir`를 비우게, 또는 고친 차트 버전으로. **정전 · 노드 재부팅마다 반복된다**(그때마다 `kubectl delete pod -n jenkins jenkins-0`로 되살림) | 따로 볼 때(11-06 사용자: 급하지 않음). ronanlab-infra 저장소 세션의 일 | `log/infra_20261106_jenkins-harbor-after-outage.md` |
+| 클러스터 파드 감시 — 인프라 웹(Jenkins `/login` 등)은 살아 있는데 **다른 파드가 죽은 것**(11-06 harbor-jobservice CrashLoopBackOff — 이번엔 저절로 풀림)을 알리기. 지금 생존 폴링은 ingress로 웹 주소만 본다. **먼저 호스트에서 클러스터를 조회하는 길이 필요하다** — 호스트에 kubectl이 없고(`vagrant ssh m-k8s`만) 브리지는 그걸 부를 수 없다. 후보: 읽기 전용 ServiceAccount 토큰 + API 서버 직접 조회(토큰 무게를 따질 것 — 웹훅 토큰 · Jenkins 토큰 때처럼) | 따로 볼 때(11-06 사용자) | `log/infra_20261106_jenkins-harbor-after-outage.md` 「판단 · 한계」 |
 | FOREMAN 외부 노출(터널) 다시 열기 | 필요해지면 — 열 때는 읽기 전용 + 강한 인증(패스키 · mTLS)으로(11-03 결정) | README 3.13, `docs/02_cloudflare_tunnel.md` |
 
 ---
