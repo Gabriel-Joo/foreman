@@ -75,7 +75,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   // 서기실 창(12a) — 서기를 누르면 pSel에 그린다. 버튼은 여기서 한 번만 받는다(다시 그려도 그대로)
   const scribe = createScribe(store);
   $('pSel').addEventListener('click', (ev) => {
-    if (target && target.kind === 'scribe') scribe.onClick(ev, target.room, projectLabel(store.state, target.room));
+    if (target && target.kind === 'scribe') scribe.onClick(ev, target.room, projectLabel(store.state, target.room),
+      (sid) => { onSelectSession(sid); setTab('sess'); });     // 열린 서기 일 → 그 세션의 「따로 작업」(11-06)
   });
   mountApprovalHistory($('pHist'), $('pHistHead'), $('pHistBody'), store);
 

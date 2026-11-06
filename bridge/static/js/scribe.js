@@ -50,7 +50,8 @@ export function createScribe(store) {
         ${x.kind !== 'publish' ? go(x.kind) : ''}</div>`).join('')
       : '<p class="small muted">기계로 센 할 일이 없습니다.</p>';
     const openHtml = opened.length ? `<div class="small"><b>열려 있는 일 ${opened.length}</b> <span class="muted">— 합치거나 버리기 전까지(동시에 2개까지, 같은 파일을 고치는 일은 하나씩)</span>${
-      opened.map((o) => `<div class="small">· ${esc((tasks[o.task] || {}).title || o.task)}${o.topic ? ` — ${esc(o.topic)}` : ''} <span class="muted">세션 ${o.session_id}</span></div>`).join('')}</div>` : '';
+      opened.map((o) => `<div class="sc-row"><div class="small">· ${esc((tasks[o.task] || {}).title || o.task)}${o.topic ? ` — ${esc(o.topic)}` : ''} <span class="muted">세션 ${o.session_id}</span></div>
+        <button type="button" class="small" data-sc-open="${o.session_id}" title="세션 열기 — 이 서기 세션의 [세션] 탭을 엽니다. 「따로 작업」에서 diff를 보고 합치거나 버립니다(끝난 세션은 화면에서 사라져도 여기서 엽니다).">세션 열기</button></div>`).join('')}</div>` : '';
     const taskHtml = openHtml + ORDER.filter((k) => k !== 'publish' && tasks[k]).map((k) => `<div class="sc-row"><div class="small"><b>${esc(tasks[k].title)}</b> <span class="muted">${esc(blocked[k] ? blocked[k] : tasks[k].desc)}</span></div>
         ${go(k)}</div>`).join('');
     // 포트폴리오 쓰기(12c, 11-06) — 주제마다 따로 연다(다른 주제는 다른 파일이라 동시에 둘까지 된다). 주제는 config/portfolio.toml
@@ -65,7 +66,11 @@ export function createScribe(store) {
       <details class="hand" open><summary title="Notion 게시 — 원본은 git 마크다운, Notion은 게시판입니다. 버튼을 눌러야만 올라갑니다."><b>Notion 게시</b></summary>${pubBlock(room)}</details>`;
   }
 
-  async function onClick(ev, room, label) {
+  async function onClick(ev, room, label, openSession) {
+    // 열린 서기 일의 세션 열기(11-06) — 끝난 서기 세션은 3분 뒤 화면에서 사라지고, 서기실의 「서기」를 누르면 이 창이 떠서
+    // 합치지 않은 worktree의 [합치기]에 닿을 길이 없었다
+    const o = ev.target.closest('[data-sc-open]');
+    if (o) { ev.preventDefault(); if (openSession) openSession(Number(o.dataset.scOpen)); return; }
     const t = ev.target.closest('[data-sc-task]'), p = ev.target.closest('[data-pub]');
     if (!t && !p) return;
     ev.preventDefault();
