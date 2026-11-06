@@ -273,6 +273,20 @@ def test_sync_keeps_block_ids_and_replaces_only_changed():
     assert st3["reset"] == 1 and [b["type"] for b in f.blocks["root"]] == ["heading_1"]
 
 
+def test_sync_insert_near_top_keeps_later_blocks():
+    """11-06 — 글 앞쪽에 사진을 끼우자 뒤 블록이 모두 밀려 새 블록이 되고 mermaid 미리보기가 풀렸다. 내용으로 짝지으면 그대로다."""
+    f = FakeNotion(see_all=True)
+    _, b1 = nt.md_to_blocks("> 이 글은 A\n\n## 구조\n\n```mermaid\nflowchart LR\n  A --> B\n```\n\n문단\n")
+    asyncio.run(nt.append_tree(f, "root", b1))
+    ids1 = [b["_id"] for b in f.blocks["root"]]
+    _, b2 = nt.md_to_blocks("> 이 글은 A\n\n## 구조\n\n![움직임](https://example.com/a.gif)\n\n```mermaid\nflowchart LR\n  A --> B\n```\n\n문단\n")
+    st = asyncio.run(nt.sync_children(f, "root", b2))
+    ids2 = [b["_id"] for b in f.blocks["root"]]
+    assert [b["type"] for b in f.blocks["root"]] == ["quote", "heading_1", "image", "code", "paragraph"]
+    assert ids2[3] == ids1[2] and ids2[4] == ids1[3] and ids2[:2] == ids1[:2]                # mermaid · 뒤 문단 id 그대로
+    assert st["added"] == 1 and st["replaced"] == 0 and st["reset"] == 0
+
+
 def test_git_show_refuses_outside_paths(tmp_path):
     for bad in ("../x.md", "/etc/passwd.md", "README.md", "log/a.txt"):
         with pytest.raises(nt.OutOfScope):
