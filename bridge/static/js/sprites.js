@@ -155,10 +155,15 @@ export function recolor(c, hex) {
   const [th, ts] = rgb2hsl(tr, tg, tb);
   const g = c.getContext('2d');
   const d = g.getImageData(0, 0, c.width, c.height);
+  // 얼굴은 그대로(11-06 사용자) — 프레임 위쪽 3/4(16px 캐릭터의 머리 · 얼굴은 5 ~ 11줄)의 살색 계열(색상 0° ~ 50° · 350° ~)은
+  // 바꾸지 않는다. 전에는 채도 · 밝기만 봐서 얼굴까지 코더 파랑이 되어 멈춘(돌) 사람처럼 보였다. 맨 아래 옷은 예전처럼 바꾼다.
+  // 대가: 주황 옷(NinjaMageOrange · SorcererOrange)은 윗부분이 주황으로 남는다
+  const head = c.height * 0.75;
   for (let i = 0; i < d.data.length; i += 4) {
     if (!d.data[i + 3]) continue;
-    const [, s, l] = rgb2hsl(d.data[i], d.data[i + 1], d.data[i + 2]);
+    const [h, s, l] = rgb2hsl(d.data[i], d.data[i + 1], d.data[i + 2]);
     if (s < 0.22 || l < 0.12 || l > 0.72) continue;
+    if ((i / 4) / c.width < head && (h <= 50 / 360 || h >= 350 / 360)) continue;
     const [r, gg, b] = hsl2rgb(th, Math.max(0.35, Math.min(1, (s + ts) / 2)), l);
     d.data[i] = r; d.data[i + 1] = gg; d.data[i + 2] = b;
   }
