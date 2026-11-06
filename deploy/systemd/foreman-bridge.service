@@ -1,0 +1,22 @@
+[Unit]
+Description=FOREMAN bridge (FastAPI, 127.0.0.1:8000)
+Documentation=file:///home/kopo17/AI_programming/foreman/docs/operations.md
+# MySQL은 docker(foreman-mysql, restart=unless-stopped)가 올린다. 사용자 매니저는 docker 순서를 보장하지 않으므로
+# DB가 아직 없으면 실패 → Restart로 다시 시도한다
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kopo17/AI_programming/foreman
+ExecStart=/home/kopo17/AI_programming/foreman/.venv/bin/python -m bridge
+Restart=on-failure
+RestartSec=5
+# tmux 명령(CC 세션 조회 · 입력 주입)이 PATH의 tmux를 쓴다
+Environment=PATH=/home/kopo17/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+KillMode=mixed
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target
