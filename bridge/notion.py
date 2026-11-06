@@ -478,11 +478,85 @@ def _same(old: dict[str, Any], new: dict[str, Any]) -> bool:
     return _norm_rt(o.get("rich_text")) == _norm_rt(n.get("rich_text")) and o.get("language") == n.get("language")
 
 
+def _sig(b: dict[str, Any]) -> tuple[Any, ...]:
+    """맞대기용 블록 지문 — 종류 + 글(+ 코드 언어 · 표 폭). 사진 · 동영상은 늘 다르게(파일이 바뀌었을 수 있다 — 매번 새로 올린다)."""
+    t = b.get("type")
+    v = b.get(t) or {}
+    if t in ("image", "video"):
+        return (t, id(b))
+    if t == "table":
+        return (t, v.get("table_width"))
+    return (t, tuple(x[0] for x in _norm_rt(v.get("rich_text"))), v.get("language"))
+
+
+async def _keep_pair(client: Any, ob: dict[str, Any], nb: dict[str, Any], st: dict[str, int]) -> bool:
+    """old 블록 자리에 new를 — 같은 종류면 내용만 고치고 id를 지킨다(mermaid 미리보기가 남는다). 못 하면 False."""
+    t = nb["type"]
+    if ob["type"] == t and t in UPDATABLE:
+        body, kids = _strip_children(nb)
+        if _same(ob, body):
+            st["kept"] += 1
+        else:
+            await client.update_block(ob["id"], body)
+            st["updated"] += 1
+        if kids or ob.get("has_children"):
+            await sync_children(client, ob["id"], kids, st)
+        return True
+    if ob["type"] == t == "table" and (ob.get("table") or {}).get("table_width") == nb["table"]["table_width"]:
+        await sync_children(client, ob["id"], nb["table"]["children"], st)
+        return True
+    if ob["type"] == t == "divider":
+        st["kept"] += 1
+        return True
+    return False
+
+
+async def _insert_after(client: Any, parent: str, blocks: list[dict[str, Any]], anchor: str) -> str:
+    """anchor 뒤에 blocks를 끼우고, 끼운 마지막 블록 id를 돌려준다(다음 끼우기의 자리)."""
+    await append_tree(client, parent, blocks, after=anchor)
+    ids = [b["id"] for b in await client.children(parent)]
+    k = ids.index(anchor) + len(blocks) if anchor in ids else -1
+    return ids[k] if 0 <= k < len(ids) else anchor
+
+
 async def sync_children(client: Any, parent: str, new: list[dict[str, Any]], stats: dict[str, int] | None = None) -> dict[str, int]:
-    """parent의 자식을 new에 맞춘다 — 같은 자리 · 같은 종류면 내용만(같으면 그대로), 다르면 그 블록만 바꾼다.
-    맨 앞 블록부터 다르면 붙일 자리가 없어 전부 갈아 끼운다(reset)."""
+    """parent의 자식을 new에 맞춘다 — **내용으로 짝짓는다**(difflib). 같은 블록은 그대로, 바뀐 구간만 고친다.
+    11-06 — 자리 순서로 맞대던 때는 글 앞에 사진 한 장을 끼우면 뒤 블록이 모두 한 칸씩 밀려 새 블록이 되고,
+    사람이 미리보기로 바꿔 둔 mermaid가 모두 풀렸다. Notion API는 맨 앞에 끼울 수 없어(after만 있다), 맨 앞부터 다르면
+    전부 갈아 끼운다(reset)."""
+    import difflib
     st = stats if stats is not None else {"kept": 0, "updated": 0, "replaced": 0, "added": 0, "deleted": 0, "reset": 0}
     old = await client.children(parent)
+    ops = difflib.SequenceMatcher(a=[_sig(b) for b in old], b=[_sig(b) for b in new], autojunk=False).get_opcodes()
+    if old and ops and ops[0][0] == "insert":         # 맨 앞에 끼워야 한다 — API로 못 하니 예전 방식
+        return await _sync_positional(client, parent, old, new, st)
+    anchor: str | None = None
+    for tag, i1, i2, j1, j2 in ops:
+        if tag == "equal":
+            for ob, nb in zip(old[i1:i2], new[j1:j2]):
+                await _keep_pair(client, ob, nb, st)
+                anchor = ob["id"]
+            continue
+        olds, news = old[i1:i2], new[j1:j2]
+        # 바뀐 구간 — 같은 자리 · 같은 종류는 내용만 고친다(id 유지), 나머지는 지우고 끼운다
+        k = 0
+        while k < len(olds) and k < len(news) and await _keep_pair(client, olds[k], news[k], st):
+            anchor = olds[k]["id"]
+            k += 1
+        if news[k:] and anchor is None:              # 맨 앞에 다른 것을 끼워야 한다 — 지우기 전에 예전 방식으로
+            return await _sync_positional(client, parent, await client.children(parent), new, st)
+        for ob in olds[k:]:
+            await client.delete_block(ob["id"])
+            st["deleted"] += 1
+        if news[k:]:
+            anchor = await _insert_after(client, parent, news[k:], anchor)
+            st["added" if not olds else "replaced"] += len(news) - k
+    return st
+
+
+async def _sync_positional(client: Any, parent: str, old: list[dict[str, Any]], new: list[dict[str, Any]],
+                           st: dict[str, int]) -> dict[str, int]:
+    """예전 방식(자리 순서) — 맨 앞부터 다를 때만."""
     anchor: str | None = None
     for i, nb in enumerate(new):
         if i >= len(old):
