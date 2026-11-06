@@ -820,7 +820,7 @@ class PipelineManager:
         if sha:
             async with self.engine.connect() as c:
                 r = (await c.execute(text(
-                    "SELECT gc.subject, cs.title, ch.name FROM git_commit gc LEFT JOIN character_session cs ON cs.id = gc.session_id "
+                    "SELECT gc.subject, COALESCE(cs.custom_title, cs.title), ch.name FROM git_commit gc LEFT JOIN character_session cs ON cs.id = gc.session_id "
                     "LEFT JOIN `character` ch ON ch.id = gc.character_id WHERE gc.sha = :s"), {"s": sha})).first()
             if r:
                 subj = r[0] or ""
@@ -877,7 +877,7 @@ class PipelineManager:
                 waiting = [{"sha": r[0], "short": r[0][:8], "subject": r[1], "pushed": r[2] is not None,
                             "at": _iso(r[3]), "session_id": r[4], "who": r[5]} for r in (await c.execute(text(
                     "SELECT gc.sha, gc.subject, gc.pushed_at, gc.committed_at, gc.session_id, "
-                    "COALESCE(cs.title, ch.name) FROM git_commit gc "
+                    "COALESCE(cs.custom_title, cs.title, ch.name) FROM git_commit gc "
                     "LEFT JOIN character_session cs ON cs.id = gc.session_id LEFT JOIN `character` ch ON ch.id = gc.character_id "
                     "WHERE gc.project_id = :p AND NOT EXISTS (SELECT 1 FROM build_commit bc WHERE bc.commit_sha = gc.sha) "
                     "AND NOT EXISTS (SELECT 1 FROM build b WHERE b.commit_sha = gc.sha) "
@@ -892,7 +892,7 @@ class PipelineManager:
 
     async def _commits(self, c: Any, p: PipeProject, head: str) -> list[dict[str, Any]]:
         rows = (await c.execute(text(
-            "SELECT gc.sha, gc.subject, gc.session_id, cs.title, ch.name, gc.author FROM git_commit gc "
+            "SELECT gc.sha, gc.subject, gc.session_id, COALESCE(cs.custom_title, cs.title), ch.name, gc.author FROM git_commit gc "
             "LEFT JOIN character_session cs ON cs.id = gc.session_id LEFT JOIN `character` ch ON ch.id = gc.character_id "
             "WHERE gc.sha IN (SELECT bc.commit_sha FROM build_commit bc JOIN build b ON b.id = bc.build_id "
             "WHERE b.project_id = :p AND b.commit_sha = :h) OR gc.sha = :h ORDER BY gc.committed_at DESC LIMIT 20"),

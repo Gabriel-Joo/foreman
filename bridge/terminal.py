@@ -493,7 +493,7 @@ class TerminalManager:
             assert self.engine is not None
             async with self.engine.connect() as c:
                 info = (await c.execute(text(
-                    "SELECT cs.type, p.name, cs.title FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
+                    "SELECT cs.type, p.name, COALESCE(cs.custom_title, cs.title) FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
                     "LEFT JOIN project p ON p.id = ch.project_id WHERE cs.id = :s"), {"s": session_id})).first()
                 if info is None or info[0] != "agent":
                     return

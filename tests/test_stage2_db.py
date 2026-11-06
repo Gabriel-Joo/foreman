@@ -1223,6 +1223,27 @@ async def test_later_since_counts_only_merged_runs(env):
     assert await sr.later_since(engine, proj) == datetime(2026, 11, 6, 6, 5)  # 합쳤다(커밋 0개여도) → 그 뒤부터
 
 
+# ── 11-06 사람이 붙인 이름이 항상 이긴다 ─────────────
+async def test_custom_title_survives_ai_title_and_passes_to_handoff(env):
+    from types import SimpleNamespace
+    from bridge.handoff import HandoffManager
+    s, main = env
+    asm = await run(s)
+    sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
+    conn = pymysql.connect(host=s.mysql_host, port=s.mysql_port, user=s.mysql_user,
+                           password=s.mysql_password.get_secret_value(), database=s.mysql_database, autocommit=True)
+    with conn.cursor() as c:
+        c.execute("UPDATE character_session SET custom_title = '내 이름' WHERE id = %s", (sid,))
+        c.execute("INSERT INTO summary (session_id, req, kind, source, status) VALUES (%s, 'abc123', 'handoff', 'self', 'ok')", (sid,))
+        sum_id = c.lastrowid
+    conn.close()
+    for t in ("CC가 새로 지은 제목", "CC가 또 지은 제목"):           # 대화 중에 CC가 제목을 다시 짓는다
+        await _append(s, asm, main, dumps({"type": "ai-title", "aiTitle": t, "sessionId": SID}))
+    assert q(s, "SELECT title, custom_title FROM character_session WHERE id = %s", sid) == (("CC가 또 지은 제목", "내 이름"),)
+    fake = SimpleNamespace(engine=asm.engine)
+    assert await HandoffManager._inherited_title(fake, sum_id) == "내 이름"     # 인계로 띄운 새 세션이 물려받는다
+
+
 # ── 11-06 겹침 알림 — 살아 있는 다른 세션의 최근 요청과 겹치면 알린다(막지 않는다) ─────────────
 async def test_overlap_alert_on_human_prompt(env, tmp_path):
     import os
