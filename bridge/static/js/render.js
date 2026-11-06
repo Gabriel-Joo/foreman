@@ -106,7 +106,17 @@ if (typeof document !== 'undefined') {
   document.addEventListener('toggle', (ev) => {        // "중간 글" 펼침도 다시 그릴 때 유지(toggle은 버블링하지 않아 capture로)
     const d = ev.target;
     if (d && d.dataset && d.dataset.mid) { if (d.open) OPEN_MSG.add(d.dataset.mid); else OPEN_MSG.delete(d.dataset.mid); }
+    if (d && d.dataset && d.dataset.keep) DETAILS.set(d.dataset.keep, d.open);
   }, true);
+}
+
+// 접고 펴는 칸(<details>)의 상태 기억(11-06) — 패널은 몇 초마다 · 이벤트마다 innerHTML로 다시 그려서, 사람이 접은 칸이
+// 처음값(open)으로 되돌아갔다(서기실 창 · 요약 고치기). 칸마다 이름(key)을 주면 사람이 바꾼 상태로 다시 그린다.
+// 쓰는 법: `<details class="hand"${keep('scribe:todo', true)}>` — 처음값은 dflt, 사람이 한 번 바꾸면 그 뒤로는 그 상태
+const DETAILS = new Map();
+export function keep(key, dflt = false) {
+  const open = DETAILS.has(key) ? DETAILS.get(key) : dflt;
+  return ` data-keep="${esc(key)}"${open ? ' open' : ''}`;
 }
 export function oneLine(s, n) {
   s = promptText(s).replace(/\s+/g, ' ');
@@ -128,7 +138,7 @@ export function approvalCard(a, st) {      // 버튼은 data-aid · data-act(all
     <div class="appr-main">
       <div><b>🔐 ${esc(projectLabel(st, a.project))}</b> · ${esc(a.tool)} <span class="muted small">#${a.id} · ${esc(a.rule)}</span></div>
       ${a.summary ? `<div class="appr-sum">▶ ${esc(a.summary)}</div>` : ''}
-      ${a.summary ? `<details class="small"><summary class="muted">명령 전체</summary><code>${esc(a.target)}</code></details>` : `<code>${esc(a.target)}</code>`}
+      ${a.summary ? `<details class="small"${keep(`appr:${a.id}:cmd`)}><summary class="muted">명령 전체</summary><code>${esc(a.target)}</code></details>` : `<code>${esc(a.target)}</code>`}
       <div class="small muted">${esc(a.reason || '')}${a.error ? ` · <span class="bad">${esc(a.error)}</span>` : ''}</div>
     </div>
     <div class="appr-act">${done ? `<span class="small">${esc(a.status)}${a.decided_by ? ' · ' + esc(a.decided_by) : ''}</span>` :
@@ -467,7 +477,7 @@ export function createRenderer(root, store) {
         <h2>${esc(p.label)} <span class="muted small">${live.length}개 살아 있음</span></h2>
         ${pipeBlock(st.pipeline.get(p.name))}
         ${live.map((s) => card(s, st)).join('')}
-        ${dormant.length ? `<details class="dormant"><summary class="small muted">종료된 세션 ${dormant.length}개</summary>${dormant.map((s) => card(s, st)).join('')}</details>` : ''}
+        ${dormant.length ? `<details class="dormant"${keep(`classic:${p.name}:dormant`)}><summary class="small muted">종료된 세션 ${dormant.length}개</summary>${dormant.map((s) => card(s, st)).join('')}</details>` : ''}
       </section>`;
     }).join('');
     const open = new Set([...$('grid').querySelectorAll('details[open]')].map((d) => d.parentElement.querySelector('h2').textContent));

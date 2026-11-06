@@ -2,7 +2,7 @@
 // 세션이 낸 "문서에 없는 것" 목록을 사람이 고치고(무엇 · 어디로 · 절) 항목마다 승인 · 빼기를 고른다. 승인한 것만 세션이 쓰고
 // 커밋하며, 브리지가 그 커밋을 git으로 확인한다. 고치던 값은 draft에 들고 있어 15초 새로 그리기에 날아가지 않는다.
 
-import { esc, ago } from './render.js';
+import { esc, ago, keep } from './render.js';
 
 const STATUS = { requested: '목록 기다리는 중…', listed: '고치고 승인해 주세요', failed: '실패', timeout: '시간 초과',
   writing: '쓰는 중…', written: '썼습니다', write_failed: '확인 실패' };
@@ -81,7 +81,7 @@ export function promoteGroup(p, can, draft, err, inputs = [], chosen = null) {
   if (!p) return wrap(head);
   let body = '';
   if (p.error) body += `<div class="small bad">${esc(p.error)}</div>`;
-  if (p.raw) body += `<details><summary class="small muted">응답 원문</summary><pre class="hand-body">${esc(p.raw)}</pre></details>`;
+  if (p.raw) body += `<details${keep(`prom:${p.id}:raw`)}><summary class="small muted">응답 원문</summary><pre class="hand-body">${esc(p.raw)}</pre></details>`;
   const items = p.items || [];
   const editable = p.status === 'listed' || p.status === 'write_failed';
   if (items.length) {

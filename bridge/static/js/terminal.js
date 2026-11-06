@@ -2,6 +2,8 @@
 // CC가 "이 명령을 실행해 주세요"라고 하면 브리지가 셸 입력 줄에 미리 채우고 terminal_request를 보낸다 → 패널을 올린다.
 // 사람이 Enter를 치고 암호를 넣는다. 결과는 브리지가 부탁한 세션에 돌려준다(terminal_result).
 
+import { keep } from './render.js';
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const PROJ = { runshoes: '런슈즈', 'petmint-rag-chatbot': '펫퍼민트', foreman: '포먼' };
 const BAR_H = 36;
@@ -93,7 +95,7 @@ export function createTerminal(store) {
     if (res) {
       html += `<div class="term-req ${res.ok ? 'ok-b' : 'bad-b'}"><div class="term-req-main">
         <span class="${res.ok ? 'ok' : 'bad'}">${esc(PROJ[res.project] || res.project || '')} 결과(종료 ${esc(res.exit)}): ${esc(res.msg)}</span>
-        ${res.output ? `<details><summary class="small">출력(마스킹)</summary><code>${esc(res.output)}</code></details>` : ''}</div>
+        ${res.output ? `<details${keep('term:result')}><summary class="small">출력(마스킹)</summary><code>${esc(res.output)}</code></details>` : ''}</div>
         <div class="appr-act"><button data-act="clear" class="ghost">지우기</button></div></div>`;
     }
     $('termReqs').innerHTML = html;

@@ -526,6 +526,21 @@ async def sync_children(client: Any, parent: str, new: list[dict[str, Any]], sta
     return st
 
 
+def content_digest(repo: str, path: str, body: str) -> str:
+    """게시 내용의 지문 — 본문 + 글이 가리키는 사진 파일 내용(11-06 — 사진만 다시 찍어 바꿨는데 본문이 같아 "바뀐 것 없음"으로
+    건너뛰었다). 사진을 못 읽으면 그 경로만 넣는다(게시 때 그 사실이 따로 드러난다)."""
+    h = hashlib.sha256(body.encode())
+    _, blocks = md_to_blocks(body, Ctx(path, "HEAD", links=False))
+    for b in blocks:
+        if "_upload" in b:
+            h.update(b"\0" + b["_upload"].encode())
+            try:
+                h.update(hashlib.sha256(git_bytes(repo, b["_upload"])).digest())
+            except (OutOfScope, FileNotFoundError):
+                pass
+    return h.hexdigest()
+
+
 def git_bytes(repo: str, path: str) -> bytes:
     p = PurePosixPath(path)
     if p.is_absolute() or ".." in p.parts or p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".gif") or not str(p).startswith(("portfolio/", "docs/", "log/")):
@@ -590,7 +605,7 @@ class Publisher:
 
     async def publish(self, path: str, when: str = "") -> dict[str, Any]:
         body, commit = git_show(self.repo, path)
-        digest = hashlib.sha256(body.encode()).hexdigest()
+        digest = content_digest(self.repo, path, body)
         portfolio = path.startswith("portfolio/")      # 바깥 사람이 읽는 글 — 저장소 링크 없이, 맨 위 "사본" 안내 없이(11-06)
         ctx = Ctx(path, commit or "HEAD", self.gh, links=not portfolio)
         title, blocks = md_to_blocks(body, ctx)
@@ -702,7 +717,7 @@ class Publisher:
             if r and r["status"] == "published":
                 try:
                     body, _ = git_show(self.repo, f)
-                    changed = hashlib.sha256(body.encode()).hexdigest() != r["content_hash"]
+                    changed = content_digest(self.repo, f, body) != r["content_hash"]
                 except (FileNotFoundError, OutOfScope):
                     changed = None
             out.append({"path": f, "title": r["title"] if r else None, "status": r["status"] if r else "new",
