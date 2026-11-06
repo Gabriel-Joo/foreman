@@ -34,6 +34,8 @@
 
 ### 3-1. 적재 — CC가 남기는 흔적에서 DB까지
 
+![현장 카드 — 적재한 기록으로 센 작업 · 쉼 · 멈춤 수와 오늘 토큰 〔시연 재생 — 숫자는 시연용〕](img/07_observability_card.png)
+
 ```mermaid
 flowchart LR
   CC["CC 세션"] -->|"hook: 프롬프트 제출 · Stop · StopFailure<br/>SessionEnd · 서브에이전트 시작/끝"| H["/hooks<br/>바로 202"]
@@ -103,6 +105,8 @@ flowchart TD
 ## 4. 겪은 문제와 풀이
 
 ### 4-1. FOREMAN 자신의 적재가 조용히 막혔다
+
+![적재가 막히면 머리말에 「⚠ 적재 막힘 N개 세션」, 마우스를 올리면 어느 세션이 몇 분 · 몇 번 실패했는지 〔시연 재생 — 104번은 실제 사례의 재시도 수〕](img/07_observability_ingest.png)
 
 - 11-03 06:48부터 펫퍼민트 세션 하나의 적재가 같은 덩어리에서 실패를 되풀이했다(로그 104회, 08:25 재시작 때까지). 3.38MB 중 661바이트까지만 들어가 이 세션의 대화가 화면 · 알림 판정에 없었다. 8단계 작업 중 브리지 로그를 보다 우연히 찾았다 [log:stage2_transcript_result.md]
 - 원인: 앞 세션의 기록을 복사해 시작한 세션(resume · fork)이었다. CC가 앞 세션 줄을 uuid 그대로, 프롬프트 id는 뺀 채 새 파일 앞에 붙였다. 조립기가 그 줄로 새 턴을 열다 원래 세션 턴의 uuid와 부딪혔다 [log:stage2_transcript_result.md]

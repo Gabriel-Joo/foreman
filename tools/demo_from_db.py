@@ -230,13 +230,70 @@ def overlap() -> dict:
                          ("jenkins-0 Unknown · harbor-jobservice CrashLoopBackOff 원인도 봐 줘", None))}
 
 
+async def stills(c) -> dict:
+    """정지 사진용 한 장면(13e) — 상태 넷 · 서기 둘(이름 겹침 · 근거 검토) · 잃은 것 점검 결과 · 포먼 계획 창 · 적재 막힘 띠 · 모델별 토큰.
+    실제 기록에서 옮긴 것: 디스패치 계획(dispatch 마지막 행), 잃은 것 판정 항목(11-05 손 점검 정답 사본 all.json 앞의 사라짐 · 약해짐).
+    나머지(세션 · 숫자)는 시연용."""
+    import os
+    plan = json.loads((await c.execute(text("SELECT plan FROM dispatch ORDER BY id DESC LIMIT 1"))).scalar() or "{}")
+    base = Path(os.path.expanduser("~/.foreman/compaction_baseline/20261105/foreman/all.json"))
+    allj = json.loads(base.read_text(encoding="utf-8")) if base.exists() else []
+    lost = [x for x in allj if x.get("status") in ("사라짐", "약해짐")][:5]
+    counts = {k: sum(1 for x in allj if x.get("status") == k) for k in ("사라짐", "약해짐", "뒤집힘", "살아 있음", "끝남")}
+    counts["살아 있음"] = counts["살아 있음"] or sum(1 for x in allj if x.get("status") == "살아있음")
+    tok = {"input": 1_890_000_000, "output": 6_400_000, "today_output": 1_200_000, "today_input": 410_000_000, "subagent_input": 0,
+           "subagent_output": 0, "by_model": [
+               {"model": "claude-opus-5-5", "label": "Opus 5.5", "family": "opus", "input": 1_880_000_000, "output": 6_350_000,
+                "today_input": 409_000_000, "today_output": 1_190_000},
+               {"model": "claude-haiku-5-5", "label": "Haiku 5.5", "family": "haiku", "input": 7_000_000, "output": 50_000,
+                "today_input": 900_000, "today_output": 9_000}]}
+    ss = [sess(991, "foreman", "코더 — 화면 고침", tool="Edit", tokens=tok),
+          sess(992, "foreman", "코더 — 쉬는 중", state="IDLE"),
+          sess(993, "foreman", "코더 — 기다려 둠", state="SUSPENDED", proc="T", cc_status=None),
+          sess(994, "foreman", "코더 — 정리 마침", state="DORMANT", proc=None, cc_status=None, detached_at="@-20000", last_ts="@-20000"),
+          sess(995, "foreman", "서기 — 포트폴리오 쓰기: 한눈에", role="scribe", state="IDLE", cwd="/demo/foreman/.worktrees/foreman-3"),
+          sess(996, "petmint-rag-chatbot", "코더 — 평가 다시 돌림", tool="Bash", target="ls",
+               compact={"count": 2, "last_ts": "@-20000", "level": "due", "short": False, "gaps": []})]
+    snap = snapshot(*ss)
+    snap["ingest"] = {"ok": False, "stalled": False, "tick_age_s": 1,
+                      "stuck": [{"session": "런슈즈 세션", "minutes": 14, "failures": 104, "error": "IntegrityError — 같은 프롬프트 id"}]}
+    ctl = {"live": True, "pid": 1, "state": "S", "tmux": True, "busy": False, "pending_req": None, "foreman_stopped": False, "why": "살아 있음",
+           "can": {"summary": True, "promote": True, "headless": False, "compact": False, "exit": True, "stop": True, "resume": False,
+                   "interrupt": True, "spawn": True}, "worktree": None, "reads": None, "losscheck": True}
+    empty = {"summaries": [], "promotions": [], "promotions_error": None, "promote_inputs": [], "losschecks_error": None}
+    review = {"marks": 70, "bad": 0, "unsupported": 2, "files": [{"path": "portfolio/00_overview.md", "bad": [],
+              "unsupported": [{"line": 7, "text": "![감독실 — 프로젝트 셋과 떠돌이 라운지를 지도 한 장에 …](img/00_overview_hq.png)"}]}],
+              "revision": {"draft_lines": 148, "revision_lines": 0, "draft_commits": 1, "revision_commits": 0, "ratio": 0.0}}
+    wt = {"exists": True, "branch": "cc/foreman-3", "base": "main", "live": False, "ahead": 1, "behind": 0, "dirty": [], "schema_lock": False,
+          "commits": ["098da51 portfolio: 00_overview — 무엇 · 왜 · 구조 · 겪은 문제 · 숫자 · 한계"],
+          "diffstat": [" portfolio/00_overview.md | 148 +++++", " 2 files changed, 148 insertions(+)"], "review": review,
+          "preview": None, "preview_ok": True}
+    api = {
+        "/api/sessions/995/handoff": {"controls": {**ctl, "live": False, "why": "끝난 세션입니다", "worktree": wt}, **empty, "losschecks": []},
+        "/api/sessions/996/handoff": {"controls": ctl, **empty, "losschecks": [
+            {"id": 7, "session_id": 996, "status": "done", "model": "sonnet", "cost_usd": 1.99, "groups_done": 7, "groups_total": 7,
+             "created_at": "@-600000", "updated_at": "@-120000", "counts": counts, "lost_total": counts["사라짐"] + counts["약해짐"],
+             "lost": lost, "error": None}]},
+        "/api/foreman/plan": {"dispatch_id": 1, "ms": 18000, "plan": plan},
+        "/api/spawn/options": {"home": "/demo", "projects": [{"name": p, "repo": f"/demo/{p}"} for p in LABEL], "recent_cwds": [],
+                               "models": {"choices": [{"id": "opus", "label": "Opus", "note": "가장 잘하지만 비쌉니다"},
+                                                      {"id": "sonnet", "label": "Sonnet", "note": "대부분의 일에 충분합니다"},
+                                                      {"id": "haiku", "label": "Haiku", "note": "가볍고 빠른 일"}],
+                                          "defaults": {"coder": "opus", "inspector": "sonnet", "cicd": "sonnet", "scribe": "opus"}},
+                               "summaries": []},
+        **convo(991, ("헤더 글씨 키워 줘", "탭 · 버튼 · 라벨을 2px 키웠습니다. 세 테마 × 세 크기 점검 0건입니다."), ("패널 접기도 봐 줘", None))}
+    return {"title": "정지 사진용 장면", "source": "script",
+            "note": "대본 — 계획 창은 실제 디스패치 계획, 잃은 것 목록은 11-05 손 점검의 실제 항목. 세션 · 숫자는 시연용",
+            "snapshot": snap, "api": api, "steps": [{"at": 120000, "end": True}]}
+
+
 async def main() -> int:
     which = sys.argv[1] if len(sys.argv) > 1 else "all"
     OUT.mkdir(parents=True, exist_ok=True)
     e = make_engine(get_settings())
     try:
         async with e.connect() as c:
-            made = {"wander": await wander(c), "subagents": await subagents(c), "approval": await approval(c)}
+            made = {"wander": await wander(c), "subagents": await subagents(c), "approval": await approval(c), "stills": await stills(c)}
     finally:
         await e.dispose()
     made["pipeline"], made["still"], made["handoff"], made["overlap"] = pipeline(), still(), handoff(), overlap()

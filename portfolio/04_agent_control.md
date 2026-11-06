@@ -41,6 +41,8 @@
 
 ### 3-1. 상태 판정
 
+![상태 넷이 그림으로 — 작업 중(키보드를 친다) · 쉼(라운지) · 멈춤(회색 돌, 「· 멈춤」) · 끝남(흐리게, 「· 끝남」 — 3분 뒤 화면에서 사라진다) 〔시연 재생 — 세션은 시연용〕](img/04_agent_control_states.png)
+
 ```mermaid
 flowchart TD
   P{"프로세스 상태 파일에<br/>살아 있는 CC가 있나<br/>(시작 시각으로 PID 재사용 거름)"} -->|없음| D["DORMANT — 끝남"]
@@ -91,6 +93,8 @@ sequenceDiagram
 - 프로젝트마다 `enforce`(판정을 돌려준다) / `observe`(기록만). 다른 두 프로젝트는 observe로 시작했다 — 실행 중인 세션에 다음 도구 호출부터 바로 걸리기 때문이다 [log:stage5_approval_result.md]
 
 ### 3-3. 입력 — 넣고, 들어갔는지 본다
+
+![패널 입력 칸 — 세션이 작업 중이면 「작업 중 — 대기열」: 보낸 글은 지금 작업이 끝난 뒤 들어간다 〔실제 기록 재생 — 승인 장면의 한 프레임〕](img/04_agent_control_input.png)
 
 ```mermaid
 flowchart LR

@@ -132,6 +132,10 @@ export function why(s) {
 // ── 두 화면이 같이 쓰는 조각(10b) ──────────────────────────
 export function projectLabel(st, name) { return (st.projects.find((p) => p.name === name) || {}).label || name || '미분류'; }
 
+// 처리된 승인 카드의 상태(11-06 — "allowed · browser"처럼 DB 값이 그대로 보였다). [글, 색]
+const APPR_DONE = { allowed: ['허용했습니다', 'ok'], denied: ['거부했습니다', 'bad'], timeout: ['시간이 지나 CC가 정했습니다', 'warn'],
+  terminal: ['터미널에서 답했습니다', ''], abandoned: ['브리지가 다시 떠서 정리했습니다', 'muted'], pending: ['기다리는 중입니다', 'warn'] };
+const APPR_BY = { browser: '화면에서', terminal: '터미널에서', bridge: '브리지가' };
 export function approvalCard(a, st) {      // 버튼은 data-aid · data-act(allow · deny · open) — 누르면 handleApprovalClick
   const done = a.status !== 'pending';
   return `<div class="appr ${done ? 'done' : ''}">
@@ -141,7 +145,8 @@ export function approvalCard(a, st) {      // 버튼은 data-aid · data-act(all
       ${a.summary ? `<details class="small"${keep(`appr:${a.id}:cmd`)}><summary class="muted">명령 전체</summary><code>${esc(a.target)}</code></details>` : `<code>${esc(a.target)}</code>`}
       <div class="small muted">${esc(a.reason || '')}${a.error ? ` · <span class="bad">${esc(a.error)}</span>` : ''}</div>
     </div>
-    <div class="appr-act">${done ? `<span class="small">${esc(a.status)}${a.decided_by ? ' · ' + esc(a.decided_by) : ''}</span>` :
+    <div class="appr-act">${done ? `<span class="small ${(APPR_DONE[a.status] || [])[1] || ''}">${esc((APPR_DONE[a.status] || [a.status])[0])}${
+        (a.status === 'allowed' || a.status === 'denied') && APPR_BY[a.decided_by] ? ' · ' + APPR_BY[a.decided_by] : ''}</span>` :
       `<button data-aid="${a.id}" data-act="allow">승인</button><button data-aid="${a.id}" data-act="deny" class="ghost">거부</button>`}
       ${a.session_id ? `<button data-aid="${a.id}" data-sid="${a.session_id}" data-act="open" class="ghost small">세션</button>` : ''}</div>
   </div>`;
