@@ -54,7 +54,7 @@ export function themeTips(style) {
   r.setProperty('--tip-bg', style.bg.length > 7 ? style.bg.slice(0, 7) : style.bg);
   r.setProperty('--tip-fg', style.fg);
   r.setProperty('--tip-border', style.border.length > 7 ? style.border.slice(0, 7) : style.border);
-  r.setProperty('--tip-font', style.font.replace(/(\d+)px/, '14px').replace(/\b(600|bold)\b/, '400'));
+  r.setProperty('--tip-font', style.font.replace(/(\d+)px/, '16px').replace(/\b(600|bold)\b/, '400'));
   document.documentElement.dataset.tipKind = style.kind || 'sign';
 }
 
