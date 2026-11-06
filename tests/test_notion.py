@@ -131,16 +131,35 @@ class FakeNotion:
         self.calls.append(("archive", pid))
 
     async def children(self, bid):
-        return [{"id": b["_id"]} for b in self.blocks.get(bid, [])]
+        return [{**b, "id": b["_id"], "has_children": bool(self.blocks.get(b["_id"]))} for b in self.blocks.get(bid, [])]
 
-    async def append(self, bid, children):
+    async def append(self, bid, children, after=None):
         out = []
+        lst = self.blocks.setdefault(bid, [])
+        at = next((i + 1 for i, b in enumerate(lst) if b["_id"] == after), len(lst)) if after else len(lst)
         for c in children:
             self.n += 1
             c = {**c, "_id": f"b{self.n}"}
-            self.blocks.setdefault(bid, []).append(c)
+            lst.insert(at, c)
+            at += 1
             out.append({"id": c["_id"]})
+        self.calls.append(("append", bid, len(children), after))
         return out
+
+    async def update_block(self, bid, block):
+        for lst in self.blocks.values():
+            for i, b in enumerate(lst):
+                if b["_id"] == bid:
+                    t = block["type"]
+                    lst[i] = {**b, t: {**b[t], **block[t]}}
+                    self.calls.append(("update", bid))
+                    return
+        raise nt.NotionError(404, "없음")
+
+    async def upload_file(self, name, data, content_type="image/png"):
+        self.n += 1
+        self.calls.append(("upload", name, len(data)))
+        return f"f{self.n}"
 
     async def move_page(self, pid, parent):
         await self.page(pid)
@@ -166,6 +185,35 @@ def test_scope_walks_up_to_root():
         asyncio.run(s.require("other"))                                  # 코드가 막는다(권한이 다 보여도)
     f.pages["doc"]["archived"] = True
     assert not asyncio.run(s.under_root("doc"))
+
+
+def test_portfolio_mode_no_repo_links_and_image_placeholder():
+    ctx = nt.Ctx("portfolio/01_context.md", "abc1234", links=False)
+    _, bs = nt.md_to_blocks("- 근거 [c:abc1234] [log:x_result.md] [상대](../docs/a.md) [밖](https://example.com/)\n\n"
+                            "![화면 — 마법학교](img/office.png)\n", ctx)
+    rt = bs[0]["bulleted_list_item"]["rich_text"]
+    links = [t["text"].get("link") for t in rt]
+    assert links.count(None) == len(links) - 1 and {"url": "https://example.com/"} in links   # 저장소 링크는 글자만, 바깥은 그대로
+    assert bs[1]["type"] == "image" and bs[1]["_upload"] == "portfolio/img/office.png"
+    assert nt.plain(bs[1]["image"]["caption"]) == "화면 — 마법학교"
+
+
+def test_sync_keeps_block_ids_and_replaces_only_changed():
+    """다시 게시 — 같은 자리 · 같은 종류면 내용만 고쳐 id가 남는다(mermaid 미리보기 보존), 바뀐 종류는 그 하나만."""
+    f = FakeNotion(see_all=True)
+    _, b1 = nt.md_to_blocks("> 이 글은 A를 다룬다\n\n```mermaid\nflowchart LR\n  A --> B\n```\n\n문단 하나\n\n- 목록\n")
+    asyncio.run(nt.append_tree(f, "root", b1))
+    ids1 = [b["_id"] for b in f.blocks["root"]]
+    mer = ids1[1]
+    _, b2 = nt.md_to_blocks("> 이 글은 A를 다룬다(고침)\n\n```mermaid\nflowchart LR\n  A --> B\n```\n\n## 제목으로 바뀜\n\n- 목록\n- 하나 더\n")
+    st = asyncio.run(nt.sync_children(f, "root", b2))
+    ids2 = [b["_id"] for b in f.blocks["root"]]
+    assert ids2[0] == ids1[0] and ids2[1] == mer                              # 첫 줄은 고쳤고 mermaid는 그대로(같은 블록)
+    assert st["updated"] == 1 and st["kept"] >= 2 and st["replaced"] == 1 and st["added"] == 1
+    assert [b["type"] for b in f.blocks["root"]] == ["quote", "code", "heading_1", "bulleted_list_item", "bulleted_list_item"]
+    _, b3 = nt.md_to_blocks("## 맨 앞부터 다름\n")
+    st3 = asyncio.run(nt.sync_children(f, "root", b3))
+    assert st3["reset"] == 1 and [b["type"] for b in f.blocks["root"]] == ["heading_1"]
 
 
 def test_git_show_refuses_outside_paths(tmp_path):

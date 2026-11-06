@@ -28,8 +28,31 @@ TASKS = {
     "readme": {"title": "README 갱신", "desc": "마지막 README 변경 뒤의 커밋 · 결과 문서로 로드맵 표를 맞춥니다."},
     "trim": {"title": "CLAUDE.md 정리", "desc": "꼭 지킬 것만 짧게 남기고 상세는 docs로 옮겨 가리킵니다."},
     "later": {"title": "나중에 할 일 정리", "desc": "대화에서 \"나중에 하자\"고 한 것을 모아 README 「나중에 할 일」 표에 넣습니다."},
+    "portfolio": {"title": "포트폴리오 쓰기", "desc": "주제를 하나 골라 바깥 독자가 읽을 글을 portfolio/에 씁니다. 게시는 [게시] 버튼으로 합니다."},
     "publish": {"title": "Notion 게시", "desc": "회고 · 문서를 Notion에 올립니다. 세션 없이 [게시] 버튼으로 합니다."},
 }
+TOPICS_FILE = "config/portfolio.toml"   # 포트폴리오 주제 — 이 파일이 있는 저장소만 「포트폴리오 쓰기」를 보인다(12c, 11-06)
+
+
+def topics(repo: str) -> list[dict[str, Any]]:
+    """포트폴리오 주제 — 순서대로. written: main에 portfolio/<slug>.md가 있나."""
+    import tomllib
+    f = Path(repo, TOPICS_FILE)
+    if not f.is_file():
+        return []
+    try:
+        raw = tomllib.loads(f.read_text(encoding="utf-8")).get("topic", [])
+    except (tomllib.TOMLDecodeError, OSError):
+        return []
+    out = []
+    for t in raw:
+        slug = str(t.get("slug", ""))
+        if not re.fullmatch(r"[0-9a-z_]{1,40}", slug):
+            continue
+        out.append({"slug": slug, "title": str(t.get("title", slug)), "about": str(t.get("about", "")),
+                    "sources": [str(s) for s in t.get("sources", [])], "screenshots": bool(t.get("screenshots")),
+                    "written": Path(repo, "portfolio", f"{slug}.md").is_file()})
+    return out
 
 
 def _git(repo: str, *a: str) -> str:
@@ -100,8 +123,10 @@ async def todo(engine: Any, publisher: Any = None) -> dict[str, dict[str, Any]]:
             except Exception:  # noqa: BLE001 — Notion이 꺼져 있어도 다른 할 일은 센다
                 pass
         opened = await open_tasks(engine, name)
-        out[name] = {"items": items, "open": opened,
-                     "blocked": {k: b for k in TASKS if k != "publish" and (b := blocked(k, opened))}}
+        tps = [{**{k: t[k] for k in ("slug", "title", "about", "written")}, "blocked": blocked("portfolio", opened, t["slug"])}
+               for t in topics(repo)]
+        out[name] = {"items": items, "open": opened, "topics": tps,
+                     "blocked": {k: b for k in TASKS if k not in ("publish", "portfolio") and (b := blocked(k, opened))}}
     return out
 
 
@@ -125,16 +150,30 @@ async def open_tasks(engine: Any, project: str) -> list[dict[str, Any]]:
             "JOIN project p ON p.id = ch.project_id WHERE p.name = :p AND sa.action = :a AND sa.ok AND NOT EXISTS ("
             "  SELECT 1 FROM session_action m WHERE m.session_id = sa.session_id AND m.action IN ('wt-merge', 'wt-discard') AND m.ok) "
             "ORDER BY sa.id"), {"p": project, "a": TASK_ACT})).all()
-    return [{"session_id": sid, "task": (d or "").split()[0], "title": t} for sid, d, t in rows if (d or "").split()]
+    out = []
+    for sid, d, t in rows:
+        w = (d or "").split()
+        if w:
+            out.append({"session_id": sid, "task": w[0], "topic": w[1] if len(w) > 1 else None, "title": t})
+    return out
 
 
-def blocked(task: str, opened: list[dict[str, Any]]) -> str | None:
-    """이 일을 지금 시킬 수 없는 까닭(없으면 None) — 화면 버튼과 서버가 같은 판단을 쓴다."""
+def touches(task: str, topic: str | None = None) -> set[str]:
+    """그 일이 고치는 파일(앞부분) — 포트폴리오는 주제마다 다르다(글 · 사진 모두 portfolio/<slug>로 시작)."""
+    if task == "portfolio":
+        return {f"portfolio/{topic}"} if topic else {"portfolio/"}
+    return TOUCHES.get(task, set())
+
+
+def blocked(task: str, opened: list[dict[str, Any]], topic: str | None = None) -> str | None:
+    """이 일을 지금 시킬 수 없는 까닭(없으면 None) — 화면 버튼과 서버가 같은 판단을 쓴다.
+    포트폴리오는 주제가 다르면 다른 일이다(서로 다른 파일) — 같은 주제만 막는다."""
     for o in opened:
-        if o["task"] == task:
-            return f"「{TASKS[task]['title']}」이 이미 열려 있습니다(세션 {o['session_id']}) — 합치거나 버린 뒤에 시켜 주세요"
+        if o["task"] == task and (task != "portfolio" or o.get("topic") == topic):
+            what = TASKS[task]["title"] + (f" — {topic}" if task == "portfolio" else "")
+            return f"「{what}」이 이미 열려 있습니다(세션 {o['session_id']}) — 합치거나 버린 뒤에 시켜 주세요"
     for o in opened:
-        common = sorted(TOUCHES.get(task, set()) & TOUCHES.get(o["task"], set()))
+        common = sorted(touches(task, topic) & touches(o["task"], o.get("topic")))
         if common:
             return (f"「{TASKS.get(o['task'], {}).get('title', o['task'])}」(세션 {o['session_id']})와 같은 파일({', '.join(common)})을 "
                     "고칩니다 — 합칠 때 충돌합니다. 그 일을 합치거나 버린 뒤에 시켜 주세요")
@@ -209,13 +248,35 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
 - 재료(저장소 밖, 사람 말 원문): `{e.get('materials') or '(없음)'}` — 지난 정리가 합쳐진 뒤(없으면 처음부터) "나중에 · 미루"가 나온 사람 말
 - 항목마다 무엇 · 언제 · 조건 · 근거(결과 문서 · log). 이미 한 것은 표에서 뺀다. 그때뿐인 "나중에"(잠깐 뒤에)는 넣지 않는다
 - README.md만 고친다"""
+    elif task == "portfolio":
+        slug = e["slug"]
+        shots = (f"""
+- 화면 사진: `tools/screen.py`로 직접 찍는다(사람에게 부탁하지 않는다). 예: `.venv/bin/python tools/screen.py --themes magic --sizes 1920x1080 --views foreman --out /tmp/<폴더>`
+  쓸 것만 `portfolio/img/{slug}_<무엇>.png`로 복사해 커밋한다(한 장에 1MB 안쪽, 많아야 셋). 글에는 `![설명](img/{slug}_<무엇>.png)`
+  찍기 전에 화면에 비밀값 · 토큰 · 다른 프로젝트의 민감한 글이 없는지 사진을 열어 본다""" if e.get("screenshots") == "1" else "")
+        body = f"""할 일: 포트폴리오 글 「{e['title']}」을 `portfolio/{slug}.md`에 쓴다(12c). 읽는 사람은 이 저장소 밖의 사람이다(채용 담당 · AI 인프라 · AI 엔지니어).
+- 이 글이 다룰 것: {e['about']}
+- 먼저 읽을 재료: {e['sources']} — 필요하면 더 읽는다(코드 · git log · 다른 log/)
+- 이미 쓴 다른 글: {e.get('siblings') or '(없음)'} — 같은 내용을 다시 쓰지 말고 "→ 「제목」"으로 가리킨다
+
+틀(`docs/style_guide.md` 「포트폴리오 문서」)
+1. `# 제목` 다음 줄에 `> 이 글은 …을 다룬다.` 한 줄(사용자 결정 11-06 — 주제 글마다 머리에 "이 글은 뭘 다루는지")
+2. 한 줄 요약(굵게) → 문제(왜 필요했나) → 판단(무엇을 고르고 무엇을 버렸나, 이유) → 구조 · 흐름 → 겪은 문제와 풀이 → 결과 · 숫자 → 한계 · 다음
+- 구조는 ```mermaid 블록으로 그려도 된다(Notion에 코드로 올라가고 사람이 한 번 미리보기로 바꾼다){shots}
+
+지켜야 할 것(바깥 독자)
+- 근거 표시는 그대로 단다: `[c:해시]` · `[log:파일]` · `[docs:파일]` — 게시할 때 글자만 남는다(저장소는 비공개라 링크가 없다). `[t:턴]`은 쓰지 않는다
+- 내부 주소 · 포트 · 경로 중 독자에게 뜻 없는 것(서버 IP, `/home/…`, tmux 이름)은 쓰지 않는다. 프롬프트 · 대화 원문을 길게 옮기지 않는다(한 줄 인용은 된다)
+- 숫자는 log · DB · git에서 온 것만. 꾸밈말(혁신적 · 완벽하게) 없이, 한 것과 안 한 것을 정직하게
+- 고칠 곳은 `portfolio/{slug}.md`와 `portfolio/img/{slug}_*`뿐이다 — 다른 파일은 건드리지 않는다
+- 커밋 메시지: `portfolio: {slug} — <한 줄>`"""
     else:
         raise ValueError(task)
     return head + body + "\n" + COMMON
 
 
-async def start(m: Any, engine: Any, project: str, task: str) -> dict[str, Any]:
-    """서기 일을 worktree 세션으로 띄운다(handoff.spawn_new). 회고는 재료 묶음을 먼저 만든다."""
+async def start(m: Any, engine: Any, project: str, task: str, topic: str | None = None) -> dict[str, Any]:
+    """서기 일을 worktree 세션으로 띄운다(handoff.spawn_new). 회고는 재료 묶음을 먼저 만든다. 포트폴리오는 주제(topic)가 있어야 한다."""
     from bridge import scribe as sc
     from bridge.inject import Refused
     if task not in TASKS or task == "publish":
@@ -225,7 +286,13 @@ async def start(m: Any, engine: Any, project: str, task: str) -> dict[str, Any]:
     repo = r[0] if r else None
     if not repo or not Path(repo, ".git").exists():
         raise Refused("이 프로젝트의 저장소를 찾지 못했습니다")
-    why = blocked(task, await open_tasks(engine, project))
+    tp = None
+    if task == "portfolio":
+        tps = topics(repo)
+        tp = next((t for t in tps if t["slug"] == topic), None)
+        if tp is None:
+            raise Refused(f"포트폴리오 주제를 찾지 못했습니다({topic or '없음'}) — {TOPICS_FILE}에 있는 주제만 시킬 수 있습니다")
+    why = blocked(task, await open_tasks(engine, project), topic if task == "portfolio" else None)
     if why:
         raise Refused(why)
     now = datetime.now(UTC).replace(tzinfo=None)
@@ -256,15 +323,20 @@ async def start(m: Any, engine: Any, project: str, task: str) -> dict[str, Any]:
         extra["materials"] = str(mat)
         prompt = task_prompt(task, project, repo, extra)
     else:
+        if tp is not None:
+            extra.update(slug=tp["slug"], title=tp["title"], about=tp["about"], screenshots="1" if tp["screenshots"] else "",
+                         sources=", ".join(f"`{s}`" for s in tp["sources"]) or "(없음)",
+                         siblings=", ".join(f"「{t['title']}」(`portfolio/{t['slug']}.md`)" for t in tps if t["written"] and t is not tp))
         if task == "readme":
             extra["since"] = commits_since_path(repo, "README.md")[1] or "?"
         if task == "doccheck":
             extra["stages"] = ", ".join(stages_without_result(repo)) or "(없음)"
         prompt = task_prompt(task, project, repo, extra)
-    res = await m.spawn_new(repo, None, f"서기 — {TASKS[task]['title']}", role="scribe", worktree=True, first_prompt=prompt)
+    name = f"서기 — {TASKS[task]['title']}" + (f": {tp['title'].split(' — ')[0]}" if tp else "")
+    res = await m.spawn_new(repo, None, name, role="scribe", worktree=True, first_prompt=prompt)
     if res.get("session_id"):
-        await m._act(res["session_id"], TASK_ACT, res.get("pid"), True, task)
+        await m._act(res["session_id"], TASK_ACT, res.get("pid"), True, f"{task} {tp['slug']}" if tp else task)
     if task == "later" and res.get("session_id"):
         # 어디까지 봤나 — 이 세션이 합쳐지면 다음 정리의 기준점이 된다(later_since)
         await m._act(res["session_id"], LATER_ACT, res.get("pid"), True, f"{now.isoformat()} 미룬 말 {len(rows)}개")
-    return {"task": task, "project": project, **{k: res.get(k) for k in ("tmux", "cc_session_id", "worktree", "note", "injected")}}
+    return {"task": task, "project": project, "topic": tp["slug"] if tp else None, **{k: res.get(k) for k in ("tmux", "cc_session_id", "worktree", "note", "injected")}}

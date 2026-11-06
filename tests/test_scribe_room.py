@@ -64,5 +64,27 @@ def test_blocked_same_task_same_file_and_cap():
     assert sr.blocked("retro", []) is None
 
 
+def test_portfolio_topics_and_blocked_per_topic(tmp_path):
+    """포트폴리오 쓰기(12c) — 주제는 config/portfolio.toml 순서, 같은 주제만 막고 다른 주제는 같이 연다."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/portfolio.toml").write_text(
+        '[[topic]]\nslug = "00_overview"\ntitle = "한눈에 — 무엇"\nabout = "A"\nsources = ["README.md"]\nscreenshots = true\n\n'
+        '[[topic]]\nslug = "01_loss"\ntitle = "압축 손실"\nabout = "B"\n\n[[topic]]\nslug = "../bad"\ntitle = "x"\n', encoding="utf-8")
+    (tmp_path / "portfolio").mkdir()
+    (tmp_path / "portfolio/01_loss.md").write_text("# x\n", encoding="utf-8")
+    tps = sr.topics(str(tmp_path))
+    assert [t["slug"] for t in tps] == ["00_overview", "01_loss"]                 # 이상한 slug는 버린다
+    assert [t["written"] for t in tps] == [False, True] and tps[0]["screenshots"]
+    assert sr.topics(str(tmp_path / "없음")) == []
+    a = {"session_id": 1, "task": "portfolio", "topic": "00_overview", "title": "서기"}
+    assert "이미 열려" in sr.blocked("portfolio", [a], "00_overview")
+    assert sr.blocked("portfolio", [a], "01_loss") is None                       # 다른 주제 — 다른 파일
+    assert sr.blocked("readme", [a]) is None
+    p = sr.task_prompt("portfolio", "foreman", "/repo", {"slug": "00_overview", "title": "한눈에", "about": "A",
+                                                         "sources": "`README.md`", "screenshots": "1", "siblings": ""})
+    assert "portfolio/00_overview.md" in p and "> 이 글은" in p and "tools/screen.py" in p and "[t:턴]" in p
+    assert "tools/screen.py" not in sr.task_prompt("portfolio", "foreman", "/repo", {"slug": "01_loss", "title": "t", "about": "B", "sources": ""})
+
+
 def test_later_pattern():
     assert sr.LATER.search("이건 나중에 하자") and sr.LATER.search("일단 미루고") and not sr.LATER.search("지금 바로 해")
