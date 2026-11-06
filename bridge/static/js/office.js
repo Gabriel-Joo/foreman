@@ -2237,7 +2237,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   resize();
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
-  return { go, theme, openSession, panel, actors, audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(), layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
+  return { go, theme, openSession, panel, actors, audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(),
+    // 시연 사진(13) — 이름표 자리(캔버스 기준 화면 좌표)와 캐릭터 발밑 화면 좌표. 툴팁을 띄워 찍을 때 마우스를 그 자리로 보낸다
+    hits: () => HITS.map((h) => ({ x: h.x, y: h.y, w: h.w, h: h.h, zone: h.zone || null })),
+    actorScreen: (key) => { const a = actors.get(key); return a ? toScreen(a.x * T, a.y * T) : null; }, layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
                                                                        anim: a.act && a.act.anim, go: a.act && a.act.go, face: a.face, dir: a.dir, char: a.char })) };
 }
 

@@ -219,7 +219,9 @@ async def run(a: argparse.Namespace) -> int:
                 for size in a.sizes.split(","):
                     w, h = (int(x) for x in size.lower().split("x"))
                     await p.call("Emulation.setDeviceMetricsOverride", width=w, height=h, deviceScaleFactor=1, mobile=False)
-                    await p.call("Page.navigate", url=f"{a.base.rstrip('/')}/office?theme={th}")
+                    if a.demo:                             # 시연 장면으로 정지 사진(13e) — 실제 /api에 닿지 않게
+                        await p.ev("localStorage.removeItem('foremanToken'); 1")
+                    await p.call("Page.navigate", url=f"{a.base.rstrip('/')}/office?theme={th}" + (f"&demo={a.demo}" if a.demo else ""))
                     if not await p.wait("!!(window.office && window.office.layoutAudit)"):
                         report["runs"].append({"theme": th, "size": size, "error": "화면이 뜨지 않았습니다"})
                         bad += 1
@@ -284,6 +286,7 @@ def main() -> None:
     ap.add_argument("--clip", help="x,y,w,h(CSS 픽셀) — 그 부분만 2배로 한 장 더(<…>_clip.png)")
     ap.add_argument("--out")
     # 녹화(13) — 예: --record pipeline --themes office --sizes 1366x768 --views runshoes --clip 60,135,890,570 --gif-width 640
+    ap.add_argument("--demo", help="정지 사진을 시연 장면(bridge/static/demo/<이름>.json)으로 — 점검 · 찍기는 그대로")
     ap.add_argument("--record", help="시연 대본 이름(bridge/static/demo/<이름>.json) — '-'면 대본 없이 실제 화면")
     ap.add_argument("--name", help="결과 파일 이름(기본: 대본 이름)")
     ap.add_argument("--fps", type=float, default=10)

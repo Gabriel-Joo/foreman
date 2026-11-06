@@ -46,3 +46,13 @@ test('여러 개 붙은 것 · 닫는 태그가 잘린 것', () => {
   const cut = HAND.replace('\n</agent-message>', '');
   assert.ok(!unwrapAgent(cut).includes('hand-back') && unwrapAgent(cut).startsWith('발볼'));
 });
+
+test('처리된 승인 카드는 한국어로(11-06 — allowed · browser가 그대로 보였다)', async () => {
+  const { approvalCard } = await import('../../bridge/static/js/render.js');
+  const st = { projects: [], sessions: new Map() };
+  const card = (status, by) => approvalCard({ id: 1, tool: 'Bash', rule: 'rm-재귀', target: 'rm -r x', status, decided_by: by }, st);
+  assert.match(card('allowed', 'browser'), /허용했습니다 · 화면에서/);
+  assert.match(card('denied', 'browser'), /거부했습니다 · 화면에서/);
+  assert.match(card('terminal', 'terminal'), /터미널에서 답했습니다</);
+  assert.doesNotMatch(card('timeout', 'timeout'), /timeout/);
+});

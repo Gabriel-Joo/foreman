@@ -104,6 +104,8 @@ flowchart LR
 
 ### 4-4. 토큰을 두 번 세지 않기
 
+![「세션 정보 · 토큰」 — 모델(띄울 때 고른 것과 지금 쓰는 것), 입력(캐시 포함) · 출력, 모델별 표 〔시연 재생 — 숫자는 시연용〕](img/09_models_cost_tokens.png)
+
 - 한 API 메시지가 트랜스크립트에서 여러 줄로 나뉘고 줄마다 같은 사용량이 붙는다. 토큰은 메시지 id 단위로 센다(상세는 → 「관찰 파이프라인 — 조용한 고장을 잡는다」) [log:01_kickoff_result.md]
 - 서브에이전트 토큰은 원래 메시지에서 나온다. 모델별 집계는 메시지만 묶어 서브에이전트 합을 다시 더하지 않는다 [log:stage12_model_choice_result.md]
 - Claude Code가 만든 가짜 응답(`<synthetic>`)은 모델별 집계에서 뺐다 [log:stage12_model_choice_result.md]
