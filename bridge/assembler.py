@@ -182,6 +182,8 @@ class Assembler:
         self.on_turn_closed: Any = None
         self.on_subagents_changed: Any = None  # (session_id) — 서브에이전트가 끝났다
         self.on_compact: Any = None            # (session_id) — 압축이 있었다(11-05 압축 알림). 실시간 모드에서만
+        # (session_id, cc_session_id, 가린 프롬프트, ts) — 사람 입력이 들어왔다(11-06 겹침 알림, UserPromptSubmit hook만)
+        self.on_human_prompt: Any = None
         self.on_tool_result: Any = None        # (tool_use_id, permissionDecision) — 5단계 승인 대기(터미널에서 답했다)
 
     # ── 시작 ────────────────────────────────────────────────
@@ -1045,6 +1047,7 @@ class Assembler:
         tp = p.get("transcript_path") or ""
         project_dir = Path(tp).parent.name if tp else ""
         b = Batch()
+        human_prompt: str | None = None
         async with self.lock:
             try:
                 async with asyncio.timeout(self.s.db_query_timeout_s * 2):
@@ -1055,6 +1058,9 @@ class Assembler:
                         sub_id = None
                         hook_type = self.HOOK_EVENT[name]
                         if name == "UserPromptSubmit":
+                            # 겹침 알림(11-06) — 사람이 넣은 것(받은 인계 포함)만. 대기열 입력도 hook이 한 번씩 온다
+                            if self._origin({}, p.get("prompt") or "") in ("human", "handoff_in"):
+                                human_prompt = self.mask.text(p.get("prompt"))
                             o = st.open_turn
                             if o is not None:
                                 # 턴이 열려 있다 — 트랜스크립트가 이미 연 이 프롬프트이거나, 바쁠 때 보낸 입력(대기열 →
@@ -1101,6 +1107,11 @@ class Assembler:
                 self.sessions.pop(sid, None)
                 raise
         self._after_commit(b)
+        if self.live and self.on_human_prompt and human_prompt:
+            try:
+                self.on_human_prompt(st.id, sid, human_prompt, now)
+            except Exception as e:  # noqa: BLE001 — 알림이 적재를 막으면 안 된다
+                log.warning("겹침 알림 예약 실패: %s", type(e).__name__)
         if self.live and self.publish:
             await self._publish(b, st)
 

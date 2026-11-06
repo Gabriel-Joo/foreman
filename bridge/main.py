@@ -31,6 +31,7 @@ from bridge.approvals import ApprovalManager
 from bridge.api.auth import require_api_token
 from bridge.assembler import Assembler
 from bridge.compactwatch import CompactWatch, load_rules as load_compact_rules
+from bridge.overlap import OverlapWatch
 from bridge.bus import Pipeline
 from bridge.config import Settings, get_settings
 from bridge.db.engine import make_engine
@@ -111,6 +112,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 cw_tasks.add(t)
                 t.add_done_callback(cw_tasks.discard)
             asm.on_compact = on_compact
+            # 겹침 알림(11-06) — 사람 입력이 같은 프로젝트의 살아 있는 다른 세션의 최근 요청과 겹치면 알린다(막지 않는다)
+            ow = OverlapWatch(engine, app.state.notifier, getattr(app.state.notifier, "rules", None), s.notify_config,
+                              s.sessions_dir, on_change=dashboard_api.invalidate)
+            app.state.overlap = ow
+            asm.on_human_prompt = ow.on_prompt
             watcher = Watcher(s, asm)
             app.state.assembler, app.state.watcher = asm, watcher
 

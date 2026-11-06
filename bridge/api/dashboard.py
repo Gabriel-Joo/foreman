@@ -169,6 +169,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "ORDER BY id"))).all()
         appr_rows = appr
     projects: dict[str | None, list[dict[str, Any]]] = {}
+    ovl = getattr(request.app.state, "overlap", None)     # 겹침 알림(11-06, bridge/overlap.py) — 패널 띠
     for sid, cc, cwd, attached, detached, char, project, last_ts, title, role, custom, model_req in visible:
         ls = live.get(cc)
         cc_status = _status(s.sessions_dir, ls.pid) if ls else None
@@ -202,6 +203,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "model": cur_model.get(sid), "model_label": model_label(cur_model.get(sid)),
             "model_family": model_family(cur_model.get(sid)), "model_req": model_req,
             "compact": cmp.get(sid),
+            "overlap": ovl.for_session(sid) if ovl else None,
             "last_ts": _iso(last_ts), "attached_at": _iso(attached), "detached_at": _iso(detached),
         })
     order = {"ACTIVE": 0, "SUSPENDED": 1, "IDLE": 2, "DORMANT": 3}

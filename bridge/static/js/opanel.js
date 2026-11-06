@@ -43,6 +43,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       </div>
       <div id="pMeta" class="pmeta small" hidden></div>
       <div id="pCmp" class="pcmp small" hidden></div>
+      <div id="pOvl" class="pcmp small" hidden></div>
       <section id="pAppr" class="papprs" aria-label="승인 대기"></section>
       <nav id="pTabs" class="ptabs" hidden>${TABS.map(([k, l]) => `<button data-tab="${k}">${l}<span data-n="${k}"></span></button>`).join('')}</nav>
       <div id="pBody" class="oside-body">
@@ -295,6 +296,31 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   });
   window.foremanCompactSnoozed = compactSnoozed;     // 픽셀 화면의 📦 표시도 같은 기준으로 숨긴다
 
+  // 겹침 알림 띠(11-06, bridge/overlap.py) — 방금 넣은 요청이 다른 살아 있는 세션의 최근 일과 겹친다. 막지 않는다.
+  // [나중에]는 이 겹침(시각으로 기억)만 숨긴다 — 이 브라우저에만
+  function drawOverlap(s) {
+    const o = s.overlap;
+    let snoozed = false;
+    try { snoozed = !!o && localStorage.getItem('ovlSnooze:' + s.id) === o.at; } catch { /* 읽지 못함 — 보인다 */ }
+    if (!o || snoozed) { $('pOvl').hidden = true; return; }
+    const html = `<span class="warn">🔁 겹침 — 세션 ${o.with}「${esc(o.with_title || '')}」이 ${esc(o.since_kst)}부터 비슷한 일을 하고 있습니다. 겹친 낱말: ${esc(o.words.join(', '))}</span>
+      <button type="button" data-ovl="go" class="small" title="그 세션 보기 — 겹친 세션을 고릅니다.">세션 ${o.with} 보기</button>
+      <button type="button" data-ovl="later" class="ghost small" title="나중에 — 이 겹침 띠를 숨깁니다. 일부러 나눠 시킨 것이면 그대로 두면 됩니다.">나중에</button>`;
+    put('pOvl', 'ovl', html);
+    $('pOvl').hidden = false;
+  }
+  $('pOvl').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-ovl]');
+    const s = store.state.sessions.get(store.state.selected);
+    if (!b || !s || !s.overlap) return;
+    if (b.dataset.ovl === 'later') {
+      try { localStorage.setItem('ovlSnooze:' + s.id, s.overlap.at); } catch { /* 저장 못 함 — 이번만 숨긴다 */ }
+      $('pOvl').hidden = true;
+      return;
+    }
+    if (store.state.sessions.has(s.overlap.with)) store.select(s.overlap.with);
+  });
+
   // 바꾸는 중 표시 — 응답 모델이 고른 것과 같아지면(또는 30분이 지나면) 지운다
   function pendModel(st, s) {
     const p = st.pendingModel.get(s.id);
@@ -343,7 +369,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   function sessionMode(on) {
     $('pSel').hidden = on; $('pTabs').hidden = !on; $('pMeta').hidden = !on; $('pForm').hidden = !on;
-    if (!on) $('pCmp').hidden = true;
+    if (!on) $('pCmp').hidden = $('pOvl').hidden = true;
     if (on) setTab(tab);
     else { $('pTabConvo').hidden = $('pTabAct').hidden = $('pTabSess').hidden = true; el.classList.remove('tab-convo'); }
   }
@@ -368,6 +394,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       · <span class="muted">오늘 출력 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn">⚠ 끝 신호 없는 턴</span>' : ''}`);
     $('pMeta').title = `${sessionSub(s)} · ${projectLabel(st, s.project)} · ${(s.cwd || '')}`;
     drawCompact(s);
+    drawOverlap(s);
     // 대화 — 바뀔 때만
     const c = $('pConvo');
     const follow = switched || nearBottom(c);
