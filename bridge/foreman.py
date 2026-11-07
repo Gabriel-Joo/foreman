@@ -27,6 +27,7 @@ from bridge import foreman_note as notes
 from bridge.handoff import HandoffManager
 from bridge.inject import Refused, _tmux_env, deliver
 from bridge.liveness import live_sessions
+from bridge.usage import record_cli
 
 log = logging.getLogger("foreman.dispatch")
 
@@ -317,9 +318,12 @@ class ForemanDispatcher:
             raise Refused(why) from None
         raw = out.decode(errors="replace")
         try:
-            result = json.loads(raw).get("result", "")
+            j = json.loads(raw)
+            result = j.get("result", "")
         except ValueError:
-            result = raw
+            j, result = None, raw
+        # 11-08 — --no-session-persistence라 트랜스크립트가 없다. 사용량은 여기서만 남는다(docs/15_usage.md)
+        await record_cli(self.engine, "dispatch", did, self.running.get(did), j)
         plan = parse_plan(result)
         if plan is None:
             await self._finish(did, None, "failed", "디스패처의 답에서 계획(JSON)을 찾지 못했습니다: " + (result or err.decode(errors="replace"))[:300], t0)
