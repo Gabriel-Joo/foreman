@@ -44,7 +44,7 @@ sources = ["README.md", "log/stage2_transcript_result.md", "log/stage5_approval_
 
 [[topic]]
 slug = "05_dispatcher"
-title = "포먼 디스패처 — 같은 일을 하는 세션을 알아채기"
+title = "디스패처 — 같은 일을 하는 세션을 알아채기"
 about = "사람의 요청을 받아 새로 띄울지 · 이어 갈지 · 이미 하는 세션에 붙일지 고르는 판단"
 sources = ["docs/11_foreman_dispatch.md", "log/stage11_foreman_dispatch_result.md", "docs/11_worktree.md", "log/stage11_worktree_result.md"]
 

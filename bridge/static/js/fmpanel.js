@@ -48,7 +48,7 @@ export function createForemanPanel(store) {
     load(projects);
     const mine = pending.filter((x) => !room || x.project === room);
     const pend = mine.length ? `<div class="fm-q"><b>[시작]을 기다리는 제안 ${mine.length}</b>${mine.map((x) => `<div class="sc-row"><div class="small">· ${esc(x.title || '(이름 없음)')}
-        <div class="muted">${esc(x.why || '')} · ${ago(x.created_at)}</div></div>
+        <div class="muted">${esc((x.why || '').split(' — ')[0])} · ${ago(x.created_at)}</div></div>
         <button type="button" class="small" data-fm-open="${x.dispatch_id}" title="계획 보기 — 실패 이벤트가 부른 계획을 엽니다. [이대로 시작]을 눌러야 시작합니다.">계획 보기</button></div>`).join('')}</div>` : '';
     return `<div class="small muted">${esc(name)} — 디스패처의 얼굴입니다. 세션은 없고, 부를 때마다 상황과 노트를 모아 계획 하나를 냅니다.</div>
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}">${esc(note.msg)}</div>` : ''}
