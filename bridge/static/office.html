@@ -124,7 +124,7 @@
   import { Store } from '/static/js/store.js';
   import { createOffice } from '/static/js/office.js';
   import { createTerminal } from '/static/js/terminal.js';
-  import '/static/js/foremanchat.js';   // [+ 세션] 창 위의 "포먼에게 말하기"(11단계)
+  import '/static/js/foremanchat.js';   // [+ 세션] 창 위의 "디스패처(팀장 · 교장 · 소장)에게 말하기"(11단계 · 11-08)
   const store = new Store();
   window.foreman = store;
   // 테마: ?theme= 가 있으면 그것(그리고 기억), 없으면 마지막에 본 것, 그것도 없으면 오피스
@@ -141,6 +141,9 @@
       if (demo) { const { runDemo } = await import('/static/js/demo.js'); return runDemo(store, demo); }
       if (store.token) store.start();
       else document.getElementById('tokDlg').classList.add('on');
+      // 텔레그램의 자동 제안 링크(11-08) — /?dispatch=N이면 그 계획을 말하기 창에 연다
+      const dn = Number(new URLSearchParams(location.search).get('dispatch'));
+      if (dn > 0 && store.token && window.foremanChat) setTimeout(() => window.foremanChat.openDispatch(dn), 800);
     })
     .catch((err) => { document.getElementById('app').textContent = '픽셀 화면을 띄우지 못했다: ' + err; console.error(err); });
   // 7단계 터미널 — 아래 접이식. 깨져도 픽셀 화면은 돈다

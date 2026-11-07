@@ -12,6 +12,7 @@ import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
 import { mountHandoff } from './handoff.js';
 import { createScribe } from './scribe.js';
+import { createForemanPanel } from './fmpanel.js';
 
 const KEY_OPEN = 'foremanPanelOpen', KEY_TAB = 'foremanPanelTab', KEY_MODE = 'foremanPanelMode';
 const KEY_W = { narrow: 'foremanPanelW', wide: 'foremanPanelWideW' };
@@ -74,10 +75,13 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   const hand = mountHandoff($('pHand'), store, { open: true });
   // 서기실 창(12a) — 서기를 누르면 pSel에 그린다. 버튼은 여기서 한 번만 받는다(다시 그려도 그대로)
   const scribe = createScribe(store);
+  const fmp = createForemanPanel(store);       // 감독실 캐릭터(11-08) — 노트 · 지난 디스패치 · 자동 제안
   $('pSel').addEventListener('click', (ev) => {
     if (target && target.kind === 'scribe') scribe.onClick(ev, target.room, projectLabel(store.state, target.room),
       (sid) => { onSelectSession(sid); setTab('sess'); });     // 열린 서기 일 → 그 세션의 「따로 작업」(11-06)
+    if (target && target.kind === 'foreman') fmp.onClick(ev);
   });
+  window.addEventListener('foreman-state', () => { if (target && target.kind === 'foreman') fmp.load([], true); });
   mountApprovalHistory($('pHist'), $('pHistHead'), $('pHistBody'), store);
 
   let target = null, targetKey = '', lastSel = undefined;
@@ -460,10 +464,9 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       return;
     }
     if (target && target.kind === 'foreman') {
-      $('pTitle').textContent = target.room ? `포먼 · ${projectLabel(st, target.room)}` : '포먼(감독)';
-      $('pSel').innerHTML = `<p class="small muted">포먼은 아직 자기 세션이 없습니다. 아래에서 세션을 고르면 대화와 입력 칸이 열립니다.</p>
-        ${target.room ? pipeBlock(st.pipeline.get(target.room)) : ''}
-        ${sessionList(st, target.room ? [target.room] : null)}`;
+      const nm = target.name || (window.office && window.office.foremanName) || '디스패처';
+      $('pTitle').textContent = target.room ? `${nm} · ${projectLabel(st, target.room)} 건` : `${nm}(감독실)`;
+      $('pSel').innerHTML = fmp.html(target.room, nm, (p) => projectLabel(st, p));
       return;
     }
     $('pTitle').textContent = '패널';

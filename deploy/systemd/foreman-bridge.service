@@ -12,8 +12,10 @@ WorkingDirectory=/home/kopo17/AI_programming/foreman
 ExecStart=/home/kopo17/AI_programming/foreman/.venv/bin/python -m bridge
 Restart=on-failure
 RestartSec=5
-# tmux 명령(CC 세션 조회 · 입력 주입)이 PATH의 tmux를 쓴다
-Environment=PATH=/home/kopo17/.local/bin:/usr/local/bin:/usr/bin:/bin
+# tmux 명령(CC 세션 조회 · 입력 주입)이 PATH의 tmux를, 디스패처 · 인계 요약(claude -p)이 PATH의 claude를 쓴다.
+# 11-08: claude는 ~/.npm-global/bin에 있는데 빠져 있어 systemd로 옮긴 11-06부터 디스패처가 "claude를 띄우지 못했습니다"였다
+# (인계 요약도 같은 길 — 그 사이 요청이 없어 드러나지 않았다). 브리지는 기동 때 claude를 찾아 못 찾으면 로그 · 계획 거절 사유로 알린다
+Environment=PATH=/home/kopo17/.npm-global/bin:/home/kopo17/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=PYTHONUNBUFFERED=1
 KillMode=mixed
 TimeoutStopSec=20

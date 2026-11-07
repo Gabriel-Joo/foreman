@@ -23,6 +23,7 @@ class IngestMonitor:
         self.w, self.asm, self.notifier = watcher, assembler, notifier
         self.alert_s, self.tick_alert_s, self.every_s = alert_s, tick_alert_s, every_s
         self.on_change = on_change or (lambda: None)
+        self.on_failure: Any = None             # 자동 기상 2단계(bridge/wake.py) — (project, kind, key, 알림 글)
         self.alerted: dict[str, float] = {}     # 막힘을 알린 파일 → 실패가 시작된 시각
         self.tick_alerted = False
         self.seen_skip = 0
@@ -44,8 +45,14 @@ class IngestMonitor:
             if self.alerted.get(path) != x["since"]:
                 self.alerted[path] = x["since"]
                 why = "DB 연결 · 시간 초과 — 기다리는 중" if x["transient"] else "같은 줄에서 되풀이 — 곧 너그러운 모드 · 건너뛰기"
-                self._send(f"⚠ 적재 막힘 — 세션 {x['session'][:8]} {x['minutes']}분째 같은 자리에서 실패({x['failures']}번). "
-                           f"이 세션의 기록이 쌓이지 않는다\n{x['error'][:200]}\n{why}")
+                msg = (f"⚠ 적재 막힘 — 세션 {x['session'][:8]} {x['minutes']}분째 같은 자리에서 실패({x['failures']}번). "
+                       f"이 세션의 기록이 쌓이지 않는다\n{x['error'][:200]}\n{why}\n파일 {path}")
+                self._send(msg)
+                if self.on_failure and not x["transient"]:   # DB 끊김 · 시간 초과는 기다리면 돌아온다 — 계획할 거리가 아니다
+                    try:
+                        self.on_failure("foreman", "ingest_stuck", f"ingest:{path}:{x['since']}", msg)
+                    except Exception as e:  # noqa: BLE001
+                        log.warning("자동 기상에 넘기지 못함: %s", type(e).__name__)
                 changed = True
         for path in [p for p in self.alerted if p not in stuck and p not in self.w.failures]:
             del self.alerted[path]
@@ -80,5 +87,5 @@ class IngestMonitor:
         if self.notifier is None:
             return
         rule = self.notifier.rules.for_project("foreman")
-        prefix = rule.prefix if rule is not None else "[포먼]"
+        prefix = rule.prefix if rule is not None else "[FOREMAN]"
         self.notifier.send_direct("foreman", "ingest", None, f"{prefix} {msg}")

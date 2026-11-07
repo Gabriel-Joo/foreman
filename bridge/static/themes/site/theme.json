@@ -56,7 +56,7 @@
     "_": "구역 이름표 — 안전 노랑 표지판(검정 글씨, 빗금 띠)",
     "style": { "bg": "#f2c14e", "fg": "#141414", "border": "#141414", "font": "bold 14px ui-monospace, 'D2Coding', monospace", "kind": "hazard" },
     "_zones": "[이름, dx, dy] — 이름표가 사람 자리를 가리지 않게 비켜 둔 것(11-05 window.office.layoutPlan())",
-    "zones": { "foreman_office": "감독 컨테이너", "store": "자재창고", "desks": ["작업대", -0.4, 0], "tools": "공구실", "test": ["검사대", -0.8, 0],
+    "zones": { "foreman_office": "소장실", "store": "자재창고", "desks": ["작업대", -0.4, 0], "tools": "공구실", "test": ["검사대", -0.8, 0],
                "plans": "도면실", "camp": "함바", "gate": "셔터", "ship": ["출하 접수대", 0, 0.9], "scribe": "서류실" },
     "_roles": "구역 → 하는 일(설명은 테마 공통, office.js ZONE_ROLE). 이름표에 마우스를 올리면 뜬다",
     "roles": { "foreman_office": "hq", "store": "read", "desks": "edit", "tools": "bash", "test": "test",
@@ -73,7 +73,7 @@
 
   "hq": {
     "_": "감독실(1단) = 감독 컨테이너. 공정표 화이트보드 + 현장마다 자석(작업중 파랑 · 쉼 초록 · 승인 · 실패 빨강 · 없음 회색)",
-    "label": "감독 컨테이너", "size": { "w": 28, "h": 16 }, "seat": [14.0, 9.7], "floor": "plate",
+    "label": "소장실", "size": { "w": 28, "h": 16 }, "seat": [14.0, 9.7], "floor": "plate",
     "board": { "style": "whiteboard", "x": 3, "y": 0.4, "w": 22, "h": 5.4 },
     "decor": [
       { "s": "workbench", "x": 12.0, "y": 9.2 }, { "s": "workbench", "x": 14.0, "y": 9.2 },
@@ -113,6 +113,7 @@
 
   "_courier": "출하 라인 담당 한 명(11-05) — 빌드를 따라 ① → ② → ③ 으로 걸어간다. char가 없으면 sprites.chars.infra.jenkins",
   "courier": { "name": "출하 반장" },
+  "foreman": { "name": "소장" },
   "infra": {
     "running": { "anim": "work" },
     "success": { "anim": "idle" },

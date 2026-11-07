@@ -1,0 +1,11 @@
+# 자동 기상 2단계(11-08, docs/14_dispatcher_note_wake.md). 바꾸면 브리지를 다시 띄운다.
+#
+# 실패 이벤트가 오면 디스패처가 "살펴볼 세션" 계획만 만들고, 텔레그램과 화면으로 "[시작]?"을 묻는다. 사람이 눌러야 시작한다.
+# 3단계(묻지 않고 띄우기)는 2단계를 써 본 뒤 정한다(사용자 11-08) — 여기에는 없다.
+enabled = true
+daily_max = 5            # 하루(KST) 계획 수 상한 — 넘으면 그날 한 번 "다 썼습니다" 알림, 실패 알림만 간다
+dedupe_hours = 12        # 같은 실패(wake_key)는 이 시간 안에 다시 계획하지 않는다
+public_url = "https://foreman.ronanlab.dev"   # 텔레그램의 [시작] 링크(Cloudflare 로그인 뒤)
+
+# 무엇을 실패로 보나 — 이름은 bridge/wake.py KINDS
+kinds = ["build_failed", "no_build", "webhook_broken", "infra_down", "ingest_stuck"]

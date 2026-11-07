@@ -267,6 +267,7 @@ class PipelineManager:
         self.engine, self.rules, self.pipeline, self.mask = engine, rules, pipeline, masker
         self.notifier = notifier
         self.on_change = on_change or (lambda: None)
+        self.on_failure: Any = None                       # 자동 기상 2단계(bridge/wake.py) — (project, kind, key, 알림 글)
         self._tasks: list[asyncio.Task[None]] = []
         self._fails: dict[int, int] = {}
         self._lock = asyncio.Lock()
@@ -434,9 +435,10 @@ class PipelineManager:
                 down = self._down_since.get("jenkins")
                 why = (f"\nJenkins 자체가 {int((now - down).total_seconds() // 60)}분째 응답 없음"
                        f"({self._down_why.get('jenkins', '?')})" if down else "")
-                self._send(p, f"⚠ 빌드 알림 없음 — push {pend['short']} \"{pend['subject'][:80]}\" 뒤 {mins}분째 "
-                              f"Jenkins 시작 알림이 없다. Jenkins 확인{why}\n"
-                              f"https://jenkins.ronanlab.dev/job/{p.jenkins_job}/")
+                msg = (f"⚠ 빌드 알림 없음 — push {pend['short']} \"{pend['subject'][:80]}\" 뒤 {mins}분째 "
+                       f"Jenkins 시작 알림이 없다. Jenkins 확인{why}\nhttps://jenkins.ronanlab.dev/job/{p.jenkins_job}/")
+                self._send(p, msg)
+                self._wake(p.name, "no_build", f"nobuild:{p.name}:{pend['short']}", msg)
 
     async def _check_hook(self, p: PipeProject) -> None:
         """새 빌드마다 — 최근 빌드 원인으로 웹훅 끊김 · 복구를 판단한다(바뀔 때 한 번 알린다)."""
@@ -447,14 +449,25 @@ class PipelineManager:
         broken = webhook_broken(causes, self.rules.hook_break_after)
         was = self._hook_broken.get(p.name, False)
         if broken and not was:
-            self._send(p, f"⚠ 웹훅 끊김 의심 — {p.jenkins_job} 최근 {self.rules.hook_break_after}번이 폴링으로 시작했다"
-                          f"(웹훅이면 몇 초, 폴링은 최대 15분). GitHub 웹훅 Recent Deliveries · Cloudflare Bypass 확인")
+            msg = (f"⚠ 웹훅 끊김 의심 — {p.jenkins_job} 최근 {self.rules.hook_break_after}번이 폴링으로 시작했다"
+                   f"(웹훅이면 몇 초, 폴링은 최대 15분). GitHub 웹훅 Recent Deliveries · Cloudflare Bypass 확인")
+            self._send(p, msg)
+            self._wake(p.name, "webhook_broken", f"webhook:{p.name}:{datetime.now(UTC):%Y%m%d}", msg)
         elif was and causes and causes[0] == "webhook":
             self._send(p, f"✅ 웹훅 복구 — {p.jenkins_job} 빌드가 다시 웹훅으로 시작했다")
             broken = False
         self._hook_broken[p.name] = broken
         if broken != was:
             self._changed(p.name)
+
+    def _wake(self, project: str | None, kind: str, key: str, msg: str) -> None:
+        """실패를 자동 기상에 넘긴다 — 무엇이 잘못돼도 알림 쪽은 그대로(콜백은 바로 돌아온다)."""
+        if self.on_failure is None:
+            return
+        try:
+            self.on_failure(project, kind, key, msg)
+        except Exception as e:  # noqa: BLE001
+            log.warning("자동 기상에 넘기지 못함 %s: %s", key, type(e).__name__)
 
     def _send(self, p: PipeProject, msg: str) -> None:
         log.warning("파이프라인 알림 %s: %s", p.name, msg.splitlines()[0])
@@ -647,8 +660,10 @@ class PipelineManager:
                 users = ", ".join(sorted({r[5] for r in chars if r[1] == kind}))
                 mins = int((now - self._down_since[kind]).total_seconds() // 60)
                 hint = {"jenkins": "kubectl get pods -n jenkins"}.get(kind, f"kubectl get pods -A | grep {kind}")
-                self._send_infra(f"⚠ {d.name} 응답 없음 — 연달아 {n}번({mins}분째, {why.get(kind, '?')}). "
-                                 f"쓰는 프로젝트: {users}. 이 동안 push해도 빌드 · 알림이 없다. {hint} 확인")
+                msg = (f"⚠ {d.name} 응답 없음 — 연달아 {n}번({mins}분째, {why.get(kind, '?')}). "
+                       f"쓰는 프로젝트: {users}. 이 동안 push해도 빌드 · 알림이 없다. {hint} 확인")
+                self._send_infra(msg)
+                self._wake(None, "infra_down", f"infra:{kind}:{self._down_since[kind]:%Y%m%d%H%M}", msg)
             elif act == "up":
                 self._down_alerted.discard(kind)
                 self._send_infra(f"✅ {d.name} 다시 응답")
@@ -659,7 +674,7 @@ class PipelineManager:
         if self.notifier is None:
             return
         rule = self.notifier.rules.for_project("foreman")
-        self.notifier.send_direct("foreman", "pipeline", None, f"{(rule and rule.prefix) or '[포먼]'} {msg}")
+        self.notifier.send_direct("foreman", "pipeline", None, f"{(rule and rule.prefix) or '[FOREMAN]'} {msg}")
 
     # ── 웹훅 ──
     async def on_jenkins(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -832,6 +847,7 @@ class PipelineManager:
         if url:
             lines.append(str(url)[:300])
         self.notifier.send_direct(p.name, "pipeline", None, "\n".join(lines))
+        self._wake(p.name, "build_failed", f"build:{p.name}:{stage}:{ext}", "\n".join(lines).replace(f"{rule.prefix} ", "", 1))
 
     def _submit(self, ev: EventIn) -> None:
         try:

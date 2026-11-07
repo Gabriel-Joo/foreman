@@ -1,6 +1,7 @@
 {
   "name": "plain",
   "label": "도형(기본)",
+  "foreman": { "name": "디스패처" },
   "_comment": "테마 = 이 파일 하나. 렌더러는 상태(state) · 도구(tool) · 플래그(flags)만 보고 여기서 동작을 고른다(README 3.8). 다른 테마는 같은 키에 다른 값.",
 
   "palette": {
@@ -73,7 +74,7 @@
 
   "tags": {
     "style": { "bg": "#1b1f27ee", "fg": "#e8e8f0", "border": "#5d6479", "font": "600 14px system-ui, sans-serif", "kind": "sign" },
-    "zones": { "foreman_office": "포먼 사무실", "desks": "책상", "server_rack": "서버랙", "window": "창가", "phone": "전화" },
+    "zones": { "foreman_office": "디스패처", "desks": "책상", "server_rack": "서버랙", "window": "창가", "phone": "전화" },
     "infra": { "title": "배포 파이프", "jenkins": "Jenkins 빌드", "harbor": "Harbor 이미지", "argocd": "ArgoCD 배포" }
   },
 

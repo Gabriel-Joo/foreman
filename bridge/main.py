@@ -3,6 +3,8 @@
 import asyncio
 import contextlib
 import logging
+import os
+import shutil
 import socket
 from collections.abc import AsyncIterator, Generator
 from contextlib import asynccontextmanager
@@ -19,6 +21,7 @@ from bridge.api import publish as publish_api
 from bridge.api import scribe as scribe_api
 from bridge.notion import NotionClient, Publisher, load_token
 from bridge.foreman import ForemanDispatcher
+from bridge.wake import Waker, load_wake
 from bridge.handoff import HandoffManager
 from bridge.promote import Promoter
 from bridge.losscheck import LossChecker
@@ -229,6 +232,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return await pm.snapshot() if pm else {"projects": []}
         app.state.foreman = ForemanDispatcher(engine, s.sessions_dir, app.state.handoff,
                                               (lambda: asm_.projects) if asm_ else (lambda: []), _pipe_snap)
+        # 11-08 — systemd PATH에 claude가 없어 디스패처가 이틀 동안 "claude를 띄우지 못했습니다"였다(부를 때까지 아무도 몰랐다).
+        # 기동 때 찾아 보고, 없으면 텔레그램으로 한 번 — 디스패처 · 인계 요약 · 자동 기상이 모두 이 실행 파일을 쓴다
+        if shutil.which("claude") is None:
+            why = f"브리지가 claude 실행 파일을 PATH에서 찾지 못합니다 — 디스패처 · 인계 요약 · 자동 기상이 안 됩니다(PATH={os.environ.get('PATH', '')})"
+            log.error(why)
+            if app.state.notifier:
+                rule = app.state.notifier.rules.for_project("foreman")
+                app.state.notifier.send_direct("foreman", "direct", None, f"{(rule and rule.prefix) or '[FOREMAN]'} ⚠ {why}")
+        # 감독실 캐릭터(디스패처의 얼굴)가 계획을 세우는 중 · 제안 대기를 보이게 — 화면이 /api/foreman/state를 다시 읽는다
+        app.state.foreman.on_change = lambda: pipeline.publish({"type": "foreman"})
+        # 11-08 자동 기상 2단계 — 실패 이벤트 → 디스패처가 계획만 → 텔레그램 · 화면에서 사람이 [시작]
+        app.state.waker = None
+        try:
+            wr = load_wake(Path(__file__).resolve().parent.parent / "config" / "wake.toml")
+            if wr.enabled:
+                app.state.waker = Waker(engine, app.state.foreman, app.state.notifier, wr)
+                for src in (app.state.pipeline_mgr, app.state.ingest_monitor):
+                    if src is not None:
+                        src.on_failure = app.state.waker.failure
+                log.info("자동 기상 2단계 켬: %s(하루 %d번)", ", ".join(wr.kinds), wr.daily_max)
+        except Exception as e:  # noqa: BLE001 — 자동 기상이 안 떠도 브리지는 뜬다
+            log.warning("자동 기상을 켜지 못함: %s", e)
         log.info("브리지 시작 %s:%d (DB %s:%d, 와처 %s)", s.bind_host, s.bind_port, s.mysql_host, s.mysql_port,
                  "켬" if s.watch_enabled else "끔")
         try:
@@ -243,6 +268,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     hook_task.cancel()
             if app.state.pipeline_mgr:
                 await app.state.pipeline_mgr.stop()
+            if getattr(app.state, "waker", None):
+                await app.state.waker.stop()
             if app.state.notifier:
                 await app.state.notifier.stop()
             if app.state.terminal:
