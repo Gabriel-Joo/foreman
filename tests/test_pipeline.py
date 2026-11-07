@@ -65,11 +65,14 @@ def test_infra_down_alerts_once_per_kind():
     chars = [(1, "jenkins", "IDLE", None, None, "runshoes"), (2, "jenkins", "IDLE", None, None, "petmint-rag-chatbot"),
              (3, "harbor", "IDLE", None, None, "runshoes")]
     t = datetime(2026, 11, 6, 3, 30)
+    woke = []
+    pm.on_failure = lambda *a: woke.append(a)                  # 11-08 자동 기상 2단계 — 알림과 같은 때 한 번 넘긴다
     for i in range(7):
         pm._alert_infra({"jenkins": False, "harbor": True}, {"jenkins": "HTTP 503"}, chars, t + timedelta(minutes=i))
     assert len(notifier.sent) == 1
+    assert [(w[0], w[1], w[2]) for w in woke] == [(None, "infra_down", "infra:jenkins:202611060330")] and "HTTP 503" in woke[0][3]
     proj, _, msg = notifier.sent[0]
-    assert proj == "foreman" and msg.startswith("[포먼] ⚠ Jenkins 응답 없음")
+    assert proj == "foreman" and msg.startswith("[FOREMAN] ⚠ Jenkins 응답 없음")
     assert "HTTP 503" in msg and "petmint-rag-chatbot, runshoes" in msg and "4분째" in msg
     assert "jenkins" in pm._down_since and "harbor" not in pm._down_since
     pm._alert_infra({"jenkins": True, "harbor": True}, {}, chars, t + timedelta(minutes=8))

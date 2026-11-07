@@ -215,6 +215,9 @@ export class Store {
       case 'turn': return this.onTurn(msg);
       case 'approval': return this.onApproval(msg);
       case 'event': return this.onEvent(msg.event);
+      case 'foreman':                        // 디스패처가 계획을 세우기 시작 · 끝 · 시작 · 버림(11-08) — 감독실 캐릭터가 다시 읽는다
+        if (typeof window !== 'undefined') window.dispatchEvent(new Event('foreman-state'));
+        return;
       case 'pipeline':                       // 단계가 바뀌었다 — 몰려와도 한 번만 다시 읽는다
         clearTimeout(this.pipeSoon);
         this.pipeSoon = setTimeout(() => this.loadPipeline().catch(() => {}), 500);

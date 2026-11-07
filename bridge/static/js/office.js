@@ -9,7 +9,7 @@ import { mountNewSession } from './newsession.js';
 import { showTip, hideTip, themeTips, attachDomTips } from './tip.js';
 import { buildGrid, findPath, footprint, RES } from './walk.js';
 
-const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'], ['foreman', '포먼']];
+const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'], ['foreman', 'FOREMAN']];
 const RATE_WIN = 10 * 60 * 1000;          // 토큰 속도 창 — 최근 10분
 const SPEED = 3.2;                         // 걷는 속도(타일/초)
 
@@ -69,6 +69,26 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
   loadScribeTodo();
   setInterval(loadScribeTodo, 60000);
+  // 감독실 캐릭터 = 디스패처의 얼굴(11-08). 세션은 없고, 디스패처가 하는 일이 여기 보인다:
+  // 계획을 세우는 중(claude -p가 도는 동안) → 책상에서 일하는 동작, [시작]을 기다리는 자동 제안 → 머리 위 "제안 N"
+  const FM_NAME = (theme.foreman && theme.foreman.name) || '디스패처';
+  let fmState = { running: [], pending: [] };
+  async function loadForeman() {
+    try {
+      const r = await fetch('/api/foreman/state', { headers: store.headers() });
+      if (!r.ok) return;
+      const j = await r.json();                 // 시연 재생은 대본의 "api"에 있으면 그 응답, 없으면 404(서 있기만)
+      fmState = { running: Array.isArray(j.running) ? j.running : [], pending: Array.isArray(j.pending) ? j.pending : [] };
+      rebuild(store.state);
+    } catch { /* 못 읽으면 캐릭터가 서 있기만 한다 */ }
+  }
+  const fmOf = (room) => ({                      // room null = 감독실(전체)
+    running: fmState.running.some((x) => room == null || x.project === room || x.project == null),
+    pending: fmState.pending.filter((x) => room == null || x.project === room),
+  });
+  window.addEventListener('foreman-state', () => loadForeman());
+  setTimeout(loadForeman, 500);
+  setInterval(loadForeman, 60000);
   const tokHist = new Map();           // 방 이름 → [{t, v, o}]
   let lastSnap = null;
   let view = 'hq';                     // 'hq'(감독실, 1단) | 'map'(전체) | 방 이름(현장, 2단) | '_lounge'
@@ -302,11 +322,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         self.subLabel = g.label;
       });
       if (!room.lounge) {
-        // 포먼 캐릭터 — 자기 세션이 아직 없다(README 2.4 임시 상태). 구석 사무실에 서 있다
+        // 감독실 캐릭터(팀장 · 교장 · 소장) — 디스패처의 얼굴. 세션은 없다. 방마다 있는 것은 같은 디스패처의 그 프로젝트 창구(11-08)
         const f = L.zones.foreman_office;
-        const key = 'f:' + room.name;
+        const key = 'f:' + room.name, fs = fmOf(room.name);
         upsert(key, { kind: 'foreman', room: room.name, tx: room.x + f.seat[0], ty: room.y + f.seat[1], face: 'down',
-                      act: { anim: 'stand' }, hue: 45, name: '포먼', char: CH.foreman || null, role: 'foreman' });
+                      act: fs.running ? { anim: 'type' } : { anim: 'stand' }, hue: 45, name: FM_NAME, char: CH.foreman || null,
+                      role: 'foreman', fm: fs });
         seen.add(key);
         // 서기(12a) — 서기실에 늘 있다. 그 방에 살아 있는 서기 세션이 있으면 그 세션 캐릭터가 대신 선다(일 → 끝나면 다시 서기실)
         const sz = L.zones.scribe;
@@ -342,10 +363,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         }
       }
     }
-    // 감독실의 포먼(교장) — 늘 자리에 있다
-    const hz = (theme.hq && theme.hq.seat) || [14, 8.6];
+    // 감독실의 팀장(교장 · 소장) — 늘 자리에 있다. 어느 프로젝트든 계획을 세우면 일하고, 제안은 모두 센다
+    const hz = (theme.hq && theme.hq.seat) || [14, 8.6], hs = fmOf(null);
     upsert('f:_hq', { kind: 'foreman', room: '_hq', tx: world.hq.x + hz[0], ty: world.hq.y + hz[1], face: 'down',
-                      act: { anim: 'stand' }, hue: 45, name: '포먼(감독)', char: CH.foreman || null, role: 'foreman' });
+                      act: hs.running ? { anim: 'type' } : { anim: 'stand' }, hue: 45, name: FM_NAME, char: CH.foreman || null,
+                      role: 'foreman', fm: hs });
     seen.add('f:_hq');
     for (const k of [...actors.keys()]) if (!seen.has(k)) vanish(k);
     if (selected && !actors.has(selected)) selected = null;
@@ -684,6 +706,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (act.bubble) drawBubble(x, y - 6, act.bubble, act.flag === 'approval_pending' ? P.warn : '#e8e8f0');
     else if (anim === 'wait' && !act.flag) drawBubble(x, y - 6, '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), P.act, 7);   // 기다림
     else if (a.kind === 'scribe' && a.todo && a.todo.items && a.todo.items.length) drawBubble(x, y - 6, `할 일 ${a.todo.items.length}`, P.warn, TODO_PX / cam.s);
+    else if (a.kind === 'foreman' && a.fm && a.fm.pending.length) drawBubble(x, y - 6, `제안 ${a.fm.pending.length}`, P.warn, TODO_PX / cam.s);
     if (a.subHidden) drawBubble(x + 10, y + 2, `+${a.subHidden}`, P.act, 7);              // 10명 넘는 서브에이전트는 접는다
     drawCompactMark(a, x + 8, y - 4);
     const rc = roleColor(a.role);
@@ -1554,6 +1577,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (a.kind === 'scribe' && a.todo && a.todo.items && a.todo.items.length) {  // 서기 — 할 일 N(누르면 목록)
       placeBubble(a, x, top, `할 일 ${a.todo.items.length}`, P.warn, TODO_PX / cam.s);
     }
+    if (a.kind === 'foreman' && a.fm && a.fm.pending.length) {                   // 디스패처 — [시작]을 기다리는 자동 제안(누르면 그 계획)
+      placeBubble(a, x, top, `제안 ${a.fm.pending.length}`, P.warn, TODO_PX / cam.s);
+    }
     if (a.subHidden) drawBubble(x + 11, top + 4, `+${a.subHidden}`, P.act, 7);      // 10명 넘는 서브에이전트는 접는다
     if (a.key === selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - 9, top - 2, 18, 20); }
   }
@@ -1655,7 +1681,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 구역이 하는 일 — 테마마다 이름(비유)은 달라도 설명은 같다(theme.tags.roles: 구역 → 아래 열쇠). 이름표에 마우스를 올리면 뜬다(11-05)
   // 툴팁 글은 짧게 — "무엇" 한 마디 + 한 줄 설명. 화면 글은 "~습니다"로(11-05 사용자 요청: 도구 목록 · 판별 명령은 넣지 않는다)
   const ZONE_ROLE = {
-    hq:   { what: '감독 자리', desc: '포먼이 현장 전체를 보는 자리입니다.' },
+    hq:   { what: '디스패처 자리', desc: '말하면 상황을 모아 어느 세션으로 할지 계획을 냅니다.' },
     read: { what: '파일 읽기', desc: '코드와 문서를 읽고 찾는 곳입니다.' },
     edit: { what: '코드 수정', desc: '파일을 고치거나 새로 쓰는 곳입니다.' },
     bash: { what: '명령 실행', desc: '셸 명령을 돌리는 곳입니다.' },
@@ -2092,7 +2118,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     } else if (a.kind === 'courier') {
       panel.show({ kind: 'infra', room: a.room, infra: 'courier', name: a.name, status: courierNow(a.plan) });
     } else if (a.kind === 'foreman') {
-      panel.show({ kind: 'foreman', room: a.room === '_hq' ? null : a.room });
+      // 11-08 — 세션 목록 대신: 패널엔 그 프로젝트 노트, 가운데엔 말하기 창(제안이 있으면 그 계획)
+      const room = a.room === '_hq' ? null : a.room;
+      panel.show({ kind: 'foreman', room, name: a.name });
+      const pend = a.fm && a.fm.pending[0];
+      if (window.foremanChat) (pend ? window.foremanChat.openDispatch(pend.dispatch_id) : window.foremanChat.open(room));
     } else if (a.kind === 'scribe') {
       panel.show({ kind: 'scribe', room: a.room });           // 서기실 — 무엇을 시킬지 고르는 창 · 할 일 · Notion 게시
     }
@@ -2175,7 +2205,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         <div class="tip-s">${esc(courierNow(a.plan))}</div>${c ? `<div class="tip-t">${esc(c.short)} ${esc(short(c.subject || '', 70))}</div>` : ''}${
         a.plan && a.plan.queue.length ? `<div class="tip-t">대기 ${a.plan.queue.length}개</div>` : ''}<div class="tip-t">누르면 파이프라인이 열립니다.</div>`;
     }
-    if (a.kind === 'foreman') return `<div class="tip-h">포먼</div>${tipOf(ZONE_ROLE.hq)}<div class="tip-t">자기 세션은 아직 없습니다.</div>`;
+    if (a.kind === 'foreman') {
+      const fm = a.fm || { running: false, pending: [] };
+      const now_ = fm.running ? '지금 계획을 세우는 중입니다.' : fm.pending.length ? `[시작]을 기다리는 제안 ${fm.pending.length}개가 있습니다.` : '기다리는 중입니다.';
+      return `<div class="tip-h">${esc(a.name)}</div>${tipOf(ZONE_ROLE.hq)}<div class="tip-s">${now_}</div>${
+        fm.pending.slice(0, 2).map((x) => `<div class="tip-t">· ${esc(short(x.title || x.why || '', 60))}</div>`).join('')}<div class="tip-t">누르면 말하기 창이 열립니다. 세션은 없습니다.</div>`;
+    }
     if (a.kind === 'scribe') {
       const t = a.todo;
       return `<div class="tip-h">서기</div><div class="tip-b">문서 담당 — 회고 · 문서 점검 · README · CLAUDE.md · 나중에 할 일 · Notion 게시</div>${
@@ -2237,7 +2272,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   resize();
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
-  return { go, theme, openSession, panel, actors, audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(),
+  return { go, theme, openSession, panel, actors, newSession: (p) => newSession.open(p), foremanName: FM_NAME,
+           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(),
     // 시연 사진(13) — 이름표 자리(캔버스 기준 화면 좌표)와 캐릭터 발밑 화면 좌표. 툴팁을 띄워 찍을 때 마우스를 그 자리로 보낸다
     hits: () => HITS.map((h) => ({ x: h.x, y: h.y, w: h.w, h: h.h, zone: h.zone || null })),
     actorScreen: (key) => { const a = actors.get(key); return a ? toScreen(a.x * T, a.y * T) : null; }, layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,

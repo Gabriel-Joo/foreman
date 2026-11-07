@@ -275,6 +275,10 @@ button.danger:not(:disabled):hover { background:color-mix(in srgb, var(--bad) 14
 .fm-plan input[type=checkbox] { width:auto; }
 .fm-first { font-family:inherit; min-height:9em; }
 .fm-q { padding:6px 8px; border-left:3px solid var(--warn); }
+.fm-notes { display:flex; flex-direction:column; gap:4px; padding:6px 8px; border-left:3px solid var(--line); }
+.fm-note { display:flex; gap:6px; align-items:flex-start; }
+.fm-note input { margin-top:3px; }
+.fm-folded { opacity:.6; }
 .fm-manual > summary { cursor:pointer; padding:4px 0; }
 .fm-manual[open] > summary { margin-bottom:6px; }
 #nsDlg select { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }

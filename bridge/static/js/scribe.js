@@ -22,7 +22,7 @@ export function createScribe(store) {
   function pubBlock(room) {
     if (!pub) return '<p class="small muted">게시 목록을 읽는 중입니다.</p>';
     if (!pub.enabled) return `<p class="small warn">${esc(pub.why || 'Notion 게시가 꺼져 있습니다.')}</p>`;
-    if (room !== 'foreman') return '<p class="small muted">Notion 게시는 지금 포먼 프로젝트만 연결돼 있습니다.</p>';
+    if (room !== 'foreman') return '<p class="small muted">Notion 게시는 지금 FOREMAN 프로젝트만 연결돼 있습니다.</p>';
     const rows = (pub.docs || []).map((d) => {
       const st = d.status === 'new' ? '<span class="muted">안 올림</span>' : d.status === 'archived' ? '<span class="muted">휴지통</span>'
         : d.changed ? '<span class="warn">원본이 바뀜</span>' : '<span class="ok">게시됨</span>';
