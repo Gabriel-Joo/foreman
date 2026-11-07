@@ -16,6 +16,14 @@ test('목록 — 중첩 · 번호 · 이어지는 줄', () => {
   assert.ok(h.includes('<ol class="md-list"><li>첫째</li><li>둘째</li></ol>'));
 });
 
+test('목록 — 번호 뒤 글머리는 새 글머리 목록, 번호는 처음 번호부터(11-08 사용자 보고)', () => {
+  const h = md('1. 이름 바꾸기\n- 화면 이름표\n- 프로젝트 이름\n\n2. 노트\n- 설계 그대로');
+  assert.equal(h, '<ol class="md-list"><li>이름 바꾸기</li></ol><ul class="md-list"><li>화면 이름표</li><li>프로젝트 이름</li></ul>'
+    + '<ol class="md-list" start="2"><li>노트</li></ol><ul class="md-list"><li>설계 그대로</li></ul>');
+  // 글머리 뒤 번호도 같다 · 중첩은 그대로
+  assert.equal(md('- 가\n1. 나\n   - 다'), '<ul class="md-list"><li>가</li></ul><ol class="md-list"><li>나<ul class="md-list"><li>다</li></ul></li></ol>');
+});
+
 test('코드블록 — 맨 앞 · 목록 안 들여 쓴 것, 안은 그대로', () => {
   assert.ok(md('```bash\na < b && **x**\n```').includes('<pre class="md-code">a &lt; b &amp;&amp; **x**</pre>'));
   const h = md('- 실행:\n  ```\n  ls -la\n  ```\n- 끝');
