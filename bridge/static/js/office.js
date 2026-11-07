@@ -1888,9 +1888,17 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.strokeStyle = border; ctx.lineWidth = thick ? 2 : 1;
     ctx.strokeRect(bx + 0.5, by + 0.5, w - 1, h - 1);
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    const maxc = Math.max(18, Math.floor((w - 12) / 8.5));
-    lines.forEach(([t, c, f], i) => { ctx.font = `${f} system-ui, sans-serif`; ctx.fillStyle = c; ctx.fillText(short(t, maxc), bx + 6, by + 5 + i * CARD_LH); });
+    // 11-08 — 글자 수(8.5px/자)로 자르던 것을 실제 폭으로. 한글은 한 자가 그보다 넓어 감독실 카드(현장 1600)에서 글이 카드 밖으로 넘쳤다
+    lines.forEach(([t, c, f], i) => { ctx.font = `${f} system-ui, sans-serif`; ctx.fillStyle = c; ctx.fillText(fitText(t, w - 12), bx + 6, by + 5 + i * CARD_LH); });
     return { x: bx, y: by, w, h };
+  }
+  // 지금 글꼴로 maxW px 안에 들어가게 — 넘치면 뒤를 줄이고 …
+  function fitText(t, maxW) {
+    t = String(t);
+    if (ctx.measureText(t).width <= maxW) return t;
+    let lo = 0, hi = t.length;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (ctx.measureText(t.slice(0, m) + '…').width <= maxW) lo = m; else hi = m - 1; }
+    return t.slice(0, lo) + '…';
   }
 
   function drawBadge(r, zoomedIn) {
