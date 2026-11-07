@@ -226,6 +226,10 @@ async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, trans
         # Enter가 그 제안을 제출하는지 문서에 없다(11-05) — 사람이 쓰지 않은 글이 실행될 수 있으니 보내지 않는다
         raise Refused("빈 입력입니다 — 공백이나 줄바꿈만으로는 보내지 않습니다")
     t, _ls, busy = await resolve(session_id, sessions_dir)
+    if not await prompt_showing(t):
+        # 입력 줄(❯)이 안 보이면 CC가 설정 · 사용량 같은 다른 화면을 띄운 것이다. 거기 붙여넣은 글은 제출되지 않고
+        # 화면 확인도 못 해 "확인하지 못했습니다"로만 떴다(11-08 cc-foreman-2 — /usage 화면이 떠 있었다). 보내지 않고 이유를 말한다
+        raise Refused("CC가 입력 줄 대신 다른 화면(설정 · 사용량 등)을 띄워 두고 있습니다. 그 세션 터미널에서 Esc로 닫아 주세요")
     send, guarded_ = guarded(text, command)
     offset = os.path.getsize(transcript) if transcript and os.path.exists(transcript) else None
     steps = await paste_and_submit(t, send, delay_s=delay_s)
@@ -248,6 +252,12 @@ async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, trans
         log.warning("주입 제출 확인 안 됨 %s %s(%d자) — 입력 칸에 %s", session_id[:8], t.pane, len(text),
                     "남아 있다" if out["left_in_box"] else "없다(제출된 것으로 보임)" if out["left_in_box"] is False else "모름")
     return out
+
+
+async def prompt_showing(t: Target) -> bool:
+    """화면에 CC 입력 줄(❯)이 있나. 작업 중에도 입력 줄은 남아 있다(11-08 실측 — 다른 pane 4개)."""
+    screen = await tmux(t.socket, "capture-pane", "-p", "-J", "-t", t.pane)
+    return any(ln.lstrip().startswith("❯") for ln in screen.splitlines())
 
 
 async def left_in_box(t: Target, sent: str) -> bool | None:

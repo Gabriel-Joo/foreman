@@ -110,3 +110,23 @@ async def test_left_in_box(monkeypatch):
     assert await inj.left_in_box(t, "이미 들어가 있던 발볼 120켤레를 검증해라.") is True
     screens["s"] = "로딩 중"
     assert await inj.left_in_box(t, "아무거나") is None
+
+
+async def test_deliver_refuses_when_overlay_hides_prompt(monkeypatch):
+    """11-08: /usage 같은 모달이 떠 입력 줄(❯)이 없으면 붙여넣지 않고 이유를 말한다(글이 모달로 새지 않게)."""
+    t = inj.Target("/s", "%8", 1, SID)
+
+    async def fake_resolve(session_id, sessions_dir):
+        return t, None, False
+    pasted = []
+
+    async def fake_tmux(socket, *args, **kw):
+        if args[0] == "capture-pane":
+            return "Settings  Status  Config  Usage  Stats\nTotal cost: $102.85\n"
+        pasted.append(args)
+        return ""
+    monkeypatch.setattr(inj, "resolve", fake_resolve)
+    monkeypatch.setattr(inj, "tmux", fake_tmux)
+    with pytest.raises(inj.Refused, match="Esc로 닫아 주세요"):
+        await inj.deliver(SID, "슬래시 없는 글", sessions_dir="/s", transcript=None)
+    assert pasted == []          # 아무것도 붙여넣지 않았다
