@@ -256,7 +256,7 @@ async def run_judge(prompt: str, wd: Path, repo: str, claude_bin: str = "claude"
         j = json.loads(raw)
     except ValueError:
         j = {"result": raw}
-    return {"text": j.get("result") or "", "usage": j.get("usage"), "cost_usd": j.get("total_cost_usd"),
+    return {"text": j.get("result") or "", "usage": j.get("usage"), "cost_usd": j.get("total_cost_usd"), "raw_json": j,
             "ms": round((time.monotonic() - t0) * 1000),
             "error": None if p.returncode == 0 else (err.decode(errors="replace")[-300:] or f"종료 코드 {p.returncode}")}
 
@@ -301,7 +301,8 @@ async def judge_all(wd: Path, names: list[tuple[str, list[str]]], n_sum: int, re
         (wd / f"raw_{tag}.txt").write_text(r["text"], encoding="utf-8")
         runs.append({"group": name, "prompts": len(ids), "items": len(got), "empty": len(empty),
                      "skipped": coverage(ids, got, empty) if r["error"] is None else ids,
-                     "ms": r["ms"], "cost_usd": r["cost_usd"], "usage": r["usage"], "error": r["error"]})
+                     "ms": r["ms"], "cost_usd": r["cost_usd"], "usage": r["usage"], "error": r["error"],
+                     "raw_json": r.get("raw_json")})
         if on_group:
             await on_group(items, runs)
     return {"items": items, "runs": runs}
@@ -421,6 +422,11 @@ class LossChecker:
                          groups_total=len(names))
 
         async def progress(items: list[dict[str, Any]], runs: list[dict[str, Any]]) -> None:
+            # 11-08 — 묶음마다 claude -p 사용량(트랜스크립트가 없어 여기서만 남는다, docs/15_usage.md)
+            if runs:
+                from bridge.usage import record_cli
+                await record_cli(getattr(self.m, "engine", None), "losscheck", lid, getattr(row, "project", None),
+                                 runs[-1].pop("raw_json", None))
             await self._save(lid, groups_done=len(runs), items=self.mask.deep(items), runs=_runs_view(runs),
                              cost_usd=round(sum(r["cost_usd"] or 0 for r in runs), 4))
 
