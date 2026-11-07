@@ -40,6 +40,7 @@ table.hist { border-collapse:collapse; margin:6px 0; } table.hist td, table.hist
 .md .md-h1, .md .md-h2 { font-size:1.08em; } .md .md-h3 { font-size:1.02em; } .md .md-h4, .md .md-h5, .md .md-h6 { font-size:1em; color:var(--muted); }
 .md .md-list { margin:.2em 0 .55em; padding-left:1.35em; }
 .md .md-list .md-list { margin:.15em 0; }
+.md ul.md-list { list-style:disc; } .md ul.md-list ul.md-list { list-style:circle; } .md ol.md-list { list-style:decimal; }
 .md li { margin:.12em 0; }
 .md .md-quote { margin:.4em 0; padding:2px 10px; border-left:3px solid var(--line); color:var(--muted); }
 .md .md-hr { border:0; border-top:1px solid var(--line); margin:.7em 0; }

@@ -32,15 +32,23 @@ function cells(line) {
 }
 
 function listHtml(items) {
-  // items: [{indent, ordered, text}] — 들여쓰기로 중첩
+  // items: [{indent, ordered, start, body}] — 들여쓰기로 중첩.
+  // 같은 들여쓰기에서 종류(번호 · 글머리)가 바뀌면 새 목록을 연다(11-08 — "1. 제목" 뒤의 "- 항목"이 번호 목록에 붙어 "2."로 보였다).
+  // 번호 목록은 첫 번호를 지킨다("2. 노트"가 "1."로 보였다)
   let html = '', stack = [];
+  const open = (it) => {
+    const tag = it.ordered ? 'ol' : 'ul', n = it.ordered ? parseInt(it.start, 10) : 1;
+    html += `<${tag} class="md-list"${n !== 1 ? ` start="${n}"` : ''}>`;
+    stack.push({ indent: it.indent, tag });
+  };
   for (const it of items) {
     while (stack.length && it.indent < stack[stack.length - 1].indent) html += `</li></${stack.pop().tag}>`;
     const top = stack[stack.length - 1];
     if (!top || it.indent > top.indent) {
-      const tag = it.ordered ? 'ol' : 'ul';
-      html += `<${tag} class="md-list">`;
-      stack.push({ indent: it.indent, tag });
+      open(it);
+    } else if (top.tag !== (it.ordered ? 'ol' : 'ul')) {
+      html += `</li></${stack.pop().tag}>`;
+      open(it);
     } else {
       html += '</li>';
     }
