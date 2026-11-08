@@ -101,5 +101,8 @@
 
 - 170 펫퍼민트(「rag-1_6806건_rebuild 어댑터 97문항」, 맥락 350k, 11-05부터 쉼)는 **끝내기만**(사용자 결정 — 식은 세션의 요약은 약 $2.8, 주간 93%). 쉼 · 열린 턴 없음 · 승인 대기 0 확인 뒤 `/api/sessions/170/action exit` → `ok`, CC 프로세스(264138) 사라짐. tmux `cc-petmint`(%66)는 bash로 남았다 — 사람이 만든 tmux라 `_cleanup_tmux`가 닫지 않는 것이 설계대로다
 - 펫퍼민트 압축 손실 점검(세션 155): 나중에(사용자 — 사용량이 빠듯하다)
-- `/login`: 아직 안 함(사용자). 만료는 2026-11-08T23:53:48Z = 11-09 08:53 KST — 그 뒤로 세션 · 디스패처 · 사용량 읽기가 멈춘다. 로그인 만료 알림은 이미 한 번 나갔다
+- `/login`: 처음엔 아직 안 함(만료 2026-11-08T23:53:48Z = 11-09 08:53 KST). 뒤에 사용자가 했는데 `/api/usage/brief`의 값이 그대로였다
+  - 값의 출처: `claude -p "/usage"` JSON의 `credential_expires_at` — `UsageMonitor`가 **읽을 때만**(600초마다) 고친다. 브리지가 마지막으로 읽은 것은 13:40, 로그인은 13:43(`~/.claude/.credentials.json` 수정 시각)이라 아직 안 읽었을 뿐이다
+  - 로그인은 됐다: 파일의 `refreshTokenExpiresAt`이 2026-12-08T02:56:41Z로 바뀌었다(`expiresAt`은 8시간짜리 접근 토큰 — CC가 알아서 갱신). 이 값이 `credential_expires_at`으로 나온다
+  - `POST /api/usage/poll`로 바로 다시 읽자 `credential_expires_at` = 2026-12-08T02:56:41Z. 그때 주간 93% · 5시간 24%
 - 문서로 옮김: 식은 세션의 인계 요약 비용 → `docs/15_usage.md` 6-1절(+ `docs/11_handoff_v2.md` 3장에 한 줄), `systemctl --user` DBUS 우회 · 브리지 주소 → `docs/operations.md` 「3. 돌리기 · 확인」

@@ -42,6 +42,15 @@ def test_korean_only_overlap_scores_zero():
     assert match(words("글마다 주제를 한눈에"), words("글마다 주제가 한눈에 보이게"), c, OverlapRules())[0] == 0
 
 
+def test_shown_words_are_only_scored_ones():
+    # 11-08 세션 214 알림 — 「쉬어서」「중이라」「하한」이 세지 않으면서 겹친 낱말로 찍혔다
+    a = "맥락 300k · 500k 알림, 쉬어서 식은 세션은 하한이 낮다. 일하는 중이라"
+    b = "300k 500k 넘으면 쉬어서 끝내기, 하한 다시 보기, 지금 중이라"
+    c = Corpus.build([a, b, *[f"다른 일 {i}" for i in range(20)]])
+    sc, shared = match(words(b), words(a), c, OverlapRules())
+    assert shared == ["300k", "500k"] and sc == 4
+
+
 def test_scribe_jobs_are_skipped():
     assert skip('\n\n<pasted_content id="d36c">\n[FOREMAN 서기 일감 — 회고] foreman')
     assert not skip("[FOREMAN 인계 r=690cec] 직전 세션의 인계다") and not skip(B)
