@@ -277,7 +277,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if s.usage_enabled:
             try:
                 ucfg = load_usage(s.usage_config)
-                app.state.usage = UsageMonitor(engine, ucfg, app.state.notifier, on_change=usage_api.invalidate)
+                # 읽을 때마다 캐시를 비우고 화면에 알린다(11-08 — 칩이 1분 폴링만 기다려 늦게 따라왔다)
+                def _usage_changed() -> None:
+                    usage_api.invalidate()
+                    pipeline.publish({"type": "usage"})
+                app.state.usage = UsageMonitor(engine, ucfg, app.state.notifier, on_change=_usage_changed)
                 usage_task = asyncio.create_task(app.state.usage.run(), name="foreman-usage")
                 log.info("사용량 읽기 켬: %d초마다, 한도 %s", ucfg.poll_s, ", ".join(x.key for x in ucfg.limits))
             except Exception as e:  # noqa: BLE001 — 설정이 깨져도 브리지는 뜬다. 다만 조용히 넘어가지 않는다

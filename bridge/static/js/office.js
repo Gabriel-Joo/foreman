@@ -22,18 +22,25 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
 
   root.innerHTML = `
     <header class="otop">
-      <span class="brand">FOREMAN</span><span class="muted small">${esc(theme.label)}</span>
-      <button id="oMap" class="ghost" title="감독실 — 현장 전체를 보는 곳으로 갑니다. Esc로도 갑니다.">${esc((theme.hq && theme.hq.label) || '감독실')}</button>
-      <button id="oAll" class="ghost" title="전체 — 모든 현장을 한 화면에 봅니다.">전체</button>
-      <nav id="oProj" class="oproj" aria-label="프로젝트"></nav>
-      <button id="oNew" class="ghost onew" title="새 세션 — 프로젝트나 폴더를 골라 새 세션을 띄웁니다.">＋ 세션</button>
-      <span id="oAlerts" class="oalerts"></span>
-      <a id="oUsage" class="ghost ousage" href="/usage" data-tip="사용량 — 누르면 한도 · 어디서 나가는지 봅니다.">사용량</a>
-      <span class="small muted otheme">테마 ${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장'], ['plain', '도형']].map(([k, v]) => k === theme.name ? `<b>${v}</b>` : `<a href="/?theme=${k}">${v}</a>`).join(' · ')}</span>
-      <a class="small" href="/classic" title="클래식 — 카드 목록 화면으로 갑니다.">클래식</a>
-      <span class="ofont" role="group" aria-label="글씨 크기"><button id="oFontDn" class="ghost" title="글씨 작게 — 옆 패널 · 터미널 글씨를 한 단계 줄입니다.">가−</button><span id="oFontV" class="small muted"></span><button id="oFontUp" class="ghost" title="글씨 크게 — 옆 패널 · 터미널 글씨를 한 단계 키웁니다.">가+</button></span>
-      <span id="oConn" class="conn"></span>
-      <button id="oTok" class="ghost" title="토큰 — API 토큰을 다시 넣습니다.">토큰</button>
+      <!-- 11-08 두 줄(사용자): 1줄 어디로 갈지 · 2줄 상태와 설정. 테마 이름 글은 뺐다(2줄 테마 버튼이 눌린 모양으로 보인다) -->
+      <div class="otop-row">
+        <span class="brand" title="FOREMAN — 지금 테마: ${esc(theme.label)}">FOREMAN</span>
+        <button id="oMap" class="ghost" title="${esc((theme.hq && theme.hq.label) || '감독실')} — 현장 전체를 보는 감독실로 갑니다. Esc로도 갑니다.">⌂</button>
+        <button id="oAll" class="ghost" title="전체 — 모든 현장을 한 화면에 봅니다.">전체</button>
+        <nav id="oProj" class="oproj" aria-label="프로젝트"></nav>
+        <button id="oNew" class="ghost onew" title="새 세션 — 프로젝트나 폴더를 골라 새 세션을 띄웁니다.">＋ 세션</button>
+        <span id="oAlerts" class="oalerts"></span>
+      </div>
+      <div class="otop-row otop-sub">
+        <span id="oStat" class="ostat"></span>
+        <a id="oUsage" class="ghost ousage" href="/usage" data-tip="사용량 — 누르면 한도 · 어디서 나가는지 봅니다.">사용량</a>
+        <span class="otheme" role="group" aria-label="테마">${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장'], ['plain', '도형']].map(([k, v]) => k === theme.name
+          ? `<span class="oproj-b on" aria-current="true" title="${v} — 지금 테마입니다.">${v}</span>` : `<a class="oproj-b" href="/?theme=${k}" title="${v} — 이 테마로 바꿉니다.">${v}</a>`).join('')}</span>
+        <a class="oproj-b" href="/classic" title="클래식 — 카드 목록 화면으로 갑니다.">클래식</a>
+        <span class="ofont" role="group" aria-label="글씨 크기"><button id="oFontDn" class="ghost" title="글씨 작게 — 머리말 · 옆 패널 · 터미널 글씨를 한 단계 줄입니다.">가−</button><span id="oFontV" class="muted"></span><button id="oFontUp" class="ghost" title="글씨 크게 — 머리말 · 옆 패널 · 터미널 글씨를 한 단계 키웁니다.">가+</button></span>
+        <span id="oConn" class="conn"></span>
+        <button id="oTok" class="ghost" title="토큰 — API 토큰을 다시 넣습니다.">토큰</button>
+      </div>
     </header>
     <div class="obody">
       <div id="oStage" class="ostage"><canvas id="oCv"></canvas>
@@ -126,7 +133,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     setTimeout(() => { const el = document.getElementById('oUsage'); if (el) el.hidden = true; }, 0);
   } else {
     setTimeout(loadUsage, 800);
-    setInterval(loadUsage, 60000);
+    setInterval(loadUsage, 60000);                  // 읽기 사이 추정 %가 오르는 것 · 이벤트를 놓친 때
+    window.addEventListener('foreman-usage', () => setTimeout(loadUsage, 300));   // 브리지가 /usage를 새로 읽은 순간
   }
   const tokHist = new Map();           // 방 이름 → [{t, v, o}]
   let lastSnap = null;
@@ -2199,8 +2207,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const igWhy = !ig ? '' : ig.stalled ? `트랜스크립트 감시가 ${ig.tick_age_s}초째 멈춰 있습니다`
       : (ig.stuck || []).map((x) => `${x.session} ${x.minutes}분 · ${x.failures}번 — ${x.error}`).join('\n');
     $('oAlerts').innerHTML = (pend ? `<button id="oPend" class="ghost warn" title="승인 대기 — 패널에서 승인하거나 거부합니다.">❗ 승인 대기 ${pend}</button>` : '') +
-      (ig && !ig.ok ? `<span class="bad" title="${esc(igWhy)}">⚠ ${ig.stalled ? '와처 멈춤' : `적재 막힘 ${(ig.stuck || []).length}개 세션`}</span>` : '') +
-      `<span class="small muted">작업 중 <b>${active}</b>/${live}${subs ? ` · 서브 ${subs}` : ''} · 오늘 출력 ${fmt(outToday)}</span>`;
+      (ig && !ig.ok ? `<span class="bad" title="${esc(igWhy)}">⚠ ${ig.stalled ? '와처 멈춤' : `적재 막힘 ${(ig.stuck || []).length}개 세션`}</span>` : '');
+    const stat = `작업 <b>${active}</b>/${live}${subs ? ` · 서브 ${subs}` : ''} · 출력 ${fmt(outToday)}`;
+    if ($('oStat').innerHTML !== stat) $('oStat').innerHTML = stat;
+    $('oStat').title = `작업 중 ${active} / 살아 있는 세션 ${live}${subs ? ` · 서브에이전트 ${subs}` : ''} · 오늘 출력 토큰 ${fmt(outToday)}`;
     $('oMap').disabled = view === 'hq';
     $('oAll').disabled = view === 'map';
     drawProjects(st);

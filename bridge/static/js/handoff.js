@@ -11,9 +11,32 @@ import { lossGroup } from './losscheck.js';
 const SOURCE = { self: '세션이 씀', self_headless: '세션이 씀(죽은 세션, claude -p)', compact: '자동 압축 요약에서', edited: '사람이 고침' };
 const STATUS = { requested: '기다리는 중…', ok: '저장됨', failed: '실패', timeout: '시간 초과' };
 const KIND = { snapshot: '지금 요약', handoff: '끝내기 전 인계' };
+export const FLOW_TIP = '넘기고 새로 시작 — 요약을 받아 보여 드리고, 확인하면 같은 폴더에 새 세션을 띄워 넣은 뒤 이 세션을 끝냅니다. 어느 단계에서나 멈출 수 있습니다.';
+
+// 넘기고 새로 시작(11-08 사용자 — 흩어진 [요약하고 끝내기] · [지금 요약] · [새로 띄우기] · 압축 요약을 버튼 하나로).
+// ① 요약 → ② 확인(넣을 글을 보여 줌) → ③ 새 세션 → ④ 옛 세션 끝내기. 어디까지 왔는지는 이 브라우저에 세션마다 기억한다
+// (다른 세션을 봤다 와도, 새로 고쳐도 이어진다). [멈추기]는 어느 단계에서나 — 요약은 남는다.
+export const FLOW_STEPS = ['요약', '확인', '새 세션', '옛 세션 끝내기'];
+const FLOW_KEY = 'foremanFlow:';
+const flowGet = (id) => { try { return JSON.parse(localStorage.getItem(FLOW_KEY + id) || 'null'); } catch { return null; } };
+const flowPut = (id, v) => { try { if (v) localStorage.setItem(FLOW_KEY + id, JSON.stringify(v)); else localStorage.removeItem(FLOW_KEY + id); } catch { /* 이 탭에서만 */ } };
+
+// 흐름의 지금 단계 — 저장한 것(flow)과 서버 데이터(요약 상태 · 넣음 · 세션이 살아 있나)로 정한다. 순수 함수(시험)
+export function flowStep(flow, summary, live) {
+  if (!flow) return null;
+  if (flow.phase === 'done') return { i: 4, done: true };
+  if (flow.phase === 'spawning') return { i: 2, busy: true };
+  if (flow.phase === 'ending') return { i: 3, busy: true };
+  if (flow.err) return { i: flow.errAt ?? 0, bad: true, msg: flow.err };
+  if (!summary || summary.status === 'requested') return { i: 0, busy: true };
+  if (summary.status !== 'ok') return { i: 0, bad: true, msg: summary.error || '요약을 받지 못했습니다' };
+  if (summary.injected_at) return live ? { i: 3 } : { i: 4, done: true };   // 넣었는데 옛 세션이 살아 있다 — 끝내기만 남음
+  return { i: 1 };
+}
 
 export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) {
   let sid = null, data = null, mode = null, preview = null, note = null, open = open0;
+  let flow = null, flowPrev = null, flowPrevAsk = false, handMore = false;    // 흐름 · ② 확인에 보여 줄 넣을 글 · 드문 버튼 펼침
   // 접는 칸을 사람이 열고 닫은 것 — 다시 그려도 그대로(null이면 저절로: 문서 정리는 할 일이 있을 때만 연다)
   let docsOpen = null, moreOpen = false;
   // 고치던 값 — 15초마다 새로 그려도 날아가지 않게 따로 든다(요약 고치기 글 · 옮기기 목록 칸)
@@ -61,7 +84,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     clearTimeout(timer);
     if (sid == null) return;
     const p0 = data && data.promotions && data.promotions[0];
-    const pending = data && (data.controls.pending_req || (data.summaries[0] && data.summaries[0].status === 'requested')
+    const pending = data && (data.controls.pending_req || (data.summaries[0] && data.summaries[0].status === 'requested') || (flow && !flow.phase)
       || (p0 && (p0.status === 'requested' || p0.status === 'writing')));
     timer = setTimeout(load, pending ? 3000 : 15000);
   }
@@ -172,7 +195,28 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     } else {
       main = sumCard(s0 && s0.status !== 'ok' && ok && s0.id !== ok.id ? s0 : ok || s0) +
         (s0 && ok && s0.id !== ok.id && s0.status !== 'ok' ? `<div class="small muted">이전 저장본 ↓</div>${sumCard(ok)}` : '') +
-        (ok && ok.kind === 'handoff' && can.exit && !ok.injected_at ? `<div class="row">${b('exit-after', '요약을 확인했습니다 — 세션 끝내기', true, 'danger', '세션 끝내기 — 위 인계 요약을 확인했으면 이 세션을 /exit로 끝냅니다. 요약은 남고 [새로 띄우기]로 넣을 수 있습니다.')}</div>` : '');
+        '';
+    }
+    // 넘기고 새로 시작 — 흐름이 있으면 요약 카드 자리에 단계 · 지금 할 일을 그린다
+    const fs = flow && data.summaries.find((x) => x.id === flow.sumId);
+    const st = flowStep(flow, fs, c.live);
+    if (st && mode == null) {
+      const steps = `<ol class="flow-steps">${FLOW_STEPS.map((n, k) => `<li class="${k < st.i ? 'done' : k === st.i ? (st.bad ? 'bad' : 'now') : ''}">${k < st.i ? '✓' : k + 1} ${n}</li>`).join('')}</ol>`;
+      let body = '';
+      if (st.done) body = `<div class="small ok">넘기기를 마쳤습니다 — 새 세션${fs && fs.injected_cc_session ? ` ${esc(fs.injected_cc_session.slice(0, 8))}` : ''}이 이어받았습니다.</div><div class="row">${b('flow-close', '닫기', true, 'ghost', '닫기 — 이 안내를 치웁니다.')}</div>`;
+      else if (st.bad) body = `<div class="small bad">${esc(st.msg)}</div><div class="row">${st.i === 3 ? b('flow-end', '옛 세션 다시 끝내기', can.exit, 'danger', '옛 세션 다시 끝내기 — 새 세션은 이미 이어받았습니다. 옛 세션만 /exit로 끝냅니다.') : st.i === 0 ? b('flow-start', '다시 요약', can.summary || can.headless, '', '다시 요약 — 요약을 새로 요청합니다.') : b('flow-go', '다시 시도', true, '', '다시 시도 — 이 단계부터 다시 합니다.')}${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 넘기기를 그만둡니다. 받은 요약은 남습니다.')}</div>`;
+      else if (st.i === 0) body = `<div class="small muted">세션이 인계 요약을 쓰는 중입니다… 다 쓰면 넣을 글을 보여 드립니다.</div><div class="row">${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 기다리지 않습니다. 세션은 쓰던 요약을 마저 쓰고, 요약은 남습니다.')}</div>`;
+      else if (st.i === 1) {
+        const p = flowPrev && flowPrev.summary_id === flow.sumId ? flowPrev : null;
+        if (!p && !flowPrevAsk) { flowPrevAsk = true; setTimeout(() => flowPreview().finally(() => { flowPrevAsk = false; }), 0); }
+        body = !p ? '<div class="small muted">넣을 글을 불러오는 중입니다…</div>'
+          : `<div class="small">새 세션에 아래 글을 첫 입력으로 넣습니다. 확인하면 새 세션을 띄우고 이 세션을 끝냅니다.${p.cut ? ` <span class="warn">길어서 일부 절을 줄였습니다.</span>` : ''}</div>
+            ${driftList(p.drift, '인계 뒤 바뀐 것')}${p.v2 ? pointerList(p) : ''}<pre class="hand-body">${esc(p.text)}</pre>`;
+        body += `<div class="row">${b('flow-go', '확인 — 새 세션 띄우고 이 세션 끝내기', !!p && !p.blocked && can.spawn, '', p && p.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다([더보기] → [요약 고치기]).' : '확인 — 같은 폴더에 새 세션을 띄워 위 글을 넣고, 이 세션을 /exit로 끝냅니다.')}${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 띄우지 않습니다. 요약은 남습니다.')}</div>`;
+      } else if (st.i === 2) body = '<div class="small muted">새 세션을 띄우고 요약을 넣는 중입니다…</div>';
+      else if (st.i === 3) body = st.busy ? '<div class="small muted">옛 세션을 끝내는 중입니다… 맥락이 큰 세션은 수십 초 걸립니다.</div>'
+        : `<div class="small">새 세션이 이어받았습니다. 옛 세션 끝내기만 남았습니다.</div><div class="row">${b('flow-end', '옛 세션 끝내기', can.exit, 'danger', '옛 세션 끝내기 — 이 세션을 /exit로 끝냅니다.')}${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 이 세션을 살려 둡니다.')}</div>`;
+      main = `<div class="flow">${steps}${body}</div>`;
     }
     const hist = data.summaries.length > 1 ? `<details class="hand-hist"${keep(`hand:${sid}:hist`)}><summary class="small muted">요약 이력 ${data.summaries.length}</summary>${
       data.summaries.map((x) => `<div class="small">#${x.id} ${esc(KIND[x.kind] || x.kind)} · ${esc(SOURCE[x.source] || x.source)} · ${esc(STATUS[x.status] || x.status)} · ${ago(x.created_at)}${x.chars ? ` · ${x.chars}자` : ''}</div>`).join('')}</details>` : '';
@@ -184,16 +228,16 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     const docsOn = docsOpen ?? !!docsBusy;
     const wtLive = !!(c.worktree && c.worktree.exists && c.worktree.live);   // 살아 있는 따로 작업 — 끝내기를 세 갈래로
     // 요약 카드 머리의 작은 [고치기] — 자주 안 쓰므로 버튼 줄에서 뺐다(11-06, 이력 1번)
-    const editLink = ok && mode == null ? b('edit', '고치기', true, 'ghost', '요약 고치기 — 저장된 요약을 직접 고칩니다. 원본은 두고 새 판으로 저장합니다.') : '';
+    const editLink = ok && mode == null && !st ? b('edit', '고치기', true, 'ghost', '요약 고치기 — 저장된 요약을 직접 고칩니다. 원본은 두고 새 판으로 저장합니다.') : '';
     el.innerHTML = `
       <section class="hand">
         <div class="hand-h"><b>인계</b> <span class="small muted">${esc(c.why || (c.live ? '살아 있음' : ''))}${s0 ? ` · 요약 ${esc(STATUS[s0.status] || s0.status)} ${ago(s0.created_at)}` : ''}</span></div>
         <div class="hand-btns">
-          ${b('summary-end', '요약하고 끝내기', can.summary, '', '요약하고 끝내기 — 세션이 다음 세션에 넘길 인계를 씁니다. 받은 요약을 확인한 뒤 [세션 끝내기]를 눌러야 끝납니다.')}
-          ${b('summary', '지금 요약', can.summary, '', '지금 요약 — 세션이 지금까지 한 일을 스스로 정리합니다. 세션은 계속 돕니다.')}
-          ${b('spawn', '새로 띄우기', can.spawn, '', '새로 띄우기 — 같은 폴더에 새 세션을 띄우고 마지막 요약을 넣습니다. 넣을 글을 먼저 보여 줍니다.')}
-          ${!c.live ? b('headless', '죽은 세션 요약 받기', can.headless, 'ghost', '죽은 세션 요약 받기 — 끝난 세션을 잠깐 불러 요약을 받습니다. 그 세션의 맥락을 다시 읽느라 토큰을 씁니다.') : ''}
-          ${!c.live ? b('compact', '압축 요약에서', can.compact, 'ghost', '압축 요약에서 — 끝난 세션이 마지막으로 자동 압축한 요약으로 인계를 만듭니다. 토큰을 쓰지 않습니다.') : ''}
+          ${st ? '' : b('flow-start', '넘기고 새로 시작', can.summary || (!c.live && can.headless), 'flow-main', FLOW_TIP)}
+          ${b('hand-more', handMore ? '접기 ▴' : '더보기 ▾', true, 'ghost', handMore ? '접기 — 드문 버튼을 다시 숨깁니다.' : '더보기 — 지금 요약 · 요약만 넣어 띄우기 · 요약 고치기 · 끝난 세션 요약. 드물게 씁니다.')}
+          ${handMore ? `${b('summary', '지금 요약(계속 돎)', can.summary, 'ghost', '지금 요약 — 세션이 지금까지 한 일을 정리합니다. 세션은 끝내지 않고 계속 돕니다.')}
+          ${b('spawn', '새 세션만 띄우기', can.spawn, 'ghost', '새 세션만 띄우기 — 이 세션은 두고, 같은 폴더에 새 세션을 띄워 마지막 요약(또는 빈 채로)을 넣습니다.')}
+          ${!c.live ? b('compact', '압축 요약으로 만들기', can.compact, 'ghost', '압축 요약으로 만들기 — 끝난 세션이 마지막 자동 압축 때 남긴 요약으로 인계를 만듭니다. 토큰을 쓰지 않지만 「읽을 곳」이 없는 거친 요약입니다.') : ''}` : ''}
         </div>
         ${note ? `<div class="small ${note.bad ? 'bad' : note.ok ? 'ok' : 'muted'}">${esc(note.msg)}</div>` : ''}
         ${editLink ? `<div class="hand-edit-link">${editLink}</div>` : ''}
@@ -258,6 +302,11 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       if (!confirm(`승인한 ${n}개를 세션이 문서에 쓰고 「인계 전 결정 기록」으로 커밋합니다. 브리지가 커밋을 확인합니다. 진행할까요?`)) return;
       return run('승인한 것 쓰기', () => post(`/api/promotions/${p.id}/write`).then(() => ({ msg: '보냈습니다. 세션이 쓰고 커밋하는 중입니다.' })));
     }
+    if (act === 'hand-more') { handMore = !handMore; draw(); return; }
+    if (act === 'flow-start') return startFlow();
+    if (act === 'flow-stop' || act === 'flow-close') { setFlow(null); note = act === 'flow-stop' ? { msg: '넘기기를 멈췄습니다. 받은 요약은 남아 있습니다.' } : null; draw(); return; }
+    if (act === 'flow-go') return flowGo();
+    if (act === 'flow-end') return flowEnd();
     const fmt = 'v2';           // 1판(요약 통째로) 고르기는 11-06에 뺐다 — 2판이 생긴 뒤 한 번도 안 썼다. API는 v1도 받는다
     if (act === 'summary') return run('요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'snapshot', mode: 'live', fmt }).then(() => ({ msg: '요청을 보냈습니다. 세션이 요약을 쓰는 중입니다.' })));
     if (act === 'summary-end') return run('인계 요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'live', fmt }).then(() => ({ msg: '요청을 보냈습니다. 요약이 오면 확인한 뒤 [세션 끝내기]를 눌러 주세요.' })));
@@ -345,10 +394,59 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     }
   });
 
+  // ── 넘기고 새로 시작 ─────────────────────────────────
+  function setFlow(v) { flow = v; if (sid != null) flowPut(sid, v); }
+  async function startFlow() {
+    if (sid == null) return;
+    if (!data) await load();
+    const c = data && data.controls;
+    if (!c) return;
+    const live = c.live && c.can.summary;
+    if (!live && !(c.can.headless && confirm('끝난 세션입니다. 잠깐 불러 요약을 받습니다 — 그 세션의 맥락을 다시 읽느라 토큰을 씁니다(식은 맥락은 비쌉니다). 진행할까요?'))) {
+      if (!live && !c.can.headless) { note = { bad: true, msg: `넘기기를 시작할 수 없습니다 — ${c.why || '지금은 요약을 받을 수 없습니다'}` }; draw(); }
+      return;
+    }
+    note = null; flowPrev = null;
+    try {
+      const r = await api('POST', `/api/sessions/${sid}/summary`, { kind: 'handoff', mode: live ? 'live' : 'headless', fmt: 'v2' });
+      setFlow({ sumId: r.summary_id, at: Date.now() });
+    } catch (e) { note = { bad: true, msg: `넘기기 — 요약을 요청하지 못했습니다: ${e.message}` }; }
+    await load();
+  }
+  // ② 확인을 그리기 전에 넣을 글을 한 번 받는다
+  async function flowPreview() {
+    if (!flow || (flowPrev && flowPrev.summary_id === flow.sumId)) return;
+    try { flowPrev = await api('GET', `/api/summaries/${flow.sumId}/injection`); } catch (e) { setFlow({ ...flow, err: `넣을 글을 받지 못했습니다 — ${e.message}`, errAt: 1 }); }
+    draw();
+  }
+  async function flowGo() {                      // ③ 새 세션 → ④ 옛 세션 끝내기
+    const id = sid, f = flow;
+    setFlow({ ...f, err: null, errAt: null, phase: 'spawning' }); draw();
+    try {
+      const r = await api('POST', `/api/sessions/${id}/spawn`, { summary_id: f.sumId });
+      if (!r.cc_session_id || !r.injected) throw new Error(r.note || '새 세션에 요약을 넣었는지 확인하지 못했습니다');
+    } catch (e) { if (id === sid) { setFlow({ ...f, phase: null, err: `새 세션을 띄우지 못했습니다 — ${e.message}`, errAt: 2 }); await load(); } return; }
+    await flowEnd(id);
+  }
+  async function flowEnd(id = sid) {
+    const f = flowGet(id) || flow;
+    if (id === sid) { setFlow({ ...f, err: null, errAt: null, phase: 'ending' }); draw(); }
+    let res;
+    try {
+      const r = data && data.controls.live === false ? { ok: true } : await api('POST', `/api/sessions/${id}/action`, { action: 'exit' });
+      res = r.ok ? { ...f, phase: 'done', err: null } : { ...f, phase: null, err: `옛 세션을 끝내지 못했습니다 — ${r.note || '확인하지 못했습니다'}`, errAt: 3 };
+    } catch (e) { res = { ...f, phase: null, err: `옛 세션을 끝내지 못했습니다 — ${e.message}`, errAt: 3 }; }
+    flowPut(id, res);
+    if (id === sid) { flow = res; await load(); }
+  }
+
   return {
+    startFlow,
     setSession(id) {
       if (id === sid) return;
       sid = id; data = null; mode = null; preview = null; note = null; editDraft = null; promDraft = {}; promId = null; promIn = null;
+      flow = id != null ? flowGet(id) : null; flowPrev = null; handMore = false;
+      if (flow && flow.phase && flow.phase !== 'done') flow = { ...flow, phase: null };   // 띄우는 · 끝내는 중에 새로 고침 — 서버 데이터로 다시 판단
       el.innerHTML = '';
       clearTimeout(timer);
       if (id != null) load();

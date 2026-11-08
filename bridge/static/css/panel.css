@@ -284,3 +284,13 @@ button.danger:not(:disabled):hover { background:color-mix(in srgb, var(--bad) 14
 #nsDlg select { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
 #nsDlg .box.ns { max-height:90vh; overflow:auto; }
 #nsDlg .box.ns:has(.fm-manual:not([open])) #nsGo { display:none; }   /* [띄우기]는 "직접 고르기"를 펼쳤을 때만 */
+
+/* 넘기고 새로 시작(11-08, js/handoff.js) — 단계 표시 · 큰 버튼 · 교장실 창의 방 세션 줄 */
+.hand-btns button.flow-main { background:var(--act); color:#fff; border-color:var(--act); font-weight:700; padding:4px 12px; }
+.flow { border:1px solid var(--line); border-radius:8px; padding:6px 10px; margin:6px 0; background:var(--card); }
+.flow-steps { display:flex; flex-wrap:wrap; gap:4px 10px; list-style:none; padding:0; margin:0 0 6px; font-size:14px; color:var(--muted); }
+.flow-steps li.done { color:var(--ok); }
+.flow-steps li.now { color:var(--fg); font-weight:700; }
+.flow-steps li.bad { color:var(--bad); font-weight:700; }
+.fm-hand { border-top:1px solid var(--line); margin-top:8px; padding-top:6px; }
+.fm-hand-row { display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:4px; }

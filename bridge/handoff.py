@@ -885,13 +885,14 @@ class HandoffManager:
                 await tmux(t.socket, "send-keys", "-t", t.pane, "Escape")
                 await asyncio.sleep(0.6)
             res = await deliver(row.cc, "/exit", sessions_dir=self.sessions_dir, transcript=None, command=True)
-            gone = await self._wait(lambda: row.cc not in live_sessions(self.sessions_dir), 15)
+            # 11-08 15 → 45초 — 맥락 520k 세션(200)이 /exit 뒤 15초 안에 내려가지 않아 "실패"로 보였고, 다시 누르자 끝났다
+            gone = await self._wait(lambda: row.cc not in live_sessions(self.sessions_dir), 45)
             cleaned = await self._cleanup_tmux(row.id, t, tname) if gone else False
             if gone:
                 await self._stop_preview(row)             # 세션을 끝내면 미리보기도(다시 보려면 [미리보기 열기])
             await self._act(row.id, "exit", ls.pid, gone, f"{t.pane} {tname} steps={','.join(res['steps'])}{' tmux 정리' if cleaned else ''}")
             return {"ok": gone, "pane": t.pane, "tmux_closed": cleaned,
-                    "note": None if gone else "15초 안에 끝나지 않았습니다. 터미널을 확인해 주세요."}
+                    "note": None if gone else "45초 안에 끝나지 않았습니다. 터미널을 확인해 주세요."}
         if act == "stop":
             await tmux(t.socket, "send-keys", "-t", t.pane, "C-z")
             stopped = await self._wait(lambda: (_proc_stat(ls.pid) or ("?",))[0] == "T", 5)

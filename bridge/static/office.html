@@ -25,7 +25,15 @@
   input[type=checkbox], input[type=radio] { width:auto; padding:0; margin:0 6px 0 0; vertical-align:middle; flex:none; }
   label:has(> input[type=radio]), label:has(> input[type=checkbox]) { display:inline-flex; align-items:center; gap:0; cursor:pointer; }
   input[type=checkbox] { width:auto; }
-  .otop { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:6px 14px; border-bottom:1px solid var(--line); flex:none; }
+  /* 머리말 두 줄(11-08) — 1줄 어디로 갈지 · 2줄 상태와 설정. 글씨 크기 배율(--ui-zoom)을 패널과 같이 받는다 */
+  .otop { display:flex; flex-direction:column; gap:5px; padding:6px 14px; border-bottom:1px solid var(--line); flex:none; zoom:var(--ui-zoom, 1.2); }
+  .otop-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; min-width:0; }
+  .otop-sub { gap:12px; font-size:16px; }
+  .otop .brand { font-size:19px; }
+  .ostat { color:var(--muted); white-space:nowrap; }
+  .otheme { display:inline-flex; gap:3px; flex-wrap:wrap; }
+  .otop a.oproj-b { color:var(--fg); text-decoration:none; font-size:15px; }
+  .otop span.oproj-b.on { font-size:15px; cursor:default; }
   /* 11-05 머리말 프로젝트 줄 — 지금 방은 눌린 모양, 승인 대기(노랑 깜빡) · 안 본 새 답(파랑) 점, 숫자 */
   .oproj { display:flex; gap:3px; align-items:center; flex-wrap:wrap; }
   .oproj-b { display:inline-flex; gap:5px; align-items:center; padding:3px 9px; border:1px solid var(--line); border-radius:14px; font-size:17px; }
@@ -116,7 +124,7 @@
 
   /* 휴대폰 — 패널은 아래 판(접으면 막대 한 줄). 캔버스는 위에 남는다 */
   @media (max-width: 760px) {
-    .otop { gap:8px; padding:6px 10px; } .otheme { order:9; width:100%; }
+    .otop { gap:4px; padding:6px 10px; } .otheme { order:9; width:100%; }
     .obody { flex-direction:column; }
     .oside { width:auto !important; height:40vh; border-left:0; border-top:1px solid var(--line); }
     .oside.folded { height:34px; }
