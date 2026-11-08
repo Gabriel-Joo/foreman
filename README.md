@@ -868,7 +868,10 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 런슈즈 · 펫퍼민트 승인을 관찰(observe) → 차단(enforce)으로 바꿀지 정하기 | 판정 수치가 볼 만큼 쌓이면(11-05 사용자: 아직 아님) | README 3.3, `config/approval.toml` |
 | 시험 GitHub Actions(브리지 systemd 유닛은 11-06에 만듦 — 부팅으로 뜨는지는 재부팅 검증 때 확인) | 정해 두고 아직 안 만듦(11-03 결정) | README 3.12, `log/infra_20261106_systemd-bridge.md` |
 | 디스패처 자동 기상 3단계(묻지 않고 띄우기) | 2단계를 써 본 뒤(사용자) | `docs/14_dispatcher_note_wake.md` |
-| 런슈즈 실제 인계 | 발볼 검증이 끝난 뒤 | `log/stage11_handoff_result.md` |
+| 런슈즈 실제 인계 | 발볼 검증이 끝난 뒤. 맥락이 큰 런슈즈 세션도 지금 작업이 끝나면 사용자가 인계한다(11-08 사용자: "런슈즈는 지금 작업 중이라 나중에. 끝나면 인계할게") | `log/stage11_handoff_result.md`, `log/stage15_usage_result.md` 「6.」 |
+| 런슈즈 README 갱신(런슈즈 서기 일감 — 11-06에 "커밋 22개"가 떠 있었다. 11-08까지 런슈즈 README 커밋 없음) | 포먼 쪽 정리를 먼저 한 뒤(11-06 사용자: "런슈즈 README 갱신은 나중에. 포먼 쪽 먼저 정리하고"). 런슈즈 저장소 세션의 일 | `log/stage12_scribe_result.md` |
+| 펫퍼민트 압축 손실 점검 — 대상은 세션 155(`cddadc68`, 압축 12번의 역사) | 사용량에 여유가 생기면(11-08 사용자: "지금은 사용량이 빠듯하다") | `log/stage15_usage_result.md` 「7.」, `log/stage0_tmux_result.md` |
+| `/login` 갱신 — 만료 11-09 08:53 KST, 그 뒤로 세션 · 디스패처 · 사용량 읽기가 멈춘다(만료 알림은 한 번 나갔다) | 사용자가 할 일, 만료 전에(11-08 사용자: "/login은 아직 안 했다") | `log/stage15_usage_result.md` 「7.」 |
 | 런슈즈 미리보기(vite) | FOREMAN 미리보기가 쓸모 있는지 본 뒤 | `docs/11_worktree.md` |
 | Claude Code와 Codex 같이 쓰기 — 일감 떠넘기기(양 많은 반복, Opus 토큰 아끼기) · 다른 모델의 의견(설계 리뷰 · 교차 검증, 같은 모델끼리는 같은 것을 놓친다) | **먼저 같은 일을 Sonnet으로 시켜 비용 · 품질을 본 뒤**, 충분하면 붙이지 않는다(11-06 사용자) | `log/later_codex_bridge.md` |
 | 9단계 LLM 지표 | 프로메테우스는 펫퍼민트 설계와 상의 뒤 | 로드맵 9 |
