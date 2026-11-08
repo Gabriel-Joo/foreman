@@ -153,7 +153,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       ${p.blocked ? `<div class="small bad">${esc(p.blocked)}</div>` : ''}</div>`;
   }
   // 11-09 — 이 프로젝트에 살아 있는 세션이 있으면 새 세션은 따로 작업(worktree)에서 뜬다. 넣을 때 브리지가 그 사실을 글 앞에 붙인다
-  const wtNext = (p) => (p && p.worktree_next ? `<div class="small warn" title="따로 작업에서 뜹니다 — 이 프로젝트에 살아 있는 세션(이 세션 포함)이 있어 새 세션은 .worktrees/ 아래 자기 브랜치에서 뜹니다. 받은 세션은 push · 브리지 재시작을 하지 않고, 끝낸 뒤 [합치기]로 합칩니다.">⑂ 새 세션은 따로 작업(worktree)에서 뜹니다 — 넣을 때 그 사실을 글 맨 앞에 덧붙입니다.</div>` : '');
+  const wtNext = (p) => (p && p.worktree_next ? `<div class="small warn" title="따로 작업에서 뜹니다 — 이 프로젝트에 살아 있는 세션이 있어(옮기기는 이 세션을 빼고 셉니다) 새 세션은 .worktrees/ 아래 자기 브랜치에서 뜹니다. 받은 세션은 push · 브리지 재시작을 하지 않고, 끝낸 뒤 [합치기]로 합칩니다.">⑂ 새 세션은 따로 작업(worktree)에서 뜹니다 — 넣을 때 그 사실을 글 맨 앞에 덧붙입니다.</div>` : '');
   // 인계 검증(11-06) — 만들 때 상태와 지금이 다르면 넣는 글 앞에 붙는 "인계 뒤 바뀐 것"
   function driftList(d, head) {
     if (!d || !d.length) return `<div class="small ok">✓ ${esc(head)} — 요약을 쓴 뒤 바뀐 것이 없습니다(git · 스키마 잠금).</div>`;
@@ -420,14 +420,14 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
   // ② 확인을 그리기 전에 넣을 글을 한 번 받는다
   async function flowPreview() {
     if (!flow || (flowPrev && flowPrev.summary_id === flow.sumId)) return;
-    try { flowPrev = await api('GET', `/api/summaries/${flow.sumId}/injection`); } catch (e) { setFlow({ ...flow, err: `넣을 글을 받지 못했습니다 — ${e.message}`, errAt: 1 }); }
+    try { flowPrev = await api('GET', `/api/summaries/${flow.sumId}/injection?replace=1`); } catch (e) { setFlow({ ...flow, err: `넣을 글을 받지 못했습니다 — ${e.message}`, errAt: 1 }); }
     draw();
   }
   async function flowGo() {                      // ③ 새 세션 → ④ 옛 세션 끝내기
     const id = sid, f = flow;
     setFlow({ ...f, err: null, errAt: null, phase: 'spawning' }); draw();
     try {
-      const r = await api('POST', `/api/sessions/${id}/spawn`, { summary_id: f.sumId });
+      const r = await api('POST', `/api/sessions/${id}/spawn`, { summary_id: f.sumId, replace: true });   // 옮기기 — 옛 세션은 빼고 worktree 판단
       if (!r.cc_session_id || !r.injected) throw new Error(r.note || '새 세션에 요약을 넣었는지 확인하지 못했습니다');
     } catch (e) { if (id === sid) { setFlow({ ...f, phase: null, err: `새 세션을 띄우지 못했습니다 — ${e.message}`, errAt: 2 }); await load(); } return; }
     await flowEnd(id);

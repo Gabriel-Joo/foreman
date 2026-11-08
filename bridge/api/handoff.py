@@ -26,6 +26,7 @@ class EditIn(BaseModel):
 
 class SpawnIn(BaseModel):
     summary_id: int | None = None
+    replace: bool = False             # 새 세션으로 옮기기 — 옛 세션을 빼고 worktree를 판단한다(곧 끝나니 원본 폴더에서 뜬다, 11-09)
 
 
 class InjectIn(BaseModel):
@@ -169,9 +170,10 @@ async def edit_summary(summary_id: int, body: EditIn, request: Request) -> JSONR
 
 
 @router.get("/summaries/{summary_id}/injection")
-async def injection_preview(summary_id: int, request: Request) -> JSONResponse:
+async def injection_preview(summary_id: int, request: Request, replace: bool = False) -> JSONResponse:
+    """replace=1 — 새 세션으로 옮기기의 ② 확인: worktree_next를 옛 세션을 빼고 판단한다."""
     try:
-        return JSONResponse(await _mgr(request).injection(summary_id))
+        return JSONResponse(await _mgr(request).injection(summary_id, replace=replace))
     except Refused as e:
         return _refused(e)
 
@@ -199,7 +201,7 @@ async def spawn(sid: int, body: SpawnIn, request: Request) -> JSONResponse:
     m = _mgr(request)
     row = await _row(m, sid)
     try:
-        return JSONResponse(await m.spawn(row, body.summary_id))
+        return JSONResponse(await m.spawn(row, body.summary_id, replace=body.replace))
     except Refused as e:
         return _refused(e)
 

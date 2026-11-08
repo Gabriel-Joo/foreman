@@ -875,7 +875,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 런슈즈 미리보기(vite) | FOREMAN 미리보기가 쓸모 있는지 본 뒤 | `docs/11_worktree.md` |
 | Claude Code와 Codex 같이 쓰기 — 일감 떠넘기기(양 많은 반복, Opus 토큰 아끼기) · 다른 모델의 의견(설계 리뷰 · 교차 검증, 같은 모델끼리는 같은 것을 놓친다) | **먼저 같은 일을 Sonnet으로 시켜 비용 · 품질을 본 뒤**, 충분하면 붙이지 않는다(11-06 사용자) | `log/later_codex_bridge.md` |
 | 9단계 LLM 지표 | 프로메테우스는 펫퍼민트 설계와 상의 뒤 | 로드맵 9 |
-| 인계를 worktree 세션에 넣을 때 그 사실 덧붙이기 — 브리지(`spawn_new`)가 "이 세션은 worktree `<이름>`(브랜치 `cc/<이름>`) — push 안 함 · 브리지 재시작 안 함 · 기록은 새 log 파일"과 CLAUDE.md 「따로 작업」 절을 읽을 곳에 자동으로 | 아직 안 만듦 | `log/handoff_v2_c_result.md` |
+| 인계를 worktree 세션에 넣을 때 그 사실 덧붙이기 — 브리지(`spawn_new`)가 "이 세션은 worktree `<이름>`(브랜치 `cc/<이름>`) — push 안 함 · 브리지 재시작 안 함 · 기록은 새 log 파일"과 CLAUDE.md 「따로 작업」 절을 읽을 곳에 자동으로 | ✅ 11-09 만듦(「이 세션이 뜬 자리」, [기록](log/handoff_flow_check_20261109.md)). 같은 날 [새 세션으로 옮기기]는 옛 세션을 빼고 판단해 원본 폴더에서 뜨게 함([기록](log/handoff_replace_main_20261109.md)) — 실제 옮기기로 확인은 다음 번 | `log/handoff_v2_c_result.md` |
 | 서버 재부팅 검증 → `-old` 컨테이너 3개(`milvus-standalone-old` · `openwebui-old` · `mysql-old`)와 백업 정리 | 사용자가 재부팅을 시킬 때(복구할 시간이 있을 때). 정리도 사용자가 시킬 때 | `log/infra_20261102_host-changes.md` 「남겨 둔 것 (되돌리기용) — 재부팅 검증 뒤 정리」 |
 | `cleanupPeriodDays`(지금 120일)와 `event` 보관 기간을 함께 다시 정하기 — 기간이 지나면 요약만 남기고 원본을 지운다 | 브리지 적재가 안정되면(11-02 사용자). 보관 정리 코드는 아직 없다 | README 5장 「보관 정책」 |
 | Jenkins 실패 상세(스테이지별 로그)를 읽는 보정 — matrix-auth로 진짜 읽기 전용 토큰을 만들어 더하기 | 실패 상세가 필요해지면(11-03 사용자: "지금은 안 만들어"). 플러그인 · JCasC는 인프라 저장소 세션의 일 | `log/stage8_cicd_result.md` |
