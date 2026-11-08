@@ -42,8 +42,26 @@ def test_check_and_reads(tmp_path):
     assert ps[0].commits_since == 0 and not ps[0].stale
     r = ptr.reads(ps[:3], str(repo), [str(repo / "docs" / "a.md"), "/tmp/다른것"])
     # 맨 위 CLAUDE.md는 Read 없이도 세션에 들어가 있다 — 읽음으로 세고 auto로 따로 보인다
-    assert r == {"total": 3, "read": 3, "missing": [], "auto": ["CLAUDE.md"]}
+    assert r == {"total": 3, "read": 3, "missing": [], "auto": ["CLAUDE.md"], "failed": []}
     assert ptr.reads(ps[:1], str(repo), [])["missing"] == ["docs/a.md"]
+    # 11-09 확인에 실패한 곳은 열었어도 읽음으로 세지 않는다("6/6 읽음"에 ✗가 섞였다)
+    r = ptr.reads(ps[:6], str(repo), [str(repo / "docs" / "a.md")])
+    assert r["read"] == 3 and r["missing"] == [] and [f["path"] for f in r["failed"]] == ["docs/없음.md", "docs/a.md", "CLAUDE.md"]
+
+
+def test_check_notes_other_side(tmp_path):
+    """11-09 런슈즈 — 읽는 쪽 폴더에 없는데 다른 쪽(원본 ↔ worktree)에는 있으면 까닭을 붙인다. 둘 다 없으면 그대로."""
+    main, wt = tmp_path / "rs", tmp_path / "rs" / ".worktrees" / "rs-2"
+    (main / "docs").mkdir(parents=True)
+    (wt / "docs").mkdir(parents=True)
+    (main / "docs" / "a.md").write_text("# a\n## 새 절\n", encoding="utf-8")
+    (wt / "docs" / "a.md").write_text("# a\n", encoding="utf-8")                 # worktree가 뒤처졌다
+    body = "## 읽을 곳\n- docs/a.md 「새 절」 — x\n- docs/a.md 「아무 데도 없는 절」 — y\n"
+    ps = asyncio.run(ptr.check(ptr.parse(body), str(wt), other=str(main), other_note="worktree가 뒤처졌습니다"))
+    assert not ps[0].ok and ps[0].problem.endswith("— worktree가 뒤처졌습니다")
+    assert not ps[1].ok and "뒤처졌" not in ps[1].problem
+    ps = asyncio.run(ptr.check(ptr.parse(body), str(main), other=str(wt), other_note="worktree에만 있습니다"))
+    assert ps[0].ok and not ps[1].ok and "worktree에만" not in ps[1].problem   # 원본 기준이면 새 절은 맞다
 
 
 def test_reads_same_file_across_worktrees(tmp_path):

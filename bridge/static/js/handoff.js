@@ -164,10 +164,14 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
   function readsLine(r, can) {
     if (!r) return '';
     const all = r.read === r.total;
+    const failed = r.failed || [], miss = r.missing || [];
     const drift = r.drift && r.drift.length ? `<div class="hand-group"><span class="hand-lbl small muted">요약 뒤 바뀐 것</span><div>${driftList(r.drift, '받을 때 요약 뒤 바뀐 것')}</div></div>` : '';
-    return `<div class="hand-group"><span class="hand-lbl small muted" title="읽을 곳 — 새 세션이 먼저 읽어야 할 문서 중 실제로 연 것의 수입니다.">읽을 곳</span><div class="hand-btns">
-      <span class="small ${all ? 'ok' : 'warn'}">${r.read}/${r.total} 읽음${all ? '' : ` — 안 읽음: ${r.missing.map(esc).join(', ')}`}${r.auto && r.auto.length ? ` <span class="muted" title="자동 — 세션이 시작할 때 저절로 들어오는 문서라 읽음으로 셉니다.">(자동: ${r.auto.map(esc).join(', ')})</span>` : ''}</span>
-      ${all ? '' : `<button data-act="reads-resend" class="small"${can ? '' : ' disabled'} title="안 읽은 곳 다시 보내기 — 아직 읽지 않은 문서만 다시 보내고, 읽은 뒤 걸리는 규칙을 말하게 합니다.">안 읽은 곳 다시 보내기</button>`}
+    // 11-09 확인에 실패한 곳(이 세션 폴더에 파일 · 절이 없다)은 읽음으로 세지 않고 따로 — 전에는 "6/6 읽음"에 ✗가 섞였다
+    const failRows = failed.map((f) => `<div class="small bad">✗ <code>${esc(f.path)}</code> — ${esc(f.problem || '')}</div>`).join('');
+    return `<div class="hand-group"><span class="hand-lbl small muted" title="읽을 곳 — 새 세션이 먼저 읽어야 할 문서 중 실제로 열고, 이 세션 폴더에서 찾던 곳이 맞는 것의 수입니다.">읽을 곳</span><div class="hand-btns">
+      <span class="small ${all ? 'ok' : 'warn'}">${r.read}/${r.total} 읽음${miss.length ? ` — 안 읽음: ${miss.map(esc).join(', ')}` : ''}${failed.length ? ` · 확인 실패 ${failed.length}` : ''}${r.auto && r.auto.length ? ` <span class="muted" title="자동 — 세션이 시작할 때 저절로 들어오는 문서라 읽음으로 셉니다.">(자동: ${r.auto.map(esc).join(', ')})</span>` : ''}</span>
+      ${failRows}
+      ${!miss.length ? '' : `<button data-act="reads-resend" class="small"${can ? '' : ' disabled'} title="안 읽은 곳 다시 보내기 — 아직 읽지 않은 문서만 다시 보내고, 읽은 뒤 걸리는 규칙을 말하게 합니다.">안 읽은 곳 다시 보내기</button>`}
     </div></div>${drift}`;
   }
 
