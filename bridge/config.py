@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     projects_root: Path = Path.home() / ".claude" / "projects"
     sessions_dir: Path = Path.home() / ".claude" / "sessions"   # <pid>.json만 읽는다(.key는 열지 않는다)
     watch_enabled: bool = True          # 테스트 · 일회성 적재(python -m bridge.ingest)에서는 끈다
+    # 뜰 때 "돌던 잃은 것 점검"을 failed로 — 운영 DB에 앱을 띄우는 시험(test_app_db)은 끈다. 11-09 시험이 운영 브리지에서
+    # 돌던 점검 #2를 "브리지가 다시 떠서 멈췄습니다"로 바꿨다(브리지는 그대로 돌고 있었다)
+    losscheck_recover: bool = True
     ingest_chunk_bytes: int = 8 << 20   # 한 번에 읽는 양(= DB 트랜잭션 하나)
     ingest_timeout_s: float = 120.0     # 덩어리 하나 적재 상한
     ingest_alert_s: float = 300.0       # 한 파일이 이만큼 같은 자리에서 실패 중이면 "적재 막힘"(텔레그램 · 대시보드, 11-03)

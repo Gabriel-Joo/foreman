@@ -1,7 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from bridge.overlap import Corpus, OverlapRules, OverlapWatch, is_ident, load_rules, match, message, score, skip, words
+from bridge.overlap import (Corpus, OverlapRules, OverlapWatch, cross_message, is_ident, load_rules, match, message, same_text, score,
+                            skip, words)
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -49,6 +50,59 @@ def test_shown_words_are_only_scored_ones():
     c = Corpus.build([a, b, *[f"다른 일 {i}" for i in range(20)]])
     sc, shared = match(words(b), words(a), c, OverlapRules())
     assert shared == ["300k", "500k"] and sc == 4
+
+
+SHOE = """<pasted_content id="2878">
+# 요약·설명 다시 쓰기 — 수정 지시
+샘플 톤은 좋다. 넷만 고치고 전체 진행해라.
+## 1. "~라는 평이 있습니다"를 줄여라
+한 설명문에 한 번 이하로. 지금은 네 번씩 나온다.
+## 2. 발볼·와이드·가격은 조심해서 써라
+## 5. 리뷰 없는 67켤레 리뷰를 새로 받아라. 사이트맵에 있는 것만.
+전체 310켤레 진행해라.
+</pasted_content>"""
+
+
+def test_same_text_catches_repasted_instruction():
+    # 11-08 — 런슈즈 217에 넣은 지시가 FOREMAN 214에도 들어왔다(꼬리표 id만 다르다)
+    assert same_text(SHOE.replace("2878", "1dbe"), SHOE)
+    assert same_text(SHOE + "\n그리고 오늘 안에", SHOE)                       # 한 줄 덧붙여도
+    assert not same_text("리셋 확인해줘", "리셋 확인해줘")                         # 짧은 글은 보지 않는다
+    assert not same_text(A + " " + B, SHOE)
+    m = cross_message("[포먼]", 214, "사용량", 217, "클러스터 이주", "런슈즈", datetime(2026, 11, 8, 5, 14))
+    assert "런슈즈 세션 217「클러스터 이주」에 14:14에 들어간 글과 거의 같습니다" in m and "[이 세션 작업 중단]" in m
+
+
+def test_cross_project_alert_with_fake_db(tmp_path):
+    import asyncio
+
+    class Res:
+        def __init__(self, rows): self.rows = rows
+        def all(self): return self.rows
+
+    class C:
+        async def execute(self, *_a, **_k):
+            return Res([(217, SHOE, datetime(2026, 11, 8, 5, 14), "cc-217", "클러스터 이주", "runshoes")])
+
+    class N:
+        def __init__(self): self.sent = []
+        def send_direct(self, *a): self.sent.append(a)
+
+    class R:
+        prefix = "[포먼]"
+
+    class Rules:
+        def for_project(self, _p): return R()
+
+    n = N()
+    w = OverlapWatch(None, n, Rules(), tmp_path / "없음.toml", tmp_path)
+    me = (1, "foreman", "사용량", None)
+    now = datetime(2026, 11, 8, 5, 18)
+    info = asyncio.run(w._cross(C(), 214, me, SHOE.replace("2878", "1dbe"), now, {"cc-217"}))
+    assert info["cross"] and info["with"] == 217 and info["with_label"] == "런슈즈"
+    assert len(n.sent) == 1 and n.sent[0][1] == "overlap" and "📋 다른 프로젝트" in n.sent[0][3]
+    assert asyncio.run(w._cross(C(), 214, me, SHOE, now, set())) is None                  # 그 세션이 끝났으면 안 본다
+    assert asyncio.run(w._cross(C(), 215, me, "짧은 글 확인", now, {"cc-217"})) is None
 
 
 def test_scribe_jobs_are_skipped():

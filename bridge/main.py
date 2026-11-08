@@ -206,7 +206,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # 11-06 — 인계 2판 d [잃은 것 보기](압축 손실 점검, claude -p). 모델은 config/models.toml [tasks] losscheck
         app.state.handoff.losscheck = LossChecker(app.state.handoff, model=Models().task("losscheck"))
         try:
-            n_ = await app.state.handoff.losscheck.recover()
+            n_ = await app.state.handoff.losscheck.recover() if s.losscheck_recover else 0
             if n_:
                 log.warning("잃은 것 점검 %d개가 돌던 중이었다 — failed로 바꿨다(브리지 재시작)", n_)
         except Exception as e:  # noqa: BLE001 — 0021 전이면 표가 없다. 브리지는 뜬다

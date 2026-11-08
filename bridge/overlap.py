@@ -39,6 +39,11 @@ home kopo17
 """.split())
 # 포먼이 내는 서기 일감(docs/12_scribe.md)은 일부러 나눠 시키는 틀 글이다 — 맞대지 않는다(11-06 다시 돌리기 헛알림의 대부분)
 _SKIP_HEAD = ("[FOREMAN 서기 일감",)
+_PROJ_KO = {"runshoes": "런슈즈", "petmint-rag-chatbot": "펫퍼민트", "foreman": "FOREMAN"}
+
+
+def projLabel(name: str | None) -> str:  # noqa: N802 — 화면(js)의 이름과 맞춘다
+    return _PROJ_KO.get(name or "", name or "미분류")
 
 
 def skip(prompt: str | None) -> bool:
@@ -135,6 +140,21 @@ def match(new: set[str], old: set[str], corpus: Corpus, r: OverlapRules) -> tupl
     return score(shared), shared
 
 
+def same_text(a: str | None, b: str | None, min_words: int = 12, ratio: float = 0.8) -> bool:
+    """거의 같은 글 — 다른 프로젝트 세션에 이미 넣은 글을 또 넣었나(11-08 런슈즈 신발 지시가 FOREMAN 세션에 두 번 들어왔다).
+    낱말 집합(한글 포함)의 자카드 ≥ ratio, 양쪽 다 낱말 min_words개 이상(짧은 "확인해줘" 류는 보지 않는다)."""
+    wa, wb = words(a), words(b)
+    if len(wa) < min_words or len(wb) < min_words:
+        return False
+    return len(wa & wb) / len(wa | wb) >= ratio
+
+
+def cross_message(prefix: str, sid: int, title: str, other: int, other_title: str, other_proj: str, at: datetime) -> str:
+    return (f"{prefix} 📋 다른 프로젝트 — 세션 {sid}「{title}」에 방금 넣은 글이 {other_proj} 세션 {other}「{other_title}」에 "
+            f"{kst_hm(at)}에 들어간 글과 거의 같습니다. 잘못된 창에 붙여 넣었을 수 있습니다.\n"
+            f"막지 않았습니다 — 실수면 패널 띠의 [이 세션 작업 중단]을 누르세요.")
+
+
 def kst_hm(ts: datetime) -> str:
     return (ts + KST).strftime("%H:%M")
 
@@ -201,6 +221,41 @@ class OverlapWatch:
         rows = (await c.execute(q, {"cc": cc_session_id, "me": session_id, "reqs": reqs})).all()
         return {x for a, b in rows for x in (a, b) if x is not None and x != session_id}
 
+    async def _cross(self, c: Any, session_id: int, me: Any, prompt: str, ts: datetime, live: set[str]) -> dict[str, Any] | None:
+        """다른 프로젝트의 살아 있는 세션이 최근(window_min) 받은 사람 글과 거의 같으면 알린다(11-08). 같은 프로젝트 겹침은
+        드문 낱말 점수로 보지만, 이것은 "같은 글을 다른 창에 또 붙였다"를 잡는다 — 프로젝트를 건너 같은 일이 두 번 돈다."""
+        if skip(prompt) or len(words(prompt)) < 12:
+            return None
+        rows = (await c.execute(text(
+            "SELECT t.session_id, t.prompt_text, t.started_at, cs.cc_session_id, "
+            "COALESCE(cs.custom_title, cs.title, LEFT(cs.cc_session_id, 8)), p.name "
+            "FROM turn t JOIN character_session cs ON cs.id = t.session_id JOIN `character` ch ON ch.id = cs.character_id "
+            "LEFT JOIN project p ON p.id = ch.project_id "
+            "WHERE (ch.project_id IS NULL OR ch.project_id <> :p) AND cs.hidden_at IS NULL AND cs.detached_at IS NULL "
+            "AND t.origin = 'human' AND t.started_at >= :cut ORDER BY t.id DESC LIMIT 200"),
+            {"p": me[0], "cut": ts - timedelta(minutes=self.rules.window_min)})).all()
+        hit = next((x for x in rows if x[3] in live and same_text(prompt, x[1])), None)
+        if not hit:
+            return None
+        other, _p, at, _cc, title, proj = hit
+        now_m = time.monotonic()
+        if now_m - self._sent.get((session_id, other), -1e9) < self.rules.repeat_min * 60:
+            return None
+        self._sent[(session_id, other)] = now_m
+        label = projLabel(proj)
+        info = {"cross": True, "with": other, "with_title": title, "with_project": proj, "with_label": label,
+                "since": at.isoformat(timespec="seconds") + "Z", "since_kst": kst_hm(at), "words": [], "score": 0,
+                "at": ts.isoformat(timespec="seconds") + "Z", "at_dt": ts}
+        self.recent[session_id] = info
+        log.info("다른 프로젝트 같은 글 session=%d ~ %d(%s)", session_id, other, proj)
+        rule = self.notify_rules.for_project(me[1]) if self.notify_rules else None
+        if rule is not None and self.notifier is not None:
+            self.notifier.send_direct(me[1], "overlap", session_id,
+                                      cross_message(rule.prefix, session_id, me[2] or str(session_id), other, title or str(other), label, at))
+        if self.on_change:
+            self.on_change()
+        return info
+
     async def check(self, session_id: int, cc_session_id: str, prompt: str, ts: datetime) -> dict[str, Any] | None:
         try:
             async with asyncio.timeout(20):
@@ -228,6 +283,9 @@ class OverlapWatch:
             if not me or me[0] is None or me[3] is not None:
                 return None
             linked = await self._handoff_linked(c, session_id, cc_session_id, prompt)
+            cross = await self._cross(c, session_id, me, prompt, ts, live)
+            if cross:
+                return cross
             rows = (await c.execute(text(
                 "SELECT t.session_id, t.prompt_text, t.started_at, cs.cc_session_id, "
                 "COALESCE(cs.custom_title, cs.title, LEFT(cs.cc_session_id, 8)) "
