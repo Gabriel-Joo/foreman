@@ -173,6 +173,10 @@ def _git(cmd: str) -> str | None:
 
 def summarize(tool: str, inp: dict[str, Any], rule: str, reason: str, cwd: str | None) -> str:
     """한 줄 — 무엇을 대상으로. 못 알아보면 명령 앞부분."""
+    if tool == "AskUserQuestion":
+        qs = [q for q in (inp.get("questions") or []) if isinstance(q, dict)]
+        first = qs[0].get("question") or qs[0].get("header") or "" if qs else ""
+        return (f"질문 {len(qs)}개 — " if len(qs) > 1 else "질문 — ") + str(first)[:MAX - 12]
     if tool != "Bash":
         path = inp.get("file_path") or inp.get("notebook_path") or inp.get("path")
         verb = {"Write": "쓰기", "Edit": "고치기", "MultiEdit": "고치기", "NotebookEdit": "고치기",

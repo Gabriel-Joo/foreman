@@ -11,7 +11,12 @@ code { display:block; white-space:pre-wrap; word-break:break-all; background:var
 .appr { display:flex; gap:10px; align-items:flex-start; border:1px solid var(--warn); border-left:5px solid var(--warn); border-radius:8px; padding:8px 10px; background:var(--card); }
 .appr.done { border-color:var(--line); opacity:.6; }
 .appr-main { flex:1; min-width:0; }
-.appr-sum { font-weight:600; margin:2px 0; word-break:break-all; }   /* 무엇을 대상으로(11-03) */
+.appr-sum { font-weight:600; margin:2px 0; word-break:break-all; }
+.appr-qq { margin:4px 0 8px; }
+.appr-opt { display:block; width:100%; text-align:left; margin:4px 0; white-space:normal; line-height:1.4; }   /* 질문 선택지 버튼(11-09) */
+.appr-opt small { display:block; opacity:.8; font-weight:normal; margin-top:2px; }
+.appr-opt.on { outline:2px solid var(--act, #4ea1ff); }
+.appr-q { white-space:pre-wrap; word-break:keep-all; overflow-wrap:anywhere; margin:4px 0; line-height:1.45; }   /* 질문 · 선택지 — 자르지 않는다(11-09) */   /* 무엇을 대상으로(11-03) */
 .appr-hist > summary { cursor:pointer; }
 table.hist { border-collapse:collapse; margin:6px 0; } table.hist td, table.hist th { padding:2px 8px; border-bottom:1px solid var(--line); text-align:left; }
 .hist-items { margin:6px 0; padding-left:18px; } .hist-items li { margin:2px 0; }
@@ -220,19 +225,20 @@ body { --term-h:0px; }
    색 · 글꼴은 테마 이름표(--tip-*: 양피지 · 사인판 · 안전 표지판). 없으면 카드 색 */
 /* 11-09 모양 하나: 제목(.tip-b) → 설명(.tip-d) → 숫자(.tip-n, 한 줄에 하나). 한글은 낱말 단위로만 끊는다(keep-all) —
    글자 단위 기본 줄바꿈 + 320px 폭에서 문장이 아무 데서나 끊겼다 */
-.tip { position:fixed; z-index:50; max-width:min(440px, calc(100vw - 16px)); pointer-events:none; padding:7px 11px 8px; border-radius:6px;
+/* 11-09 글씨 크기 배율(--ui-zoom, 가+ · 가−)을 따른다 — 전에는 16px 고정이라 130%에서 탭 글씨보다 작았다 */
+.tip { --tz:var(--ui-zoom, 1.2); position:fixed; z-index:50; max-width:min(calc(440px * var(--tz)), calc(100vw - 16px)); pointer-events:none; padding:7px 11px 8px; border-radius:6px;
        word-break:keep-all; overflow-wrap:anywhere;
        background:var(--tip-bg, var(--card)); color:var(--tip-fg, var(--fg)); border:1px solid var(--tip-border, var(--line));
-       box-shadow:0 4px 14px rgba(0,0,0,.35); font:var(--tip-font, 16px/1.45 system-ui, sans-serif); font-size:16px; line-height:1.45;
+       box-shadow:0 4px 14px rgba(0,0,0,.35); font:var(--tip-font, 16px/1.45 system-ui, sans-serif); font-size:calc(16px * var(--tz)); line-height:1.45;
        animation:tipin .12s ease-out; }
 .tip[hidden] { display:none; }
 @keyframes tipin { from { opacity:0; transform:translateY(2px); } to { opacity:1; transform:none; } }
-.tip-h { font-size:14px; opacity:.7; margin-bottom:2px; }
+.tip-h { font-size:calc(14px * var(--tz)); opacity:.7; margin-bottom:2px; }
 .tip-b { font-weight:700; }
 .tip-d { margin-top:1px; }
 .tip-n { margin-top:6px; padding-top:5px; border-top:1px solid color-mix(in srgb, currentColor 25%, transparent); font-variant-numeric:tabular-nums; }
 .tip-n > div { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.tip-t { opacity:.7; font-size:15px; font-weight:400; }
+.tip-t { opacity:.7; font-size:calc(15px * var(--tz, 1.2)); font-weight:400; }
 .tip-s { margin-top:3px; font-weight:700; }
 /* 테마 분위기 — 구조는 같고 장식만 */
 :root[data-tip-kind="sign"] .tip { border-left:4px solid var(--tip-border); }

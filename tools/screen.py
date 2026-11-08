@@ -213,6 +213,8 @@ async def run(a: argparse.Namespace) -> int:
             await p.call("Page.navigate", url=a.base)
             await p.wait("document.readyState==='complete'")
             await p.ev(f"localStorage.setItem('foremanToken', {json.dumps(api_token())}); 1")
+            if a.ui_scale:                                 # 글씨 크기(가+ · 가−) — 사용자가 보는 배율로 찍는다(11-09)
+                await p.ev(f"localStorage.setItem('foremanUiScale', {json.dumps(str(a.ui_scale))}); 1")
             if a.record:                                   # 녹화(13) — 점검 대신
                 bad += await record(p, a, out, report)
             for th in ([] if a.record else a.themes.split(",")):
@@ -285,6 +287,7 @@ def main() -> None:
     ap.add_argument("--wait", type=float, default=2.0, help="화면을 바꾼 뒤 기다릴 초(캐릭터가 걸어 들어갈 시간)")
     ap.add_argument("--clip", help="x,y,w,h(CSS 픽셀) — 그 부분만 2배로 한 장 더(<…>_clip.png)")
     ap.add_argument("--out")
+    ap.add_argument("--ui-scale", type=float, help="글씨 크기 배율(가+ · 가−, uiscale.js STEPS 중 하나 — 예: 1.3)")
     # 녹화(13) — 예: --record pipeline --themes office --sizes 1366x768 --views runshoes --clip 60,135,890,570 --gif-width 640
     ap.add_argument("--demo", help="정지 사진을 시연 장면(bridge/static/demo/<이름>.json)으로 — 점검 · 찍기는 그대로")
     ap.add_argument("--record", help="시연 대본 이름(bridge/static/demo/<이름>.json) — '-'면 대본 없이 실제 화면")

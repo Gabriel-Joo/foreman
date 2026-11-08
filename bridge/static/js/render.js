@@ -143,6 +143,8 @@ const APPR_DONE = { allowed: ['허용했습니다', 'ok'], denied: ['거부했�
 const APPR_BY = { browser: '화면에서', terminal: '터미널에서', bridge: '브리지가' };
 export function approvalCard(a, st) {      // 버튼은 data-aid · data-act(allow · deny · open) — 누르면 handleApprovalClick
   const done = a.status !== 'pending';
+  // 질문(AskUserQuestion)은 승인이 아니다 — 선택지를 버튼으로, 누르면 그 답이 세션에 바로 들어간다(11-09 사용자)
+  if (a.tool === 'AskUserQuestion') return questionCard(a, st, done);
   return `<div class="appr ${done ? 'done' : ''}">
     <div class="appr-main">
       <div><b>🔐 ${esc(projectLabel(st, a.project))}</b> · <span title="${esc(a.tool)} — 승인 #${a.id} · 걸린 규칙 ${esc(a.rule)}">${esc(a.tool)}</span></div>
@@ -156,10 +158,58 @@ export function approvalCard(a, st) {      // 버튼은 data-aid · data-act(all
       ${a.session_id ? `<button data-aid="${a.id}" data-sid="${a.session_id}" data-act="open" class="ghost small">세션</button>` : ''}</div>
   </div>`;
 }
+// 질문 카드 — 고른 것은 다시 그려도 남게 여기에(aid → 질문 번호 → 고른 선택지 이름들)
+const PICKS = new Map();
+function questionCard(a, st, done) {
+  const qs = !done && Array.isArray(a.questions) ? a.questions : null;
+  const picks = PICKS.get(a.id) || {};
+  // 질문이 하나 · 하나만 고름이면 누르는 즉시 보낸다. 여럿이거나 여러 개 고름이면 고른 뒤 [답 보내기]
+  const instant = qs && qs.length === 1 && !qs[0].multi;
+  const ready = qs && qs.every((q, i) => (picks[i] || []).length);
+  const body = qs ? qs.map((q, i) => `<div class="appr-qq">
+        <div class="appr-sum">${q.header ? `<span class="muted">[${esc(q.header)}]</span> ` : ''}${esc(q.question)}${q.multi ? ' <span class="small muted">(여러 개 고를 수 있습니다)</span>' : ''}</div>
+        ${q.options.map((o, j) => `<button class="appr-opt ${(picks[i] || []).includes(o.label) ? 'on' : ''}" data-aid="${a.id}" data-act="pick" data-qi="${i}" data-oi="${j}"
+          title="${esc(o.label)} — ${instant ? '누르면 이 답을 세션에 바로 넣습니다.' : '고른 뒤 [답 보내기]를 누릅니다.'}"><b>${esc(o.label)}</b>${o.description ? `<small>${esc(o.description)}</small>` : ''}</button>`).join('')}
+      </div>`).join('')
+    : `<div class="appr-q">${esc(a.target)}</div>`;
+  const doneTxt = a.status === 'allowed' ? '답했습니다 · 화면에서' : a.status === 'terminal' ? '답했습니다 · 터미널에서' : (APPR_DONE[a.status] || [a.status])[0];
+  return `<div class="appr appr-ask ${done ? 'done' : ''}">
+    <div class="appr-main">
+      <div><b>❓ ${esc(projectLabel(st, a.project))}</b> · <span title="세션의 질문 — 세션이 고를 것을 묻고 답을 기다립니다. 선택지를 누르면 그 답이 세션에 바로 들어갑니다. 터미널에서 답해도 됩니다.">세션이 묻습니다</span></div>
+      ${body}
+      ${a.error ? `<div class="small bad">${esc(a.error)}</div>` : ''}
+    </div>
+    <div class="appr-act">${done ? `<span class="small ${(APPR_DONE[a.status] || [])[1] || ''}">${esc(doneTxt)}</span>`
+      : qs ? (instant ? '' : `<button data-aid="${a.id}" data-act="answer" ${ready ? '' : 'disabled'} title="답 보내기 — 고른 답을 세션에 넣습니다.">답 보내기</button>`)
+        : '<span class="small warn" title="터미널에서 답합니다 — 브리지가 다시 떠서 이 질문의 선택지를 잃었습니다.">터미널에서 답합니다</span>'}
+      ${a.session_id ? `<button data-aid="${a.id}" data-sid="${a.session_id}" data-act="open" class="ghost small" title="세션 — 이 질문을 한 세션의 패널을 엽니다.">세션</button>` : ''}</div>
+  </div>`;
+}
+function sendAnswer(store, a, picks) {
+  const out = {};
+  a.questions.forEach((q, i) => { out[q.question] = picks[i] || []; });
+  store.answer(a.id, out);
+}
+
 export function handleApprovalClick(ev, store, openSession) {
   const b = ev.target.closest('button[data-aid]');
   if (!b) return;
   const aid = Number(b.dataset.aid);
+  if (b.dataset.act === 'pick' || b.dataset.act === 'answer') {
+    const a = store.state.approvals.get(aid);
+    if (!a || !Array.isArray(a.questions)) return;
+    const picks = PICKS.get(aid) || {};
+    if (b.dataset.act === 'pick') {
+      const qi = Number(b.dataset.qi), q = a.questions[qi], label = q.options[Number(b.dataset.oi)].label, cur = picks[qi] || [];
+      picks[qi] = q.multi ? (cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label]) : [label];
+      PICKS.set(aid, picks);
+      if (a.questions.length === 1 && !q.multi) { sendAnswer(store, a, picks); return; }
+      store.touch('approvals');
+      return;
+    }
+    sendAnswer(store, a, picks);
+    return;
+  }
   if (b.dataset.act === 'allow') store.decide(aid, 'allow');
   else if (b.dataset.act === 'deny') {
     const m = prompt('거부 이유를 적어 주세요. 모델에게 그대로 전달됩니다.', '사용자가 거부했습니다');

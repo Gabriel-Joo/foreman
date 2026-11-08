@@ -104,7 +104,22 @@ class Sprites {
 
   // 캐릭터 한 프레임 — mode: null · 'stone'(석화, 회색) · 'ghost'(유령, 푸른빛)
   // robe: 역할 색(#rrggbb) — 옷(채도 있고 너무 밝지 않은 픽셀)의 색상만 그 색으로 바꾼다(피부 · 외곽선은 그대로)
+  // 캐릭터 한 장 — { img(원본 캔버스), width · height(월드 px, 키운 크기), static }. 그리는 쪽은 drawImage(c.img, x, y, c.width, c.height).
+  // 11-09 사용자: "캐릭터가 작아서 뭐 하는지 안 보인다" — 방은 이미 화면에 꽉 차서, 방 안에서 캐릭터만 키운다(가구는 그대로).
+  // 크기를 여기 한 곳에서 바꾸므로 얼굴 칸 · 소품 자리 · 이름표 높이 · 점검(layoutAudit · propAudit)이 모두 같은 크기를 본다.
+  // 테마 sprites.char_scale로 바꿀 수 있다(기본 1.5 — 원본 2px이 3px, 사용자 결정)
   charFrame(name, kind, dir, f, mode, robe = null) {
+    const k = this.S.char_scale ?? 1.5;
+    const key = `C:${name}:${kind}:${dir}:${f}:${mode || ''}:${robe || ''}`;
+    let c = this.cache.get(key);
+    if (c) return c;
+    const img = this.charBase(name, kind, dir, f, mode, robe);
+    if (!img) return null;
+    c = { img, width: img.width * k, height: img.height * k, static: !!img.static, scale: k };
+    this.cache.set(key, c);
+    return c;
+  }
+  charBase(name, kind, dir, f, mode, robe = null) {
     const key = `c:${name}:${kind}:${dir}:${f}:${mode || ''}:${robe || ''}`;
     let c = this.cache.get(key);
     if (c) return c;

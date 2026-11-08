@@ -416,7 +416,10 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const sel = st.selected;
     list.sort((a, b) => (b.session_id === sel) - (a.session_id === sel));    // 고른 세션 것을 맨 위에
     const pend = list.filter((a) => a.status === 'pending');
-    $('pAppr').innerHTML = list.length ? `<h3>승인 대기 ${pend.length}</h3>` + list.map((a) => approvalCard(a, st)).join('') : '';
+    // 질문(AskUserQuestion)은 승인이 아니다 — 머리말도 따로 센다(11-09)
+    const nq = pend.filter((a) => a.tool === 'AskUserQuestion').length, na = pend.length - nq;
+    const head = [na ? `승인 대기 ${na}` : '', nq ? `질문 ${nq}` : ''].filter(Boolean).join(' · ') || '처리됨';
+    $('pAppr').innerHTML = list.length ? `<h3>${head}</h3>` + list.map((a) => approvalCard(a, st)).join('') : '';
     $('pCount').innerHTML = pend.length ? `<span class="warn">❗${pend.length}</span>` : '';
     $('pStripBadge').innerHTML = pend.length ? `<span class="oside-badge">${pend.length}</span>` : '';
     // 새 승인 요청이 오면 접혀 있어도 편다 — 승인은 기다리는 사람이 있다
