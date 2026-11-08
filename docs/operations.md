@@ -29,6 +29,8 @@
 ## 3. 돌리기 · 확인
 
 - 브리지는 systemd 사용자 유닛 `foreman-bridge`가 돌린다(11-06, `deploy/systemd/foreman-bridge.service`, linger 켬 — 부팅 때 자동 기동). 상태 · 로그: `systemctl --user status foreman-bridge`, `journalctl --user -u foreman-bridge -n 100`. 다시 띄우기(승인 대기 — `/api/dashboard`의 approvals pending — 가 없는지 본 뒤): `systemctl --user restart foreman-bridge`(10초 남짓 끊김)
+  - CC 세션 셸에서는 `systemctl --user`가 `Process org.freedesktop.systemd1 exited with status 1`로 실패한다(세션 환경의 DBUS가 VNC 쪽 버스를 가리키고 `XDG_RUNTIME_DIR`가 비어 있다, 11-08). 앞에 `XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus`를 붙인다(`journalctl --user`도 같다)
+- 브리지 주소는 `127.0.0.1:8000`이다(API 시험 때)
 - CC 세션 tmux: 서기 세션은 아직 tmux 세션 `foreman-bridge` 안에 있다(11-06 이름 변경 보류 — `cc-foreman`이 이미 있어서. 정하면 바꾼다). 런슈즈 `cc-runshoes`(11-05 이전, 11-06 정전 뒤 사라짐). 펫퍼민트는 아직 tmux 밖(pts/7) — 입력 주입 불가
 - 화면 자리 점검 도구 `.venv/bin/python tools/screen.py`
   - 헤드리스 크로미움으로 세 테마 × 세 크기의 `layoutAudit()` · `propAudit()` + PNG. 문제가 있으면 종료 코드 1
