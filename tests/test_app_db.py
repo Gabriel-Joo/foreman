@@ -17,6 +17,7 @@ def client():
     with TestClient(create_app(get_settings().model_copy(update={"watch_enabled": False, "notify_enabled": False,
                                                                  "terminal_enabled": False,
                                                                  "pipeline_enabled": False,
+                                                                 "losscheck_recover": False,   # 켜면 운영 브리지에서 도는 점검을 failed로 바꾼다(11-09)
                                                                  "usage_enabled": False}))) as c:   # 켜면 claude -p "/usage"를 부르고 운영 DB에 관찰을 남긴다
         yield c
 

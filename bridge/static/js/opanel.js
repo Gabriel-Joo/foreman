@@ -334,16 +334,30 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     let snoozed = false;
     try { snoozed = !!o && localStorage.getItem('ovlSnooze:' + s.id) === o.at; } catch { /* 읽지 못함 — 보인다 */ }
     if (!o || snoozed) { $('pOvl').hidden = true; return; }
-    const html = `<span class="warn">🔁 겹침 — 세션 ${o.with}「${esc(o.with_title || '')}」이 ${esc(o.since_kst)}부터 비슷한 일을 하고 있습니다. 겹친 낱말: ${esc(o.words.join(', '))}</span>
-      <button type="button" data-ovl="go" class="small" title="그 세션 보기 — 겹친 세션을 고릅니다.">세션 ${o.with} 보기</button>
-      <button type="button" data-ovl="later" class="ghost small" title="나중에 — 이 겹침 띠를 숨깁니다. 일부러 나눠 시킨 것이면 그대로 두면 됩니다.">나중에</button>`;
-    put('pOvl', 'ovl', html);
+    // 11-08 다른 프로젝트 — 같은 글이 다른 프로젝트 세션에 이미 들어갔다(잘못된 창에 붙였을 수 있다). 바로 일을 시작하므로 [작업 중단]도
+    const html = o.cross
+      ? `<span class="bad">📋 다른 프로젝트 — 이 글은 ${esc(o.with_label || o.with_project || '')} 세션 ${o.with}「${esc(o.with_title || '')}」에 ${esc(o.since_kst)}에 들어간 글과 거의 같습니다. 잘못된 창에 붙여 넣었을 수 있습니다.</span>
+      ${s.state === 'ACTIVE' ? '<button type="button" data-ovl="stop" class="small warn" title="이 세션 작업 중단 — 지금 하는 작업만 멈춥니다(Esc). 세션은 살아 있습니다.">이 세션 작업 중단</button>' : ''}
+      <button type="button" data-ovl="go" class="small" title="그 세션 보기 — 같은 글을 받은 세션을 고릅니다.">세션 ${o.with} 보기</button>`
+      : `<span class="warn">🔁 겹침 — 세션 ${o.with}「${esc(o.with_title || '')}」이 ${esc(o.since_kst)}부터 비슷한 일을 하고 있습니다. 겹친 낱말: ${esc(o.words.join(', '))}</span>
+      <button type="button" data-ovl="go" class="small" title="그 세션 보기 — 겹친 세션을 고릅니다.">세션 ${o.with} 보기</button>`;
+    const later = `
+      <button type="button" data-ovl="later" class="ghost small" title="나중에 — 이 띠를 숨깁니다. 일부러 그렇게 시킨 것이면 그대로 두면 됩니다.">나중에</button>`;
+    put('pOvl', 'ovl', html + later);
     $('pOvl').hidden = false;
   }
-  $('pOvl').addEventListener('click', (ev) => {
+  $('pOvl').addEventListener('click', async (ev) => {
     const b = ev.target.closest('[data-ovl]');
     const s = store.state.sessions.get(store.state.selected);
     if (!b || !s || !s.overlap) return;
+    if (b.dataset.ovl === 'stop') {
+      b.disabled = true;
+      const r = await fetch(`/api/sessions/${s.id}/action`, { method: 'POST', headers: store.headers(true), body: JSON.stringify({ action: 'interrupt' }) });
+      const j = await r.json().catch(() => ({}));
+      store.state.lastInput = { sessionId: s.id, ts: Date.now(), ok: r.ok, msg: r.ok ? '이 세션의 작업을 중단했습니다.' : `중단하지 못했습니다 — ${j.refused || j.detail || r.status}` };
+      store.touch('panel');
+      return;
+    }
     if (b.dataset.ovl === 'later') {
       try { localStorage.setItem('ovlSnooze:' + s.id, s.overlap.at); } catch { /* 저장 못 함 — 이번만 숨긴다 */ }
       $('pOvl').hidden = true;
