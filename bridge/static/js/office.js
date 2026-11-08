@@ -34,9 +34,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       <div class="otop-row otop-sub">
         <span id="oStat" class="ostat"></span>
         <a id="oUsage" class="ghost ousage" href="/usage" data-tip="사용량 — 누르면 한도 · 어디서 나가는지 봅니다.">사용량</a>
-        <span class="otheme" role="group" aria-label="테마">${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장'], ['plain', '도형']].map(([k, v]) => k === theme.name
+        <!-- 11-08 도형 · 클래식은 머리말에서 뺐다(사용자 — 안 쓴다). 주소 /?theme=plain · /classic으로는 그대로 열린다 -->
+        <span class="otheme" role="group" aria-label="테마">${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장']].map(([k, v]) => k === theme.name
           ? `<span class="oproj-b on" aria-current="true" title="${v} — 지금 테마입니다.">${v}</span>` : `<a class="oproj-b" href="/?theme=${k}" title="${v} — 이 테마로 바꿉니다.">${v}</a>`).join('')}</span>
-        <a class="oproj-b" href="/classic" title="클래식 — 카드 목록 화면으로 갑니다.">클래식</a>
         <span class="ofont" role="group" aria-label="글씨 크기"><button id="oFontDn" class="ghost" title="글씨 작게 — 머리말 · 옆 패널 · 터미널 글씨를 한 단계 줄입니다.">가−</button><span id="oFontV" class="muted"></span><button id="oFontUp" class="ghost" title="글씨 크게 — 머리말 · 옆 패널 · 터미널 글씨를 한 단계 키웁니다.">가+</button></span>
         <span id="oConn" class="conn"></span>
         <button id="oTok" class="ghost" title="토큰 — API 토큰을 다시 넣습니다.">토큰</button>
@@ -124,7 +124,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const bad = usage.failed || !rd.ok;
     const max = usageMax();
     el.className = 'ghost ousage' + (bad ? ' bad' : max >= 95 ? ' bad' : max >= 80 ? ' warn' : '');
-    el.textContent = usage.failed ? '⚠ 사용량' : (bad ? '⚠ ' : '') + (parts.join(' · ') || '사용량');
+    el.textContent = usage.failed ? '⚠ 사용량' : (bad ? '⚠ ' : '') + (parts.length ? `사용량: ${parts.join(' · ')}` : '사용량');
     const lines = ls.map((l) => `${l.label} ${usagePct(l) == null ? '—' : Math.round(usagePct(l)) + '%'}${l.eta_before_reset ? ' — 이 속도면 리셋 전에 100%' : ''}`);
     el.dataset.tip = `사용량 — 누르면 한도 · 어디서 나가는지 봅니다.\n${lines.join('\n')}`
       + (usage.failed ? `\n불러오지 못했습니다(${usage.failed}).` : !rd.ok ? `\n/usage를 읽지 못하고 있습니다: ${rd.error || '오래됐습니다'}` : '');
@@ -561,8 +561,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const q = view === 'hq' ? world.hq : view === 'map' ? null : roomByView();
     const r = !q ? { x: -1, y: -3, w: world.w + 2, h: world.h + 4 }
       : q.hq ? { x: q.x - 0.3, y: q.y - 0.3, w: q.w + 0.6, h: q.h + 5.6 }      // 아래에 현장 카드 자리
-      // 11-08 위 2.5 → 1.9칸 · 아래 0.5 → 0.4(사용자 — 여백이 많다). 방 위 카드는 남는 높이만큼 줄을 줄여 그린다(drawBadge)
-      : { x: q.x - 0.4, y: q.y - 1.9, w: q.w + 0.8, h: q.h + 2.3 };
+      // 11-08 위 2.5 → 0.5칸(방 위 카드를 평소엔 빼서 — drawBadge) · 아래 0.4(사용자 — 여백이 많다)
+      : { x: q.x - 0.4, y: q.y - 0.5, w: q.w + 0.8, h: q.h + 0.9 };
     const s = Math.min(W / (r.w * T), H / (r.h * T)) * 0.99;
     camT.s = s; camT.x = (r.x + r.w / 2) * T; camT.y = (r.y + r.h / 2) * T;
   }
@@ -1961,13 +1961,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const lines = [];
     lines.push([`${r.label}`, P.label, 'bold 17px']);
     lines.push([`작업 ${st.ACTIVE || 0} · 쉼 ${st.IDLE || 0}${st.SUSPENDED ? ' · 멈춤 ' + st.SUSPENDED : ''}${st.subs ? ' · 일꾼 ' + st.subs : ''}${r.overflow ? ' · 자리 밖 +' + r.overflow : ''}`, P.muted, '15px']);
-    if (st.pending) lines.push([`❗ 승인 대기 ${st.pending}`, P.warn, 'bold 16px']);
+    // 넷째 칸 true = 경고 줄 — 한 방을 볼 때는 이 줄만 카드로 띄운다(11-08, 나머지는 머리말과 겹친다)
+    if (st.pending) lines.push([`❗ 승인 대기 ${st.pending}`, P.warn, 'bold 16px', true]);
     const pp = r.pipe;
     const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
-    if (broke) lines.push([`🔥 파이프라인 실패 · ${broke}`, P.bad, 'bold 15px']);
-    else if (r.st_argocd === 'waiting') lines.push(['⏸ Sync 대기', P.warn, '15px']);
-    if (pp && pp.webhook_broken) lines.push(['⚠ 웹훅 끊김 의심', P.bad, '15px']);
-    if (pp && pp.watch && pp.watch.state !== 'ok') lines.push([`⚠ 빌드 알림 ${pp.watch.state === 'missing' ? '없음' : '늦음'}`, pp.watch.state === 'missing' ? P.bad : P.warn, '15px']);
+    if (broke) lines.push([`🔥 파이프라인 실패 · ${broke}`, P.bad, 'bold 15px', true]);
+    else if (r.st_argocd === 'waiting') lines.push(['⏸ Sync 대기', P.warn, '15px', true]);
+    if (pp && pp.webhook_broken) lines.push(['⚠ 웹훅 끊김 의심', P.bad, '15px', true]);
+    if (pp && pp.watch && pp.watch.state !== 'ok') lines.push([`⚠ 빌드 알림 ${pp.watch.state === 'missing' ? '없음' : '늦음'}`, pp.watch.state === 'missing' ? P.bad : P.warn, '15px', true]);
     // 토큰 — 지금 어느 방이 쓰고 있나(사용자 요청 11-03). 오늘 누적 + 최근 10분 증가
     const hot = r.rate > 2e6 ? P.bad : r.rate > 3e5 ? P.warn : r.rate > 0 ? P.act : P.muted;
     lines.push([`토큰 오늘 출력 ${fmt(st.tout || 0)} · 입력 ${fmt(st.tin || 0)}`, P.muted, '15px']);
@@ -1989,8 +1990,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     for (let i = out.length - 1; out.length > maxLines && i >= 0; i--) if (OPT.test(out[i][0])) out.splice(i, 1);
     return out;
   }
-  function drawCard(r, bx, by, w, minW = 210, maxW = 400, maxLines = 99) {
-    const b = badgeLines(r), { border, thick } = b, lines = fitLines(b.lines, maxLines);
+  function cardLines(r, alertsOnly) {
+    const all = badgeLines(r).lines;
+    return alertsOnly ? (all.some((l) => l[3]) ? [all[0], ...all.filter((l) => l[3])] : []) : all;
+  }
+  function drawCard(r, bx, by, w, minW = 210, maxW = 400, maxLines = 99, alertsOnly = false) {
+    const b = badgeLines(r), { border, thick } = b, lines = fitLines(cardLines(r, alertsOnly), maxLines);
     w = Math.max(minW, Math.min(w, maxW));
     const h = lines.length * CARD_LH + 8;
     ctx.fillStyle = '#0d0f14e6'; ctx.fillRect(bx, by, w, h);
@@ -2014,9 +2019,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (view === 'hq' || (zoomedIn && (r.name || '_lounge') !== view)) { r.badge = null; return; }   // 안 그린 배지는 클릭도 안 받는다
     const [sx, sy] = toScreen(r.x * T, r.y * T);
     const [ex] = toScreen((r.x + r.w) * T, 0);
-    const maxLines = Math.max(2, Math.floor((sy - 10 - 8) / CARD_LH));      // 방 위 공간에 들어가는 줄 수
-    const h = fitLines(badgeLines(r).lines, maxLines).length * CARD_LH + 8;
-    r.badge = drawCard(r, sx, Math.max(4, sy - h - 6), ex - sx, 210, 400, maxLines);
+    // 11-08 한 방을 볼 때는 경고(승인 대기 · 파이프라인 · 웹훅 · 빌드 알림)가 있을 때만 그 줄만 — 작업 수 · 토큰은 머리말
+    // (프로젝트 버튼 · 툴팁)과 겹쳐 뺐고, 그만큼 방을 키웠다(aim). 경고 카드는 방 윗벽 위에 겹쳐 그린다
+    if (zoomedIn && !cardLines(r, true).length) { r.badge = null; return; }
+    const maxLines = zoomedIn ? 6 : Math.max(2, Math.floor((sy - 10 - 8) / CARD_LH));      // 전체 화면: 방 위 공간에 들어가는 줄 수
+    const h = fitLines(cardLines(r, zoomedIn), maxLines).length * CARD_LH + 8;
+    r.badge = drawCard(r, sx, Math.max(4, sy - h - 6), ex - sx, 210, 400, maxLines, zoomedIn);
   }
 
   // ── 감독실(1단) ────────────────────────────────────
@@ -2185,7 +2193,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const unseen = lastReply > Math.max(openedAt, seenAt.get(key) || 0);
       const dot = pend ? '<i class="pdot warn"></i>' : unseen ? '<i class="pdot new"></i>' : '';
       const nums = [act ? `<span class="pn">작업 ${act}</span>` : '', pend ? `<span class="pn warn">승인 ${pend}</span>` : ''].join('');
-      const tip = `${r.label} — 이 방으로 가서 주요 세션 대화를 엽니다.${act ? ` 작업 중 ${act}.` : ''}${pend ? ` 승인 대기 ${pend}.` : ''}${unseen ? ' 안 본 새 답이 있습니다.' : ''}`;
+      const rs = r.stats || {};
+      const tip = `${r.label} — 이 방으로 가서 주요 세션 대화를 엽니다.${act ? ` 작업 중 ${act}.` : ''}${pend ? ` 승인 대기 ${pend}.` : ''}${unseen ? ' 안 본 새 답이 있습니다.' : ''}`
+        + `\n오늘 출력 토큰 ${fmt(rs.tout || 0)} · 입력 ${fmt(rs.tin || 0)}${rs.opus_out ? ` · Opus 출력 ${fmt(rs.opus_out)}` : ''}`;   // 11-08 방 카드에서 옮김
       return `<button class="ghost oproj-b${view === key ? ' on' : ''}${pend ? ' pend' : ''}" data-room="${esc(key)}" data-tip="${esc(tip)}" aria-pressed="${view === key}">${dot}${esc(r.label)}${nums}</button>`;
     }).join('');
     if ($('oProj').innerHTML !== html) $('oProj').innerHTML = html;
@@ -2208,7 +2218,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       : (ig.stuck || []).map((x) => `${x.session} ${x.minutes}분 · ${x.failures}번 — ${x.error}`).join('\n');
     $('oAlerts').innerHTML = (pend ? `<button id="oPend" class="ghost warn" title="승인 대기 — 패널에서 승인하거나 거부합니다.">❗ 승인 대기 ${pend}</button>` : '') +
       (ig && !ig.ok ? `<span class="bad" title="${esc(igWhy)}">⚠ ${ig.stalled ? '와처 멈춤' : `적재 막힘 ${(ig.stuck || []).length}개 세션`}</span>` : '');
-    const stat = `작업 <b>${active}</b>/${live}${subs ? ` · 서브 ${subs}` : ''} · 출력 ${fmt(outToday)}`;
+    const stat = `작업 <b>${active}</b>/${live}${subs ? ` · 서브 ${subs}` : ''} · 출력 토큰 ${fmt(outToday)}`;
     if ($('oStat').innerHTML !== stat) $('oStat').innerHTML = stat;
     $('oStat').title = `작업 중 ${active} / 살아 있는 세션 ${live}${subs ? ` · 서브에이전트 ${subs}` : ''} · 오늘 출력 토큰 ${fmt(outToday)}`;
     $('oMap').disabled = view === 'hq';
