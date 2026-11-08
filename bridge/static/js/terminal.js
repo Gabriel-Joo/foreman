@@ -17,7 +17,7 @@ export function createTerminal(store) {
       <button id="termToggle" class="ghost" aria-expanded="false">▲ 터미널</button>
       <span id="termBadge"></span>
       <span id="termLast" class="small muted term-last"></span>
-      <span class="right small muted term-note">사람이 직접 치는 셸 · 승인 정책 없음 · 친 명령은 마스킹해서 기록</span>
+      <span class="right small muted term-note">사람이 직접 치는 셸 · 승인 정책 없음 · 친 명령은 비밀값을 가려 기록</span>
     </div>
     <div id="termReqs" class="term-reqs"></div>
     <div class="term-body"><iframe id="termFrame" title="FOREMAN 터미널"></iframe><div id="termMsg" class="term-msg"></div></div>`;
@@ -34,10 +34,10 @@ export function createTerminal(store) {
     try {
       // 쿠키는 대시보드가 연결될 때 이미 받았다(store.js hello). 패널을 열 때 한 번 더 받아 만료 · 재시작에 대비한다
       const j = await store.terminalSession();
-      $('termMsg').textContent = j.running ? '' : 'ttyd가 떠 있지 않다 — 브리지 로그를 본다';
+      $('termMsg').textContent = j.running ? '' : '터미널 서버가 꺼져 있습니다 — 브리지 로그를 봅니다';
       if (!loaded || force) { frame.src = '/terminal/'; loaded = true; }
     } catch (err) {
-      $('termMsg').textContent = `터미널을 열지 못했다 — ${err.message || err}`;
+      $('termMsg').textContent = `터미널을 열지 못했습니다 — ${err.message || err}`;
     }
   }
   function focusShell() {
@@ -99,7 +99,7 @@ export function createTerminal(store) {
     if (res) {
       html += `<div class="term-req ${res.ok ? 'ok-b' : 'bad-b'}"><div class="term-req-main">
         <span class="${res.ok ? 'ok' : 'bad'}">${esc(PROJ[res.project] || res.project || '')} 결과(종료 ${esc(res.exit)}): ${esc(res.msg)}</span>
-        ${res.output ? `<details${keep('term:result')}><summary class="small">출력(마스킹)</summary><code>${esc(res.output)}</code></details>` : ''}</div>
+        ${res.output ? `<details${keep('term:result')}><summary class="small">출력(비밀값 가림)</summary><code>${esc(res.output)}</code></details>` : ''}</div>
         <div class="appr-act"><button data-act="clear" class="ghost">지우기</button></div></div>`;
     }
     $('termReqs').innerHTML = html;

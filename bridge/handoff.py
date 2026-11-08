@@ -325,7 +325,7 @@ class HandoffManager:
         elif live.state == "T":
             why = "일시정지된 세션입니다" + (" (FOREMAN이 멈춤)" if stopped_pid else " (사람이 멈춤 — 건드리지 않습니다)")
         elif not te:
-            why = "tmux 밖에서 도는 세션이라 화면에서 조작할 수 없습니다"
+            why = "FOREMAN 터미널(tmux) 밖에서 띄운 세션이라 화면에서 보내거나 끌 수 없습니다"
         elif busy:
             why = "작업 중입니다"
         out["why"] = why
@@ -447,7 +447,7 @@ class HandoffManager:
     async def request_live(self, row: SessionRow, kind: str = "snapshot", fmt: str = "v2") -> dict[str, Any]:
         """살아 있는 tmux 세션에 요약을 시킨다. 보내고 바로 돌아오고, 응답은 뒤에서 기다린다."""
         if not row.cc:
-            raise Refused("CC 세션 ID가 없습니다")
+            raise Refused("세션 기록을 찾지 못했습니다")
         if await self._pending(row.id) or await self._promote_busy(row.id):
             raise Refused("이미 요약 · 대화 결정 문서에 적기를 기다리는 중입니다")
         _t, ls, busy = await resolve(row.cc, self.sessions_dir)
@@ -863,7 +863,7 @@ class HandoffManager:
     # ── 세션 조작 ────────────────────────────────────────
     async def action(self, row: SessionRow, act: str) -> dict[str, Any]:
         if not row.cc:
-            raise Refused("CC 세션 ID가 없습니다")
+            raise Refused("세션 기록을 찾지 못했습니다")
         if act == "resume":
             return await self._resume(row)
         t, ls, busy = await resolve(row.cc, self.sessions_dir)

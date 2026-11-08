@@ -127,7 +127,8 @@ export function mountNewSession(store, { onCreated }) {
       const r = await api('POST', '/api/spawn', { cwd, summary_id, title: $('nsTitle').value.trim() || null,
         role: $('nsRole').value, model: $('nsModel').value || null });
       if (r.session_id) {
-        msg(`새 세션을 띄웠습니다(tmux ${r.tmux}${r.model ? ' · ' + r.model : ''}).${summary_id ? (r.injected ? ' 요약을 넣었습니다.' : ' 요약은 넣지 못했습니다.') : ''}${r.note ? ' ' + r.note : ''}`, r.note ? 'warn' : 'ok');
+        $('nsMsg').title = r.tmux ? `새 세션 — tmux 창 ${r.tmux}` : '';
+        msg(`새 세션을 띄웠습니다${r.model ? `(${r.model})` : ''}.${summary_id ? (r.injected ? ' 요약을 넣었습니다.' : ' 요약은 넣지 못했습니다.') : ''}${r.note ? ' ' + r.note : ''}`, r.note ? 'warn' : 'ok');
         await store.loadSnapshot();
         if (onCreated) onCreated(r.session_id);
         setTimeout(close, r.note ? 4000 : 900);

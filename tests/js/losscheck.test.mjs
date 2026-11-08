@@ -9,7 +9,7 @@ test('잃은 것 — 없으면 시작 버튼, 도는 중이면 묶음 진행', (
   assert.match(none, /data-act="loss-run"(?![^>]*disabled)/);
   assert.ok(none.includes('아직 없습니다'));
   const run = lossGroup({ id: 4, status: 'running', groups_done: 2, groups_total: 5, cost_usd: 0.8, model: 'sonnet', created_at: NOW }, false, null);
-  assert.ok(run.includes('도는 중') && run.includes('묶음 2/5') && run.includes('0.80달러'));
+  assert.ok(run.includes('도는 중') && run.includes('2/5 진행') && run.includes('0.80달러'));
   assert.match(run, /data-act="loss-run"[^>]*disabled/);                  // 도는 동안 다시 못 누른다
 });
 

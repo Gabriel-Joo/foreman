@@ -218,7 +218,10 @@ body { --term-h:0px; }
 
 /* 11-05 툴팁 하나(tip.js) — 이름표 · 캐릭터 · 출하 라인 · 버튼 · 패널이 같은 모양 · 크기 · 위치 · 지연.
    색 · 글꼴은 테마 이름표(--tip-*: 양피지 · 사인판 · 안전 표지판). 없으면 카드 색 */
-.tip { position:fixed; z-index:50; max-width:320px; pointer-events:none; padding:7px 11px 8px; border-radius:6px;
+/* 11-09 모양 하나: 제목(.tip-b) → 설명(.tip-d) → 숫자(.tip-n, 한 줄에 하나). 한글은 낱말 단위로만 끊는다(keep-all) —
+   글자 단위 기본 줄바꿈 + 320px 폭에서 문장이 아무 데서나 끊겼다 */
+.tip { position:fixed; z-index:50; max-width:min(440px, calc(100vw - 16px)); pointer-events:none; padding:7px 11px 8px; border-radius:6px;
+       word-break:keep-all; overflow-wrap:anywhere;
        background:var(--tip-bg, var(--card)); color:var(--tip-fg, var(--fg)); border:1px solid var(--tip-border, var(--line));
        box-shadow:0 4px 14px rgba(0,0,0,.35); font:var(--tip-font, 16px/1.45 system-ui, sans-serif); font-size:16px; line-height:1.45;
        animation:tipin .12s ease-out; }
@@ -226,6 +229,9 @@ body { --term-h:0px; }
 @keyframes tipin { from { opacity:0; transform:translateY(2px); } to { opacity:1; transform:none; } }
 .tip-h { font-size:14px; opacity:.7; margin-bottom:2px; }
 .tip-b { font-weight:700; }
+.tip-d { margin-top:1px; }
+.tip-n { margin-top:6px; padding-top:5px; border-top:1px solid color-mix(in srgb, currentColor 25%, transparent); font-variant-numeric:tabular-nums; }
+.tip-n > div { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .tip-t { opacity:.7; font-size:15px; font-weight:400; }
 .tip-s { margin-top:3px; font-weight:700; }
 /* 테마 분위기 — 구조는 같고 장식만 */
