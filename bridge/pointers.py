@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -79,26 +80,38 @@ async def _git(repo: str, *args: str) -> str:
     return out.decode(errors="replace").strip()
 
 
-async def check(pointers: list[Pointer], repo: str) -> list[Pointer]:
-    """있나 · 줄 범위 · 절 이름이 맞나(틀리면 ok=False), 문서 뒤로 커밋이 얼마나 쌓였나(많으면 stale — 막지는 않는다)."""
+def _problem(p: Pointer, repo: str) -> str | None:
+    """그 저장소(폴더)에서 이 읽을 곳이 맞나 — 틀리면 까닭, 맞으면 None."""
+    f = _resolve(repo, p.path)
+    if not f.is_file():
+        return "파일이 없습니다"
+    try:
+        lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return "읽을 수 없습니다"
+    if p.start is not None and (p.start < 1 or (p.end or p.start) > len(lines) or (p.end or p.start) < p.start):
+        return f"줄 범위가 맞지 않습니다(파일은 {len(lines)}줄)"
+    if p.section and not any(p.section in ln for ln in lines):
+        return f"「{p.section}」을(를) 찾지 못했습니다"
+    return None
+
+
+async def check(pointers: list[Pointer], repo: str, other: str | None = None,
+                other_note: str | None = None) -> list[Pointer]:
+    """있나 · 줄 범위 · 절 이름이 맞나(틀리면 ok=False), 문서 뒤로 커밋이 얼마나 쌓였나(많으면 stale — 막지는 않는다).
+    repo — 읽는 세션이 보는 폴더(받은 세션의 폴더, 넣기 전이면 새 세션이 시작할 원본 폴더).
+    other — 같은 저장소의 다른 쪽(원본 ↔ worktree). repo에서 틀렸는데 other에서 맞으면 까닭 뒤에 other_note를 붙인다
+    (11-09 런슈즈: 쓴 세션의 worktree가 main보다 뒤처져, main에는 있는 절을 "찾지 못했다"고 막았다)."""
     for p in pointers:
         if not p.path:
             continue
+        prob = _problem(p, repo)
+        if prob:
+            if other and other_note and os.path.realpath(other) != os.path.realpath(repo) and _problem(p, other) is None:
+                prob = f"{prob} — {other_note}"
+            p.ok, p.problem = False, prob
+            continue
         f = _resolve(repo, p.path)
-        if not f.is_file():
-            p.ok, p.problem = False, "파일이 없습니다"
-            continue
-        try:
-            lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError:
-            p.ok, p.problem = False, "읽을 수 없습니다"
-            continue
-        if p.start is not None and (p.start < 1 or (p.end or p.start) > len(lines) or (p.end or p.start) < p.start):
-            p.ok, p.problem = False, f"줄 범위가 맞지 않습니다(파일은 {len(lines)}줄)"
-            continue
-        if p.section and not any(p.section in ln for ln in lines):
-            p.ok, p.problem = False, f"「{p.section}」을(를) 찾지 못했습니다"
-            continue
         try:
             rel = str(f.resolve().relative_to(Path(repo).resolve()))
         except ValueError:
@@ -130,13 +143,18 @@ def _key(repo: str, p: str) -> str:
 
 
 def reads(pointers: list[Pointer], repo: str, read_targets: list[str]) -> dict[str, Any]:
-    """새 세션의 Read 대상(절대 경로)과 맞댄다 — {total, read, missing: [path], auto: [path]}.
-    auto는 Read 없이도 세션에 들어가 있는 문서(맨 위 CLAUDE.md) — 읽음으로 세고 따로 보인다(늘 "안 읽음"으로 뜨지 않게)."""
+    """새 세션의 Read 대상(절대 경로)과 맞댄다 — {total, read, missing: [path], auto: [path], failed: [{path, problem}]}.
+    auto는 Read 없이도 세션에 들어가 있는 문서(맨 위 CLAUDE.md) — 읽음으로 세고 따로 보인다(늘 "안 읽음"으로 뜨지 않게).
+    failed — check()에서 틀린 곳(그 세션 폴더에 파일 · 절이 없다). 열었어도 찾던 것을 못 읽었으니 읽음으로 세지 않는다(11-09 사용자:
+    "6/6 읽음"에 ✗가 섞였다)."""
     got = {_key(repo, t) for t in read_targets if t}
     want = [p for p in pointers if p.path]
     auto = [p.path for p in want if _key(repo, p.path) in {"repo:" + n for n in AUTO_LOADED}]
-    missing = [p.path for p in want if p.path not in auto and _key(repo, p.path) not in got]
-    return {"total": len(want), "read": len(want) - len(missing), "missing": missing, "auto": auto}
+    failed = [{"path": p.path, "problem": p.problem} for p in want if not p.ok]
+    bad = {f["path"] for f in failed}
+    missing = [p.path for p in want if p.path not in bad and p.path not in auto and _key(repo, p.path) not in got]
+    return {"total": len(want), "read": len(want) - len(missing) - len(bad), "missing": missing, "auto": auto,
+            "failed": failed}
 
 
 def as_dicts(pointers: list[Pointer]) -> list[dict[str, Any]]:

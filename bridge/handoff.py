@@ -615,8 +615,12 @@ class HandoffManager:
                    wt.split(row.cwd)[0], row.cc if replace else None)}
         if out["v2"]:
             # 2판 — 읽을 곳을 기계로 확인한다. 틀린 곳(없는 파일 · 줄 · 절)이 있으면 넣지 않는다(요약을 고치면 된다)
-            repo = await repo_root(row.cwd if row else None)
-            ps = await ptr.check(ptr.parse(s["body"]), repo or "")
+            # 11-09 기준은 새 세션이 시작할 원본 폴더(새 worktree도 base 브랜치에서 갈라진다). 전에는 요약을 쓴 세션의 폴더였다 —
+            # 그 worktree가 main보다 뒤처지면 main에는 있는 절을 "찾지 못했다"고 막았다(런슈즈). 쓴 worktree에만 있으면 그 까닭을 붙인다
+            src = await repo_root(row.cwd if row else None)
+            base = wt.split(src)[0] if src else None
+            ps = await ptr.check(ptr.parse(s["body"]), base or "", other=src,
+                                 other_note="원본 폴더에는 아직 없고 요약을 쓴 worktree에만 있습니다(합친 뒤 넣습니다)")
             out["pointers"] = ptr.as_dicts(ps)
             bad = [p for p in ps if not p.ok]
             if not ps:
@@ -645,8 +649,18 @@ class HandoffManager:
                 "SELECT target FROM event WHERE session_id = :i AND type = 'tool_use' AND tool = 'Read'"),
                 {"i": row.id})).all()]
         repo = await repo_root(row.cwd)
+        # 11-09 받은 세션이 실제로 보는 폴더 기준으로 읽을 곳을 확인한다 — 틀린 곳은 읽음에서 뺀다. 그 세션이 worktree인데
+        # 거기 없고 원본(main)에는 있으면 "뒤처졌다"고 알린다(런슈즈: worktree가 main보다 뒤처져 절이 없었다)
+        base = wt.split(repo)[0] if repo else None
+        note = None
+        if repo and base and os.path.realpath(base) != os.path.realpath(repo):
+            bb = await wt.base_branch(base)
+            n = await ptr._git(repo, "rev-list", "--count", f"HEAD..{bb}")
+            note = (f"이 worktree가 {bb}보다 커밋 {n}개 뒤처졌습니다({bb}에는 있습니다) — fast-forward하면 읽을 수 있습니다"
+                    if n.isdigit() and int(n) else f"{bb}에는 있습니다")
+        ps = await ptr.check(ptr.parse(s[1]), repo or "", other=base, other_note=note)
         # drift — 넣을 때 붙인 "인계 뒤 바뀐 것"(11-06). 받은 세션 패널에 보인다
-        return {"summary_id": s[0], "drift": self._json(s[2]) or []} | ptr.reads(ptr.parse(s[1]), repo or "", targets)
+        return {"summary_id": s[0], "drift": self._json(s[2]) or []} | ptr.reads(ps, repo or "", targets)
 
     async def resend_reads(self, row: SessionRow) -> dict[str, Any]:
         """안 읽은 곳만 다시 — 그 세션에 "아직 읽지 않은 곳"을 보낸다."""
