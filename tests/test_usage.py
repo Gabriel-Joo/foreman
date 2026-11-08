@@ -235,6 +235,14 @@ def test_alerts_thresholds_eta_once_and_after_restart():
             async with eng.connect() as c:
                 low = (await c.execute(text("SELECT decision FROM notification WHERE rule = :r"), {"r": f"usage:{limw.key}:80:01031500"})).scalar()
             assert low == "skipped"                                                  # 95%를 보냈으니 80%는 보낸 것으로
+            # 11-08 — /usage의 리셋 글이 1분 흔들려도(3pm → 2:59pm) 같은 창이다. 키가 달라 두 번 나갔다
+            jitter = body.replace("Jan 1, 3pm", "Jan 1, 2:59pm").replace("Jan 3, 3pm", "Jan 3, 2:59pm")
+
+            async def reader2():
+                return {"result": jitter}
+            mon3 = UsageMonitor(eng, cfg, _Notifier(), reader=reader2)
+            assert await mon3.poll(now + timedelta(minutes=3))
+            assert await mon3.check_alerts(now + timedelta(minutes=3)) == []
         finally:
             async with eng.begin() as c:
                 await c.execute(text("DELETE FROM usage_observation WHERE limit_key LIKE :k"), {"k": tag + "%"})

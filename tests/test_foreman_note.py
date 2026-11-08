@@ -117,7 +117,9 @@ def test_waker_plans_once_and_caps():
     async def go(eng, proj):
         n, d = FakeNotifier(), FakeDispatcher(eng, proj)
         async with eng.connect() as c:          # 오늘 이미 있는 자동 계획 수(실제 DB) — 상한을 그 위로 잡는다
-            day0 = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=1)
+            # 코드와 같은 "오늘"(KST 자정부터) — 24시간 전으로 잡으면 자정 직후 base가 커져 상한이 높아졌다(11-09 00:04 실패)
+            kst = datetime.now(UTC) + timedelta(hours=9)
+            day0 = (kst.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=9)).replace(tzinfo=None)
             base = (await c.execute(text("SELECT COUNT(*) FROM dispatch WHERE origin = 'wake' AND created_at >= :t"), {"t": day0})).scalar()
         w = Waker(eng, d, n, WakeRules(daily_max=base + 2, public_url="https://f.dev"))
         w.failure(proj, "build_failed", f"build:{proj}:1", "❌ 파이프라인 실패 · Jenkins 빌드\n커밋 abc")

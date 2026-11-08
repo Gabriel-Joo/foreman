@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 log = logging.getLogger("foreman.usage")
 
@@ -495,6 +495,9 @@ class UsageMonitor:
             if pct is None:
                 continue
             tag = f"{x['reset_at']:%m%d%H%M}" if x["reset_at"] else "na"
+            # 같은 창의 다른 키 — /usage의 리셋 글이 읽을 때마다 1분씩 흔들린다(11-08 21:59 ↔ 22:00, 17:19 ↔ 17:20 —
+            # 95% · ⏳ 알림이 같은 창에 두 번 나갔다). 앞뒤 5분 안의 키는 같은 창으로 본다
+            near = [f"{x['reset_at'] + timedelta(minutes=m):%m%d%H%M}" for m in range(-5, 6) if m] if x["reset_at"] else []
             src = (f"측정 {x['measured_pct']:g}% · {self._local(x['measured_at'])} 읽음" if x["measured_pct"] is not None else "측정 없음")
             reset = f"리셋 {self._local(x['reset_at'])}" if x["reset_at"] else "리셋 모름"
             eta = f" 이 속도면 {self._local(x['eta_100'])}에 100%." if x["eta_100"] and x["eta_before_reset"] else ""
@@ -503,27 +506,33 @@ class UsageMonitor:
                 if pct >= thr:
                     rules = [f"usage:{x['key']}:{t}:{tag}" for t in (95, 80) if t <= thr]   # 95%를 보냈으면 80%는 따로 안 보낸다
                     if await self._once(rules[0], f"{'🛑' if thr >= 95 else '⚠'} {x['label']} 사용량 약 {pct:.0f}% — {src}, {reset}.{eta}"
-                                                  f"{stale} 한도에 닿으면 세션이 말없이 멈춘다. 화면 머리의 사용량 칩 → /usage", also=rules[1:]):
+                                                  f"{stale} 한도에 닿으면 세션이 말없이 멈춘다. 화면 머리의 사용량 칩 → /usage", also=rules[1:],
+                                        same=[f"usage:{x['key']}:{thr}:{t}" for t in near]):
                         sent.append(rules[0])
                     break
             if (x["window_h"] < 24 and x["eta_100"] and x["eta_before_reset"]
                     and (x["eta_100"] - now) <= timedelta(hours=1) and pct < 100):
                 r = f"usage:{x['key']}:eta:{tag}"
                 if await self._once(r, f"⏳ {x['label']}이 이 속도(최근 1시간 ${x['rate_usd_h']:.1f}/시간)면 {self._local(x['eta_100'])}에 100% — "
-                                       f"리셋({self._local(x['reset_at'])})보다 먼저. 지금 약 {pct:.0f}%{stale}"):
+                                       f"리셋({self._local(x['reset_at'])})보다 먼저. 지금 약 {pct:.0f}%{stale}",
+                                    same=[f"usage:{x['key']}:eta:{t}" for t in near]):
                     sent.append(r)
         return sent
 
-    async def _once(self, rule: str, msg: str, also: list[str] | None = None, like: str | None = None) -> bool:
-        """rule로 이미 보냈으면 False. 보내면 also도 보낸 것으로(같은 창의 낮은 문턱). like: rule 없이 남은 옛 기록을 글로 찾는다."""
+    async def _once(self, rule: str, msg: str, also: list[str] | None = None, like: str | None = None,
+                    same: list[str] | None = None) -> bool:
+        """rule로 이미 보냈으면 False. 보내면 also도 보낸 것으로(같은 창의 낮은 문턱). like: rule 없이 남은 옛 기록을 글로 찾는다.
+        same: 같은 알림으로 보는 다른 키(리셋 시각이 1분씩 흔들린 같은 창)."""
         keys = [rule, *(also or [])]
-        if rule in self._sent_rules:
+        alike = [rule, *(same or [])]
+        if any(k in self._sent_rules for k in alike):
             return False
         try:
             async with self.engine.connect() as c:
-                hit = (await c.execute(text("SELECT 1 FROM notification WHERE kind = 'usage' AND (rule = :r OR "
-                                            "(:like IS NOT NULL AND rule IS NULL AND text LIKE :like)) LIMIT 1"),
-                                       {"r": rule, "like": like})).first()
+                hit = (await c.execute(text("SELECT 1 FROM notification WHERE kind = 'usage' AND (rule IN :rs OR "
+                                            "(:like IS NOT NULL AND rule IS NULL AND text LIKE :like)) LIMIT 1"
+                                            ).bindparams(bindparam("rs", expanding=True)),
+                                       {"rs": alike, "like": like})).first()
         except Exception:  # noqa: BLE001 — 확인을 못 하면 메모리만으로(한 번은 보낸다)
             hit = None
         self._sent_rules.update(keys)
