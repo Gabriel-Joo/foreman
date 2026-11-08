@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from bridge import handoff_state as hs
 from bridge import pointers as ptr
 from bridge import worktree as wt
-from bridge.inject import Refused, _status, _tmux_env, deliver, resolve, tmux
+from bridge.inject import Refused, _status, _tmux_env, deliver, prompt_showing, resolve, tmux
 from bridge.liveness import _proc_stat, live_sessions
 from bridge.model_choice import Models
 
@@ -877,6 +877,13 @@ class HandoffManager:
             raise Refused("작업 중입니다. 작업이 끝난 뒤에 하거나 먼저 [작업 중단]을 눌러 주세요")
         if act == "exit":
             tname = (await tmux(t.socket, "display-message", "-p", "-t", t.pane, "#{session_name}")).strip()
+            # 11-08 — /usage · 설정 같은 화면이 떠 있으면 입력 줄(❯)이 없어 /exit를 못 받는다(세션 210, 끝내기가 안 됐다).
+            # 사람이 하듯 Esc로 닫고 입력 줄이 돌아온 뒤 보낸다. 작업 중이 아닐 때만 여기 온다(위에서 막음) — Esc가 작업을 끊지 않는다
+            for _ in range(3):
+                if await prompt_showing(t):
+                    break
+                await tmux(t.socket, "send-keys", "-t", t.pane, "Escape")
+                await asyncio.sleep(0.6)
             res = await deliver(row.cc, "/exit", sessions_dir=self.sessions_dir, transcript=None, command=True)
             gone = await self._wait(lambda: row.cc not in live_sessions(self.sessions_dir), 15)
             cleaned = await self._cleanup_tmux(row.id, t, tname) if gone else False
