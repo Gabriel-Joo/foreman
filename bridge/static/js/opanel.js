@@ -253,7 +253,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   function drawCompact(s) {
     const c = s.compact;
     const snoozed = c && compactSnoozed(s.id, c.count);
-    if (!c || !c.level || snoozed) { $('pCmp').hidden = true; return; }
+    if (!c || !c.level || snoozed) { drawContext(s); return; }
     const late = c.level === 'late';
     const html = `<span class="${late ? 'bad' : 'warn'}">📦 압축 ${c.count}번 — ${late
         ? '늦었습니다. 앞에서 정한 결정 · 금지가 이미 많이 빠졌을 수 있습니다.'
@@ -265,13 +265,34 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;
     $('pCmp').hidden = false;
   }
+  // 맥락 크기 띠(11-08) — 압축 단계가 없을 때. 마지막 응답 맥락 300k "넘어갈 때" · 500k "늦었음". [나중에]는 다음 단계까지
+  function drawContext(s) {
+    const x = s.context;
+    const lv = x && x.level;
+    let snz = '';
+    try { snz = localStorage.getItem('ctxSnooze:' + s.id) || ''; } catch { /* 기억 못 함 */ }
+    if (!lv || snz === lv || (snz === 'late' && lv === 'due')) { $('pCmp').hidden = true; return; }
+    const late = lv === 'late';
+    const html = `<span class="${late ? 'bad' : 'warn'}">🧠 맥락 ${Math.round(x.tokens / 1000)}k — ${late
+        ? '늦었습니다. 응답 하나하나가 비쌉니다.' : '넘어갈 때입니다.'} 응답마다 이 맥락 전체를 다시 읽습니다(한도 사용의 대부분). 인계하면 수십k에서 다시 시작합니다.</span>
+      ${s.injectable ? '<button type="button" data-cmp="handoff" class="small" title="인계 요약 받기 — 세션이 지금까지를 인계 문서로 씁니다. 받은 뒤 [세션] 탭에서 확인하고 새 세션을 띄웁니다.">인계 요약 받기</button>' : ''}
+      <button type="button" data-cmp="ctxlater" class="ghost small" title="나중에 — 다음 단계(500k)까지 이 띠를 숨깁니다.">나중에</button>`;
+    put('pCmp', 'cmp', html);
+    $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;
+    $('pCmp').hidden = false;
+  }
   function compactSnoozed(id, count) {
     try { return Number(localStorage.getItem('cmpSnooze:' + id) || 0) >= count; } catch { return false; }
   }
   $('pCmp').addEventListener('click', async (ev) => {
     const b = ev.target.closest('[data-cmp]');
     const s = store.state.sessions.get(store.state.selected);
-    if (!b || !s || !s.compact) return;
+    if (b && s && b.dataset.cmp === 'ctxlater') {
+      try { localStorage.setItem('ctxSnooze:' + s.id, (s.context && s.context.level) || ''); } catch { /* 이번만 숨긴다 */ }
+      $('pCmp').hidden = true;
+      return;
+    }
+    if (!b || !s || (!s.compact && !(s.context && s.context.level))) return;
     if (b.dataset.cmp === 'later') {
       try { localStorage.setItem('cmpSnooze:' + s.id, String(s.compact.count)); } catch { /* 저장 못 함 — 이번만 숨긴다 */ }
       $('pCmp').hidden = true;
