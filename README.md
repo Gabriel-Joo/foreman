@@ -2,7 +2,7 @@
 
 > AI 코딩 에이전트가 만든 변경이 배포까지 가는 전 과정을, 브라우저 한 화면에서 보고 지시하는 관제실.
 
-🚧 **킥오프** (2026-11-02) — 설계 검토 끝(브리프 01의 1~3. 3은 사용자가 범위를 좁혀 승인 정책·인과 체인·수명 정책은 검토 안 함, [`log/01_kickoff_result.md`](log/01_kickoff_result.md)). 남은 것: 브리프 01의 4. 브리프 01의 5(로드맵 0단계 tmux 이전)는 보류 — 런슈즈 · 펫퍼민트 세션은 FOREMAN 동작을 확인한 뒤에 옮기고, 지금은 이 프로젝트 세션만 tmux(`cc-foreman`)에서 돈다. **로드맵 1단계 완료**([결과](log/stage1_bridge_db_result.md)), **2단계 완료**([결과](log/stage2_transcript_result.md)), **3단계 완료**([결과](log/stage3_inject_result.md) — hook은 사용자 설정에 설치), **4단계 완료**([결과](log/stage4_notify_result.md) — 텔레그램은 브리지가 보낸다), **5단계 완료**([결과](log/stage5_approval_result.md) — 승인 정책), **6단계 완료**([결과](log/stage6_dashboard_result.md) — 대시보드 `/`). 서버 PC 변경 기록은 [`log/`](log/)
+🔧 **매일 쓰는 중** (2026-11-08 기준) — 로드맵 **0 ~ 8 · 11 · 13 · 14 완료**, 10(테마 렌더러 — 10a 사용자 확인 대기) · 12(서기) · 15(사용량 — 1만)는 일부, 9(LLM 지표)는 보류. 런슈즈 · 펫퍼민트 · FOREMAN 세션이 모두 tmux에서 돌고, 브리지는 systemd 사용자 유닛이 돌린다(11-06). 단계별 상태 · 결과 링크는 「6. 로드맵」, 서버 PC 변경 기록은 [`log/`](log/). 킥오프(2026-11-02) 설계 검토는 [`log/01_kickoff_result.md`](log/01_kickoff_result.md) — 브리프 01의 4는 남음
 
 **접속**: 서버 PC(VNC) 브라우저나 `ssh -L 8000:localhost:8000`으로 붙는다. **터널로 밖에 열지 않는다**(2026-11-03 결정, 근거 3.13) — 밖에서는 텔레그램으로 받는다. 화면은 `http://localhost:8000/`(픽셀 화면 — 승인 · 대화 · 입력 · 터미널이 다 여기서, 테마는 마지막에 본 것), 카드 목록은 `/classic`, 확인 · 디버그 페이지는 `/debug`.
 
@@ -866,7 +866,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | 무엇 | 언제 · 조건 | 근거 |
 |---|---|---|
 | 런슈즈 · 펫퍼민트 승인을 관찰(observe) → 차단(enforce)으로 바꿀지 정하기 | 판정 수치가 볼 만큼 쌓이면(11-05 사용자: 아직 아님) | README 3.3, `config/approval.toml` |
-| FOREMAN 배포 systemd 유닛 · 시험 GitHub Actions | 정해 두고 아직 안 만듦(11-03 결정) | README 3.12 |
+| 시험 GitHub Actions(브리지 systemd 유닛은 11-06에 만듦 — 부팅으로 뜨는지는 재부팅 검증 때 확인) | 정해 두고 아직 안 만듦(11-03 결정) | README 3.12, `log/infra_20261106_systemd-bridge.md` |
 | 디스패처 자동 기상 3단계(묻지 않고 띄우기) | 2단계를 써 본 뒤(사용자) | `docs/14_dispatcher_note_wake.md` |
 | 런슈즈 실제 인계 | 발볼 검증이 끝난 뒤 | `log/stage11_handoff_result.md` |
 | 런슈즈 미리보기(vite) | FOREMAN 미리보기가 쓸모 있는지 본 뒤 | `docs/11_worktree.md` |
@@ -913,8 +913,17 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 
 | # | 브리프 | 내용 | 실행 시점 |
 |---|---|---|---|
-| 01 | [kickoff](docs/01_kickoff.md) | 설계 검토: README 파악, 환경 조사, 설계 리스크, 기존 구현 조사, 단계 0 계획 | 지금 — 1~3 끝(3은 범위 축소, [결과](log/01_kickoff_result.md)), 4 남음, 5 보류(FOREMAN 동작 확인 뒤) |
+| 01 | [kickoff](docs/01_kickoff.md) | 설계 검토: README 파악, 환경 조사, 설계 리스크, 기존 구현 조사, 단계 0 계획 | 지금 — 1~3 끝(3은 범위 축소, [결과](log/01_kickoff_result.md)), 4 남음, 5(로드맵 0단계 tmux 이전)는 11-08 끝 |
 | 02 | [cloudflare tunnel](docs/02_cloudflare_tunnel.md) | 외부 노출: foreman.ronanlab.dev 터널 + Access 사람 인증, 브리지 자체 토큰 | ⏸ **보류 — 필요해지면**(2026-11-03 결정, 근거 3.13). 다시 열면 읽기 전용 + 패스키 · mTLS로 고쳐서 |
+| 10 | [office_design](docs/10_office_design.md) | 픽셀 오피스의 이상적인 그림(사용자 구상) — 에셋 조사 뒤 「실제로 가능한 범위」로 깎음 | 로드맵 10, [결과](log/stage10_office_result.md) |
+| 11 | [handoff](docs/11_handoff.md) | 세션 인계 1판 · 세션 조작(끝내기 · 멈춤 · 되살리기) | ✅ 11-05, [결과](log/stage11_handoff_result.md) |
+| 11 | [foreman_dispatch](docs/11_foreman_dispatch.md) | 디스패처 1단계 — 사람은 "뭘 하려는지"만, 디스패처가 프로젝트 · 방식 · 역할을 계획 | ✅ 11-05, [결과](log/stage11_foreman_dispatch_result.md) |
+| 11 | [worktree](docs/11_worktree.md) | 세션마다 따로 작업(worktree) · 스키마 잠금 · 미리보기 브리지 | ✅ 11-05, [결과](log/stage11_worktree_result.md) |
+| 11 | [handoff_v2](docs/11_handoff_v2.md) | 인계 2판 — 문서로 옮기고 읽을 곳을 넘긴다 · 압축 알림 · 인계 검증 | a ~ d, [결과](log/handoff_v2_result.md) · [d](log/handoff_v2_d_result.md) · [검증](log/handoff_verify_20261106.md) |
+| 12 | [scribe](docs/12_scribe.md) | 서기 — 프로젝트마다 문서 담당, 근거 표시 · Notion 게시 · 포트폴리오 | 일부, [지금 상태](log/stage12_scribe_result.md) |
+| 13 | [demo_capture](docs/13_demo_capture.md) | 시연 사진 · 녹화 — 시연 모드 · GIF 녹화기 · 실제 기록 재생 | ✅ 11-06, [결과](log/stage13_demo_capture_result.md) |
+| 14 | [dispatcher_note_wake](docs/14_dispatcher_note_wake.md) | 감독실 캐릭터 · 디스패처 노트 · 자동 기상 2단계 | ✅ 11-08, [결과](log/stage14_dispatcher_note_wake_result.md) |
+| 15 | [usage](docs/15_usage.md) | 사용량 화면 · 한도 역산(하한) | 1만 끝(11-08), [결과](log/stage15_usage_result.md) |
 
 ### 기록 (`log/`)
 
@@ -932,6 +941,14 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | [stage6_dashboard_result.md](log/stage6_dashboard_result.md) | 승인 규칙 좁히기(되돌릴 수 없는 것만, 실행과 글자) + 로드맵 6단계(대시보드) 결과 |
 | [stage7_terminal_result.md](log/stage7_terminal_result.md) | 로드맵 7단계(터미널 패널) 결과 — ttyd를 UNIX 소켓에, 쿠키 · Origin, 기록 · 마스킹, 부탁 감지 · 미리 채우기 · 결과 전달 |
 | [stage8_cicd_result.md](log/stage8_cicd_result.md) | 로드맵 8단계(CI/CD 인과 체인) 결과 — GitLab 없음 · 로컬 git 커밋 귀속, 웹훅 전용 포트, 보내는 쪽 설정(사람 실행), 승인 규칙 "실행과 글자" 넓히기 |
+| [handoff_v2_result.md](log/handoff_v2_result.md) | 인계 2판 · 압축 알림 결과 — 단계 a(압축 알림) ~ d를 이어 씀 |
+| [handoff_v2_d_result.md](log/handoff_v2_d_result.md) | 인계 2판 d [잃은 것 보기] 1부 — 추출 · 판정 · 손 점검 142항목과 맞대기 |
+| [foreman_compaction_loss_20261105.md](log/foreman_compaction_loss_20261105.md) | FOREMAN 세션 압축 손실 점검(auto-compact 7번) — 잃은 것 63 ~ 64% |
+| [runshoes_compaction_loss_20261105.md](log/runshoes_compaction_loss_20261105.md) | 런슈즈 세션 압축 손실 점검(auto-compact 17번, 730MB) — 282항목 |
+| [runshoes_claude_md_draft_20261105.md](log/runshoes_claude_md_draft_20261105.md) | 런슈즈 CLAUDE.md 초안 — 위 점검에서 사라지거나 약해진 금지 · 결정만 |
+| [infra_20261106_systemd-bridge.md](log/infra_20261106_systemd-bridge.md) | 11-06 서버 정전 뒤 복구 · 브리지 systemd 사용자 유닛 · linger(재부팅 검증 전) |
+| [stage10_background_waiting_result.md](log/stage10_background_waiting_result.md) | 백그라운드가 도는데 캐릭터가 자던 것 — 기다림 표시 |
+| [stage11_session_tab_result.md](log/stage11_session_tab_result.md) | 패널 [세션] 탭 정리 — 버튼이 너무 많고 뭔지 모르던 것 |
 | [handoff_verify_20261106.md](log/handoff_verify_20261106.md) | 인계 검증 — 인계 뒤 바뀐 것(worktree · 합침 · 새 커밋 · 잠금)을 기계로 붙인다 |
 | [overlap_alert_20261106.md](log/overlap_alert_20261106.md) | 겹침 알림 — 살아 있는 세션에 들어간 입력도 다른 세션과 맞대 본다 |
 | [ui_font_title_20261106.md](log/ui_font_title_20261106.md) | 글씨 키우기 · 사람이 붙인 세션 이름이 항상 이기게 |
