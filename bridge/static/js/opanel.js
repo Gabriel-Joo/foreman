@@ -17,7 +17,8 @@ import { createForemanPanel } from './fmpanel.js';
 const KEY_OPEN = 'foremanPanelOpen', KEY_TAB = 'foremanPanelTab', KEY_MODE = 'foremanPanelMode';
 const KEY_W = { narrow: 'foremanPanelW', wide: 'foremanPanelWideW' };
 const WIDTH = {                                   // 기본 너비 · 창에 대한 최대 비율
-  narrow: { def: () => 360, max: 0.4 },
+  // 11-08 1920 기준 360 → 420(글씨를 키워 — uiscale 120% — 안쪽 폭이 좁아졌다). 작은 창은 예전 360 그대로
+  narrow: { def: () => Math.round(Math.min(420, Math.max(360, window.innerWidth * 0.3))), max: 0.4 },
   wide: { def: () => Math.max(560, Math.round(window.innerWidth * 0.5)), max: 0.72 },
 };
 const MIN_W = 280;
@@ -62,7 +63,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         </div>
       </div>
       <form id="pForm" class="input" hidden>
-        <textarea id="pText" rows="3" placeholder="이 세션에 보낼 입력 (Ctrl+Enter로 보냅니다)"></textarea>
+        <textarea id="pText" rows="6"placeholder="이 세션에 보낼 입력 (Ctrl+Enter로 보냅니다)"></textarea>
         <div class="row prow">
           <span id="pWhy" class="pwhy small"></span>
           <button id="pSend" type="submit">보내기</button>
