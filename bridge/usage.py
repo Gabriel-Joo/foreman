@@ -464,22 +464,85 @@ class UsageMonitor:
         self.on_change = on_change or (lambda: None)
         self.fails = 0
         self.alerted = False
-        self.login_alerted: set[str] = set()
         self.latest: dict[str, dict[str, Any]] = {}
         self.last_ok_at: datetime | None = None
         self.last_try_at: datetime | None = None
         self.error: str | None = None
         self.credential_expires_at: datetime | None = None
         self.contrib: str | None = None
+        self._sent_rules: set[str] = set()
         self._lock = asyncio.Lock()
 
-    async def run(self) -> None:
+    async def run(self, tick_s: float = 60.0) -> None:
+        """1분마다: /usage는 poll_s마다만 읽고, 알림 판정(80 · 95% · 1시간 안에 5시간 한도)은 매번 — 읽기 사이에도 추정 %가 오른다."""
         while True:
+            now = datetime.now(UTC).replace(tzinfo=None)
             try:
-                await self.poll()
+                if self.last_try_at is None or (now - self.last_try_at).total_seconds() >= self.cfg.poll_s:
+                    await self.poll()
+                await self.check_alerts()
             except Exception as e:  # noqa: BLE001 — 루프는 죽지 않는다
-                log.warning("사용량 읽기 루프 오류: %s: %s", type(e).__name__, str(e)[:200])
-            await asyncio.sleep(self.cfg.poll_s)
+                log.warning("사용량 루프 오류: %s: %s", type(e).__name__, str(e)[:200])
+            await asyncio.sleep(tick_s)
+
+    async def check_alerts(self, now: datetime | None = None) -> list[str]:
+        """한도마다 추정(없으면 측정) %가 80 · 95%를 넘으면, 5시간 한도는 이 속도면 1시간 안에 100%(리셋 전)면 — 창마다 한 번.
+        같은 창 · 같은 문턱은 rule 키(notification.rule)로 한 번만 — 브리지를 다시 띄워도. 보낸 rule 목록."""
+        now = now or datetime.now(UTC).replace(tzinfo=None)
+        sent: list[str] = []
+        for x in await limit_status(self.engine, self.cfg, now, self.latest):
+            pct = x["est_pct"] if x["est_pct"] is not None else x["measured_pct"]
+            if pct is None:
+                continue
+            tag = f"{x['reset_at']:%m%d%H%M}" if x["reset_at"] else "na"
+            src = (f"측정 {x['measured_pct']:g}% · {self._local(x['measured_at'])} 읽음" if x["measured_pct"] is not None else "측정 없음")
+            reset = f"리셋 {self._local(x['reset_at'])}" if x["reset_at"] else "리셋 모름"
+            eta = f" 이 속도면 {self._local(x['eta_100'])}에 100%." if x["eta_100"] and x["eta_before_reset"] else ""
+            stale = "" if self.error is None else " (지금 /usage를 못 읽고 있어 FOREMAN이 본 사용량으로만 추정)"
+            for thr in (95, 80):
+                if pct >= thr:
+                    rules = [f"usage:{x['key']}:{t}:{tag}" for t in (95, 80) if t <= thr]   # 95%를 보냈으면 80%는 따로 안 보낸다
+                    if await self._once(rules[0], f"{'🛑' if thr >= 95 else '⚠'} {x['label']} 사용량 약 {pct:.0f}% — {src}, {reset}.{eta}"
+                                                  f"{stale} 한도에 닿으면 세션이 말없이 멈춘다. 화면 머리의 사용량 칩 → /usage", also=rules[1:]):
+                        sent.append(rules[0])
+                    break
+            if (x["window_h"] < 24 and x["eta_100"] and x["eta_before_reset"]
+                    and (x["eta_100"] - now) <= timedelta(hours=1) and pct < 100):
+                r = f"usage:{x['key']}:eta:{tag}"
+                if await self._once(r, f"⏳ {x['label']}이 이 속도(최근 1시간 ${x['rate_usd_h']:.1f}/시간)면 {self._local(x['eta_100'])}에 100% — "
+                                       f"리셋({self._local(x['reset_at'])})보다 먼저. 지금 약 {pct:.0f}%{stale}"):
+                    sent.append(r)
+        return sent
+
+    async def _once(self, rule: str, msg: str, also: list[str] | None = None, like: str | None = None) -> bool:
+        """rule로 이미 보냈으면 False. 보내면 also도 보낸 것으로(같은 창의 낮은 문턱). like: rule 없이 남은 옛 기록을 글로 찾는다."""
+        keys = [rule, *(also or [])]
+        if rule in self._sent_rules:
+            return False
+        try:
+            async with self.engine.connect() as c:
+                hit = (await c.execute(text("SELECT 1 FROM notification WHERE kind = 'usage' AND (rule = :r OR "
+                                            "(:like IS NOT NULL AND rule IS NULL AND text LIKE :like)) LIMIT 1"),
+                                       {"r": rule, "like": like})).first()
+        except Exception:  # noqa: BLE001 — 확인을 못 하면 메모리만으로(한 번은 보낸다)
+            hit = None
+        self._sent_rules.update(keys)
+        if hit:
+            return False
+        self._send(msg, rule=rule)
+        for k in also or []:                                      # 낮은 문턱도 기록 — 다시 띄운 뒤 80%가 따로 나가지 않게
+            self._mark(k)
+        return True
+
+    def _mark(self, rule: str) -> None:
+        async def go() -> None:
+            try:
+                async with self.engine.begin() as c:
+                    await c.execute(text("INSERT INTO notification (kind, decision, rule, text) VALUES ('usage', 'skipped', :r, :t)"),
+                                    {"r": rule, "t": "더 높은 문턱을 보냈다"})
+            except Exception:  # noqa: BLE001
+                pass
+        asyncio.get_running_loop().create_task(go())
 
     async def poll(self, now: datetime | None = None) -> bool:
         async with self._lock:
@@ -504,7 +567,7 @@ class UsageMonitor:
                 self.latest[lim.key] = {"pct": f["pct"], "reset_at": f["reset_at"], "observed_at": now, "line": f["line"],
                                         "seen_usd": seen}
             self.contrib = body.split("What's contributing", 1)[1].strip()[:1500] if "What's contributing" in body else None
-            self._credential(j.get("credential_expires_at"), now)
+            await self._credential(j.get("credential_expires_at"), now)
             if self.alerted:
                 self._send("✅ 사용량 읽기 돌아왔다 — " + " · ".join(f"{lim.label} {found[lim.key]['pct']:g}%" for lim in self.cfg.limits))
             self.fails, self.alerted, self.error, self.last_ok_at = 0, False, None, now
@@ -522,7 +585,8 @@ class UsageMonitor:
                        f"마지막으로 읽은 때: {last or '없음'}")
         self.on_change()
 
-    def _credential(self, v: Any, now: datetime) -> None:
+    async def _credential(self, v: Any, now: datetime) -> None:
+        """로그인 만료 24시간 안 — 만료 시각마다 한 번(rule로, 브리지를 다시 띄워도. 11-08 처음엔 메모리로만 막아 재기동마다 또 나갔다)."""
         if not v:
             return
         try:
@@ -530,10 +594,10 @@ class UsageMonitor:
         except ValueError:
             return
         self.credential_expires_at = exp
-        if exp - now < timedelta(hours=24) and str(v) not in self.login_alerted:
-            self.login_alerted.add(str(v))
-            self._send(f"⚠ CC 로그인이 {self._local(exp)}에 만료된다 — 그 뒤로 모든 세션 · 디스패처 · 사용량 읽기가 멈춘다. "
-                       "아무 CC 터미널에서 /login 해 주세요")
+        if exp - now < timedelta(hours=24):
+            await self._once(f"usage:login:{exp:%Y%m%d%H%M}",
+                             f"⚠ CC 로그인이 {self._local(exp)}에 만료된다 — 그 뒤로 모든 세션 · 디스패처 · 사용량 읽기가 멈춘다. "
+                             "아무 CC 터미널에서 /login 해 주세요", like=f"%로그인이 {self._local(exp)}에 만료%")
 
     def _local(self, dt: datetime | None) -> str | None:
         return dt.replace(tzinfo=UTC).astimezone(self.cfg.zone).strftime("%m-%d %H:%M") if dt else None
@@ -549,9 +613,9 @@ class UsageMonitor:
                 "last_ok_at": self.last_ok_at, "last_try_at": self.last_try_at, "stale": self.stale(),
                 "poll_s": self.cfg.poll_s, "credential_expires_at": self.credential_expires_at, "contributing": self.contrib}
 
-    def _send(self, msg: str) -> None:
+    def _send(self, msg: str, rule: str | None = None) -> None:
         log.warning("사용량 알림: %s", msg.splitlines()[0])
         if self.notifier is None:
             return
-        rule = self.notifier.rules.for_project("foreman")
-        self.notifier.send_direct("foreman", "usage", None, f"{(rule and rule.prefix) or '[FOREMAN]'} {msg}")
+        pr = self.notifier.rules.for_project("foreman")
+        self.notifier.send_direct("foreman", "usage", None, f"{(pr and pr.prefix) or '[FOREMAN]'} {msg}", rule=rule)

@@ -139,8 +139,9 @@ class _Notifier:
         self.sent = []
         self.rules = type("R", (), {"for_project": lambda self, p: None})()
 
-    def send_direct(self, project, kind, sid, msg):
+    def send_direct(self, project, kind, sid, msg, rule=None):
         self.sent.append((kind, msg))
+        self.rules_sent = getattr(self, "rules_sent", []) + [rule]
 
 
 def test_monitor_observe_fail_alert_recover_and_status():
@@ -192,5 +193,52 @@ def test_monitor_observe_fail_alert_recover_and_status():
             async with eng.begin() as c:
                 await c.execute(text("DELETE FROM usage_observation WHERE limit_key LIKE :k"), {"k": tag + "%"})
                 await c.execute(text("DELETE FROM usage_extra WHERE source = :s"), {"s": tag})
+            await eng.dispose()
+    asyncio.run(go())
+
+
+def test_alerts_thresholds_eta_once_and_after_restart():
+    """5시간 85% + 최근 1시간 $20 → 80% · 1시간 안에 100%. 주간 96% → 95%만(80%는 따로 안 보냄). 다시 판정 · 다시 띄워도 한 번."""
+    tag = "zz" + uuid.uuid4().hex[:6]
+    lim5 = Limit(key=f"{tag}_5h", label="5시간", match="Current session", window_h=5)
+    limw = Limit(key=f"{tag}_wk", label="주간", match="Current week (all models)", window_h=168)
+    cfg = UsageConfig(poll_s=600, fail_alert=3, tz="UTC", prices=CFG.prices, limits=[lim5, limw])
+    now = datetime(2001, 1, 1, 12, 0)
+    body = ("Current session: 85% used · resets Jan 1, 3pm (UTC)\n"
+            "Current week (all models): 96% used · resets Jan 3, 3pm (UTC)")
+
+    async def reader():
+        return {"result": body}
+
+    async def go():
+        eng = make_engine(Settings(mysql_database="foreman_test"))
+        n = _Notifier()
+        try:
+            async with eng.begin() as c:   # 최근 1시간 안에 $20(Opus 출력 100만)
+                await c.execute(text("INSERT INTO usage_extra (source, project, model, token_output, created_at) "
+                                     "VALUES (:s, 'foreman', 'claude-opus-5-5', 1000000, :t)"), {"s": tag, "t": now - timedelta(minutes=30)})
+            mon = UsageMonitor(eng, cfg, n, reader=reader)
+            assert await mon.poll(now)
+            sent = await mon.check_alerts(now)
+            assert sorted(sent) == sorted([f"usage:{lim5.key}:80:01011500", f"usage:{lim5.key}:eta:01011500",
+                                           f"usage:{limw.key}:95:01031500"])
+            assert any("🛑 주간" in m for _, m in n.sent) and any("⏳ 5시간" in m for _, m in n.sent)
+            assert all(m.startswith("[FOREMAN] ") for _, m in n.sent)
+            assert await mon.check_alerts(now + timedelta(minutes=1)) == []          # 같은 창 — 다시 안 보낸다
+            async with eng.begin() as c:   # 가짜 알림기는 DB에 안 쓴다 — 실제 send_direct처럼 기록해 두고 "다시 띄운" 모니터로
+                for r in n.rules_sent:
+                    await c.execute(text("INSERT INTO notification (kind, decision, rule, text) VALUES ('usage', 'sent', :r, 't')"), {"r": r})
+            await asyncio.sleep(0.05)      # _mark(낮은 문턱) 기록이 끝나게
+            mon2 = UsageMonitor(eng, cfg, _Notifier(), reader=reader)
+            assert await mon2.poll(now + timedelta(minutes=2))
+            assert await mon2.check_alerts(now + timedelta(minutes=2)) == []
+            async with eng.connect() as c:
+                low = (await c.execute(text("SELECT decision FROM notification WHERE rule = :r"), {"r": f"usage:{limw.key}:80:01031500"})).scalar()
+            assert low == "skipped"                                                  # 95%를 보냈으니 80%는 보낸 것으로
+        finally:
+            async with eng.begin() as c:
+                await c.execute(text("DELETE FROM usage_observation WHERE limit_key LIKE :k"), {"k": tag + "%"})
+                await c.execute(text("DELETE FROM usage_extra WHERE source = :s"), {"s": tag})
+                await c.execute(text("DELETE FROM notification WHERE rule LIKE :k"), {"k": f"usage:{tag}%"})
             await eng.dispose()
     asyncio.run(go())

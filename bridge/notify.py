@@ -265,15 +265,16 @@ class Notifier:
             self._batch_pending.pop(session_id, None)
             log.warning("묶음 판정 실패 session=%s: %s: %s", session_id, type(e).__name__, str(e)[:200])
 
-    def send_direct(self, project: str | None, kind: str, session_id: int | None, msg: str) -> None:
-        """규칙 판정 없이 바로 보낸다(승인 대기 등 — 기다리는 사람이 있다). 기록은 kind로 남는다."""
+    def send_direct(self, project: str | None, kind: str, session_id: int | None, msg: str, rule: str | None = None) -> None:
+        """규칙 판정 없이 바로 보낸다(승인 대기 등 — 기다리는 사람이 있다). 기록은 kind로 남는다.
+        rule은 기록용 키(11-08 사용량 알림이 같은 창에서 한 번만 — 브리지를 다시 띄워도 — 보내려고 남긴다)."""
         if not self.rules.enabled:
             return
 
         async def go() -> None:
             try:
                 async with self.engine.begin() as c:
-                    nid = await self._record(c, session_id, None, kind, None, "pending", None, msg)
+                    nid = await self._record(c, session_id, None, kind, None, "pending", rule, msg)
                 if nid:
                     await self._send_q.put((nid, msg))
             except Exception as e:  # noqa: BLE001
