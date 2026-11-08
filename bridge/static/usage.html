@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FOREMAN · 사용량</title>
+<style>
+  :root { --bg:#fff; --fg:#1d1d1f; --muted:#6e6e73; --line:#d9d9de; --card:#f7f7f9; --code:#f1f1f4;
+          --ok:#1a7f37; --bad:#c62828; --warn:#b26a00; --act:#0b62d6;
+          --k-cache_read:#5b8def; --k-cache_write:#e8a33d; --k-output:#c2549d; --k-input:#8e8e93; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#111214; --fg:#e8e8ea; --muted:#9a9aa0; --line:#2e2f33; --card:#1a1b1e;
+          --code:#202125; --ok:#4ade80; --bad:#f87171; --warn:#f0b445; --act:#5aa2ff;
+          --k-cache_read:#6f9cf5; --k-cache_write:#f0b445; --k-output:#e070b8; --k-input:#77777d; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, -apple-system, "Noto Sans KR", sans-serif; }
+  a { color:var(--act); }
+  button, select { font:inherit; padding:4px 10px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  .muted { color:var(--muted); } .small { font-size:12px; } .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  .top { position:sticky; top:0; z-index:5; display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:8px 16px;
+         background:var(--bg); border-bottom:1px solid var(--line); }
+  .brand { font-weight:700; letter-spacing:.04em; }
+  .read { margin-left:auto; font-size:12px; padding:2px 8px; border-radius:10px; border:1px solid var(--line); }
+  .read.bad { border-color:var(--bad); }
+  main { max-width:1180px; margin:0 auto; padding:12px 16px 40px; }
+  .band { margin:10px 0; padding:8px 12px; border:1px solid var(--bad); border-left:5px solid var(--bad); border-radius:8px; }
+  .band.warn { border-color:var(--warn); }
+  h2 { font-size:15px; margin:22px 0 8px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(270px, 1fr)); gap:12px; }
+  .card { border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:var(--card); }
+  .card .big { font-size:30px; font-weight:700; line-height:1.1; }
+  .bar { position:relative; height:10px; border-radius:5px; background:var(--code); overflow:hidden; margin:8px 0; }
+  .bar i { position:absolute; left:0; top:0; bottom:0; border-radius:5px; }
+  .bar .m { background:var(--act); } .bar .e { background:color-mix(in srgb, var(--act) 35%, transparent); }
+  .bar.w80 .m { background:var(--warn); } .bar.w95 .m { background:var(--bad); }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:13px; }
+  .kv dt { color:var(--muted); } .kv dd { margin:0; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .stack { display:flex; height:22px; border-radius:6px; overflow:hidden; margin:6px 0; background:var(--code); }
+  .stack i { display:block; height:100%; }
+  .legend { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; }
+  .legend b { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+  .why { margin:8px 0 0; padding:8px 12px; border-radius:8px; background:var(--code); }
+  .tbl { overflow-x:auto; border:1px solid var(--line); border-radius:8px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { padding:5px 9px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; background:var(--card); position:sticky; top:0; }
+  td.l, th.l { text-align:left; } td.t { max-width:280px; overflow:hidden; text-overflow:ellipsis; }
+  tr:last-child td { border-bottom:0; }
+  .chart { border:1px solid var(--line); border-radius:8px; padding:8px; overflow-x:auto; }
+  .chart svg { display:block; }
+  .chart text { fill:var(--muted); font-size:11px; }
+  #tokDlg { display:none; position:fixed; inset:0; background:#0008; align-items:center; justify-content:center; z-index:20; }
+  #tokDlg.on { display:flex; } #tokDlg form { background:var(--bg); padding:16px; border-radius:10px; width:min(420px, 92vw); }
+  #tokDlg input { width:100%; font:inherit; padding:7px 9px; margin:8px 0; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  @media (max-width: 720px) { .two { grid-template-columns:1fr; } .top { padding:8px 12px; } main { padding:10px 12px 40px; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <span class="brand">FOREMAN</span><span>사용량</span>
+  <a href="/" title="화면 — 픽셀 화면으로 돌아갑니다.">← 화면</a>
+  <select id="period" title="기간 — 아래 표 · 그래프의 기간을 고릅니다.">
+    <option value="">이번 주간 창</option><option value="24">최근 24시간</option><option value="72">최근 3일</option><option value="336">최근 2주</option>
+  </select>
+  <button id="pollBtn" title="지금 읽기 — CC의 /usage를 지금 한 번 읽습니다. 모델을 부르지 않아 비용이 없습니다.">지금 읽기</button>
+  <span id="read" class="read">불러오는 중</span>
+</header>
+<main>
+  <div id="bands"></div>
+  <section><h2>한도</h2><div id="cards" class="cards"></div>
+    <p class="small muted" id="basis"></p></section>
+  <section><h2>어디서 나가나</h2>
+    <div class="two">
+      <div class="card"><b>최근 1시간</b> <span id="recentTot"></span><div id="recentKind"></div><div id="recentSess" class="small"></div></div>
+      <div class="card"><b id="periodLabel">이 기간</b> <span id="periodTot"></span><div id="periodKind"></div><div id="why" class="why small"></div></div>
+    </div>
+    <div class="legend" id="legend" style="margin-top:8px"></div>
+  </section>
+  <section><h2>시간대별 <span class="small muted">(환산액, 토큰 종류별로 쌓음 · 세로 점선은 주간 리셋 · 음영은 지금 5시간 창)</span></h2>
+    <div class="chart" id="chart"></div></section>
+  <section><h2>세션별 <span class="small muted">— 응답당 맥락이 크면 응답 하나하나가 비쌉니다</span></h2><div class="tbl" id="tSess"></div></section>
+  <div class="two">
+    <section><h2>프로젝트별</h2><div class="tbl" id="tProj"></div></section>
+    <section><h2>모델별</h2><div class="tbl" id="tModel"></div></section>
+  </div>
+  <section><h2>관찰 기록 <span class="small muted">(/usage에서 읽은 % — 값이 바뀔 때만)</span></h2><div class="tbl" id="tObs"></div></section>
+</main>
+<div id="tokDlg"><form id="tokForm"><b>API 토큰</b><div class="small muted">.env.bridge의 FOREMAN_API_TOKEN을 넣어 주세요. 이 브라우저에만 저장합니다.</div>
+  <input id="tokIn" type="password" autocomplete="off"><button>저장</button></form></div>
+<script>
+const KINDS = [['cache_read', '캐시 읽기', '쌓인 맥락을 응답마다 다시 읽는 몫'], ['cache_write', '캐시 쓰기', '새 맥락을 캐시에 올리는 몫(1시간짜리, 입력의 2배)'],
+               ['output', '출력', '모델이 쓴 글 · 도구 호출'], ['input', '입력', '캐시 밖 입력']];
+const LIMIT_TIP = '측정은 /usage가 보인 값, 추정은 그 뒤 FOREMAN이 본 사용량으로 더한 값입니다.';
+let tz = 'Asia/Seoul', data = null;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const tok = () => { try { return localStorage.getItem('foremanToken') || ''; } catch { return ''; } };
+const usd = (v, d = 2) => v == null ? '—' : '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+const big = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(n);
+const D = (s) => s ? new Date(s) : null;
+const hm = (s) => s ? D(s).toLocaleTimeString('ko-KR', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
+const mdhm = (s) => s ? D(s).toLocaleString('ko-KR', { timeZone: tz, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
+function left(s) {
+  if (!s) return '';
+  const m = Math.round((D(s) - Date.now()) / 60000);
+  if (m <= 0) return '지남';
+  return m >= 60 * 24 ? `${Math.floor(m / 1440)}일 ${Math.floor(m % 1440 / 60)}시간 남음` : m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분 남음` : `${m}분 남음`;
+}
+
+async function api(path, opt = {}) {
+  const r = await fetch(path, { ...opt, headers: { Authorization: `Bearer ${tok()}` } });
+  if (r.status === 401 || r.status === 403) { $('tokDlg').classList.add('on'); throw new Error('토큰이 필요합니다'); }
+  if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 200)}`);
+  return r.json();
+}
+
+async function load() {
+  try {
+    const h = $('period').value;
+    data = await api('/api/usage' + (h ? `?hours=${h}` : ''));
+    tz = data.tz || tz;
+    render(data);
+  } catch (e) {
+    $('read').className = 'read bad'; $('read').textContent = '불러오지 못했습니다';
+    $('bands').innerHTML = `<div class="band">사용량을 불러오지 못했습니다 — ${esc(e.message)}</div>`;
+  }
+}
+
+function render(d) {
+  const r = d.reading || {};
+  $('read').className = 'read ' + (r.ok ? 'ok' : 'bad');
+  $('read').textContent = r.ok ? `읽음 ${hm(r.last_ok_at)}` : r.last_ok_at ? `⚠ 못 읽음 · 마지막 ${mdhm(r.last_ok_at)}` : '⚠ 아직 못 읽음';
+  $('read').title = r.ok ? `사용량 읽기 — ${Math.round((r.poll_s || 600) / 60)}분마다 /usage를 읽습니다.` : `사용량 읽기 — ${r.error || '오래 읽지 못했습니다'}`;
+  const bands = [];
+  if (!r.ok) bands.push(`<div class="band"><b>⚠ 사용량(/usage)을 읽지 못하고 있습니다.</b> ${esc(r.error || '마지막으로 읽은 지 오래됐습니다')} — 아래 측정 %는 ${r.last_ok_at ? mdhm(r.last_ok_at) + ' 값' : '없습니다'}. ${r.fails ? `연달아 ${r.fails}번 실패했습니다.` : ''}</div>`);
+  if (r.credential_expires_at && D(r.credential_expires_at) - Date.now() < 864e5)
+    bands.push(`<div class="band warn"><b>⚠ CC 로그인이 ${mdhm(r.credential_expires_at)}에 만료됩니다.</b> 만료되면 모든 세션 · 디스패처가 멈춥니다. 아무 CC 터미널에서 /login 해 주세요.</div>`);
+  $('bands').innerHTML = bands.join('');
+  $('cards').innerHTML = (d.limits || []).map(card).join('');
+  $('basis').textContent = `${d.basis}. 하한 = 그 창에서 FOREMAN이 본 환산액 ÷ 측정 %. 웹 · 앱 · 다른 PC 사용은 보이지 않아 실제 한도는 이보다 큽니다.`;
+  where(d);
+  chart(d);
+  tables(d);
+}
+
+function card(x) {
+  const m = x.measured_pct, e = x.est_pct;
+  const show = e ?? m;
+  const cls = show >= 95 ? 'w95' : show >= 80 ? 'w80' : '';
+  const f = x.floor;
+  const eta = x.eta_100 ? `<span class="${x.eta_before_reset ? 'bad' : 'muted'}">이 속도면 ${mdhm(x.eta_100)}에 100%${x.eta_before_reset ? ' — 리셋 전입니다' : ' — 리셋이 먼저입니다'}</span>` : '<span class="muted">—</span>';
+  return `<div class="card" title="${esc(x.label)} — ${LIMIT_TIP}">
+    <div><b>${esc(x.label)}</b> <span class="small muted">${x.window_h >= 24 ? '7일 창' : '5시간 창'}</span></div>
+    <div class="big ${show >= 95 ? 'bad' : show >= 80 ? 'warn' : ''}">${show == null ? '—' : (e != null && m != null && Math.abs(e - m) >= 0.5 ? '약 ' : '') + Math.round(show) + '%'}</div>
+    <div class="small muted">측정 ${m == null ? '—' : m + '%'} · ${mdhm(x.measured_at)} 읽음${e != null && m != null && Math.abs(e - m) >= 0.5 ? ` · 그 뒤 추정 +${(e - m).toFixed(1)}%p` : ''}</div>
+    <div class="bar ${cls}"><i class="e" style="width:${Math.min(100, e ?? 0)}%"></i><i class="m" style="width:${Math.min(100, m ?? 0)}%"></i></div>
+    <dl class="kv">
+      <dt>리셋</dt><dd>${mdhm(x.reset_at)} <span class="muted small">${left(x.reset_at)}</span></dd>
+      <dt>창 안 환산</dt><dd>${usd(x.window_usd)}</dd>
+      <dt>하한</dt><dd>${f ? `${usd(f.usd, 0)} <span class="muted small">근거 ${f.n}개${f.n > 1 ? ` · ${usd(f.min, 0)}~${usd(f.max, 0)}` : ''}${f.stable ? '' : ' · 아직 흔들림'}</span>` : '<span class="muted">관찰이 더 필요합니다</span>'}</dd>
+      <dt>최근 1시간</dt><dd>${usd(x.rate_usd_h)}/시간</dd>
+      <dt>예상</dt><dd>${eta}</dd>
+    </dl></div>`;
+}
+
+function stack(byKind) {
+  const tot = KINDS.reduce((s, [k]) => s + (byKind[k] || 0), 0) || 1;
+  return `<div class="stack">${KINDS.map(([k, n]) => `<i style="width:${(byKind[k] || 0) / tot * 100}%;background:var(--k-${k})" title="${n} — ${usd(byKind[k])} (${Math.round((byKind[k] || 0) / tot * 100)}%)"></i>`).join('')}</div>`
+    + `<div class="small">${KINDS.map(([k, n]) => `${n} ${Math.round((byKind[k] || 0) / tot * 100)}%`).join(' · ')}</div>`;
+}
+
+function where(d) {
+  $('legend').innerHTML = KINDS.map(([k, n, t]) => `<span title="${n} — ${t}"><b style="background:var(--k-${k})"></b>${n}</span>`).join('');
+  const rc = d.recent || { by_kind: {}, by_session: [] };
+  $('recentTot').innerHTML = `<span class="muted">${usd(rc.total_usd)}</span>`;
+  $('recentKind').innerHTML = rc.total_usd > 0 ? stack(rc.by_kind) : '<div class="small muted">최근 1시간은 쓴 것이 거의 없습니다.</div>';
+  $('recentSess').innerHTML = (rc.by_session || []).slice(0, 5).map((s) =>
+    `<div>${Math.round(s.share * 100)}% · ${usd(s.usd)} · ${esc(s.title || s.key)} <span class="muted">${esc(s.project || '')} · 응답 ${s.n} · 응답당 맥락 ${big(Math.round(s.cache_read / Math.max(1, s.n)))}</span></div>`).join('');
+  $('periodLabel').textContent = $('period').selectedOptions[0].textContent;
+  $('periodTot').innerHTML = `<span class="muted">${usd(d.total_usd)} · ${mdhm(d.period.start)}부터</span>`;
+  $('periodKind').innerHTML = stack(d.by_kind || {});
+  // 왜 비싼가 — 가장 큰 종류와 응답당 맥락이 큰 세션을 짚는다
+  const tot = d.total_usd || 0, bk = d.by_kind || {};
+  const crShare = tot ? (bk.cache_read || 0) / tot : 0, cwShare = tot ? (bk.cache_write || 0) / tot : 0;
+  const heavy = (d.by_session || []).filter((s) => s.n >= 20).map((s) => ({ ...s, ctx: s.cache_read / s.n }))
+    .sort((a, b) => b.ctx - a.ctx).slice(0, 3);
+  const lines = [];
+  if (crShare >= 0.4) lines.push(`환산액의 <b>${Math.round(crShare * 100)}%가 캐시 읽기</b>입니다. 응답 하나마다 그 세션에 쌓인 맥락 전체를 다시 읽기 때문입니다. 출력은 ${Math.round((bk.output || 0) / (tot || 1) * 100)}%뿐입니다.`);
+  if (cwShare >= 0.2) lines.push(`캐시 쓰기가 ${Math.round(cwShare * 100)}%입니다. 맥락이 바뀌거나 1시간 넘게 쉬었다 이어 쓰면 다시 올립니다.`);
+  if (heavy.length) lines.push('응답당 맥락이 큰 세션: ' + heavy.map((s) => `<b>${esc(s.title || s.key)}</b> ${big(Math.round(s.ctx))}(응답 하나에 읽기만 ${usd(s.usd_cache_read / s.n, 3)})`).join(', ')
+    + '. 일이 바뀌면 /clear나 인계로 새로 시작하면 줄어듭니다.');
+  $('why').innerHTML = lines.join('<br>') || '<span class="muted">눈에 띄는 쏠림이 없습니다.</span>';
+}
+
+function chart(d) {
+  const hours = d.by_hour || [];
+  if (!hours.length) { $('chart').innerHTML = '<div class="small muted">이 기간에 쓴 것이 없습니다.</div>'; return; }
+  const t0 = D(d.period.start).getTime(), t1 = D(d.period.end).getTime();
+  const nH = Math.max(1, Math.ceil((t1 - t0) / 36e5));
+  const bw = Math.max(3, Math.min(14, Math.floor(1100 / nH))), W = nH * bw + 50, H = 190, top = 10, base = H - 24;
+  const vals = hours.map((h) => KINDS.reduce((s, [k]) => s + h[`usd_${k}`], 0));
+  const max = Math.max(...vals, 0.01);
+  const x = (t) => 40 + (t - t0) / 36e5 * bw;
+  const y = (v) => base - v / max * (base - top);
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="시간대별 환산액">`;
+  const sess = (d.limits || []).find((l) => l.window_h < 24 && l.window_start);
+  if (sess) s += `<rect x="${x(D(sess.window_start).getTime())}" y="${top}" width="${(D(sess.reset_at) - D(sess.window_start)) / 36e5 * bw}" height="${base - top}" fill="var(--act)" opacity=".08"><title>지금 5시간 창 — ${mdhm(sess.window_start)} ~ ${mdhm(sess.reset_at)}</title></rect>`;
+  for (const v of [max / 2, max]) s += `<line x1="40" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="2" y="${y(v) + 4}">${usd(v, 0)}</text>`;
+  hours.forEach((h) => {
+    const t = new Date(h.key.replace(' ', 'T') + 'Z').getTime();
+    let acc = 0;
+    for (const [k, n] of [...KINDS].reverse()) {
+      const v = h[`usd_${k}`]; if (!v) continue;
+      s += `<rect x="${x(t)}" y="${y(acc + v)}" width="${bw - 1}" height="${y(acc) - y(acc + v)}" fill="var(--k-${k})"><title>${mdhm(new Date(t).toISOString())}시 ${n} ${usd(v)} · 그 시간 합 ${usd(KINDS.reduce((q, [kk]) => q + h[`usd_${kk}`], 0))}</title></rect>`;
+      acc += v;
+    }
+  });
+  // 날짜 눈금(0시) · 주간 리셋 선
+  for (let t = Math.ceil(t0 / 36e5) * 36e5; t <= t1; t += 36e5) {
+    const hh = Number(new Date(t).toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hour12: false })) % 24;
+    if (hh === 0) s += `<line x1="${x(t)}" x2="${x(t)}" y1="${base}" y2="${base + 4}" stroke="var(--muted)"/><text x="${x(t) + 2}" y="${H - 8}">${new Date(t).toLocaleDateString('ko-KR', { timeZone: tz, month: 'numeric', day: 'numeric' })}</text>`;
+  }
+  for (const l of d.limits || []) if (l.window_h >= 24 && l.window_start) {
+    for (const t of [D(l.window_start).getTime(), D(l.reset_at).getTime()]) if (t >= t0 && t <= t1)
+      s += `<line x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${base}" stroke="var(--warn)" stroke-dasharray="3 3"><title>주간 리셋 ${mdhm(new Date(t).toISOString())}</title></line>`;
+    break;
+  }
+  s += `<line x1="40" x2="${W}" y1="${base}" y2="${base}" stroke="var(--line)"/></svg>`;
+  $('chart').innerHTML = s;
+}
+
+function table(rows, cols) {
+  if (!rows.length) return '<div class="small muted" style="padding:8px">없습니다.</div>';
+  return `<table><thead><tr>${cols.map((c) => `<th class="${c.l ? 'l' : ''}" title="${esc(c.tip || '')}">${c.h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) =>
+    `<tr>${cols.map((c) => `<td class="${c.l ? 'l' : ''} ${c.t ? 't' : ''}">${c.v(r)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+}
+const pct = (r) => `${(r.share * 100).toFixed(1)}%`;
+const tokCols = [
+  { h: '응답', v: (r) => r.n.toLocaleString() },
+  { h: '캐시 읽기', v: (r) => big(r.cache_read), tip: '캐시 읽기 — 응답마다 다시 읽은 맥락 토큰' },
+  { h: '캐시 쓰기', v: (r) => big(r.cache_write) }, { h: '출력', v: (r) => big(r.output) },
+  { h: '환산', v: (r) => usd(r.usd) }, { h: '비중', v: pct }];
+
+function tables(d) {
+  $('tSess').innerHTML = table((d.by_session || []).slice(0, 30), [
+    { h: '세션', l: 1, t: 1, v: (r) => `${esc(r.title || '(제목 없음)')} <span class="muted small">${typeof r.key === 'number' ? '#' + r.key : ''}</span>` },
+    { h: '프로젝트', l: 1, v: (r) => esc(r.project || '—') },
+    { h: '응답당 맥락', v: (r) => big(Math.round(r.cache_read / Math.max(1, r.n))), tip: '응답당 맥락 — 응답 하나가 다시 읽은 평균 토큰입니다. 클수록 응답 하나가 비쌉니다.' },
+    ...tokCols]);
+  $('tProj').innerHTML = table(d.by_project || [], [{ h: '프로젝트', l: 1, v: (r) => esc(r.key) }, { h: '환산', v: (r) => usd(r.usd) }, { h: '비중', v: pct }]);
+  $('tModel').innerHTML = table(d.by_model || [], [{ h: '모델', l: 1, v: (r) => esc(r.key) }, { h: '출력', v: (r) => big(r.output) }, { h: '환산', v: (r) => usd(r.usd) }, { h: '비중', v: pct }]);
+  const label = Object.fromEntries((d.limits || []).map((l) => [l.key, l.label]));
+  $('tObs').innerHTML = table(d.observations || [], [
+    { h: '읽은 때', l: 1, v: (r) => mdhm(r.observed_at) }, { h: '한도', l: 1, v: (r) => esc(label[r.limit_key] || r.limit_key) },
+    { h: '%', v: (r) => r.pct + '%' }, { h: '리셋', v: (r) => mdhm(r.reset_at) },
+    { h: '그 창 환산', v: (r) => usd(r.seen_usd) },
+    { h: '하한', v: (r) => r.seen_usd && r.pct >= 20 ? usd(r.seen_usd / r.pct * 100, 0) : '—', tip: '하한 — 그 창 환산 ÷ % × 100. 20% 아래는 반올림 오차가 커서 셈하지 않습니다.' },
+    { h: '출처', l: 1, v: (r) => esc(r.source) }]);
+}
+
+$('period').addEventListener('change', load);
+$('pollBtn').addEventListener('click', async () => {
+  $('pollBtn').disabled = true; $('pollBtn').textContent = '읽는 중…';
+  try { await api('/api/usage/poll', { method: 'POST' }); } catch (e) { alert('읽지 못했습니다 — ' + e.message); }
+  $('pollBtn').disabled = false; $('pollBtn').textContent = '지금 읽기';
+  load();
+});
+$('tokForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  try { localStorage.setItem('foremanToken', $('tokIn').value.trim()); } catch { /* 저장 못 하면 다시 묻는다 */ }
+  $('tokDlg').classList.remove('on'); load();
+});
+if (!tok()) $('tokDlg').classList.add('on'); else load();
+setInterval(() => { if (tok() && !document.hidden) load(); }, 60000);
+</script>
+</body>
+</html>

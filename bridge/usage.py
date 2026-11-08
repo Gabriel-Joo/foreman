@@ -303,8 +303,9 @@ async def observe(engine: Any, cfg: UsageConfig, lim: Limit, pct: float, reset_a
     return bool(res.rowcount), seen
 
 
-def floors(obs: list[dict[str, Any]], min_pct: float = 5.0) -> dict[str, Any] | None:
-    """관찰들 → 하한(달러). 높은 %에 무게(정수 % 반올림 오차가 작다). 범위 · 근거 수 · 10% 안에 모이면 안정."""
+def floors(obs: list[dict[str, Any]], min_pct: float = 20.0) -> dict[str, Any] | None:
+    """관찰들 → 하한(달러). 높은 %에 무게(정수 % 반올림 오차가 작다). 범위 · 근거 수 · 10% 안에 모이면 안정.
+    20% 아래는 뺀다 — 11-08 5시간 7%($2.34 → $33)가 52%($45 → $87)와 크게 어긋났다(±0.5%p가 ±7%)."""
     xs = [(float(o["seen_usd"]) / float(o["pct"]) * 100, float(o["pct"])) for o in obs
           if o.get("seen_usd") is not None and float(o["pct"]) >= min_pct and float(o["seen_usd"]) > 0]
     if not xs:
@@ -387,9 +388,12 @@ async def breakdown(engine: Any, cfg: UsageConfig, start: datetime, end: datetim
     tables: dict[str, dict[Any, dict[str, Any]]] = {"model": {}, "project": {}, "session": {}, "hour": {}}
 
     def add(kind: str, key: Any, model: str, t: dict[str, int], n: int, **extra: Any) -> None:
-        row = tables[kind].setdefault(key, {"key": key, **extra, **{k: 0 for k in TOKEN_KINDS}, "usd": 0.0, "n": 0})
+        row = tables[kind].setdefault(key, {"key": key, **extra, **{k: 0 for k in TOKEN_KINDS},
+                                            **{f"usd_{k}": 0.0 for k in TOKEN_KINDS}, "usd": 0.0, "n": 0})
+        p = cfg.price(model) or {}
         for k in TOKEN_KINDS:
             row[k] += t[k]
+            row[f"usd_{k}"] += t[k] * p.get(k, 0.0) / 1e6     # 어디서 나가나 — 종류별(긴 맥락을 응답마다 다시 읽는 캐시 읽기 등)
         row["usd"] += cfg.usd(model, t)
         row["n"] += n
 
@@ -407,12 +411,15 @@ async def breakdown(engine: Any, cfg: UsageConfig, start: datetime, end: datetim
         add("session", f"claude -p · {r.source}", r.model, t, int(r.n), title=f"claude -p({r.source})", project=r.project)
         add("hour", r.h, r.model, t, int(r.n))
     total = sum(x["usd"] for x in tables["model"].values()) or 0.0
-    out: dict[str, Any] = {"total_usd": round(total, 2)}
+    out: dict[str, Any] = {"total_usd": round(total, 2),
+                           "by_kind": {k: round(sum(x[f"usd_{k}"] for x in tables["model"].values()), 4) for k in TOKEN_KINDS}}
     for kind, rows in tables.items():
         lst = list(rows.values())
         for x in lst:
             x["share"] = round(x["usd"] / total, 4) if total else 0.0
             x["usd"] = round(x["usd"], 4)
+            for k in TOKEN_KINDS:
+                x[f"usd_{k}"] = round(x[f"usd_{k}"], 4)
         lst.sort(key=(lambda x: str(x["key"])) if kind == "hour" else (lambda x: -x["usd"]))
         out[f"by_{kind}"] = lst
     return out

@@ -354,6 +354,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def office_page() -> FileResponse:
         return FileResponse(STATIC / "office.html")      # 예전 주소(북마크) — / 와 같다
 
+    @app.get("/usage", include_in_schema=False)
+    async def usage_page() -> FileResponse:
+        return FileResponse(STATIC / "usage.html")       # 11-08 사용량 · 한도(docs/15). 데이터는 /api/usage(토큰)
+
     @app.get("/classic", include_in_schema=False)
     async def classic_page() -> FileResponse:
         return FileResponse(STATIC / "dashboard.html")   # 6단계 카드 대시보드

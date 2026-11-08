@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import text
 
 from bridge.api.auth import require_api_token
 from bridge.usage import UsageConfig, breakdown, limit_status, load_config
@@ -62,9 +63,19 @@ async def usage(request: Request, hours: float | None = None) -> dict[str, Any]:
         wk = next((x for x in limits if x["window_h"] >= 24 and x["window_start"]), None)
         start = wk["window_start"] if wk else now - timedelta(days=7)
     tables = await breakdown(engine, cfg, start, now)
+    recent = await breakdown(engine, cfg, now - timedelta(hours=1), now)     # 지금 어디서 나가나(최근 1시간)
     reading = mon.snapshot() if mon else {"ok": False, "error": "사용량 읽기가 꺼져 있습니다(usage_enabled)", "stale": True}
+    async with engine.connect() as c:
+        obs = [dict(r) for r in (await c.execute(text(
+            "SELECT limit_key, pct, observed_at, reset_at, source, seen_usd FROM usage_observation "
+            "ORDER BY observed_at DESC LIMIT 40"))).mappings().all()]
+    for o in obs:
+        o["pct"] = float(o["pct"])
+        o["seen_usd"] = float(o["seen_usd"]) if o["seen_usd"] is not None else None
     data = _j({"generated_at": now, "tz": cfg.tz, "basis": "API 정가 비율 환산(config/usage.toml) — 한도는 하한입니다",
-               "reading": reading, "limits": limits, "period": {"start": start, "end": now}, **tables})
+               "reading": reading, "limits": limits, "period": {"start": start, "end": now}, **tables,
+               "recent": {"total_usd": recent["total_usd"], "by_kind": recent["by_kind"], "by_session": recent["by_session"][:8]},
+               "observations": obs})
     _cache.update(at=time.monotonic(), key=key, data=data)
     return data
 
