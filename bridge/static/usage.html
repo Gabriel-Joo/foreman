@@ -138,7 +138,11 @@ function render(d) {
     bands.push(`<div class="band warn"><b>⚠ CC 로그인이 ${mdhm(r.credential_expires_at)}에 만료됩니다.</b> 만료되면 모든 세션 · 디스패처가 멈춥니다. 아무 CC 터미널에서 /login 해 주세요.</div>`);
   $('bands').innerHTML = bands.join('');
   $('cards').innerHTML = (d.limits || []).map(card).join('');
-  $('basis').textContent = `${d.basis}. 하한 = 그 창에서 FOREMAN이 본 환산액 ÷ 측정 %. 웹 · 앱 · 다른 PC 사용은 보이지 않아 실제 한도는 이보다 큽니다.`;
+  const wk = (d.limits || []).find((l) => l.key === 'weekly_all');
+  $('basis').innerHTML = `<b>왜 하한인가</b> — 측정 %는 Anthropic이 센 <b>모든</b> 사용(이 PC의 CC + 웹 · 앱 Claude + 다른 PC)입니다. FOREMAN은 이 PC의 CC만 봅니다.<br>`
+    + `실제 한도 = (FOREMAN이 본 것 + 못 보는 사용) ÷ 측정 % <b>≥</b> FOREMAN이 본 것 ÷ 측정 % = 하한`
+    + (wk && wk.floor ? ` — 예: 주간 ${usd(wk.window_usd, 0)} ÷ ${wk.measured_pct}% = ${usd(wk.floor.usd, 0)}. 웹에서 많이 쓴 주일수록 실제 한도는 이보다 큽니다.` : '.')
+    + `<br><span class="muted">${esc(d.basis)}. 같은 이유로 "추정 %"와 "이 속도면 언제 100%"는 FOREMAN이 보는 사용만으로 셈합니다 — 웹을 함께 쓰면 실제로는 더 빨리 찹니다(다음 /usage 읽기에서 바로잡힙니다).</span>`;
   where(d);
   chart(d);
   tables(d);
@@ -157,8 +161,9 @@ function card(x) {
     <div class="bar ${cls}"><i class="e" style="width:${Math.min(100, e ?? 0)}%"></i><i class="m" style="width:${Math.min(100, m ?? 0)}%"></i></div>
     <dl class="kv">
       <dt>리셋</dt><dd>${mdhm(x.reset_at)} <span class="muted small">${left(x.reset_at)}</span></dd>
-      <dt>창 안 환산</dt><dd>${usd(x.window_usd)}</dd>
-      <dt>하한</dt><dd>${f ? `${usd(f.usd, 0)} <span class="muted small">근거 ${f.n}개${f.n > 1 ? ` · ${usd(f.min, 0)}~${usd(f.max, 0)}` : ''}${f.stable ? '' : ' · 아직 흔들림'}</span>` : '<span class="muted">관찰이 더 필요합니다</span>'}</dd>
+      <dt title="FOREMAN이 본 것 — 이 창에서 FOREMAN이 기록한 CC 세션 · claude -p 사용의 환산액입니다.">FOREMAN이 본 것</dt><dd>${usd(x.window_usd)}</dd>
+      <dt title="못 보는 사용 — 웹 · 앱 Claude, 다른 PC의 CC는 기록이 없습니다. 측정 %에는 들어 있습니다.">못 보는 사용</dt><dd class="muted">웹 · 앱 · 다른 PC — 금액 모름</dd>
+      <dt title="한도 하한 — FOREMAN이 본 것 ÷ 측정 %입니다. 못 보는 사용만큼 실제 한도는 더 큽니다.">한도 하한</dt><dd>${f ? `${usd(f.usd, 0)} 이상 <span class="muted small">근거 ${f.n}개${f.n > 1 ? ` · ${usd(f.min, 0)}~${usd(f.max, 0)}` : ''}${f.stable ? '' : ' · 아직 흔들림'}</span>` : '<span class="muted">관찰이 더 필요합니다(20% 이상)</span>'}</dd>
       <dt>최근 1시간</dt><dd>${usd(x.rate_usd_h)}/시간</dd>
       <dt>예상</dt><dd>${eta}</dd>
     </dl></div>`;
