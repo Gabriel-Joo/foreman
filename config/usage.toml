@@ -1,0 +1,58 @@
+# 사용량 · 한도(11-08, docs/15_usage.md). 바꾸면 브리지를 다시 띄운다.
+#
+# 한도 %는 `claude -p "/usage"`로 읽는다 — 모델을 부르지 않는다(비용 0), 어떤 세션도 막지 않는다.
+# 환산(달러)은 API 정가 비율 — 한도가 토큰을 어떻게 치는지 몰라서(사용자 동의). 관찰이 쌓이면 가중치를 고친다.
+
+poll_s = 600            # /usage 읽기 간격(초)
+fail_alert = 3          # 연달아 이만큼 못 읽으면 텔레그램 한 번(돌아오면 한 번)
+tz = "Asia/Seoul"
+
+# 100만 토큰당 달러 — 모델 이름에 이 글자가 들어 있으면. 캐시 쓰기는 1시간짜리(CC가 ephemeral_1h로 쓴다 — 입력의 2배)
+[prices.opus]
+input = 4.0
+output = 20.0
+cache_read = 0.20
+cache_write = 8.0
+
+[prices.sonnet]
+input = 2.0
+output = 10.0
+cache_read = 0.20
+cache_write = 4.0
+
+[prices.haiku]
+input = 0.10
+output = 0.50
+cache_read = 0.01
+cache_write = 0.20
+
+[prices.fable]
+input = 10.0
+output = 50.0
+cache_read = 0.25
+cache_write = 20.0
+
+# 한도 — /usage 화면의 줄 머리("Current session" · "Current week (all models)" · "Current week (Fable)")로 고른다.
+# window_h: 창 길이(리셋 시각에서 거꾸로). models: 이 글자가 든 모델만 센다(빈 목록이면 전부)
+[[limits]]
+key = "session_5h"
+label = "5시간 세션"
+match = "Current session"
+window_h = 5
+models = []
+
+[[limits]]
+key = "weekly_all"
+label = "주간 · 전체"
+match = "Current week (all models)"
+window_h = 168
+models = []
+reset = "일요일 22:00"   # 사용자 11-08 — /usage가 "Resets Nov 8, 10pm"(11-08은 일요일)
+
+[[limits]]
+key = "weekly_fable"
+label = "주간 · Fable"
+match = "Current week (Fable)"
+window_h = 168
+models = ["fable"]
+reset = "일요일 22:00"
