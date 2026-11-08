@@ -41,10 +41,15 @@ export function showTip(html, x, y, key = html) {
 export function hideTip() { clearTimeout(timer); shownFor = null; if (el) el.hidden = true; }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-// "머리 — 본문" 한 줄짜리 title도 같은 구조로: 첫 " — " 앞을 굵게
+// 글 툴팁 모양 하나(11-09): 첫 줄 "제목 — 설명", 그 아래 줄(\n)은 숫자 — 한 줄에 하나씩, 구분선 아래에.
+//   "사용량 — 구독 한도를 몇 % 썼는지입니다.\n5시간 51% — 02:10 리셋\n주간 5% — 11월 15일 22:00 리셋"
 export function textTip(t) {
-  const i = t.indexOf(' — ');
-  return i > 0 ? `<div class="tip-b">${esc(t.slice(0, i))}</div><div>${esc(t.slice(i + 3))}</div>` : `<div>${esc(t)}</div>`;
+  const [head, ...nums] = String(t).split('\n').map((x) => x.trim());
+  const i = head.indexOf(' — ');
+  const top = i > 0 ? `<div class="tip-b">${esc(head.slice(0, i))}</div><div class="tip-d">${esc(head.slice(i + 3))}</div>`
+    : `<div class="tip-d">${esc(head)}</div>`;
+  const rows = nums.filter(Boolean);
+  return top + (rows.length ? `<div class="tip-n">${rows.map((x) => `<div>${esc(x)}</div>`).join('')}</div>` : '');
 }
 
 // 테마 이름표 색 · 글꼴을 툴팁에(theme.tags.style). 없으면(도형 · 클래식) 기본 카드 색

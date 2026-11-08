@@ -8,7 +8,7 @@ import { esc, ago, keep } from './render.js';
 import { promoteGroup, edits as promoteEdits } from './promote.js';
 import { lossGroup } from './losscheck.js';
 
-const SOURCE = { self: '세션이 씀', self_headless: '세션이 씀(죽은 세션, claude -p)', compact: '자동 압축 요약에서', edited: '사람이 고침' };
+const SOURCE = { self: '세션이 씀', self_headless: '끝난 세션을 잠깐 불러 씀', compact: '자동 압축 요약에서', edited: '사람이 고침' };
 const STATUS = { requested: '기다리는 중…', ok: '저장됨', failed: '실패', timeout: '시간 초과' };
 // 11-09 화면 말 통일 — "인계"는 "새 세션으로 옮기기"(문서 · log · 세션에 넣는 글은 그대로 "인계")
 const KIND = { snapshot: '지금 요약', handoff: '옮기기용 요약' };
@@ -128,7 +128,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     const why = w.live ? '세션을 끝내면서 합치거나 버립니다 — 위 「세션」의 [끝내고 합치기] · [끝내고 버리기].'
       : w.dirty.length ? `커밋 안 된 변경 ${w.dirty.length}개 — 그 세션에서 커밋하거나 버려야 합칠 수 있습니다.` : '';
     return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div>
-      <div class="small"><code>${esc(w.branch)}</code> · ${esc(w.base)}보다 커밋 <b>${w.ahead}</b>개 앞${w.behind ? ` · ${esc(w.base)}가 ${w.behind}개 앞서감(합칠 때 rebase)` : ''}${w.dirty.length ? ` · <span class="warn">커밋 안 됨 ${w.dirty.length}</span>` : ''}${w.schema_lock ? ' · <span class="warn">스키마 잠금 보유</span>' : ''}</div>
+      <div class="small"><code>${esc(w.branch)}</code> · ${esc(w.base)}보다 커밋 <b>${w.ahead}</b>개 앞${w.behind ? ` · <span title="${esc(w.base)}가 ${w.behind}개 앞서감(합칠 때 rebase) — 이 브랜치를 만든 뒤 ${esc(w.base)}에 들어온 커밋입니다. 합칠 때 그 위로 다시 얹습니다.">${esc(w.base)}에 새 변경 ${w.behind}개</span>` : ''}${w.dirty.length ? ` · <span class="warn">커밋 안 됨 ${w.dirty.length}</span>` : ''}${w.schema_lock ? ' · <span class="warn" title="스키마 잠금 보유 — 이 세션이 DB 구조(migrations)를 바꾸는 중이라 다른 세션은 바꿀 수 없습니다.">DB 구조 바꾸는 중</span>' : ''}</div>
       ${w.commits.length ? `<details${keep(`hand:${sid}:wt-commits`)}><summary class="small muted">커밋 · 바뀐 파일</summary><pre class="hand-body">${esc(w.commits.join('\n'))}\n\n${esc(w.diffstat.join('\n'))}</pre></details>` : ''}
       ${why ? `<div class="small muted">${esc(why)}</div>` : ''}
       ${reviewBlock(w.review)}
@@ -162,8 +162,8 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
   function readsLine(r, can) {
     if (!r) return '';
     const all = r.read === r.total;
-    const drift = r.drift && r.drift.length ? `<div class="hand-group"><span class="hand-lbl small muted">바뀐 것</span><div>${driftList(r.drift, '받을 때 요약 뒤 바뀐 것')}</div></div>` : '';
-    return `<div class="hand-group"><span class="hand-lbl small muted">읽을 곳</span><div class="hand-btns">
+    const drift = r.drift && r.drift.length ? `<div class="hand-group"><span class="hand-lbl small muted">요약 뒤 바뀐 것</span><div>${driftList(r.drift, '받을 때 요약 뒤 바뀐 것')}</div></div>` : '';
+    return `<div class="hand-group"><span class="hand-lbl small muted" title="읽을 곳 — 새 세션이 먼저 읽어야 할 문서 중 실제로 연 것의 수입니다.">읽을 곳</span><div class="hand-btns">
       <span class="small ${all ? 'ok' : 'warn'}">${r.read}/${r.total} 읽음${all ? '' : ` — 안 읽음: ${r.missing.map(esc).join(', ')}`}${r.auto && r.auto.length ? ` <span class="muted" title="자동 — 세션이 시작할 때 저절로 들어오는 문서라 읽음으로 셉니다.">(자동: ${r.auto.map(esc).join(', ')})</span>` : ''}</span>
       ${all ? '' : `<button data-act="reads-resend" class="small"${can ? '' : ' disabled'} title="안 읽은 곳 다시 보내기 — 아직 읽지 않은 문서만 다시 보내고, 읽은 뒤 걸리는 규칙을 말하게 합니다.">안 읽은 곳 다시 보내기</button>`}
     </div></div>${drift}`;
@@ -219,7 +219,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         : `<div class="small">새 세션이 이어받았습니다. 옛 세션 끝내기만 남았습니다.</div><div class="row">${b('flow-end', '옛 세션 끝내기', can.exit, 'danger', '옛 세션 끝내기 — 이 세션을 /exit로 끝냅니다.')}${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 이 세션을 살려 둡니다.')}</div>`;
       main = `<div class="flow">${steps}${body}</div>`;
     }
-    const hist = data.summaries.length > 1 ? `<details class="hand-hist"${keep(`hand:${sid}:hist`)}><summary class="small muted">요약 이력 ${data.summaries.length}</summary>${
+    const hist = data.summaries.length > 1 ? `<details class="hand-hist"${keep(`hand:${sid}:hist`)}><summary class="small muted" title="지난 요약 — 이 세션에서 받은 요약 목록입니다. 맨 위가 지금 쓰는 것입니다.">지난 요약 ${data.summaries.length}</summary>${
       data.summaries.map((x) => `<div class="small">#${x.id} ${esc(KIND[x.kind] || x.kind)} · ${esc(SOURCE[x.source] || x.source)} · ${esc(STATUS[x.status] || x.status)} · ${ago(x.created_at)}${x.chars ? ` · ${x.chars}자` : ''}</div>`).join('')}</details>` : '';
     // 문서 정리 — 평소엔 접고, 사람이 할 일(목록 승인 · 쓰기 확인)이나 도는 점검이 있으면 연다(사람이 닫으면 그대로)
     const p0 = prom(), lc0 = (data.losschecks || [])[0] || null;

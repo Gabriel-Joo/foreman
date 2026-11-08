@@ -5,7 +5,7 @@
 // 10b: 승인 카드 · 대화 · 활동 · 세션 정보 · 파이프라인 HTML은 함수로 내보낸다 — 픽셀 화면 옆 패널(opanel.js)도 같은 것을 쓴다.
 
 export const STATE_LABEL = { ACTIVE: '작업 중', IDLE: '대기', SUSPENDED: '정지', DORMANT: '종료' };
-export const ORIGIN_LABEL = { human: '나', task_notification: '완료 알림', subagent_message: '서브에이전트 결과', agent_message: '다른 세션', meta: '시스템', handoff: '옮기기 요약 요청(FOREMAN)', handoff_in: '옮겨 온 요약(FOREMAN)' };
+export const ORIGIN_LABEL = { human: '나', task_notification: '완료 알림', subagent_message: '서브에이전트 결과', agent_message: '다른 세션', meta: '자동 메시지', handoff: '옮기기 요약 요청(FOREMAN)', handoff_in: '옮겨 온 요약(FOREMAN)' };
 const END_LABEL = { stop: '끝남', stop_failure: 'API 오류', interrupted: '중단', session_end: '세션 종료', process_lost: '프로세스 사라짐', merged: '다음 입력에 합쳐짐', no_signal: '신호 없음', abandoned: '끝 신호 없이 버려짐' };
 
 import { stuckTurn } from './store.js';
@@ -18,7 +18,12 @@ export function sessionName(s) { return s.custom_title || s.title || s.cc_name |
 export function sessionSub(s) {
   // 캐릭터 이름이 역할 이름으로 시작하면(0017 재배치 — "코더" · "코더 foreman-2") 역할은 다시 쓰지 않는다
   const role = ROLE_LABEL[s.role] || s.role;
-  return [s.character, s.character && role && s.character.startsWith(role) ? null : role, s.short, s.tmux_pane].filter(Boolean).join(' · ');
+  // 겉은 캐릭터 · 역할만(11-09 — 짧은 id · tmux 창은 호버로, sessionIds)
+  return [s.character, s.character && role && s.character.startsWith(role) ? null : role].filter(Boolean).join(' · ');
+}
+// 호버용 — 세션 짧은 id · tmux 창
+export function sessionIds(s) {
+  return [s.short ? `세션 ${s.short}` : '', s.tmux_pane ? `tmux 창 ${s.tmux_pane}` : ''].filter(Boolean).join(' · ');
 }
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -133,14 +138,14 @@ export function why(s) {
 export function projectLabel(st, name) { return (st.projects.find((p) => p.name === name) || {}).label || name || '미분류'; }
 
 // 처리된 승인 카드의 상태(11-06 — "allowed · browser"처럼 DB 값이 그대로 보였다). [글, 색]
-const APPR_DONE = { allowed: ['허용했습니다', 'ok'], denied: ['거부했습니다', 'bad'], timeout: ['시간이 지나 CC가 정했습니다', 'warn'],
+const APPR_DONE = { allowed: ['허용했습니다', 'ok'], denied: ['거부했습니다', 'bad'], timeout: ['시간 초과 — CC가 기본값대로 정했습니다', 'warn'],
   terminal: ['터미널에서 답했습니다', ''], abandoned: ['브리지가 다시 떠서 정리했습니다', 'muted'], pending: ['기다리는 중입니다', 'warn'] };
 const APPR_BY = { browser: '화면에서', terminal: '터미널에서', bridge: '브리지가' };
 export function approvalCard(a, st) {      // 버튼은 data-aid · data-act(allow · deny · open) — 누르면 handleApprovalClick
   const done = a.status !== 'pending';
   return `<div class="appr ${done ? 'done' : ''}">
     <div class="appr-main">
-      <div><b>🔐 ${esc(projectLabel(st, a.project))}</b> · ${esc(a.tool)} <span class="muted small">#${a.id} · ${esc(a.rule)}</span></div>
+      <div><b>🔐 ${esc(projectLabel(st, a.project))}</b> · <span title="${esc(a.tool)} — 승인 #${a.id} · 걸린 규칙 ${esc(a.rule)}">${esc(a.tool)}</span></div>
       ${a.summary ? `<div class="appr-sum">▶ ${esc(a.summary)}</div>` : ''}
       ${a.summary ? `<details class="small"${keep(`appr:${a.id}:cmd`)}><summary class="muted">명령 전체</summary><code>${esc(a.target)}</code></details>` : `<code>${esc(a.target)}</code>`}
       <div class="small muted">${esc(a.reason || '')}${a.error ? ` · <span class="bad">${esc(a.error)}</span>` : ''}</div>
@@ -165,13 +170,24 @@ export function handleApprovalClick(ev, store, openSession) {
 export function sessionKv(s, pend) {
   const t = s.tokens || {};
   return `<div class="small kv">
-      <span>프로세스</span><span>${s.pid ? `${s.pid} (${esc(s.proc)}) · CC ${esc(s.cc_status || '?')}` : '없음'}${s.tmux_pane ? ' · tmux ' + esc(s.tmux_pane) : ''}</span>
+      <span>상태</span><span title="${esc(procTip(s))}">${procLabel(s)}</span>
       <span>지금</span><span>${s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target, 120))} (${ago(s.activity.ts)})` : (s.state === 'ACTIVE' ? '생각 중' : STATE_LABEL[s.state])}</span>
       <span>서브에이전트</span><span>${s.subagents_running ? `${s.subagents_running}개 — ${esc((s.subagent_descs || []).join(', '))}` : '없음'}</span>
       <span>모델</span><span>${modelChip(s, pend) || '<span class="muted">아직 응답 없음</span>'}${s.model_req ? ` <span class="muted">· 띄울 때 고른 것 ${esc(s.model_req)}</span>` : ''}</span>
-      <span>토큰</span><span>입력(캐시 포함) ${tok(t.input)} · 출력 ${tok(t.output)} · 오늘 입력 ${tok(t.today_input)} · 출력 ${tok(t.today_output)}<br><span class="muted">서브에이전트 입력 ${tok(t.subagent_input)} · 출력 ${tok(t.subagent_output)}(추정)</span></span>
+      <span>토큰</span><span><span title="입력(캐시 포함) — 대화가 이어질 때마다 앞 대화를 다시 읽는 몫(캐시)까지 더한 양입니다. 캐시는 싸게 매겨집니다.">입력(캐시 포함) ${tok(t.input)}</span> · 출력 ${tok(t.output)} · 오늘 입력 ${tok(t.today_input)} · 출력 ${tok(t.today_output)}<br><span class="muted" title="서브에이전트 토큰(추정) — 서브에이전트 기록에서 셈한 값이라 실제와 조금 다를 수 있습니다.">서브에이전트 입력 ${tok(t.subagent_input)} · 출력 ${tok(t.subagent_output)}(추정)</span></span>
       ${(t.by_model || []).length ? `<span>모델별</span><span>${byModelTable(t.by_model)}</span>` : ''}
     </div>`;
+}
+// 세션 정보 「상태」 칸(11-09) — 겉은 쉬운 말, pid · 상태 문자 · CC 상태 · tmux 창은 호버로
+const PROC_KO = { R: '실행', S: '대기(잠듦)', D: '디스크 대기', T: '멈춤(Ctrl+Z)', Z: '좀비', I: '유휴' };
+function procLabel(s) {
+  if (!s.pid) return '꺼짐';
+  if (s.proc === 'T') return '켜짐 · 멈춰 둠';
+  return `켜짐 · ${s.cc_status === 'busy' ? '일하는 중' : s.cc_status ? '쉬는 중' : '상태 모름'}`;
+}
+function procTip(s) {
+  if (!s.pid) return '꺼짐 — 이 세션의 프로세스가 없습니다.';
+  return `상태 — 프로세스 ${s.pid} (${s.proc || '?'}${PROC_KO[s.proc] ? ' ' + PROC_KO[s.proc] : ''}) · CC ${s.cc_status || '?'}${s.tmux_pane ? ` · tmux 창 ${s.tmux_pane}` : ''}`;
 }
 
 // 모델(11-05) — 지금 쓰는 모델(마지막 응답). Opus는 비싸서 색으로 구분한다
@@ -227,11 +243,11 @@ export function mountApprovalHistory(det, head, body, store) {
       const yes = h.by_rule.filter((b) => b.always_yes);
       const rules = h.by_rule.map((b) => `<tr${b.always_yes ? ' class="warn"' : ''}><td>${esc(b.rule)}</td><td>${b.n}</td><td>${b.approved}</td><td>${b.denied}</td><td>${b.unknown}</td><td>${b.always_yes ? '늘 허락함 — 묻지 않게 바꿀 후보' :''}</td></tr>`).join('');
       const items = h.items.slice(0, 30).map((x) => `<li><span class="${OUT[x.outcome][1]}">${OUT[x.outcome][0]}</span> <span class="muted">${ago(x.at)} · ${esc(x.project || '미분류')} · ${esc(x.rule)}</span> ${esc(oneLine(x.summary || '', 140))}</li>`).join('');
-      const obs = h.observe.length ? `<div class="muted">관찰 모드(창을 띄우지 않음)에서 걸렸을 것: ${h.observe.map((o) => `${esc(o.project)} ${esc(o.rule)} ${o.n}`).join(' · ')}</div>` : '';
+      const obs = h.observe.length ? `<div class="muted" title="묻지 않고 지켜보기만 한 것 — 관찰 모드인 규칙입니다. 승인 창을 띄우지 않고, 창을 띄웠다면 걸렸을 것만 셉니다.">묻지 않고 지켜보기만 한 것:${h.observe.map((o) => `${esc(o.project)} ${esc(o.rule)} ${o.n}`).join(' · ')}</div>` : '';
       body.innerHTML = `
         <div class="row"><button class="ghost small" data-days="1">오늘</button><button class="ghost small" data-days="7">7일</button><button class="ghost small" data-days="30">30일</button></div>
         ${yes.length ? `<div class="warn" title="늘 허락함 — 매번 허락한 규칙입니다. 묻지 않게 바꾸면 번거로움이 줄어듭니다(config/approval.toml).">늘 허락함: ${yes.map((b) => `${esc(b.rule)} ${b.n}번`).join(' · ')} — 묻는 의미가 없으면 규칙을 고칩니다</div>` : ''}
-        ${rules ? `<table class="hist"><tr><th>규칙</th><th>걸림</th><th>승인</th><th>거부</th><th>모름</th><th></th></tr>${rules}</table>` : '<div class="muted">걸린 것 없음</div>'}
+        ${rules ? `<table class="hist"><tr><th title="규칙 — 승인 창을 띄운 규칙의 이름입니다(config/approval.toml).">규칙</th><th>걸림</th><th>승인</th><th>거부</th><th>모름</th><th></th></tr>${rules}</table>` : '<div class="muted">걸린 것 없음</div>'}
         ${obs}<ul class="hist-items">${items}</ul>`;
     } catch (e) { body.textContent = '불러오지 못함'; }
   }
@@ -293,7 +309,7 @@ export function toolDetailHtml(d) {
 
 // ── 8단계 파이프라인 — 프로젝트마다 인프라 캐릭터와 최근 체인(커밋 → Jenkins → Harbor → ArgoCD), 깨진 곳은 붉게 ──
 const PIPE_STAGES = [['jenkins', 'Jenkins'], ['harbor', 'Harbor'], ['argocd', 'ArgoCD']];
-const PIPE_MARK = { success: '✓', failed: '✗', running: '…', waiting: '⏸ Sync 대기', stale: '– 나중 배포로 대체' };   // waiting — 수동 Sync 앱, 실패 아님(11-03). stale — 끝 알림 없이 남았던 것(11-05)
+const PIPE_MARK = { success: '✓', failed: '✗', running: '…', waiting: '⏸ 배포 승인 기다림', stale: '– 나중 배포로 대체' };   // waiting — 수동 Sync 앱, 실패 아님(11-03). stale — 끝 알림 없이 남았던 것(11-05)
 const INFRA_LABEL = { IDLE: '응답', ACTIVE: '일하는 중', STALE: '응답 없음' };
 export function pipeBlock(pp) {
   if (!pp) return '';
@@ -302,9 +318,9 @@ export function pipeBlock(pp) {
   // 빠진 알림 찾기(11-03): push 뒤 시작 알림이 없으면 3분에 노란색, 17분에 빨간색(텔레그램도)
   const w = pp.watch;
   const watch = w && w.state !== 'ok'
-    ? `<div class="small ${w.state === 'missing' ? 'bad' : 'warn'}">${w.state === 'missing' ? '빌드 알림 없음 — Jenkins 확인' : '빌드 시작 알림 없음 — 폴링 안전망 대기'}: push <code class="sha">${esc(w.short)}</code> ${esc(oneLine(w.subject || '', 60))} · ${ago(w.since)}</div>`
+    ? `<div class="small ${w.state === 'missing' ? 'bad' : 'warn'}"${w.state === 'missing' ? '' : ' title="빌드 시작 알림 없음 — Jenkins가 push 알림(웹훅)을 못 받은 것 같습니다. 몇 분마다 저장소를 직접 확인하는 폴링이 대신 빌드를 시작하길 기다립니다."'}>${w.state === 'missing' ? '빌드 알림 없음 — Jenkins 확인' : '빌드 시작 알림 없음 — Jenkins가 스스로 확인하길 기다리는 중'}: push <code class="sha">${esc(w.short)}</code> ${esc(oneLine(w.subject || '', 60))} · ${ago(w.since)}</div>`
     : (w ? `<div class="small muted">빌드 기다리는 중: push <code class="sha">${esc(w.short)}</code> · ${ago(w.since)}</div>` : '');
-  const hook = pp.webhook_broken ? '<div class="small bad">웹훅 끊김 의심 — 최근 빌드가 폴링으로 시작</div>' : '';
+  const hook = pp.webhook_broken ? '<div class="small bad" title="빌드 알림 끊김 의심 — push 때 Jenkins로 가는 알림(웹훅)이 끊긴 것 같습니다. 최근 빌드가 웹훅이 아니라 폴링(주기적 확인)으로 시작했습니다.">빌드 알림 끊김 의심 — 최근 빌드가 늦게 시작했습니다</div>' : '';
   const chips = infra.map((c) => `<span class="pill infra ${c.status === 'STALE' ? 'warn' : ''}" title="${esc(INFRA_LABEL[c.status] || c.status)} · 마지막 응답 ${esc(ago(c.last_seen_at))}">${esc(c.name)}${c.status === 'STALE' ? ' ⚠' : ''}</span>`).join('');
   const who = (c) => c.title || c.character || (c.session_id ? '세션' : '사람');
   const chains = pp.chains.slice(0, 4).map((ch) => {
@@ -314,7 +330,7 @@ export function pipeBlock(pp) {
     const steps = PIPE_STAGES.map(([k, label]) => {
       const x = ch.stages[k];
       const cls = x ? `ps-${x.status}` : 'ps-none';
-      const tip = x ? `${label} ${x.status}${x.step ? ' · ' + x.step : ''}${x.message ? '\n' + x.message : ''}` : `${label} 아직`;
+      const tip = x ? `${label} ${x.status}${x.step ? ' · ' + x.step : ''}${x.status === 'waiting' ? '\n배포 승인 기다림 — ArgoCD에서 Sync를 눌러야 올라갑니다.' : ''}${x.message ? '\n' + x.message : ''}` : `${label} 아직`;
       const inner = `${label} ${x ? PIPE_MARK[x.status] || '' : '·'}${x && x.step && x.status === 'failed' ? ` <b>${esc(x.step)}</b>` : ''}`;
       return x && x.url ? `<a class="ps ${cls}" href="${esc(x.url)}" target="_blank" rel="noopener" title="${esc(tip)}">${inner}</a>`
         : `<span class="ps ${cls}" title="${esc(tip)}">${inner}</span>`;
@@ -464,7 +480,7 @@ export function createRenderer(root, store) {
         <b class="title" title="${esc(sessionName(s))}">${esc(sessionName(s))}</b>
         <span class="right small muted">${s.state === 'DORMANT' ? ago(s.last_ts) : STATE_LABEL[s.state]}</span>
       </div>
-      <div class="sub small muted">${esc(sessionSub(s))}</div>
+      <div class="sub small muted" title="${esc(sessionIds(s))}">${esc(sessionSub(s))}</div>
       ${turn}${doing}${reply}
       <div class="meta small">
         ${s.subagents_running ? `<span class="pill">서브에이전트 ${s.subagents_running}</span>` : ''}
@@ -500,7 +516,7 @@ export function createRenderer(root, store) {
       $('inputForm').hidden = true;
       return;
     }
-    $('panelHead').innerHTML = `<span class="badge st-${s.state}">${s.state}</span> <b>${esc(sessionName(s))}</b><div class="muted small">${esc(sessionSub(s))} · ${esc((s.cwd || '').replace(/^\/home\/[^/]+/, '~'))}</div>`;
+    $('panelHead').innerHTML = `<span class="badge st-${s.state}">${s.state}</span> <b>${esc(sessionName(s))}</b><div class="muted small" title="${esc(sessionIds(s))}">${esc(sessionSub(s))} · ${esc((s.cwd || '').replace(/^\/home\/[^/]+/, '~'))}</div>`;
     $('panelInfo').innerHTML = sessionKv(s);
     const convo = $('convo');
     const atBottom = convo.scrollHeight - convo.scrollTop - convo.clientHeight < 40 || lastSel !== s.id;
@@ -510,7 +526,7 @@ export function createRenderer(root, store) {
     $('inputForm').hidden = false;
     const blocked = !s.injectable;
     $('inputText').disabled = blocked; $('sendBtn').disabled = blocked;
-    $('inputWhy').textContent = blocked ? `보낼 수 없음 — ${why(s)}` : (s.state === 'ACTIVE' ? '작업 중 — 대기열' : '');
+    $('inputWhy').textContent = blocked ? `보낼 수 없음 — ${why(s)}` : (s.state === 'ACTIVE' ? '작업 중 — 끝나면 전달' : '');
     const li = st.lastInput && st.lastInput.sessionId === s.id ? st.lastInput : null;
     $('inputResult').innerHTML = li ? `<span class="${li.ok ? 'ok' : 'bad'}">${esc(li.msg)}${li.guarded ? ' (첫 글자 보호)' : ''}</span>` : '';
     if (lastSel !== s.id) { $('inputText').value = ''; lastSel = s.id; }

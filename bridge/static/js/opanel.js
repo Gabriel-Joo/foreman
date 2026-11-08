@@ -7,7 +7,7 @@
 // 너비는 두 가지(좁게 = 픽셀 볼 때, 넓게 = 대화 읽을 때)를 오가고, 각각 끌어서 바꾼 값을 따로 기억한다.
 
 import { approvalCard, handleApprovalClick, sessionKv, modelChip, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
-         sessionName, sessionSub, projectLabel, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN } from './render.js';
+         sessionName, sessionSub, sessionIds, projectLabel, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN } from './render.js';
 import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
 import { mountHandoff, FLOW_TIP } from './handoff.js';
@@ -58,7 +58,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         <div id="pTabSess" class="ptab" hidden>
           <div id="pInfo"></div>
           <section id="pHand"></section>
-          <details id="pKvBox" class="hand"><summary title="세션 정보 · 토큰 — 프로세스 · 지금 하는 일 · 서브에이전트 · 모델 · 토큰(모델별)."><b>세션 정보 · 토큰</b> <span id="pKvHead" class="small muted"></span></summary><div id="pKv"></div></details>
+          <details id="pKvBox" class="hand"><summary title="세션 정보 — 켜져 있는지, 지금 무엇을 하는지, 어떤 모델을 쓰는지, 얼마나 썼는지 봅니다."><b>세션 정보 · 토큰</b> <span id="pKvHead" class="small muted"></span></summary><div id="pKv"></div></details>
           <details id="pHist" class="appr-hist"><summary class="small" title="승인 기록 — 세션이 위험할 수 있는 명령을 하려다 나에게 물은 것과, 내가 어떻게 답했는지입니다.">승인 기록<span id="pHistHead" class="muted"></span></summary><div id="pHistBody" class="small"></div></details>
         </div>
       </div>
@@ -256,11 +256,11 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const snoozed = c && compactSnoozed(s.id, c.count);
     if (!c || !c.level || snoozed) { drawContext(s); return; }
     const late = c.level === 'late';
-    const html = `<span class="${late ? 'bad' : 'warn'}">📦 압축 ${c.count}번 — ${late
+    const html = `<span class="${late ? 'bad' : 'warn'}" title="대화 자동 요약 — 대화가 길어 앞부분을 요약해 줄였습니다. 줄일수록 처음에 정한 것을 잊습니다.">📦 대화 자동 요약 ${c.count}번 — ${late
         ? '늦었습니다. 앞에서 정한 결정 · 금지가 이미 많이 빠졌을 수 있습니다.'
-        : '넘어갈 때입니다. 처음에 정한 것이 빠지기 시작합니다.'}${c.short ? ' 압축 간격도 짧습니다.' : ''}</span>
+        : '넘어갈 때입니다. 처음에 정한 것이 빠지기 시작합니다.'}${c.short ? ' 요약 간격도 짧습니다.' : ''}</span>
       ${s.injectable ? `<button type="button" data-cmp="handoff" class="small" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
-      <button type="button" data-cmp="loss" class="small" title="압축으로 잊은 것 찾기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 결과는 [세션] 탭 「넘기기 전 정리」에 나옵니다.">압축으로 잊은 것 찾기</button>
+      <button type="button" data-cmp="loss" class="small" title="압축으로 잊은 것 찾기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. 내가 보낸 말 20개당 약 0.4달러 · 1.5분이 들고, 결과는 [세션] 탭 「넘기기 전 정리」에 나옵니다.">압축으로 잊은 것 찾기</button>
       <button type="button" data-cmp="later" class="ghost small" title="나중에 — 다음 압축까지 이 띠를 숨깁니다.">나중에</button>`;
     put('pCmp', 'cmp', html);
     $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;
@@ -276,8 +276,10 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const late = lv === 'late';
     // 11-09 사용자 문구 — 겉은 짧게, 호버에 크기를 사람 말로(한글 ≈ 토큰 × 0.9자, 책 한 권 ≈ 10만 자)
     const usd = x.usd_reply != null ? ` · 응답당 약 $${x.usd_reply < 0.1 ? x.usd_reply.toFixed(2) : x.usd_reply.toFixed(1)}` : '';
-    const tip = `토큰 ${koNum(x.tokens)}, 한글 ${koNum(Math.round(x.tokens * 0.9 / 10000) * 10000)} 자, 책 ${koBooks(x.tokens * 0.9 / 100000)}쯤입니다. `
-      + '답할 때마다 이걸 전부 다시 읽고, 그만큼 비용이 듭니다. 새 세션으로 옮기면 수십k에서 다시 시작합니다.';
+    // 툴팁 모양(11-09): 제목 — 설명 / 숫자 한 줄에 하나
+    const tip = '지금까지 쌓인 대화 — 답할 때마다 이걸 전부 다시 읽고, 그만큼 비용이 듭니다. 새 세션으로 옮기면 수십k에서 다시 시작합니다.'
+      + `\n토큰 ${koNum(x.tokens)}\n한글 약 ${koNum(Math.round(x.tokens * 0.9 / 10000) * 10000)} 자 (책 ${koBooks(x.tokens * 0.9 / 100000)}쯤)`
+      + (x.usd_reply != null ? `\n응답당 약 $${x.usd_reply.toFixed(2)}` : '');
     const html = `<span class="${late ? 'bad' : 'warn'}" title="${esc(tip)}">🧠 지금까지 쌓인 대화 ${Math.round(x.tokens / 1000)}k${usd}</span>
       ${s.injectable ? `<button type="button" data-cmp="handoff" class="small" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
       <button type="button" data-cmp="ctxlater" class="ghost small" title="나중에 — 다음 단계(500k)까지 이 띠를 숨깁니다.">나중에</button>`;
@@ -313,7 +315,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       return;
     }
     if (b.dataset.cmp === 'loss') {
-      if (!confirm('압축으로 잊은 것 찾기 — 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 끝나면 알림이 갑니다. 진행할까요?')) return;
+      if (!confirm('압축으로 잊은 것 찾기 — 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 내가 보낸 말 20개당 약 0.4달러 · 1.5분이 들고, 끝나면 알림이 갑니다. 진행할까요?')) return;
       b.disabled = true;
       const r = await fetch(`/api/sessions/${s.id}/losscheck`, { method: 'POST', headers: store.headers(true), body: '{}' });
       const j = await r.json().catch(() => ({}));
@@ -448,8 +450,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const now = s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target || '', 60))}` : (s.state === 'ACTIVE' ? '생각 중' : '');
     put('pMeta', 'meta', `<span class="badge st-${s.state}">${esc(STATE_LABEL[s.state] || s.state)}</span>
       <span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
-      · <span class="muted">오늘 출력 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn" title="끝났는지 모름 — 작업이 끝났다는 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.">⚠ 끝났는지 모름</span>' : ''}`);
-    $('pMeta').title = `${sessionSub(s)} · ${projectLabel(st, s.project)} · ${(s.cwd || '')}`;
+      · <span class="muted" title="오늘 출력 토큰 — 이 세션이 오늘 쓴 글의 양입니다.">오늘 출력 토큰 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn" title="끝났는지 모름 — 작업이 끝났다는 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.">⚠ 끝났는지 모름</span>' : ''}`);
+    $('pMeta').title = [sessionSub(s), sessionIds(s), projectLabel(st, s.project), s.cwd || ''].filter(Boolean).join(' · ');
     drawCompact(s);
     drawOverlap(s);
     // 대화 — 바뀔 때만
@@ -473,15 +475,15 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         })() : ''}`);
       put('pKv', 'kv', sessionKv(s, pendModel(st, s)));
       const t_ = s.tokens || {};
-      $('pKvHead').textContent = `${s.model_label || ''}${s.model_label ? ' · ' : ''}오늘 출력 ${tok(t_.today_output)}`;
+      $('pKvHead').textContent = `${s.model_label || ''}${s.model_label ? ' · ' : ''}오늘 출력 토큰 ${tok(t_.today_output)}`;
     }
     const blocked = !s.injectable;
     $('pText').disabled = blocked; $('pSend').disabled = blocked;
     // 입력 칸 아래 — 가운데는 세션 상태(짧게), 아래 줄은 보낸 결과(성공은 한 마디, 잘못됐을 때만 자세히)(11-05)
     const why_ = blocked ? why(s) : '';
-    $('pWhy').textContent = blocked ? '보낼 수 없음' : (s.state === 'ACTIVE' ? '작업 중 — 대기열' : '');
+    $('pWhy').textContent = blocked ? '보낼 수 없음' : (s.state === 'ACTIVE' ? '작업 중 — 끝나면 전달' : '');
     $('pWhy').className = `pwhy small${blocked ? ' bad' : s.state === 'ACTIVE' ? ' busy' : ''}`;
-    if (blocked) $('pWhy').dataset.tip = `보낼 수 없음 — ${why_}`; else if (s.state === 'ACTIVE') $('pWhy').dataset.tip = '작업 중 — 지금 보내면 대기열에 들어가 진행 중인 작업에 이어 전달됩니다.'; else delete $('pWhy').dataset.tip;
+    if (blocked) $('pWhy').dataset.tip = `보낼 수 없음 — ${why_}`; else if (s.state === 'ACTIVE') $('pWhy').dataset.tip = '작업 중 — 지금 보내면 하던 일이 끝난 뒤 이어서 전달됩니다.'; else delete $('pWhy').dataset.tip;
     const li = st.lastInput && st.lastInput.sessionId === s.id && Date.now() - st.lastInput.ts < (st.lastInput.ok ? 8000 : 60000) ? st.lastInput : null;
     $('pResult').innerHTML = blocked ? `<span class="muted">${esc(why_)}</span>` : li ? `<span class="${li.ok ? 'ok' : 'bad'}">${esc(li.msg)}</span>` : '';
     if (switched) { $('pText').value = ''; lastSel = s.id; $('pNew').hidden = true; }
