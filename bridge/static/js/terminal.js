@@ -3,6 +3,7 @@
 // 사람이 Enter를 치고 암호를 넣는다. 결과는 브리지가 부탁한 세션에 돌려준다(terminal_result).
 
 import { keep } from './render.js';
+import { applyTermFont } from './uiscale.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const PROJ = { runshoes: '런슈즈', 'petmint-rag-chatbot': '펫퍼민트', foreman: 'FOREMAN' };
@@ -56,7 +57,10 @@ export function createTerminal(store) {
     requestAnimationFrame(setHeight);
   }
   $('termToggle').onclick = () => setOpen(!open);
-  frame.addEventListener('load', () => { if (open) setTimeout(focusShell, 200); });
+  // 글씨 크기(11-08, uiscale.js) — ttyd가 xterm을 띄운 뒤(window.term)에 맞춘다. 버튼을 누르면 바로
+  function fitFont(tries = 20) { if (!applyTermFont(frame) && tries > 0) setTimeout(() => fitFont(tries - 1), 250); }
+  frame.addEventListener('load', () => { fitFont(); if (open) setTimeout(focusShell, 200); });
+  window.addEventListener('foreman-uiscale', () => fitFont(0));
   window.addEventListener('resize', setHeight);
 
   $('termReqs').addEventListener('click', (ev) => {

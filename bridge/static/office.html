@@ -102,7 +102,13 @@
   .pnew[hidden] { display:none; }
   .oside .feed { max-height:none; }
   .oside .input { padding:8px 12px; flex:none; }
-  .oside .input textarea { resize:vertical; min-height:3.2em; }
+  .oside .input textarea { resize:vertical; min-height:6.5em; max-height:45dvh; }
+  /* 글씨 크기(11-08, js/uiscale.js) — 패널 안쪽 전체를 한 배율로. 폭은 그대로(안쪽 글이 그만큼 접힌다) */
+  .oside-main { zoom:var(--ui-zoom, 1.2); }
+  @media (max-height: 860px) { .oside .input textarea { min-height:3.6em; } }   /* 낮은 창 — 대화가 보이게(끌어서 키울 수 있다) */
+  .ofont { display:inline-flex; align-items:center; gap:4px; }
+  .ofont button { padding:1px 8px; font-weight:700; }
+  .ofont button:disabled { opacity:.4; cursor:default; }
   .plist-h { margin-top:8px; }
   .plist { display:flex; gap:6px; align-items:center; width:100%; text-align:left; margin-top:4px; padding:4px 8px; }
   .plist b { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
@@ -129,6 +135,7 @@
   import { Store } from '/static/js/store.js';
   import { createOffice } from '/static/js/office.js';
   import { createTerminal } from '/static/js/terminal.js';
+  import '/static/js/uiscale.js';       // 글씨 크기 [가−] [가+](11-08) — 패널 · 터미널
   import '/static/js/foremanchat.js';   // [+ 세션] 창 위의 "디스패처(팀장 · 교장 · 소장)에게 말하기"(11단계 · 11-08)
   const store = new Store();
   window.foreman = store;

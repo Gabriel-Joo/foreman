@@ -31,6 +31,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       <a id="oUsage" class="ghost ousage" href="/usage" data-tip="사용량 — 누르면 한도 · 어디서 나가는지 봅니다.">사용량</a>
       <span class="small muted otheme">테마 ${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장'], ['plain', '도형']].map(([k, v]) => k === theme.name ? `<b>${v}</b>` : `<a href="/?theme=${k}">${v}</a>`).join(' · ')}</span>
       <a class="small" href="/classic" title="클래식 — 카드 목록 화면으로 갑니다.">클래식</a>
+      <span class="ofont" role="group" aria-label="글씨 크기"><button id="oFontDn" class="ghost" title="글씨 작게 — 옆 패널 · 터미널 글씨를 한 단계 줄입니다.">가−</button><span id="oFontV" class="small muted"></span><button id="oFontUp" class="ghost" title="글씨 크게 — 옆 패널 · 터미널 글씨를 한 단계 키웁니다.">가+</button></span>
       <span id="oConn" class="conn"></span>
       <button id="oTok" class="ghost" title="토큰 — API 토큰을 다시 넣습니다.">토큰</button>
     </header>
@@ -551,9 +552,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function aim() {
     const q = view === 'hq' ? world.hq : view === 'map' ? null : roomByView();
     const r = !q ? { x: -1, y: -3, w: world.w + 2, h: world.h + 4 }
-      : q.hq ? { x: q.x - 0.5, y: q.y - 0.5, w: q.w + 1, h: q.h + 6 }          // 아래에 현장 카드 자리
-      : { x: q.x - 0.5, y: q.y - 2.5, w: q.w + 1, h: q.h + 3 };
-    const s = Math.min(W / (r.w * T), H / (r.h * T)) * 0.96;
+      : q.hq ? { x: q.x - 0.3, y: q.y - 0.3, w: q.w + 0.6, h: q.h + 5.6 }      // 아래에 현장 카드 자리
+      // 11-08 위 2.5 → 1.9칸 · 아래 0.5 → 0.4(사용자 — 여백이 많다). 방 위 카드는 남는 높이만큼 줄을 줄여 그린다(drawBadge)
+      : { x: q.x - 0.4, y: q.y - 1.9, w: q.w + 0.8, h: q.h + 2.3 };
+    const s = Math.min(W / (r.w * T), H / (r.h * T)) * 0.99;
     camT.s = s; camT.x = (r.x + r.w / 2) * T; camT.y = (r.y + r.h / 2) * T;
   }
   function toWorld(px, py) { return [(px - W / 2) / cam.s + cam.x, (py - H / 2) / cam.s + cam.y]; }
