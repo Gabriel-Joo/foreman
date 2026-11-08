@@ -128,7 +128,7 @@ def test_chain_windows_and_anchor():
 
 
 def test_floors_weighted_and_stable():
-    assert floors([]) is None and floors([{"pct": 2, "seen_usd": 10}]) is None   # 5% 아래는 반올림 오차가 커서 뺀다
+    assert floors([]) is None and floors([{"pct": 7, "seen_usd": 2.34}]) is None   # 20% 아래는 반올림 오차가 커서 뺀다
     f = floors([{"pct": 90, "seen_usd": 855}, {"pct": 50, "seen_usd": 470}])
     assert f["n"] == 2 and f["min"] == 940 and f["max"] == 950 and f["stable"]
     assert 945 < f["usd"] < 950                                                # 높은 %에 무게
@@ -151,7 +151,7 @@ def test_monitor_observe_fail_alert_recover_and_status():
     cfg = UsageConfig(poll_s=600, fail_alert=3, tz="UTC", prices=CFG.prices, limits=[lim5, limw])
     now = datetime(2001, 1, 1, 12, 0)
     body = ("Current session: 40% used · resets Jan 1, 3pm (UTC)\n"
-            "Current week (all models): 10% used · resets Jan 3, 3pm (UTC)")
+            "Current week (all models): 25% used · resets Jan 3, 3pm (UTC)")
     replies: list = []
 
     async def reader():
@@ -173,10 +173,10 @@ def test_monitor_observe_fail_alert_recover_and_status():
             async with eng.connect() as c:
                 rows = (await c.execute(text("SELECT limit_key, pct, seen_usd FROM usage_observation WHERE limit_key LIKE :k ORDER BY limit_key"),
                                         {"k": tag + "%"})).all()
-            assert [(r[0], float(r[1]), float(r[2])) for r in rows] == [(lim5.key, 40.0, 20.0), (limw.key, 10.0, 20.0)]   # 같은 값은 한 번만
+            assert [(r[0], float(r[1]), float(r[2])) for r in rows] == [(lim5.key, 40.0, 20.0), (limw.key, 25.0, 20.0)]   # 같은 값은 한 번만
             assert [k for k, m in n.sent] == ["usage"] and "로그인" in n.sent[0][1]      # 24시간 안 만료 — 한 번
             st = {x["key"]: x for x in await limit_status(eng, cfg, now + timedelta(minutes=10), mon.latest, history_days=10**5)}
-            assert st[lim5.key]["floor"]["usd"] == 50.0 and st[limw.key]["floor"]["usd"] == 200.0   # $20 ÷ 40% · ÷ 10%
+            assert st[lim5.key]["floor"]["usd"] == 50.0 and st[limw.key]["floor"]["usd"] == 80.0   # $20 ÷ 40% · ÷ 25%
             assert st[lim5.key]["est_pct"] == 40.0 and st[lim5.key]["reset_at"] == datetime(2001, 1, 1, 15, 0)
             # 못 읽음 셋 — 셋째에 한 번만 알림, 화면 오류 칸. 그다음 돌아오면 한 번
             n.sent.clear()
