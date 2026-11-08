@@ -220,7 +220,7 @@ def test_proxy_cookie_origin_ws(shell, tmp_path):
     if not os.access(ttyd, os.X_OK):
         pytest.skip("ttyd 없음")
     s = shell.model_copy(update={"ttyd_bin": ttyd, "mysql_database": "foreman_test", "watch_enabled": False,
-                                 "notify_enabled": False, "pipeline_enabled": False})
+                                 "notify_enabled": False, "pipeline_enabled": False, "usage_enabled": False})
     conn = pymysql.connect(host=s.mysql_host, port=s.mysql_port, user=s.mysql_user,
                            password=s.mysql_password.get_secret_value(), database=s.mysql_database, autocommit=True)
     conn.close()

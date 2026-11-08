@@ -101,6 +101,9 @@ class Settings(BaseSettings):
     webhook_bind_host: str = "192.168.122.1"
     webhook_bind_port: int = 8001
     webhook_allow_cidrs: str = "127.0.0.0/8,192.168.121.0/24,192.168.122.0/24"
+    # 11-08 사용량(docs/15_usage.md) — /usage 주기 읽기 · 환산 · 한도. 끄면 읽기만 멈추고 /api/usage 집계는 남는다
+    usage_enabled: bool = True
+    usage_config: Path = REPO / "config" / "usage.toml"
 
     @field_validator("foreman_webhook_token")
     @classmethod

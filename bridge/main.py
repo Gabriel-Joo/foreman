@@ -19,6 +19,8 @@ from bridge.api import approvals as approvals_api, dashboard as dashboard_api, d
 from bridge.api import foreman as foreman_api, handoff as handoff_api, terminal as terminal_api, webhooks
 from bridge.api import publish as publish_api
 from bridge.api import scribe as scribe_api
+from bridge.api import usage as usage_api
+from bridge.usage import UsageMonitor, load_config as load_usage
 from bridge.notion import NotionClient, Publisher, load_token
 from bridge.foreman import ForemanDispatcher
 from bridge.wake import Waker, load_wake
@@ -254,6 +256,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.info("자동 기상 2단계 켬: %s(하루 %d번)", ", ".join(wr.kinds), wr.daily_max)
         except Exception as e:  # noqa: BLE001 — 자동 기상이 안 떠도 브리지는 뜬다
             log.warning("자동 기상을 켜지 못함: %s", e)
+        # 11-08 사용량(docs/15) — `claude -p "/usage"`를 poll_s마다(모델 호출 없음). 못 읽으면 연달아 fail_alert번에 텔레그램
+        app.state.usage = None
+        usage_task = None
+        if s.usage_enabled:
+            try:
+                ucfg = load_usage(s.usage_config)
+                app.state.usage = UsageMonitor(engine, ucfg, app.state.notifier, on_change=usage_api.invalidate)
+                usage_task = asyncio.create_task(app.state.usage.run(), name="foreman-usage")
+                log.info("사용량 읽기 켬: %d초마다, 한도 %s", ucfg.poll_s, ", ".join(x.key for x in ucfg.limits))
+            except Exception as e:  # noqa: BLE001 — 설정이 깨져도 브리지는 뜬다. 다만 조용히 넘어가지 않는다
+                why = f"사용량 읽기를 켜지 못했다(config/usage.toml): {type(e).__name__}: {str(e)[:200]}"
+                log.error(why)
+                if app.state.notifier:
+                    rule = app.state.notifier.rules.for_project("foreman")
+                    app.state.notifier.send_direct("foreman", "usage", None, f"{(rule and rule.prefix) or '[FOREMAN]'} ⚠ {why}")
         log.info("브리지 시작 %s:%d (DB %s:%d, 와처 %s)", s.bind_host, s.bind_port, s.mysql_host, s.mysql_port,
                  "켬" if s.watch_enabled else "끔")
         try:
@@ -274,7 +291,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await app.state.notifier.stop()
             if app.state.terminal:
                 await app.state.terminal.stop()   # ttyd만 내린다 — tmux 셸은 남는다
-            for t in (watch_task, state_task, health_task):
+            for t in (watch_task, state_task, health_task, usage_task):
                 if t:
                     t.cancel()
                     try:
@@ -297,6 +314,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(foreman_api.router)
     app.include_router(approvals_api.router)
     app.include_router(dashboard_api.router)
+    app.include_router(usage_api.router)
     app.include_router(terminal_api.api)
     app.include_router(terminal_api.router)
     app.include_router(webhooks.router)

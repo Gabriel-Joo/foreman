@@ -41,3 +41,156 @@ def test_record_cli_writes_rows():
                 await c.execute(text("DELETE FROM usage_extra WHERE source = :s"), {"s": src})
             await eng.dispose()
     asyncio.run(go())
+
+
+# ── 2단계: 환산 · /usage 글 풀이 · 창 · 하한 · 주기 읽기 ──────────────
+
+from datetime import datetime, timedelta  # noqa: E402
+
+from bridge.usage import (Limit, UsageConfig, UsageMonitor, chain_windows, floors, limit_status, load_config,  # noqa: E402
+                          next_weekly, parse_reset, parse_usage)
+
+CFG = load_config("config/usage.toml")
+# 11-08 09:30 KST 실제 `claude -p "/usage"`의 result(앞부분)
+CLI_BODY = """You are currently using your subscription to power your Claude Code usage
+
+Current session: 46% used · resets Nov 8, 12:10pm (Asia/Seoul)
+Current week (all models): 90% used · resets Nov 8, 10pm (Asia/Seoul)
+Current week (Fable): 0% used · resets Nov 8, 10pm (Asia/Seoul)
+
+What's contributing to your usage?
+Approximate · sessions on this machine only · shares overlap
+
+Last 24h · 363 requests · 5 sessions
+  91%  Start fresh when you switch tasks · run /clear"""
+# 같은 날 tmux 화면의 /usage(Usage 탭) — 머리 · 막대 · Resets가 여러 줄
+SCREEN_BODY = """   Settings  Status   Config   Usage   Stats
+   Session
+   Total cost:            $0.0000
+   Current session
+   ███████████████████████                            46% used
+   Resets 12:10pm (Asia/Seoul)
+   Current week (all models)
+   █████████████████████████████████████████████      90% used
+   Resets Nov 8, 10pm (Asia/Seoul)
+   Current week (Fable)
+                                                      0% used
+   Resets Nov 8, 10pm (Asia/Seoul)"""
+NOW = datetime(2026, 11, 8, 0, 30)          # UTC = 09:30 KST
+
+
+def test_usd_prices():
+    t = {"input": 1_000_000, "output": 1_000_000, "cache_read": 1_000_000, "cache_write": 1_000_000}
+    assert round(CFG.usd("claude-opus-5-5", t), 4) == 4 + 20 + 0.2 + 8
+    assert round(CFG.usd("claude-haiku-5-5", t), 4) == 0.1 + 0.5 + 0.01 + 0.2
+    assert CFG.usd("<synthetic>", t) == 0.0                                    # 표에 없는 모델은 0
+
+
+def test_parse_cli_and_screen_forms():
+    for body in (CLI_BODY, SCREEN_BODY):
+        found, missing = parse_usage(body, CFG.limits, NOW, CFG.tz)
+        assert missing == []
+        assert found["session_5h"]["pct"] == 46 and found["session_5h"]["reset_at"] == datetime(2026, 11, 8, 3, 10)
+        assert found["weekly_all"]["pct"] == 90 and found["weekly_all"]["reset_at"] == datetime(2026, 11, 8, 13, 0)
+        assert found["weekly_fable"]["pct"] == 0
+        assert "What's" not in found["weekly_fable"]["line"] and "█" not in found["weekly_all"]["line"]
+    found, missing = parse_usage(CLI_BODY.replace("Current week (Fable)", "Current week (Opus)"), CFG.limits, NOW, CFG.tz)
+    assert missing == ["주간 · Fable"]                                          # 글 모양이 바뀌면 못 찾은 것을 말한다
+    assert parse_usage("", CFG.limits, NOW, CFG.tz)[1] == [x.label for x in CFG.limits]
+
+
+def test_parse_reset_rollovers():
+    # 날짜 없는 시각이 이미 지났으면 다음 날
+    assert parse_reset("Resets 9am (Asia/Seoul)", NOW, "Asia/Seoul") == datetime(2026, 11, 9, 0, 0)
+    # 12월 31일에 본 "Jan 1" → 다음 해
+    assert parse_reset("resets Jan 1, 10pm (Asia/Seoul)", datetime(2026, 12, 31, 3, 0), "Asia/Seoul") == datetime(2027, 1, 1, 13, 0)
+    assert parse_reset("resets 12am", NOW, "UTC") == datetime(2026, 11, 9, 0, 0)
+    assert parse_reset("리셋 모름", NOW, "Asia/Seoul") is None
+
+
+def test_next_weekly_sunday_22():
+    # 11-08(일) 09:30 KST → 그날 22:00 KST = 13:00 UTC, 지나면 다음 주
+    assert next_weekly("일요일 22:00", NOW, "Asia/Seoul") == datetime(2026, 11, 8, 13, 0)
+    assert next_weekly("일요일 22:00", datetime(2026, 11, 8, 13, 1), "Asia/Seoul") == datetime(2026, 11, 15, 13, 0)
+    assert next_weekly(None, NOW, "Asia/Seoul") is None
+
+
+def test_chain_windows_and_anchor():
+    t0 = datetime(2026, 10, 23, 11, 16)
+    ts = [t0, t0 + timedelta(hours=1), t0 + timedelta(hours=5, minutes=1), t0 + timedelta(hours=6)]
+    w = chain_windows(ts, 5)
+    assert [(x["start"], x["end"]) for x in w] == [(t0, t0 + timedelta(hours=5)),
+                                                   (ts[2], ts[2] + timedelta(hours=5))]
+    # 10-23 사례: FOREMAN 첫 입력 20:16(KST)인데 화면 리셋 01:20 — 읽은 리셋이 이긴다
+    r = t0 + timedelta(hours=5, minutes=4)
+    w = chain_windows(ts[:2], 5, anchors=[r])
+    assert len(w) == 1 and w[0]["anchored"] and w[0]["start"] == t0 and w[0]["end"] == r      # 몇 분 앞선 첫 메시지도 그 창
+
+
+def test_floors_weighted_and_stable():
+    assert floors([]) is None and floors([{"pct": 2, "seen_usd": 10}]) is None   # 5% 아래는 반올림 오차가 커서 뺀다
+    f = floors([{"pct": 90, "seen_usd": 855}, {"pct": 50, "seen_usd": 470}])
+    assert f["n"] == 2 and f["min"] == 940 and f["max"] == 950 and f["stable"]
+    assert 945 < f["usd"] < 950                                                # 높은 %에 무게
+
+
+class _Notifier:
+    def __init__(self):
+        self.sent = []
+        self.rules = type("R", (), {"for_project": lambda self, p: None})()
+
+    def send_direct(self, project, kind, sid, msg):
+        self.sent.append((kind, msg))
+
+
+def test_monitor_observe_fail_alert_recover_and_status():
+    """2001년 시각 · 이 시험만의 한도 key로 — 다른 행과 섞이지 않게(foreman_test)."""
+    tag = "zz" + uuid.uuid4().hex[:6]
+    lim5 = Limit(key=f"{tag}_5h", label="5시간", match="Current session", window_h=5)
+    limw = Limit(key=f"{tag}_wk", label="주간", match="Current week (all models)", window_h=168)
+    cfg = UsageConfig(poll_s=600, fail_alert=3, tz="UTC", prices=CFG.prices, limits=[lim5, limw])
+    now = datetime(2001, 1, 1, 12, 0)
+    body = ("Current session: 40% used · resets Jan 1, 3pm (UTC)\n"
+            "Current week (all models): 10% used · resets Jan 3, 3pm (UTC)")
+    replies: list = []
+
+    async def reader():
+        r = replies.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    async def go():
+        eng = make_engine(Settings(mysql_database="foreman_test"))
+        n = _Notifier()
+        mon = UsageMonitor(eng, cfg, n, reader=reader)
+        try:
+            async with eng.begin() as c:   # 창 안에 Opus 출력 100만 토큰 = $20
+                await c.execute(text("INSERT INTO usage_extra (source, project, model, token_output, created_at) "
+                                     "VALUES (:s, 'foreman', 'claude-opus-5-5', 1000000, :t)"), {"s": tag, "t": now - timedelta(hours=1)})
+            replies.extend([{"result": body, "credential_expires_at": "2001-01-01T20:00:00Z"}, {"result": body}])
+            assert await mon.poll(now) and await mon.poll(now + timedelta(minutes=10))
+            async with eng.connect() as c:
+                rows = (await c.execute(text("SELECT limit_key, pct, seen_usd FROM usage_observation WHERE limit_key LIKE :k ORDER BY limit_key"),
+                                        {"k": tag + "%"})).all()
+            assert [(r[0], float(r[1]), float(r[2])) for r in rows] == [(lim5.key, 40.0, 20.0), (limw.key, 10.0, 20.0)]   # 같은 값은 한 번만
+            assert [k for k, m in n.sent] == ["usage"] and "로그인" in n.sent[0][1]      # 24시간 안 만료 — 한 번
+            st = {x["key"]: x for x in await limit_status(eng, cfg, now + timedelta(minutes=10), mon.latest, history_days=10**5)}
+            assert st[lim5.key]["floor"]["usd"] == 50.0 and st[limw.key]["floor"]["usd"] == 200.0   # $20 ÷ 40% · ÷ 10%
+            assert st[lim5.key]["est_pct"] == 40.0 and st[lim5.key]["reset_at"] == datetime(2001, 1, 1, 15, 0)
+            # 못 읽음 셋 — 셋째에 한 번만 알림, 화면 오류 칸. 그다음 돌아오면 한 번
+            n.sent.clear()
+            replies.extend([RuntimeError("시간 초과"), {"result": "Current session: 40% used"}, RuntimeError("x"),
+                            RuntimeError("y"), {"result": body}])
+            for i in range(4):
+                assert not await mon.poll(now + timedelta(minutes=20 + i))
+            assert mon.fails == 4 and len(n.sent) == 1 and "연달아" in n.sent[0][1] and mon.snapshot()["ok"] is False
+            assert await mon.poll(now + timedelta(minutes=30)) and mon.fails == 0 and mon.error is None
+            assert len(n.sent) == 2 and "돌아왔다" in n.sent[1][1]
+            assert mon.stale(now + timedelta(minutes=30 + 31)) is False and mon.stale(now + timedelta(hours=2)) is True
+        finally:
+            async with eng.begin() as c:
+                await c.execute(text("DELETE FROM usage_observation WHERE limit_key LIKE :k"), {"k": tag + "%"})
+                await c.execute(text("DELETE FROM usage_extra WHERE source = :s"), {"s": tag})
+            await eng.dispose()
+    asyncio.run(go())
