@@ -587,9 +587,10 @@ class HandoffManager:
         return {"summary_id": sid, "req": req, "status": "ok"}
 
     # ── 넣을 글 ──────────────────────────────────────────
-    async def injection(self, summary_id: int, target_cwd: str | None = None) -> dict[str, Any]:
+    async def injection(self, summary_id: int, target_cwd: str | None = None, replace: bool = False) -> dict[str, Any]:
         """넣을 글. target_cwd — 받는 세션이 뜬 폴더(넣을 때). worktree면 그 사실을 맨 앞에 붙인다. 미리보기(띄우기 전)에는
-        없으므로 worktree_next로 "따로 작업에서 뜰 것"만 알린다."""
+        없으므로 worktree_next로 "따로 작업에서 뜰 것"만 알린다. replace — 새 세션으로 옮기기의 미리보기: 옛 세션(요약을 쓴
+        세션)을 빼고 판단한다(spawn(replace=True)와 같은 판단)."""
         s = await self.summary(summary_id)
         if not s or s["status"] != "ok" or not s["body"]:
             raise Refused("넣을 수 있는 요약이 아닙니다(저장이 끝난 요약만 넣습니다)")
@@ -610,7 +611,8 @@ class HandoffManager:
         out = {"summary_id": summary_id, "text": inject_prompt(s["req"], src, wt_block(target_cwd) + hs.block(dr) + body), "cut": cut,
                "full_path": str(full) if cut else None, "chars": len(s["body"]), "v2": ptr.is_v2(s["body"]),
                "pointers": [], "blocked": None, "state": state, "drift": dr,
-               "worktree_next": target_cwd is None and bool(row and row.cwd) and self.will_worktree(wt.split(row.cwd)[0])}
+               "worktree_next": target_cwd is None and bool(row and row.cwd) and self.will_worktree(
+                   wt.split(row.cwd)[0], row.cc if replace else None)}
         if out["v2"]:
             # 2판 — 읽을 곳을 기계로 확인한다. 틀린 곳(없는 파일 · 줄 · 절)이 있으면 넣지 않는다(요약을 고치면 된다)
             repo = await repo_root(row.cwd if row else None)
@@ -677,24 +679,27 @@ class HandoffManager:
         return {"delivered": bool(res.get("delivered")), "queued": res.get("queued"), "cut": inj["cut"], "drift": inj["drift"]}
 
     # ── 새로 띄우기 ──────────────────────────────────────
-    async def spawn(self, row: SessionRow, summary_id: int | None) -> dict[str, Any]:
-        """세션 패널의 [새로 띄우기] — 그 세션과 같은 폴더 · 역할 · 모델로(모델은 띄울 때 고른 것, 없으면 역할 기본값)."""
+    async def spawn(self, row: SessionRow, summary_id: int | None, replace: bool = False) -> dict[str, Any]:
+        """세션 패널의 [새로 띄우기] — 그 세션과 같은 폴더 · 역할 · 모델로(모델은 띄울 때 고른 것, 없으면 역할 기본값).
+        replace — 새 세션으로 옮기기(옛 세션을 곧 끝낸다). worktree를 판단할 때 옛 세션을 세지 않는다(11-09)."""
         async with self.engine.connect() as c:
             r = (await c.execute(text("SELECT role, model FROM character_session WHERE id = :i"), {"i": row.id})).first()
         role, model = (r[0], r[1]) if r else (None, None)
         # worktree 세션이면 원본 저장소 기준으로(같은 worktree에 둘이 붙지 않게 — 살아 있는 세션이 있으니 새 worktree가 된다)
         return await self.spawn_new(wt.split(row.cwd or "")[0] if row.cwd else "", summary_id, None, src_session=row.id,
-                                    role=role if role in ROLE_KO else None, model=model)
+                                    role=role if role in ROLE_KO else None, model=model,
+                                    exclude_cc=row.cc if replace else None)
 
     async def spawn_new(self, cwd: str, summary_id: int | None, title: str | None,
                         src_session: int | None = None, first_prompt: str | None = None,
                         read_only: bool = False, role: str | None = None, worktree: bool | None = None,
-                        model: str | None = None) -> dict[str, Any]:
+                        model: str | None = None, exclude_cc: str | None = None) -> dict[str, Any]:
         """+ 버튼 · [새로 띄우기] — tmux 세션을 만들고 그 안에서 claude(resume 아님). 세션 행을 바로 만들어(이름도) 첫 입력 전에도
         화면에 캐릭터가 선다. 인계 요약을 고르면 입력 칸이 뜬 뒤 넣는다. 폴더 신뢰 창이 뜨면 사람이 터미널에서 답할 때까지
         뒤에서 기다렸다가(5분) 이어 한다.
         worktree — None이면 그 프로젝트에 살아 있는 세션이 있을 때만 따로 작업 자리(git worktree)에서 띄운다(11-05). True · False는 강제.
-        model — config/models.toml의 id. 없으면 역할 기본값, 그것도 없으면 CC 설정(--model 없이)."""
+        model — config/models.toml의 id. 없으면 역할 기본값, 그것도 없으면 CC 설정(--model 없이).
+        exclude_cc — worktree=None 판단에서 세지 않을 세션(옮기기의 옛 세션)."""
         cwd = os.path.realpath(os.path.expanduser(cwd or ""))
         if not cwd or not Path(cwd).is_dir():
             raise Refused(f"폴더가 없습니다: {cwd}")
@@ -711,7 +716,7 @@ class HandoffManager:
             name, n = f"{base}-{n}", n + 1
         wt_info = None
         if worktree is None:
-            worktree = self.will_worktree(cwd)
+            worktree = self.will_worktree(cwd, exclude_cc)
         if worktree:
             if wt.split(cwd)[1] is not None or not await wt.is_repo(cwd):
                 raise Refused("따로 작업(worktree)은 저장소 맨 위 폴더에서만 띄울 수 있습니다")
@@ -740,13 +745,15 @@ class HandoffManager:
             return out
         return out | await self._finish_spawn(name, pane, cwd, summary_id, title, src_session, cc=cc, pid=pid, **extra)
 
-    def will_worktree(self, cwd: str) -> bool:
-        """spawn_new(worktree=None)이 따로 작업 자리로 보낼까 — 그 프로젝트에 살아 있는 세션이 있으면."""
+    def will_worktree(self, cwd: str, exclude_cc: str | None = None) -> bool:
+        """spawn_new(worktree=None)이 따로 작업 자리로 보낼까 — 그 프로젝트에 살아 있는 세션이 있으면.
+        exclude_cc — 세지 않을 세션(새 세션으로 옮기기의 옛 세션: 곧 끝나니 하나 더 생기는 게 아니다, 11-09)."""
         if not self.project_of or not cwd:
             return False
         project = self.project_of(cwd)[0]
         return bool(project) and wt.split(cwd)[1] is None and any(
-            self.project_of(ls.cwd)[0] == project for ls in live_sessions(self.sessions_dir).values())
+            self.project_of(ls.cwd)[0] == project
+            for cc, ls in live_sessions(self.sessions_dir).items() if not (exclude_cc and cc == exclude_cc))
 
     async def _wait_ready(self, pane: str, secs: float) -> tuple[str | None, int | None, bool]:
         """(cc 세션 id, pid, 신뢰 창이 떴나). 입력 칸(❯)이 뜨고 일하지 않을 때까지."""

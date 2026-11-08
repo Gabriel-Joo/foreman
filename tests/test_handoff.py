@@ -37,6 +37,23 @@ def test_wt_block_only_for_worktree(tmp_path):
     assert Assembler._origin({}, h.inject_prompt("7f3a9c", "c5320140", b + "본문")) == "handoff_in"
 
 
+def test_will_worktree_replace_excludes_old_session(tmp_path):
+    """새 세션으로 옮기기(replace)는 옛 세션을 세지 않는다 — 옛 세션 하나뿐이면 원본 폴더, 다른 세션이 더 있으면 worktree(11-09)."""
+    import os
+    from types import SimpleNamespace
+    repo, sd = tmp_path / "foreman", tmp_path / "sessions"
+    repo.mkdir()
+    sd.mkdir()
+    old, other = "a" * 8 + "-0000-0000-0000-000000000001", "b" * 8 + "-0000-0000-0000-000000000002"
+    (sd / f"{os.getpid()}.json").write_text(json.dumps({"pid": os.getpid(), "sessionId": old, "cwd": str(repo)}))
+    me = SimpleNamespace(sessions_dir=str(sd), project_of=lambda c: ("foreman" if str(c).startswith(str(repo)) else None,))
+    ww = lambda ex=None: h.HandoffManager.will_worktree(me, str(repo), ex)   # noqa: E731
+    assert ww() is True and ww(old) is False                          # 옛 세션 하나뿐 — 옮기기면 원본 폴더
+    (sd / f"{os.getppid()}.json").write_text(json.dumps({"pid": os.getppid(), "sessionId": other,
+                                                         "cwd": str(repo / ".worktrees" / "foreman-2")}))
+    assert ww(old) is True                                            # 다른 세션(worktree 안이라도 같은 프로젝트)이 더 있다
+
+
 def test_extract_only_from_assistant_and_matching_req(tmp_path):
     p = tmp_path / "t.jsonl"
     _w(p, {"type": "user", "message": {"content": h.request_prompt("aaaaaa")}})   # 요청에도 표지가 있다 — 보지 않는다
