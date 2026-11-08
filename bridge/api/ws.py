@@ -2,7 +2,7 @@
 
 프로토콜
   클라이언트 → {"type": "auth", "token": "<FOREMAN_API_TOKEN>"}   연결 뒤 ws_auth_timeout_s 안에. 틀리면 close 1008
-  서버 → {"type": "hello", "heartbeat_s": N}
+  서버 → {"type": "hello", "heartbeat_s": N, "ui": "<화면 코드 지문>"}
   서버 → {"type": "event", "event": {...}}                          적재가 끝난 이벤트(id 포함)
   서버 → {"type": "ping", "ts": "..."}                              N초 동안 보낼 것이 없을 때. 끊김 감지용(README 3.10)
   서버 → {"type": "resync"}                                         밀려서 버렸다 — 빠진 것은 DB에서 다시 읽는다
@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from bridge.api.auth import token_ok
+from bridge.uiver import ui_version
 
 router = APIRouter()
 log = logging.getLogger("foreman.ws")
@@ -40,7 +41,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
 
     q = pipeline.subscribe()
     try:
-        await ws.send_json({"type": "hello", "heartbeat_s": s.ws_heartbeat_s})
+        # ui — 화면 코드 지문(bridge/uiver.py). 페이지가 처음 받은 것과 다르면 [새로 고침] 띠(11-09)
+        await ws.send_json({"type": "hello", "heartbeat_s": s.ws_heartbeat_s, "ui": ui_version()})
 
         async def reader() -> None:
             while True:

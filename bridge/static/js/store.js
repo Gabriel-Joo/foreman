@@ -93,7 +93,24 @@ export class Store {
     const r = await fetch('/api/dashboard', { headers: this.headers() });
     if (r.status === 401) { this.setConn('auth', '토큰이 맞지 않습니다'); return; }
     if (!r.ok) return;
-    this.applySnapshot(await r.json());
+    const j = await r.json();
+    this.checkUi(j.ui);
+    this.applySnapshot(j);
+  }
+  // 화면 코드 지문(11-09, bridge/uiver.py) — 처음 받은 것과 다르면 이 탭은 옛 코드로 돈다. 맨 위에 [새로 고침] 띠.
+  // 저절로 고치지 않는다(입력 칸에 쓰던 글이 날아간다). 11-09: 질문 카드 버튼을 만들었는데 탭이 옛 코드라 안 보였다
+  checkUi(ver) {
+    if (!ver) return;
+    if (!this.uiVer) { this.uiVer = ver; return; }
+    if (ver === this.uiVer || document.getElementById('uiStale')) return;
+    const d = document.createElement('div');
+    d.id = 'uiStale';
+    d.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:9999;background:#f2c14e;color:#141414;'
+      + 'padding:6px 12px;border-radius:0 0 8px 8px;font:600 15px system-ui,sans-serif;display:flex;gap:10px;align-items:center;box-shadow:0 2px 8px #0008';
+    d.innerHTML = '<span>화면 코드가 바뀌었습니다 — 새로 고쳐야 바뀐 기능이 보입니다.</span>'
+      + '<button style="font:inherit;padding:2px 10px;cursor:pointer" title="새로 고침 — 이 페이지를 다시 불러옵니다. 입력 칸에 쓰던 글은 사라집니다.">새로 고침</button>';
+    d.querySelector('button').onclick = () => location.reload();
+    document.body.appendChild(d);
   }
   // 스냅샷(/api/dashboard 모양)을 상태에 넣는다 — 시연 재생은 대본의 스냅샷을 여기로 넣는다(같은 코드)
   applySnapshot(j) {
@@ -201,6 +218,7 @@ export class Store {
     switch (msg.type) {
       case 'hello':
         this.hb = msg.heartbeat_s; this.everUp = true; st.conn.attempt = 0;
+        this.checkUi(msg.ui);
         this.setConn('up');
         this.loadSnapshot().catch(() => {});
         // 한 번 인증으로 둘 다 — 같은 토큰으로 터미널 쿠키도 받는다(iframe은 헤더를 못 붙여 쿠키가 필요하다).
@@ -457,6 +475,14 @@ export class Store {
     const j = await r.json().catch(() => ({}));
     const q = this.state.terminal.requests.get(id);
     if (q) { q.prefilled = !!j.ok; q.note = j.note || null; this.touch('term'); }
+  }
+  // 세션의 질문(AskUserQuestion)에 답한다(11-09) — picks: 질문 글 → 고른 선택지 이름들
+  async answer(aid, picks) {
+    const r = await fetch(`/api/approvals/${aid}/answer`, { method: 'POST', headers: this.headers(true), body: JSON.stringify({ picks }) });
+    const a = this.state.approvals.get(aid);
+    if (!a) return;
+    a.error = r.ok ? null : ((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
+    this.touch('approvals');
   }
   async decide(aid, decision, message) {
     const r = await fetch(`/api/approvals/${aid}`, { method: 'POST', headers: this.headers(true), body: JSON.stringify({ decision, message: message || null }) });

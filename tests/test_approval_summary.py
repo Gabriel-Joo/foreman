@@ -62,3 +62,43 @@ def test_heredoc_body_is_not_parsed_as_shell():
     # heredoc 밖의 셸 명령은 그대로 뽑는다
     out2 = s("rm -rf /tmp/zz-none && cat > notes.md <<'EOF'\nrm -rf 설명\nEOF")
     assert out2.startswith("rm -rf → /tmp/zz-none")
+
+
+def test_ask_user_question_is_readable():
+    """11-09 — AskUserQuestion 카드가 JSON 300자에서 잘려 선택지를 못 봤다. 질문 · 선택지를 읽는 글로, 1024자까지."""
+    from bridge.approvals import _approval_text, _target
+    long = "설명 " * 120
+    inp = {"questions": [{"question": "어떻게 키울까요?", "header": "키우는 법", "multiSelect": False,
+                          "options": [{"label": "캐릭터만", "description": long}, {"label": "캐릭터+가구", "description": "같이"},
+                                      {"label": "여백만", "description": "조금"}]}]}
+    t = _target("AskUserQuestion", inp)
+    assert t.startswith("1. [키우는 법] 어떻게 키울까요?") and "   3) 여백만 — 조금" in t and "{" not in t
+    assert len(t) > 300
+    assert summarize("AskUserQuestion", inp, "cc", "", None) == "질문 — 어떻게 키울까요?"
+    msg = _approval_text("foreman", "AskUserQuestion", t, "질문", "", 3600, None)
+    assert "❓" in msg and "승인" not in msg and msg.endswith("그 세션의 터미널에서 답합니다")
+
+
+def test_answer_question_from_panel():
+    """11-09 — 패널에서 질문에 답한다: 선택지 이름만, 하나만 고름 질문엔 하나, 여러 개는 쉼표로. 결과는 ("answer", None)."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from bridge.approvals import ApprovalManager
+
+    async def run():
+        inp = {"questions": [{"question": "A?", "multiSelect": False, "options": [{"label": "x"}, {"label": "y"}]},
+                             {"question": "B?", "multiSelect": True, "options": [{"label": "p"}, {"label": "q"}]}]}
+        m = SimpleNamespace(waiting={}, questions={7: inp}, answers={})
+        m.questions_of = lambda aid: ApprovalManager.questions_of(m, aid)
+        assert ApprovalManager.answer(m, 7, {"A?": ["x"]}) == "gone"            # 기다리는 hook이 없다
+        m.waiting[7] = asyncio.get_running_loop().create_future()
+        assert ApprovalManager.answer(m, 7, {"A?": ["x"]}) == "bad"             # B? 안 골랐다
+        assert ApprovalManager.answer(m, 7, {"A?": ["x", "y"], "B?": ["p"]}) == "bad"   # 하나만 고르는 질문에 둘
+        assert ApprovalManager.answer(m, 7, {"A?": ["z"], "B?": ["p"]}) == "bad"        # 없는 선택지
+        assert ApprovalManager.answer(m, 7, {"A?": ["y"], "B?": ["p", "q"]}) == "ok"
+        assert m.answers[7] == {"A?": "y", "B?": "p, q"} and m.waiting[7].result() == ("answer", None)
+        assert ApprovalManager.answer(m, 7, {"A?": ["y"], "B?": ["p"]}) == "gone"       # 이미 답했다
+        assert ApprovalManager.questions_of(m, 8) is None
+
+    asyncio.run(run())

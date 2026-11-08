@@ -91,6 +91,25 @@ async def history(request: Request, days: int = 1) -> dict[str, Any]:
             "observe": [{"project": o[0], "rule": o[1], "n": int(o[2])} for o in observe]}
 
 
+class AnswerIn(BaseModel):
+    picks: dict[str, list[str]]       # 질문 글 → 고른 선택지 이름들(AskUserQuestion, 11-09)
+
+
+@router.post("/{approval_id}/answer")
+async def answer(approval_id: int, body: AnswerIn, request: Request) -> dict[str, Any]:
+    """패널에서 세션의 질문에 답한다 — 고른 답이 그 세션에 바로 들어간다(터미널 질문 창을 건너뛴다)."""
+    mgr = getattr(request.app.state, "approvals", None)
+    if mgr is None:
+        raise HTTPException(503, "승인 기능이 꺼져 있습니다")
+    r = mgr.answer(approval_id, body.picks)
+    if r == "gone":
+        raise HTTPException(409, "이미 답했거나(터미널 · 시간 초과) 기다리는 질문이 없습니다")
+    if r == "bad":
+        raise HTTPException(422, "모든 질문에 선택지를 하나씩 골라 주세요(여러 개 고름이 아닌 질문은 하나만)")
+    log.warning("화면에서 질문에 답함 #%d", approval_id)
+    return {"id": approval_id, "decision": "answer"}
+
+
 @router.post("/{approval_id}")
 async def decide(approval_id: int, body: DecideIn, request: Request) -> dict[str, Any]:
     mgr = getattr(request.app.state, "approvals", None)

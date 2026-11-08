@@ -25,6 +25,7 @@ from bridge.liveness import live_sessions
 from bridge.compactwatch import context_status, status as compact_status
 from bridge.model_choice import family as model_family
 from bridge.model_choice import label as model_label
+from bridge.uiver import ui_version
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
 
@@ -225,9 +226,13 @@ async def dashboard(request: Request) -> dict[str, Any]:
         out_projects.append({"name": name, "label": LABEL.get(name, name), "sessions": ss})
     data = {
         "generated_at": _iso(datetime.now(UTC).replace(tzinfo=None)),
+        "ui": ui_version(),                   # 화면 코드 지문 — 열린 페이지가 옛 코드면 [새로 고침] 띠(11-09)
         "projects": out_projects,
         "approvals": [{"id": a[0], "session_id": a[1], "tool": a[2], "target": a[3], "rule": a[4], "reason": a[5],
-                       "created_at": _iso(a[6]), "summary": a[7], "status": "pending"} for a in appr_rows],
+                       "created_at": _iso(a[6]), "summary": a[7], "status": "pending",
+                       # 질문(AskUserQuestion)이면 선택지 — 패널에서 바로 답한다(11-09). 브리지가 다시 뜨면 없다(터미널에서)
+                       "questions": am.questions_of(a[0]) if (am := getattr(request.app.state, "approvals", None)) else None}
+                      for a in appr_rows],
         "hidden_dormant": len(rows) - len(visible),
         "terminal": term.snapshot() if (term := getattr(request.app.state, "terminal", None)) else {"enabled": False},
         # 적재(수집기) 상태 — 막히면 머리 띠(11-03, bridge/ingest_health.py)

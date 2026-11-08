@@ -8,6 +8,13 @@ import { createSidePanel } from './opanel.js';
 import { mountNewSession } from './newsession.js';
 import { showTip, hideTip, themeTips, attachDomTips } from './tip.js';
 import { buildGrid, findPath, footprint, RES } from './walk.js';
+import { uiScale } from './uiscale.js';
+
+// 픽셀 화면 글씨(화면 좌표로 그리는 것 — 구역 · 캐릭터 이름표, 말풍선, 방 카드, 단계 이름) 배율(11-09 사용자:
+// "130%로 보는데 맨 윗줄 탭 글씨 정도면 좋겠다", [가+ · 가−]도 따라가게). 탭은 17px × 배율 — 이름표 14px × 배율 × 1.2가 그쯤
+const FZ = () => uiScale() * 1.2;
+const fpx = (n) => Math.round(n * FZ());
+const sizeFont = (f) => String(f).replace(/(\d+(?:\.\d+)?)px/, (m, n) => `${fpx(+n)}px`);
 
 const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'], ['foreman', 'FOREMAN']];
 const RATE_WIN = 10 * 60 * 1000;          // 토큰 속도 창 — 최근 10분
@@ -289,8 +296,13 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
 
   function rebuild(st) {
     world = rooms(st);
-    const pending = new Map();
-    for (const a of st.approvals.values()) if (a.status === 'pending' && a.session_id != null) pending.set(a.session_id, (pending.get(a.session_id) || 0) + 1);
+    // 승인 대기와 질문(AskUserQuestion)은 따로 센다(11-09 사용자: 질문은 승인이 아니다). 둘 다 사람을 기다리니 경고는 같다
+    const pending = new Map(), asking = new Map();
+    for (const a of st.approvals.values()) {
+      if (a.status !== 'pending' || a.session_id == null) continue;
+      const m = a.tool === 'AskUserQuestion' ? asking : pending;
+      m.set(a.session_id, (m.get(a.session_id) || 0) + 1);
+    }
     const seen = new Set();
     for (const room of [...world.rooms, world.lounge]) {
       const plan = !room.lounge && L.zones.infra ? courierPlan(room, st.pipeline.get(room.name)) : null;
@@ -304,13 +316,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 패널 세션 목록의 "종료된 세션"에는 그대로 있다 — 거기서 골라 [새로 띄우기]. 멈춘 세션(SUSPENDED)은 그대로 보인다
       const shown = ss.filter((s) => !dormantGone(s, room.name));
       room.overflow = Math.max(0, shown.length - cap);
-      room.stats = { ACTIVE: 0, IDLE: 0, SUSPENDED: 0, DORMANT: 0, pending: 0, subs: 0, tin: 0, tout: 0, opus_out: 0, all_out: 0 };
+      room.stats = { ACTIVE: 0, IDLE: 0, SUSPENDED: 0, DORMANT: 0, pending: 0, question: 0, subs: 0, tin: 0, tout: 0, opus_out: 0, all_out: 0 };
       let slot = 0;
       ss.forEach((s) => {
         // 기다림(IDLE + 자식 일)은 작업으로 센다 — 현장이 "쉼"으로 보이면 돌고 있는 일을 놓친다(11-06)
         const vs = viewState(s) === 'WAITING' ? 'ACTIVE' : s.state;
         room.stats[vs] = (room.stats[vs] || 0) + 1;
         room.stats.pending += pending.get(s.id) || 0;
+        room.stats.question += asking.get(s.id) || 0;
         room.stats.subs += s.subagents_running || 0;
         room.stats.tin += (s.tokens && s.tokens.today_input) || 0;
         room.stats.tout += (s.tokens && s.tokens.today_output) || 0;
@@ -323,7 +336,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         const k = slot++;
         if (k >= cap) return;
         let act = resolveAction(theme, { state: viewState(s), role: roleOf(s), tool: s.activity && s.activity.tool, target: s.activity && s.activity.target,
-                                         flags: { approval_pending: pending.has(s.id), stuck_turn: !!s.stuck_turn } });
+                                         flags: { approval_pending: pending.has(s.id) || asking.has(s.id), stuck_turn: !!s.stuck_turn } });
         // 쉬는 모습은 사람마다 다르게(마법학교: 엎드려 자기 · 먹기 · 책) — 플래그가 덮은 동작은 그대로
         if (act.variants && !act.flag) act = { ...act, anim: act.variants[s.id % act.variants.length] };
         // 서기(12a) — 서기실 안에서만 움직인다. 일할 때 도구에 따라 쓰기(Edit · Write) · 서가(Read · Grep) · 대조대(Bash),
@@ -570,9 +583,15 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const r = !q ? { x: -1, y: -3, w: world.w + 2, h: world.h + 4 }
       : q.hq ? { x: q.x - 0.3, y: q.y - 0.3, w: q.w + 0.6, h: q.h + 5.6 }      // 아래에 현장 카드 자리
       // 11-08 위 2.5 → 0.5칸(방 위 카드를 평소엔 빼서 — drawBadge) · 아래 0.4(사용자 — 여백이 많다)
-      : { x: q.x - 0.4, y: q.y - 0.5, w: q.w + 0.8, h: q.h + 0.9 };
+      // 11-09 0.4 → 0.2칸(사용자: 방이 다 들어가는 선에서 최대한)
+      : { x: q.x - 0.2, y: q.y - 0.3, w: q.w + 0.4, h: q.h + 0.6 };
     const s = Math.min(W / (r.w * T), H / (r.h * T)) * 0.99;
     camT.s = s; camT.x = (r.x + r.w / 2) * T; camT.y = (r.y + r.h / 2) * T;
+  }
+  // 방 하나를 볼 때의 카메라 배율(aim과 같은 식) — 이름표 칸 재기용
+  function roomViewScale() {
+    const q = L.room || { w: 28, h: 18 };
+    return Math.min(W / ((q.w + 0.4) * T), H / ((q.h + 0.6) * T)) * 0.99;
   }
   function toWorld(px, py) { return [(px - W / 2) / cam.s + cam.x, (py - H / 2) / cam.s + cam.y]; }
   function toScreen(wx, wy) { return [(wx - cam.x) * cam.s + W / 2, (wy - cam.y) * cam.s + H / 2]; }
@@ -638,7 +657,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         const tbl = !a.moving && a.act && a.act.anim === 'sleep' && sleepTable(a);
         if (tbl) sorted.push({ y: tbl.key, draw: () => {                   // 엎드린 머리를 탁자 위에
           ctx.save(); ctx.beginPath();
-          ctx.rect((a.x - 1) * T, (a.y - 2.5) * T, 2 * T, (tbl.clipBottom - a.y + 2.5) * T); ctx.clip();
+          ctx.rect((a.x - 1.5) * T, (a.y - 4) * T, 3 * T, (tbl.clipBottom - a.y + 4) * T); ctx.clip();   // 11-09 캐릭터 1.5배 — 칸도 넓게
           drawActorS(a, now); ctx.restore();
         } });
       }
@@ -762,8 +781,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (act.fx === 'smoke') drawSmoke(a.x, a.y - 1.4, now);
     if (act.bubble) drawBubble(x, y - 6, act.bubble, act.flag === 'approval_pending' ? P.warn : '#e8e8f0');
     else if (anim === 'wait' && !act.flag) drawBubble(x, y - 6, '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), P.act, 7);   // 기다림
-    else if (a.kind === 'scribe' && a.todo && a.todo.items && a.todo.items.length) drawBubble(x, y - 6, `문서 할 일 ${a.todo.items.length}`, P.warn, TODO_PX / cam.s);
-    else if (a.kind === 'foreman' && a.fm && a.fm.pending.length) drawBubble(x, y - 6, `시작할 일 ${a.fm.pending.length}`, P.warn, TODO_PX / cam.s);
+    else if (a.kind === 'scribe' && a.todo && a.todo.items && a.todo.items.length) drawBubble(x, y - 6, `문서 할 일 ${a.todo.items.length}`, P.warn, todoPx() / cam.s);
+    else if (a.kind === 'foreman' && a.fm && a.fm.pending.length) drawBubble(x, y - 6, `시작할 일 ${a.fm.pending.length}`, P.warn, todoPx() / cam.s);
     if (a.subHidden) drawBubble(x + 10, y + 2, `+${a.subHidden}`, P.act, 7);              // 10명 넘는 서브에이전트는 접는다
     drawCompactMark(a, x + 8, y - 4);
     const rc = roleColor(a.role);
@@ -875,12 +894,15 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const c = SP.charFrame(ch, 'idle', 'down', 0, null, null);
       if (c) { w = Math.max(w, c.width / T); h = Math.max(h, c.height / T); }
     }
-    return (bodySize._v = [Math.min(w, 1.3), Math.min(h, 2.4)]);
+    const k = (theme.sprites && theme.sprites.char_scale) ?? 1.5;    // 캐릭터 배율(11-09) — 상한도 같이
+    return (bodySize._v = [Math.min(w, 1.3 * k), Math.min(h, 2.4 * k)]);
   }
   // 구역 이름표의 방 좌표 칸 — 이름표는 화면에 같은 크기로 그리므로 칸 크기는 지금 확대 배율에 달렸다(방 하나를 보는 보통 배율로 잰다)
   function tagRects(where = 'room') {
     const out = [], fontPx = +((TAG.font.match(/(\d+)px/) || [0, 10])[1]);
-    const padL = TAG.kind === 'hazard' ? 9 : TAG.kind === 'sign' ? 7 : 6, s = cam.s * T;
+    // 11-09 지금 카메라가 아니라 방 하나를 볼 때의 배율로 — 카메라가 다가가는 중(지도 배율)에 재면 글씨가 커진 만큼 이름표가
+    // 방 좌표로 부풀어, 실제 방 화면에선 안 가리는 것을 가린다고 셌다(office 1024)
+    const padL = TAG.kind === 'hazard' ? 9 : TAG.kind === 'sign' ? 7 : 6, s = roomViewScale() * T;
     ctx.save(); ctx.font = TAG.font;
     if (where === 'hq') {
       const label = HQ.label || '감독실';
@@ -914,7 +936,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const [, dx = 0, dy = 0] = Array.isArray(v) ? v : [v, 0, 0];
     const zw = z.w || 1, zh = z.h || 1;
     const cands = [[z.x + 0.1 + dx, z.y + 0.08 + dy], [z.x + 0.1, z.y + 0.08], [z.x + zw - w - 0.1, z.y + 0.08],
-                   [z.x + 0.1, z.y + zh - h - 0.08], [z.x + zw - w - 0.1, z.y + zh - h - 0.08], [z.x + 0.1, z.y - h - 0.05]];
+                   [z.x + 0.1, z.y + zh - h - 0.08], [z.x + zw - w - 0.1, z.y + zh - h - 0.08], [z.x + 0.1, z.y - h - 0.05],
+                   [z.x + 0.1, z.y + zh + 0.05]];          // 11-09 구역 바로 아래 — 글씨가 커져 작은 창에서 구역 안이 다 사람에 걸릴 때
     const [bw, bh] = bodySize();
     const bodies = standSpots().map((p) => [p.x - bw / 2 + 0.05, p.y - bh, bw - 0.1, bh]);
     const others = Object.entries((theme.tags && theme.tags.zones) || {}).filter(([k]) => k !== key && L.zones[k] && L.zones[k].x != null)
@@ -1422,7 +1445,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       if (!c) return;
       const w = Math.round(c.width * MINI), h = Math.round(c.height * MINI);
       const bob = c.static ? Math.round(Math.abs(Math.sin(a.phase * 1.3)) * 1.5) : 0;
-      ctx.drawImage(c, Math.round(a.x * T - w / 2), Math.round(a.y * T - h) - bob, w, h);
+      ctx.drawImage(c.img, Math.round(a.x * T - w / 2), Math.round(a.y * T - h) - bob, w, h);
       return;
     }
     const act = a.act || {};
@@ -1433,11 +1456,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const f = walking && !mode ? Math.floor(a.phase * 0.8) % 4 : 0;
     const c = SP.charFrame(a.char, walking ? 'walk' : 'idle', dir, f, mode, mode || ROLE_MODE !== 'robe' ? null : roleColor(a.role));
     if (!c) return;
+    const K = c.scale || 1;                                                      // 캐릭터 배율(11-09, sprites.js charFrame) — 흔들림 · 표시도 같이
     let px = Math.round(a.x * T - c.width / 2), py = Math.round(a.y * T - c.height);
     a.drawH = c.height;
-    if (c.static && walking && !mode) py -= Math.round(Math.abs(Math.sin(a.phase * 1.3)) * 2);   // 정면 한 장 — 출렁여서 걷는 흉내
-    if (anim === 'sleep') py += 4;                                               // 엎드려 잔다 — 머리를 탁자 위로
-    if (mode === 'ghost') py += Math.round(Math.sin(a.phase * 0.6) * 1.5) - 2;  // 유령은 떠 있다
+    if (c.static && walking && !mode) py -= Math.round(Math.abs(Math.sin(a.phase * 1.3)) * 2 * K);   // 정면 한 장 — 출렁여서 걷는 흉내
+    if (anim === 'sleep') py += Math.round(4 * K);                               // 엎드려 잔다 — 머리를 탁자 위로
+    if (mode === 'ghost') py += Math.round((Math.sin(a.phase * 0.6) * 1.5 - 2) * K);  // 유령은 떠 있다
     ctx.globalAlpha = act.alpha != null ? act.alpha : 1;
     if (anim === 'lie' && !a.moving) {
       // 간이침대에 눕기 — 그림을 왼쪽으로 90도 눕힌다(머리가 왼쪽 = 베개 쪽). 자리 점이 아니라 그 아래 침대의 가운데에
@@ -1448,24 +1472,28 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       ctx.save();
       ctx.translate(Math.round(cx * T), Math.round(cy * T));
       ctx.rotate(-Math.PI / 2);
-      ctx.drawImage(c, -c.width / 2, -c.height / 2);
+      ctx.drawImage(c.img, -c.width / 2, -c.height / 2, c.width, c.height);
       ctx.restore();
       ctx.globalAlpha = 1;
-      a.drawH = 10;
+      a.drawH = Math.round(10 * K);
       return;
     }
-    ctx.drawImage(c, px, py);
-    // 역할 표시 — 오피스는 사원증 끈, 현장은 안전모 색(마법학교는 위에서 로브 색을 바꿨다)
+    ctx.drawImage(c.img, px, py, c.width, c.height);
+    // 역할 표시 — 오피스는 사원증 끈, 현장은 안전모 색(마법학교는 위에서 로브 색을 바꿨다). 원본 픽셀 단위로 그리고 K배
     const rc = !mode && roleColor(a.role);
     if (rc && ROLE_MODE === 'lanyard') {
-      const cx = Math.round(a.x * T), ny = py + Math.round(c.height * 0.42);
+      ctx.save(); ctx.translate(Math.round(a.x * T), py + Math.round(c.height * 0.42)); ctx.scale(K, K);
       ctx.fillStyle = rc;
-      for (let k = 0; k < 4; k++) { ctx.fillRect(cx - 3 + Math.floor(k / 1.4), ny + k, 1, 1); ctx.fillRect(cx + 2 - Math.floor(k / 1.4), ny + k, 1, 1); }
-      ctx.fillStyle = '#ffffff'; ctx.fillRect(cx - 1, ny + 4, 3, 3); ctx.fillStyle = rc; ctx.fillRect(cx - 1, ny + 4, 3, 1);
+      for (let k = 0; k < 4; k++) { ctx.fillRect(-3 + Math.floor(k / 1.4), k, 1, 1); ctx.fillRect(2 - Math.floor(k / 1.4), k, 1, 1); }
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(-1, 4, 3, 3); ctx.fillStyle = rc; ctx.fillRect(-1, 4, 3, 1);
+      ctx.restore();
     } else if (rc && ROLE_MODE === 'helmet') {
-      const hw = Math.round(c.width * 0.62), hx = Math.round(a.x * T - hw / 2), hy = py - 1;
-      ctx.fillStyle = rc; ctx.fillRect(hx, hy, hw, 3); ctx.fillRect(hx - 1, hy + 3, hw + 2, 1);
-      ctx.fillStyle = '#ffffff55'; ctx.fillRect(hx + 1, hy, 2, 1);
+      const bw = c.width / K;                                                    // 원본 폭
+      const hw = Math.round(bw * 0.62);
+      ctx.save(); ctx.translate(Math.round(a.x * T), py); ctx.scale(K, K);
+      ctx.fillStyle = rc; ctx.fillRect(-hw / 2, -1, hw, 3); ctx.fillRect(-hw / 2 - 1, 2, hw + 2, 1);
+      ctx.fillStyle = '#ffffff55'; ctx.fillRect(-hw / 2 + 1, -1, 2, 1);
+      ctx.restore();
     }
     ctx.globalAlpha = 1;
   }
@@ -1585,7 +1613,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         const foot = r * cell + cell - 6;
         for (const [j, withTbl] of [[0, false], [1, true]]) {
           const cx = Math.round(lab + i * cell + 14 + j * 26);
-          g.drawImage(c, Math.round(cx - c.width / 2), foot - c.height);
+          g.drawImage(c.img, Math.round(cx - c.width / 2), foot - c.height, c.width, c.height);
           let tbl = null;
           if (withTbl) {                                                  // 사람 바로 앞 탁자 — 윗면이 몸 아래 40%(layoutAudit이 허용하는 높이). 사람보다 나중에
             tbl = { top: foot - Math.round(c.height * 0.4), h: T, lx: cx - 12, rx: cx + 12 };
@@ -1633,20 +1661,20 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       drawBubble(x, top - 3, '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), P.act, 7);
     }
     if (a.kind === 'scribe' && a.todo && a.todo.items && a.todo.items.length) {  // 서기 — 할 일 N(누르면 목록)
-      placeBubble(a, x, top, `문서 할 일 ${a.todo.items.length}`, P.warn, TODO_PX / cam.s);
+      placeBubble(a, x, top, `문서 할 일 ${a.todo.items.length}`, P.warn, todoPx() / cam.s);
     }
     if (a.kind === 'foreman' && a.fm && a.fm.pending.length) {                   // 디스패처 — [시작]을 기다리는 자동 제안(누르면 그 계획)
-      placeBubble(a, x, top, `시작할 일 ${a.fm.pending.length}`, P.warn, TODO_PX / cam.s);
+      placeBubble(a, x, top, `시작할 일 ${a.fm.pending.length}`, P.warn, todoPx() / cam.s);
     }
     if (a.subHidden) drawBubble(x + 11, top + 4, `+${a.subHidden}`, P.act, 7);      // 10명 넘는 서브에이전트는 접는다
-    if (a.key === selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - 9, top - 2, 18, 20); }
+    if (a.key === selected) { const h = (a.drawH || 16) + 4, w = Math.round(h * 0.9); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - w / 2, top - 2, w, h); }
   }
 
   // 이름표를 피하는 말풍선(11-06 — 서기실에서 "할 일 2"가 구역 이름표를 덮었다). 이름표는 사람 위 글보다 나중에 화면 좌표로 그려서,
   // 지난 프레임의 이름표 칸(HITS)을 월드 픽셀로 바꿔 머리 위 → 오른쪽 → 왼쪽 → 발밑 순으로 안 겹치는 첫 자리에 둔다(없으면 가장 덜 겹치는 곳)
   const BUBBLES = new Map();
   // 서기 "할 일 N"은 화면 px로 고정(11-06 — 월드 8px이 줌 2.5~3배로 20px 넘게 커져 다른 글씨보다 훨씬 컸다)
-  const TODO_PX = 12;
+  const todoPx = () => fpx(12);                  // 11-09 글씨 배율을 따른다
   function tagBoxesW() {
     const toW = (sx, sy) => [((sx - W / 2) / cam.s + cam.x), ((sy - H / 2) / cam.s + cam.y)];
     return HITS.filter((h) => h.zone).map((h) => { const [x0, y0] = toW(h.x, h.y), [x1, y1] = toW(h.x + h.w, h.y + h.h); return [x0, y0, x1 - x0, y1 - y0]; });
@@ -1747,7 +1775,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
 
   // ── 구역 이름표(화면 좌표 — 줌과 상관없이 작고 선명하게) ─────
-  const TAG = (theme.tags && theme.tags.style) || { bg: '#000000cc', fg: '#ffffff', border: '#ffffff55', font: '600 14px system-ui, sans-serif', kind: 'sign' };
+  const TAG0 = (theme.tags && theme.tags.style) || { bg: '#000000cc', fg: '#ffffff', border: '#ffffff55', font: '600 14px system-ui, sans-serif', kind: 'sign' };
+  // font는 읽을 때마다 글씨 배율을 곱한다(11-09) — 이름표 그리기 · 폭 재기 · 자리 점검이 모두 같은 크기를 본다
+  const TAG = { ...TAG0, get font() { return sizeFont(TAG0.font); } };
   themeTips(theme.tags && theme.tags.style);     // 툴팁 색 · 글꼴도 이름표를 따른다(양피지 · 사인판 · 안전 표지판). 구조 · 크기 · 지연은 같다
   attachDomTips();
   // (wx, wy) 월드 타일 → 그 자리에 이름표 하나. big: 감독실 이름처럼 조금 크게. dot: 앞에 붙는 상태 색
@@ -1852,7 +1882,13 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const col = { running: P.act, success: P.ok, failed: P.bad, waiting: P.warn }[st] || null;
       const mark = { running: '진행 중', success: '✓', failed: '✗ 실패', waiting: '배포 승인 기다림' }[st] || null;
       const label = `${'①②③'[i]} ${it[kind] || (iz[kind] && iz[kind].label) || kind}`;
-      drawTag(r.x + iz[kind].x + 0.1, r.y + iz.y + 0.25, label, false, col, mark,
+      // 11-09 글씨가 커지자 작은 창에서 다음 단계 이름표를 덮고 화면 밖으로 나갔다 — 다음 단계(마지막은 방 끝)까지 안 들어가면
+      // 앞부분(「① 검수대」)만. 전체 이름은 툴팁에
+      const room = (i < kinds.length - 1 ? iz[kinds[i + 1]].x : r.w - 0.2) - iz[kind].x - 0.3;
+      const extra = (col ? 9 : 0) + (mark ? 16 + mark.length * fpx(9) : 0);
+      const fits = (t) => tagW(t) + extra / (cam.s * T) <= room;
+      const shown = fits(label) ? label : label.split(' · ')[0];
+      drawTag(r.x + iz[kind].x + 0.1, r.y + iz.y + 0.25, shown, false, col, mark,
         `<div class="tip-h">${esc(label)}</div>${tipOf(INFRA_ROLE[kind])}${st !== 'none' ? `<div class="tip-s">${esc(STATUS_KO[st] || st)}${st === 'waiting' ? ' — ' + WAIT_TIP : ''}</div>` : ''}`);
       if (i < kinds.length - 1) {                                     // 다음 단계로 화살표
         const [ax, ay] = toScreen((r.x + iz[kind].x + 4.7) * T, (r.y + iz.y + 1.5) * T);
@@ -1875,11 +1911,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 먼저 그린 사람이 긴 이름으로 자리를 다 차지해 둘째가 갈 데가 없었다(오피스 1024 필사실)
   const nameTail = (s) => { const m = String(s || '').split(/:\s|\s—\s/); return m[m.length - 1] || s; };
   function markCrowd(as) {
-    ctx.font = '15px system-ui, sans-serif';
+    ctx.font = `${fpx(15)}px system-ui, sans-serif`;
     const bx = as.filter((a) => !(a.kind === 'mini' && a.key !== selected)).map((a) => {
       const [sx, sy] = toScreen(a.x * T, a.y * T), w = ctx.measureText(short(a.name, 18)).width + 6;
       a.crowd = false;
-      return [a, [sx - w / 2, sy + 2, w, 18]];
+      return [a, [sx - w / 2, sy + 2, w, fpx(15) + 3]];
     });
     for (let i = 0; i < bx.length; i++) for (let j = i + 1; j < bx.length; j++) {
       if (areaOf(bx[i][1], bx[j][1]) > 0) bx[i][0].crowd = bx[j][0].crowd = true;
@@ -1893,8 +1929,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const base = a.crowd && a.kind === 'session' ? nameTail(a.name) : a.name;
     const text = (a.kind === 'session' ? short(base, 18) : short(base, 30)) + suffix;
     // 11-06 글씨 키움(11 → 15px, 두 번) — 줄 높이 NH, 줄 사이 1px
-    const NH = 18;
-    ctx.font = '15px system-ui, sans-serif';
+    const NH = fpx(15) + 3;                                  // 11-09 글씨 배율을 따른다(배율 1에서 15px · 18)
+    ctx.font = `${fpx(15)}px system-ui, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     const lines = [[text, a.kind === 'foreman' ? P.warn : P.label]];
     const n = a.kind === 'session' && a.s ? a.s.subagents_running || 0 : 0;
@@ -1939,6 +1975,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       if (alt.c < best.c) best = alt;
     }
     const { ws, mw, bh } = best;
+    best.cx = Math.max(mw / 2 + 2, Math.min(W - mw / 2 - 2, best.cx));   // 화면 밖으로 잘리지 않게(11-09 — 1024에서 방 밖 「출하 반장」)
     best.ls.forEach(([t, col], i) => {
       const y = best.top + i * (NH + 1);
       ctx.fillStyle = '#000a'; ctx.fillRect(best.cx - ws[i] / 2, y, ws[i], NH);
@@ -1957,14 +1994,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const st = r.stats || {}, pp = r.pipe;
     const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
     if (broke || (pp && pp.webhook_broken) || (pp && pp.watch && pp.watch.state === 'missing')) return 'fail';
-    if (st.pending) return 'alert';
+    if (st.pending || st.question) return 'alert';
     if (st.ACTIVE) return 'busy';
     if ((st.IDLE || 0) + (st.SUSPENDED || 0) + (st.DORMANT || 0)) return 'idle';
     return 'empty';
   }
 
-  // 현장 카드 글씨(11-06 키움 두 번: 11 → 15px, 제목 13 → 17px, 줄 간격 15 → CARD_LH)
-  const CARD_LH = 20;
+  // 현장 카드 글씨(11-06 키움 두 번: 11 → 15px, 제목 13 → 17px, 줄 간격 15 → cardLH())
+  const cardLH = () => fpx(20);                  // 11-09 글씨 배율을 따른다
   function badgeLines(r) {
     const st = r.stats || {};
     const lines = [];
@@ -1972,6 +2009,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     lines.push([`작업 ${st.ACTIVE || 0} · 쉼 ${st.IDLE || 0}${st.SUSPENDED ? ' · 멈춤 ' + st.SUSPENDED : ''}${st.subs ? ' · 일꾼 ' + st.subs : ''}${r.overflow ? ' · 책상 없음 +' + r.overflow : ''}`, P.muted, '15px']);
     // 넷째 칸 true = 경고 줄 — 한 방을 볼 때는 이 줄만 카드로 띄운다(11-08, 나머지는 머리말과 겹친다)
     if (st.pending) lines.push([`❗ 승인 대기 ${st.pending}`, P.warn, 'bold 16px', true]);
+    if (st.question) lines.push([`❓ 질문 ${st.question} — 패널에서 답합니다`, P.warn, 'bold 16px', true]);
     const pp = r.pipe;
     const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
     if (broke) lines.push([`🔥 파이프라인 실패 · ${broke}`, P.bad, 'bold 15px', true]);
@@ -1988,8 +2026,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     lines.push([r.rate ? `최근 ${Math.max(1, Math.min(10, span))}분 ${fmt(r.rate)} 토큰 씀 (출력 ${fmt(r.rateOut)})`
       : (r.rateSpan || 0) < 60000 ? '최근 사용량 재는 중…(화면을 연 뒤부터)' : `최근 ${Math.min(10, span)}분 사용 없음`,
       hot, r.rate ? 'bold 15px' : '15px']);
-    const border = st.pending || broke ? P.warn : hot;
-    return { lines, border, thick: r.rate > 3e5 || st.pending };
+    const border = st.pending || st.question || broke ? P.warn : hot;
+    return { lines, border, thick: r.rate > 3e5 || st.pending || st.question };
   }
 
   // 줄 수가 넘치면 뒤에서부터 덜 중요한 줄(Opus · 최근 사용량)을 뺀다 — 11-06 글씨를 키우자 마법학교 1366에서 카드가 방 윗벽을 덮었다
@@ -2005,14 +2043,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
   function drawCard(r, bx, by, w, minW = 210, maxW = 400, maxLines = 99, alertsOnly = false) {
     const b = badgeLines(r), { border, thick } = b, lines = fitLines(cardLines(r, alertsOnly), maxLines);
-    w = Math.max(minW, Math.min(w, maxW));
-    const h = lines.length * CARD_LH + 8;
+    w = Math.max(minW * FZ(), Math.min(w, maxW * FZ()));             // 폭도 글씨 배율만큼(11-09)
+    const h = lines.length * cardLH() + 8;
     ctx.fillStyle = '#0d0f14e6'; ctx.fillRect(bx, by, w, h);
     ctx.strokeStyle = border; ctx.lineWidth = thick ? 2 : 1;
     ctx.strokeRect(bx + 0.5, by + 0.5, w - 1, h - 1);
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     // 11-08 — 글자 수(8.5px/자)로 자르던 것을 실제 폭으로. 한글은 한 자가 그보다 넓어 감독실 카드(현장 1600)에서 글이 카드 밖으로 넘쳤다
-    lines.forEach(([t, c, f], i) => { ctx.font = `${f} system-ui, sans-serif`; ctx.fillStyle = c; ctx.fillText(fitText(t, w - 12), bx + 6, by + 5 + i * CARD_LH); });
+    lines.forEach(([t, c, f], i) => { ctx.font = `${sizeFont(f)} system-ui, sans-serif`; ctx.fillStyle = c; ctx.fillText(fitText(t, w - 12), bx + 6, by + 5 + i * cardLH()); });
     return { x: bx, y: by, w, h };
   }
   // 지금 글꼴로 maxW px 안에 들어가게 — 넘치면 뒤를 줄이고 …
@@ -2031,8 +2069,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 11-08 한 방을 볼 때는 경고(승인 대기 · 파이프라인 · 웹훅 · 빌드 알림)가 있을 때만 그 줄만 — 작업 수 · 토큰은 머리말
     // (프로젝트 버튼 · 툴팁)과 겹쳐 뺐고, 그만큼 방을 키웠다(aim). 경고 카드는 방 윗벽 위에 겹쳐 그린다
     if (zoomedIn && !cardLines(r, true).length) { r.badge = null; return; }
-    const maxLines = zoomedIn ? 6 : Math.max(2, Math.floor((sy - 10 - 8) / CARD_LH));      // 전체 화면: 방 위 공간에 들어가는 줄 수
-    const h = fitLines(cardLines(r, zoomedIn), maxLines).length * CARD_LH + 8;
+    const maxLines = zoomedIn ? 6 : Math.max(2, Math.floor((sy - 10 - 8) / cardLH()));      // 전체 화면: 방 위 공간에 들어가는 줄 수
+    const h = fitLines(cardLines(r, zoomedIn), maxLines).length * cardLH() + 8;
     r.badge = drawCard(r, sx, Math.max(4, sy - h - 6), ex - sx, 210, 400, maxLines, zoomedIn);
   }
 
@@ -2056,9 +2094,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 현황판 위 이름 — 지도 위 땅 · 모니터 위
       const [lx, ly] = toScreen((s.x + s.w / 2) * T, (s.y + 0.35) * T);
       const st = siteState(s.r);
-      ctx.font = 'bold 17px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.font = `bold ${fpx(17)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       const tw = ctx.measureText(s.r.label).width + 10;
-      ctx.fillStyle = '#000000aa'; ctx.fillRect(lx - tw / 2, ly, tw, 22);
+      ctx.fillStyle = '#000000aa'; ctx.fillRect(lx - tw / 2, ly, tw, fpx(17) + 5);
       ctx.fillStyle = st === 'fail' ? P.bad : st === 'alert' ? P.warn : P.label;
       ctx.fillText(s.r.label + (st === 'alert' ? ' ❗' : st === 'fail' ? ' 🔥' : ''), lx, ly + 2);
     }
@@ -2197,20 +2235,21 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       if (view === key) seenAt.set(key, now);
       const ss = (r.sessionIds || []).map((id) => st.sessions.get(id)).filter(Boolean);
       const act = ss.filter((s) => s.state === 'ACTIVE' || viewState(s) === 'WAITING').length;
-      const pend = (r.stats && r.stats.pending) || 0;
+      const pend = (r.stats && r.stats.pending) || 0, ques = (r.stats && r.stats.question) || 0;
       const lastReply = Math.max(0, ...ss.map((s) => s.replyAt || 0));
       const unseen = lastReply > Math.max(openedAt, seenAt.get(key) || 0);
-      const dot = pend ? '<i class="pdot warn"></i>' : unseen ? '<i class="pdot new"></i>' : '';
-      const nums = [act ? `<span class="pn">작업 ${act}</span>` : '', pend ? `<span class="pn warn">승인 ${pend}</span>` : ''].join('');
+      const dot = pend || ques ? '<i class="pdot warn"></i>' : unseen ? '<i class="pdot new"></i>' : '';
+      const nums = [act ? `<span class="pn">작업 ${act}</span>` : '', pend ? `<span class="pn warn">승인 ${pend}</span>` : '',
+        ques ? `<span class="pn warn">질문 ${ques}</span>` : ''].join('');
       const rs = r.stats || {};
       // 11-09 툴팁 모양(제목 — 설명 / 숫자 한 줄에 하나). "출력 74k · Opus 출력 94k"가 헷갈렸다 — 앞은 본 대화만, 뒤는
       // 서브에이전트 포함이었다. 출력은 서브에이전트 포함 하나로, Opus는 그중 %로
       const allOut = rs.all_out || rs.tout || 0;
       const tip = `${r.label} — 이 방으로 가서 주요 세션 대화를 엽니다.`
-        + (act || pend ? `\n작업 중 ${act}${pend ? ` · 승인 대기 ${pend}` : ''}` : '') + (unseen ? '\n안 본 새 답 있음' : '')
+        + (act || pend || ques ? `\n작업 중 ${act}${pend ? ` · 승인 대기 ${pend}` : ''}${ques ? ` · 질문 ${ques}` : ''}` : '') + (unseen ? '\n안 본 새 답 있음' : '')
         + `\n오늘 쓴 글 ${fmt(allOut)} 토큰${rs.opus_out && allOut ? ` (그중 Opus ${Math.round(100 * rs.opus_out / allOut)}%)` : ''}`
         + `\n오늘 읽은 양 ${fmt(rs.tin || 0)} 토큰 (대화 다시 읽기 포함)`;
-      return `<button class="ghost oproj-b${view === key ? ' on' : ''}${pend ? ' pend' : ''}" data-room="${esc(key)}" data-tip="${esc(tip)}" aria-pressed="${view === key}">${dot}${esc(r.label)}${nums}</button>`;
+      return `<button class="ghost oproj-b${view === key ? ' on' : ''}${pend || ques ? ' pend' : ''}" data-room="${esc(key)}" data-tip="${esc(tip)}" aria-pressed="${view === key}">${dot}${esc(r.label)}${nums}</button>`;
     }).join('');
     if ($('oProj').innerHTML !== html) $('oProj').innerHTML = html;
   }
@@ -2218,7 +2257,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const c = st.conn;
     $('oConn').className = 'conn ' + c.status;
     $('oConn').textContent = { up: '연결됨', down: '끊김', connecting: '연결 중', auth: '토큰 필요', idle: '연결 전' }[c.status] || c.status;
-    const pend = [...st.approvals.values()].filter((a) => a.status === 'pending').length;
+    const pl = [...st.approvals.values()].filter((a) => a.status === 'pending');
+    const ques = pl.filter((a) => a.tool === 'AskUserQuestion').length, pend = pl.length - ques;
     const ig = st.ingest;
     // 전체 요약(클래식 머리말과 같은 숫자) + 적재가 막히면 무엇이 막혔는지(마우스를 올리면)
     let active = 0, live = 0, outToday = 0, subs = 0;
@@ -2231,6 +2271,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const igWhy = !ig ? '' : ig.stalled ? `화면 갱신 멈춤 — 세션 기록을 읽어 화면을 바꾸는 감시가 멈췄습니다.\n트랜스크립트 감시가 ${ig.tick_age_s}초째 멈춰 있습니다`
       : '기록 못 읽는 세션 — 브리지가 이 세션들의 대화 기록을 읽지 못해 화면이 늦습니다.\n' + (ig.stuck || []).map((x) => `${x.session} ${x.minutes}분 · ${x.failures}번 — ${x.error}`).join('\n');
     $('oAlerts').innerHTML = (pend ? `<button id="oPend" class="ghost warn" title="승인 대기 — 패널에서 승인하거나 거부합니다.">❗ 승인 대기 ${pend}</button>` : '') +
+      (ques ? `<button id="oAsk" class="ghost warn" title="질문 — 세션이 고를 것을 묻고 있습니다. 패널에서 선택지를 누르면 답이 들어갑니다.">❓ 질문 ${ques}</button>` : '') +
       (ig && !ig.ok ? `<span class="bad" title="${esc(igWhy)}">⚠ ${ig.stalled ? '화면 갱신 멈춤' : `기록 못 읽는 세션 ${(ig.stuck || []).length}`}</span>` : '');
     const stat = `작업 중 <b>${active}</b>/${live}${subs ? ` · 서브에이전트 ${subs}` : ''} · 출력 토큰 ${fmt(outToday)}`;
     if ($('oStat').innerHTML !== stat) $('oStat').innerHTML = stat;
@@ -2429,7 +2470,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if ($('tokDlg').classList.contains('on')) { $('tokDlg').classList.remove('on'); return; }
     go('hq');
   });
-  $('oAlerts').addEventListener('click', (ev) => { if (ev.target.closest('#oPend')) panel.setOpen(true); });
+  $('oAlerts').addEventListener('click', (ev) => { if (ev.target.closest('#oPend, #oAsk')) panel.setOpen(true); });
   $('oRetry').onclick = () => store.retryNow();
   $('oTok').onclick = () => { $('tokDlg').classList.add('on'); $('tokInput').focus(); };
   $('tokCancel').onclick = () => $('tokDlg').classList.remove('on');
@@ -2453,7 +2494,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
   return { go, theme, openSession, panel, actors, newSession: (p) => newSession.open(p), foremanName: FM_NAME,
-           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(),
+           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(),
     // 시연 사진(13) — 이름표 자리(캔버스 기준 화면 좌표)와 캐릭터 발밑 화면 좌표. 툴팁을 띄워 찍을 때 마우스를 그 자리로 보낸다
     hits: () => HITS.map((h) => ({ x: h.x, y: h.y, w: h.w, h: h.h, zone: h.zone || null })),
     actorScreen: (key) => { const a = actors.get(key); return a ? toScreen(a.x * T, a.y * T) : null; }, layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,
