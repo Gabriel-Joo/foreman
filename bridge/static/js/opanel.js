@@ -523,7 +523,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       return;
     }
     if (target && target.kind === 'foreman') {
-      const nm = target.name || (window.office && window.office.foremanName) || '디스패처';
+      const nm = target.name || (window.office && window.office.foremanName) || '감독';
       $('pTitle').textContent = target.room ? `${nm} · ${projectLabel(st, target.room)} 건` : `${nm}(감독실)`;
       $('pSel').innerHTML = fmp.html(target.room, nm, (p) => projectLabel(st, p));
       return;

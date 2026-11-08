@@ -252,7 +252,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # 11-08 — systemd PATH에 claude가 없어 디스패처가 이틀 동안 "claude를 띄우지 못했습니다"였다(부를 때까지 아무도 몰랐다).
         # 기동 때 찾아 보고, 없으면 텔레그램으로 한 번 — 디스패처 · 새 세션으로 옮기기 요약 · 자동 기상이 모두 이 실행 파일을 쓴다
         if shutil.which("claude") is None:
-            why = f"브리지가 claude 실행 파일을 PATH에서 찾지 못합니다 — 디스패처 · 새 세션으로 옮기기 요약 · 자동 기상이 안 됩니다(PATH={os.environ.get('PATH', '')})"
+            why = f"브리지가 claude 실행 파일을 PATH에서 찾지 못합니다 — 계획 세우기 · 새 세션으로 옮기기 요약 · 자동 기상이 안 됩니다(PATH={os.environ.get('PATH', '')})"
             log.error(why)
             if app.state.notifier:
                 rule = app.state.notifier.rules.for_project("foreman")

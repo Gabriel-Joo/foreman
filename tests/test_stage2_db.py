@@ -836,6 +836,11 @@ async def test_handoff_request_extract_edit_inject_preview(env, monkeypatch):
     assert (await mgr.latest_ok(sid))["id"] == e["summary_id"]
     inj = await mgr.injection(e["summary_id"])
     assert inj["text"].startswith(f"[FOREMAN 인계 r={e['req']}]") and "고친 것" in inj["text"] and not inj["cut"]
+    assert "이 세션이 뜬 자리" not in inj["text"] and inj["worktree_next"] is False   # project_of 없음 — 예측 안 함
+    # 받는 세션이 worktree면 넣는 글에 그 사실이 들어간다(본문보다 앞) — 11-09
+    inj = await mgr.injection(e["summary_id"], "/r/proj/.worktrees/proj-2")
+    t = inj["text"]
+    assert "브랜치 `cc/proj-2`" in t and t.index("이 세션이 뜬 자리") < t.index("고친 것") and inj["worktree_next"] is False
 
     # 되살리기 — FOREMAN이 멈춘 기록이 없으면 거부(사람이 멈춘 CC는 건드리지 않는다)
     monkeypatch.setattr(h, "live_sessions", lambda d: {SID: LiveSession(4242, SID, "/x", "T")})

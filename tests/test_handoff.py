@@ -26,6 +26,17 @@ def test_prompt_has_markers_and_origin():
     assert Assembler._origin({}, "보통 입력") == "human"
 
 
+def test_wt_block_only_for_worktree(tmp_path):
+    """받는 세션이 worktree에서 떴으면 그 사실(브랜치 · push 안 함)을 붙인다 — 원본 폴더 · 없음이면 빈 글(11-09)."""
+    repo = tmp_path / "foreman"
+    (repo / ".worktrees" / "foreman-2").mkdir(parents=True)
+    b = h.wt_block(str(repo / ".worktrees" / "foreman-2"))
+    assert b.startswith("## 이 세션이 뜬 자리") and "`cc/foreman-2`" in b and "push하지 않는다" in b
+    assert h.wt_block(str(repo)) == "" and h.wt_block(None) == ""
+    # 인계 글로 감싸도 맨 앞 표지는 그대로(받은 세션 판정 handoff_in)
+    assert Assembler._origin({}, h.inject_prompt("7f3a9c", "c5320140", b + "본문")) == "handoff_in"
+
+
 def test_extract_only_from_assistant_and_matching_req(tmp_path):
     p = tmp_path / "t.jsonl"
     _w(p, {"type": "user", "message": {"content": h.request_prompt("aaaaaa")}})   # 요청에도 표지가 있다 — 보지 않는다
