@@ -299,7 +299,7 @@ class Promoter:
                 continue
             out.append({"id": r["id"], "kind": "summary", "title": r["title"], "cc": (r["cc_session_id"] or "")[:8],
                         "created_at": r["created_at"].isoformat() + "Z" if r["created_at"] else None,
-                        "why": "이 세션이 받은 인계" if r["got"] else "이 세션이 쓴 인계" if r["own"] else "같은 프로젝트의 인계",
+                        "why": "이 세션이 받은 요약" if r["got"] else "이 세션이 쓴 요약" if r["own"] else "같은 프로젝트의 요약",
                         "diff": d[:600]})
         return out[:limit]
 
@@ -336,7 +336,7 @@ class Promoter:
             r = (await c.execute(text("SELECT body FROM summary WHERE id = :i AND status = 'ok'"), {"i": summary_id})).first()
         d = diff_section(r[0]) if r and ptr.is_v2(r[0]) else None
         if not d:
-            raise Refused(f"인계 #{summary_id}에 「{DIFF_SECTION}」 절이 없습니다")
+            raise Refused(f"요약 #{summary_id}에 「{DIFF_SECTION}」 절이 없습니다")
         return d
 
     async def _busy(self, sid: int) -> bool:
@@ -401,7 +401,7 @@ class Promoter:
         후보가 하나일 때만 그것을 쓰고, 둘 이상이면 거부한다 — 11-06 첫 사례에서 기본값(받은 인계 #7)이 말없이 들어가
         #6을 넣으려던 사람이 헷갈렸다."""
         if await self._busy(row.id) or await self.m._pending(row.id):
-            raise Refused("이미 이 세션에 인계 · 옮기기 요청을 기다리는 중입니다")
+            raise Refused("이미 이 세션에 요약 · 문서 적기 요청을 기다리는 중입니다")
         diff = loss = None
         if no_input:
             summary_id = loss_check_id = None
@@ -476,7 +476,7 @@ class Promoter:
         if bad:
             raise Refused("목적지가 틀렸습니다 — " + "; ".join(f"#{it['id']} {it['dest']}: {ck['problem']}" for it, ck in bad))
         if await self._busy(row.id) or await self.m._pending(row.id):
-            raise Refused("이미 이 세션에 인계 · 옮기기 요청을 기다리는 중입니다")
+            raise Refused("이미 이 세션에 요약 · 문서 적기 요청을 기다리는 중입니다")
         base = await ptr._git(repo or "", "rev-parse", "HEAD")
         if not base:
             raise Refused("저장소 HEAD를 읽지 못했습니다")

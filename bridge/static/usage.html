@@ -194,7 +194,7 @@ function where(d) {
   if (crShare >= 0.4) lines.push(`환산액의 <b>${Math.round(crShare * 100)}%가 캐시 읽기</b>입니다. 응답 하나마다 그 세션에 쌓인 맥락 전체를 다시 읽기 때문입니다. 출력은 ${Math.round((bk.output || 0) / (tot || 1) * 100)}%뿐입니다.`);
   if (cwShare >= 0.2) lines.push(`캐시 쓰기가 ${Math.round(cwShare * 100)}%입니다. 맥락이 바뀌거나 1시간 넘게 쉬었다 이어 쓰면 다시 올립니다.`);
   if (heavy.length) lines.push('응답당 맥락이 큰 세션: ' + heavy.map((s) => `<b>${esc(s.title || s.key)}</b> ${big(Math.round(s.ctx))}(응답 하나에 읽기만 ${usd(s.usd_cache_read / s.n, 3)})`).join(', ')
-    + '. 일이 바뀌면 /clear나 인계로 새로 시작하면 줄어듭니다.');
+    + '. 일이 바뀌면 /clear나 새 세션으로 옮기기로 다시 시작하면 줄어듭니다.');
   $('why').innerHTML = lines.join('<br>') || '<span class="muted">눈에 띄는 쏠림이 없습니다.</span>';
 }
 

@@ -631,7 +631,7 @@ class HandoffManager:
         """안 읽은 곳만 다시 — 그 세션에 "아직 읽지 않은 곳"을 보낸다."""
         r = await self.handoff_reads(row)
         if not r or not r["missing"]:
-            raise Refused("다시 보낼 곳이 없습니다(2판 인계를 받은 세션이 아니거나 모두 읽었습니다)")
+            raise Refused("다시 보낼 곳이 없습니다(읽을 곳이 있는 요약을 받은 세션이 아니거나 모두 읽었습니다)")
         msg = ("[FOREMAN 인계] 「읽을 곳」 중 아직 읽지 않은 곳이 있다. 지금 Read로 읽고, 각각 이 일에 걸리는 규칙 · 결정을 "
                "2줄씩 말해라:\n" + "\n".join(f"- `{p}`" for p in r["missing"]))
         res = await deliver(row.cc or "", msg, sessions_dir=self.sessions_dir,

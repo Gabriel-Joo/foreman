@@ -6,7 +6,7 @@
 // newsession.js를 고치지 않고 그 창(#nsDlg)이 생기면 위에 붙는다.
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const MODE = { new: '새로 시작', handoff: '인계 요약 넣고 시작', attach: '살아 있는 세션에 보내기', ask: '되묻기(시작하지 않음)' };
+const MODE = { new: '새로 시작', handoff: '옮기기용 요약 넣고 시작', attach: '살아 있는 세션에 보내기', ask: '되묻기(시작하지 않음)' };
 const OPK = { add: '더하기', update: '바꾸기', retire: '내리기', touch: '아직 맞음' };
 const KIND = { thread: '진행 중인 일', decision: '사람이 정한 판단' };
 import { ROLE_PICK as ROLE, bindRoleModel, modelOptions } from './modelpick.js';
@@ -71,12 +71,12 @@ function mount(dlg) {
     const ss = !room || !st ? [] : [...st.sessions.values()].filter((s) => s.project === room && s.state !== 'DORMANT' && s.injectable);
     $('fmHand').hidden = !ss.length;
     if (!ss.length) { $('fmHand').innerHTML = ''; return; }
-    const tip = (window.foremanHandoff && window.foremanHandoffTip) || '넘기고 새로 시작 — 요약을 받아 보여 드리고, 확인하면 새 세션을 띄워 넣은 뒤 이 세션을 끝냅니다.';
-    $('fmHand').innerHTML = `<div class="small muted">이 방 세션 넘기기</div>` + ss.map((s) => {
+    const tip = window.foremanHandoffTip || '새 세션으로 옮기기 — 지금까지를 요약해 보여 드리고, 확인하면 새 세션을 띄워 요약을 넣은 뒤 이 세션을 끝냅니다.';
+    $('fmHand').innerHTML = `<div class="small muted">이 방 세션을 새 세션으로 옮기기</div>` + ss.map((s) => {
       const k = s.context && s.context.tokens ? Math.round(s.context.tokens / 1000) : null;
       const lv = s.context && s.context.level;
       return `<div class="fm-hand-row"><span class="small">${esc(s.custom_title || s.title || s.short)}${k != null ? ` · <span class="${lv === 'late' ? 'bad' : lv ? 'warn' : 'muted'}">맥락 ${k}k</span>` : ''}</span>
-        <button type="button" class="small" data-hand="${s.id}" title="${esc(tip)}">넘기고 새로 시작</button></div>`;
+        <button type="button" class="small" data-hand="${s.id}" title="${esc(tip)}">새 세션으로 옮기기</button></div>`;
     }).join('');
   }
   $('fmHand').addEventListener('click', (ev) => {
@@ -152,7 +152,7 @@ function mount(dlg) {
         <select id="fmProj">${(opts.projects || []).map((x) => opt(x.name, p.project, projLabel(x.name))).join('')}</select>
         <label class="small muted">방식</label>
         <select id="fmMode">${Object.entries(MODE).map(([k, v]) => opt(k, p.mode, v)).join('')}</select>
-        <label class="small muted">인계 요약</label>
+        <label class="small muted" title="넣을 요약 — 다른 세션에서 새 세션으로 옮길 때 쓴 요약입니다. 고르면 새 세션의 첫 글 뒤에 붙습니다.">넣을 요약</label>
         <select id="fmSum">${opt('', p.summary_id, '쓰지 않음')}${sums.map((s) => opt(s.id, p.summary_id, `세션 ${s.session_id} · ${s.chars}자 — ${(s.head || s.session || '').slice(0, 50)}`)).join('')}</select>
         <label class="small muted">보낼 세션</label>
         <input id="fmAttach" value="${esc(p.attach_session ?? '')}" placeholder="방식이 '살아 있는 세션에 보내기'일 때 세션 번호">
@@ -166,7 +166,7 @@ function mount(dlg) {
       <label class="small"><input id="fmRO" type="checkbox"${p.read_only ? ' checked' : ''}> 읽기 전용으로 시작(살펴보기만 — 고치기 전에 승인)</label>
       <label class="small" title="따로 작업 — 저장소 안 .worktrees/에 이 세션만의 폴더 · 브랜치(cc/…)를 만들어 띄웁니다. 끝낸 뒤 [합치기]로 main에 합칩니다."><input id="fmWT" type="checkbox"${p.worktree ? ' checked' : ''}> 따로 작업(worktree)
         <span class="muted">${p.live_here ? `— 이 프로젝트에 살아 있는 세션 ${p.live_here}개와 파일이 겹치지 않습니다` : '— 지금 이 프로젝트에 다른 세션이 없습니다'}</span></label>
-      <label class="small muted" for="fmFirst">넣을 첫 글${p.summary_id ? ' (고른 인계 요약은 이 뒤에 붙습니다)' : ''}</label>
+      <label class="small muted" for="fmFirst">넣을 첫 글${p.summary_id ? ' (고른 요약은 이 뒤에 붙습니다)' : ''}</label>
       <textarea id="fmFirst" rows="10" class="fm-first">${esc(p.first_prompt || '')}</textarea>
       ${notesHtml(p)}
       <details class="fm-why"${(p.confidence ?? 1) < 0.7 ? ' open' : ''}><summary class="small">왜 이렇게 판단했나 · 확신도 ${Math.round((p.confidence ?? 0) * 100)}%</summary>

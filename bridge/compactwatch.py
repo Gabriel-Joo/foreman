@@ -74,10 +74,11 @@ def context_rule(tokens: int, sent: set[str], r: CompactRules) -> str | None:
 
 
 def context_message(prefix: str, title: str, tokens: int, lvl: str | None, per_reply_usd: float | None) -> str:
-    cost = f" 응답 하나에 맥락 읽기만 약 ${per_reply_usd:.2f}입니다." if per_reply_usd else ""
-    body = ("— 넘어갈 때입니다." if lvl == "due" else "— 늦었습니다. 응답 하나하나가 비쌉니다.")
-    return (f"{prefix} 세션 「{title}」 맥락 {tokens / 1000:.0f}k {body}{cost} 응답마다 이 맥락 전체를 다시 읽습니다"
-            f"(한도 사용의 대부분). 인계해 새로 시작하면 수십k에서 다시 시작합니다.\n패널에서 [인계 요약 받기]로 넘어갈 수 있습니다.")
+    # 11-09 화면 말 통일 — "인계" → "새 세션으로 옮기기", 맥락 → "지금까지 쌓인 대화"
+    cost = f" · 응답당 약 ${per_reply_usd:.2f}" if per_reply_usd else ""
+    body = ("새 세션으로 옮길 때입니다." if lvl == "due" else "많이 늦었습니다 — 응답 하나하나가 비쌉니다.")
+    return (f"{prefix} 세션 「{title}」 지금까지 쌓인 대화 {tokens / 1000:.0f}k{cost}. {body} 답할 때마다 이걸 전부 다시 읽습니다"
+            f"(한도 사용의 대부분). 새 세션으로 옮기면 수십k에서 다시 시작합니다.\n패널에서 [새 세션으로 옮기기]를 누르세요.")
 
 
 def level(count: int, r: CompactRules) -> str | None:
@@ -117,7 +118,7 @@ def message(prefix: str, title: str, count: int, lvl: str | None, short: bool) -
     body = ("— 넘어갈 때입니다. 처음에 정한 것이 빠지기 시작합니다." if lvl == "due"
             else "— 늦었습니다. 앞에서 정한 결정 · 금지가 이미 많이 빠졌을 수 있습니다.")
     tail = " 압축 간격도 짧습니다(맥락이 금방 찹니다)." if short else ""
-    return f"{head} {body}{tail}\n패널에서 [인계 요약 받기]로 넘어갈 수 있습니다."
+    return f"{head} {body}{tail}\n패널에서 [새 세션으로 옮기기]를 누르세요."
 
 
 class CompactWatch:

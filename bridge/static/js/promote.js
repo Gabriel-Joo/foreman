@@ -59,14 +59,14 @@ export function inputPick(inputs, chosen) {
   if (!inputs || !inputs.length) return '<span class="small muted">같이 넣을 것 없음</span>';
   const cur = chosen != null ? String(chosen) : inputs.length === 1 ? String(inputs[0].id) : '';
   const opt = (v, label, tip) => `<option value="${v}"${cur === String(v) ? ' selected' : ''}${tip ? ` title="${esc(tip)}"` : ''}>${esc(label)}</option>`;
-  return `<select id="promIn" class="small" title="같이 넣을 것 — 인계의 「문서와 다른 지금」 절이나 잃은 것 점검의 사라짐 · 약해짐을 목록 요청에 같이 넣습니다.">${
+  return `<select id="promIn" class="small" title="같이 넣을 것 — 옮기기용 요약의 「문서와 다른 지금」 절이나 잃은 것 점검의 사라짐 · 약해짐을 목록 요청에 같이 넣습니다.">${
     inputs.length > 1 ? opt('', `같이 넣을 것 고르기(${inputs.length}개)`) : ''}${
     inputs.map((x) => opt(x.id, x.kind === 'loss' ? `${x.title} — ${x.why}` : `#${x.id} ${x.title || x.cc} — ${x.why}`, x.diff)).join('')}${opt('none', '넣지 않음')}</select>`;
 }
 
 // 이 목록에 무엇을 같이 넣었나 — 쓰는 사람이 어느 인계로 뽑았는지 바로 보이게
 function inputUsed(p) {
-  if (p.summary_id) return ` · 인계 #${esc(String(p.summary_id))} 같이 넣음`;
+  if (p.summary_id) return ` · 요약 #${esc(String(p.summary_id))} 같이 넣음`;
   if (p.loss_check_id) return ` · 잃은 것 점검 #${esc(String(p.loss_check_id))} 같이 넣음`;
   return ' · 같이 넣은 것 없음';
 }
