@@ -2177,7 +2177,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const unseen = lastReply > Math.max(openedAt, seenAt.get(key) || 0);
       const dot = pend ? '<i class="pdot warn"></i>' : unseen ? '<i class="pdot new"></i>' : '';
       const nums = [act ? `<span class="pn">작업 ${act}</span>` : '', pend ? `<span class="pn warn">승인 ${pend}</span>` : ''].join('');
-      const tip = `${r.label} — 이 방으로 갑니다.${act ? ` 작업 중 ${act}.` : ''}${pend ? ` 승인 대기 ${pend}.` : ''}${unseen ? ' 안 본 새 답이 있습니다.' : ''}`;
+      const tip = `${r.label} — 이 방으로 가서 주요 세션 대화를 엽니다.${act ? ` 작업 중 ${act}.` : ''}${pend ? ` 승인 대기 ${pend}.` : ''}${unseen ? ' 안 본 새 답이 있습니다.' : ''}`;
       return `<button class="ghost oproj-b${view === key ? ' on' : ''}${pend ? ' pend' : ''}" data-room="${esc(key)}" data-tip="${esc(tip)}" aria-pressed="${view === key}">${dot}${esc(r.label)}${nums}</button>`;
     }).join('');
     if ($('oProj').innerHTML !== html) $('oProj').innerHTML = html;
@@ -2222,6 +2222,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const owner = a.kind === 'mini' ? actors.get(a.parent) : a;
     if (owner && owner.kind === 'session') {
       if (store.state.selected !== owner.s.id) store.select(owner.s.id);
+      remember(owner.s.id);
       panel.show({ kind: 'session' });
     } else if (a.kind === 'infra') {
       const r = world.rooms.find((q) => q.name === a.room), st = r ? r['st_' + a.infra] : 'none';
@@ -2244,7 +2245,38 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (a && view !== a.room) { view = a.room || '_lounge'; aim(); header(store.state); }
     selected = a ? key : null;
     store.select(sid);
+    remember(sid);
     panel.show({ kind: 'session' });
+  }
+
+  // 방마다 마지막으로 본 세션(11-08 사용자 — 프로젝트를 오갈 때마다 캐릭터를 눌러야 대화가 떴다). 이 브라우저에만
+  const LAST_KEY = 'foremanLastSess:';
+  function remember(sid, room) {
+    const a = actors.get('s:' + sid);
+    const key = a ? (a.room || '_lounge') : room;              // 끝난 세션은 캐릭터가 없다 — 머리말에서 고른 방으로
+    if (!key) return;
+    try { localStorage.setItem(LAST_KEY + key, String(sid)); } catch { /* 이번만 */ }
+  }
+  // 머리말에서 방을 누르면 열 세션: 작업 중(승인 대기 포함)이 있으면 그중 가장 최근에 움직인 것,
+  // 다 쉬면 마지막으로 본 것(그 방에 아직 있으면), 그것도 없으면 가장 최근에 움직인 것
+  function pickSession(key) {
+    const r = [...world.rooms, world.lounge].find((q) => q && (q.name || '_lounge') === key);
+    const ss = ((r && r.sessionIds) || []).map((id) => store.state.sessions.get(id)).filter(Boolean);
+    if (!ss.length) return null;
+    const moved = (s) => Date.parse(s.last_ts || 0) || 0;
+    const latest = (xs) => xs.reduce((b, s) => (moved(s) > moved(b) ? s : b));
+    const busy = ss.filter((s) => s.state === 'ACTIVE' || viewState(s) === 'WAITING');
+    if (busy.length) return latest(busy).id;
+    let last = null;
+    try { last = Number(localStorage.getItem(LAST_KEY + key)); } catch { /* 기억 없음 */ }
+    if (last && ss.some((s) => s.id === last)) return last;
+    const live = ss.filter((s) => s.state !== 'DORMANT');
+    return latest(live.length ? live : ss).id;
+  }
+  function goRoom(key) {
+    go(key);
+    const sid = pickSession(key);
+    if (sid != null) { openSession(sid); remember(sid, key); }
   }
 
   // ── 입력 ───────────────────────────────────────────
@@ -2350,7 +2382,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function go(v) { view = v; aim(); header(store.state); }
   $('oMap').onclick = () => go('hq');
   $('oAll').onclick = () => go('map');
-  $('oProj').addEventListener('click', (ev) => { const b = ev.target.closest('[data-room]'); if (b) go(b.dataset.room); });
+  $('oProj').addEventListener('click', (ev) => { const b = ev.target.closest('[data-room]'); if (b) goRoom(b.dataset.room); });
   // + 새 세션(11-05) — 지금 보고 있는 현장을 기본 프로젝트로. 띄우면 그 세션을 골라 패널에 연다
   const newSession = mountNewSession(store, { onCreated: (sid) => setTimeout(() => openSession(sid), 300) });
   $('oNew').onclick = () => newSession.open(view !== 'hq' && view !== 'map' && view !== '_lounge' ? view : null);
