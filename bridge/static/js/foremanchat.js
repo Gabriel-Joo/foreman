@@ -51,7 +51,8 @@ function mount(dlg) {
     <label class="small muted" for="fmText"><span id="fmWho">디스패처</span>에게 말하기 — 뭘 하려는지 <span id="fmRoom" class="muted"></span></label>
     <textarea id="fmText" rows="2" placeholder="예: 런슈즈 발볼 검증 이어서 · 펫퍼민트 새로 시작 · 빌드 터진 거 봐줘"></textarea>
     <div class="row fm-row"><span id="fmMsg" class="small muted"></span><button type="button" id="fmAsk">계획 받기</button></div>
-    <div id="fmPlan" class="fm-plan" hidden></div>`;
+    <div id="fmPlan" class="fm-plan" hidden></div>
+    <div id="fmHand" class="fm-hand" hidden></div>`;
   h2.after(fm, manual);
   const $ = (id) => box.querySelector('#' + id);
   let disp = null, opts = null, room = null;
@@ -62,7 +63,28 @@ function mount(dlg) {
     room = p || null;
     $('fmRoom').innerHTML = room ? `· ${esc(projLabel(room))} 방에서 <button type="button" class="ghost small" id="fmRoomX" title="방 풀기 — 프로젝트를 디스패처가 고르게 합니다.">✕</button>` : '';
     if (room) $('fmRoomX').onclick = () => setRoom(null);
+    drawHand();
   }
+  // 이 방의 살아 있는 세션 — [세션] 탭 · 맥락 띠와 같은 [넘기고 새로 시작](11-08 사용자 — 이름이 흩어지지 않게 한 버튼)
+  function drawHand() {
+    const st = window.foreman && window.foreman.state;
+    const ss = !room || !st ? [] : [...st.sessions.values()].filter((s) => s.project === room && s.state !== 'DORMANT' && s.injectable);
+    $('fmHand').hidden = !ss.length;
+    if (!ss.length) { $('fmHand').innerHTML = ''; return; }
+    const tip = (window.foremanHandoff && window.foremanHandoffTip) || '넘기고 새로 시작 — 요약을 받아 보여 드리고, 확인하면 새 세션을 띄워 넣은 뒤 이 세션을 끝냅니다.';
+    $('fmHand').innerHTML = `<div class="small muted">이 방 세션 넘기기</div>` + ss.map((s) => {
+      const k = s.context && s.context.tokens ? Math.round(s.context.tokens / 1000) : null;
+      const lv = s.context && s.context.level;
+      return `<div class="fm-hand-row"><span class="small">${esc(s.custom_title || s.title || s.short)}${k != null ? ` · <span class="${lv === 'late' ? 'bad' : lv ? 'warn' : 'muted'}">맥락 ${k}k</span>` : ''}</span>
+        <button type="button" class="small" data-hand="${s.id}" title="${esc(tip)}">넘기고 새로 시작</button></div>`;
+    }).join('');
+  }
+  $('fmHand').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-hand]');
+    if (!b || !window.foremanHandoff) return;
+    dlg.classList.remove('on');
+    window.foremanHandoff.start(Number(b.dataset.hand));
+  });
   function reset(project) {
     who();
     disp = null;

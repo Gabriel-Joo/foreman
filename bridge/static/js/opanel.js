@@ -10,7 +10,7 @@ import { approvalCard, handleApprovalClick, sessionKv, modelChip, convoHtml, fee
          sessionName, sessionSub, projectLabel, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN } from './render.js';
 import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
-import { mountHandoff } from './handoff.js';
+import { mountHandoff, FLOW_TIP } from './handoff.js';
 import { createScribe } from './scribe.js';
 import { createForemanPanel } from './fmpanel.js';
 
@@ -259,7 +259,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const html = `<span class="${late ? 'bad' : 'warn'}">📦 압축 ${c.count}번 — ${late
         ? '늦었습니다. 앞에서 정한 결정 · 금지가 이미 많이 빠졌을 수 있습니다.'
         : '넘어갈 때입니다. 처음에 정한 것이 빠지기 시작합니다.'}${c.short ? ' 압축 간격도 짧습니다.' : ''}</span>
-      ${s.injectable ? '<button type="button" data-cmp="handoff" class="small" title="인계 요약 받기 — 세션이 지금까지를 인계 문서로 씁니다. 받은 뒤 [세션] 탭에서 확인하고 새 세션을 띄웁니다.">인계 요약 받기</button>' : ''}
+      ${s.injectable ? `<button type="button" data-cmp="handoff" class="small" title="${esc(FLOW_TIP)}">넘기고 새로 시작</button>` : ''}
       <button type="button" data-cmp="loss" class="small" title="압축으로 잊은 것 찾기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 결과는 [세션] 탭 「넘기기 전 정리」에 나옵니다.">압축으로 잊은 것 찾기</button>
       <button type="button" data-cmp="later" class="ghost small" title="나중에 — 다음 압축까지 이 띠를 숨깁니다.">나중에</button>`;
     put('pCmp', 'cmp', html);
@@ -275,8 +275,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (!lv || snz === lv || (snz === 'late' && lv === 'due')) { $('pCmp').hidden = true; return; }
     const late = lv === 'late';
     const html = `<span class="${late ? 'bad' : 'warn'}">🧠 맥락 ${Math.round(x.tokens / 1000)}k — ${late
-        ? '늦었습니다. 응답 하나하나가 비쌉니다.' : '넘어갈 때입니다.'} 응답마다 이 맥락 전체를 다시 읽습니다(한도 사용의 대부분). 인계하면 수십k에서 다시 시작합니다.</span>
-      ${s.injectable ? '<button type="button" data-cmp="handoff" class="small" title="인계 요약 받기 — 세션이 지금까지를 인계 문서로 씁니다. 받은 뒤 [세션] 탭에서 확인하고 새 세션을 띄웁니다.">인계 요약 받기</button>' : ''}
+        ? '늦었습니다. 응답 하나하나가 비쌉니다.' : '넘어갈 때입니다.'} 응답마다 이 맥락 전체를 다시 읽습니다.</span>
+      ${s.injectable ? `<button type="button" data-cmp="handoff" class="small" title="${esc(FLOW_TIP)}">넘기고 새로 시작</button>` : ''}
       <button type="button" data-cmp="ctxlater" class="ghost small" title="나중에 — 다음 단계(500k)까지 이 띠를 숨깁니다.">나중에</button>`;
     put('pCmp', 'cmp', html);
     $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;
@@ -312,16 +312,20 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       store.touch('panel');
       return;
     }
-    b.disabled = true;
-    const r = await fetch(`/api/sessions/${s.id}/summary`, { method: 'POST', headers: store.headers(true), body: JSON.stringify({ kind: 'handoff', mode: 'live' }) });
-    const j = await r.json().catch(() => ({}));
-    store.state.lastInput = { sessionId: s.id, ts: Date.now(), ok: r.ok,
-      msg: r.ok ? '인계 요약을 요청했습니다. 세션이 쓰는 중입니다 — [세션] 탭에서 확인하고 새 세션을 띄울 수 있습니다.' : `요청하지 못했습니다 — ${j.refused || j.detail || r.status}` };
-    if (r.ok) setTab('sess');
-    b.disabled = false;
-    store.touch('panel');
+    if (b.dataset.cmp === 'handoff') startHandoff(s.id);
   });
   window.foremanCompactSnoozed = compactSnoozed;     // 픽셀 화면의 📦 표시도 같은 기준으로 숨긴다
+  // 넘기고 새로 시작(11-08) — 띠 · 교장실 창 · [세션] 탭이 모두 이것 하나를 부른다: 그 세션을 열고 [세션] 탭에서 흐름을 시작
+  function startHandoff(id) {
+    if (onSelectSession) onSelectSession(id); else store.select(id);
+    setOpen(true);
+    setTab('sess');
+    hand.setSession(id);
+    hand.startFlow();
+    store.touch('panel');
+  }
+  window.foremanHandoff = { start: startHandoff };
+  window.foremanHandoffTip = FLOW_TIP;
 
   // 겹침 알림 띠(11-06, bridge/overlap.py) — 방금 넣은 요청이 다른 살아 있는 세션의 최근 일과 겹친다. 막지 않는다.
   // [나중에]는 이 겹침(시각으로 기억)만 숨긴다 — 이 브라우저에만
