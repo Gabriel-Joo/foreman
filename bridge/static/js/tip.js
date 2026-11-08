@@ -58,8 +58,38 @@ export function themeTips(style) {
   document.documentElement.dataset.tipKind = style.kind || 'sign';
 }
 
+// title → data-tip. 11-09 — 마우스를 올린 순간에만 옮기면, 다시 그리며 title을 또 붙이는 곳(머리말 작업 수 · 15초마다
+// 그리는 패널 칸)에서 브라우저 기본 툴팁과 이 툴팁이 둘 다 떴다. 붙는 순간 옮긴다(화면 전체, 새로 생기는 것까지)
+function moveTitle(n) {
+  // 꺼진 버튼은 두다 — 브라우저에 따라 마우스 이벤트가 오지 않아 이 툴팁이 못 뜬다(기본 툴팁 하나만 뜬다)
+  if (n.nodeType !== 1 || !n.hasAttribute('title') || n.closest('svg') || n.matches(':disabled')) return;
+  const t = n.getAttribute('title');
+  if (t) n.dataset.tip = t;
+  n.removeAttribute('title');
+}
+function watchTitles(root) {
+  const top = root === document ? document.documentElement : root;
+  for (const n of top.querySelectorAll('[title]')) moveTitle(n);
+  new MutationObserver((muts) => {
+    for (const m of muts) {
+      if (m.type === 'attributes') {
+        const n = m.target;
+        if (m.attributeName === 'disabled' && n.matches(':disabled') && !n.hasAttribute('title') && n.dataset.tip) n.setAttribute('title', n.dataset.tip);
+        else moveTitle(n);
+        continue;
+      }
+      for (const n of m.addedNodes) {
+        if (n.nodeType !== 1) continue;
+        moveTitle(n);
+        for (const k of n.querySelectorAll('[title]')) moveTitle(k);
+      }
+    }
+  }).observe(top, { subtree: true, childList: true, attributes: true, attributeFilter: ['title', 'disabled'] });   // 다시 켜지면 옮긴다
+}
+
 // DOM — data-tip · title이 달린 것에 마우스를 올리면
 export function attachDomTips(root = document) {
+  watchTitles(root);
   let cur = null;
   root.addEventListener('mouseover', (ev) => {
     const t = ev.target.closest && ev.target.closest('[data-tip], [title]');

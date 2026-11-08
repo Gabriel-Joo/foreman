@@ -275,7 +275,7 @@ async def list_dirs(path: str = "~", hidden: bool = False) -> dict[str, Any]:
 async def spawn_new(body: NewIn, request: Request) -> JSONResponse:
     try:
         if body.first_prompt and body.summary_id is not None:
-            raise Refused("첫 입력과 인계 요약은 같이 줄 수 없습니다 — 하나만 골라 주세요")
+            raise Refused("첫 입력과 옮기기용 요약은 같이 줄 수 없습니다 — 하나만 골라 주세요")
         return JSONResponse(await _mgr(request).spawn_new(body.cwd, body.summary_id, body.title, worktree=body.worktree,
                                                           role=body.role, model=body.model or None,
                                                           first_prompt=body.first_prompt or None))

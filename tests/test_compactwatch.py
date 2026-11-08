@@ -39,13 +39,13 @@ def test_context_level_and_rule_once_per_threshold():
 
 def test_context_message_wording():
     m = context_message("[런슈즈]", "클러스터 이주", 439_000, "due", 0.0878)
-    assert m.startswith("[런슈즈] 세션 「클러스터 이주」 맥락 439k — 넘어갈 때입니다. 응답 하나에 맥락 읽기만 약 $0.09입니다.")
-    assert "인계 요약 받기" in m
+    assert m.startswith("[런슈즈] 세션 「클러스터 이주」 지금까지 쌓인 대화 439k · 응답당 약 $0.09. 새 세션으로 옮길 때입니다.")
+    assert "[새 세션으로 옮기기]" in m and "인계" not in m                     # 11-09 화면 말 통일
     assert "$" not in context_message("[포먼]", "x", 510_000, "late", None) and "늦었습니다" in context_message("[포먼]", "x", 510_000, "late", None)
 
 
 def test_message_wording():
     m = message("[포먼]", "인계 2판", 2, "due", False)
-    assert m.startswith("[포먼] 세션 「인계 2판」 압축 2번 — 넘어갈 때입니다.") and "인계 요약 받기" in m
+    assert m.startswith("[포먼] 세션 「인계 2판」 압축 2번 — 넘어갈 때입니다.") and "[새 세션으로 옮기기]" in m
     m = message("[런슈즈]", "발볼", 4, "late", True)
     assert "늦었습니다" in m and "간격도 짧습니다" in m

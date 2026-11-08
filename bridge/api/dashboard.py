@@ -162,6 +162,11 @@ async def dashboard(request: Request) -> dict[str, Any]:
         cmp = await compact_status(c, [r[0] for r in visible], request.app.state.compact_rules)
         # 맥락 크기(11-08) — 마지막 본 대화 응답의 맥락. 300k "넘어갈 때" · 500k "늦었음"(notify.toml [compact] context_at)
         ctx = await context_status(c, [r[0] for r in visible], request.app.state.compact_rules)
+        # 응답 하나가 이 맥락을 다시 읽는 값(캐시 읽기 정가, config/usage.toml) — 패널 띠 "응답당 약 $0.07"(11-09)
+        ucfg = getattr(getattr(request.app.state, "usage", None), "cfg", None)
+        for v in ctx.values():
+            p = ucfg.price(v["model"]) if ucfg else None
+            v["usd_reply"] = round(v["tokens"] * p.get("cache_read", 0.0) / 1e6, 3) if p else None
         # 지금 모델 — 본 대화(서브에이전트 아님)의 마지막 응답. 세션 안에서 /model로 바꾸면 따라간다
         cur_model = {r[0]: r[1] for r in (await c.execute(text(
             f"SELECT t.session_id, m.model FROM message m JOIN turn t ON t.id = m.turn_id JOIN ("

@@ -59,7 +59,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
           <div id="pInfo"></div>
           <section id="pHand"></section>
           <details id="pKvBox" class="hand"><summary title="세션 정보 · 토큰 — 프로세스 · 지금 하는 일 · 서브에이전트 · 모델 · 토큰(모델별)."><b>세션 정보 · 토큰</b> <span id="pKvHead" class="small muted"></span></summary><div id="pKv"></div></details>
-          <details id="pHist" class="appr-hist"><summary class="small">승인 이력 <span id="pHistHead" class="muted"></span></summary><div id="pHistBody" class="small"></div></details>
+          <details id="pHist" class="appr-hist"><summary class="small" title="승인 기록 — 세션이 위험할 수 있는 명령을 하려다 나에게 물은 것과, 내가 어떻게 답했는지입니다.">승인 기록<span id="pHistHead" class="muted"></span></summary><div id="pHistBody" class="small"></div></details>
         </div>
       </div>
       <form id="pForm" class="input" hidden>
@@ -259,7 +259,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const html = `<span class="${late ? 'bad' : 'warn'}">📦 압축 ${c.count}번 — ${late
         ? '늦었습니다. 앞에서 정한 결정 · 금지가 이미 많이 빠졌을 수 있습니다.'
         : '넘어갈 때입니다. 처음에 정한 것이 빠지기 시작합니다.'}${c.short ? ' 압축 간격도 짧습니다.' : ''}</span>
-      ${s.injectable ? `<button type="button" data-cmp="handoff" class="small" title="${esc(FLOW_TIP)}">넘기고 새로 시작</button>` : ''}
+      ${s.injectable ? `<button type="button" data-cmp="handoff" class="small" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
       <button type="button" data-cmp="loss" class="small" title="압축으로 잊은 것 찾기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 결과는 [세션] 탭 「넘기기 전 정리」에 나옵니다.">압축으로 잊은 것 찾기</button>
       <button type="button" data-cmp="later" class="ghost small" title="나중에 — 다음 압축까지 이 띠를 숨깁니다.">나중에</button>`;
     put('pCmp', 'cmp', html);
@@ -274,13 +274,25 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     try { snz = localStorage.getItem('ctxSnooze:' + s.id) || ''; } catch { /* 기억 못 함 */ }
     if (!lv || snz === lv || (snz === 'late' && lv === 'due')) { $('pCmp').hidden = true; return; }
     const late = lv === 'late';
-    const html = `<span class="${late ? 'bad' : 'warn'}">🧠 맥락 ${Math.round(x.tokens / 1000)}k — ${late
-        ? '늦었습니다. 응답 하나하나가 비쌉니다.' : '넘어갈 때입니다.'} 응답마다 이 맥락 전체를 다시 읽습니다.</span>
-      ${s.injectable ? `<button type="button" data-cmp="handoff" class="small" title="${esc(FLOW_TIP)}">넘기고 새로 시작</button>` : ''}
+    // 11-09 사용자 문구 — 겉은 짧게, 호버에 크기를 사람 말로(한글 ≈ 토큰 × 0.9자, 책 한 권 ≈ 10만 자)
+    const usd = x.usd_reply != null ? ` · 응답당 약 $${x.usd_reply < 0.1 ? x.usd_reply.toFixed(2) : x.usd_reply.toFixed(1)}` : '';
+    const tip = `토큰 ${koNum(x.tokens)}, 한글 ${koNum(Math.round(x.tokens * 0.9 / 10000) * 10000)} 자, 책 ${koBooks(x.tokens * 0.9 / 100000)}쯤입니다. `
+      + '답할 때마다 이걸 전부 다시 읽고, 그만큼 비용이 듭니다. 새 세션으로 옮기면 수십k에서 다시 시작합니다.';
+    const html = `<span class="${late ? 'bad' : 'warn'}" title="${esc(tip)}">🧠 지금까지 쌓인 대화 ${Math.round(x.tokens / 1000)}k${usd}</span>
+      ${s.injectable ? `<button type="button" data-cmp="handoff" class="small" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
       <button type="button" data-cmp="ctxlater" class="ghost small" title="나중에 — 다음 단계(500k)까지 이 띠를 숨깁니다.">나중에</button>`;
     put('pCmp', 'cmp', html);
     $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;
     $('pCmp').hidden = false;
+  }
+  // 33만 6천 · 책 세 권 — 맥락 띠 호버(11-09)
+  function koNum(n) {
+    const man = Math.floor(n / 10000), cheon = Math.floor((n % 10000) / 1000);
+    return man ? `${man}만${cheon ? ` ${cheon}천` : ''}` : cheon ? `${cheon}천` : String(n);
+  }
+  function koBooks(b) {
+    const n = Math.max(1, Math.round(b));
+    return `${['', '한', '두', '세', '네', '다섯', '여섯', '일곱', '여덟', '아홉', '열'][n] || n} 권`;
   }
   function compactSnoozed(id, count) {
     try { return Number(localStorage.getItem('cmpSnooze:' + id) || 0) >= count; } catch { return false; }
@@ -306,7 +318,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       const r = await fetch(`/api/sessions/${s.id}/losscheck`, { method: 'POST', headers: store.headers(true), body: '{}' });
       const j = await r.json().catch(() => ({}));
       store.state.lastInput = { sessionId: s.id, ts: Date.now(), ok: r.ok,
-        msg: r.ok ? `압축으로 잊은 것 찾기를 시작했습니다(#${j.loss_check_id}). 진행과 결과는 [세션] 탭 「넘기기 전 정리」에 나옵니다.` : `시작하지 못했습니다 — ${j.refused || j.detail || r.status}` };
+        msg: r.ok ? `압축으로 잊은 것 찾기를 시작했습니다(#${j.loss_check_id}). 진행과 결과는 [세션] 탭 「옮기기 전 정리」에 나옵니다.` : `시작하지 못했습니다 — ${j.refused || j.detail || r.status}` };
       if (r.ok) setTab('sess');
       b.disabled = false;
       store.touch('panel');
@@ -436,7 +448,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const now = s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target || '', 60))}` : (s.state === 'ACTIVE' ? '생각 중' : '');
     put('pMeta', 'meta', `<span class="badge st-${s.state}">${esc(STATE_LABEL[s.state] || s.state)}</span>
       <span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
-      · <span class="muted">오늘 출력 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn">⚠ 끝 신호 없는 턴</span>' : ''}`);
+      · <span class="muted">오늘 출력 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn" title="끝났는지 모름 — 작업이 끝났다는 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.">⚠ 끝났는지 모름</span>' : ''}`);
     $('pMeta').title = `${sessionSub(s)} · ${projectLabel(st, s.project)} · ${(s.cwd || '')}`;
     drawCompact(s);
     drawOverlap(s);
@@ -453,7 +465,12 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (tab === 'sess' || switched) {
       // 11-06 정리 — 위에는 어디서 무엇을 하는지 한 줄, 표(프로세스 · 모델 · 토큰)는 아래 접는 칸으로
       put('pInfo', 'info', `<div class="small muted">${esc(projectLabel(st, s.project))} · ${esc((s.cwd || '').replace(/^\/home\/[^/]+/, '~'))}</div>
-        ${s.open_turn ? `<div class="small${stuck ? ' warn' : ''}">${stuck ? '⚠ 끝 신호 없는 턴' : '▶ 턴'} ${esc(ORIGIN_LABEL[s.open_turn.origin] || '')} · ${ago(s.open_turn.started_at)} 시작</div>` : ''}`);
+        ${s.open_turn ? (() => {           // 11-09 "턴 나 · 10분 전 시작" → "작업 중 · 10분째"(무엇으로 시작했는지는 호버)
+          const o = s.open_turn, el = ago(o.started_at).replace(/ 전$/, '째'), by = o.origin === 'human' ? '내 입력' : (ORIGIN_LABEL[o.origin] || '');
+          const tip = stuck ? `끝났는지 모름 — ${by}으로 시작한 작업이 끝났다는 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.`
+            : `작업 중 — ${by}으로 시작한 작업이 ${el} 돌고 있습니다.`;
+          return `<div class="small${stuck ? ' warn' : ''}" title="${esc(tip)}">${stuck ? '⚠ 끝났는지 모름' : '▶ 작업 중'} · ${esc(el)}</div>`;
+        })() : ''}`);
       put('pKv', 'kv', sessionKv(s, pendModel(st, s)));
       const t_ = s.tokens || {};
       $('pKvHead').textContent = `${s.model_label || ''}${s.model_label ? ' · ' : ''}오늘 출력 ${tok(t_.today_output)}`;

@@ -39,7 +39,7 @@ TITLES = {
     "abandoned": "끝 신호 없이 버려진 턴",
 }
 ORIGIN_LABEL = {"human": "요청", "meta": "입력", "agent_message": "다른 세션 메시지", "task_notification": "완료 알림",
-                "subagent_message": "서브에이전트 결과", "handoff": "인계 요청", "handoff_in": "인계 넣기"}
+                "subagent_message": "서브에이전트 결과", "handoff": "옮기기 요약 요청", "handoff_in": "옮겨 온 요약"}
 SUB_STATUS = {"done": "완료", "failed": "실패", "stopped": "중단", "running": "진행", "stale": "확인 안 됨"}
 _WRAP = re.compile(r'^\s*<pasted_content id="[0-9a-f]+">\s*', re.S)
 

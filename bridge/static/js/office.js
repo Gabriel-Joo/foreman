@@ -118,15 +118,16 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const el = document.getElementById('oUsage');
     if (!el || !usage) return;
     const ls = usage.limits || [], rd = usage.reading || {};
-    const short = { session_5h: '5h', weekly_all: '주', weekly_fable: 'Fable' };
+    // 11-09 "5h"를 몰랐다 — 5시간 · 주간, 추정이면 "약"
+    const short = { session_5h: '5시간', weekly_all: '주간', weekly_fable: 'Fable 주간' };
     const parts = ls.filter((l) => usagePct(l) != null && (l.key !== 'weekly_fable' || usagePct(l) >= 1))
-      .map((l) => `${short[l.key] || l.label} ${(l.est_pct != null && l.measured_pct != null && Math.abs(l.est_pct - l.measured_pct) >= 0.5) ? '~' : ''}${Math.round(usagePct(l))}%`);
+      .map((l) => `${short[l.key] || l.label} ${(l.est_pct != null && l.measured_pct != null && Math.abs(l.est_pct - l.measured_pct) >= 0.5) ? '약 ' : ''}${Math.round(usagePct(l))}%`);
     const bad = usage.failed || !rd.ok;
     const max = usageMax();
     el.className = 'ghost ousage' + (bad ? ' bad' : max >= 95 ? ' bad' : max >= 80 ? ' warn' : '');
     el.textContent = usage.failed ? '⚠ 사용량' : (bad ? '⚠ ' : '') + (parts.length ? `사용량: ${parts.join(' · ')}` : '사용량');
     const lines = ls.map((l) => `${l.label} ${usagePct(l) == null ? '—' : Math.round(usagePct(l)) + '%'}${l.eta_before_reset ? ' — 이 속도면 리셋 전에 100%' : ''}`);
-    el.dataset.tip = `사용량 — 누르면 한도 · 어디서 나가는지 봅니다.\n${lines.join('\n')}`
+    el.dataset.tip = `사용량 — 구독 한도를 몇 % 썼는지입니다. 5시간 한도는 첫 메시지부터 5시간마다, 주간 한도는 일요일 22시에 다시 찹니다. "약"은 마지막으로 읽은 뒤 FOREMAN이 더해 본 추정입니다. 누르면 어디서 나가는지 봅니다.\n${lines.join('\n')}`
       + (usage.failed ? `\n불러오지 못했습니다(${usage.failed}).` : !rd.ok ? `\n/usage를 읽지 못하고 있습니다: ${rd.error || '오래됐습니다'}` : '');
   }
   if (new URLSearchParams(location.search).get('demo')) {   // 시연 재생은 /api를 막는다 — 칩을 숨긴다(⚠로 찍히지 않게)
@@ -2218,9 +2219,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       : (ig.stuck || []).map((x) => `${x.session} ${x.minutes}분 · ${x.failures}번 — ${x.error}`).join('\n');
     $('oAlerts').innerHTML = (pend ? `<button id="oPend" class="ghost warn" title="승인 대기 — 패널에서 승인하거나 거부합니다.">❗ 승인 대기 ${pend}</button>` : '') +
       (ig && !ig.ok ? `<span class="bad" title="${esc(igWhy)}">⚠ ${ig.stalled ? '와처 멈춤' : `적재 막힘 ${(ig.stuck || []).length}개 세션`}</span>` : '');
-    const stat = `작업 <b>${active}</b>/${live}${subs ? ` · 서브 ${subs}` : ''} · 출력 토큰 ${fmt(outToday)}`;
+    const stat = `작업 중 <b>${active}</b>/${live}${subs ? ` · 서브에이전트 ${subs}` : ''} · 출력 토큰 ${fmt(outToday)}`;
     if ($('oStat').innerHTML !== stat) $('oStat').innerHTML = stat;
-    $('oStat').title = `작업 중 ${active} / 살아 있는 세션 ${live}${subs ? ` · 서브에이전트 ${subs}` : ''} · 오늘 출력 토큰 ${fmt(outToday)}`;
+    // data-tip으로 바로(11-09 — title을 매번 다시 붙여 기본 툴팁과 둘이 떴다)
+    $('oStat').dataset.tip = `지금 상태 — 일하는 세션 ${active} / 켜져 있는 세션 ${live}${subs ? ` · 세션이 일을 나눠 맡긴 서브에이전트 ${subs}` : ''} · 오늘 AI가 쓴 글의 양(출력 토큰) ${fmt(outToday)}`;
     $('oMap').disabled = view === 'hq';
     $('oAll').disabled = view === 'map';
     drawProjects(st);
@@ -2353,7 +2355,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
         s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎</div>` : ''}${
         bg.length ? `<div>백그라운드 ${bg.length}개 돎${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}</div>`).join('')}</div>` : ''}${
-        a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝 신호 없는 턴' }[a.act.flag] || a.act.flag)}</div>` : ''}${
+        a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝났는지 모름 — 끝 신호가 오지 않았습니다' }[a.act.flag] || a.act.flag)}</div>` : ''}${
         s.compact && s.compact.level ? `<div class="tip-s">📦 압축 ${s.compact.count}번 — ${s.compact.level === 'late' ? '늦었습니다' : '새 세션으로 넘어갈 때입니다'}</div>` : ''}
         <div class="tip-t">누르면 대화가 열립니다.</div>`;
     }

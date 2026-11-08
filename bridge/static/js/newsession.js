@@ -27,7 +27,7 @@ export function mountNewSession(store, { onCreated }) {
     </div>
     <div class="small muted">시작</div>
     <label class="small ns-opt"><input type="radio" name="nsMode" value="fresh" checked><span>새로 시작</span></label>
-    <label class="small ns-opt" id="nsHandOpt"><input type="radio" name="nsMode" value="handoff"><span>인계 요약 넣고 시작</span><span id="nsNoSum" class="muted" hidden> — 넣을 요약이 없습니다</span></label>
+    <label class="small ns-opt" id="nsHandOpt"><input type="radio" name="nsMode" value="handoff"><span>옮기기용 요약 넣고 시작</span><span id="nsNoSum" class="muted" hidden> — 넣을 요약이 없습니다</span></label>
     <div id="nsHand" hidden>
       <label class="small muted" for="nsSum">어느 세션의 요약을 넣을까요</label>
       <select id="nsSum"></select>
@@ -93,7 +93,7 @@ export function mountNewSession(store, { onCreated }) {
       groups.get(s.session_id).list.push(s);
     }
     const when = (t) => new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    const KIND = { snapshot: '지금 요약', handoff: '끝내기 전 인계' };
+    const KIND = { snapshot: '지금 요약', handoff: '옮기기용 요약' };
     const cut = (t, n) => (t && t.length > n ? t.slice(0, n) + '…' : t || '');
     $('nsSum').innerHTML = '<option value="">— 세션을 골라 주세요 —</option>' + [...groups.values()].map((g) =>
       `<optgroup label="세션 ${g.head.session_id} · ${esc(cut(g.head.session, 30))}">${g.list.map((s) =>
@@ -120,14 +120,14 @@ export function mountNewSession(store, { onCreated }) {
   $('nsGo').onclick = async () => {
     if (busy || !cwd) { if (!cwd) msg('폴더를 골라 주세요.', 'bad'); return; }
     const summary_id = mode() === 'handoff' && $('nsSum').value ? Number($('nsSum').value) : null;
-    if (mode() === 'handoff' && !summary_id) { msg(mine().length ? '넣을 요약의 세션을 골라 주세요.' : '이 프로젝트에는 넣을 인계 요약이 없습니다.', 'bad'); return; }
+    if (mode() === 'handoff' && !summary_id) { msg(mine().length ? '넣을 요약의 세션을 골라 주세요.' : '이 프로젝트에는 넣을 요약이 없습니다.', 'bad'); return; }
     busy = true; $('nsGo').disabled = true;
     msg(`새 세션을 띄우는 중입니다… (${home(cwd, opts.home)})`);
     try {
       const r = await api('POST', '/api/spawn', { cwd, summary_id, title: $('nsTitle').value.trim() || null,
         role: $('nsRole').value, model: $('nsModel').value || null });
       if (r.session_id) {
-        msg(`새 세션을 띄웠습니다(tmux ${r.tmux}${r.model ? ' · ' + r.model : ''}).${summary_id ? (r.injected ? ' 인계를 넣었습니다.' : ' 인계는 넣지 못했습니다.') : ''}${r.note ? ' ' + r.note : ''}`, r.note ? 'warn' : 'ok');
+        msg(`새 세션을 띄웠습니다(tmux ${r.tmux}${r.model ? ' · ' + r.model : ''}).${summary_id ? (r.injected ? ' 요약을 넣었습니다.' : ' 요약은 넣지 못했습니다.') : ''}${r.note ? ' ' + r.note : ''}`, r.note ? 'warn' : 'ok');
         await store.loadSnapshot();
         if (onCreated) onCreated(r.session_id);
         setTimeout(close, r.note ? 4000 : 900);

@@ -10,8 +10,9 @@ import { lossGroup } from './losscheck.js';
 
 const SOURCE = { self: '세션이 씀', self_headless: '세션이 씀(죽은 세션, claude -p)', compact: '자동 압축 요약에서', edited: '사람이 고침' };
 const STATUS = { requested: '기다리는 중…', ok: '저장됨', failed: '실패', timeout: '시간 초과' };
-const KIND = { snapshot: '지금 요약', handoff: '끝내기 전 인계' };
-export const FLOW_TIP = '넘기고 새로 시작 — 요약을 받아 보여 드리고, 확인하면 같은 폴더에 새 세션을 띄워 넣은 뒤 이 세션을 끝냅니다. 어느 단계에서나 멈출 수 있습니다.';
+// 11-09 화면 말 통일 — "인계"는 "새 세션으로 옮기기"(문서 · log · 세션에 넣는 글은 그대로 "인계")
+const KIND = { snapshot: '지금 요약', handoff: '옮기기용 요약' };
+export const FLOW_TIP = '새 세션으로 옮기기 — 지금까지를 요약해 보여 드리고, 확인하면 같은 폴더에 새 세션을 띄워 요약을 넣은 뒤 이 세션을 끝냅니다. 어느 단계에서나 멈출 수 있습니다.';
 
 // 넘기고 새로 시작(11-08 사용자 — 흩어진 [요약하고 끝내기] · [지금 요약] · [새로 띄우기] · 압축 요약을 버튼 하나로).
 // ① 요약 → ② 확인(넣을 글을 보여 줌) → ③ 새 세션 → ④ 옛 세션 끝내기. 어디까지 왔는지는 이 브라우저에 세션마다 기억한다
@@ -153,7 +154,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
   }
   // 인계 검증(11-06) — 만들 때 상태와 지금이 다르면 넣는 글 앞에 붙는 "인계 뒤 바뀐 것"
   function driftList(d, head) {
-    if (!d || !d.length) return `<div class="small ok">✓ ${esc(head)} — 인계를 쓴 뒤 바뀐 것이 없습니다(git · 스키마 잠금).</div>`;
+    if (!d || !d.length) return `<div class="small ok">✓ ${esc(head)} — 요약을 쓴 뒤 바뀐 것이 없습니다(git · 스키마 잠금).</div>`;
     return `<div class="hand-drift"><div class="small warn"><b>⚠ ${esc(head)} ${d.length}</b> — 받은 세션이 「지금 상태」를 다시 판단하도록 글 앞에 붙습니다.</div>
       ${d.map((x) => `<div class="small">· ${esc(x)}</div>`).join('')}</div>`;
   }
@@ -161,7 +162,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
   function readsLine(r, can) {
     if (!r) return '';
     const all = r.read === r.total;
-    const drift = r.drift && r.drift.length ? `<div class="hand-group"><span class="hand-lbl small muted">바뀐 것</span><div>${driftList(r.drift, '받을 때 인계 뒤 바뀐 것')}</div></div>` : '';
+    const drift = r.drift && r.drift.length ? `<div class="hand-group"><span class="hand-lbl small muted">바뀐 것</span><div>${driftList(r.drift, '받을 때 요약 뒤 바뀐 것')}</div></div>` : '';
     return `<div class="hand-group"><span class="hand-lbl small muted">읽을 곳</span><div class="hand-btns">
       <span class="small ${all ? 'ok' : 'warn'}">${r.read}/${r.total} 읽음${all ? '' : ` — 안 읽음: ${r.missing.map(esc).join(', ')}`}${r.auto && r.auto.length ? ` <span class="muted" title="자동 — 세션이 시작할 때 저절로 들어오는 문서라 읽음으로 셉니다.">(자동: ${r.auto.map(esc).join(', ')})</span>` : ''}</span>
       ${all ? '' : `<button data-act="reads-resend" class="small"${can ? '' : ' disabled'} title="안 읽은 곳 다시 보내기 — 아직 읽지 않은 문서만 다시 보내고, 읽은 뒤 걸리는 규칙을 말하게 합니다.">안 읽은 곳 다시 보내기</button>`}
@@ -172,7 +173,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     if (sid == null || !data) { el.innerHTML = ''; return; }
     const c = data.controls, can = c.can, s0 = data.summaries[0], ok = latest();
     const b = (act, label, on, cls = '', tip = '') => `<button data-act="${act}" class="small ${cls}"${tip ? ` title="${esc(tip)}"` : ''}${on ? '' : ' disabled'}>${label}</button>`;
-    const sumCard = (x) => !x ? '<p class="small muted">아직 인계 요약이 없습니다.</p>' : `
+    const sumCard = (x) => !x ? '<p class="small muted">아직 요약이 없습니다.</p>' : `
       <div class="hand-sum">
         <div class="small"><b>${esc(KIND[x.kind] || x.kind)}</b> · ${esc(SOURCE[x.source] || x.source)} ·
           <span class="${x.status === 'ok' ? 'ok' : x.status === 'requested' ? '' : 'bad'}">${esc(STATUS[x.status] || x.status)}</span>
@@ -187,11 +188,11 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         <div class="row">${b('edit-save', '고친 본 저장', true, '', '저장 — 원본은 두고 고친 본을 새 판으로 저장합니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 고친 것을 버리고 요약 카드로 돌아갑니다.')}</div>`;
     } else if (mode === 'spawn') {
       main = preview ? `<div class="small">같은 폴더에 새 세션을 띄우고 아래 글을 첫 입력으로 넣습니다.${preview.cut ? ` <span class="warn">길어서 일부 절을 줄였습니다(전체는 ${esc(preview.full_path)}).</span>` : ''}</div>
-        ${driftList(preview.drift, '인계 뒤 바뀐 것')}
+        ${driftList(preview.drift, '요약 뒤 바뀐 것')}
         ${preview.v2 ? pointerList(preview) : ''}
         <pre class="hand-body">${esc(preview.text)}</pre>
         <div class="row">${b('spawn-go', '이 글을 넣고 시작', !preview.blocked, '', preview.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다(요약 카드의 [고치기]).' : '이 글을 넣고 시작 — 같은 폴더에 새 세션을 띄우고 위 글을 첫 입력으로 넣습니다.')}${b('spawn-bare', '요약 없이 시작', true, 'ghost', '요약 없이 시작 — 같은 폴더에 빈 새 세션만 띄웁니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 띄우지 않고 돌아갑니다.')}</div>`
-        : `<div class="small">넣을 인계 요약이 없습니다.</div><div class="row">${b('spawn-bare', '요약 없이 새로 띄우기', true, '', '요약 없이 새로 띄우기 — 같은 폴더에 빈 새 세션만 띄웁니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 띄우지 않고 돌아갑니다.')}</div>`;
+        : `<div class="small">넣을 요약이 없습니다.</div><div class="row">${b('spawn-bare', '요약 없이 새로 띄우기', true, '', '요약 없이 새로 띄우기 — 같은 폴더에 빈 새 세션만 띄웁니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 띄우지 않고 돌아갑니다.')}</div>`;
     } else {
       main = sumCard(s0 && s0.status !== 'ok' && ok && s0.id !== ok.id ? s0 : ok || s0) +
         (s0 && ok && s0.id !== ok.id && s0.status !== 'ok' ? `<div class="small muted">이전 저장본 ↓</div>${sumCard(ok)}` : '') +
@@ -203,15 +204,15 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     if (st && mode == null) {
       const steps = `<ol class="flow-steps">${FLOW_STEPS.map((n, k) => `<li class="${k < st.i ? 'done' : k === st.i ? (st.bad ? 'bad' : 'now') : ''}">${k < st.i ? '✓' : k + 1} ${n}</li>`).join('')}</ol>`;
       let body = '';
-      if (st.done) body = `<div class="small ok">넘기기를 마쳤습니다 — 새 세션${fs && fs.injected_cc_session ? ` ${esc(fs.injected_cc_session.slice(0, 8))}` : ''}이 이어받았습니다.</div><div class="row">${b('flow-close', '닫기', true, 'ghost', '닫기 — 이 안내를 치웁니다.')}</div>`;
+      if (st.done) body = `<div class="small ok">새 세션으로 옮겼습니다 — 새 세션${fs && fs.injected_cc_session ? ` ${esc(fs.injected_cc_session.slice(0, 8))}` : ''}이 이어받았습니다.</div><div class="row">${b('flow-close', '닫기', true, 'ghost', '닫기 — 이 안내를 치웁니다.')}</div>`;
       else if (st.bad) body = `<div class="small bad">${esc(st.msg)}</div><div class="row">${st.i === 3 ? b('flow-end', '옛 세션 다시 끝내기', can.exit, 'danger', '옛 세션 다시 끝내기 — 새 세션은 이미 이어받았습니다. 옛 세션만 /exit로 끝냅니다.') : st.i === 0 ? b('flow-start', '다시 요약', can.summary || can.headless, '', '다시 요약 — 요약을 새로 요청합니다.') : b('flow-go', '다시 시도', true, '', '다시 시도 — 이 단계부터 다시 합니다.')}${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 넘기기를 그만둡니다. 받은 요약은 남습니다.')}</div>`;
-      else if (st.i === 0) body = `<div class="small muted">세션이 인계 요약을 쓰는 중입니다… 다 쓰면 넣을 글을 보여 드립니다.</div><div class="row">${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 기다리지 않습니다. 세션은 쓰던 요약을 마저 쓰고, 요약은 남습니다.')}</div>`;
+      else if (st.i === 0) body = `<div class="small muted">세션이 옮길 요약을 쓰는 중입니다… 다 쓰면 넣을 글을 보여 드립니다.</div><div class="row">${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 기다리지 않습니다. 세션은 쓰던 요약을 마저 쓰고, 요약은 남습니다.')}</div>`;
       else if (st.i === 1) {
         const p = flowPrev && flowPrev.summary_id === flow.sumId ? flowPrev : null;
         if (!p && !flowPrevAsk) { flowPrevAsk = true; setTimeout(() => flowPreview().finally(() => { flowPrevAsk = false; }), 0); }
         body = !p ? '<div class="small muted">넣을 글을 불러오는 중입니다…</div>'
           : `<div class="small">새 세션에 아래 글을 첫 입력으로 넣습니다. 확인하면 새 세션을 띄우고 이 세션을 끝냅니다.${p.cut ? ` <span class="warn">길어서 일부 절을 줄였습니다.</span>` : ''}</div>
-            ${driftList(p.drift, '인계 뒤 바뀐 것')}${p.v2 ? pointerList(p) : ''}<pre class="hand-body">${esc(p.text)}</pre>`;
+            ${driftList(p.drift, '요약 뒤 바뀐 것')}${p.v2 ? pointerList(p) : ''}<pre class="hand-body">${esc(p.text)}</pre>`;
         body += `<div class="row">${b('flow-go', '확인 — 새 세션 띄우고 이 세션 끝내기', !!p && !p.blocked && can.spawn, '', p && p.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다([더보기] → [요약 고치기]).' : '확인 — 같은 폴더에 새 세션을 띄워 위 글을 넣고, 이 세션을 /exit로 끝냅니다.')}${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 띄우지 않습니다. 요약은 남습니다.')}</div>`;
       } else if (st.i === 2) body = '<div class="small muted">새 세션을 띄우고 요약을 넣는 중입니다…</div>';
       else if (st.i === 3) body = st.busy ? '<div class="small muted">옛 세션을 끝내는 중입니다… 맥락이 큰 세션은 수십 초 걸립니다.</div>'
@@ -231,14 +232,15 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     const editLink = ok && mode == null && !st ? b('edit', '고치기', true, 'ghost', '요약 고치기 — 저장된 요약을 직접 고칩니다. 원본은 두고 새 판으로 저장합니다.') : '';
     el.innerHTML = `
       <section class="hand">
-        <div class="hand-h"><b>인계</b> <span class="small muted">${esc(c.why || (c.live ? '살아 있음' : ''))}${s0 ? ` · 요약 ${esc(STATUS[s0.status] || s0.status)} ${ago(s0.created_at)}` : ''}</span></div>
+        <div class="hand-h"><b>새 세션으로 옮기기</b>${s0 ? ` <span class="small muted" title="마지막 요약 — ${esc(KIND[s0.kind] || s0.kind)}, ${esc(STATUS[s0.status] || s0.status)}">· 요약 ${esc(STATUS[s0.status] || s0.status)} ${ago(s0.created_at)}</span>` : ''}</div>
         <div class="hand-btns">
-          ${st ? '' : b('flow-start', '넘기고 새로 시작', can.summary || (!c.live && can.headless), 'flow-main', FLOW_TIP)}
+          ${st ? '' : b('flow-start', '새 세션으로 옮기기', can.summary || (!c.live && can.headless), 'flow-main', FLOW_TIP)}
           ${b('hand-more', handMore ? '접기 ▴' : '더보기 ▾', true, 'ghost', handMore ? '접기 — 드문 버튼을 다시 숨깁니다.' : '더보기 — 지금 요약 · 요약만 넣어 띄우기 · 요약 고치기 · 끝난 세션 요약. 드물게 씁니다.')}
           ${handMore ? `${b('summary', '지금 요약(계속 돎)', can.summary, 'ghost', '지금 요약 — 세션이 지금까지 한 일을 정리합니다. 세션은 끝내지 않고 계속 돕니다.')}
           ${b('spawn', '새 세션만 띄우기', can.spawn, 'ghost', '새 세션만 띄우기 — 이 세션은 두고, 같은 폴더에 새 세션을 띄워 마지막 요약(또는 빈 채로)을 넣습니다.')}
-          ${!c.live ? b('compact', '압축 요약으로 만들기', can.compact, 'ghost', '압축 요약으로 만들기 — 끝난 세션이 마지막 자동 압축 때 남긴 요약으로 인계를 만듭니다. 토큰을 쓰지 않지만 「읽을 곳」이 없는 거친 요약입니다.') : ''}` : ''}
+          ${!c.live ? b('compact', '압축 요약으로 만들기', can.compact, 'ghost', '압축 요약으로 만들기 — 끝난 세션이 마지막 자동 압축 때 남긴 요약으로 옮기기용 요약을 만듭니다. 토큰을 쓰지 않지만 「읽을 곳」이 없는 거친 요약입니다.') : ''}` : ''}
         </div>
+        ${!st && !(can.summary || (!c.live && can.headless)) && c.why ? `<div class="small muted">${esc(c.why === '작업 중입니다' ? '세션이 작업 중이라 지금은 못 합니다. 끝나면 눌러주세요.' : /입니다$/.test(c.why) ? c.why.replace(/입니다$/, '이라 지금은 못 합니다.') : c.why + '.')}</div>` : ''}
         ${note ? `<div class="small ${note.bad ? 'bad' : note.ok ? 'ok' : 'muted'}">${esc(note.msg)}</div>` : ''}
         ${editLink ? `<div class="hand-edit-link">${editLink}</div>` : ''}
         ${main}${hist}
@@ -258,7 +260,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         </div>
         ${wtGroup(c.worktree, b)}
       </section>
-      <details class="hand hand-docs"${docsOn ? ' open' : ''}><summary title="넘기기 전 정리 — 세션을 넘기기 전에, 압축으로 잊은 것과 대화에서만 정한 것을 찾아 문서에 적습니다. 문서 정리 · 포트폴리오는 서기실에서 합니다."><b>넘기기 전 정리</b> <span class="small muted">잊은 것 · 대화 결정을 문서에${docsHint ? ` · <span class="warn">${esc(docsHint)}</span>` : ''}</span></summary>
+      <details class="hand hand-docs"${docsOn ? ' open' : ''}><summary title="옮기기 전 정리 — 새 세션으로 옮기기 전에, 압축으로 잊은 것과 대화에서만 정한 것을 찾아 문서에 적습니다. 문서 정리 · 포트폴리오는 서기실에서 합니다."><b>옮기기 전 정리</b> <span class="small muted">잊은 것 · 대화 결정을 문서에${docsHint ? ` · <span class="warn">${esc(docsHint)}</span>` : ''}</span></summary>
         ${lossGroup(lc0, can.losscheck !== false && !!data.losschecks && !data.losschecks_error, data.losschecks_error)}
         ${promoteGroup(p0, !!can.promote, promDraft, data.promotions_error, data.promote_inputs, promIn)}
       </details>`;
@@ -280,7 +282,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       if (v === '') { note = { bad: true, msg: '같이 넣을 것을 골라 주세요 — 넣지 않으려면 「넣지 않음」을 고릅니다.' }; draw(); return; }
       const body = v === 'none' ? { no_input: true } : v.startsWith('lc:') ? { loss_check_id: Number(v.slice(3)) } : { summary_id: Number(v) };
       return run('대화 결정 목록 뽑기', () => post(`/api/sessions/${id}/promote`, body).then((r) => ({ msg: `요청을 보냈습니다. 세션이 목록을 만드는 중입니다${
-        r.summary_id ? `(인계 #${r.summary_id}의 「문서와 다른 지금」도 같이 넣었습니다)` : r.loss_check_id ? `(잃은 것 점검 #${r.loss_check_id}의 사라짐 · 약해짐도 같이 넣었습니다)` : ''}.` })));
+        r.summary_id ? `(요약 #${r.summary_id}의 「문서와 다른 지금」도 같이 넣었습니다)` : r.loss_check_id ? `(잃은 것 점검 #${r.loss_check_id}의 사라짐 · 약해짐도 같이 넣었습니다)` : ''}.` })));
     }
     if (act === 'loss-run') {
       if (!confirm('압축으로 잊은 것 찾기 — 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 끝나면 알림이 갑니다. 진행할까요?')) return;
@@ -299,12 +301,12 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     if (act === 'prom-write') {
       const p = prom(), n = p.items.filter((x) => x.state === 'approved').length;
       if (promoteEdits(p.items, promDraft).length) { note = { bad: true, msg: '고친 것이 저장되지 않았습니다 — 먼저 [고친 것 저장]을 눌러 주세요.' }; draw(); return; }
-      if (!confirm(`승인한 ${n}개를 세션이 문서에 쓰고 「인계 전 결정 기록」으로 커밋합니다. 브리지가 커밋을 확인합니다. 진행할까요?`)) return;
+      if (!confirm(`승인한 ${n}개를 세션이 문서에 쓰고 커밋합니다. 브리지가 커밋을 확인합니다. 진행할까요?`)) return;
       return run('승인한 것 쓰기', () => post(`/api/promotions/${p.id}/write`).then(() => ({ msg: '보냈습니다. 세션이 쓰고 커밋하는 중입니다.' })));
     }
     if (act === 'hand-more') { handMore = !handMore; draw(); return; }
     if (act === 'flow-start') return startFlow();
-    if (act === 'flow-stop' || act === 'flow-close') { setFlow(null); note = act === 'flow-stop' ? { msg: '넘기기를 멈췄습니다. 받은 요약은 남아 있습니다.' } : null; draw(); return; }
+    if (act === 'flow-stop' || act === 'flow-close') { setFlow(null); note = act === 'flow-stop' ? { msg: '옮기기를 멈췄습니다. 받은 요약은 남아 있습니다.' } : null; draw(); return; }
     if (act === 'flow-go') return flowGo();
     if (act === 'flow-end') return flowEnd();
     const fmt = 'v2';           // 1판(요약 통째로) 고르기는 11-06에 뺐다 — 2판이 생긴 뒤 한 번도 안 썼다. API는 v1도 받는다
@@ -335,7 +337,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         const r = await post(`/api/sessions/${id}/spawn`, { summary_id });
         const where = `tmux ${r.tmux}`;
         return r.note ? { bad: !r.cc_session_id, msg: `${where} — ${r.note}` }
-          : { ok: true, msg: `새 세션을 띄웠습니다(${where}).${summary_id ? (r.injected ? ' 인계를 넣었습니다.' : ' 인계는 넣지 못했습니다.') : ''}` };
+          : { ok: true, msg: `새 세션을 띄웠습니다(${where}).${summary_id ? (r.injected ? ' 요약을 넣었습니다.' : ' 요약은 넣지 못했습니다.') : ''}` };
       });
     }
     if (act === 'wt-preview') {
@@ -380,7 +382,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     const ACT = { exit: '세션 끝내기', 'exit-after': '세션 끝내기', stop: '일시정지', resume: '다시 시작', interrupt: '작업 중단' };
     const DONE = { exit: '세션을 끝냈습니다.', 'exit-after': '세션을 끝냈습니다.', stop: '일시정지했습니다.', resume: '다시 시작했습니다.', interrupt: '작업을 중단했습니다.' };
     if (ACT[act]) {
-      const ask = { exit: '이 세션을 완전히 끝냅니다(/exit). 인계 요약 없이 끝내면 맥락은 기록으로만 남습니다. 끝낼까요?',
+      const ask = { exit: '이 세션을 완전히 끝냅니다(/exit). 새 세션으로 옮기지 않고 끝내면 대화는 기록으로만 남습니다. 끝낼까요?',
                     'exit-after': '요약을 확인했으면 이 세션을 완전히 끝냅니다(/exit). 끝낼까요?',
                     stop: '이 세션을 일시정지합니다(Ctrl+Z). [다시 시작]을 누르기 전까지 입력을 받지 않습니다. 멈출까요?' }[act];
       const w = data.controls.worktree;
@@ -403,14 +405,14 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     if (!c) return;
     const live = c.live && c.can.summary;
     if (!live && !(c.can.headless && confirm('끝난 세션입니다. 잠깐 불러 요약을 받습니다 — 그 세션의 맥락을 다시 읽느라 토큰을 씁니다(식은 맥락은 비쌉니다). 진행할까요?'))) {
-      if (!live && !c.can.headless) { note = { bad: true, msg: `넘기기를 시작할 수 없습니다 — ${c.why || '지금은 요약을 받을 수 없습니다'}` }; draw(); }
+      if (!live && !c.can.headless) { note = { bad: true, msg: `옮기기를 시작할 수 없습니다 —${c.why || '지금은 요약을 받을 수 없습니다'}` }; draw(); }
       return;
     }
     note = null; flowPrev = null;
     try {
       const r = await api('POST', `/api/sessions/${sid}/summary`, { kind: 'handoff', mode: live ? 'live' : 'headless', fmt: 'v2' });
       setFlow({ sumId: r.summary_id, at: Date.now() });
-    } catch (e) { note = { bad: true, msg: `넘기기 — 요약을 요청하지 못했습니다: ${e.message}` }; }
+    } catch (e) { note = { bad: true, msg: `옮기기 — 요약을 요청하지 못했습니다:${e.message}` }; }
     await load();
   }
   // ② 확인을 그리기 전에 넣을 글을 한 번 받는다

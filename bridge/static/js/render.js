@@ -5,7 +5,7 @@
 // 10b: 승인 카드 · 대화 · 활동 · 세션 정보 · 파이프라인 HTML은 함수로 내보낸다 — 픽셀 화면 옆 패널(opanel.js)도 같은 것을 쓴다.
 
 export const STATE_LABEL = { ACTIVE: '작업 중', IDLE: '대기', SUSPENDED: '정지', DORMANT: '종료' };
-export const ORIGIN_LABEL = { human: '나', task_notification: '완료 알림', subagent_message: '서브에이전트 결과', agent_message: '다른 세션', meta: '시스템', handoff: '인계 요청(FOREMAN)', handoff_in: '인계 넣기(FOREMAN)' };
+export const ORIGIN_LABEL = { human: '나', task_notification: '완료 알림', subagent_message: '서브에이전트 결과', agent_message: '다른 세션', meta: '시스템', handoff: '옮기기 요약 요청(FOREMAN)', handoff_in: '옮겨 온 요약(FOREMAN)' };
 const END_LABEL = { stop: '끝남', stop_failure: 'API 오류', interrupted: '중단', session_end: '세션 종료', process_lost: '프로세스 사라짐', merged: '다음 입력에 합쳐짐', no_signal: '신호 없음', abandoned: '끝 신호 없이 버려짐' };
 
 import { stuckTurn } from './store.js';
@@ -222,14 +222,15 @@ export function mountApprovalHistory(det, head, body, store) {
       if (!r.ok) { body.textContent = `불러오지 못함(${r.status})`; return; }
       const h = await r.json();
       const t = h.total;
-      head.textContent = `— ${histDays === 1 ? '오늘' : histDays + '일'} ${t.n}건 · 승인 ${t.approved} · 거부 ${t.denied}${t.unknown ? ' · 모름 ' + t.unknown : ''}`;
+      head.textContent = `— ${histDays === 1 ? '오늘' : histDays + '일'} ${t.n}건 · 승인 ${t.approved} · 거부 ${t.denied}${t.unknown ? ' · 답 확인 못 함 ' + t.unknown : ''}`;
+      head.title = '답 확인 못 함 — 터미널에서 직접 답했거나 시간이 지나, 어떻게 됐는지 FOREMAN이 알 수 없는 것입니다.';
       const yes = h.by_rule.filter((b) => b.always_yes);
-      const rules = h.by_rule.map((b) => `<tr${b.always_yes ? ' class="warn"' : ''}><td>${esc(b.rule)}</td><td>${b.n}</td><td>${b.approved}</td><td>${b.denied}</td><td>${b.unknown}</td><td>${b.always_yes ? '늘 Yes — 규칙 손볼 후보' : ''}</td></tr>`).join('');
+      const rules = h.by_rule.map((b) => `<tr${b.always_yes ? ' class="warn"' : ''}><td>${esc(b.rule)}</td><td>${b.n}</td><td>${b.approved}</td><td>${b.denied}</td><td>${b.unknown}</td><td>${b.always_yes ? '늘 허락함 — 묻지 않게 바꿀 후보' :''}</td></tr>`).join('');
       const items = h.items.slice(0, 30).map((x) => `<li><span class="${OUT[x.outcome][1]}">${OUT[x.outcome][0]}</span> <span class="muted">${ago(x.at)} · ${esc(x.project || '미분류')} · ${esc(x.rule)}</span> ${esc(oneLine(x.summary || '', 140))}</li>`).join('');
       const obs = h.observe.length ? `<div class="muted">관찰 모드(창을 띄우지 않음)에서 걸렸을 것: ${h.observe.map((o) => `${esc(o.project)} ${esc(o.rule)} ${o.n}`).join(' · ')}</div>` : '';
       body.innerHTML = `
         <div class="row"><button class="ghost small" data-days="1">오늘</button><button class="ghost small" data-days="7">7일</button><button class="ghost small" data-days="30">30일</button></div>
-        ${yes.length ? `<div class="warn">늘 Yes: ${yes.map((b) => `${esc(b.rule)} ${b.n}번`).join(' · ')} — 묻는 의미가 없으면 규칙을 고친다</div>` : ''}
+        ${yes.length ? `<div class="warn" title="늘 허락함 — 매번 허락한 규칙입니다. 묻지 않게 바꾸면 번거로움이 줄어듭니다(config/approval.toml).">늘 허락함: ${yes.map((b) => `${esc(b.rule)} ${b.n}번`).join(' · ')} — 묻는 의미가 없으면 규칙을 고칩니다</div>` : ''}
         ${rules ? `<table class="hist"><tr><th>규칙</th><th>걸림</th><th>승인</th><th>거부</th><th>모름</th><th></th></tr>${rules}</table>` : '<div class="muted">걸린 것 없음</div>'}
         ${obs}<ul class="hist-items">${items}</ul>`;
     } catch (e) { body.textContent = '불러오지 못함'; }
@@ -455,7 +456,7 @@ export function createRenderer(root, store) {
     const pend = [...st.approvals.values()].filter((x) => x.session_id === s.id && x.status === 'pending').length;
     const doing = s.state === 'ACTIVE' && a ? `<div class="doing"><b>${esc(a.tool)}</b>${a.subagent ? ' <span class="muted">(서브)</span>' : ''} ${esc(oneLine(a.target, 90))} <span class="muted small">${ago(a.ts)}</span></div>` : '';
     const stuck = stuckTurn(s);
-    const turn = s.open_turn ? `<div class="turn small${stuck ? ' warn' : ''}">${stuck ? '⚠ 끝 신호 없는 턴' : '▶'} ${esc(ORIGIN_LABEL[s.open_turn.origin] || '')} ${esc(oneLine(s.open_turn.prompt || '', 80))} <span class="muted">${since(s.open_turn.started_at)}</span></div>` : '';
+    const turn = s.open_turn ? `<div class="turn small${stuck ? ' warn' : ''}">${stuck ? '⚠ 끝났는지 모름' : '▶'} ${esc(ORIGIN_LABEL[s.open_turn.origin] || '')} ${esc(oneLine(s.open_turn.prompt || '', 80))} <span class="muted">${since(s.open_turn.started_at)}</span></div>` : '';
     const reply = s.replyPreview && s.state === 'ACTIVE' ? `<div class="reply small">${esc(oneLine(s.replyPreview, 100))}</div>` : '';
     return `<article class="card st-${s.state}${st.selected === s.id ? ' sel' : ''}" data-sid="${s.id}" tabindex="0" aria-label="${esc(sessionName(s))} ${STATE_LABEL[s.state]}">
       <div class="card-top">
