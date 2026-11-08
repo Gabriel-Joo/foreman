@@ -26,7 +26,7 @@ class StartIn(BaseModel):
 def _d(request: Request) -> Any:
     d = getattr(request.app.state, "foreman", None)
     if d is None:
-        raise HTTPException(503, "디스패처가 꺼져 있습니다")
+        raise HTTPException(503, "계획 세우기가 꺼져 있습니다")
     return d
 
 

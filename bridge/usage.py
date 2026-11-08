@@ -605,7 +605,7 @@ class UsageMonitor:
         self.credential_expires_at = exp
         if exp - now < timedelta(hours=24):
             await self._once(f"usage:login:{exp:%Y%m%d%H%M}",
-                             f"⚠ CC 로그인이 {self._local(exp)}에 만료된다 — 그 뒤로 모든 세션 · 디스패처 · 사용량 읽기가 멈춘다. "
+                             f"⚠ CC 로그인이 {self._local(exp)}에 만료됩니다 — 그 뒤로 모든 세션 · 계획 세우기 · 사용량 읽기가 멈춥니다. "
                              "아무 CC 터미널에서 /login 해 주세요", like=f"%로그인이 {self._local(exp)}에 만료%")
 
     def _local(self, dt: datetime | None) -> str | None:

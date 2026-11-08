@@ -152,6 +152,8 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     return `<div class="hand-ptrs"><div class="small"><b>읽을 곳 ${(p.pointers || []).length}</b> — 새 세션이 먼저 읽습니다</div>${rows}
       ${p.blocked ? `<div class="small bad">${esc(p.blocked)}</div>` : ''}</div>`;
   }
+  // 11-09 — 이 프로젝트에 살아 있는 세션이 있으면 새 세션은 따로 작업(worktree)에서 뜬다. 넣을 때 브리지가 그 사실을 글 앞에 붙인다
+  const wtNext = (p) => (p && p.worktree_next ? `<div class="small warn" title="따로 작업에서 뜹니다 — 이 프로젝트에 살아 있는 세션(이 세션 포함)이 있어 새 세션은 .worktrees/ 아래 자기 브랜치에서 뜹니다. 받은 세션은 push · 브리지 재시작을 하지 않고, 끝낸 뒤 [합치기]로 합칩니다.">⑂ 새 세션은 따로 작업(worktree)에서 뜹니다 — 넣을 때 그 사실을 글 맨 앞에 덧붙입니다.</div>` : '');
   // 인계 검증(11-06) — 만들 때 상태와 지금이 다르면 넣는 글 앞에 붙는 "인계 뒤 바뀐 것"
   function driftList(d, head) {
     if (!d || !d.length) return `<div class="small ok">✓ ${esc(head)} — 요약을 쓴 뒤 바뀐 것이 없습니다(git · 스키마 잠금).</div>`;
@@ -188,7 +190,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         <div class="row">${b('edit-save', '고친 본 저장', true, '', '저장 — 원본은 두고 고친 본을 새 판으로 저장합니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 고친 것을 버리고 요약 카드로 돌아갑니다.')}</div>`;
     } else if (mode === 'spawn') {
       main = preview ? `<div class="small">같은 폴더에 새 세션을 띄우고 아래 글을 첫 입력으로 넣습니다.${preview.cut ? ` <span class="warn">길어서 일부 절을 줄였습니다(전체는 ${esc(preview.full_path)}).</span>` : ''}</div>
-        ${driftList(preview.drift, '요약 뒤 바뀐 것')}
+        ${wtNext(preview)}${driftList(preview.drift, '요약 뒤 바뀐 것')}
         ${preview.v2 ? pointerList(preview) : ''}
         <pre class="hand-body">${esc(preview.text)}</pre>
         <div class="row">${b('spawn-go', '이 글을 넣고 시작', !preview.blocked, '', preview.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다(요약 카드의 [고치기]).' : '이 글을 넣고 시작 — 같은 폴더에 새 세션을 띄우고 위 글을 첫 입력으로 넣습니다.')}${b('spawn-bare', '요약 없이 시작', true, 'ghost', '요약 없이 시작 — 같은 폴더에 빈 새 세션만 띄웁니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 띄우지 않고 돌아갑니다.')}</div>`
@@ -212,7 +214,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         if (!p && !flowPrevAsk) { flowPrevAsk = true; setTimeout(() => flowPreview().finally(() => { flowPrevAsk = false; }), 0); }
         body = !p ? '<div class="small muted">넣을 글을 불러오는 중입니다…</div>'
           : `<div class="small">새 세션에 아래 글을 첫 입력으로 넣습니다. 확인하면 새 세션을 띄우고 이 세션을 끝냅니다.${p.cut ? ` <span class="warn">길어서 일부 절을 줄였습니다.</span>` : ''}</div>
-            ${driftList(p.drift, '요약 뒤 바뀐 것')}${p.v2 ? pointerList(p) : ''}<pre class="hand-body">${esc(p.text)}</pre>`;
+            ${wtNext(p)}${driftList(p.drift, '요약 뒤 바뀐 것')}${p.v2 ? pointerList(p) : ''}<pre class="hand-body">${esc(p.text)}</pre>`;
         body += `<div class="row">${b('flow-go', '확인 — 새 세션 띄우고 이 세션 끝내기', !!p && !p.blocked && can.spawn, '', p && p.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다([더보기] → [요약 고치기]).' : '확인 — 같은 폴더에 새 세션을 띄워 위 글을 넣고, 이 세션을 /exit로 끝냅니다.')}${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 띄우지 않습니다. 요약은 남습니다.')}</div>`;
       } else if (st.i === 2) body = '<div class="small muted">새 세션을 띄우고 요약을 넣는 중입니다…</div>';
       else if (st.i === 3) body = st.busy ? '<div class="small muted">옛 세션을 끝내는 중입니다… 맥락이 큰 세션은 수십 초 걸립니다.</div>'

@@ -11,7 +11,7 @@ const END_LABEL = { stop: '끝남', stop_failure: 'API 오류', interrupted: '�
 import { stuckTurn } from './store.js';
 import { renderMarkdown } from './md.js';
 
-const ROLE_LABEL = { coder: '코더', foreman: '디스패처', cicd: 'CI/CD', inspector: '점검', helper: '도우미', infra: '인프라' };
+const ROLE_LABEL = { coder: '코더', foreman: '감독', cicd: 'CI/CD', inspector: '점검', helper: '도우미', infra: '인프라' };
 
 // 세션을 알아보는 이름 — CC가 붙인 제목 → CC 세션 이름 → 짧은 id. 캐릭터 이름은 아래 줄에(한 캐릭터에 세션 여럿)
 export function sessionName(s) { return s.custom_title || s.title || s.cc_name || s.short; }   // 사람이 붙인 이름이 먼저(11-05)

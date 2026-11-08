@@ -309,8 +309,9 @@ class ForemanDispatcher:
             out, err = await asyncio.wait_for(p.communicate(prompt.encode()), PLAN_TIMEOUT_S)
         except TimeoutError:
             p.kill()
-            await self._finish(did, None, "failed", f"디스패처가 {PLAN_TIMEOUT_S:.0f}초 안에 답하지 않았습니다", t0)
-            raise Refused(f"디스패처가 {PLAN_TIMEOUT_S:.0f}초 안에 답하지 않았습니다") from None
+            # 화면 · 알림에 나가는 글 — "디스패처"라고 쓰지 않는다(11-09)
+            await self._finish(did, None, "failed", f"{PLAN_TIMEOUT_S:.0f}초 안에 계획을 받지 못했습니다", t0)
+            raise Refused(f"{PLAN_TIMEOUT_S:.0f}초 안에 계획을 받지 못했습니다") from None
         except OSError as e:
             why = f"claude를 띄우지 못했습니다: {e}" + (f" — PATH에 {self.claude_bin}가 없습니다(브리지 서비스의 PATH 확인)"
                                                        if isinstance(e, FileNotFoundError) else "")
@@ -326,8 +327,8 @@ class ForemanDispatcher:
         await record_cli(self.engine, "dispatch", did, self.running.get(did), j)
         plan = parse_plan(result)
         if plan is None:
-            await self._finish(did, None, "failed", "디스패처의 답에서 계획(JSON)을 찾지 못했습니다: " + (result or err.decode(errors="replace"))[:300], t0)
-            raise Refused("디스패처의 답에서 계획을 찾지 못했습니다. 다시 물어보거나 직접 골라 주세요")
+            await self._finish(did, None, "failed", "답에서 계획(JSON)을 찾지 못했습니다: " + (result or err.decode(errors="replace"))[:300], t0)
+            raise Refused("답에서 계획을 찾지 못했습니다. 다시 물어보거나 직접 골라 주세요")
         plan = await self.check(plan)
         await self._finish(did, plan, "planned", None, t0)
         return {"dispatch_id": did, "plan": plan, "ms": round((time.monotonic() - t0) * 1000), "context_chars": ctx_chars}
@@ -392,7 +393,7 @@ class ForemanDispatcher:
                 st or "", "없는 계획입니다"))
         plan = await self.check(dict(plan))
         if plan["mode"] == "ask":
-            raise Refused("디스패처가 되묻는 계획입니다 — 질문에 답해 다시 물어보거나 직접 골라 주세요")
+            raise Refused("되묻는 계획입니다 — 질문에 답해 다시 물어보거나 직접 골라 주세요")
         if not plan["first_prompt"].strip():
             raise Refused("넣을 첫 글이 비었습니다")
         if plan["mode"] == "attach":

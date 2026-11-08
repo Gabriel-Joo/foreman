@@ -79,7 +79,7 @@ class Waker:
             raise
         except Exception as e:  # noqa: BLE001 — 실패 알림 쪽으로 번지지 않게
             log.warning("자동 기상 실패 %s: %s", key, e)
-            self._send(project, f"⚠ {KINDS[kind]} — 디스패처가 살펴볼 계획을 세우지 못했습니다({type(e).__name__}). 실패 알림을 직접 봐 주세요")
+            self._send(project, f"⚠ {KINDS[kind]} — 살펴볼 계획을 세우지 못했습니다({type(e).__name__}). 실패 알림을 직접 봐 주세요")
 
     async def _wake_inner(self, project: str | None, kind: str, key: str, what: str) -> None:
         now = datetime.now(KST)
@@ -104,12 +104,12 @@ class Waker:
         try:
             r = await self.dispatcher.plan(request, project, origin="wake", wake_key=key, wake_text=f"{KINDS[kind]} — {what.splitlines()[0][:300]}")
         except Refused as e:
-            self._send(project, f"⚠ {KINDS[kind]} — 디스패처가 살펴볼 계획을 세우지 못했습니다. {e}. 실패 알림을 직접 봐 주세요")
+            self._send(project, f"⚠ {KINDS[kind]} — 살펴볼 계획을 세우지 못했습니다. {e}. 실패 알림을 직접 봐 주세요")
             return
         p = r["plan"]
         link = f"{self.rules.public_url}/?dispatch={r['dispatch_id']}" if self.rules.public_url else f"/?dispatch={r['dispatch_id']}"
         test = "〔시험〕 " if what.startswith("〔시험〕") else ""
-        lines = [f"🧭 {test}{KINDS[kind]} — 디스패처가 이렇게 살펴보자고 합니다",
+        lines = [f"🧭 {test}{KINDS[kind]} — 이렇게 살펴보자는 계획을 세웠습니다",
                  f"▶ {p.get('title') or '(이름 없음)'} — {ROLE_KO.get(p.get('role'), p.get('role'))}"
                  f"{' · 읽기 전용' if p.get('read_only') else ''} · {MODE_KO.get(p.get('mode'), p.get('mode'))}"
                  + (f"(세션 {p['attach_session']})" if p.get("attach_session") else "")]

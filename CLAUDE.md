@@ -28,7 +28,7 @@
 - git 원격은 GitHub(`Gabriel-Joo/foreman`)만이다. **FOREMAN의 CI/CD는 GitLab · Jenkins에 태우지 않는다**(11-03 결정, README 3.12)
 - **작업 트리에 내가 만들지 않은 변경이 있으면 건드리지 않고 사용자에게 알린다**(다른 세션이 같은 저장소에서 일할 수 있다). 커밋할 때는 내가 고친 파일만 `git add`
 - **시험으로 띄운 세션은 끝낸 뒤 지우지 않고 `hidden_reason='test'`로 숨긴다**(0018 `hidden_at`)
-- **화면에 뜨는 글(툴팁 · 안내 · 확인 창 · 결과 · 서버 거부 사유)은 "~습니다"로**, 툴팁은 "무엇 — 한 줄 설명"으로 짧게(11-05 사용자 지시)
+- **화면에 뜨는 글(툴팁 · 안내 · 확인 창 · 결과 · 서버 거부 사유)은 "~습니다"로**, 툴팁은 "무엇 — 한 줄 설명"으로 짧게(11-05 사용자 지시). 화면 말("디스패처" 안 씀 등) · 툴팁 글 약속은 `docs/style_guide.md` 「4-1. 화면 글」
 - 파일 고치기는 Edit · Write로(Bash의 sed · python으로 고치지 않는다). `approval.toml` · `notify.toml` · 브리지 코드를 바꾸면 브리지를 다시 띄운다
 - **다른 저장소(runshoes · petmint-rag-chatbot · ronanlab-infra)는 사용자가 시킬 때만 고치고, 그 저장소의 CLAUDE.md를 따른다**
 - **비밀값을 화면 · 로그 · 커밋에 내지 않는다**: `.env*`, `~/.claude/.credentials.json`, `~/.claude/sessions/*.key`(세션 간 통신 토큰 — 11-02 조사 때 한 번 출력에 찍혔다). 값이 필요 없으면 키 이름만 본다

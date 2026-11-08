@@ -80,7 +80,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   setInterval(loadScribeTodo, 60000);
   // 감독실 캐릭터 = 디스패처의 얼굴(11-08). 세션은 없고, 디스패처가 하는 일이 여기 보인다:
   // 계획을 세우는 중(claude -p가 도는 동안) → 책상에서 일하는 동작, [시작]을 기다리는 자동 제안 → 머리 위 "제안 N"
-  const FM_NAME = (theme.foreman && theme.foreman.name) || '디스패처';
+  const FM_NAME = (theme.foreman && theme.foreman.name) || '감독';
   let fmState = { running: [], pending: [] };
   async function loadForeman() {
     try {
@@ -1799,7 +1799,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 구역이 하는 일 — 테마마다 이름(비유)은 달라도 설명은 같다(theme.tags.roles: 구역 → 아래 열쇠). 이름표에 마우스를 올리면 뜬다(11-05)
   // 툴팁 글은 짧게 — "무엇" 한 마디 + 한 줄 설명. 화면 글은 "~습니다"로(11-05 사용자 요청: 도구 목록 · 판별 명령은 넣지 않는다)
   const ZONE_ROLE = {
-    hq:   { what: '디스패처 자리', desc: '말하면 상황을 모아 어느 세션으로 할지 계획을 냅니다.' },
+    hq:   { what: '계획 세우는 자리', desc: '뭘 할지 말하면 어느 프로젝트에서, 새 세션으로 할지 기존 세션에 붙일지 계획을 세워줍니다.' },
     read: { what: '파일 읽기', desc: '코드와 문서를 읽고 찾는 곳입니다.' },
     edit: { what: '코드 수정', desc: '파일을 고치거나 새로 쓰는 곳입니다.' },
     bash: { what: '명령 실행', desc: '셸 명령을 돌리는 곳입니다.' },
@@ -2387,7 +2387,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
     if (a.kind === 'foreman') {
       const fm = a.fm || { running: false, pending: [] };
-      const now_ = fm.running ? '지금 계획을 세우는 중입니다.' : fm.pending.length ? `시작할 일 ${fm.pending.length} — 디스패처가 낸 계획 중 [시작]을 기다리는 것입니다.` : '기다리는 중입니다.';
+      const now_ = fm.running ? '지금 계획을 세우는 중입니다.' : fm.pending.length ? `시작할 일 ${fm.pending.length} — 세워 둔 계획 중 [시작]을 기다리는 것입니다.` : '기다리는 중입니다.';
       return `<div class="tip-h">${esc(a.name)}</div>${tipOf(ZONE_ROLE.hq)}<div class="tip-s">${now_}</div>${
         fm.pending.slice(0, 2).map((x) => `<div class="tip-t">· ${esc(short(x.title || x.why || '', 60))}</div>`).join('')}<div class="tip-t">누르면 말하기 창이 열립니다. 세션은 없습니다.</div>`;
     }

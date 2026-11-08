@@ -186,6 +186,22 @@ def fit_body(body: str, limit: int = MAX_INJECT, full_path: str | None = None) -
     return s[: limit + 400], True
 
 
+def wt_block(cwd: str | None) -> str:
+    """받는 세션이 따로 작업(worktree)에서 떴으면 넣는 글 맨 앞에 붙일 절(11-09). 인계를 쓴 세션은 받을 세션이 어디서 뜰지
+    모른다 — 「지금 상태」에 "브랜치 main"이라고 적어도 실제는 worktree였다(11-05 · 11-09 두 번). 띄운 브리지가 안다."""
+    if not cwd:
+        return ""
+    _, name = wt.split(cwd)
+    if not name:
+        return ""
+    return ("## 이 세션이 뜬 자리 (브리지가 띄울 때 정함)\n"
+            f"- 이 세션은 원본 폴더가 아니라 **따로 작업(worktree) `.worktrees/{name}` · 브랜치 `{wt.BRANCH_PREFIX}{name}`**에서 떴다. "
+            "아래 인계에 \"브랜치 main\"이라고 적혀 있어도 이것이 맞다(인계를 쓴 세션은 어디서 뜰지 몰랐다)\n"
+            "- 커밋은 이 브랜치에만 하고 **push하지 않는다**. 합치기는 세션을 끝낸 뒤 사람이 패널 [합치기]로 한다 — 끝내기 전에 커밋을 마친다\n"
+            "- 원본 폴더에서만 할 일(브리지 다시 띄우기 · README 로드맵 표 고치기 등)은 하지 않는다. 결과 기록은 자기 이름의 새 `log/` 파일에\n"
+            "- 저장소 CLAUDE.md의 worktree 절(FOREMAN은 「따로 작업(worktree)에서 일할 때」)을 따른다\n\n")
+
+
 def inject_prompt(req: str, src: str, body: str) -> str:
     tpl = INJECT_PROMPT_V2 if ptr.is_v2(body) else INJECT_PROMPT
     return tpl.format(head=IN_HEAD.format(r=req), src=src, body=body)
@@ -571,7 +587,9 @@ class HandoffManager:
         return {"summary_id": sid, "req": req, "status": "ok"}
 
     # ── 넣을 글 ──────────────────────────────────────────
-    async def injection(self, summary_id: int) -> dict[str, Any]:
+    async def injection(self, summary_id: int, target_cwd: str | None = None) -> dict[str, Any]:
+        """넣을 글. target_cwd — 받는 세션이 뜬 폴더(넣을 때). worktree면 그 사실을 맨 앞에 붙인다. 미리보기(띄우기 전)에는
+        없으므로 worktree_next로 "따로 작업에서 뜰 것"만 알린다."""
         s = await self.summary(summary_id)
         if not s or s["status"] != "ok" or not s["body"]:
             raise Refused("넣을 수 있는 요약이 아닙니다(저장이 끝난 요약만 넣습니다)")
@@ -589,9 +607,10 @@ class HandoffManager:
             dr = [f"인계 뒤 바뀐 것을 확인하지 못했습니다({type(e).__name__}) — 지금 상태를 직접 확인하라."]
         if state is None:
             dr = ["이 인계에는 만들 때의 상태 기록이 없습니다(11-06 이전 인계) — 「지금 상태」가 맞는지 git · 잠금으로 직접 확인하라."]
-        out = {"summary_id": summary_id, "text": inject_prompt(s["req"], src, hs.block(dr) + body), "cut": cut,
+        out = {"summary_id": summary_id, "text": inject_prompt(s["req"], src, wt_block(target_cwd) + hs.block(dr) + body), "cut": cut,
                "full_path": str(full) if cut else None, "chars": len(s["body"]), "v2": ptr.is_v2(s["body"]),
-               "pointers": [], "blocked": None, "state": state, "drift": dr}
+               "pointers": [], "blocked": None, "state": state, "drift": dr,
+               "worktree_next": target_cwd is None and bool(row and row.cwd) and self.will_worktree(wt.split(row.cwd)[0])}
         if out["v2"]:
             # 2판 — 읽을 곳을 기계로 확인한다. 틀린 곳(없는 파일 · 줄 · 절)이 있으면 넣지 않는다(요약을 고치면 된다)
             repo = await repo_root(row.cwd if row else None)
@@ -604,8 +623,8 @@ class HandoffManager:
                 out["blocked"] = "읽을 곳이 틀렸습니다 — " + "; ".join(f"{p.path or p.raw}: {p.problem}" for p in bad)
         return out
 
-    async def ensure_injectable(self, summary_id: int) -> dict[str, Any]:
-        inj = await self.injection(summary_id)
+    async def ensure_injectable(self, summary_id: int, target_cwd: str | None = None) -> dict[str, Any]:
+        inj = await self.injection(summary_id, target_cwd)
         if inj["blocked"]:
             raise Refused(inj["blocked"])
         return inj
@@ -645,7 +664,7 @@ class HandoffManager:
         p.chmod(0o600)
 
     async def inject(self, summary_id: int, cc_session_id: str, cwd: str) -> dict[str, Any]:
-        inj = await self.ensure_injectable(summary_id)
+        inj = await self.ensure_injectable(summary_id, cwd)
         s = await self.summary(summary_id)
         if inj["cut"]:
             self._write_full(s["req"], s["body"])
@@ -692,8 +711,7 @@ class HandoffManager:
             name, n = f"{base}-{n}", n + 1
         wt_info = None
         if worktree is None:
-            worktree = bool(project) and wt.split(cwd)[1] is None and any(
-                self.project_of(ls.cwd)[0] == project for ls in live_sessions(self.sessions_dir).values())
+            worktree = self.will_worktree(cwd)
         if worktree:
             if wt.split(cwd)[1] is not None or not await wt.is_repo(cwd):
                 raise Refused("따로 작업(worktree)은 저장소 맨 위 폴더에서만 띄울 수 있습니다")
@@ -721,6 +739,14 @@ class HandoffManager:
             out["note"] = "45초 안에 새 세션을 찾지 못했습니다. 터미널에서 확인해 주세요."
             return out
         return out | await self._finish_spawn(name, pane, cwd, summary_id, title, src_session, cc=cc, pid=pid, **extra)
+
+    def will_worktree(self, cwd: str) -> bool:
+        """spawn_new(worktree=None)이 따로 작업 자리로 보낼까 — 그 프로젝트에 살아 있는 세션이 있으면."""
+        if not self.project_of or not cwd:
+            return False
+        project = self.project_of(cwd)[0]
+        return bool(project) and wt.split(cwd)[1] is None and any(
+            self.project_of(ls.cwd)[0] == project for ls in live_sessions(self.sessions_dir).values())
 
     async def _wait_ready(self, pane: str, secs: float) -> tuple[str | None, int | None, bool]:
         """(cc 세션 id, pid, 신뢰 창이 떴나). 입력 칸(❯)이 뜨고 일하지 않을 때까지."""
@@ -774,7 +800,7 @@ class HandoffManager:
             # 포먼이 쓴 첫 글(+ 고른 인계 요약) — 사람이 계획 카드에서 확인 · 고친 글 그대로
             body = first_prompt
             if summary_id is not None:
-                inj = await self.ensure_injectable(summary_id)
+                inj = await self.ensure_injectable(summary_id, cwd)
                 s = await self.summary(summary_id)
                 if inj["cut"]:
                     self._write_full(s["req"], s["body"])

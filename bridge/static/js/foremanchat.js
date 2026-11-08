@@ -12,7 +12,7 @@ const KIND = { thread: '진행 중인 일', decision: '사람이 정한 판단' 
 import { ROLE_PICK as ROLE, bindRoleModel, modelOptions } from './modelpick.js';
 
 // 감독실 캐릭터 이름 — 테마마다(오피스 팀장 · 마법학교 교장 · 현장 소장 · 기본 디스패처)
-export const fmName = () => (window.office && window.office.theme && window.office.theme.foreman && window.office.theme.foreman.name) || '디스패처';
+export const fmName = () => (window.office && window.office.theme && window.office.theme.foreman && window.office.theme.foreman.name) || '감독';   // 화면엔 "디스패처"를 쓰지 않는다(11-09)
 // 받침을 보고 주격 조사(팀장이 · 디스패처가)
 export function josa(w, a = '이', b = '가') {
   const c = String(w).charCodeAt(String(w).length - 1);
@@ -48,7 +48,7 @@ function mount(dlg) {
   fm.className = 'fm';
   fm.innerHTML = `
     <div id="fmWake" class="fm-q" hidden></div>
-    <label class="small muted" for="fmText"><span id="fmWho">디스패처</span>에게 말하기 — 뭘 하려는지 <span id="fmRoom" class="muted"></span></label>
+    <label class="small muted" for="fmText"><span id="fmWho">감독</span>에게 말하기 — 뭘 하려는지 <span id="fmRoom" class="muted"></span></label>
     <textarea id="fmText" rows="2" placeholder="예: 런슈즈 발볼 검증 이어서 · 펫퍼민트 새로 시작 · 빌드 터진 거 봐줘"></textarea>
     <div class="row fm-row"><span id="fmMsg" class="small muted"></span><button type="button" id="fmAsk">계획 받기</button></div>
     <div id="fmPlan" class="fm-plan" hidden></div>
@@ -61,7 +61,7 @@ function mount(dlg) {
 
   function setRoom(p) {
     room = p || null;
-    $('fmRoom').innerHTML = room ? `· ${esc(projLabel(room))} 방에서 <button type="button" class="ghost small" id="fmRoomX" title="방 풀기 — 프로젝트를 디스패처가 고르게 합니다.">✕</button>` : '';
+    $('fmRoom').innerHTML = room ? `· ${esc(projLabel(room))} 방에서 <button type="button" class="ghost small" id="fmRoomX" title="방 풀기 — 프로젝트도 ${esc(fmName())}${josa(fmName(), '이', '가')} 고르게 합니다.">✕</button>` : '';
     if (room) $('fmRoomX').onclick = () => setRoom(null);
     drawHand();
   }

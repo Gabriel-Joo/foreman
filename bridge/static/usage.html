@@ -135,7 +135,7 @@ function render(d) {
   const bands = [];
   if (!r.ok) bands.push(`<div class="band"><b>⚠ 사용량(/usage)을 읽지 못하고 있습니다.</b> ${esc(r.error || '마지막으로 읽은 지 오래됐습니다')} — 아래 측정 %는 ${r.last_ok_at ? mdhm(r.last_ok_at) + ' 값' : '없습니다'}. ${r.fails ? `연달아 ${r.fails}번 실패했습니다.` : ''}</div>`);
   if (r.credential_expires_at && D(r.credential_expires_at) - Date.now() < 864e5)
-    bands.push(`<div class="band warn"><b>⚠ CC 로그인이 ${mdhm(r.credential_expires_at)}에 만료됩니다.</b> 만료되면 모든 세션 · 디스패처가 멈춥니다. 아무 CC 터미널에서 /login 해 주세요.</div>`);
+    bands.push(`<div class="band warn"><b>⚠ CC 로그인이 ${mdhm(r.credential_expires_at)}에 만료됩니다.</b> 만료되면 모든 세션과 계획 세우기가 멈춥니다. 아무 CC 터미널에서 /login 해 주세요.</div>`);
   $('bands').innerHTML = bands.join('');
   $('cards').innerHTML = (d.limits || []).map(card).join('');
   const wk = (d.limits || []).find((l) => l.key === 'weekly_all');
