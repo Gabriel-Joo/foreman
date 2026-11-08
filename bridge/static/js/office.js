@@ -28,6 +28,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       <nav id="oProj" class="oproj" aria-label="프로젝트"></nav>
       <button id="oNew" class="ghost onew" title="새 세션 — 프로젝트나 폴더를 골라 새 세션을 띄웁니다.">＋ 세션</button>
       <span id="oAlerts" class="oalerts"></span>
+      <a id="oUsage" class="ghost ousage" href="/usage" data-tip="사용량 — 누르면 한도 · 어디서 나가는지 봅니다.">사용량</a>
       <span class="small muted otheme">테마 ${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장'], ['plain', '도형']].map(([k, v]) => k === theme.name ? `<b>${v}</b>` : `<a href="/?theme=${k}">${v}</a>`).join(' · ')}</span>
       <a class="small" href="/classic" title="클래식 — 카드 목록 화면으로 갑니다.">클래식</a>
       <span id="oConn" class="conn"></span>
@@ -89,6 +90,43 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   window.addEventListener('foreman-state', () => loadForeman());
   setTimeout(loadForeman, 500);
   setInterval(loadForeman, 60000);
+  // 사용량(11-08, docs/15) — 머리 칩 "5h 42% · 주 91%", 지난 30분 환산액 상위 셋의 열기, 한도 90% 넘으면 현황판 경고등.
+  // 못 읽으면 칩이 "⚠ 사용량"으로 바뀐다(조용히 옛 숫자를 보이지 않게)
+  let usage = null;                              // /api/usage/brief
+  const hotOf = new Map();                       // 세션 id → 달러/시간
+  async function loadUsage() {
+    try {
+      const r = await fetch('/api/usage/brief', { headers: store.headers() });
+      if (!r.ok) throw new Error(String(r.status));
+      usage = await r.json();
+    } catch (e) { usage = { failed: String(e.message || e) }; }
+    hotOf.clear();
+    for (const h of (usage && usage.hot) || []) hotOf.set(h.session_id, h.usd_h);
+    usageChip();
+  }
+  const usagePct = (l) => (l.est_pct ?? l.measured_pct);
+  const usageMax = () => Math.max(0, ...((usage && usage.limits) || []).map((l) => usagePct(l) ?? 0));
+  function usageChip() {
+    const el = document.getElementById('oUsage');
+    if (!el || !usage) return;
+    const ls = usage.limits || [], rd = usage.reading || {};
+    const short = { session_5h: '5h', weekly_all: '주', weekly_fable: 'Fable' };
+    const parts = ls.filter((l) => usagePct(l) != null && (l.key !== 'weekly_fable' || usagePct(l) >= 1))
+      .map((l) => `${short[l.key] || l.label} ${(l.est_pct != null && l.measured_pct != null && Math.abs(l.est_pct - l.measured_pct) >= 0.5) ? '~' : ''}${Math.round(usagePct(l))}%`);
+    const bad = usage.failed || !rd.ok;
+    const max = usageMax();
+    el.className = 'ghost ousage' + (bad ? ' bad' : max >= 95 ? ' bad' : max >= 80 ? ' warn' : '');
+    el.textContent = usage.failed ? '⚠ 사용량' : (bad ? '⚠ ' : '') + (parts.join(' · ') || '사용량');
+    const lines = ls.map((l) => `${l.label} ${usagePct(l) == null ? '—' : Math.round(usagePct(l)) + '%'}${l.eta_before_reset ? ' — 이 속도면 리셋 전에 100%' : ''}`);
+    el.dataset.tip = `사용량 — 누르면 한도 · 어디서 나가는지 봅니다.\n${lines.join('\n')}`
+      + (usage.failed ? `\n불러오지 못했습니다(${usage.failed}).` : !rd.ok ? `\n/usage를 읽지 못하고 있습니다: ${rd.error || '오래됐습니다'}` : '');
+  }
+  if (new URLSearchParams(location.search).get('demo')) {   // 시연 재생은 /api를 막는다 — 칩을 숨긴다(⚠로 찍히지 않게)
+    setTimeout(() => { const el = document.getElementById('oUsage'); if (el) el.hidden = true; }, 0);
+  } else {
+    setTimeout(loadUsage, 800);
+    setInterval(loadUsage, 60000);
+  }
   const tokHist = new Map();           // 방 이름 → [{t, v, o}]
   let lastSnap = null;
   let view = 'hq';                     // 'hq'(감독실, 1단) | 'map'(전체) | 방 이름(현장, 2단) | '_lounge'
@@ -702,6 +740,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (anim === 'talk' || anim === 'call') { ctx.fillStyle = '#c9a227'; ctx.fillRect(x + 4, y + 2, 3, 5); }
     if (act.fx === 'frozen') { ctx.strokeStyle = '#bfe8ff'; ctx.lineWidth = 1; ctx.strokeRect(x - sp.w / 2 - 2, y - 2, sp.w + 4, h + 4); }
     ctx.globalAlpha = 1;
+    drawHeat(a, now);
     if (act.fx === 'smoke') drawSmoke(a.x, a.y - 1.4, now);
     if (act.bubble) drawBubble(x, y - 6, act.bubble, act.flag === 'approval_pending' ? P.warn : '#e8e8f0');
     else if (anim === 'wait' && !act.flag) drawBubble(x, y - 6, '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), P.act, 7);   // 기다림
@@ -1559,6 +1598,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function drawOverlay(a, now) {
     const act = a.act || {};
     const x = a.x * T, top = a.y * T - (a.drawH || 16);
+    drawHeat(a, now);
     if (act.fx === 'smoke') drawSmokeS(a.x, a.y - 0.6, now);
     drawCompactMark(a, x + 7, top + 4);
     if (act.bubble) {
@@ -1619,6 +1659,65 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.fillText(text, x, y - size / 2);
   }
   function drawSign(tx, ty, ch) { drawBubble(tx * T, ty * T, ch, P.warn, 10); }
+  // 사용량 열기(11-08, docs/15 6절) — 지난 30분 환산액 상위 셋. 세기는 달러/시간에 비례($20/시간이면 가득).
+  // 오피스: 노트북에서 김 · 마법학교: 마력 오라 · 현장: 엔진 아지랑이 · 도형: 주황 고리. 실패 연기(회색)와 섞이지 않게 색을 따로 쓴다
+  function drawHeat(a, now) {
+    if (a.kind !== 'session' || !a.s) return;
+    const r = hotOf.get(a.s.id);
+    if (!r) return;
+    // 세기 0.6~1 — 0.3에서는 바닥색에 묻혀 보이지 않았다(11-08 확대 사진). 효과는 몸통 둘레 · 머리 위(발밑은 이름표가 가린다)
+    const k = Math.max(0.6, Math.min(1, r / 20)), x = a.x * T, mid = a.y * T - 9, head = a.y * T - 18, t = now / 1000;
+    const kind = theme.name;
+    if (kind === 'magic') {
+      glow(x, mid, 16 + 4 * Math.sin(t * 3), '#a87bff', 0.35 * k);
+      for (let i = 0; i < 2; i++) {                               // 몸을 감싸며 퍼지는 마력 고리
+        const p = (t * 0.8 + i / 2) % 1;
+        ctx.globalAlpha = 0.8 * k * (1 - p); ctx.strokeStyle = '#c9a6ff'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.ellipse(x, mid, 8 + p * 7, 11 + p * 7, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      for (let i = 0; i < 4; i++) {                               // 위로 오르는 빛 알갱이
+        const p = (t * 0.7 + i / 4) % 1;
+        ctx.globalAlpha = k * (1 - p); ctx.fillStyle = '#efe4ff';
+        ctx.fillRect(x - 8 + i * 5 + Math.sin(p * 6 + i) * 2, head - p * 18, 2, 2);
+      }
+    } else if (kind === 'site') {
+      glow(x, head + 2, 14, '#ff8a1f', 0.3 * k);
+      ctx.strokeStyle = '#ffb04a'; ctx.lineWidth = 1.6;
+      for (let i = 0; i < 3; i++) {                               // 엔진 아지랑이 — 머리 위로 일렁이는 선
+        const p = (t * 0.9 + i / 3) % 1, yy = head - 2 - p * 16;
+        ctx.globalAlpha = 0.9 * k * (1 - p);
+        ctx.beginPath();
+        for (let j = -7; j <= 7; j += 2) ctx.lineTo(x + j, yy + Math.sin(j * 0.9 + t * 8 + i) * 1.8);
+        ctx.stroke();
+      }
+    } else if (kind === 'office') {
+      for (let i = 0; i < 4; i++) {                               // 노트북 김 — 머리 옆으로 오르는 김(어두운 테두리로 밝은 바닥에서도 보이게)
+        const p = (t * 0.7 + i / 4) % 1, px = x + 7 + Math.sin(p * 6 + i) * 3, py = head + 4 - p * 20, rad = 2 + p * 4;
+        ctx.globalAlpha = 0.85 * k * (1 - p);
+        ctx.fillStyle = '#f4f6fa'; ctx.strokeStyle = '#5b6170'; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.arc(px, py, rad, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+    } else {
+      const p = (t * 1.2) % 1;
+      ctx.globalAlpha = 0.8 * k * (1 - p); ctx.strokeStyle = '#ff9f1c'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, mid, 10 + p * 7, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // 현황판 경고등 — 한도(추정) 90% 넘으면 판 오른쪽 위에서 붉게 깜빡(95% 넘으면 빠르게). 못 읽으면 노란 등
+  function drawUsageLamp(now) {
+    if (!usage) return;
+    const max = usageMax(), bad = usage.failed || (usage.reading && !usage.reading.ok);
+    if (max < 90 && !bad) return;
+    const b = HQ.board || {}, q = world.hq;
+    const x = (q.x + (b.x ?? 3) + (b.w ?? 22) - 0.5) * T, y = (q.y + (b.y ?? 0.4) - 0.05) * T;
+    const col = max >= 90 ? '#ff3b30' : '#ffcc00';
+    const on = 0.55 + 0.45 * Math.sin(now / (max >= 95 ? 150 : 400));
+    glow(x, y, 30 * on, col, 0.6 * on);
+    ctx.fillStyle = col; ctx.globalAlpha = 0.6 + 0.4 * on;
+    ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1; ctx.fillStyle = '#222'; ctx.fillRect(x - 4.5, y + 4.5, 9, 3);
+  }
   function drawSmoke(tx, ty, now) {
     for (let i = 0; i < 3; i++) {
       const t = ((now / 900) + i / 3) % 1;
@@ -2044,6 +2143,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     drawWalls(q);
     for (const d of HQ.decor || []) if (d.s || d.fx) placeDecor(d, q.x, q.y, now, sorted);
     drawBoard(now);
+    drawUsageLamp(now);
   }
 
   function drawHQShapes(now) {
@@ -2053,6 +2153,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     rect(q.x + 11, q.y + 9, 6, 1.2, P.deskTop); rect(q.x + 11, q.y + 10.2, 6, 0.3, P.desk);
     rect(q.x + 12.3, q.y + 8.4, 1.2, 0.8, '#1b1f27'); rect(q.x + 14.5, q.y + 8.4, 1.2, 0.8, '#1b1f27');   // 듀얼 모니터
     drawBoard(now);
+    drawUsageLamp(now);
   }
 
   // ── 머리말 · 정보 패널 ──────────────────────────────

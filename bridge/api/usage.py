@@ -23,6 +23,7 @@ CACHE_S = 20.0
 
 def invalidate() -> None:
     _cache["data"] = None
+    _brief["data"] = None
 
 
 def _j(v: Any) -> Any:
@@ -77,6 +78,30 @@ async def usage(request: Request, hours: float | None = None) -> dict[str, Any]:
                "recent": {"total_usd": recent["total_usd"], "by_kind": recent["by_kind"], "by_session": recent["by_session"][:8]},
                "observations": obs})
     _cache.update(at=time.monotonic(), key=key, data=data)
+    return data
+
+
+_brief: dict[str, Any] = {"at": 0.0, "data": None}
+
+
+@router.get("/brief")
+async def brief(request: Request) -> dict[str, Any]:
+    """머리 칩 · 캐릭터 열기용(가볍게, 15초 캐시) — 한도별 % · 읽기 상태 · 지난 30분 환산액 상위 세션 셋(달러/시간)."""
+    if _brief["data"] is not None and time.monotonic() - _brief["at"] < 15.0:
+        return _brief["data"]
+    cfg = _cfg(request)
+    engine = request.app.state.store.engine
+    mon = getattr(request.app.state, "usage", None)
+    now = datetime.now(UTC).replace(tzinfo=None)
+    limits = await limit_status(engine, cfg, now, mon.latest if mon else None)
+    hot = await breakdown(engine, cfg, now - timedelta(minutes=30), now)
+    reading = mon.snapshot() if mon else {"ok": False, "error": "사용량 읽기가 꺼져 있습니다(usage_enabled)", "stale": True}
+    data = _j({"reading": {k: reading.get(k) for k in ("ok", "error", "last_ok_at", "stale", "credential_expires_at")},
+               "limits": [{k: x[k] for k in ("key", "label", "window_h", "measured_pct", "est_pct", "reset_at", "eta_100",
+                                             "eta_before_reset")} for x in limits],
+               "hot": [{"session_id": s["key"], "usd_h": round(s["usd"] * 2, 2)} for s in hot["by_session"]
+                       if isinstance(s["key"], int) and s["usd"] > 0][:3]})
+    _brief.update(at=time.monotonic(), data=data)
     return data
 
 

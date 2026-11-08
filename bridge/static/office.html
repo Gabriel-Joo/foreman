@@ -39,6 +39,11 @@
   .brand { font-weight:700; letter-spacing:.04em; }
   .oalerts { display:flex; gap:10px; font-size:17px; }
   .oalerts button { padding:1px 8px; }
+  /* 사용량 칩(11-08) — 80% 노랑 · 95% · 못 읽음 빨강. 누르면 /usage */
+  .ousage { display:inline-flex; align-items:center; padding:2px 9px; border:1px solid var(--line); border-radius:14px; font-size:16px;
+            color:var(--fg); text-decoration:none; white-space:nowrap; }
+  .ousage[hidden] { display:none; }
+  .ousage.warn { color:var(--warn); border-color:var(--warn); } .ousage.bad { color:var(--bad); border-color:var(--bad); }
   .conn { margin-left:auto; font-size:16px; padding:2px 8px; border-radius:10px; border:1px solid var(--line); }
   .conn.up { color:var(--ok); } .conn.down, .conn.auth { color:var(--bad); border-color:var(--bad); }
   .badge { font-size:15px; padding:1px 6px; border-radius:8px; border:1px solid var(--line); white-space:nowrap; }
