@@ -1307,4 +1307,21 @@ async def test_overlap_alert_on_human_prompt(env, tmp_path):
     await prompt(SID2, "Notion 게시 기능 만들자")
     await prompt(SID2, "[FOREMAN 서기 일감 — 회고] jenkins-0 harbor-jobservice crashloopbackoff")
     assert len(tg.sent) == 1
+
+    # 11-08 — 인계로 이어받은 세션은 겹침이 아니다(세션 214 ~ 211 헛알림). 인계 글이 넣음 기록보다 먼저 적재돼
+    # summary.injected_cc_session이 아직 비어 있어도 글의 r=로 알아본다. 그 뒤 기록이 차면 r= 없는 요청도 뺀다
+    ow2 = OverlapWatch(asm.engine, n, n.rules, tmp_path / "없음.toml", s.sessions_dir)   # 한 시간 막기를 비운 새 감시
+    asm.on_human_prompt = ow2.on_prompt
+    ow = ow2
+    conn = pymysql.connect(host=s.mysql_host, port=s.mysql_port, user=s.mysql_user,
+                           password=s.mysql_password.get_secret_value(), database=s.mysql_database, autocommit=True)
+    with conn.cursor() as c:
+        c.execute("INSERT INTO summary (session_id, req, kind, source, status) VALUES (%s, 'e83d1c', 'handoff', 'self', 'ok')", (other,))
+    await prompt(SID, "[FOREMAN 인계 r=e83d1c] 직전 세션의 인계다. jenkins-0 harbor-jobservice CrashLoopBackOff 이어서")
+    with conn.cursor() as c:
+        c.execute("UPDATE summary SET injected_cc_session = %s WHERE req = 'e83d1c'", (SID,))
+    conn.close()
+    await prompt(SID, "jenkins-0 harbor-jobservice CrashLoopBackOff 마저 봐줘")
+    await prompt(SID2, "jenkins-0 harbor-jobservice CrashLoopBackOff 넘긴 쪽에서 다시")    # 넘겨준 쪽에서도
+    assert len(tg.sent) == 1 and ow2.recent == {}
     await n.stop()

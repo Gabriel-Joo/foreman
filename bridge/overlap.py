@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 log = logging.getLogger("foreman.overlap")
 
@@ -129,9 +129,9 @@ def score(shared: Iterable[str]) -> int:
 
 
 def match(new: set[str], old: set[str], corpus: Corpus, r: OverlapRules) -> tuple[int, list[str]]:
-    """(점수, 겹친 드문 낱말 — 식별자 · 영문 · 한글 순)."""
-    shared = sorted((w for w in new & old if corpus.rare(w, r)),
-                    key=lambda w: (not is_ident(w), not w.isascii(), w))
+    """(점수, 겹친 드문 낱말 — 식별자 · 영문 순). 보여 주는 것도 점수에 든 낱말만 — 한글은 세지 않으면서 보여 주니
+    「쉬어서」「중이라」가 근거처럼 찍혔다(11-08 세션 214 알림)."""
+    shared = sorted((w for w in new & old if w.isascii() and corpus.rare(w, r)), key=lambda w: (not is_ident(w), w))
     return score(shared), shared
 
 
@@ -185,6 +185,22 @@ class OverlapWatch:
             self._corpus_at = time.monotonic()
         return self._corpus
 
+    @staticmethod
+    async def _handoff_linked(c: Any, session_id: int, cc_session_id: str, prompt: str) -> set[int]:
+        """인계로 이어진 세션 — 같은 일을 넘겨받은 것이지 겹친 것이 아니다(11-08 세션 214 ~ 211 헛알림).
+        인계 글은 넣음 기록(summary.injected_at)보다 먼저 적재된다(0.3초) — 그래서 글의 r=도 본다.
+        - 이 요청의 [FOREMAN 인계 r=X] → 넘겨준 세션
+        - 나에게 넣은 인계(injected_cc_session = 나) → 넘겨준 세션
+        - 내가 넘겨준 인계 → 받은 세션"""
+        from bridge.handoff import IN_RE
+        reqs = IN_RE.findall((prompt or "")[:500]) or [""]          # 빈 req는 맞는 행이 없다
+        q = text("SELECT s.session_id, cs.id FROM summary s "
+                 "LEFT JOIN character_session cs ON cs.cc_session_id = s.injected_cc_session "
+                 "WHERE s.injected_cc_session = :cc OR s.session_id = :me OR s.req IN :reqs"
+                 ).bindparams(bindparam("reqs", expanding=True))
+        rows = (await c.execute(q, {"cc": cc_session_id, "me": session_id, "reqs": reqs})).all()
+        return {x for a, b in rows for x in (a, b) if x is not None and x != session_id}
+
     async def check(self, session_id: int, cc_session_id: str, prompt: str, ts: datetime) -> dict[str, Any] | None:
         try:
             async with asyncio.timeout(20):
@@ -211,6 +227,7 @@ class OverlapWatch:
                 "LEFT JOIN project p ON p.id = ch.project_id WHERE cs.id = :i"), {"i": session_id})).first()
             if not me or me[0] is None or me[3] is not None:
                 return None
+            linked = await self._handoff_linked(c, session_id, cc_session_id, prompt)
             rows = (await c.execute(text(
                 "SELECT t.session_id, t.prompt_text, t.started_at, cs.cc_session_id, "
                 "COALESCE(cs.custom_title, cs.title, LEFT(cs.cc_session_id, 8)) "
@@ -218,7 +235,7 @@ class OverlapWatch:
                 "WHERE ch.project_id = :p AND t.session_id <> :me AND cs.hidden_at IS NULL AND cs.detached_at IS NULL "
                 "AND t.origin IN ('human', 'handoff_in') AND t.started_at >= :cut ORDER BY t.id DESC"),
                 {"p": me[0], "me": session_id, "cut": ts - timedelta(minutes=r.window_min)})).all()
-            rows = [x for x in rows if x[3] in live and not skip(x[1])]
+            rows = [x for x in rows if x[3] in live and x[0] not in linked and not skip(x[1])]
             if not rows:
                 return None
             corpus = await self._get_corpus(c)
