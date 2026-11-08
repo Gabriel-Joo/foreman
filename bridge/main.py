@@ -108,8 +108,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         cb(*a)
                 asm.on_turn_closed = on_turn_closed
             # 압축 알림(11-05) — 정한 횟수의 압축 직후 텔레그램. 기준값(notify.toml [compact])은 대시보드 표시에도 쓴다
-            cw = CompactWatch(engine, app.state.notifier, getattr(app.state.notifier, "rules", None), s.notify_config)
+            def _ctx_price(model: str, tokens: int) -> float | None:   # 맥락 알림의 "응답 하나에 맥락 읽기만 약 $N"(사용량 설정 가격)
+                um = getattr(app.state, "usage", None)
+                p = um.cfg.price(model) if um else None
+                return tokens * p.get("cache_read", 0.0) / 1e6 if p else None
+            cw = CompactWatch(engine, app.state.notifier, getattr(app.state.notifier, "rules", None), s.notify_config, price=_ctx_price)
             app.state.compact = cw
+            # 맥락 크기 알림(11-08) — 턴이 닫히면 마지막 응답 맥락을 본다(300k · 500k, notify.toml [compact] context_at)
+            prev_closed = asm.on_turn_closed
+
+            def on_turn_closed_ctx(*a: object) -> None:
+                if prev_closed:
+                    prev_closed(*a)
+                try:
+                    cw.on_turn_closed(*a)
+                except Exception as e:  # noqa: BLE001 — 알림 실패가 적재를 막지 않는다
+                    log.warning("맥락 알림 예약 실패: %s", type(e).__name__)
+            asm.on_turn_closed = on_turn_closed_ctx
             cw_tasks: set[asyncio.Task[None]] = set()
 
             def on_compact(sid: int) -> None:

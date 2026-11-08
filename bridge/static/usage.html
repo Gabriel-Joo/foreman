@@ -139,7 +139,7 @@ function render(d) {
   $('bands').innerHTML = bands.join('');
   $('cards').innerHTML = (d.limits || []).map(card).join('');
   const wk = (d.limits || []).find((l) => l.key === 'weekly_all');
-  $('basis').innerHTML = `<b>왜 하한인가</b> — 측정 %는 Anthropic이 센 <b>모든</b> 사용(이 PC의 CC + 웹 · 앱 Claude + 다른 PC)입니다. FOREMAN은 이 PC의 CC만 봅니다.<br>`
+  $('basis').innerHTML = `<b>왜 하한인가</b> — 한도는 웹 · 앱 Claude, 다른 PC와 <b>같이 씁니다</b>. 측정 %는 그 모두(이 PC의 CC + 웹 · 앱 Claude + 다른 PC)를 센 값이고, FOREMAN은 이 PC의 CC만 봅니다. 웹에서 긴 대화를 이어 쓰면 그것도 응답마다 맥락을 다시 읽어 한도를 씁니다.<br>`
     + `실제 한도 = (FOREMAN이 본 것 + 못 보는 사용) ÷ 측정 % <b>≥</b> FOREMAN이 본 것 ÷ 측정 % = 하한`
     + (wk && wk.floor ? ` — 예: 주간 ${usd(wk.window_usd, 0)} ÷ ${wk.measured_pct}% = ${usd(wk.floor.usd, 0)}. 웹에서 많이 쓴 주일수록 실제 한도는 이보다 큽니다.` : '.')
     + `<br><span class="muted">${esc(d.basis)}. 같은 이유로 "추정 %"와 "이 속도면 언제 100%"는 FOREMAN이 보는 사용만으로 셈합니다 — 웹을 함께 쓰면 실제로는 더 빨리 찹니다(다음 /usage 읽기에서 바로잡힙니다).</span>`;
