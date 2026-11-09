@@ -49,3 +49,7 @@
   - Explore도 싸게 하려면: 부를 때 `model` 인자를 주거나, 같은 이름의 사용자 에이전트 정의로 덮는다 — 런슈즈 저장소 일(사용자가 시킬 때)
   - 떠 있던 세션(225)에 설정이 걸리는지는 그 세션이 서브에이전트를 부르지 않아 아직 모름
 - **Explore도 sonnet으로(사용자 20:3x)**: 런슈즈에 같은 이름 에이전트를 정의해 기본 제공을 덮어쓰는 쪽(부를 때마다 지정은 모델이 지키는지에 달려 쓰지 않음). 런슈즈 세션 `runshoes-99`(234)에 세션 간 메시지로 전함 — **바꾸기 전에 파일 · 내용 · 덮어쓰기 근거(CC 문서) · CLAUDE.md 문장 · 확인 방법을 먼저 보여 주고 그 세션 사용자 확인 뒤 고치게**. FOREMAN · 펫퍼민트는 런슈즈 확인 뒤 사용자가 정한다
+- **결과(20:4x)**: 런슈즈 `57420bd`(push 안 함 — 그 세션 사용자가 말할 때) — `.claude/agents/Explore.md`(model: sonnet, 쓰기 도구 막음 · 읽기 전용 본문), CLAUDE.md 「서브에이전트 모델」 한 문장. 근거 CC 문서 sub-agents "A user or project subagent named `Explore` overrides the built-in and keeps its own `model` field"
+  - FOREMAN이 서브에이전트 기록으로 다시 셈: 저장소 안 새 세션 `cf4dd796` Explore → **sonnet 7**(+ opus 1줄 — general-purpose에서도 보인 응답 아닌 줄), 저장소 밖 비교 `639dd193` 기본 제공 Explore → opus 9 ✓
+  - 같은 찾기 일(compare.view 쓰는 곳)에서 둘 다 정답 8곳(런슈즈 보고)
+  - FOREMAN · 펫퍼민트에 넣을지는 사용자가 정한다
