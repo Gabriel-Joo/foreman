@@ -491,6 +491,98 @@ def adopt_notion_shape(old: list[dict[str, Any]], new: list[dict[str, Any]], kee
     return out
 
 
+FOOTER_HEAD = "마지막 갱신 — "
+_CHECK = re.compile(r"(?m)^\s*\[[ xX]\]\s+")
+_NUMHEAD = re.compile(r"^[\d\-]+\.\s*")
+
+
+def compact(s: str) -> str:
+    """쪽 단위 비교용 글(11-09 펫퍼민트 "shape") — 꾸밈 표시(** ~~ `) · 체크박스 표시([ ] [x]) · 모든 공백 · 줄바꿈을 뺀다.
+    그래서 블록 나눔(여러 문단 인용 · 강제 줄바꿈) · 표 칸 공백 · 블록 끝 줄바꿈 · 체크박스 ↔ to_do · 제목 단계 · 코드 언어 차이는 같게 본다."""
+    s = _CHECK.sub("", s or "")
+    s = s.replace("**", "").replace("~~", "").replace("`", "").replace("⏎", "")
+    return re.sub(r"\s+", "", s)
+
+
+def flat_md(blocks: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    """변환 블록을 (종류, 글)로 펼친다 — 표 줄은 칸을 이어서, 자식까지."""
+    out: list[tuple[str, str]] = []
+    for b in blocks:
+        t = b.get("type")
+        v = b.get(t) or {}
+        if t == "table":
+            out += [("table_row", "".join(plain(c) for c in r["table_row"]["cells"])) for r in v.get("children", [])]
+            continue
+        out.append((t, plain(v.get("rich_text") or [])))
+        out += flat_md(v.get("children", []))
+    return out
+
+
+async def flat_notion(client: Any, bid: str) -> list[tuple[str, str]]:
+    """Notion 블록을 (종류, 글)로 펼친다(하위 페이지 빼고, 자식까지)."""
+    out: list[tuple[str, str]] = []
+    for b in await client.children(bid):
+        t = b.get("type")
+        if t in SUBPAGES:
+            out.append((t, (b.get(t) or {}).get("title", "")))
+            continue
+        v = b.get(t) or {}
+        out.append((t, "".join(plain(c) for c in v.get("cells", [])) if t == "table_row" else plain(v.get("rich_text") or [])))
+        if b.get("has_children"):
+            out += await flat_notion(client, b["id"])
+    return out
+
+
+def shape_text(flat: list[tuple[str, str]], subpage_titles: set[str]) -> str:
+    """쪽 전체를 한 줄로 — 맨 아래 갱신 줄 · 하위 페이지 블록 · 하위 페이지 제목과 같은 문서 목록 줄(펫퍼민트 pipeline 7절)은 뺀다."""
+    keys = {compact(x) for t in subpage_titles for x in (t, _NUMHEAD.sub("", t))}
+
+    def doc_list(t: str, c: str) -> bool:
+        # 하위 페이지 제목과 같은 줄, 또는 그 제목으로 시작하는 목록 줄("모니터링 (Prometheus·Grafana)" ↔ "15. 모니터링")
+        return c in keys or (t.endswith("list_item") and any(len(k) >= 2 and c.startswith(k) for k in keys))
+    return "".join(c for t, x in flat if t not in SUBPAGES and not x.startswith(FOOTER_HEAD)
+                   and (c := compact(x)) and not doc_list(t, c))
+
+
+def shape_diff(a: str, b: str, n: int = 5) -> list[str]:
+    """Notion 글(a)과 git 글(b)이 갈리는 곳 몇 군데 — 알림 · 서기 할 일에 "▶ Notion '…' ↔ git '…'"."""
+    import difflib
+    out = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes():
+        if tag != "equal":
+            out.append(f"Notion '{a[max(0, i1 - 8):i2 + 8][:40]}' ↔ git '{b[max(0, j1 - 8):j2 + 8][:40]}'")
+            if len(out) >= n:
+                break
+    return out
+
+
+def adopt_by_compact(old: list[dict[str, Any]], new: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """글(compact)이 같은 블록은 Notion 블록 모양을 그대로 쓴다(체크박스 ↔ to_do, 코드 언어, 끝 줄바꿈 등) — git만 바뀐 쪽을
+    맞출 때 바뀌지 않은 블록까지 git 모양으로 다시 쓰지 않게(11-09). 자식이 있는 블록은 자식은 새 것으로."""
+    pool: dict[str, list[dict[str, Any]]] = {}
+    for ob in old:
+        t = ob.get("type")
+        if t in SUBPAGES or t == "table":
+            continue
+        pool.setdefault(compact(plain((ob.get(t) or {}).get("rich_text") or [])), []).append(ob)
+    out = []
+    for nb in new:
+        t = nb.get("type")
+        v = nb.get(t) or {}
+        key = compact(plain(v.get("rich_text") or [])) if t not in ("table",) else None
+        cand = pool.get(key) if key else None
+        if cand:
+            ob = cand.pop(0)
+            ot = ob["type"]
+            keep = {k: x for k, x in (ob.get(ot) or {}).items() if k in ("rich_text", "checked", "language", "color", "caption")}
+            if "children" in v:
+                keep["children"] = v["children"]
+            out.append({"object": "block", "type": ot, ot: keep})
+        else:
+            out.append(nb)
+    return out
+
+
 def _strip_children(b: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """표는 줄을 같이 만들어야 해서 그대로, 그 밖의 자식은 떼어 두었다가 만든 뒤 붙인다(깊이 제한 없이)."""
     if b["type"] == "table":
@@ -851,6 +943,8 @@ class Publisher:
                 if row["content_hash"] == digest:
                     return {"path": path, "action": "unchanged", "page_id": pid, "url": row["url"], "commit": commit,
                             "title": title}
+                if "shape" in self.keep_notion:
+                    return await self._publish_shape(path, pid, row, blocks, commit, digest, title, force)
                 if self.keep_notion:
                     blocks = adopt_notion_shape(await self.c.children(pid), blocks, self.keep_notion)
                 if not force and (edits := await self.human_edits(pid, blocks)):
@@ -874,6 +968,57 @@ class Publisher:
         await self._save(path, kind="doc", title=title, notion_page_id=pid, parent_page_id=parent, commit_sha=commit,
                          content_hash=digest, status="published", url=p.get("url"), error=None)
         return {"path": path, "action": "created", "page_id": pid, "url": p.get("url"), "commit": commit, "blocks": n}
+
+    async def _publish_shape(self, path: str, pid: str, row: dict[str, Any], blocks: list[dict[str, Any]], commit: str | None,
+                             digest: str, title: str, force: bool) -> dict[str, Any]:
+        """쪽 단위 비교(11-09 펫퍼민트 — 모양 예외가 끝없이 늘어서). 글(compact)로만 견준다:
+        - Notion == 새 git → 글이 같다. Notion은 손대지 않고 맨 아래 갱신 줄만(모양은 Notion 그대로)
+        - Notion == 지난번 맞춘 git(row.commit_sha) → Notion은 그대로고 git만 바뀌었다. 같은 글 블록은 Notion 블록을 두고 나머지만 맞춘다
+        - 그 밖 → 누군가 Notion 글을 고쳤다(또는 처음이라 알 수 없다) — HumanEdited, 어디가 다른지 몇 군데
+        force면 마지막 경우도 git으로 맞춘다."""
+        footer = blocks[-1] if self.footer else None
+        body = blocks[:-1] if footer else blocks
+        nflat = await flat_notion(self.c, pid)
+        subs = {x for t, x in nflat if t in SUBPAGES}
+        old_t, new_t = shape_text(nflat, subs), shape_text(flat_md(body), subs)
+        if old_t == new_t:
+            st = await self._ensure_footer(pid, footer)
+        else:
+            prev_t = None
+            if row.get("commit_sha"):
+                try:
+                    pb, _ = git_show(self.repo, path, row["commit_sha"])
+                    _, pbl = md_to_blocks(pb, Ctx(path, row["commit_sha"], self.gh))
+                    prev_t = shape_text(flat_md(pbl), subs)
+                except (FileNotFoundError, OutOfScope):
+                    prev_t = None
+            if old_t != prev_t and not force:
+                raise HumanEdited(path, shape_diff(old_t, new_t), row["url"])
+            old = await self.c.children(pid)
+            body = adopt_by_compact(old, adopt_notion_shape(old, body, self.keep_notion))
+            body = await resolve_uploads(self.c, self.repo, body, await self._upload_limit(), self.ref)
+            st = await sync_children(self.c, pid, body + ([footer] if footer else []))
+        await self._save(path, kind="doc", title=title, commit_sha=commit, content_hash=digest, status="published", error=None)
+        return {"path": path, "action": "footer" if old_t == new_t else "updated", "page_id": pid, "url": row["url"],
+                "commit": commit, "sync": st}
+
+    async def _ensure_footer(self, pid: str, footer: dict[str, Any] | None) -> dict[str, int]:
+        """맨 아래 갱신 줄만 넣거나 고친다 — 다른 블록은 건드리지 않는다."""
+        st = {"kept": 0, "updated": 0, "replaced": 0, "added": 0, "deleted": 0, "reset": 0}
+        if not footer:
+            return st
+        kids = [b for b in await self.c.children(pid) if b.get("type") not in SUBPAGES]
+        last = kids[-1] if kids else None
+        if last and last.get("type") == "paragraph" and plain(last["paragraph"].get("rich_text") or []).startswith(FOOTER_HEAD):
+            if _same(last, footer):
+                st["kept"] += 1
+            else:
+                await self.c.update_block(last["id"], footer)
+                st["updated"] += 1
+        else:
+            await append_tree(self.c, pid, [footer], after=last["id"] if last else None)
+            st["added"] += 1
+        return st
 
     async def archive(self, path: str) -> dict[str, Any]:
         """내리기 = 휴지통. 우리가 만든 페이지이고 지금도 루트 아래일 때만."""
