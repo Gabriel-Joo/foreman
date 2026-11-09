@@ -438,6 +438,46 @@ def header_block(path: str, commit: str, ctx: Ctx, when: str) -> dict[str, Any]:
     return {"object": "block", "type": "callout", "callout": {"rich_text": rich, "icon": {"type": "emoji", "emoji": "📄"}, "color": "gray_background"}}
 
 
+def footer_block(path: str, commit: str, ctx: Ctx, when: str) -> dict[str, Any]:
+    """맨 아래 회색 한 줄(11-09 펫퍼민트 — 사본 상자 대신 "마지막 갱신 커밋은 작게"). Notion API엔 글자 크기가 없어 회색으로."""
+    rich = _rt("마지막 갱신 — ") + _rt(commit, code=True, link=f"{ctx.gh}/commit/{commit}") + _rt(f" · {when}")
+    for r in rich:
+        r.setdefault("annotations", {})["color"] = "gray"
+    return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rich}}
+
+
+SUBPAGES = ("child_page", "child_database")     # 맞추기가 절대 지우지 않는다 — 사람이 단 하위 페이지(펫퍼민트 01 · 02 아래 단계 문서)
+
+
+def adopt_notion_shape(old: list[dict[str, Any]], new: list[dict[str, Any]], keep: set[str]) -> list[dict[str, Any]]:
+    """Notion 모양이 기준인 차이를 새 블록에 옮겨 담는다(11-09 펫퍼민트 사용자 결정) — 그래서 사람 수정으로 멈추지도, 덮지도 않는다.
+    inline_code: 글(plain)이 같고 꾸밈만 다르면(파일명을 인라인 코드로 감쌈) 새 블록의 글을 Notion 쪽 그대로.
+    image: 저장소 그림 자리(_upload)를 Notion에 있는 그림 블록과 차례대로 짝지어 그 블록을 둔다(다시 올리지 않는다)."""
+    out = [dict(b) for b in new]
+    if "inline_code" in keep:
+        pool: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for ob in old:
+            t = ob.get("type")
+            rt = (ob.get(t) or {}).get("rich_text")
+            if rt:
+                pool.setdefault((t, plain(rt)), []).append(ob)
+        for i, nb in enumerate(out):
+            t = nb.get("type")
+            v = nb.get(t) or {}
+            rt = v.get("rich_text")
+            cand = pool.get((t, plain(rt))) if rt else None
+            if cand and _norm_rt(rt) != _norm_rt((cand[0].get(t) or {}).get("rich_text")):
+                ob = cand.pop(0)
+                out[i] = {**nb, t: {**v, "rich_text": (ob.get(t) or {}).get("rich_text")}}
+    if "image" in keep:
+        imgs = [ob for ob in old if ob.get("type") == "image"]
+        for i, nb in enumerate(out):
+            if "_upload" in nb and imgs and not PurePosixPath(nb["_upload"]).suffix.lower() == ".webm":
+                ob = imgs.pop(0)
+                out[i] = {"object": "block", "type": "image", "image": {}, "_keep_as": ob["id"]}
+    return out
+
+
 def _strip_children(b: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """표는 줄을 같이 만들어야 해서 그대로, 그 밖의 자식은 떼어 두었다가 만든 뒤 붙인다(깊이 제한 없이)."""
     if b["type"] == "table":
@@ -449,6 +489,7 @@ def _strip_children(b: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, A
 
 async def append_tree(client: Any, parent: str, blocks: list[dict[str, Any]], after: str | None = None) -> int:
     """블록들을 붙인다(자식은 만든 뒤 붙인다). after를 주면 그 블록 바로 뒤에 차례로."""
+    blocks = [b for b in blocks if "_keep_as" not in b]     # Notion에 있는 그림을 두기로 한 자리 — 새로 만들 것이 없다(11-09)
     n = 0
     for k in range(0, len(blocks), CHUNK):
         part = [_strip_children(b) for b in blocks[k:k + CHUNK]]
@@ -492,7 +533,8 @@ def _sig(b: dict[str, Any]) -> tuple[Any, ...]:
     t = b.get("type")
     v = b.get(t) or {}
     if t in ("image", "video"):
-        return (t, id(b))
+        # Notion에 있는 그림을 그대로 두기로 짝지은 새 블록(_keep_as)은 그 블록과 같은 지문 — 맞대기에서 "같음"(11-09)
+        return (t, b.get("_keep_as") or (b.get("id") if b.get("id") and "_upload" not in b else None) or id(b))
     if t == "table":
         return (t, v.get("table_width"))
     return (t, tuple(x[0] for x in _norm_rt(v.get("rich_text"))), v.get("language"))
@@ -535,7 +577,8 @@ async def sync_children(client: Any, parent: str, new: list[dict[str, Any]], sta
     전부 갈아 끼운다(reset)."""
     import difflib
     st = stats if stats is not None else {"kept": 0, "updated": 0, "replaced": 0, "added": 0, "deleted": 0, "reset": 0}
-    old = await client.children(parent)
+    # 하위 페이지 블록은 보지도 지우지도 않는다(11-09 — 지우면 그 페이지가 휴지통으로 간다)
+    old = [b for b in await client.children(parent) if b.get("type") not in SUBPAGES]
     ops = difflib.SequenceMatcher(a=[_sig(b) for b in old], b=[_sig(b) for b in new], autojunk=False).get_opcodes()
     if old and ops and ops[0][0] == "insert":         # 맨 앞에 끼워야 한다 — API로 못 하니 예전 방식
         return await _sync_positional(client, parent, old, new, st)
@@ -553,7 +596,8 @@ async def sync_children(client: Any, parent: str, new: list[dict[str, Any]], sta
             anchor = olds[k]["id"]
             k += 1
         if news[k:] and anchor is None:              # 맨 앞에 다른 것을 끼워야 한다 — 지우기 전에 예전 방식으로
-            return await _sync_positional(client, parent, await client.children(parent), new, st)
+            return await _sync_positional(client, parent, [b for b in await client.children(parent) if b.get("type") not in SUBPAGES],
+                                          new, st)
         for ob in olds[k:]:
             await client.delete_block(ob["id"])
             st["deleted"] += 1
@@ -669,7 +713,7 @@ class Publisher:
 
     def __init__(self, engine: Any, client: Any, root: str, repo: str, project: str = "foreman", gh: str = GH,
                  ref: str = "HEAD", docs_page: str | None = None, portfolio_page: str | None = None,
-                 docs_mode: str = "off", quiet_min: float = 30) -> None:
+                 docs_mode: str = "off", quiet_min: float = 30, opts: dict[str, Any] | None = None) -> None:
         """Notion 구조(11-09 사용자 결정): 「프로젝트」 > 프로젝트 페이지(root) > [기술문서](docs_page) · [포트폴리오](portfolio_page).
         ref — 어느 커밋을 원본으로 보나. FOREMAN은 HEAD(이 저장소 main), 다른 프로젝트는 origin/main(push된 것 — Notion은 GitHub에
         있는 것의 사본이다, 런슈즈 요청 3-1). docs_mode — off(docs/를 올리지 않는다) · manual · auto(push 뒤 quiet_min분 조용하면
@@ -679,6 +723,14 @@ class Publisher:
         self.docs_page = norm(docs_page) if docs_page else None
         self.portfolio_page = norm(portfolio_page) if portfolio_page else None
         self.scope = Scope(client, root)
+        # 11-09 펫퍼민트(사용자 결정) — 사람이 옮겨 둔 기존 페이지에 맞춘다. 기본값은 지금까지 동작 그대로
+        o = opts or {}
+        self.create = o.get("create", True) is not False          # False: 짝(doc_publish)이 없으면 만들지 않고 실패로 남긴다
+        self.keep_title = o.get("title") == "keep"                 # 제목을 건드리지 않는다("00. 모델 준비" — 사이드바 순서)
+        self.keep_order = o.get("order") == "keep"                 # 페이지를 옮기거나 차례를 바꾸지 않는다
+        self.footer = o.get("header") == "footer"                  # 맨 위 사본 상자 대신 맨 아래 회색 한 줄
+        self.keep_notion = set(o.get("keep_notion") or [])         # inline_code · image — Notion 모양이 기준
+        self.skip = set(o.get("skip") or [])                       # 맞추기 대상이 아닌 docs 파일
 
     async def parent_for(self, path: str) -> str:
         """글이 놓일 페이지 — 포트폴리오는 [포트폴리오](없으면 루트 바로 아래, 11-06 방식), docs/는 [기술문서], 그 밖은 묶음 페이지."""
@@ -765,31 +817,41 @@ class Publisher:
         title = given or title or PurePosixPath(path).stem
         if portfolio:
             title = portfolio_title(path, title)
+        elif self.footer:
+            blocks = blocks + [footer_block(path, commit or "HEAD", ctx, when)]     # 11-09 펫퍼민트 — 포트폴리오로 보여 줄 문서
         else:
             blocks = [header_block(path, commit or "HEAD", ctx, when)] + blocks
         row = await self._row(path)
         if row and row["status"] == "published" and row["notion_page_id"]:
             pid = row["notion_page_id"]
             if await self.scope.under_root(pid):
-                # 정해진 자리([포트폴리오] · [기술문서])가 아니면 옮긴다(옮긴 순서대로 쌓인다)
+                if self.keep_title:
+                    title = row["title"]
+                # 정해진 자리([포트폴리오] · [기술문서])가 아니면 옮긴다(옮긴 순서대로 쌓인다). keep_order면 사람이 둔 자리 그대로
                 want = await self.parent_for(path)
-                if (portfolio or path.startswith("docs/")) and norm(row["parent_page_id"] or "") != want:
+                if not self.keep_order and (portfolio or path.startswith("docs/")) and norm(row["parent_page_id"] or "") != want:
                     await self.c.move_page(pid, want)
                     await self._save(path, parent_page_id=want)
-                if row["title"] != title:
+                if not self.keep_title and row["title"] != title:
                     await self.c.set_title(pid, title)
                     await self._save(path, title=title)
                 if row["content_hash"] == digest:
                     return {"path": path, "action": "unchanged", "page_id": pid, "url": row["url"], "commit": commit,
                             "title": title}
+                if self.keep_notion:
+                    blocks = adopt_notion_shape(await self.c.children(pid), blocks, self.keep_notion)
                 if not force and (edits := await self.human_edits(pid, blocks)):
                     raise HumanEdited(path, edits, row["url"])
                 blocks = await resolve_uploads(self.c, self.repo, blocks, await self._upload_limit(), self.ref)
                 st = await sync_children(self.c, pid, blocks)    # 같은 페이지 · 같은 URL, 바뀐 블록만(mermaid 미리보기가 남는다)
-                await self.c.set_title(pid, title)
+                if not self.keep_title:
+                    await self.c.set_title(pid, title)
                 await self._save(path, kind="doc", title=title, commit_sha=commit, content_hash=digest, status="published", error=None)
                 return {"path": path, "action": "updated", "page_id": pid, "url": row["url"], "commit": commit, "sync": st}
             # Notion에서 지워졌거나 범위 밖으로 옮겨졌다 — 그 페이지는 두고 새로 만든다
+        if not self.create:
+            # 11-09 펫퍼민트 — 사람이 옮겨 둔 페이지에만 맞춘다. 짝이 없거나 범위 밖이면 새로 만들지 않고 멈춘다(사용자: 새 페이지 0)
+            raise OutOfScope(f"짝 페이지가 없거나 범위 밖입니다 — 새 페이지를 만들지 않습니다(create = false): {path}")
         blocks = await resolve_uploads(self.c, self.repo, blocks, await self._upload_limit(), self.ref)
         parent = await self.parent_for(path)
         await self.scope.require(parent, not_root=parent != self.root)

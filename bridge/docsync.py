@@ -100,7 +100,7 @@ def commits_behind(repo: str, synced: str | None, ref: str) -> int | None:
 
 async def status(pub: Any) -> dict[str, Any]:
     """한 프로젝트의 기술 문서 상태 — new · changed · deleted 파일, 뒤처진 커밋 수, 마지막 docs 커밋 시각."""
-    files = docs_files(pub.repo, pub.ref)
+    files = [f for f in docs_files(pub.repo, pub.ref) if f not in getattr(pub, "skip", ())]     # 대상이 아닌 파일(11-09 펫퍼민트)
     names = titles(files, _git(pub.repo, "show", f"{pub.ref}:docs/README.md"))
     async with pub.e.connect() as c:
         rows = {r["path"]: dict(r) for r in (await c.execute(text(
@@ -115,6 +115,8 @@ async def status(pub: Any) -> dict[str, Any]:
         except (FileNotFoundError, OutOfScope) as e:
             broken.append({"path": f, "error": str(e)})
             continue
+        if getattr(pub, "keep_title", False) and r:
+            names[f] = r["title"]                                    # 제목 유지(사람이 붙인 "00. 모델 준비" — 사이드바 순서)
         if not r or r["status"] != "published":
             new.append(f)
         elif r["content_hash"] != dg or r["title"] != names[f]:      # 제목만 바뀌어도(README 표 설명) 맞춘다
@@ -151,7 +153,7 @@ async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset
         except Exception as e:  # noqa: BLE001
             failed.append({"path": f, "error": f"{type(e).__name__}: {str(e)[:200]}"})
     failed += [{"path": b["path"], "error": b["error"]} for b in st["broken"]]
-    if done and pub.docs_page:          # 차례가 이미 맞으면 reorder가 옮기지 않는다(자식 목록 한 번 읽기)
+    if done and pub.docs_page and not getattr(pub, "keep_order", False):   # 차례가 이미 맞으면 reorder가 옮기지 않는다. keep_order면 사람 차례 그대로
         async with pub.e.connect() as c:
             pages = {r[0]: r[1] for r in (await c.execute(text(
                 "SELECT path, notion_page_id FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' "
