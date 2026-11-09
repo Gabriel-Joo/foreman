@@ -34,7 +34,7 @@ export function mountNewSession(store, { onCreated }) {
       <pre id="nsPrev" class="hand-body ns-prev"></pre>
     </div>
     <div class="row ns-act"><span id="nsMsg" class="small"></span>
-      <button type="button" id="nsCancel" class="ghost">취소</button><button type="button" id="nsGo">띄우기</button></div>
+      <button type="button" id="nsCancel" class="ghost">취소</button><button type="button" id="nsGo" class="primary">띄우기</button></div>
   </div>`;
   document.body.appendChild(dlg);
   const $ = (id) => dlg.querySelector('#' + id);

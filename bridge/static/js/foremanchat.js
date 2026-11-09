@@ -50,7 +50,7 @@ function mount(dlg) {
     <div id="fmWake" class="fm-q" hidden></div>
     <label class="small muted" for="fmText"><span id="fmWho">감독</span>에게 말하기 — 뭘 하려는지 <span id="fmRoom" class="muted"></span></label>
     <textarea id="fmText" rows="2" placeholder="예: 런슈즈 발볼 검증 이어서 · 펫퍼민트 새로 시작 · 빌드 터진 거 봐줘"></textarea>
-    <div class="row fm-row"><span id="fmMsg" class="small muted"></span><button type="button" id="fmAsk">계획 받기</button></div>
+    <div class="row fm-row"><span id="fmMsg" class="small muted"></span><button type="button" id="fmAsk" class="primary">계획 받기</button></div>
     <div id="fmPlan" class="fm-plan" hidden></div>
     <div id="fmHand" class="fm-hand" hidden></div>`;
   h2.after(fm, manual);
@@ -174,7 +174,7 @@ function mount(dlg) {
       <div class="row fm-row"><span id="fmStartMsg" class="small"></span>
         <button type="button" id="fmDrop" class="ghost" title="버리기 — 이 계획을 쓰지 않습니다. 기록에는 '사람이 버림'으로 남습니다."${done ? ' disabled' : ''}>버리기</button>
         <button type="button" id="fmAgain" class="ghost">다시 물어보기</button>
-        <button type="button" id="fmGo"${p.mode === 'ask' || done ? ` disabled title="${done ? '이미 끝난 계획입니다.' : '되묻는 계획입니다 — 답을 요청에 덧붙여 다시 물어보거나 방식을 바꿔 주세요.'}"` : ''}>이대로 시작</button></div>`;
+        <button type="button" id="fmGo" class="primary"${p.mode === 'ask' || done ? ` disabled title="${done ? '이미 끝난 계획입니다.' : '되묻는 계획입니다 — 답을 요청에 덧붙여 다시 물어보거나 방식을 바꿔 주세요.'}"` : ''}>이대로 시작</button></div>`;
     $('fmPlan').hidden = false;
     bindRoleModel($('fmRole'), $('fmModel'), opts.models);
     $('fmProj').onchange = () => { draw({ ...collect(), summary_id: null }); };

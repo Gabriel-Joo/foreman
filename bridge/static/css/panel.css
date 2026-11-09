@@ -298,7 +298,18 @@ button.danger:not(:disabled):hover { background:color-mix(in srgb, var(--bad) 14
 #nsDlg .box.ns:has(.fm-manual:not([open])) #nsGo { display:none; }   /* [띄우기]는 "직접 고르기"를 펼쳤을 때만 */
 
 /* 넘기고 새로 시작(11-08, js/handoff.js) — 단계 표시 · 큰 버튼 · 교장실 창의 방 세션 줄 */
-.hand-btns button.flow-main { background:var(--act); color:#fff; border-color:var(--act); font-weight:700; padding:4px 12px; }
+/* 지금 눌러야 하는 버튼(11-09 사용자 — "어디를 눌러야 하는지 바로 보이게"): 채운 색 · 굵게 · 테두리 빛. 한 줄에 하나만.
+   옆의 [멈추기] · [취소]는 ghost(테두리만)로 둔다. danger와 함께면 빨강으로 채운다(옛 세션 끝내기처럼 그것이 할 일일 때).
+   :root를 붙인 것은 페이지 <style>(panel.css 뒤에 읽힌다)의 button.small보다 앞서려고 */
+:root button.primary { background:var(--act); border-color:var(--act); color:var(--bg); font-weight:700; padding:5px 16px;
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--act) 30%, transparent); }
+:root button.primary.danger { background:var(--bad); border-color:var(--bad); color:var(--bg);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--bad) 30%, transparent); }
+:root button.primary:not(:disabled):hover { filter:brightness(1.12); background:var(--act); }
+:root button.primary.danger:not(:disabled):hover { background:var(--bad); }
+:root button.primary:disabled { opacity:.45; box-shadow:none; cursor:default; }
+/* 긴 넣을 글 · 읽을 곳 아래로 버튼이 묻히지 않게 — 흐름의 버튼 줄은 스크롤해도 아래에 붙어 있다 */
+.flow .row.flow-act { position:sticky; bottom:0; z-index:1; background:var(--card); padding:8px 0 4px; margin-top:6px; border-top:1px solid var(--line); }
 .flow { border:1px solid var(--line); border-radius:8px; padding:6px 10px; margin:6px 0; background:var(--card); }
 .flow-steps { display:flex; flex-wrap:wrap; gap:4px 10px; list-style:none; padding:0; margin:0 0 6px; font-size:14px; color:var(--muted); }
 .flow-steps li.done { color:var(--ok); }

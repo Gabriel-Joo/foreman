@@ -90,8 +90,8 @@ export function promoteGroup(p, can, draft, err, inputs = [], chosen = null) {
     body += items.map((it) => itemRow(it, merged(it, draft), editable)).join('');
     if (editable) {
       body += `<div class="hand-btns"><span class="small">승인 ${c.approved} · 대기 ${c.pending} · 빼기 ${c.dropped}${c.approved !== saved.approved ? ' <span class="warn">(저장 전)</span>' : ''}</span>
-        ${b('prom-save', '고친 것 저장', true, '', '고친 것 저장 — 문장 · 목적지 · 상태를 저장합니다. 쓰기 전에 저장해야 합니다.')}
-        ${b('prom-write', `승인한 것 쓰기(${saved.approved})`, saved.approved > 0, '', '승인한 것 쓰기 — 세션이 저장된 승인 항목만 문서에 쓰고 「인계 전 결정 기록」으로 커밋합니다. 브리지가 커밋을 확인합니다.')}</div>`;
+        ${b('prom-save', '고친 것 저장', true, c.approved !== saved.approved ? 'primary' : '', '고친 것 저장 — 문장 · 목적지 · 상태를 저장합니다. 쓰기 전에 저장해야 합니다.')}
+        ${b('prom-write', `승인한 것 쓰기(${saved.approved})`, saved.approved > 0, c.approved === saved.approved ? 'primary' : '', '승인한 것 쓰기 — 세션이 저장된 승인 항목만 문서에 쓰고 「인계 전 결정 기록」으로 커밋합니다. 브리지가 커밋을 확인합니다.')}</div>`;
     }
   } else if (p.status === 'listed') {
     body += '<div class="small muted">세션이 문서에 남길 것이 없다고 했습니다.</div>';
