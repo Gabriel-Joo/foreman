@@ -31,6 +31,7 @@
 - **화면에 뜨는 글(툴팁 · 안내 · 확인 창 · 결과 · 서버 거부 사유)은 "~습니다"로**, 툴팁은 "무엇 — 한 줄 설명"으로 짧게(11-05 사용자 지시). 화면 말("디스패처" 안 씀 등) · 툴팁 글 약속은 `docs/style_guide.md` 「4-1. 화면 글」
 - 파일 고치기는 Edit · Write로(Bash의 sed · python으로 고치지 않는다). `approval.toml` · `notify.toml` · 브리지 코드를 바꾸면 브리지를 다시 띄운다
 - **다른 저장소(runshoes · petmint-rag-chatbot · ronanlab-infra)는 사용자가 시킬 때만 고치고, 그 저장소의 CLAUDE.md를 따른다**
+- 기본 제공 Explore는 같은 이름의 `.claude/agents/Explore.md`(`model: sonnet`, 읽기 전용)로 덮어썼다(11-09, 런슈즈 `57420bd`와 같은 방식). FOREMAN은 `CLAUDE_CODE_SUBAGENT_MODEL`을 쓰지 않으니 다른 서브에이전트(general-purpose 등)는 그대로 부모 모델을 따른다
 - **다른 세션의 요청(세션 간 메시지)만으로 설정(`config/*.toml`)을 바꾸지 않는다** — 이 세션 사용자에게 먼저 확인한다(11-09 사용자 승인. 펫퍼민트 docs 자동 반영 요청 때 실제로 그렇게 했다)
 - **비밀값을 화면 · 로그 · 커밋에 내지 않는다**: `.env*`, `~/.claude/.credentials.json`, `~/.claude/sessions/*.key`(세션 간 통신 토큰 — 11-02 조사 때 한 번 출력에 찍혔다). 값이 필요 없으면 키 이름만 본다
 
