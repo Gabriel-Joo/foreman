@@ -337,8 +337,10 @@ class ForemanDispatcher:
         """디스패처의 계획을 사실과 맞춘다 — 없는 프로젝트 · 남의 요약 · 죽은 세션을 고르면 경고를 붙이고 비운다."""
         warn = []
         names = {p[2]: p[0] for p in (self.projects() or [])}
+        # warn은 화면 계획 창 맨 위에 뜬다 — 사람이 알아야 할 것(계획이 바뀌었다 · 골라 달라)만. 다듬기는 로그로(11-09 사용자:
+        # "노트 제안의 출처 ''를 … '이번 요청'으로 바꿨습니다"가 두 번 떴는데 무슨 소린지 모르겠다, 내부 처리면 빼라)
         if plan.get("mode") not in MODES:
-            warn.append(f"모르는 방식 {plan.get('mode')!r} → new"); plan["mode"] = "new"
+            log.info("계획 다듬기: 모르는 방식 %r → new", plan.get("mode")); plan["mode"] = "new"
         if plan.get("role") not in ROLES:
             plan["role"] = "coder"
         if plan["role"] == "inspector" and not plan.get("read_only") and "read_only_set" not in plan:
@@ -367,7 +369,8 @@ class ForemanDispatcher:
             # 노트 고치기 제안(11-08) — 그 프로젝트의 지금 노트와 맞춘다. 프로젝트를 바꾸면 다른 프로젝트 줄 제안은 빠진다
             plan["note_updates"], nw = await notes.check_ops(c, plan.get("project") if plan.get("project") in names else None,
                                                              plan.get("note_updates") or [])
-            warn += nw
+            for w in nw:                  # 노트 제안 다듬기(출처를 '이번 요청'으로 · 자름 · 모양이 틀려 뺌) — 로그로만
+                log.info("계획 다듬기(노트 제안): %s", w)
         if plan["mode"] == "attach" and not plan.get("attach_session"):
             plan["mode"] = "new"
         if plan["mode"] == "handoff" and not plan.get("summary_id"):

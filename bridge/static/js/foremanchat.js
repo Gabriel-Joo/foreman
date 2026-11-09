@@ -41,23 +41,32 @@ function mount(dlg) {
   // 원래 창(직접 고르기)을 접는다 — 버튼 · 칸 id는 그대로라 newsession.js가 그대로 쓴다
   const manual = document.createElement('details');
   manual.className = 'fm-manual';
-  manual.innerHTML = '<summary class="small">직접 고르기 — 프로젝트 · 시작 방식을 내가 정한다</summary>';
+  // 11-09 사용자 — "직접 고르기 — … 내가 정한다"로는 뭘 하는지 안 보였다. 하는 일로
+  manual.innerHTML = '<summary title="계획 없이 직접 띄우기 — 감독실을 거치지 않고 프로젝트(폴더) · 이름 · 역할 · 시작 방식을 직접 골라 새 세션을 바로 띄웁니다. 계획이 틀렸을 때 씁니다.">계획 없이 직접 띄우기 <span class="muted">— 폴더 · 이름 · 시작 방식을 내가 고릅니다</span></summary>';
   const act = box.querySelector('.ns-act');          // [취소] · [띄우기] 줄은 접지 않는다
   while (h2.nextSibling && h2.nextSibling !== act) manual.appendChild(h2.nextSibling);
   const fm = document.createElement('section');
   fm.className = 'fm';
   fm.innerHTML = `
     <div id="fmWake" class="fm-q" hidden></div>
-    <label class="small muted" for="fmText"><span id="fmWho">감독</span>에게 말하기 — 뭘 하려는지 <span id="fmRoom" class="muted"></span></label>
-    <textarea id="fmText" rows="2" placeholder="예: 런슈즈 발볼 검증 이어서 · 펫퍼민트 새로 시작 · 빌드 터진 거 봐줘"></textarea>
-    <div class="row fm-row"><span id="fmMsg" class="small muted"></span><button type="button" id="fmAsk" class="primary">계획 받기</button></div>
+    <label class="fm-lbl" for="fmText"><b><span id="fmWho">감독</span>에게 말하기</b> <span id="fmRoom" class="muted"></span>
+      <span class="muted fm-hint">하려는 일을 적으면 <span id="fmWho2">감독</span> 어느 프로젝트에서 어떻게 할지 계획을 세워 보여 줍니다. 확인해야 세션이 뜹니다.</span></label>
+    <textarea id="fmText" rows="6" placeholder="예: 런슈즈 발볼 검증 이어서 · 펫퍼민트 새로 시작 · 빌드 터진 거 봐줘&#10;(Ctrl+Enter로 계획 받기)"></textarea>
+    <div class="row fm-row"><button type="button" id="fmAsk" class="primary">계획 받기</button></div>
+    <div id="fmMsg" class="fm-status" hidden></div>
     <div id="fmPlan" class="fm-plan" hidden></div>
     <div id="fmHand" class="fm-hand" hidden></div>`;
   h2.after(fm, manual);
   const $ = (id) => box.querySelector('#' + id);
   let disp = null, opts = null, room = null;
-  const msg = (t, cls = 'muted') => { $('fmMsg').className = `small ${cls}`; $('fmMsg').textContent = t; };
-  const who = () => { $('fmWho').textContent = fmName(); };
+  // 상태 글(11-09 사용자 — 버튼 옆 작은 회색 글은 읽기 힘들었다): 입력칸 아래 상자, 기다리는 중이면 움직이는 점
+  const msg = (t, cls = 'muted') => {
+    const busy = cls === 'muted' && /…/.test(t);
+    $('fmMsg').hidden = !t;
+    $('fmMsg').className = `fm-status ${busy ? 'busy' : cls}`;
+    $('fmMsg').textContent = t;
+  };
+  const who = () => { $('fmWho').textContent = fmName(); $('fmWho2').textContent = josa(fmName()); };
 
   function setRoom(p) {
     room = p || null;
@@ -99,18 +108,22 @@ function mount(dlg) {
     const text = $('fmText').value.trim();
     if (!text) { msg('뭘 하려는지 적어 주세요.', 'bad'); return; }
     $('fmAsk').disabled = true; $('fmPlan').hidden = true; $('fmWake').hidden = true;
-    msg(`${josa(fmName())} 상황을 보고 계획을 세우는 중입니다… (20초 안팎)`);
+    const t0 = Date.now();
+    const wait = () => msg(`${josa(fmName())} 계획을 세우고 있습니다… ${Math.round((Date.now() - t0) / 1000)}초\n프로젝트 상황 · 노트 · 문서를 읽느라 보통 20초쯤 걸립니다.`);
+    wait();
+    const tick = setInterval(wait, 1000);
     try {
       [disp, opts] = await Promise.all([api('POST', '/api/foreman/plan', { text, project: room }), opts || api('GET', '/api/spawn/options')]);
-      msg(`계획이 나왔습니다(${Math.round(disp.ms / 1000)}초). 확인하고 고칠 것은 고친 뒤 시작해 주세요.`, 'ok');
+      clearInterval(tick);
+      msg(`계획이 나왔습니다(${Math.round(disp.ms / 1000)}초). 아래에서 확인하고, 고칠 것은 고친 뒤 [이대로 시작]을 누릅니다.`, 'ok');
       draw(disp.plan);
-    } catch (e) { msg(`계획을 받지 못했습니다 — ${e.message}. 아래 "직접 고르기"를 쓸 수 있습니다.`, 'bad'); }
+    } catch (e) { clearInterval(tick); msg(`계획을 받지 못했습니다 — ${e.message}\n아래 "계획 없이 직접 띄우기"로 띄울 수 있습니다.`, 'bad'); }
     $('fmAsk').disabled = false;
   }
 
   // 이미 만든 계획 하나를 연다(자동 제안 · 텔레그램 링크)
   async function load(id) {
-    msg('계획을 불러오는 중입니다…');
+    msg('계획을 불러오고 있습니다…');
     try {
       const [d, o] = await Promise.all([api('GET', `/api/foreman/dispatch/${id}`), opts || api('GET', '/api/spawn/options')]);
       opts = o;
@@ -124,7 +137,7 @@ function mount(dlg) {
       if (!d.plan) { msg(`이 계획은 만들어지지 못했습니다 — ${d.error || d.status}`, 'bad'); return; }
       disp = { dispatch_id: d.dispatch_id, plan: d.plan };
       draw(d.plan, d.status);
-      msg(d.status === 'planned' ? '확인하고 고칠 것은 고친 뒤 시작해 주세요.' : `이미 ${d.status === 'started' ? '시작한' : '버린'} 계획입니다.`,
+      msg(d.status === 'planned' ? '아래에서 확인하고, 고칠 것은 고친 뒤 [이대로 시작]을 누릅니다.' : `이미 ${d.status === 'started' ? '시작한' : '버린'} 계획입니다.`,
         d.status === 'planned' ? 'ok' : 'warn');
     } catch (e) { msg(`계획을 불러오지 못했습니다 — ${e.message}`, 'bad'); }
   }
@@ -135,39 +148,62 @@ function mount(dlg) {
     const line = (o) => o.op === 'retire' ? `${esc(o.was)}${o.why ? ` <span class="muted">— ${esc(o.why)}</span>` : ''}`
       : o.op === 'touch' ? esc(o.was)
       : `${esc(o.body)}${o.op === 'update' ? ` <span class="muted">(전: ${esc(o.was)})</span>` : ''}`;
-    return `<div class="fm-notes"><div class="small"><b>노트 고치기 제안</b> <span class="muted">— [이대로 시작]을 누를 때 켠 것만 반영합니다</span></div>${
+    // 11-09 사용자 — 접어 두고 몇 개인지만. 펼치면 줄마다 켜고 끄기
+    return `<details class="fm-fold fm-notes-box"><summary title="노트 고치기 제안 — ${esc(fmName())}${josa(fmName(), '이', '가')} 이 방 노트(진행 중인 일 · 사람이 정한 판단)를 이렇게 고치자고 합니다. [이대로 시작]을 누를 때 켠 것만 반영합니다.">노트 고치기 제안 ${ups.length}개</summary>
+      <div class="fm-notes">${
       ups.map((o, i) => `<label class="small fm-note"><input type="checkbox" data-ni="${i}"${o.on !== false ? ' checked' : ''}>
-        <span><b>${OPK[o.op] || o.op}</b> · ${KIND[o.kind] || ''} — ${line(o)} <span class="muted">출처 ${esc(o.source || '이번 요청')}</span></span></label>`).join('')}</div>`;
+        <span><b>${OPK[o.op] || o.op}</b> · ${KIND[o.kind] || ''} — ${line(o)} <span class="muted">출처 ${esc(o.source || '이번 요청')}</span></span></label>`).join('')}</div></details>`;
+  }
+  // "자세히"가 접혀 있어도 지금 값이 보이게 — 접힌 줄에 한 줄 요약
+  function moreLine() {
+    const sel = (id) => { const e = $(id); return e && e.selectedOptions && e.selectedOptions[0] ? e.selectedOptions[0].textContent : ''; };
+    const bits = [sel('fmRole'), sel('fmModel'), $('fmWT').checked ? '따로 작업(worktree)' : '원본 폴더', $('fmRO').checked ? '읽기 전용' : ''];
+    if ($('fmMode').value === 'attach') bits.unshift($('fmAttach').value ? `세션 ${$('fmAttach').value}에 보냄` : '보낼 세션을 골라 주세요');
+    $('fmMoreSum').textContent = bits.filter(Boolean).join(' · ');
+  }
+  function modeChanged() {
+    const m = $('fmMode').value;
+    $('fmGo').disabled = m === 'ask';
+    $('fmSumL').hidden = $('fmSum').hidden = m !== 'handoff';   // 넣을 요약 줄은 "요약 넣고 시작"일 때만(라벨 · 칸 둘 다)
+    if (m === 'attach') $('fmMore').open = true;      // 보낼 세션은 "자세히" 안에 있다 — 이 방식이면 꼭 필요하니 펼친다
+    moreLine();
   }
 
   function draw(p, status = 'planned') {
     const sums = (opts.summaries || []).filter((s) => !p.project || s.project === p.project);
     const opt = (v, cur, label) => `<option value="${esc(v)}"${String(v) === String(cur ?? '') ? ' selected' : ''}>${esc(label)}</option>`;
     const done = status !== 'planned';
+    // 11-09 사용자("칸 8개에 체크박스에 긴 글까지 한 화면에") — 먼저 보이는 것은 프로젝트 · 방식 · 이름 · 넣을 첫 글.
+    // 역할 · 모델 · 보낼 세션 · 읽기 전용 · worktree는 [자세히], 노트 제안은 개수만. 칸 id는 그대로(collect가 읽는다)
+    const warns = (p.warnings || []).filter((w) => !/^노트 /.test(w));   // 11-09 전 계획에 남은 노트 다듬기 글(지금은 로그로만)
     $('fmPlan').innerHTML = `
-      ${(p.warnings || []).length ? `<div class="small warn">${p.warnings.map(esc).join('<br>')}</div>` : ''}
+      ${warns.length ? `<div class="fm-warn">${warns.map(esc).join('<br>')}</div>` : ''}
       ${(p.questions || []).length ? `<div class="fm-q"><b>${esc(josa(fmName()))} 묻습니다</b>${p.questions.map((q) => `<div>• ${esc(q)}</div>`).join('')}</div>` : ''}
       <div class="fm-grid">
-        <label class="small muted">프로젝트</label>
+        <label class="muted" for="fmProj">프로젝트</label>
         <select id="fmProj">${(opts.projects || []).map((x) => opt(x.name, p.project, projLabel(x.name))).join('')}</select>
-        <label class="small muted">방식</label>
+        <label class="muted" for="fmMode">방식</label>
         <select id="fmMode">${Object.entries(MODE).map(([k, v]) => opt(k, p.mode, v)).join('')}</select>
-        <label class="small muted" title="넣을 요약 — 다른 세션에서 새 세션으로 옮길 때 쓴 요약입니다. 고르면 새 세션의 첫 글 뒤에 붙습니다.">넣을 요약</label>
+        <label class="muted" id="fmSumL" for="fmSum" title="넣을 요약 — 다른 세션에서 새 세션으로 옮길 때 쓴 요약입니다. 고르면 새 세션의 첫 글 뒤에 붙습니다.">넣을 요약</label>
         <select id="fmSum">${opt('', p.summary_id, '쓰지 않음')}${sums.map((s) => opt(s.id, p.summary_id, `세션 ${s.session_id} · ${s.chars}자 — ${(s.head || s.session || '').slice(0, 50)}`)).join('')}</select>
-        <label class="small muted">보낼 세션</label>
-        <input id="fmAttach" value="${esc(p.attach_session ?? '')}" placeholder="방식이 '살아 있는 세션에 보내기'일 때 세션 번호">
-        <label class="small muted">역할</label>
-        <select id="fmRole">${Object.entries(ROLE).map(([k, v]) => opt(k, p.role, v)).join('')}</select>
-        <label class="small muted" title="모델 — 역할마다 기본값이 있고 바꿀 수 있습니다(config/models.toml).">모델</label>
-        <select id="fmModel">${modelOptions(opts.models, p.model, p.role)}</select>
-        <label class="small muted">이름</label>
+        <label class="muted" for="fmTitle">이름</label>
         <input id="fmTitle" value="${esc(p.title || '')}">
       </div>
-      <label class="small"><input id="fmRO" type="checkbox"${p.read_only ? ' checked' : ''}> 읽기 전용으로 시작(살펴보기만 — 고치기 전에 승인)</label>
-      <label class="small" title="따로 작업 — 저장소 안 .worktrees/에 이 세션만의 폴더 · 브랜치(cc/…)를 만들어 띄웁니다. 끝낸 뒤 [합치기]로 main에 합칩니다."><input id="fmWT" type="checkbox"${p.worktree ? ' checked' : ''}> 따로 작업(worktree)
-        <span class="muted">${p.live_here ? `— 이 프로젝트에 살아 있는 세션 ${p.live_here}개와 파일이 겹치지 않습니다` : '— 지금 이 프로젝트에 다른 세션이 없습니다'}</span></label>
-      <label class="small muted" for="fmFirst">넣을 첫 글${p.summary_id ? ' (고른 요약은 이 뒤에 붙습니다)' : ''}</label>
-      <textarea id="fmFirst" rows="10" class="fm-first">${esc(p.first_prompt || '')}</textarea>
+      <label class="muted" for="fmFirst">넣을 첫 글${p.summary_id ? ' (고른 요약은 이 뒤에 붙습니다)' : ''}</label>
+      <textarea id="fmFirst" rows="12" class="fm-first">${esc(p.first_prompt || '')}</textarea>
+      <details class="fm-fold" id="fmMore"><summary title="자세히 — 역할 · 모델 · 보낼 세션 · 읽기 전용 · 따로 작업(worktree)입니다. 접혀 있어도 오른쪽에 지금 값이 보입니다.">자세히 <span id="fmMoreSum" class="muted"></span></summary>
+        <div class="fm-grid">
+          <label class="muted" for="fmRole">역할</label>
+          <select id="fmRole">${Object.entries(ROLE).map(([k, v]) => opt(k, p.role, v)).join('')}</select>
+          <label class="muted" for="fmModel" title="모델 — 역할마다 기본값이 있고 바꿀 수 있습니다(config/models.toml).">모델</label>
+          <select id="fmModel">${modelOptions(opts.models, p.model, p.role)}</select>
+          <label class="muted" for="fmAttach">보낼 세션</label>
+          <input id="fmAttach" value="${esc(p.attach_session ?? '')}" placeholder="방식이 '살아 있는 세션에 보내기'일 때 세션 번호">
+        </div>
+        <label class="fm-check"><input id="fmRO" type="checkbox"${p.read_only ? ' checked' : ''}> 읽기 전용으로 시작 <span class="muted">— 살펴보기만, 고치기 전에 승인</span></label>
+        <label class="fm-check" title="따로 작업 — 저장소 안 .worktrees/에 이 세션만의 폴더 · 브랜치(cc/…)를 만들어 띄웁니다. 끝낸 뒤 [합치기]로 main에 합칩니다."><input id="fmWT" type="checkbox"${p.worktree ? ' checked' : ''}> 따로 작업(worktree)
+          <span class="muted">${p.live_here ? `— 이 프로젝트에 살아 있는 세션 ${p.live_here}개와 파일이 겹치지 않습니다` : '— 지금 이 프로젝트에 다른 세션이 없습니다'}</span></label>
+      </details>
       ${notesHtml(p)}
       <details class="fm-why"${(p.confidence ?? 1) < 0.7 ? ' open' : ''}><summary class="small">왜 이렇게 판단했나 · 확신도 ${Math.round((p.confidence ?? 0) * 100)}%</summary>
         ${(p.reasons || []).map((r) => `<div class="small">• ${esc(r)}</div>`).join('')}</details>
@@ -178,7 +214,11 @@ function mount(dlg) {
     $('fmPlan').hidden = false;
     bindRoleModel($('fmRole'), $('fmModel'), opts.models);
     $('fmProj').onchange = () => { draw({ ...collect(), summary_id: null }); };
-    $('fmMode').onchange = () => { $('fmGo').disabled = $('fmMode').value === 'ask'; };
+    $('fmMode').onchange = modeChanged;
+    for (const id of ['fmRole', 'fmModel', 'fmAttach', 'fmRO', 'fmWT']) $(id).addEventListener('change', moreLine);
+    $('fmAttach').addEventListener('input', moreLine);
+    modeChanged();
+    if (done) $('fmGo').disabled = true;
     $('fmAgain').onclick = () => { if (!$('fmText').value.trim() && disp) $('fmText').value = (box.querySelector('#fmWake div') || {}).textContent || ''; ask(); };
     $('fmGo').onclick = start;
     $('fmDrop').onclick = drop;

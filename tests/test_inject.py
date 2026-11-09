@@ -112,21 +112,50 @@ async def test_left_in_box(monkeypatch):
     assert await inj.left_in_box(t, "아무거나") is None
 
 
-async def test_deliver_refuses_when_overlay_hides_prompt(monkeypatch):
-    """11-08: /usage 같은 모달이 떠 입력 줄(❯)이 없으면 붙여넣지 않고 이유를 말한다(글이 모달로 새지 않게)."""
+MODAL = "Settings  Status  Config  Usage  Stats\nTotal cost: $102.85\n"
+PROMPT = "● 답\n────\n❯ \n────\n  ⏵⏵ auto mode on"
+
+
+def _overlay(monkeypatch, *, busy, closes_after):
+    """입력 줄이 없는 화면 — Esc를 closes_after번 받으면 입력 줄이 돌아온다(None이면 안 닫힘). 보낸 tmux 명령을 모은다."""
     t = inj.Target("/s", "%8", 1, SID)
+    sent: list[tuple] = []
 
     async def fake_resolve(session_id, sessions_dir):
-        return t, None, False
-    pasted = []
+        return t, None, busy
 
     async def fake_tmux(socket, *args, **kw):
         if args[0] == "capture-pane":
-            return "Settings  Status  Config  Usage  Stats\nTotal cost: $102.85\n"
-        pasted.append(args)
+            escs = sum(1 for a in sent if a[-1] == "Escape")
+            return PROMPT if closes_after is not None and escs >= closes_after else MODAL
+        sent.append(args)
         return ""
     monkeypatch.setattr(inj, "resolve", fake_resolve)
     monkeypatch.setattr(inj, "tmux", fake_tmux)
-    with pytest.raises(inj.Refused, match="Esc로 닫아 주세요"):
+    monkeypatch.setattr(inj, "ESC_WAIT_S", 0)
+    return sent
+
+
+async def test_deliver_escapes_overlay_then_sends(monkeypatch):
+    """11-09 사용자: 설정 화면에 입력이 막히는 게 반복된다 — Esc를 보내 닫고 보낸다(끝내기와 같게)."""
+    sent = _overlay(monkeypatch, busy=False, closes_after=2)
+    out = await inj.deliver(SID, "슬래시 없는 글", sessions_dir="/s", transcript=None)
+    assert out["esc"] == 2 and out["steps"][:2] == ["Escape", "Escape"]
+    kinds = [a[0] if a[0] != "send-keys" else a[-1] for a in sent]
+    assert kinds == ["Escape", "Escape", "load-buffer", "paste-buffer", "Enter"]   # Esc로 닫은 뒤에야 붙여넣는다
+
+
+async def test_deliver_refuses_when_escape_does_not_help(monkeypatch):
+    """Esc 3번에도 입력 줄이 안 돌아오면 붙여넣지 않고 알린다(글이 모달로 새지 않게 — 11-08)."""
+    sent = _overlay(monkeypatch, busy=False, closes_after=None)
+    with pytest.raises(inj.Refused, match="Esc를 3번 보내도 닫히지 않았습니다"):
         await inj.deliver(SID, "슬래시 없는 글", sessions_dir="/s", transcript=None)
-    assert pasted == []          # 아무것도 붙여넣지 않았다
+    assert [a[-1] for a in sent] == ["Escape"] * 3      # 붙여넣지 않았다
+
+
+async def test_deliver_no_escape_while_busy(monkeypatch):
+    """작업 중이면 Esc를 보내지 않는다 — 작업이 끊기고, 승인 · 질문 창(busy)에서는 거부 · 취소가 된다."""
+    sent = _overlay(monkeypatch, busy=True, closes_after=1)
+    with pytest.raises(inj.Refused, match="작업 중이라 Esc를 보내지 않았습니다"):
+        await inj.deliver(SID, "슬래시 없는 글", sessions_dir="/s", transcript=None)
+    assert sent == []
