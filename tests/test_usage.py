@@ -278,6 +278,22 @@ def test_credit_status():
     assert credit_view({"state": "unknown"}, credit_status(now_c, date(2026, 11, 20)))["blocked"] is False
 
 
+def test_parse_contrib():
+    """11-09 실제 /usage "What's contributing" 모양 — 구간마다 서브에이전트 · MCP 비중 · 제안 줄."""
+    from bridge.usage import parse_contrib
+    body = ("to your usage?\nApproximate · sessions on this machine only · shares overlap\n\n"
+            "Last 24h · 2532 requests · 11 sessions\n  82%  Give \"general-purpose\" subagents a cheaper model\n"
+            "  72%  Start fresh when you switch tasks · run /clear\n  Top subagents: general-purpose 30%\n"
+            "  Top MCP servers: claude.ai Notion 5%\n\nLast 7d · 9489 requests · 52 sessions\n"
+            "  80%  Start fresh when you switch tasks · run /clear\n  Top subagents: general-purpose 15%\n")
+    got = parse_contrib(body)
+    assert [b["span"] for b in got] == ["24h", "7d"]
+    assert got[0]["subagents"] == "general-purpose 30%" and got[0]["mcp"] == "claude.ai Notion 5%"
+    assert got[0]["tips"][0] == {"pct": 82, "text": "Give \"general-purpose\" subagents a cheaper model"} and len(got[0]["tips"]) == 2
+    assert got[1]["mcp"] is None and got[1]["subagents"] == "general-purpose 15%"
+    assert parse_contrib(None) == []
+
+
 def test_credit_signal_from_cc_limit_messages():
     """11-09 실측 모양 — 13:10 5시간 한도 → 13:13부터 응답이 이어짐(추가 사용) → 13:32 월 지출 한도(막힘). 2001-02월 시각 · 이 시험만의 세션"""
     from bridge.usage import credit_signal

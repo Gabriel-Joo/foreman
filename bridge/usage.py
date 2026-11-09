@@ -132,6 +132,28 @@ def load_config(path: str | Path) -> UsageConfig:
                        credits=raw.get("credits") if isinstance(raw.get("credits"), dict) else None)
 
 
+def parse_contrib(body: str | None) -> list[dict[str, Any]]:
+    """/usage의 "What's contributing" 글 → 구간마다 {span, subagents, mcp, tips}(11-09 사용자 — 사용량 호버에).
+    CC가 "Approximate · sessions on this machine only · shares overlap"이라고 밝힌 추정치다(비중끼리 겹쳐 합이 100%가 아님).
+    모양(11-09): "Last 24h · 2532 requests · 11 sessions" / "  82%  Give …" / "  Top subagents: general-purpose 30%" / "  Top MCP servers: …\""""
+    out: list[dict[str, Any]] = []
+    cur: dict[str, Any] | None = None
+    for ln in (body or "").splitlines():
+        s = ln.strip()
+        if m := re.match(r"^Last\s+(\S+)", s):
+            cur = {"span": m.group(1), "subagents": None, "mcp": None, "tips": []}
+            out.append(cur)
+        elif cur is None or not s:
+            continue
+        elif s.lower().startswith("top subagents:"):
+            cur["subagents"] = s.split(":", 1)[1].strip()
+        elif s.lower().startswith("top mcp servers:"):
+            cur["mcp"] = s.split(":", 1)[1].strip()
+        elif m := re.match(r"^(\d{1,3})%\s+(.+)$", s):
+            cur["tips"].append({"pct": int(m.group(1)), "text": m.group(2).strip()})
+    return out
+
+
 _SPEND = re.compile(r"monthly spend limit", re.I)
 MANUAL_DAYS = 3                 # 사람이 넣은 크레딧 값을 믿는 날 수(credit_status)
 
