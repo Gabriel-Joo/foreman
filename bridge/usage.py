@@ -132,10 +132,57 @@ def load_config(path: str | Path) -> UsageConfig:
                        credits=raw.get("credits") if isinstance(raw.get("credits"), dict) else None)
 
 
+_SPEND = re.compile(r"monthly spend limit", re.I)
+MANUAL_DAYS = 3                 # 사람이 넣은 크레딧 값을 믿는 날 수(credit_status)
+
+
+def credit_view(signal: dict[str, Any], manual: dict[str, Any] | None) -> dict[str, Any]:
+    """화면 · 알림이 쓰는 하나 — CC 한도 글(signal)이 먼저, 그게 없을 때만 넣은 지 3일 안의 값. blocked: 한도 = 멈춤으로 볼까"""
+    fresh = manual if manual and not manual["stale"] else None
+    blocked = signal.get("state") == "blocked" or (signal.get("state") == "unknown" and bool(fresh and fresh["blocked"]))
+    return {"signal": signal, "manual": manual, "manual_fresh": bool(fresh), "blocked": blocked}
+
+
+async def credit_signal(engine: Any, cfg: "UsageConfig", now: datetime) -> dict[str, Any]:
+    """추가 사용(크레딧)이 되는지 — 사람이 넣은 값이 아니라 CC가 한도에 닿을 때 남긴 글로(11-09 사용자: 직접 넣은 값은 조용히 틀린다).
+    CC는 한도에 닿으면 모델 응답 대신 오류 글을 남긴다(isApiErrorMessage, error rate_limit — 적재기가 event type 'error'로 넣는다):
+      "You've hit your 5-hour limit · resets 2:10pm (Asia/Seoul)"                              — 한도에 닿음
+      "You've hit your monthly spend limit · raise it at …/settings/usage … · your 5-hour limit resets 2:10pm" — 이어 쓸 돈이 막힘
+    이번 달(설정 tz) 마지막 한도 도달 하나로 정한다:
+      monthly spend limit → blocked
+      그냥 한도 → 그 한도 리셋 전에 실제 모델 응답(message, <synthetic> 아님)이 1분 뒤로 이어졌으면 flowing(추가 사용으로 이어 씀), 아니면 blocked
+      이번 달 근거 없음 → unknown. 금액(잔액 · 월 한도)은 이 글에 없다"""
+    loc = now.replace(tzinfo=UTC).astimezone(cfg.zone)
+    month0 = _utc(datetime(loc.year, loc.month, 1, tzinfo=cfg.zone))
+    async with engine.connect() as c:
+        r = (await c.execute(text(
+            "SELECT ts, session_id, JSON_UNQUOTE(JSON_EXTRACT(payload, '$.text')) FROM event WHERE type = 'error' "
+            "AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.error')) = 'rate_limit' AND JSON_EXTRACT(payload, '$.text') IS NOT NULL "
+            # 같은 때 StopFailure 훅 이벤트(글 없음)도 error로 들어온다 — 30ms 뒤라 그것을 고르면 글을 못 읽었다(11-09)
+            "AND ts >= :a AND ts <= :b ORDER BY ts DESC LIMIT 1"),
+            {"a": month0, "b": now})).first()
+        if not r:
+            return {"state": "unknown"}
+        at, sid, msg = r[0], r[1], r[2] or ""
+        out: dict[str, Any] = {"at": at, "session_id": sid, "text": msg[:200]}
+        if _SPEND.search(msg):
+            return {**out, "state": "blocked", "why": "spend"}
+        reset = parse_reset(msg, at, cfg.tz)
+        until = min(reset, now) if reset else now
+        more = (await c.execute(text(
+            "SELECT MIN(created_at) FROM message WHERE created_at > :a AND created_at < :b AND model <> '<synthetic>'"),
+            {"a": at + timedelta(minutes=1), "b": until})).scalar()
+    if more:
+        return {**out, "state": "flowing", "since": more}
+    return {**out, "state": "blocked", "why": "limit", "reset_at": reset}
+
+
 def credit_status(c: dict[str, Any] | None, today: Any) -> dict[str, Any] | None:
     """사람이 넣은 크레딧 값 → 화면 상태(11-09). today = 지금 날짜(설정 tz).
     blocked — 한도(5시간 · 주간)에 닿으면 넘쳐 쓸 돈이 없다: 월 한도를 다 썼거나, 잔액 0에 자동 충전이 꺼짐.
-    stale — 값을 본 달이 지났다(월 사용액은 그달 값). 그때는 blocked를 믿지 않고 "갱신 필요"만"""
+    stale — 넣은 지 MANUAL_DAYS일이 지났거나 달이 바뀜. 그때는 숫자를 감추고 blocked도 믿지 않는다(11-09 사용자 — 사람은 날짜를 안 본다).
+    3일: 월 사용액은 쓰는 날마다 늘고 충전 · 한도는 아무 때나 바뀐다 — 한 주를 넘기면 거의 늘 틀린 숫자다. 막힘 판정은 이 값이 아니라
+    CC가 남긴 한도 글(credit_signal)이 먼저다 — 이 값은 호버의 금액 참고용"""
     if not c:
         return None
     from datetime import date
@@ -150,7 +197,7 @@ def credit_status(c: dict[str, Any] | None, today: Any) -> dict[str, Any] | None
     room = None if cap is None else max(0.0, float(cap) - used)
     blocked = (room is not None and room <= 0) or (bal <= 0 and not auto)
     avail = bal if room is None else (room if auto else min(bal, room))
-    stale = as_of is None or (as_of.year, as_of.month) != (today.year, today.month)
+    stale = as_of is None or (as_of.year, as_of.month) != (today.year, today.month) or (today - as_of).days >= MANUAL_DAYS
     return {"balance_usd": bal, "monthly_cap_usd": cap, "monthly_used_usd": used, "auto_reload": auto,
             "as_of": as_of.isoformat() if as_of else None, "room_usd": room, "available_usd": round(avail, 2),
             "blocked": blocked and not stale, "stale": stale}
@@ -523,8 +570,13 @@ class UsageMonitor:
         now = now or datetime.now(UTC).replace(tzinfo=None)
         sent: list[str] = []
         # 11-09 — 추가 사용이 막혀 있으면(크레딧 0 · 월 한도 초과) 100%가 곧 멈춤이다 → 90%에 한 번 더(마무리할 틈)
-        cr = credit_status(self.cfg.credits, now.replace(tzinfo=UTC).astimezone(self.cfg.zone).date())
-        blocked = bool(cr and cr["blocked"])
+        try:
+            sig = await credit_signal(self.engine, self.cfg, now)
+        except Exception as e:  # noqa: BLE001 — 판정을 못 해도 기존 알림은 간다
+            log.warning("추가 사용 판정 실패: %s", type(e).__name__)
+            sig = {"state": "unknown"}
+        cv = credit_view(sig, credit_status(self.cfg.credits, now.replace(tzinfo=UTC).astimezone(self.cfg.zone).date()))
+        blocked = cv["blocked"]
         thrs = (95, 90, 80) if blocked else (95, 80)
         for x in await limit_status(self.engine, self.cfg, now, self.latest):
             pct = x["est_pct"] if x["est_pct"] is not None else x["measured_pct"]
@@ -538,8 +590,9 @@ class UsageMonitor:
             reset = f"리셋 {self._local(x['reset_at'])}" if x["reset_at"] else "리셋 모름"
             eta = f" 이 속도면 {self._local(x['eta_100'])}에 100%." if x["eta_100"] and x["eta_before_reset"] else ""
             stale = "" if self.error is None else " (지금 /usage를 못 읽고 있어 FOREMAN이 본 사용량으로만 추정)"
-            stop = (f" 추가 사용이 막혀 있습니다(크레딧 ${cr['balance_usd']:g} · 월 한도 ${cr['monthly_cap_usd']:g} 중 "
-                    f"${cr['monthly_used_usd']:g} 사용, {cr['as_of']} 기준) — 100%가 되면 리셋까지 세션이 멈춥니다. 마무리할 일을 먼저 하세요."
+            why = (f"{self._local(sig['at'])}에 {'월 지출 한도에 닿았습니다' if sig.get('why') == 'spend' else '한도에 닿은 뒤 이어 쓰지 못했습니다'}"
+                   if sig.get("state") == "blocked" else "직접 넣은 값 기준")
+            stop = (f" 추가 사용이 막혀 있습니다({why}) — 100%가 되면 리셋까지 세션이 멈춥니다. 마무리할 일을 먼저 하세요."
                     if blocked else "")
             for thr in thrs:
                 if pct >= thr:

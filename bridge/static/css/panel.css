@@ -226,8 +226,11 @@ body { --term-h:0px; }
 /* 11-09 모양 하나: 제목(.tip-b) → 설명(.tip-d) → 숫자(.tip-n, 한 줄에 하나). 한글은 낱말 단위로만 끊는다(keep-all) —
    글자 단위 기본 줄바꿈 + 320px 폭에서 문장이 아무 데서나 끊겼다 */
 /* 11-09 글씨 크기 배율(--ui-zoom, 가+ · 가−)을 따른다 — 전에는 16px 고정이라 130%에서 탭 글씨보다 작았다 */
+/* 11-09 사용자 — 잘리지 않고 길면 상자가 커진다. 폭 상한(440px × 배율)은 한 줄이 너무 길면 읽기 어려워서 — 높이 상한은 없고,
+   화면보다 높으면 tip.js가 폭을 화면 폭까지 넓힌다. 줄은 뜻이 끊기지 않게: 설명은 문장마다 줄(.tip-d > div), 낱말 단위(keep-all),
+   마지막 줄에 한두 낱말만 남지 않게(text-wrap: pretty). 낱말 하나가 폭보다 길 때만 낱말 안에서 끊는다(overflow-wrap) — tipAudit가 센다 */
 .tip { --tz:var(--ui-zoom, 1.2); position:fixed; z-index:50; max-width:min(calc(440px * var(--tz)), calc(100vw - 16px)); pointer-events:none; padding:7px 11px 8px; border-radius:6px;
-       word-break:keep-all; overflow-wrap:anywhere;
+       word-break:keep-all; overflow-wrap:anywhere; text-wrap:pretty;
        background:var(--tip-bg, var(--card)); color:var(--tip-fg, var(--fg)); border:1px solid var(--tip-border, var(--line));
        box-shadow:0 4px 14px rgba(0,0,0,.35); font:var(--tip-font, 16px/1.45 system-ui, sans-serif); font-size:calc(16px * var(--tz)); line-height:1.45;
        animation:tipin .12s ease-out; }
@@ -237,7 +240,9 @@ body { --term-h:0px; }
 .tip-b { font-weight:700; }
 .tip-d { margin-top:1px; }
 .tip-n { margin-top:6px; padding-top:5px; border-top:1px solid color-mix(in srgb, currentColor 25%, transparent); font-variant-numeric:tabular-nums; }
-.tip-n > div { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* 숫자 줄 — 전엔 nowrap + …로 잘랐다(11-09 사용량 호버 "11월 10일 …"). 길면 줄을 바꾸고 이어지는 줄은 들여 쓴다 */
+.tip-n > div { padding-left:1em; text-indent:-1em; }
+.tip-d > div + div { margin-top:2px; }
 .tip-t { opacity:.7; font-size:calc(15px * var(--tz, 1.2)); font-weight:400; }
 .tip-s { margin-top:3px; font-weight:700; }
 /* 테마 분위기 — 구조는 같고 장식만 */

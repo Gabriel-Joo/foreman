@@ -251,6 +251,10 @@ async def run(a: argparse.Namespace) -> int:
                         ca = await p.ev("window.office.cardAudit ? window.office.cardAudit().problems : []") or []
                         base.setdefault("cardAudit", {})[view] = ca
                         bad += len(ca)
+                        # 호버 잘림(11-09) — 지금 화면의 모든 호버 글을 실제 툴팁 상자에 넣어 넘침 · 낱말 끊김 · 화면보다 큼
+                        ta = await p.ev("window.office.tipAudit ? window.office.tipAudit() : {n: 0, problems: []}") or {}
+                        base.setdefault("tipAudit", {})[view] = ta
+                        bad += len(ta.get("problems") or [])
                         if a.eval:
                             base.setdefault("eval", {})[view] = await p.ev(a.eval)
                         f = out / f"{th}_{size}_{view}.png"
@@ -267,7 +271,10 @@ async def run(a: argparse.Namespace) -> int:
                     report["runs"].append(base)
                     n_names = sum(len(v) for v in base.get("nameAudit", {}).values())
                     n_cards = sum(len(v) for v in base.get("cardAudit", {}).values())
-                    print(f"{th} {size}: layoutAudit {len(la or [])} · nameAudit {n_names} · cardAudit {n_cards} · propAudit {len(base['propAudit_issues'])} · "
+                    n_tips = sum(len(v.get("problems") or []) for v in base.get("tipAudit", {}).values())
+                    n_tipn = sum(v.get("n") or 0 for v in base.get("tipAudit", {}).values())
+                    print(f"{th} {size}: layoutAudit {len(la or [])} · nameAudit {n_names} · cardAudit {n_cards} · "
+                          f"tipAudit {n_tips}/{n_tipn} · propAudit {len(base['propAudit_issues'])} · "
                           f"audit(고정 안 됨) {len(au or [])} · 페이지 오류 {len(base['page_errors'])} · 사진 {len(shots)}")
     finally:
         proc.terminate()

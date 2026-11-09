@@ -16,7 +16,13 @@ function ensure() {
   return el;
 }
 
+// 화면보다 높으면 폭을 화면 폭까지 넓혀 높이를 줄인다(11-09 — 자르지 않는다)
+function fit(t) {
+  t.style.maxWidth = '';
+  if (t.offsetHeight > window.innerHeight - 12) t.style.maxWidth = `${window.innerWidth - 16}px`;
+}
 function place(x, y) {
+  fit(el);
   const w = el.offsetWidth, h = el.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
   let left = x + 14, top = y + 18;
   if (left + w > vw - 6) left = Math.max(6, x - w - 10);
@@ -40,16 +46,59 @@ export function showTip(html, x, y, key = html) {
 }
 export function hideTip() { clearTimeout(timer); shownFor = null; if (el) el.hidden = true; }
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const esc0 = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// 띄어쓰기 없는 긴 글(경로 · 명령 · 주소)은 / _ - . = , : 뒤에서만 끊게 끊을 자리를 넣는다(11-09 — 아무 글자에서나 끊겼다)
+export const softEsc = (s) => String(s ?? '').split(/(\s+)/).map((w) => (w.length > 16 ? esc0(w).replace(/([/_\-.=,:?]|&amp;)/g, '$1<wbr>') : esc0(w))).join('');
+const esc = softEsc;
 // 글 툴팁 모양 하나(11-09): 첫 줄 "제목 — 설명", 그 아래 줄(\n)은 숫자 — 한 줄에 하나씩, 구분선 아래에.
 //   "사용량 — 구독 한도를 몇 % 썼는지입니다.\n5시간 51% — 02:10 리셋\n주간 5% — 11월 15일 22:00 리셋"
 export function textTip(t) {
   const [head, ...nums] = String(t).split('\n').map((x) => x.trim());
   const i = head.indexOf(' — ');
-  const top = i > 0 ? `<div class="tip-b">${esc(head.slice(0, i))}</div><div class="tip-d">${esc(head.slice(i + 3))}</div>`
-    : `<div class="tip-d">${esc(head)}</div>`;
+  const top = i > 0 ? `<div class="tip-b">${esc(head.slice(0, i))}</div><div class="tip-d">${sentences(head.slice(i + 3))}</div>`
+    : `<div class="tip-d">${sentences(head)}</div>`;
   const rows = nums.filter(Boolean);
   return top + (rows.length ? `<div class="tip-n">${rows.map((x) => `<div>${esc(x)}</div>`).join('')}</div>` : '');
+}
+// 설명은 문장마다 줄(11-09 — 긴 한 문단이 "넘쳐 쓸 / 크레딧이"처럼 뜻 가운데서 끊겼다). "…습니다." · "…다." · "?" 뒤 공백에서 나눈다
+export function splitSentences(t) {
+  return String(t).split(/(?<=(?:[다요죠]\.|[?!]))\s+(?=\S)/).map((s) => s.trim()).filter(Boolean);
+}
+const sentences = (t) => splitSentences(t).map((s) => `<div>${esc(s)}</div>`).join('');
+
+// 호버 잘림 점검(11-09, window.office.tipAudit · tools/screen.py) — 툴팁 html마다 실제 상자(보이지 않게)에 넣어 본다.
+// 잘림: 안쪽이 상자 밖으로 넘침 · 화면보다 큼(폭을 넓혀도), 낱말 끊김: 낱말 하나가 줄 폭보다 길어 낱말 안에서 끊김. 돌려주는 값: 문제 목록
+export function tipAudit(items) {
+  const probe = document.createElement('div');
+  probe.className = 'tip';
+  probe.style.visibility = 'hidden'; probe.style.left = '0px'; probe.style.top = '0px'; probe.style.animation = 'none';
+  document.body.appendChild(probe);
+  const cv = document.createElement('canvas').getContext('2d');
+  const out = [];
+  try {
+    for (const { name, html } of items) {
+      probe.innerHTML = html;
+      fit(probe);
+      const label = String(name).slice(0, 40);
+      if (probe.offsetHeight > window.innerHeight - 12 || probe.offsetWidth > window.innerWidth - 12) out.push(`화면보다 큼 ${label}`);
+      for (const n of [probe, ...probe.querySelectorAll('*')]) {
+        if (n.scrollWidth > n.clientWidth + 1) { out.push(`넘침 ${label}`); break; }
+      }
+      const cs = getComputedStyle(probe);
+      const inner = probe.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      for (const n of probe.querySelectorAll('.tip-b, .tip-d > div, .tip-n > div, .tip-h, .tip-s, .tip-t, div:not([class])')) {
+        if (n.children.length) continue;
+        const ns = getComputedStyle(n);
+        cv.font = ns.font;
+        const room = inner - parseFloat(ns.paddingLeft || '0') + 1;
+        // 끊을 수 있는 자리: 띄어쓰기, 그리고 긴 글의 / _ - . = , : 뒤(softEsc가 넣은 자리)
+        const pieces = n.textContent.split(/\s+/).flatMap((w) => (w.length > 16 ? w.split(/(?<=[/_\-.=,:?&])/) : [w]));
+        const wide = pieces.find((w) => w && cv.measureText(w).width > room);
+        if (wide) { out.push(`낱말 끊김 ${label} — ${wide.slice(0, 30)}`); break; }
+      }
+    }
+  } finally { probe.remove(); }
+  return out;
 }
 
 // 테마 이름표 색 · 글꼴을 툴팁에(theme.tags.style). 없으면(도형 · 클래식) 기본 카드 색
