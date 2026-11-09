@@ -31,7 +31,7 @@ _mask = Masker()
 
 class InputIn(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_INPUT)
-    command: bool = False  # True면 '/'로 시작하는 입력을 슬래시 명령으로 보낸다('!'는 언제나 막는다)
+    command: bool = False  # True면 '/'로 시작하는 입력을 슬래시 명령으로 보낸다('!'는 이 값과 상관없이 bang_check — 11-09)
 
 
 async def _row(request: Request, session_id: int) -> Any:

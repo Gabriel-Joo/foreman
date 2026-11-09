@@ -5,7 +5,7 @@
 # 구조(11-09 사용자 결정):
 #   프로젝트
 #   ├ <프로젝트 페이지 = root>
-#   │   ├ [기술문서]   = docs_page       docs/*.md(바로 아래만, docs/archive/ 빼고). 차례는 docs/README.md 표 순서
+#   │   ├ [기술문서]   = docs_page       docs/**/*.md(하위 폴더까지 — 11-09, docs/archive/ · skip의 "…/" 폴더 빼고). 차례는 docs/README.md 표 순서
 #   │   └ [포트폴리오] = portfolio_page  portfolio/*.md(번호순)
 #   └ 인프라(게시기가 다루지 않는다 — 사람이 쓴 문서)
 #
