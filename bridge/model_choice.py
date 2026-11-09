@@ -43,6 +43,20 @@ class Models:
         return {"choices": self.choices, "defaults": self.defaults}
 
 
+def load_windows(path: str | Path = DEFAULT_PATH) -> dict[str, int]:
+    """config/models.toml [windows] — family별 컨텍스트 창(토큰). 없는 파일 · 잘못된 값은 뺀다."""
+    try:
+        raw = tomllib.loads(Path(path).read_text(encoding="utf-8")).get("windows") or {}
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+    return {str(k): int(v) for k, v in raw.items() if isinstance(v, int) and not isinstance(v, bool) and v > 0}
+
+
+def window_of(windows: dict[str, int], model_id: str | None) -> int | None:
+    """메시지의 모델 id → 창 크기. 모르는 모델이면 None(%를 보이지 않는다)."""
+    return windows.get(family(model_id)) if model_id else None
+
+
 def label(model_id: str | None) -> str:
     """메시지의 모델 id → 화면 이름. claude-opus-5-5 → Opus 5.5, claude-haiku-4-5-20251001 → Haiku 4.5."""
     if not model_id:
