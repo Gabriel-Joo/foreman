@@ -29,7 +29,8 @@ async def scribe_todo(request: Request) -> dict[str, Any]:
     if _cache["data"] is not None and time.monotonic() - _cache["at"] < 30:
         return _cache["data"]
     data = {"tasks": sr.TASKS, "projects": await sr.todo(request.app.state.store.engine,
-                                                          getattr(request.app.state, "publisher", None))}
+                                                          getattr(request.app.state, "publishers", None),
+                                                          getattr(request.app.state, "docsync", None))}
     _cache.update(at=time.monotonic(), data=data)
     return data
 

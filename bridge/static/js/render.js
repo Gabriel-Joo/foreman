@@ -377,8 +377,10 @@ export function pipeBlock(pp) {
     const commits = ch.commits.length ? ch.commits : [{ short: ch.short, subject: '' }];
     const head = commits.find((c) => c.sha === ch.head) || commits[0];
     const extra = commits.length > 1 ? ` <span class="muted">+${commits.length - 1}커밋</span>` : '';
+    const skip = ch.stages.jenkins && ch.stages.jenkins.skipped;   // 문서만 바뀐 빌드(11-09) — 이미지 · 배포 없음이 정상
     const steps = PIPE_STAGES.map(([k, label]) => {
       const x = ch.stages[k];
+      if (!x && skip && k !== 'jenkins') return `<span class="ps ps-none muted" title="${esc(label)} 건너뜀 — 문서만 바뀐 빌드라 이미지 · 배포를 하지 않았습니다. 정상입니다.">${label} –</span>`;
       const cls = x ? `ps-${x.status}` : 'ps-none';
       const tip = x ? `${label} ${x.status}${x.step ? ' · ' + x.step : ''}${x.status === 'waiting' ? '\n배포 승인 기다림 — ArgoCD에서 Sync를 눌러야 올라갑니다.' : ''}${x.message ? '\n' + x.message : ''}` : `${label} 아직`;
       const inner = `${label} ${x ? PIPE_MARK[x.status] || '' : '·'}${x && x.step && x.status === 'failed' ? ` <b>${esc(x.step)}</b>` : ''}`;

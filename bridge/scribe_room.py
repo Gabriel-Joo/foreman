@@ -88,8 +88,10 @@ def stages_without_result(repo: str) -> list[str]:
     return out
 
 
-async def todo(engine: Any, publisher: Any = None) -> dict[str, dict[str, Any]]:
-    """프로젝트마다 할 일 — [{kind(시킬 일), title, why}]. 기계로만 센다."""
+async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: Any = None) -> dict[str, dict[str, Any]]:
+    """프로젝트마다 할 일 — [{kind(시킬 일), title, why}]. 기계로만 센다. publishers — 프로젝트 → Notion 게시기(11-09 프로젝트마다)."""
+    from bridge import docsync as ds
+    publishers = publishers or {}
     async with engine.connect() as c:
         projects = (await c.execute(text("SELECT name, repo_path FROM project"))).all()
     out: dict[str, dict[str, Any]] = {}
@@ -114,12 +116,18 @@ async def todo(engine: Any, publisher: Any = None) -> dict[str, dict[str, Any]]:
         later = await _later_count(engine, name, repo)
         if later:
             items.append({"kind": "later", "title": f"나중에 할 일 정리 — \"나중에\" {later}번", "why": "지난 정리가 합쳐진 뒤(없으면 처음부터) 사람이 미룬 말"})
-        if publisher is not None and name == getattr(publisher, "project", None):
+        if (pub := publishers.get(name)) is not None:
+            # 11-09 런슈즈 요청 3-1 — 파일마다 한 줄이던 것을 묶음마다 한 줄로. 포트폴리오는 사람이 [게시](바깥 독자에게 내는 글)
             try:
-                for d in await publisher.list():
-                    if d["status"] == "new" or d["changed"]:
-                        items.append({"kind": "publish", "title": f"Notion 게시 — {Path(d['path']).name}",
-                                      "why": "아직 안 올렸습니다" if d["status"] == "new" else "게시 뒤 원본이 바뀌었습니다"})
+                if name == "foreman":
+                    pend = [d for d in await pub.list() if d["status"] == "new" or d["changed"]]
+                    if pend:
+                        nn = sum(d["status"] == "new" for d in pend)
+                        items.append({"kind": "publish", "title": f"Notion 포트폴리오 — 파일 {len(pend)}개 뒤처짐"
+                                      f"({' · '.join(x for x in (f'새 {nn}' if nn else '', f'바뀜 {len(pend) - nn}' if len(pend) - nn else '') if x)})",
+                                      "why": ", ".join(Path(d["path"]).name for d in pend[:4]) + (" …" if len(pend) > 4 else "")
+                                      + " — 아래 「Notion 게시」에서 올립니다"})
+                items += await ds.todo_items(pub, (docsync.last.get(name) if docsync else None))
             except Exception:  # noqa: BLE001 — Notion이 꺼져 있어도 다른 할 일은 센다
                 pass
         opened = await open_tasks(engine, name)

@@ -21,6 +21,9 @@ from bridge.api import publish as publish_api
 from bridge.api import scribe as scribe_api
 from bridge.api import usage as usage_api
 from bridge.usage import UsageMonitor, load_config as load_usage
+from sqlalchemy import text
+
+from bridge.docsync import DocSync
 from bridge.notion import NotionClient, Publisher, load_token
 from bridge.foreman import ForemanDispatcher
 from bridge.wake import Waker, load_wake
@@ -212,20 +215,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception as e:  # noqa: BLE001 — 0021 전이면 표가 없다. 브리지는 뜬다
             log.warning("잃은 것 점검 정리 못 함: %s", type(e).__name__)
         # 11-06 — Notion 게시(12c). 토큰(.env.notion)이 없으면 꺼 두고 사유를 보인다. 토큰 값은 찍지 않는다
-        app.state.publisher, app.state.publisher_off = None, None
+        # 11-09 — 프로젝트마다 게시기 하나(root · [기술문서] · [포트폴리오]). FOREMAN 것은 app.state.publisher로도(서기 화면의 [게시])
+        app.state.publisher, app.state.publisher_off, app.state.publishers, app.state.docsync = None, None, {}, None
+        docsync_task = None
         root_dir = Path(__file__).resolve().parent.parent
         try:
             import tomllib
-            ncfg = tomllib.loads((root_dir / "config" / "notion.toml").read_text(encoding="utf-8")).get("foreman") or {}
+            allcfg = tomllib.loads((root_dir / "config" / "notion.toml").read_text(encoding="utf-8"))
             tok = load_token(root_dir / ".env.notion")
-            if not ncfg.get("root"):
+            if not (allcfg.get("foreman") or {}).get("root"):
                 app.state.publisher_off = "config/notion.toml에 루트 페이지가 없습니다"
             elif not tok:
                 app.state.publisher_off = "Notion 토큰이 없습니다 — .env.notion에 NOTION_TOKEN을 넣고 브리지를 다시 띄워 주세요"
             else:
-                app.state.publisher = Publisher(engine, NotionClient(tok), ncfg["root"], str(root_dir),
-                                                gh=ncfg.get("github") or "https://github.com/Gabriel-Joo/foreman")
-        except OSError as e:
+                client = NotionClient(tok)          # 프로젝트끼리 한 클라이언트(요청 간격 · 초당 한도를 같이 지킨다)
+                async with engine.connect() as c:
+                    repos = {r[0]: r[1] for r in (await c.execute(text("SELECT name, repo_path FROM project"))).all()}
+                for name, ncfg in allcfg.items():
+                    repo = str(root_dir) if name == "foreman" else repos.get(name)
+                    if not isinstance(ncfg, dict) or not ncfg.get("root") or not repo:
+                        continue
+                    app.state.publishers[name] = Publisher(
+                        engine, client, ncfg["root"], repo, project=name, gh=ncfg.get("github") or "https://github.com/Gabriel-Joo/foreman",
+                        ref=ncfg.get("ref") or "HEAD", docs_page=ncfg.get("docs_page"), portfolio_page=ncfg.get("portfolio_page"),
+                        docs_mode=ncfg.get("docs") or "off", quiet_min=float(ncfg.get("quiet_min") or 30))
+                app.state.publisher = app.state.publishers.get("foreman")
+                app.state.docsync = DocSync(app.state.publishers, app.state.notifier)
+                if any(p.docs_mode == "auto" for p in app.state.publishers.values()):
+                    docsync_task = asyncio.create_task(app.state.docsync.run(), name="foreman-docsync")
+        except (OSError, ValueError) as e:
             app.state.publisher_off = f"Notion 설정을 읽지 못했습니다({type(e).__name__})"
         # 11-05 — 스키마 잠금(세션 둘 이상이 한 프로젝트에 붙을 때 DB 스키마는 한 세션만). 합치기 · 버리기에서 푼다
         sd = s.sessions_dir
@@ -310,7 +328,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await app.state.notifier.stop()
             if app.state.terminal:
                 await app.state.terminal.stop()   # ttyd만 내린다 — tmux 셸은 남는다
-            for t in (watch_task, state_task, health_task, usage_task):
+            for t in (watch_task, state_task, health_task, usage_task, docsync_task):
                 if t:
                     t.cancel()
                     try:

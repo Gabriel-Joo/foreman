@@ -290,6 +290,23 @@ async def test_chain_end_to_end(env):
         assert "Jenkins 빌드 · 빌드·push" in notifier.sent[-1][2]
         # 모르는 job은 건너뛴다
         assert "ignored" in await pm.on_jenkins({"job": "other", "number": 1})
+
+        # 문서만 바뀐 빌드(11-09, 런슈즈 요청 4절) — foremanNotify "skipped": true. 시작 알림 때 붙은 태그를 지우고(이미지 없음),
+        # 배포 기다림으로 고르지 않고, 체인은 깨진 곳 없이 빌드에서 끝난다
+        c5 = _commit(repo, "docs.md", t0 + timedelta(minutes=12))
+        await pm.on_jenkins({"job": "runshoes-app", "number": 4, "phase": "started", "commit": c5})
+        assert q(conn, "SELECT tag FROM build WHERE external_id = 'runshoes-app#4'")[0][0] == c5[:12]
+        sent = len(notifier.sent)
+        await pm.on_jenkins({"job": "runshoes-app", "number": 4, "phase": "completed", "result": "SUCCESS", "commit": c5,
+                             "skipped": True})
+        assert q(conn, "SELECT status, step, tag FROM build WHERE external_id = 'runshoes-app#4'")[0] == \
+            ("success", "건너뜀 — 문서만", None)
+        assert await pm._undeployed_tag(p) != c5[:12]
+        assert len(notifier.sent) == sent                       # 경고 없음
+        snap = await pm.snapshot()
+        ch5 = next(x for x in snap["projects"] if x["project"] == "runshoes")["chains"][0]
+        assert ch5["head"] == c5 and ch5["stages"]["jenkins"]["skipped"] and ch5["broke"] is None
+        assert set(ch5["stages"]) == {"jenkins"}
     finally:
         await engine.dispose()
 

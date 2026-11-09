@@ -47,7 +47,11 @@ export function createScribe(store) {
       return `<button type="button" class="small" data-sc-task="${esc(k)}"${busy || why ? ' disabled' : ''} title="${esc(why ? `${(tasks[k] || {}).title || k} — 지금은 시킬 수 없습니다. ${why}` : `${(tasks[k] || {}).title || k} — 서기 세션을 따로 작업(worktree)으로 띄워 맡깁니다. 끝나면 [끝내고 합치기]로 검토해 합칩니다.`)}">${label}</button>`;
     };
     const todoHtml = items.length ? items.map((x) => `<div class="sc-row"><div class="small"><b>${esc(x.title)}</b> <span class="muted">— ${esc(x.why)}</span></div>
-        ${x.kind !== 'publish' ? go(x.kind) : ''}</div>`).join('')
+        ${x.kind !== 'publish' ? go(x.kind) : x.act === 'docsync'
+          ? `<button type="button" class="small" data-pub="docsync" data-proj="${esc(x.project)}" title="지금 맞추기 — 기다리지 않고 지금 바뀐 기술문서만 Notion에 올립니다. 사람이 Notion에서 고친 페이지는 덮지 않습니다.">지금 맞추기</button>`
+          : x.act === 'force'
+            ? `<button type="button" class="small danger" data-pub="publish" data-force="1" data-proj="${esc(x.project)}" data-path="${esc(x.path)}" title="Notion 수정 버리고 덮기 — Notion에서 사람이 고친 곳을 버리고 git 원본으로 덮습니다. 살릴 수정이면 먼저 git에 옮겨 주세요.">Notion 수정 버리고 덮기</button>`
+            : ''}</div>`).join('')
       : '<p class="small muted">기계로 센 할 일이 없습니다.</p>';
     const openHtml = opened.length ? `<div class="small"><b>열려 있는 일 ${opened.length}</b> <span class="muted">— 합치거나 버리기 전까지(동시에 2개까지, 같은 파일을 고치는 일은 하나씩)</span>${
       opened.map((o) => `<div class="sc-row"><div class="small">· ${esc((tasks[o.task] || {}).title || o.task)}${o.topic ? ` — ${esc(o.topic)}` : ''} <span class="muted">세션 ${o.session_id}</span></div>
@@ -86,11 +90,20 @@ export function createScribe(store) {
       await load(true);
       return;
     }
-    const act = p.dataset.pub, path = p.dataset.path;
+    const act = p.dataset.pub, path = p.dataset.path || 'docs/', project = p.dataset.proj || 'foreman', force = !!p.dataset.force;
     if (act === 'archive' && !confirm(`${path}의 Notion 페이지를 휴지통으로 보냅니다(30일 안에 Notion에서 되살릴 수 있습니다). 내릴까요?`)) return;
-    note = { msg: `${act === 'archive' ? '내리는' : '올리는'} 중입니다…` }; store.touch('panel');
-    const r = await fetch('/api/publish', { method: 'POST', headers: store.headers(true), body: JSON.stringify({ path, action: act }) });
+    if (force && !confirm(`${path} — Notion에서 사람이 고친 곳을 버리고 git 원본으로 덮습니다. 살릴 수정이면 먼저 git에 옮겨 주세요. 덮을까요?`)) return;
+    note = { msg: `${act === 'archive' ? '내리는' : act === 'docsync' ? '기술문서를 맞추는' : '올리는'} 중입니다…` }; store.touch('panel');
+    // 덮기는 그 파일만 force로 맞춘다(자동 맞추기와 같은 길 — 차례 · 기록이 같이 맞는다)
+    const body = act === 'docsync' || force ? { path, action: 'docsync', project, force } : { path, action: act, project };
+    const r = await fetch('/api/publish', { method: 'POST', headers: store.headers(true), body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
+    if (r.ok && j.action === 'docsync') {
+      note = { bad: !!(j.held.length || j.failed.length),
+        msg: `기술문서를 맞췄습니다 — 올림 ${j.done.length}${j.held.length ? ` · 사람이 고쳐 멈춤 ${j.held.length}` : ''}${j.failed.length ? ` · 실패 ${j.failed.length}(${j.failed[0].path})` : ''}` };
+      await load(true);
+      return;
+    }
     note = r.ok ? { msg: { created: '새 페이지로 올렸습니다.', updated: '같은 페이지에 덮어썼습니다.', unchanged: '바뀐 것이 없어 건너뛰었습니다.', archived: '휴지통으로 보냈습니다.' }[j.action] || '마쳤습니다.' }
       : { bad: true, msg: `${j.refused || j.detail || r.status}` };
     await load(true);
