@@ -369,3 +369,20 @@ def test_git_show_refuses_outside_paths(tmp_path):
     for bad in ("../x.md", "/etc/passwd.md", "README.md", "log/a.txt"):
         with pytest.raises(nt.OutOfScope):
             nt.git_show(str(tmp_path), bad)
+
+
+def test_heading_md_keeps_markdown_levels():
+    """11-09 펫퍼민트 — 사람이 옮긴 페이지는 마크다운 단계 그대로(## → heading_2). 기본 변환은 한 단계 위(## → heading_1)."""
+    md = "## 큰\n\n### 0. 목표\n\n#### 0-1. 세부\n\n##### 더 깊음\n"
+    kinds = lambda ctx: [b["type"] for b in nt.md_to_blocks(md, ctx)[1]]   # noqa: E731
+    assert kinds(nt.Ctx()) == ["heading_1", "heading_2", "heading_3", "heading_3"]
+    assert kinds(nt.Ctx(heading_md=True)) == ["heading_2", "heading_3", "heading_4", "heading_4"]
+
+
+def test_archive_separate_from_create():
+    """11-09 사용자 — 새 페이지 만들기와 옛 페이지 지우기는 다른 기능. archive = false면 create = true여도 휴지통으로 안 보낸다."""
+    p = nt.Publisher(None, None, "a" * 32, ".", project="x", opts={"create": True, "archive": False})
+    assert p.create and not p.archive_ok
+    with pytest.raises(nt.OutOfScope):
+        asyncio.run(p.archive("docs/a.md"))
+    assert nt.Publisher(None, None, "a" * 32, ".", project="x").archive_ok        # 기본은 그대로(런슈즈 · FOREMAN)

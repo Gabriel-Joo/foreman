@@ -156,10 +156,11 @@ async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset
         except Exception as e:  # noqa: BLE001 — 파일 하나가 막혀도 나머지는 올린다
             failed.append({"path": f, "error": f"{type(e).__name__}: {str(e)[:200]}"})
     for f in st["deleted"]:
-        if not getattr(pub, "create", True):
-            # 11-09 — 사람이 옮겨 둔 페이지에 맞추는 프로젝트(create = false)는 원본이 사라져도 휴지통으로 보내지 않는다.
+        if not getattr(pub, "create", True) or not getattr(pub, "archive_ok", True):
+            # 11-09 — 사람이 옮겨 둔 페이지에 맞추는 프로젝트는 원본이 사라져도 휴지통으로 보내지 않는다(create = false 또는
+            # archive = false — 사용자: 새 페이지 만들기와 옛 페이지 지우기는 다른 기능, 지운 문서는 실패로만 남기고 사람이 판단).
             # 경로만 바뀐 것(git mv)이면 짝을 새 경로로 옮기면 풀린다. 그냥 옮겼으면 펫퍼민트 20쪽이 모두 휴지통으로 갈 뻔했다
-            failed.append({"path": f, "error": "원본이 사라졌습니다 — create = false라 휴지통으로 보내지 않습니다. "
+            failed.append({"path": f, "error": "원본이 사라졌습니다 — 이 프로젝트는 휴지통으로 보내지 않습니다(archive = false). "
                                                "경로가 바뀌었으면 짝(doc_publish)을 새 경로로 옮겨 주세요"})
             continue
         try:

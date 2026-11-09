@@ -52,8 +52,11 @@ class OutOfScope(Exception):
 class Ctx:
     """링크를 풀 때 쓰는 것 — 원본 경로와 게시한 커밋. links=False(포트폴리오)면 커밋 · 파일 · 저장소 안 링크를 글자로만 둔다 —
     저장소가 비공개라 읽는 사람에게는 404다(11-06 사용자 결정)."""
-    def __init__(self, path: str = "", commit: str = "HEAD", gh: str = GH, links: bool = True) -> None:
+    def __init__(self, path: str = "", commit: str = "HEAD", gh: str = GH, links: bool = True, heading_md: bool = False) -> None:
         self.path, self.commit, self.gh, self.links = path, commit, gh, links
+        # 제목 단계 — 기본은 ## → heading_1(첫 # 는 페이지 제목). heading_md면 마크다운 단계 그대로 ## → 2 · ### → 3 · #### 이상 → 4
+        # (11-09 펫퍼민트 — 사람이 옮긴 페이지가 이 모양이라 새 페이지 · 끼우는 블록도 같게)
+        self.heading_md = heading_md
 
     def blob(self, rel: str) -> str:
         return f"{self.gh}/blob/{self.commit}/{rel}"
@@ -185,7 +188,8 @@ def md_to_blocks(md: str, ctx: Ctx | None = None) -> tuple[str | None, list[dict
             if level == 1 and title is None and not blocks:
                 title = re.sub(r"\s*\[t:[^\]\s]+\]", "", text)
             else:
-                kind = "heading_" + str(min(max(level - 1, 1), 3))    # ## → h1 · ### → h2 · #### 이상 → h3
+                kind = ("heading_" + str(min(level, 4)) if ctx.heading_md
+                        else "heading_" + str(min(max(level - 1, 1), 3)))    # ## → h1 · ### → h2 · #### 이상 → h3
                 blocks.append(_block(kind, inline(text, ctx)))
             i += 1
             continue
@@ -689,7 +693,7 @@ async def append_tree(client: Any, parent: str, blocks: list[dict[str, Any]], af
 # ── 다시 게시 — 자리를 지키며 갈아 끼우기(11-06) ──────────────
 # 모두 지우고 새로 붙이면 사람이 바꿔 둔 보기(mermaid 미리보기)가 날아간다. API로는 그 보기를 정할 수 없다(code에 caption ·
 # language · rich_text뿐). 블록 내용만 고치면 id가 그대로라 보기가 남는다 — 자리마다 같은 종류면 고치고, 다르면 그 하나만 바꾼다
-UPDATABLE = {"paragraph", "heading_1", "heading_2", "heading_3", "bulleted_list_item", "numbered_list_item", "quote", "code",
+UPDATABLE = {"paragraph", "heading_1", "heading_2", "heading_3", "heading_4", "bulleted_list_item", "numbered_list_item", "quote", "code",
              "callout", "to_do", "table_row"}
 
 
@@ -914,6 +918,51 @@ class Publisher:
         self.footer = o.get("header") == "footer"                  # 맨 위 사본 상자 대신 맨 아래 회색 한 줄
         self.keep_notion = set(o.get("keep_notion") or [])         # inline_code · image — Notion 모양이 기준
         self.skip = set(o.get("skip") or [])                       # 맞추기 대상이 아닌 docs 파일
+        # 11-09 펫퍼민트 create = true 준비(사용자 네 가지) — 모두 기본값은 지금까지 동작 그대로
+        self.archive_ok = o.get("archive", True) is not False      # False: 원본이 사라져도 휴지통으로 보내지 않고 실패로(create와 따로)
+        self.heading_md = o.get("headings") == "md"                # 제목 단계를 마크다운 그대로(## → heading_2) — 사람이 옮긴 페이지 모양
+        self.new_parent = o.get("new_parent")                      # "folder": 하위 폴더 새 문서는 같은 폴더 형제들의 부모 페이지 아래
+        self.new_title = o.get("new_title")                        # "numbered": 새 페이지 제목 "00. 모델 준비"(번호 + 상위 문서 목록의 이름)
+
+    def _ctx(self, path: str, commit: str, links: bool = True) -> Ctx:
+        return Ctx(path, commit, self.gh, links=links, heading_md=self.heading_md)
+
+    async def new_page_plan(self, path: str) -> tuple[str, str | None]:
+        """새 페이지의 (부모 페이지, 정한 제목 또는 None). 정할 수 없으면 OutOfScope — 만들지 않는다(짐작으로 엉뚱한 자리 · 제목에 만들지 않게).
+        new_parent = folder: docs/<폴더>/x.md는 같은 폴더의 게시된 형제들이 모두 걸린 부모(펫퍼민트 docs/02_pipeline/ → 「02. 파이프라인 설계」).
+        new_title = numbered: 파일 번호(19_ → "19", 03a_ → "03-1") + 부모 페이지의 원본 문서에서 그 번호로 시작하는 마지막 줄의 이름
+        (펫퍼민트 pipeline.md 「7. 단계별 문서」 — "15. 모니터링 (Prometheus·Grafana)"처럼 앞쪽 목록보다 짧다)."""
+        from sqlalchemy import text
+        parent = await self.parent_for(path)
+        folder = path.rsplit("/", 1)[0]
+        if self.new_parent == "folder" and path.startswith("docs/") and folder != "docs":
+            async with self.e.connect() as c:
+                rows = (await c.execute(text(
+                    "SELECT path, parent_page_id FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' "
+                    "AND path LIKE :pre"), {"p": self.project, "pre": folder + "/%"})).all()
+            sib = {norm(r[1]) for r in rows if r[1] and r[0].rsplit("/", 1)[0] == folder}
+            if len(sib) != 1:
+                raise OutOfScope(f"{folder}/의 부모 페이지를 정할 수 없습니다(게시된 형제 {len(rows)}편, 부모 {len(sib)}곳) — 만들지 않습니다: {path}")
+            parent = sib.pop()
+        title = None
+        if self.new_title == "numbered":
+            m = re.match(r"^(\d+)([a-z])?_", path.rsplit("/", 1)[-1])
+            if not m:
+                raise OutOfScope(f"파일 이름에 번호가 없어 번호식 제목을 정할 수 없습니다(예: 19_x.md) — 만들지 않습니다: {path}")
+            num = m.group(1) + (f"-{ord(m.group(2)) - ord('a') + 1}" if m.group(2) else "")
+            async with self.e.connect() as c:
+                src = (await c.execute(text(
+                    "SELECT path FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' AND notion_page_id = :id"),
+                    {"p": self.project, "id": parent})).first()
+            if not src:
+                raise OutOfScope(f"부모 페이지의 원본 문서가 없어 이름을 정할 수 없습니다 — 만들지 않습니다: {path}")
+            body, _ = git_show(self.repo, src[0], self.ref)
+            names = [mm.group(1).strip() for ln in body.splitlines()
+                     if (mm := re.match(rf"^\s*(?:[-*]\s+)?(?:\*\*)?{re.escape(num)}\.\s+(.+?)(?:\*\*)?\s*$", ln))]
+            if not names:
+                raise OutOfScope(f"{src[0]}에 「{num}. …」 줄이 없어 제목을 정할 수 없습니다 — 그 목록에 한 줄 더한 뒤 맞춥니다: {path}")
+            title = f"{num}. {re.sub(r'[`*]', '', names[-1])}"
+        return parent, title
 
     async def parent_for(self, path: str) -> str:
         """글이 놓일 페이지 — 포트폴리오는 [포트폴리오](없으면 루트 바로 아래, 11-06 방식), docs/는 [기술문서], 그 밖은 묶음 페이지."""
@@ -995,7 +1044,7 @@ class Publisher:
         body, commit = git_show(self.repo, path, self.ref)
         digest = content_digest(self.repo, path, body, self.ref)
         portfolio = path.startswith("portfolio/")      # 바깥 사람이 읽는 글 — 저장소 링크 없이, 맨 위 "사본" 안내 없이(11-06)
-        ctx = Ctx(path, commit or "HEAD", self.gh, links=not portfolio)
+        ctx = self._ctx(path, commit or "HEAD", links=not portfolio)
         title, blocks = md_to_blocks(body, ctx)
         title = given or title or PurePosixPath(path).stem
         if portfolio:
@@ -1037,8 +1086,9 @@ class Publisher:
         if not self.create:
             # 11-09 펫퍼민트 — 사람이 옮겨 둔 페이지에만 맞춘다. 짝이 없거나 범위 밖이면 새로 만들지 않고 멈춘다(사용자: 새 페이지 0)
             raise OutOfScope(f"짝 페이지가 없거나 범위 밖입니다 — 새 페이지를 만들지 않습니다(create = false): {path}")
+        parent, planned = await self.new_page_plan(path)                # 정할 수 없으면 여기서 멈춘다(아무것도 쓰기 전)
+        title = planned or title
         blocks = await resolve_uploads(self.c, self.repo, blocks, await self._upload_limit(), self.ref)
-        parent = await self.parent_for(path)
         await self.scope.require(parent, not_root=parent != self.root)
         p = await self.c.create_page(parent, title, [])
         pid = norm(p["id"])
@@ -1067,7 +1117,7 @@ class Publisher:
                 try:
                     # 지난번 맞춘 글 — 그 뒤 옮겼으면(git mv) 그때 경로로 읽는다(11-09 펫퍼민트 docs/02_pipeline/ 이동)
                     pb, _ = git_show(self.repo, renamed_from(self.repo, row["commit_sha"], self.ref, path), row["commit_sha"])
-                    _, pbl = md_to_blocks(pb, Ctx(path, row["commit_sha"], self.gh))
+                    _, pbl = md_to_blocks(pb, self._ctx(path, row["commit_sha"]))
                     prev_t = shape_text(flat_md(pbl), subs)
                 except (FileNotFoundError, OutOfScope):
                     prev_t, pbl = None, None
@@ -1108,8 +1158,9 @@ class Publisher:
 
     async def archive(self, path: str) -> dict[str, Any]:
         """내리기 = 휴지통. 우리가 만든 페이지이고 지금도 루트 아래일 때만."""
-        if not self.create:
-            raise OutOfScope("create = false 프로젝트는 페이지를 휴지통으로 보내지 않습니다 — 사람이 옮겨 둔 페이지입니다")
+        if not self.archive_ok or not self.create:
+            # 11-09 사용자: 새 페이지 만들기와 옛 페이지 지우기는 다른 기능 — archive = false면 create와 상관없이 막는다
+            raise OutOfScope("이 프로젝트는 페이지를 휴지통으로 보내지 않습니다(archive = false · create = false) — 사람이 보고 정합니다")
         row = await self._row(path)
         if not row or row["status"] != "published" or not row["notion_page_id"]:
             raise OutOfScope("게시한 기록이 없는 글입니다 — 우리가 만든 페이지만 내립니다")
