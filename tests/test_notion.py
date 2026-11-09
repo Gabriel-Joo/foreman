@@ -301,6 +301,18 @@ def test_adopt_notion_shape_inline_code_and_image():
     assert any(r.get("annotations", {}).get("code") for r in f.blocks["root"][0]["paragraph"]["rich_text"])   # 인라인 코드 그대로
 
 
+def test_adopt_notion_shape_heading_level():
+    """11-09 펫퍼민트 사용자 결정 — 글이 같고 단계만 다른 제목은 Notion 단계 그대로(멈추지도 고치지도 않는다)."""
+    f = FakeNotion(see_all=True)
+    asyncio.run(nt.append_tree(f, "root", [{"object": "block", "type": "heading_3", "heading_3": {"rich_text": nt._rt("0. 목표")}}]))
+    old = asyncio.run(f.children("root"))
+    _, new = nt.md_to_blocks("## 0. 목표\n")
+    got = nt.adopt_notion_shape(old, new, {"heading"})
+    assert got[0]["type"] == "heading_3" and [nt._sig(b) for b in got] == [nt._sig(b) for b in old]
+    st = asyncio.run(nt.sync_children(f, "root", got))
+    assert st["updated"] == 0 and st["replaced"] == 0 and f.blocks["root"][0]["type"] == "heading_3"
+
+
 def test_sync_insert_near_top_keeps_later_blocks():
     """11-06 — 글 앞쪽에 사진을 끼우자 뒤 블록이 모두 밀려 새 블록이 되고 mermaid 미리보기가 풀렸다. 내용으로 짝지으면 그대로다."""
     f = FakeNotion(see_all=True)
