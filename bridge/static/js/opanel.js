@@ -44,6 +44,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         <button id="pFold" class="ghost small" title="접기 — 패널을 접어 픽셀 화면을 넓힙니다.">▶</button>
       </div>
       <div id="pMeta" class="pmeta small" hidden></div>
+      <div id="pSw" class="pcmp small switch" hidden></div>
       <div id="pCmp" class="pcmp small" hidden></div>
       <div id="pOvl" class="pcmp small" hidden></div>
       <section id="pAppr" class="papprs" aria-label="승인 대기"></section>
@@ -266,23 +267,24 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;
     $('pCmp').hidden = false;
   }
-  // 맥락 크기 띠(11-08) — 압축 단계가 없을 때. 마지막 응답 맥락 300k "넘어갈 때" · 500k "늦었음". [나중에]는 다음 단계까지
+  // 맥락 크기 띠(11-08) — 압축 단계가 없을 때. 토큰(300k · 500k)이나 창 비율(50% · 75%) 중 먼저 닿는 쪽(11-09). [나중에]는 다음 단계까지
+  // 작업 전환 권유 띠가 떠 있으면 그쪽이 같은 [새 세션으로 옮기기]를 더 분명한 까닭과 함께 권하므로 이 띠는 숨긴다
   function drawContext(s) {
     const x = s.context;
     const lv = x && x.level;
     let snz = '';
     try { snz = localStorage.getItem('ctxSnooze:' + s.id) || ''; } catch { /* 기억 못 함 */ }
-    if (!lv || snz === lv || (snz === 'late' && lv === 'due')) { $('pCmp').hidden = true; return; }
+    if (!lv || snz === lv || (snz === 'late' && lv === 'due') || !$('pSw').hidden) { $('pCmp').hidden = true; return; }
     const late = lv === 'late';
     // 11-09 사용자 문구 — 겉은 짧게, 호버에 크기를 사람 말로(한글 ≈ 토큰 × 0.9자, 책 한 권 ≈ 10만 자)
     const usd = x.usd_reply != null ? ` · 응답당 약 $${x.usd_reply < 0.1 ? x.usd_reply.toFixed(2) : x.usd_reply.toFixed(1)}` : '';
     // 툴팁 모양(11-09): 제목 — 설명 / 숫자 한 줄에 하나
     const tip = '지금까지 쌓인 대화 — 답할 때마다 이걸 전부 다시 읽고, 그만큼 비용이 듭니다. 새 세션으로 옮기면 수십k에서 다시 시작합니다.'
-      + `\n토큰 ${koNum(x.tokens)}\n한글 약 ${koNum(Math.round(x.tokens * 0.9 / 10000) * 10000)} 자 (책 ${koBooks(x.tokens * 0.9 / 100000)}쯤)`
+      + `\n토큰 ${koNum(x.tokens)}${x.pct != null ? ` — 창 ${koNum(x.window)}의 ${x.pct}%` : ''}\n한글 약 ${koNum(Math.round(x.tokens * 0.9 / 10000) * 10000)} 자 (책 ${koBooks(x.tokens * 0.9 / 100000)}쯤)`
       + (x.usd_reply != null ? `\n응답당 약 $${x.usd_reply.toFixed(2)}` : '');
-    const html = `<span class="${late ? 'bad' : 'warn'}" title="${esc(tip)}">🧠 지금까지 쌓인 대화 ${Math.round(x.tokens / 1000)}k${usd}</span>
+    const html = `<span class="${late ? 'bad' : 'warn'}" title="${esc(tip)}">🧠 지금까지 쌓인 대화 ${Math.round(x.tokens / 1000)}k${x.pct != null ? ` (${x.pct}%)` : ''}${usd}</span>
       ${s.injectable ? `<button type="button" data-cmp="handoff" class="small primary" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
-      <button type="button" data-cmp="ctxlater" class="ghost small" title="나중에 — 다음 단계(500k)까지 이 띠를 숨깁니다.">나중에</button>`;
+      <button type="button" data-cmp="ctxlater" class="ghost small" title="나중에 — 다음 단계까지 이 띠를 숨깁니다.">나중에</button>`;
     put('pCmp', 'cmp', html);
     $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;
     $('pCmp').hidden = false;
@@ -296,6 +298,47 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const n = Math.max(1, Math.round(b));
     return `${['', '한', '두', '세', '네', '다섯', '여섯', '일곱', '여덟', '아홉', '열'][n] || n} 권`;
   }
+  // 머리줄 "쌓인 대화 N%"(11-09) — 세션의 대화가 모델 창을 얼마나 채웠나. 계정의 사용 한도(머리 칩 "한도")와 같은 %라
+  // 헷갈리지 않게 이름을 나눈다. 창을 모르는 모델은 k로, 설정한 창보다 크면 ⚠(창 크기 값이 틀렸다)
+  function ctxChip(s) {
+    const x = s.context;
+    if (!x || !x.tokens) return '';
+    const k = `${Math.round(x.tokens / 1000)}k`;
+    const cls = x.window_over ? 'warn' : x.level === 'late' ? 'bad' : x.level === 'due' ? 'warn' : 'muted';
+    const label = x.window_over ? `쌓인 대화 ${k} ⚠` : x.pct != null ? `쌓인 대화 ${x.pct}%` : `쌓인 대화 ${k}`;
+    const tip = x.window_over
+      ? `쌓인 대화 — 설정한 창보다 커서 %를 낼 수 없습니다. 창 크기 값이 틀렸습니다(config/models.toml [windows]).\n토큰 ${koNum(x.tokens)}\n설정한 창 ${koNum(x.window)}`
+      : `쌓인 대화 — 이 세션의 대화가 모델이 한 번에 읽을 수 있는 양(창)을 얼마나 채웠는지입니다. 계정 사용 한도(머리의 한도 칩)와는 다릅니다.${x.window ? '' : ' 창 크기를 모르는 모델이라 %는 내지 않습니다.'}`
+        + `\n토큰 ${koNum(x.tokens)}${x.window ? `\n창 ${koNum(x.window)}` : ''}`;
+    return `<span class="${cls}" data-tip="${esc(tip)}">${label}</span> · `;
+  }
+  // 작업 전환 권유 띠(11-09, bridge/switchwatch.py) — 텔레그램과 같은 판정을 dashboard가 싣는다(s.switch).
+  // 전환 말 + (30분 안 커밋 | 20분 넘는 쉼) + 쌓인 대화 문턱 이상. [나중에]는 그 사람 턴 동안만(다음 입력에서 다시 판정)
+  function drawSwitch(s) {
+    const w = s.switch;
+    let snz = '';
+    try { snz = localStorage.getItem('swSnooze:' + s.id) || ''; } catch { /* 기억 못 함 */ }
+    if (!w || snz === String(w.turn_id)) { $('pSw').hidden = true; return; }
+    const why = w.committed && w.idle ? '방금 커밋했고 한참 쉬었다 오셨고' : w.committed ? '방금 커밋했고' : '한참 쉬었다 오셨고';
+    const tip = `작업 전환 권유 — 새 일을 시작하는 말에, 방금 한 커밋이나 긴 쉼이 겹치고 쌓인 대화가 많을 때 띄웁니다. 옮기기 전에 대화에서만 정한 결정은 문서로 옮겨 둡니다.`
+      + `\n걸린 말 「${w.phrase}」\n쌓인 대화 ${w.pct}%`;
+    put('pSw', 'sw', `<span data-tip="${esc(tip)}">🔀 다른 일로 넘어가시는 것 같습니다 — ${why} 쌓인 대화가 ${w.pct}%입니다. 새 일은 새 세션에서 시작하면 빠르고 쌉니다.</span>
+      ${s.injectable ? `<button type="button" data-sw="handoff" class="small primary" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
+      <button type="button" data-sw="later" class="ghost small" title="나중에 — 이 띠를 숨깁니다. 다음에 다른 일로 넘어갈 때 다시 판단합니다.">나중에</button>`);
+    $('pSw').hidden = false;
+  }
+  $('pSw').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-sw]');
+    const s = store.state.sessions.get(store.state.selected);
+    if (!b || !s || !s.switch) return;
+    if (b.dataset.sw === 'later') {
+      try { localStorage.setItem('swSnooze:' + s.id, String(s.switch.turn_id)); } catch { /* 이번만 숨긴다 */ }
+      $('pSw').hidden = true;
+      drawCompact(s);                 // 숨긴 자리에 쌓인 대화 띠가 다시 보일 수 있다
+      return;
+    }
+    startHandoff(s.id);
+  });
   function compactSnoozed(id, count) {
     try { return Number(localStorage.getItem('cmpSnooze:' + id) || 0) >= count; } catch { return false; }
   }
@@ -349,15 +392,28 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     try { snoozed = !!o && localStorage.getItem('ovlSnooze:' + s.id) === o.at; } catch { /* 읽지 못함 — 보인다 */ }
     if (!o || snoozed) { $('pOvl').hidden = true; return; }
     // 11-08 다른 프로젝트 — 같은 글이 다른 프로젝트 세션에 이미 들어갔다(잘못된 창에 붙였을 수 있다). 바로 일을 시작하므로 [작업 중단]도
-    const html = o.cross
-      ? `<span class="bad">📋 다른 프로젝트 — 이 글은 ${esc(o.with_label || o.with_project || '')} 세션 ${o.with}「${esc(o.with_title || '')}」에 ${esc(o.since_kst)}에 들어간 글과 거의 같습니다. 잘못된 창에 붙여 넣었을 수 있습니다.</span>
+    // 11-09 세 갈래 더: 같은 파일(두 세션이 실제로 고침 — 가장 확실) · 낱말 + 상대가 그 파일을 고침 · 낱말만(지시서에 나왔을 뿐일 수 있음)
+    const files = o.files || [];
+    // 겉은 파일 이름만(좁은 패널에서 경로가 띠를 다 먹었다), 전체 경로는 호버
+    const fileList = files.slice(0, 3).map((f) => f.split('/').pop()).join(', ') + (o.files_n > 3 ? ` 외 ${o.files_n - 3}개` : '');
+    const wordsTip = o.words && o.words.length ? `\n겹친 낱말 ${o.words.join(', ')}` : '';
+    let soft = false;
+    const html = files.length
+      ? `<span class="bad" data-tip="${esc(`같은 파일 — 이 세션과 세션 ${o.with}이 최근 3시간 안에 같은 파일을 고쳤습니다. 합칠 때 부딪치거나 서로 고친 것을 덮을 수 있습니다. 일부러 나눈 것이면 그대로 두면 됩니다.\n${files.join('\n')}`)}">📝 같은 파일 — 세션 ${o.with}「${esc(o.with_title || '')}」도 ${esc(fileList)}를 고쳤습니다(마지막 ${esc(o.since_kst)}).</span>
+      <button type="button" data-ovl="go" class="small" title="그 세션 보기 — 같은 파일을 고친 세션을 고릅니다.">세션 ${o.with} 보기</button>`
+      : !o.cross && !(o.edited && o.edited.length)       // 근거(상대가 고친 파일)가 없으면 약한 띠 — 11-09 전 형식(edited 없음)도
+      ? ((soft = true), `<span class="muted" data-tip="${esc(`겹칠 수도 — 세션 ${o.with}이 ${o.since_kst}부터 받은 요청과 드문 낱말이 겹칩니다. 그 세션이 고친 파일과는 겹치지 않습니다. 두 세션에 같은 지시서를 보냈다면 말에 나왔을 뿐입니다. 두 세션이 같은 파일을 고치면 「같은 파일」 알림이 갑니다.${wordsTip}`)}">🔁 겹칠 수도 — 세션 ${o.with}「${esc(o.with_title || '')}」과 요청 낱말이 겹칩니다. 말에 나왔을 뿐일 수 있습니다.</span>
+      <button type="button" data-ovl="go" class="small ghost" title="그 세션 보기 — 낱말이 겹친 세션을 고릅니다.">세션 ${o.with} 보기</button>`)
+      : !o.cross
+      ? `<span class="warn" data-tip="${esc(`겹침 — 세션 ${o.with}이 ${o.since_kst}부터 비슷한 일을 하고, 요청에 나온 파일을 실제로 고쳤습니다. 이 세션도 같은 파일을 고치면 「같은 파일」 알림이 갑니다.${wordsTip}`)}">🔁 겹침 — 세션 ${o.with}「${esc(o.with_title || '')}」이 ${esc(o.since_kst)}부터 비슷한 일을 하고 ${esc((o.edited || []).join(', '))}를 실제로 고쳤습니다.</span>
+      <button type="button" data-ovl="go" class="small" title="그 세션 보기 — 겹친 세션을 고릅니다.">세션 ${o.with} 보기</button>`
+      : `<span class="bad">📋 다른 프로젝트 — 이 글은 ${esc(o.with_label || o.with_project || '')} 세션 ${o.with}「${esc(o.with_title || '')}」에 ${esc(o.since_kst)}에 들어간 글과 거의 같습니다. 잘못된 창에 붙여 넣었을 수 있습니다.</span>
       ${s.state === 'ACTIVE' ? '<button type="button" data-ovl="stop" class="small warn" title="이 세션 작업 중단 — 지금 하는 작업만 멈춥니다(Esc). 세션은 살아 있습니다.">이 세션 작업 중단</button>' : ''}
-      <button type="button" data-ovl="go" class="small" title="그 세션 보기 — 같은 글을 받은 세션을 고릅니다.">세션 ${o.with} 보기</button>`
-      : `<span class="warn">🔁 겹침 — 세션 ${o.with}「${esc(o.with_title || '')}」이 ${esc(o.since_kst)}부터 비슷한 일을 하고 있습니다. 겹친 낱말: ${esc(o.words.join(', '))}</span>
-      <button type="button" data-ovl="go" class="small" title="그 세션 보기 — 겹친 세션을 고릅니다.">세션 ${o.with} 보기</button>`;
+      <button type="button" data-ovl="go" class="small" title="그 세션 보기 — 같은 글을 받은 세션을 고릅니다.">세션 ${o.with} 보기</button>`;
     const later = `
       <button type="button" data-ovl="later" class="ghost small" title="나중에 — 이 띠를 숨깁니다. 일부러 그렇게 시킨 것이면 그대로 두면 됩니다.">나중에</button>`;
     put('pOvl', 'ovl', html + later);
+    $('pOvl').className = `pcmp small${soft ? ' soft' : files.length ? ' late' : ''}`;
     $('pOvl').hidden = false;
   }
   $('pOvl').addEventListener('click', async (ev) => {
@@ -431,7 +487,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   function sessionMode(on) {
     $('pSel').hidden = on; $('pTabs').hidden = !on; $('pMeta').hidden = !on; $('pForm').hidden = !on;
-    if (!on) $('pCmp').hidden = $('pOvl').hidden = true;
+    if (!on) $('pCmp').hidden = $('pOvl').hidden = $('pSw').hidden = true;
     if (on) setTab(tab);
     else { $('pTabConvo').hidden = $('pTabAct').hidden = $('pTabSess').hidden = true; el.classList.remove('tab-convo'); }
   }
@@ -451,10 +507,11 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     // 제목 아래 한 줄 — 세션 정보 · 토큰은 여기 작게, 자세한 것은 [세션] 탭
     const t = s.tokens || {}, stuck = stuckTurn(s);
     const now = s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target || '', 60))}` : (s.state === 'ACTIVE' ? '생각 중' : '');
-    put('pMeta', 'meta', `${stateBadge(s)}
-      <span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
+    // "쌓인 대화 N%"는 상태 바로 뒤 — 머리줄은 한 줄이라 좁은 패널에서 뒤쪽이 말줄임으로 잘린다(11-09 1366 사진)
+    put('pMeta', 'meta', `${stateBadge(s)} ${ctxChip(s)}<span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
       · <span class="muted" title="오늘 출력 토큰 — 이 세션이 오늘 쓴 글의 양입니다.">오늘 출력 토큰 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn" title="끝났는지 모름 — 작업이 끝났다는 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.">⚠ 끝났는지 모름</span>' : ''}`);
     $('pMeta').title = [sessionSub(s), sessionIds(s), projectLabel(st, s.project), s.cwd || ''].filter(Boolean).join(' · ');
+    drawSwitch(s);                   // 먼저 — 떠 있으면 쌓인 대화 띠는 숨긴다(같은 버튼, 까닭은 이쪽이 분명)
     drawCompact(s);
     drawOverlap(s);
     // 대화 — 바뀔 때만

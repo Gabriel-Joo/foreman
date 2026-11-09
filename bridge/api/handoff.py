@@ -27,6 +27,7 @@ class EditIn(BaseModel):
 class SpawnIn(BaseModel):
     summary_id: int | None = None
     replace: bool = False             # 새 세션으로 옮기기 — 옛 세션을 빼고 worktree를 판단한다(곧 끝나니 원본 폴더에서 뜬다, 11-09)
+    note: str | None = Field(None, max_length=2000)   # [덧붙여서 보내기] — 인계 글 끝에 붙는 사람 말(11-09)
 
 
 class InjectIn(BaseModel):
@@ -201,7 +202,7 @@ async def spawn(sid: int, body: SpawnIn, request: Request) -> JSONResponse:
     m = _mgr(request)
     row = await _row(m, sid)
     try:
-        return JSONResponse(await m.spawn(row, body.summary_id, replace=body.replace))
+        return JSONResponse(await m.spawn(row, body.summary_id, replace=body.replace, note=body.note))
     except Refused as e:
         return _refused(e)
 

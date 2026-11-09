@@ -207,6 +207,16 @@ def inject_prompt(req: str, src: str, body: str) -> str:
     return tpl.format(head=IN_HEAD.format(r=req), src=src, body=body)
 
 
+NOTE_MAX = 2000
+
+
+def note_block(note: str | None) -> str:
+    """새 세션으로 옮기기 [덧붙여서 보내기](11-09) — 사람이 넣기 직전에 쓴 말. 인계 글 맨 끝에 붙인다(마지막에 읽는 말).
+    요약 본문은 바꾸지 않는다(요약 이력 · 읽을 곳 확인이 그대로)."""
+    n = (note or "").strip()[:NOTE_MAX]
+    return f"\n\n## 사람이 덧붙인 말 (넣기 직전)\n{n}" if n else ""
+
+
 def transcript_path(cwd: str, cc_session_id: str) -> str:
     """CC가 쓰는 자리 — ~/.claude/projects/<cwd의 영숫자 밖 글자를 -로>/<id>.jsonl(실측: '/' '_' → '-')."""
     return str(Path.home() / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9-]", "-", cwd) / f"{cc_session_id}.jsonl")
@@ -679,12 +689,12 @@ class HandoffManager:
         p.write_text(body + "\n", encoding="utf-8")
         p.chmod(0o600)
 
-    async def inject(self, summary_id: int, cc_session_id: str, cwd: str) -> dict[str, Any]:
+    async def inject(self, summary_id: int, cc_session_id: str, cwd: str, note: str | None = None) -> dict[str, Any]:
         inj = await self.ensure_injectable(summary_id, cwd)
         s = await self.summary(summary_id)
         if inj["cut"]:
             self._write_full(s["req"], s["body"])
-        res = await deliver(cc_session_id, inj["text"], sessions_dir=self.sessions_dir,
+        res = await deliver(cc_session_id, inj["text"] + note_block(note), sessions_dir=self.sessions_dir,
                             transcript=transcript_path(cwd, cc_session_id), verify_s=15.0)
         if res.get("delivered"):
             async with self.engine.begin() as c:
@@ -693,21 +703,22 @@ class HandoffManager:
         return {"delivered": bool(res.get("delivered")), "queued": res.get("queued"), "cut": inj["cut"], "drift": inj["drift"]}
 
     # ── 새로 띄우기 ──────────────────────────────────────
-    async def spawn(self, row: SessionRow, summary_id: int | None, replace: bool = False) -> dict[str, Any]:
+    async def spawn(self, row: SessionRow, summary_id: int | None, replace: bool = False, note: str | None = None) -> dict[str, Any]:
         """세션 패널의 [새로 띄우기] — 그 세션과 같은 폴더 · 역할 · 모델로(모델은 띄울 때 고른 것, 없으면 역할 기본값).
-        replace — 새 세션으로 옮기기(옛 세션을 곧 끝낸다). worktree를 판단할 때 옛 세션을 세지 않는다(11-09)."""
+        replace — 새 세션으로 옮기기(옛 세션을 곧 끝낸다). worktree를 판단할 때 옛 세션을 세지 않는다(11-09).
+        note — [덧붙여서 보내기]로 사람이 쓴 말. 인계 글 끝에 붙는다(요약이 있을 때만)."""
         async with self.engine.connect() as c:
             r = (await c.execute(text("SELECT role, model FROM character_session WHERE id = :i"), {"i": row.id})).first()
         role, model = (r[0], r[1]) if r else (None, None)
         # worktree 세션이면 원본 저장소 기준으로(같은 worktree에 둘이 붙지 않게 — 살아 있는 세션이 있으니 새 worktree가 된다)
         return await self.spawn_new(wt.split(row.cwd or "")[0] if row.cwd else "", summary_id, None, src_session=row.id,
                                     role=role if role in ROLE_KO else None, model=model,
-                                    exclude_cc=row.cc if replace else None)
+                                    exclude_cc=row.cc if replace else None, note=note)
 
     async def spawn_new(self, cwd: str, summary_id: int | None, title: str | None,
                         src_session: int | None = None, first_prompt: str | None = None,
                         read_only: bool = False, role: str | None = None, worktree: bool | None = None,
-                        model: str | None = None, exclude_cc: str | None = None) -> dict[str, Any]:
+                        model: str | None = None, exclude_cc: str | None = None, note: str | None = None) -> dict[str, Any]:
         """+ 버튼 · [새로 띄우기] — tmux 세션을 만들고 그 안에서 claude(resume 아님). 세션 행을 바로 만들어(이름도) 첫 입력 전에도
         화면에 캐릭터가 선다. 인계 요약을 고르면 입력 칸이 뜬 뒤 넣는다. 폴더 신뢰 창이 뜨면 사람이 터미널에서 답할 때까지
         뒤에서 기다렸다가(5분) 이어 한다.
@@ -746,7 +757,7 @@ class HandoffManager:
                                "pid": None, "session_id": None, "note": None, "injected": False, "worktree": wt_info,
                                "model": model}
         extra = {"first_prompt": first_prompt, "role": role, "worktree_path": wt_info["path"] if wt_info else None,
-                 "model": model}
+                 "model": model, "note": note}
         cc, pid, trust = await self._wait_ready(pane, 45)
         if trust:
             out["note"] = "처음 쓰는 폴더라 신뢰 확인 창이 떴습니다. 터미널(tmux " + name + ")에서 답하면 이어서 " + ("첫 글을 넣습니다." if (summary_id or first_prompt) else "화면에 뜹니다.")
@@ -795,7 +806,7 @@ class HandoffManager:
     async def _finish_spawn(self, name: str, pane: str, cwd: str, summary_id: int | None, title: str | None,
                             src_session: int | None, cc: str | None = None, pid: int | None = None,
                             wait: float = 0, first_prompt: str | None = None, role: str | None = None,
-                            worktree_path: str | None = None, model: str | None = None) -> dict[str, Any]:
+                            worktree_path: str | None = None, model: str | None = None, note: str | None = None) -> dict[str, Any]:
         if cc is None:                                    # 신뢰 창 — 사람이 답하기를 기다린다
             loop = asyncio.get_running_loop()
             end = loop.time() + wait
@@ -837,7 +848,7 @@ class HandoffManager:
             return out
         if summary_id is not None:
             await asyncio.sleep(1.0)
-            r = await self.inject(summary_id, cc, cwd)
+            r = await self.inject(summary_id, cc, cwd, note)
             out["injected"] = r["delivered"]
             if not r["delivered"]:
                 out["note"] = "인계 글을 보냈지만 제출을 확인하지 못했습니다. 입력 칸을 확인해 주세요."

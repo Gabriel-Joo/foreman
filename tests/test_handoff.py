@@ -105,3 +105,11 @@ def test_compact_body(tmp_path):
     q = tmp_path / "n.jsonl"
     _w(q, {"type": "user", "message": {"content": "압축 없음"}})
     assert h.compact_body(q) is None
+
+
+def test_note_block_appends_human_line_only_when_given():
+    # 11-09 [덧붙여서 보내기] — 넣는 글 끝에 붙는다. 비었으면 아무것도 붙지 않는다(= [이대로 보내기])
+    assert h.note_block(None) == "" and h.note_block("  \n ") == ""
+    b = h.note_block(" 다음 할 일 3번부터 해 주세요. ")
+    assert b == "\n\n## 사람이 덧붙인 말 (넣기 직전)\n다음 할 일 3번부터 해 주세요."
+    assert len(h.note_block("가" * 5000)) == len(h.note_block("")) + len("\n\n## 사람이 덧붙인 말 (넣기 직전)\n") + h.NOTE_MAX

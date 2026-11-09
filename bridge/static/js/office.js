@@ -42,7 +42,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       </div>
       <div class="otop-row otop-sub">
         <span id="oStat" class="ostat"></span>
-        <a id="oUsage" class="ghost ousage" href="/usage" data-tip="사용량 — 누르면 한도 · 어디서 나가는지 봅니다.">사용량</a>
+        <a id="oUsage" class="ghost ousage" href="/usage" data-tip="한도 — 구독 사용 한도입니다. 누르면 사용량 화면에서 어디서 나가는지 봅니다.">한도</a>
         <a id="oCredit" class="ghost ousage" href="/usage" hidden></a>
         <!-- 11-08 도형 · 클래식은 머리말에서 뺐다(사용자 — 안 쓴다). 주소 /?theme=plain · /classic으로는 그대로 열린다 -->
         <span class="otheme" role="group" aria-label="테마">${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장']].map(([k, v]) => k === theme.name
@@ -177,7 +177,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const bad = usage.failed || !rd.ok;
     const max = usageMax();
     el.className = 'ghost ousage' + (bad ? ' bad' : max >= 95 ? ' bad' : max >= 80 ? ' warn' : '');
-    el.textContent = usage.failed ? '⚠ 사용량' : (bad ? '⚠ ' : '') + (parts.length ? `사용량: ${parts.join(' · ')}` : '사용량');
+    // 11-09 이름 나누기 — 계정 사용 한도는 "한도", 세션 대화가 창을 채운 비율은 패널 머리줄 "쌓인 대화 N%"(같은 %라 헷갈렸다)
+    el.textContent = usage.failed ? '⚠ 한도' : (bad ? '⚠ ' : '') + (parts.length ? `한도: ${parts.join(' · ')}` : '한도');
     // 11-09 숫자 줄: "5시간 51% — 02:10 리셋" · "주간 5% — 11월 15일 22:00 리셋"(오늘이면 시각만)
     const resetKo = (iso) => {
       if (!iso) return '';
@@ -197,7 +198,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (contrib.length) lines.push('CC가 본 비중 — 대략 · 이 기기 세션만 · 비중끼리 겹침(합이 100%가 아님)', ...contrib);
     usageTipRows = { lines, why };                     // 감독실 경고등 호버도 같은 줄을 쓴다(11-09)
     creditChip(usage.credits);
-    el.dataset.tip =`사용량 — 구독 한도를 몇 % 썼는지입니다. "약"은 마지막으로 읽은 뒤 FOREMAN이 더해 본 추정입니다. 누르면 어디서 나가는지 봅니다.${why}\n${lines.join('\n')}`;
+    el.dataset.tip =`한도 — 구독 사용 한도를 몇 % 썼는지입니다. 세션마다 쌓인 대화 %(패널 머리줄)와는 다릅니다. "약"은 마지막으로 읽은 뒤 FOREMAN이 더해 본 추정입니다. 누르면 어디서 나가는지 봅니다.${why}\n${lines.join('\n')}`;
   }
   if (new URLSearchParams(location.search).get('demo')) {   // 시연 재생은 /api를 막는다 — 칩을 숨긴다(⚠로 찍히지 않게)
     setTimeout(() => { for (const id of ['oUsage', 'oCredit']) { const el = document.getElementById(id); if (el) el.hidden = true; } }, 0);

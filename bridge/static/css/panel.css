@@ -142,6 +142,10 @@ body { --term-h:0px; }
 .hand-body { white-space:pre-wrap; word-break:break-word; font:15px/1.45 ui-monospace, monospace; max-height:40vh; overflow:auto;
              background:var(--code); padding:6px 8px; border-radius:6px; margin:4px 0; }
 .hand-edit { width:100%; box-sizing:border-box; font:15px/1.45 ui-monospace, monospace; }
+/* 11-09 [덧붙여서 보내기] — 넣는 글 아래 덧붙일 말 칸 */
+.hand-note { margin:6px 0 0; }
+.hand-note label { display:block; color:var(--muted); margin-bottom:2px; word-break:keep-all; }
+.hand-note textarea { font-family:inherit; }
 .hand .row { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0; }
 .hand-hist { margin-top:4px; }
 /* 11-06 세션 탭 정리 — 칸 머리 · 요약 카드 머리의 [고치기]([더보기]는 버튼이라 따로 스타일 없음) */
@@ -207,6 +211,8 @@ body { --term-h:0px; }
 /* 압축 알림 띠(11-05) — 머리줄 아래 */
 .pcmp { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:4px 8px; margin:2px 0; border-radius:6px; border:1px solid var(--warn); }
 .pcmp.late { border-color:var(--bad); }
+.pcmp.soft { border-color:var(--line); }       /* 11-09 겹침 — 낱말만 겹친 것(말에 나왔을 뿐일 수 있음)은 옅게 */
+.pcmp.switch { border-color:var(--accent, var(--warn)); }
 .pcmp[hidden] { display:none; }
 .pcmp > span { flex:1 1 200px; }
 .mdl-btn { background:none; cursor:pointer; font:inherit; font-size:11px; padding:0 5px; }
