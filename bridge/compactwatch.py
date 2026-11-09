@@ -203,6 +203,7 @@ class CompactWatch:
         async def go() -> None:
             await asyncio.sleep(1.0)
             await self.check_context(session_id)
+            await self.check_switch(session_id)
         t = asyncio.get_running_loop().create_task(go())
         self._tasks.add(t)
         t.add_done_callback(self._tasks.discard)
@@ -212,7 +213,7 @@ class CompactWatch:
         try:
             async with self.engine.connect() as c:
                 st = (await context_status(c, [session_id], self.rules)).get(session_id)
-                if not st or not st["level"]:
+                if not st or not (st["level"] or st["window_over"]):
                     return None
                 sent = {r[0] for r in (await c.execute(text(
                     "SELECT rule FROM notification WHERE kind = 'context' AND session_id = :s"), {"s": session_id})).all()}
@@ -220,13 +221,20 @@ class CompactWatch:
                     "SELECT p.name, COALESCE(cs.custom_title, cs.title, LEFT(cs.cc_session_id, 8)), cs.hidden_at "
                     "FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
                     "LEFT JOIN project p ON p.id = ch.project_id WHERE cs.id = :i"), {"i": session_id})).first()
-            rule_key = context_rule(st["tokens"], sent, self.rules)
-            if rule_key is None:
-                return None
             if not row or row[2] is not None:
                 return None
             rule = self.notify_rules.for_project(row[0]) if self.notify_rules else None
             if rule is None or self.notifier is None:
+                return None
+            # 설정한 창보다 큰 맥락 = models.toml [windows] 추정이 틀렸다(11-09). 세션마다 한 번 알린다
+            over_key = f"over:{st['window']}"
+            if st["window_over"] and over_key not in sent:
+                self.notifier.send_direct(row[0], "context", session_id,
+                                          window_over_message(rule.prefix, row[1] or str(session_id), st["model"], st["tokens"], st["window"]),
+                                          rule=over_key)
+                log.warning("창 크기 추정 틀림 session=%d model=%s %dk > %dk", session_id, st["model"], st["tokens"] // 1000, st["window"] // 1000)
+            rule_key = context_rule(st["tokens"], sent, self.rules, st["window"])
+            if rule_key is None:
                 return None
             usd = None
             if self.price:
@@ -235,12 +243,44 @@ class CompactWatch:
                 except Exception:  # noqa: BLE001 — 금액 없이 보낸다
                     usd = None
             self.notifier.send_direct(row[0], "context", session_id,
-                                      context_message(rule.prefix, row[1] or str(session_id), st["tokens"], st["level"], usd),
+                                      context_message(rule.prefix, row[1] or str(session_id), st["tokens"], st["level"], usd, st["pct"]),
                                       rule=rule_key)
             log.info("맥락 알림 session=%d %dk", session_id, st["tokens"] // 1000)
             return rule_key
         except Exception as e:  # noqa: BLE001 — 알림 실패가 적재를 막으면 안 된다
             log.warning("맥락 알림 실패 session=%s: %s", session_id, type(e).__name__)
+            return None
+
+    async def check_switch(self, session_id: int) -> str | None:
+        """작업 전환 권유(11-09, bridge/switchwatch.py) — 전환 말 + (커밋 | 쉼) + 쌓인 대화 ≥ switch_min_pct%.
+        사람 턴마다 한 번(notification kind 'switch' · rule 'switch:<턴 id>'). 보낸 rule."""
+        from bridge.switchwatch import latest_signal, should_suggest, switch_message
+        try:
+            async with self.engine.connect() as c:
+                st = (await context_status(c, [session_id], self.rules)).get(session_id)
+                if not st or st["pct"] is None or st["pct"] < self.rules.switch_min_pct:
+                    return None
+                sig = await latest_signal(c, session_id)
+                if sig is None or not should_suggest(st["pct"], self.rules.switch_min_pct, sig.phrase, sig.committed, sig.idle):
+                    return None
+                key = f"switch:{sig.turn_id}"
+                if (await c.execute(text("SELECT 1 FROM notification WHERE kind = 'switch' AND session_id = :s AND rule = :r LIMIT 1"),
+                                    {"s": session_id, "r": key})).first():
+                    return None
+                row = (await c.execute(text(
+                    "SELECT p.name, COALESCE(cs.custom_title, cs.title, LEFT(cs.cc_session_id, 8)), cs.hidden_at "
+                    "FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
+                    "LEFT JOIN project p ON p.id = ch.project_id WHERE cs.id = :i"), {"i": session_id})).first()
+            if not row or row[2] is not None:
+                return None
+            rule = self.notify_rules.for_project(row[0]) if self.notify_rules else None
+            if rule is None or self.notifier is None:
+                return None
+            self.notifier.send_direct(row[0], "switch", session_id, switch_message(rule.prefix, row[1] or str(session_id), st["pct"], sig), rule=key)
+            log.info("작업 전환 권유 session=%d %d%% 커밋=%s 쉼=%s", session_id, st["pct"], sig.committed, sig.idle)
+            return key
+        except Exception as e:  # noqa: BLE001 — 알림 실패가 적재를 막으면 안 된다
+            log.warning("작업 전환 권유 실패 session=%s: %s", session_id, type(e).__name__)
             return None
 
     async def on_compact(self, session_id: int) -> None:
