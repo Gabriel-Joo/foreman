@@ -187,6 +187,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const lines = ls.filter((l) => l.key !== 'weekly_fable' || (usagePct(l) || 0) >= 1).map((l) =>
       `${short[l.key] || l.label} ${usagePct(l) == null ? '—' : Math.round(usagePct(l)) + '%'}${l.reset_at ? ` — ${resetKo(l.reset_at)} 리셋` : ''}${l.eta_before_reset ? ` (이 속도면 ${l.eta_100 ? resetKo(l.eta_100) + '에 ' : '리셋 전에 '}100%)` : ''}`);
     const why = usage.failed ? ` 지금은 불러오지 못했습니다(${usage.failed}).` : !rd.ok ? ` 지금은 /usage를 읽지 못하고 있습니다(${rd.error || '오래됐습니다'}).` : '';
+    // 11-09 사용자 — /usage "What's contributing"(CC 추정: 대략 · 이 기기 세션만 · 비중끼리 겹침). 서브에이전트 · MCP 비중, 제안 줄
+    const span = { '24h': '24시간', '7d': '7일' };
+    const contrib = (usage.contributing || []).flatMap((b) => {
+      const name = span[b.span] || b.span;
+      const top = [b.subagents && `서브에이전트 ${b.subagents}`, b.mcp && `MCP ${b.mcp}`].filter(Boolean).join(' · ');
+      return [top && `지난 ${name} — ${top}`, ...(b.span === '24h' ? b.tips.map((t) => `CC 제안 ${t.pct}% — ${t.text}`) : [])].filter(Boolean);
+    });
+    if (contrib.length) lines.push('CC가 본 비중 — 대략 · 이 기기 세션만 · 비중끼리 겹침(합이 100%가 아님)', ...contrib);
     usageTipRows = { lines, why };                     // 감독실 경고등 호버도 같은 줄을 쓴다(11-09)
     creditChip(usage.credits);
     el.dataset.tip =`사용량 — 구독 한도를 몇 % 썼는지입니다. "약"은 마지막으로 읽은 뒤 FOREMAN이 더해 본 추정입니다. 누르면 어디서 나가는지 봅니다.${why}\n${lines.join('\n')}`;

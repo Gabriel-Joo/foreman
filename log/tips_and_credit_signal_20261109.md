@@ -25,6 +25,13 @@
 - 사람이 넣은 값(`[credits]`)은 **판정에 쓰지 않고**(근거가 없을 때만) 호버의 금액 참고로만. **넣은 지 3일**이 지나거나 달이 바뀌면 숫자를 감춘다 — 월 사용액은 쓰는 날마다 늘고 충전 · 한도는 아무 때나 바뀐다
 - 90% 알림의 "막힘"도 같은 판정(근거 시각 · 까닭을 글에)
 
+## 3. 사용량 호버에 "What's contributing"(사용자)
+
+- FOREMAN은 /usage를 읽을 때 이 글을 이미 받아 두고 있었다(`UsageMonitor.contrib`) — `usage.parse_contrib`로 구간마다 서브에이전트 · MCP 비중 · 제안 줄을 풀어 `brief`에 싣고, 사용량 호버의 숫자 줄 뒤에:
+  "CC가 본 비중 — 대략 · 이 기기 세션만 · 비중끼리 겹침(합이 100%가 아님)" / "지난 24시간 — 서브에이전트 general-purpose 26% · MCP claude.ai Notion 4%" / "CC 제안 71% — Give "general-purpose" subagents a cheaper model"(24시간 것만) / "지난 7일 — …"
+- 겹침 확인: 원격에 새 커밋 없음(`628c74a`는 이 세션 커밋). 다른 FOREMAN 세션은 228(worktree foreman-2, 인계 띠 기준) — 브랜치에 커밋 · 변경 없음, 사용량 호버와 겹치지 않음
+- 세 테마 × 세 폭 × 125% [⌂] tipAudit 0. 브리지 16:45:08 다시 띄움
+
 ## 확인
 
 - 파이썬 512 + `test_credit_signal_from_cc_limit_messages`(5시간 한도 → 이어 씀 → 월 지출 한도 → 훅 행 · 리셋 뒤 응답에도 막힘 → 다음 달 모름) · JS 53
