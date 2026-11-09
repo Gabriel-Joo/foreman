@@ -388,7 +388,7 @@ class ForemanDispatcher:
         return plan
 
     # ── 시작 ─────────────────────────────────────────────
-    async def start(self, dispatch_id: int, plan: dict[str, Any]) -> dict[str, Any]:
+    async def start(self, dispatch_id: int, plan: dict[str, Any], inbox_id: int | None = None) -> dict[str, Any]:
         async with self.engine.connect() as c:
             st = (await c.execute(text("SELECT status FROM dispatch WHERE id = :i"), {"i": dispatch_id})).scalar()
         if st != "planned":
@@ -419,6 +419,24 @@ class ForemanDispatcher:
             touched = await notes.apply(c, plan["project"], plan.get("note_updates") or [], dispatch_id,
                                         out.get("session_id") or plan.get("attach_session"), head or None)
         out["notes"] = len(touched)
+        if inbox_id and out.get("session_id"):
+            # 코더에게 받은 할 일(11-09) — 이 세션이 가져간다. 합쳐지면 "끝남". 못 가져가도(이미 가져감 · 버림) 시작은 그대로
+            from bridge import scribe_room as sr
+            why = None
+            try:
+                out["inbox_taken"] = await sr.inbox_take_coder(self.engine, int(inbox_id), int(out["session_id"]))
+                if not out["inbox_taken"]:
+                    why = f"받은 할 일 #{inbox_id}은 이미 다른 세션이 가져갔거나 버린 것이라 이 세션 몫으로 적지 않았습니다."
+            except Exception as e:  # noqa: BLE001 — 0028 전 DB 등. 시작을 되돌리지 않고 화면에 알린다
+                out["inbox_taken"] = False
+                why = f"받은 할 일 #{inbox_id}을 이 세션 몫으로 적지 못했습니다({type(e).__name__})."
+            if why:
+                out["note"] = f"{out.get('note') or ''} {why}".strip()
+            try:
+                from bridge.api import coder
+                coder.invalidate()
+            except Exception:  # noqa: BLE001
+                pass
         self._changed()
         return out
 

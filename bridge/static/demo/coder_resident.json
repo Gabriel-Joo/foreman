@@ -1,0 +1,52 @@
+{
+ "title": "코더 상주 — 쉬는 코더 · 임시 일꾼 · 맡길 일 · 정리할까요?",
+ "source": "script",
+ "note": "11-09 코더 상주 점검용(log/coder_resident_20261109.md). 런슈즈 · 펫퍼민트는 세션 없음 — 상주 코더가 자리에서 쉰다(런슈즈: 쉬게 한 일 1 · 2일째, 펫퍼민트: 코더에게 받은 할 일 1). FOREMAN: 첫 코더 세션이 상주 코더, 둘째 · 셋째는 임시 일꾼, 서기에 정리할까요?",
+ "snapshot": {
+  "generated_at": "@+0",
+  "projects": [
+   {"name": "runshoes", "label": "런슈즈", "sessions": []},
+   {"name": "petmint-rag-chatbot", "label": "펫퍼민트", "sessions": []},
+   {"name": "foreman", "label": "FOREMAN", "sessions": [
+    {"id": 971, "cc_session_id": "demo-0971", "short": "demo0971", "character": "코더", "project": "foreman", "title": "코더 — 화면 고침", "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10971, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": {"id": 9710, "origin": "human", "started_at": "@-30000", "prompt": "시연"}, "activity": {"tool": "Edit", "target": "", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null},
+    {"id": 972, "cc_session_id": "demo-0972", "short": "demo0972", "character": "코더", "project": "foreman", "title": "코더 — 시험", "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10972, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": {"id": 9720, "origin": "human", "started_at": "@-30000", "prompt": "시연"}, "activity": {"tool": "Bash", "target": "pytest -q", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null},
+    {"id": 973, "cc_session_id": "demo-0973", "short": "demo0973", "character": "코더", "project": "foreman", "title": "코더 — 조사", "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10973, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": {"id": 9730, "origin": "human", "started_at": "@-30000", "prompt": "시연"}, "activity": {"tool": "Read", "target": "", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null},
+    {"id": 974, "cc_session_id": "demo-0974", "short": "demo0974", "character": "코더", "project": "foreman", "title": "서기 — 정리", "custom_title": null, "cc_name": null, "role": "scribe", "cwd": "/demo/foreman", "pid": 10974, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": {"id": 9740, "origin": "human", "started_at": "@-30000", "prompt": "시연"}, "activity": {"tool": "Edit", "target": "", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null}
+   ]}
+  ],
+  "approvals": [],
+  "hidden_dormant": 0,
+  "terminal": {"enabled": false},
+  "ingest": null
+ },
+ "steps": [{"at": 60000, "end": true}],
+ "api": {
+  "/api/schema-lock/board": {"locks": {
+   "foreman": {"wt": null, "since": "@-3600000", "what": "bridge.db.migrate", "held": true, "session_id": 230, "cc": "168ece53",
+               "blocked": {"at": "@-600000", "what": "migrations/0028_todo_inbox_assignee.sql", "session_id": 971, "cc": "demo0971"}}},
+   "released": {"runshoes": {"cc": "bd37cdbe", "at": "@-60000", "why": "적용 · 커밋 끝 — migrations/ 28개가 모두 DB에 적용됐고(마지막 0028_todo_inbox_assignee) 커밋 안 한 변경이 없습니다"}}},
+  "/api/coder/todo": {"projects": {
+   "runshoes": {"inbox": [], "rested": [{"session_id": 950, "title": "발볼 검증 화면", "project": "runshoes", "branch": "cc/runshoes-2", "rested_at": "@-172800000", "days": 2}]},
+   "petmint-rag-chatbot": {"inbox": [{"id": 31, "body": "검색 결과 카드 — 출처 링크가 잘린다. 한 줄로 접고 호버로 전체", "created_at": "@-3600000"}], "rested": []},
+   "foreman": {"inbox": [], "rested": []}
+  }},
+  "/api/scribe/todo": {"tasks": {}, "projects": {
+   "petmint-rag-chatbot": {"items": [{"kind": "later", "title": "받은 할 일 1개 — 가장 오래된 것 4일째", "why": "머리줄 [＋ 할 일]로 받은 글"}], "open": [], "topics": [], "blocked": {},
+                           "nudge": {"n": 1, "days": 4, "why": "새로 1개 · 가장 오래된 것 4일째"}},
+   "foreman": {"items": [{"kind": "later", "title": "받은 할 일 3개", "why": "머리줄 [＋ 할 일]로 받은 글"}], "open": [], "topics": [], "blocked": {},
+               "nudge": {"n": 3, "days": 0, "why": "새로 3개"}}
+  }}
+ }
+}

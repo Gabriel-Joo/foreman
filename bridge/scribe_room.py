@@ -34,6 +34,32 @@ TASKS = {
 TOPICS_FILE = "config/portfolio.toml"   # 포트폴리오 주제 — 이 파일이 있는 저장소만 「포트폴리오 쓰기」를 보인다(12c, 11-06)
 
 
+NUDGE_FILE = Path(__file__).resolve().parent.parent / "config" / "scribe.toml"
+NUDGE_DEFAULT = {"new_min": 3, "oldest_days": 3}
+
+
+def nudge_conf(path: Path | None = None) -> dict[str, int]:
+    """서기 제안 기준(config/scribe.toml [nudge]) — 없거나 틀리면 기본값."""
+    import tomllib
+    try:
+        raw = tomllib.loads(Path(path or NUDGE_FILE).read_text(encoding="utf-8")).get("nudge") or {}
+    except (OSError, tomllib.TOMLDecodeError):
+        raw = {}
+    return {k: int(raw.get(k, v)) if str(raw.get(k, v)).isdigit() else v for k, v in NUDGE_DEFAULT.items()}
+
+
+def nudge_of(inbox: list[dict[str, Any]], conf: dict[str, int] | None = None, now: datetime | None = None) -> dict[str, Any] | None:
+    """서기 머리 위 "정리할까요?"(11-09) — 서기 몫 새로가 new_min개 이상이거나 가장 오래된 것이 oldest_days일 지났으면.
+    자동은 제안까지만: 누르면 서기 창이 「나중에 할 일 정리」를 고른 채 열리고, 세션은 사람이 [시키기]를 눌러야 뜬다."""
+    if not inbox:
+        return None
+    cf = conf or nudge_conf()
+    days = ((now or datetime.now(UTC).replace(tzinfo=None)) - inbox[0]["created_at"]).days
+    if len(inbox) >= cf["new_min"] or days >= cf["oldest_days"]:
+        return {"n": len(inbox), "days": days, "why": f"새로 {len(inbox)}개" + (f" · 가장 오래된 것 {days}일째" if days >= 1 else "")}
+    return None
+
+
 def topics(repo: str) -> list[dict[str, Any]]:
     """포트폴리오 주제 — 순서대로. written: main에 portfolio/<slug>.md가 있나."""
     import tomllib
@@ -117,6 +143,7 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
         if later:
             items.append({"kind": "later", "title": f"나중에 할 일 정리 — \"나중에\" {later}번", "why": "지난 정리가 합쳐진 뒤(없으면 처음부터) 사람이 미룬 말"})
         inbox = await inbox_new(engine, name)
+        nudge = nudge_of(inbox)
         if inbox:
             age = (datetime.now(UTC).replace(tzinfo=None) - inbox[0]["created_at"]).days
             items.append({"kind": "later", "title": f"받은 할 일 {len(inbox)}개" + (f" — 가장 오래된 것 {age}일째" if age >= INBOX_STALE_DAYS else ""),
@@ -138,7 +165,7 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
         opened = await open_tasks(engine, name)
         tps = [{**{k: t[k] for k in ("slug", "title", "about", "written")}, "blocked": blocked("portfolio", opened, t["slug"])}
                for t in topics(repo)]
-        out[name] = {"items": items, "open": opened, "topics": tps,
+        out[name] = {"items": items, "open": opened, "topics": tps, "nudge": nudge,
                      "blocked": {k: b for k in TASKS if k not in ("publish", "portfolio") and (b := blocked(k, opened))}}
     return out
 
@@ -224,43 +251,67 @@ async def _later_count(engine: Any, project: str, repo: str) -> int:
 # 상태는 계산한다: 버림(dropped_at) / 새로(아무도 안 가져감 · 가져간 정리를 버림) / 정리 중(가져간 세션이 아직 열림) / 옮김(합쳐짐)
 INBOX_MAX = 8000
 INBOX_STALE_DAYS = 3        # 새로인 채 이만큼 지나면 서기 할 일 글에 "N일째"를 붙여 눈에 띄게(조용히 쌓이지 않게)
+# 받는 사람(11-09, 0028) — 서기 정리(「나중에 할 일 정리」가 README 표로) · 코더에게(그 방 코더의 "맡길 일", 계획으로 세션이 가져감)
+ASSIGNEES = ("scribe", "coder")
+# 코더 몫이 끝나는 때: 가져간 세션이 합쳐짐, 또는 원본 폴더(worktree 아님) 세션이 끝남 — 원본 폴더 세션은 합치기가 없다
 _INBOX_STATE = ("CASE WHEN i.dropped_at IS NOT NULL THEN 'dropped' WHEN i.taken_by IS NULL THEN 'new' "
                 "WHEN EXISTS (SELECT 1 FROM session_action m WHERE m.session_id = i.taken_by AND m.action = 'wt-merge' AND m.ok) THEN 'moved' "
                 "WHEN EXISTS (SELECT 1 FROM session_action m WHERE m.session_id = i.taken_by AND m.action = 'wt-discard' AND m.ok) THEN 'new' "
+                "WHEN i.assignee = 'coder' AND EXISTS (SELECT 1 FROM character_session t WHERE t.id = i.taken_by "
+                "  AND t.worktree_path IS NULL AND t.detached_at IS NOT NULL) THEN 'moved' "
                 "ELSE 'taking' END")
 INBOX_LABEL = {"new": "새로", "taking": "서기가 정리 중", "moved": "옮김", "dropped": "버림"}
+INBOX_LABEL_CODER = {"new": "새로", "taking": "코더가 하는 중", "moved": "끝남", "dropped": "버림"}
+ASSIGNEE_KO = {"scribe": "서기 정리", "coder": "코더에게"}
 
 
-async def inbox_add(engine: Any, project: str, body: str) -> int:
+def inbox_label(state: str, assignee: str | None) -> str:
+    """받는 사람에 맞는 상태 이름 — 코더 몫은 합쳐지면 "옮김" 대신 "끝남"."""
+    return (INBOX_LABEL_CODER if assignee == "coder" else INBOX_LABEL).get(state, state)
+
+
+async def inbox_add(engine: Any, project: str, body: str, assignee: str = "scribe") -> int:
     from bridge.inject import Refused
     body = (body or "").strip()
     if not body:
         raise Refused("적을 글이 비어 있습니다")
     if len(body) > INBOX_MAX:
         raise Refused(f"글이 너무 깁니다({len(body)}자) — {INBOX_MAX}자까지 받습니다")
+    if assignee not in ASSIGNEES:
+        raise Refused(f"받는 사람은 서기 정리 · 코더에게 중 하나입니다: {assignee}")
     async with engine.begin() as c:
         if not (await c.execute(text("SELECT 1 FROM project WHERE name = :p"), {"p": project})).first():
             raise Refused(f"모르는 프로젝트입니다: {project}")
-        r = await c.execute(text("INSERT INTO todo_inbox (project, body) VALUES (:p, :b)"), {"p": project, "b": body})
+        r = await c.execute(text("INSERT INTO todo_inbox (project, body, assignee) VALUES (:p, :b, :a)"),
+                            {"p": project, "b": body, "a": assignee})
         return int(r.lastrowid)
 
 
 async def inbox_list(engine: Any, project: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
     """최근 것부터 — 버린 것도 보인다(나중에 다시 볼 수 있게)."""
-    q = (f"SELECT i.id, i.project, i.body, i.created_at, i.taken_by, i.dropped_at, {_INBOX_STATE} AS state FROM todo_inbox i "
+    q = (f"SELECT i.id, i.project, i.body, i.assignee, i.created_at, i.taken_by, i.dropped_at, {_INBOX_STATE} AS state FROM todo_inbox i "
          + ("WHERE i.project = :p " if project else "") + "ORDER BY i.id DESC LIMIT :n")
     async with engine.connect() as c:
         rows = (await c.execute(text(q), {"p": project, "n": limit})).mappings().all()
     return [dict(r) for r in rows]
 
 
-async def inbox_new(engine: Any, project: str) -> list[dict[str, Any]]:
-    """서기가 가져갈 것 — 새로인 것만, 오래된 것부터."""
+async def inbox_new(engine: Any, project: str, assignee: str = "scribe") -> list[dict[str, Any]]:
+    """받는 사람이 가져갈 것 — 새로인 것만, 오래된 것부터. 서기 「나중에 할 일 정리」는 서기 몫만 가져간다."""
     async with engine.connect() as c:
         rows = (await c.execute(text(
-            f"SELECT i.id, i.body, i.created_at FROM todo_inbox i WHERE i.project = :p AND {_INBOX_STATE} = 'new' ORDER BY i.id"),
-            {"p": project})).mappings().all()
+            f"SELECT i.id, i.body, i.created_at FROM todo_inbox i WHERE i.project = :p AND i.assignee = :a "
+            f"AND {_INBOX_STATE} = 'new' ORDER BY i.id"), {"p": project, "a": assignee})).mappings().all()
     return [dict(r) for r in rows]
+
+
+async def inbox_take_coder(engine: Any, iid: int, session_id: int) -> bool:
+    """코더에게 받은 할 일을 계획으로 띄운 세션이 가져간다(11-09) — 새로인 코더 몫만. 아니면 False(시작은 막지 않는다)."""
+    async with engine.begin() as c:
+        r = await c.execute(text(
+            f"UPDATE todo_inbox i SET i.taken_by = :s, i.taken_at = UTC_TIMESTAMP(3) WHERE i.id = :i AND i.assignee = 'coder' "
+            f"AND {_INBOX_STATE} = 'new'"), {"s": session_id, "i": iid})
+        return r.rowcount > 0
 
 
 async def inbox_drop(engine: Any, iid: int) -> bool:

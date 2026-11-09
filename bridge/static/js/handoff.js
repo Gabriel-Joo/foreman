@@ -18,6 +18,8 @@ export const FLOW_TIP = '새 세션으로 옮기기 — 지금까지를 요약�
 // ① 요약 → ② 확인(넣을 글을 보여 줌) → ③ 새 세션 → ④ 옛 세션 끝내기. 어디까지 왔는지는 이 브라우저에 세션마다 기억한다
 // (다른 세션을 봤다 와도, 새로 고쳐도 이어진다). [멈추기]는 어느 단계에서나 — 요약은 남는다.
 export const FLOW_STEPS = ['요약', '확인', '새 세션', '옛 세션 끝내기'];
+// 쉬게 한 지 며칠째(11-09) — 화면 시계 기준 하루 단위
+export const restDays = (iso, now = Date.now()) => Math.max(0, Math.floor((now - Date.parse(iso)) / 86400000)) || 0;
 const FLOW_KEY = 'foremanFlow:';
 const flowGet = (id) => { try { return JSON.parse(localStorage.getItem(FLOW_KEY + id) || 'null'); } catch { return null; } };
 const flowPut = (id, v) => { try { if (v) localStorage.setItem(FLOW_KEY + id, JSON.stringify(v)); else localStorage.removeItem(FLOW_KEY + id); } catch { /* 이 탭에서만 */ } };
@@ -134,11 +136,13 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       <div class="small"><code>${esc(w.branch)}</code> · ${esc(w.base)}보다 커밋 <b>${w.ahead}</b>개 앞${w.behind ? ` · <span title="${esc(w.base)}가 ${w.behind}개 앞서감(합칠 때 rebase) — 이 브랜치를 만든 뒤 ${esc(w.base)}에 들어온 커밋입니다. 합칠 때 그 위로 다시 얹습니다.">${esc(w.base)}에 새 변경 ${w.behind}개</span>` : ''}${w.dirty.length ? ` · <span class="warn">커밋 안 됨 ${w.dirty.length}</span>` : ''}${w.schema_lock ? ' · <span class="warn" title="스키마 잠금 보유 — 이 세션이 DB 구조(migrations)를 바꾸는 중이라 다른 세션은 바꿀 수 없습니다.">DB 구조 바꾸는 중</span>' : ''}</div>
       ${w.commits.length ? `<details${keep(`hand:${sid}:wt-commits`)}><summary class="small muted">커밋 · 바뀐 파일</summary><pre class="hand-body">${esc(w.commits.join('\n'))}\n\n${esc(w.diffstat.join('\n'))}</pre></details>` : ''}
       ${why ? `<div class="small muted">${esc(why)}</div>` : ''}
+      ${w.rested_at ? `<div class="small warn wt-rest" title="쉬는 중 — [쉬게 하기]로 지금까지를 커밋하고 세션만 끝냈습니다. 같은 일을 이어 하려면 [이어서], 끝났으면 [합치기]입니다.">쉬는 중 — 합치기 기다림 · ${esc(ago(w.rested_at))}부터${restDays(w.rested_at) >= 1 ? ` · ${restDays(w.rested_at)}일째` : ''}</div>` : ''}
       ${reviewBlock(w.review)}
       ${w.preview ? `<div class="small ok">미리보기가 :${w.preview.port}에서 돌고 있습니다.</div>` : ''}
       <div class="hand-btns">
         ${w.preview_ok ? b('wt-preview', '미리보기 열기', true, '', '미리보기 열기 — 이 브랜치의 화면 파일로 새 탭을 엽니다. 데이터와 버튼은 실제 브리지입니다. 없으면 빈 포트로 띄웁니다.') : ''}
         ${w.preview ? b('wt-preview-off', '미리보기 닫기', true, 'ghost', '미리보기 닫기 — 미리보기 서버를 끕니다.') : ''}
+        ${w.resume_ok ? b('rest-resume', '이어서', true, '', '이어서 — 같은 worktree에서 이 CC 세션을 다시 붙입니다(--resume). 같은 일의 맥락을 그대로 잇습니다. 새 일이면 새 세션으로 띄웁니다.') : ''}
         ${w.live ? '' : `${b('wt-merge', '합치기', !w.dirty.length, 'primary', `합치기 — ${w.branch}를 ${w.base} 위로 rebase한 뒤 fast-forward로 합치고 worktree를 지웁니다. 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다.`)}
         ${b('wt-discard', '버리기', true, 'danger', '버리기 — worktree와 브랜치를 지웁니다. 합치지 않은 커밋도 사라집니다.')}`}
       </div></div></div>`;
@@ -265,7 +269,8 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       <section class="hand">
         <div class="hand-h"><b>세션</b></div>
         <div class="hand-btns">
-          ${wtLive ? `${b('wt-end-merge', '끝내고 합치기', can.exit, '', `끝내고 합치기 — 커밋 안 된 변경이 없으면 세션을 끝내고 ${c.worktree.branch}를 ${c.worktree.base}에 합칩니다. 있으면 끝내지 않고 알립니다.`)}
+          ${wtLive ? `${b('rest', '쉬게 하기', can.rest, '', '쉬게 하기 — 지금까지를 이 브랜치에 커밋하고 세션만 끝냅니다. worktree는 남고 코더는 자리로 돌아가 「합치기 기다림」으로 보입니다. 나중에 [이어서] · [합치기] · [버리기]를 고릅니다.')}
+          ${b('wt-end-merge', '끝내고 합치기', can.exit, '', `끝내고 합치기 — 커밋 안 된 변경이 없으면 세션을 끝내고 ${c.worktree.branch}를 ${c.worktree.base}에 합칩니다. 있으면 끝내지 않고 알립니다.`)}
           ${b('wt-end-discard', '끝내고 버리기', can.exit, 'danger', '끝내고 버리기 — 세션을 끝내고 worktree와 브랜치를 지웁니다. 합치지 않은 커밋도 사라집니다.')}
           ${b('exit', '그냥 끝내기(나중에 정함)', can.exit, 'ghost', '그냥 끝내기 — 세션만 끝냅니다. worktree는 남고, 이 세션의 [세션] 탭 「따로 작업」에서 나중에 합치거나 버립니다.')}`
     : b('exit', '세션 끝내기', can.exit, 'danger', '세션 끝내기 — /exit로 세션을 완전히 끝냅니다. FOREMAN이 띄운 tmux 창도 닫습니다.')}
@@ -387,6 +392,15 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       // 미리보기 탭 안에서 누르면 이 탭을 띄운 서버가 꺼진다(11-06 — 끊긴 채로 남았다). 먼저 알린다
       if (window.FOREMAN_PREVIEW && !confirm('지금 이 탭이 미리보기입니다. 미리보기를 닫으면 이 탭은 끊깁니다(메인 브리지는 그대로입니다). 닫을까요?')) return;
       return run('미리보기 닫기', () => api('DELETE', `/api/sessions/${id}/preview`).then(() => ({ ok: true, msg: '미리보기를 껐습니다.' })));
+    }
+    // 쉬게 하기 · 이어서(11-09) — 실패하면 까닭(커밋 실패 · 뒤에서 도는 일 · 끝내기 확인 창 · resume 실패)을 그대로 띄운다
+    if (act === 'rest') {
+      const w = data.controls.worktree;
+      if (!confirm(`지금까지를 ${w.branch}에 커밋하고(커밋 안 한 변경 ${w.dirty.length}개${w.dirty.length ? ' — .env · .venv 링크는 넣지 않습니다' : ''}) 세션만 끝냅니다. worktree는 남습니다. 나중에 [이어서] · [합치기] · [버리기]를 고릅니다. 쉬게 할까요?`)) return;
+      return run('쉬게 하기', () => post(`/api/sessions/${id}/rest`).then((r) => ({ ok: !!r.ok, bad: !r.ok, msg: r.note || (r.ok ? '쉬게 했습니다.' : '쉬게 하지 못했습니다.') })));
+    }
+    if (act === 'rest-resume') {
+      return run('이어서', () => post(`/api/sessions/${id}/rest-resume`).then((r) => ({ ok: !!r.ok, bad: !r.ok, msg: r.note || (r.ok ? '이어서 붙였습니다.' : '이어 붙이지 못했습니다.') })));
     }
     if (act === 'wt-merge' || act === 'wt-discard' || act === 'wt-end-merge' || act === 'wt-end-discard') {
       const w = data.controls.worktree;

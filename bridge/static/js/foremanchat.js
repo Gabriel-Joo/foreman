@@ -59,6 +59,7 @@ function mount(dlg) {
   h2.after(fm, manual);
   const $ = (id) => box.querySelector('#' + id);
   let disp = null, opts = null, room = null;
+  let inboxId = null;      // 11-09 코더에게 받은 할 일에서 연 계획 — [이대로 시작]하면 그 세션이 가져간다(창을 다시 열면 풀린다)
   // 상태 글(11-09 사용자 — 버튼 옆 작은 회색 글은 읽기 힘들었다): 입력칸 아래 상자, 기다리는 중이면 움직이는 점
   const msg = (t, cls = 'muted') => {
     const busy = cls === 'muted' && /…/.test(t);
@@ -97,6 +98,7 @@ function mount(dlg) {
   function reset(project) {
     who();
     disp = null;
+    inboxId = null;
     $('fmWake').hidden = true;
     $('fmPlan').hidden = true;
     $('fmAsk').disabled = false;
@@ -239,7 +241,7 @@ function mount(dlg) {
     $('fmStartMsg').className = 'small muted';
     $('fmStartMsg').textContent = plan.mode === 'attach' ? '세션에 보내는 중입니다…' : '새 세션을 띄우는 중입니다…';
     try {
-      const r = await api('POST', '/api/foreman/start', { dispatch_id: disp.dispatch_id, plan });
+      const r = await api('POST', '/api/foreman/start', { dispatch_id: disp.dispatch_id, plan, ...(inboxId ? { inbox_id: inboxId } : {}) });
       const ok = r.mode === 'attach' ? (r.injected ? '보냈습니다.' : '보냈지만 제출을 확인하지 못했습니다.')
         : `새 세션을 띄웠습니다${r.tmux ? `(tmux ${r.tmux}${r.model ? ' · ' + r.model : ''})` : ''}.${r.worktree ? ` 따로 작업 ${r.worktree.branch}에서 합니다.` : ''}${r.injected ? ' 첫 글을 넣었습니다.' : ''}`;
       $('fmStartMsg').className = `small ${r.note ? 'warn' : 'ok'}`;
@@ -263,7 +265,13 @@ function mount(dlg) {
   $('fmAsk').onclick = ask;
   $('fmText').addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); ask(); } });
   who();
-  ui = { reset, load, focus: () => $('fmText').focus() };
+  // 11-09 코더의 맡길 일 → 받은 할 일 글을 말하기 칸에 채운다. 바로 계획을 받지 않는다(사람이 읽고 [계획 받기])
+  function prefill(text, id) {
+    $('fmText').value = text || '';
+    inboxId = id || null;
+    msg(id ? `받은 할 일 #${id}을 채웠습니다. 고칠 것은 고친 뒤 [계획 받기]를 누릅니다. 시작하면 그 세션이 이 할 일을 가져갑니다.` : '', 'muted');
+  }
+  ui = { reset, load, prefill, focus: () => $('fmText').focus() };
 }
 
 // 감독실 캐릭터 · 말풍선 · 텔레그램 링크가 부른다 — [+ 세션] 창을 열고 위의 말하기 칸으로
@@ -281,7 +289,12 @@ async function openDispatch(id) {
   await open(null);
   if (ui) await ui.load(id);
 }
-window.foremanChat = { open, openDispatch };
+// 코더의 맡길 일(11-09) — 받은 할 일을 말하기 칸에 채워 연다(계획으로 — 바로 띄우지 않는다)
+async function openWith(project, text, inboxId) {
+  await open(project || null);
+  if (ui) ui.prefill(text, inboxId);
+}
+window.foremanChat = { open, openDispatch, openWith };
 
 // [+ 세션] 창은 office.js가 처음 그릴 때 만든다 — 생기면 붙는다
 const watch = new MutationObserver(() => { const d = document.getElementById('nsDlg'); if (d) { mount(d); watch.disconnect(); } });

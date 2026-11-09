@@ -19,6 +19,7 @@ from bridge.api import approvals as approvals_api, dashboard as dashboard_api, d
 from bridge.api import foreman as foreman_api, handoff as handoff_api, terminal as terminal_api, webhooks
 from bridge.api import publish as publish_api
 from bridge.api import scribe as scribe_api
+from bridge.api import coder as coder_api
 from bridge.api import usage as usage_api
 from bridge.usage import UsageMonitor, load_config as load_usage
 from sqlalchemy import text
@@ -81,7 +82,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.compact_rules = load_compact_rules(s.notify_config)   # 대시보드 압축 표시 기준(적재가 꺼져 있어도)
         app.state.terminal = None
         app.state.ingest_monitor = None
-        watch_task = state_task = health_task = denied_task = None
+        watch_task = state_task = health_task = denied_task = schema_task = None
         if s.terminal_enabled:
             # 7단계 터미널 패널 — ttyd(UNIX 소켓) + tmux foreman-shell. 실패해도 브리지는 뜬다
             term = TerminalManager(engine, s, pipeline, Masker(), publish=pipeline.publish,
@@ -265,6 +266,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.schema_lock = SchemaLock(Path(__file__).resolve().parent.parent / "config" / "worktree.toml",
                                            alive=lambda cc: cc in live_sessions(sd))
         app.state.handoff.schema = app.state.schema_lock
+        # 11-09 — 일찍 풀기: 원본 폴더 세션이 쥔 FOREMAN 잠금은 마이그레이션 적용 · 커밋이 끝나면 저절로 푼다(1분마다)
+        sl_ = app.state.schema_lock
+
+        async def schema_early_release() -> None:
+            while True:
+                await asyncio.sleep(60)
+                try:
+                    for proj, h in list(sl_.state.items()):
+                        top = h.get("top")
+                        if h.get("wt") or not top or not Path(top, "bridge", "db", "migrate.py").is_file():
+                            continue                        # FOREMAN 저장소(이 DB의 schema_migrations)만 — 다른 저장소의 DB는 모른다
+                        async with engine.connect() as c:
+                            applied = {r[0] for r in (await c.execute(text("SELECT version FROM schema_migrations"))).all()}
+                        why = sl_.try_release_early(proj, applied)
+                        if why:
+                            log.info("스키마 잠금을 일찍 풀었다 — %s(%s): %s", proj, h["cc"][:8], why)
+                except Exception as e:  # noqa: BLE001 — 판단 실패는 잠금을 그대로 둔다(풀지 않는 쪽이 안전)
+                    log.warning("스키마 잠금 일찍 풀기 확인 실패: %s", type(e).__name__)
+        schema_task = asyncio.create_task(schema_early_release(), name="foreman-schema-release")
         # 11-05 — 미리보기 브리지(worktree 화면 + 지금 브리지 데이터). 버튼을 누를 때만 띄우고 끝내기 · 합치기 · 버리기 때 끈다
         app.state.handoff.previews = Previews(Path(__file__).resolve().parent.parent / "config" / "worktree.toml",
                                               app.state.handoff.socket, f"http://{s.bind_host}:{s.bind_port}")
@@ -348,7 +368,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await app.state.notifier.stop()
             if app.state.terminal:
                 await app.state.terminal.stop()   # ttyd만 내린다 — tmux 셸은 남는다
-            for t in (watch_task, state_task, health_task, usage_task, docsync_task, denied_task):
+            for t in (watch_task, state_task, health_task, usage_task, docsync_task, denied_task, schema_task):
                 if t:
                     t.cancel()
                     try:
@@ -368,6 +388,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(handoff_api.router)
     app.include_router(publish_api.router)
     app.include_router(scribe_api.router)
+    app.include_router(coder_api.router)
     app.include_router(foreman_api.router)
     app.include_router(approvals_api.router)
     app.include_router(dashboard_api.router)

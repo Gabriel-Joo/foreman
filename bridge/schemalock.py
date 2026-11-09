@@ -44,6 +44,7 @@ class SchemaLock:
                 self.rules[proj] = {"paths": [x.strip("/") + "/" for x in r.get("paths", [])],
                                     "commands": [re.compile(x) for x in r.get("commands", [])]}
         self.alive = alive
+        self.released: dict[str, dict[str, Any]] = {}   # 일찍 푼 것(11-09) — 화면이 "잠금을 풀었습니다"를 잠깐 보인다(메모리만)
         self.state_path = Path(state or Path.home() / ".foreman" / "schema_lock.json")
         self.state: dict[str, dict[str, Any]] = {}
         try:
@@ -84,14 +85,57 @@ class SchemaLock:
         h = self.state.get(project)
         if h and h["cc"] != cc and self._held(h):
             where = f"worktree {h['wt']}" if h.get("wt") else "원본 폴더"
+            # 11-09 — 막힌 세션을 남긴다(화면 띠 · 텔레그램 한 번). 메시지를 보내지 않으면 아무도 몰랐다(세션 233)
+            b = h.get("blocked") or {}
+            if b.get("cc") != cc:
+                h["blocked"] = {"cc": cc, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "what": what, "new": True}
+                self._save()
             return (f"스키마 잠금 — 이 프로젝트의 DB 스키마는 다른 세션({h['cc'][:8]}, {where})이 바꾸는 중입니다({what}). "
                     "그 세션이 끝나 합쳐진 뒤에 하거나, 그 세션에 맡기거나, 화면에서 잠금을 풀어 달라고 사용자에게 요청하세요.")
         if not h or h["cc"] != cc:
             repo, name = wt.split(cwd or "")
             self.state[project] = {"cc": cc, "wt": name, "wt_path": os.path.join(repo, wt.WT_DIR, name) if name else None,
+                                   "top": _top(cwd) if cwd else None,
                                    "since": datetime.now(timezone.utc).isoformat(timespec="seconds"), "what": what}
             self._save()
         return None
+
+    def take_blocked_notice(self, project: str | None) -> dict[str, Any] | None:
+        """막힘을 처음 본 것이면 그 기록(알림을 한 번만 보내려고 표시를 지운다), 아니면 None."""
+        h = self.state.get(project or "")
+        b = (h or {}).get("blocked")
+        if not b or not b.get("new"):
+            return None
+        b["new"] = False
+        self._save()
+        return {**b, "holder": h["cc"], "wt": h.get("wt"), "since": h.get("since")}
+
+    def try_release_early(self, project: str, applied: set[str]) -> str | None:
+        """일찍 풀기(11-09) — 원본 폴더 세션은 끝날 때까지 쥔다(_held). 그 세션 작업 트리의 migrations/ 파일이 모두 DB에
+        적용됐고(schema_migrations) migrations/에 커밋 안 한 변경이 없으면 저절로 푼다. 푼 까닭(판단 근거)을 돌려준다.
+        worktree 세션이 쥔 잠금은 합치기 전까지 그대로(그 스키마가 main에 없다)."""
+        import subprocess
+        h = self.state.get(project)
+        if not h or h.get("wt") or not h.get("top"):
+            return None
+        mig = Path(h["top"]) / "migrations"
+        if not mig.is_dir():
+            return None
+        files = sorted(p.stem for p in mig.glob("[0-9][0-9][0-9][0-9]_*.sql"))
+        missing = [f for f in files if f not in applied]
+        if not files or missing:
+            return None
+        try:
+            r = subprocess.run(["git", "-C", h["top"], "status", "--porcelain", "--", "migrations/"],
+                               capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if r.returncode or r.stdout.strip():
+            return None
+        why = f"적용 · 커밋 끝 — migrations/ {len(files)}개가 모두 DB에 적용됐고(마지막 {files[-1]}) 커밋 안 한 변경이 없습니다"
+        self.released[project] = {"cc": h["cc"], "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "why": why}
+        self.release(project)
+        return why
 
     def _held(self, h: dict[str, Any]) -> bool:
         if self.alive(h["cc"]):
@@ -108,3 +152,6 @@ class SchemaLock:
 
     def view(self) -> dict[str, Any]:
         return {p: {**h, "held": self._held(h)} for p, h in self.state.items()}
+
+    def released_view(self) -> dict[str, Any]:
+        return dict(self.released)

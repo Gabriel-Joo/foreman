@@ -124,6 +124,8 @@ class ApprovalManager:
         if why_lock:
             dec = Decision("deny", rule, why_lock)
             log.warning("deny %s %s — %s", project, tool, why_lock)
+            if rule == "스키마-잠금":
+                self._schema_blocked_notice(project)
             self._bg(self._record_pre(p, tool, inp, dec, pp.mode, True, None))
             return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                            "permissionDecisionReason": f"FOREMAN {why_lock}"}}
@@ -165,6 +167,31 @@ class ApprovalManager:
                                       f"{prefix} 🛡 안전 규칙 파일 수정 · {tool}\n▶ {path}\n"
                                       f"묻지 않고 통과 — 브리지를 다시 띄워야 반영된다. "
                                       f"10분 안의 다음 수정은 따로 알리지 않는다")
+
+    def _schema_blocked_notice(self, project: str | None) -> None:
+        """다른 세션이 스키마 잠금에 막혔다(11-09) — 텔레그램 한 번(같은 막힌 세션은 다시 안 보낸다). 화면은 방 배너(/api/schema-lock)."""
+        b = self.schema.take_blocked_notice(project) if self.schema else None
+        if not b or not self.notifier:
+            return
+
+        async def go() -> None:
+            try:
+                async with self.engine.connect() as c:
+                    ids = {r[0]: r[1] for r in (await c.execute(text(
+                        "SELECT cc_session_id, id FROM character_session WHERE cc_session_id IN (:a, :b)"),
+                        {"a": b["cc"], "b": b["holder"]})).all()}
+            except Exception:  # noqa: BLE001
+                ids = {}
+            who = lambda cc: f"세션 {ids[cc]}" if cc in ids else f"세션 {cc[:8]}"   # noqa: E731
+            rule_ = self.notifier.rules.for_project(project)
+            prefix = rule_.prefix if rule_ else "[미분류]"
+            where = f"worktree {b['wt']}" if b.get("wt") else "원본 폴더"
+            since = (b.get("since") or "")[11:16]
+            self.notifier.send_direct(project, "schlock", ids.get(b["cc"]),
+                                      f"{prefix} 🔒 {who(b['cc'])}이 스키마 잠금에 막혔습니다 — 쥔 세션 {who(b['holder'])}"
+                                      f"({where}, {since} UTC부터) · 시도 {b.get('what')}\n"
+                                      "푸는 곳: 화면 방 배너의 [풀기](쥔 세션이 스키마 일을 끝냈으면)")
+        self._bg(go())
 
     def _summary(self, tool: str, inp: dict[str, Any], rule: str, reason: str, cwd: str | None) -> str | None:
         try:
