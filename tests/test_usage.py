@@ -250,3 +250,50 @@ def test_alerts_thresholds_eta_once_and_after_restart():
                 await c.execute(text("DELETE FROM notification WHERE rule LIKE :k"), {"k": f"usage:{tag}%"})
             await eng.dispose()
     asyncio.run(go())
+
+
+def test_credit_status():
+    """11-09 사람이 넣은 크레딧 값 — 크레딧 0 · 월 한도 초과 · 자동 충전 꺼짐(지금 값)이면 막힘, 달이 지나면 갱신 필요."""
+    from datetime import date
+
+    from bridge.usage import credit_status
+    now_c = {"balance_usd": 0, "monthly_cap_usd": 50, "monthly_used_usd": 51.3, "auto_reload": False, "as_of": "2026-11-09"}
+    s = credit_status(now_c, date(2026, 11, 20))
+    assert s["blocked"] and not s["stale"] and s["room_usd"] == 0
+    s = credit_status(now_c, date(2026, 12, 1))                       # 달이 바뀜 — 그달 사용액이 아니다
+    assert s["stale"] and not s["blocked"]
+    ok = {**now_c, "balance_usd": 20, "monthly_used_usd": 10}
+    s = credit_status(ok, date(2026, 11, 20))
+    assert not s["blocked"] and s["available_usd"] == 20               # 잔액 20, 한도 여유 40 → 20
+    assert credit_status({**ok, "auto_reload": True}, date(2026, 11, 20))["available_usd"] == 40
+    assert credit_status(None, date(2026, 11, 20)) is None
+    assert CFG.credits and CFG.credits["as_of"]                        # config/usage.toml에 칸이 있다
+
+
+def test_alerts_90_when_credits_blocked():
+    """추가 사용이 막혀 있으면 90%에 한 번 더(100%가 곧 멈춤) — 글에 막힌 까닭과 '마무리'."""
+    tag = "zz" + uuid.uuid4().hex[:6]
+    lim5 = Limit(key=f"{tag}_5h", label="5시간", match="Current session", window_h=5)
+    cr = {"balance_usd": 0, "monthly_cap_usd": 50, "monthly_used_usd": 51.3, "auto_reload": False, "as_of": "2001-01-01"}
+    cfg = UsageConfig(poll_s=600, fail_alert=3, tz="UTC", prices=CFG.prices, limits=[lim5], credits=cr)
+    now = datetime(2001, 1, 1, 12, 0)
+
+    async def reader():
+        return {"result": "Current session: 92% used · resets Jan 1, 3pm (UTC)"}
+
+    async def go():
+        eng = make_engine(Settings(mysql_database="foreman_test"))
+        n = _Notifier()
+        try:
+            mon = UsageMonitor(eng, cfg, n, reader=reader)
+            assert await mon.poll(now)
+            sent = await mon.check_alerts(now)
+            assert f"usage:{lim5.key}:90:01011500" in sent
+            msg = next(m for _, m in n.sent if "5시간 사용량" in m)
+            assert msg.startswith("[FOREMAN] 🛑") and "추가 사용이 막혀 있습니다" in msg and "마무리할 일을 먼저 하세요" in msg
+        finally:
+            async with eng.begin() as c:
+                await c.execute(text("DELETE FROM usage_observation WHERE limit_key LIKE :k"), {"k": tag + "%"})
+                await c.execute(text("DELETE FROM notification WHERE rule LIKE :k"), {"k": f"usage:{tag}%"})
+            await eng.dispose()
+    asyncio.run(go())

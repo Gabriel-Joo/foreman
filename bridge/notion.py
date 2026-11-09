@@ -895,6 +895,12 @@ async def resolve_uploads(client: Any, repo: str, blocks: list[dict[str, Any]], 
     return out
 
 
+def file_order(path: str) -> tuple[int, int] | None:
+    """파일 이름 번호의 차례 — "17_x.md" → (17, 0), "03a_x.md" → (3, 1). 번호가 없으면 None."""
+    m = re.match(r"^(\d+)([a-z])?_", path.rsplit("/", 1)[-1])
+    return (int(m.group(1)), ord(m.group(2)) - 96 if m.group(2) else 0) if m else None
+
+
 class Publisher:
     """doc_publish 기록 + 범위 확인 + 게시 · 다시 게시 · 내리기. DB는 store(engine)로, Notion은 client로."""
 
@@ -940,10 +946,18 @@ class Publisher:
                 rows = (await c.execute(text(
                     "SELECT path, parent_page_id FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' "
                     "AND path LIKE :pre"), {"p": self.project, "pre": folder + "/%"})).all()
-            sib = {norm(r[1]) for r in rows if r[1] and r[0].rsplit("/", 1)[0] == folder}
+            mates = [r for r in rows if r[1] and r[0].rsplit("/", 1)[0] == folder]
+            sib = {norm(r[1]) for r in mates}
             if len(sib) != 1:
                 raise OutOfScope(f"{folder}/의 부모 페이지를 정할 수 없습니다(게시된 형제 {len(rows)}편, 부모 {len(sib)}곳) — 만들지 않습니다: {path}")
             parent = sib.pop()
+            # 11-09 사용자 — Notion은 새 하위 페이지를 부모 끝에 붙인다(API로 자리를 못 정한다). 형제 중 가장 큰 번호보다 작으면
+            # 사이드바 차례가 깨진다 → 만들지 않고 실패. 맨 뒤 번호만 만든다
+            key = file_order(path)
+            last = max((k for r in mates if (k := file_order(r[0])) is not None), default=None)
+            if key is None or (last is not None and key < last):
+                tail = f"(같은 폴더 마지막 번호 {last[0]:02d}{chr(96 + last[1]) if last[1] else ''})" if last else ""
+                raise OutOfScope(f"중간 번호라 자리를 정할 수 없습니다. 직접 만드십시오 — {path}{tail}")
         title = None
         if self.new_title == "numbered":
             m = re.match(r"^(\d+)([a-z])?_", path.rsplit("/", 1)[-1])

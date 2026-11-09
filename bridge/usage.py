@@ -100,6 +100,7 @@ class UsageConfig:
     tz: str = "Asia/Seoul"
     prices: dict[str, dict[str, float]] = field(default_factory=dict)
     limits: list[Limit] = field(default_factory=list)
+    credits: dict[str, Any] | None = None           # [credits] — 사람이 넣는 크레딧 값(11-09)
 
     @property
     def zone(self) -> ZoneInfo:
@@ -127,7 +128,32 @@ def load_config(path: str | Path) -> UsageConfig:
                     models=[str(m).lower() for m in x.get("models") or []], reset=x.get("reset"))
               for x in raw.get("limits") or []]
     return UsageConfig(poll_s=float(raw.get("poll_s", 600)), fail_alert=int(raw.get("fail_alert", 3)),
-                       tz=str(raw.get("tz", "Asia/Seoul")), prices=prices, limits=limits)
+                       tz=str(raw.get("tz", "Asia/Seoul")), prices=prices, limits=limits,
+                       credits=raw.get("credits") if isinstance(raw.get("credits"), dict) else None)
+
+
+def credit_status(c: dict[str, Any] | None, today: Any) -> dict[str, Any] | None:
+    """사람이 넣은 크레딧 값 → 화면 상태(11-09). today = 지금 날짜(설정 tz).
+    blocked — 한도(5시간 · 주간)에 닿으면 넘쳐 쓸 돈이 없다: 월 한도를 다 썼거나, 잔액 0에 자동 충전이 꺼짐.
+    stale — 값을 본 달이 지났다(월 사용액은 그달 값). 그때는 blocked를 믿지 않고 "갱신 필요"만"""
+    if not c:
+        return None
+    from datetime import date
+    bal = float(c.get("balance_usd") or 0)
+    cap = c.get("monthly_cap_usd")
+    used = float(c.get("monthly_used_usd") or 0)
+    auto = bool(c.get("auto_reload"))
+    try:
+        as_of = date.fromisoformat(str(c.get("as_of")))
+    except ValueError:
+        as_of = None
+    room = None if cap is None else max(0.0, float(cap) - used)
+    blocked = (room is not None and room <= 0) or (bal <= 0 and not auto)
+    avail = bal if room is None else (room if auto else min(bal, room))
+    stale = as_of is None or (as_of.year, as_of.month) != (today.year, today.month)
+    return {"balance_usd": bal, "monthly_cap_usd": cap, "monthly_used_usd": used, "auto_reload": auto,
+            "as_of": as_of.isoformat() if as_of else None, "room_usd": room, "available_usd": round(avail, 2),
+            "blocked": blocked and not stale, "stale": stale}
 
 
 # ── 2. /usage 글 풀이 ─────────────────────────────────
@@ -496,6 +522,10 @@ class UsageMonitor:
         같은 창 · 같은 문턱은 rule 키(notification.rule)로 한 번만 — 브리지를 다시 띄워도. 보낸 rule 목록."""
         now = now or datetime.now(UTC).replace(tzinfo=None)
         sent: list[str] = []
+        # 11-09 — 추가 사용이 막혀 있으면(크레딧 0 · 월 한도 초과) 100%가 곧 멈춤이다 → 90%에 한 번 더(마무리할 틈)
+        cr = credit_status(self.cfg.credits, now.replace(tzinfo=UTC).astimezone(self.cfg.zone).date())
+        blocked = bool(cr and cr["blocked"])
+        thrs = (95, 90, 80) if blocked else (95, 80)
         for x in await limit_status(self.engine, self.cfg, now, self.latest):
             pct = x["est_pct"] if x["est_pct"] is not None else x["measured_pct"]
             if pct is None:
@@ -508,11 +538,14 @@ class UsageMonitor:
             reset = f"리셋 {self._local(x['reset_at'])}" if x["reset_at"] else "리셋 모름"
             eta = f" 이 속도면 {self._local(x['eta_100'])}에 100%." if x["eta_100"] and x["eta_before_reset"] else ""
             stale = "" if self.error is None else " (지금 /usage를 못 읽고 있어 FOREMAN이 본 사용량으로만 추정)"
-            for thr in (95, 80):
+            stop = (f" 추가 사용이 막혀 있습니다(크레딧 ${cr['balance_usd']:g} · 월 한도 ${cr['monthly_cap_usd']:g} 중 "
+                    f"${cr['monthly_used_usd']:g} 사용, {cr['as_of']} 기준) — 100%가 되면 리셋까지 세션이 멈춥니다. 마무리할 일을 먼저 하세요."
+                    if blocked else "")
+            for thr in thrs:
                 if pct >= thr:
-                    rules = [f"usage:{x['key']}:{t}:{tag}" for t in (95, 80) if t <= thr]   # 95%를 보냈으면 80%는 따로 안 보낸다
-                    if await self._once(rules[0], f"{'🛑' if thr >= 95 else '⚠'} {x['label']} 사용량 약 {pct:.0f}% — {src}, {reset}.{eta}"
-                                                  f"{stale} 한도에 닿으면 세션이 말없이 멈춘다. 화면 머리의 사용량 칩 → /usage", also=rules[1:],
+                    rules = [f"usage:{x['key']}:{t}:{tag}" for t in thrs if t <= thr]   # 95%를 보냈으면 80%는 따로 안 보낸다
+                    if await self._once(rules[0], f"{'🛑' if thr >= 90 else '⚠'} {x['label']} 사용량 약 {pct:.0f}% — {src}, {reset}.{eta}"
+                                                  f"{stale}{stop or ' 한도에 닿으면 세션이 말없이 멈춘다.'} 화면 머리의 사용량 칩 → /usage", also=rules[1:],
                                         same=[f"usage:{x['key']}:{thr}:{t}" for t in near]):
                         sent.append(rules[0])
                     break

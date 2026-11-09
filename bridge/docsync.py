@@ -153,6 +153,8 @@ async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset
             done.append({"path": f, "action": r["action"]})
         except HumanEdited as e:
             held.append({"path": f, "edits": e.edits[:5], "count": len(e.edits), "url": e.url})
+        except OutOfScope as e:                          # 게시기가 일부러 막은 것 — 사유 글 그대로(알림에 "OutOfScope:"를 붙이지 않게)
+            failed.append({"path": f, "error": str(e)[:200]})
         except Exception as e:  # noqa: BLE001 — 파일 하나가 막혀도 나머지는 올린다
             failed.append({"path": f, "error": f"{type(e).__name__}: {str(e)[:200]}"})
     for f in st["deleted"]:
