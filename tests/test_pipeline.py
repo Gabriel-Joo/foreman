@@ -16,8 +16,8 @@ from bridge.config import Settings
 from bridge.db.engine import make_engine
 from bridge.db.migrate import main as migrate_main
 from bridge.mask import Masker
-from bridge.pipeline import (PipelineManager, argocd_status, build_cause, harbor_items, image_tag, infra_alert,
-                             jenkins_status, load_pipeline, commit_match, other_repo, watch_state, webhook_broken)
+from bridge.pipeline import (PipelineManager, argocd_live, argocd_status, build_cause, harbor_items, image_tag, infra_alert,
+                             jenkins_status, live_verdict, load_pipeline, commit_match, other_repo, watch_state, webhook_broken)
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -423,9 +423,16 @@ async def test_argocd_sync_waiting_attaches_to_undeployed_build(env):
         assert await pm.check_sync_wait(end + timedelta(hours=3)) == []
         k2 = await pm.check_sync_wait(end + timedelta(hours=26))
         assert len(k2) == 1 and k2 != k1
+        # 사람이 Sync를 누름 → 진행 중. 시작 시각은 누른 때로(대기 시작 시각이 남으면 "진행 중 N시간"으로 센다, 11-09)
+        pressed = datetime.now(UTC).replace(tzinfo=None, microsecond=0)
+        await pm.on_argocd({"app": "runshoes", "sync": "Synced", "health": "Progressing", "phase": "Running",
+                            "revision": "2" * 40, "op_revision": "2" * 40, "images": img(new), "automated": False,
+                            "at": pressed.isoformat() + "Z"})
+        assert q(conn, "SELECT status, started_at, ended_at FROM build WHERE id = %s", out["build"])[0] == ("running", pressed, None)
         await pm.on_argocd({"app": "runshoes", "sync": "Synced", "health": "Healthy", "phase": "Succeeded",
                             "revision": "2" * 40, "op_revision": "2" * 40, "images": img(new), "automated": False})
-        assert q(conn, "SELECT status FROM build WHERE id = %s", out["build"])[0][0] == "success"
+        st, ended = q(conn, "SELECT status, ended_at FROM build WHERE id = %s", out["build"])[0]
+        assert st == "success" and ended >= pressed                         # 끝 시각은 대기 시작 시각이 아니라 끝난 때
     finally:
         await engine.dispose()
 
@@ -454,5 +461,90 @@ async def test_argocd_running_without_revision_closed_by_later_result(env):
         await pm.on_jenkins({"job": "runshoes-app", "number": 2, "phase": "started", "commit": sha})
         await pm.on_jenkins({"job": "runshoes-app", "number": 3, "phase": "completed", "result": "SUCCESS", "commit": sha})
         assert q(conn, "SELECT status FROM build WHERE stage = 'jenkins' AND external_id LIKE %s", "%#2")[0][0] == "running"
+    finally:
+        await engine.dispose()
+
+
+def test_argocd_live_verdict():
+    """11-09 펫퍼민트 #109 모양 — Synced · Progressing 알림 뒤 Healthy 알림이 안 왔다. 직접 읽은 상태로 판정."""
+    app = {"status": {"sync": {"status": "OutOfSync", "revision": "b" * 40}, "health": {"status": "Healthy"},
+                      "operationState": {"phase": "Succeeded", "finishedAt": "2026-11-09T04:53:03Z",
+                                         "syncResult": {"revision": "a" * 40}, "message": "successfully synced"}}}
+    live = argocd_live(app)
+    assert live["op_revision"] == "a" * 40 and live["revision"] == "b" * 40 and live["health"] == "Healthy"
+    assert live_verdict(live, "a" * 40) == ("success", None)          # 끝난 작업 · 다음 리비전이 이미 와 있음(수동 Sync)
+    assert live_verdict(live, "b" * 40) is None                       # OutOfSync의 목표 리비전 — 아직 안 올라갔다
+    assert live_verdict({**live, "sync": "Synced"}, "b" * 40) == ("success", None)
+    assert live_verdict(live, "c" * 40) is None                       # 모르는 리비전
+    assert live_verdict(live, "?") is None
+    assert live_verdict({**live, "phase": "Running"}, "a" * 40) is None
+    assert live_verdict({**live, "health": "Progressing"}, "a" * 40) is None
+    assert live_verdict({**live, "phase": "Failed"}, "a" * 40) == ("failed", "sync")
+    assert live_verdict({**live, "health": "Degraded", "sync": "Synced"}, "b" * 40) == ("failed", "health")
+    assert live_verdict({**live, "health": "Degraded"}, "b" * 40) is None
+    assert argocd_live({})["sync"] == ""
+
+
+@pytest.mark.db
+async def test_argocd_running_read_closes_or_alerts(env):
+    """running이 10분 넘으면 ArgoCD를 읽어 그 리비전이 끝났으면 닫고, 30분 지나도 안 끝났거나 못 읽으면 행마다 한 번 알린다."""
+    s, repo, conn = env
+    t0 = datetime.now(UTC).replace(tzinfo=None, microsecond=0) - timedelta(minutes=60)
+    sha = _commit(repo, "a.txt", t0)
+    _git(repo, "update-ref", "refs/remotes/origin/main", sha)
+    engine = make_engine(s)
+    notifier = FakeNotifier()
+    pm = PipelineManager(engine, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+                         notifier)
+    reads = []
+
+    async def reader(app):
+        reads.append(app)
+        return state["live"]
+    state = {"live": {"sync": "Synced", "health": "Progressing", "revision": "1" * 40, "phase": "Succeeded",
+                      "op_revision": "1" * 40, "finished_at": None, "message": ""}}
+    pm.argo_reader = reader
+    try:
+        await pm.start(loops=False)
+        img = [f"harbor.ronanlab.dev/runshoes/runshoes:{sha[:12]}"]
+        await pm.on_jenkins({"job": "runshoes-app", "number": 1, "phase": "completed", "result": "SUCCESS", "commit": sha})
+        r = await pm.on_argocd({"app": "runshoes", "sync": "Synced", "health": "Progressing", "phase": "Succeeded",
+                                "revision": "1" * 40, "op_revision": "1" * 40, "images": img, "at": t0.isoformat() + "Z"})
+        assert r["status"] == "running"
+        # 5분: 아직 읽지 않는다
+        assert await pm.check_argo_running(t0 + timedelta(minutes=5)) == [] and reads == []
+        # 15분: 읽었지만 Progressing — 알림은 아직(30분 전)
+        assert await pm.check_argo_running(t0 + timedelta(minutes=15)) == [] and reads == ["runshoes"]
+        # 같은 앱은 5분 안에 다시 읽지 않는다
+        await pm.check_argo_running(t0 + timedelta(minutes=17))
+        assert len(reads) == 1
+        # 35분: 안 끝남 → 한 번 알림(ArgoCD 화면 링크 · 지금 상태)
+        k = await pm.check_argo_running(t0 + timedelta(minutes=35))
+        assert len(k) == 1 and notifier.sent[-1][1] == "argorun"
+        assert "배포가 끝나지 않습니다" in notifier.sent[-1][2] and "상태 Progressing" in notifier.sent[-1][2]
+        with conn.cursor() as c:
+            c.execute("INSERT INTO notification (kind, decision, rule, text) VALUES ('argorun', 'sent', %s, 'x')", (k[0],))
+        assert await pm.check_argo_running(t0 + timedelta(minutes=45)) == []           # 같은 행은 다시 안 알린다
+        # Healthy가 되면 읽어서 성공으로 닫는다(끝 알림 없이)
+        state["live"] = {**state["live"], "health": "Healthy", "finished_at": (t0 + timedelta(minutes=3)).isoformat() + "Z"}
+        out = await pm.check_argo_running(t0 + timedelta(minutes=55))
+        assert out == [f"closed:{r['build']}:success"]
+        row = q(conn, "SELECT status, ended_at, message FROM build WHERE id = %s", r["build"])[0]
+        assert row[0] == "success" and row[1] == t0 + timedelta(minutes=3) and "ArgoCD를 읽어 확인" in row[2]
+        # 못 읽음 — 안 끝난 행은 이유를 넣어 알린다(조용히 넘어가지 않게)
+        r2 = await pm.on_argocd({"app": "runshoes", "sync": "Synced", "health": "Progressing", "phase": "Running",
+                                 "revision": "2" * 40, "op_revision": "2" * 40, "images": img, "at": (t0 + timedelta(minutes=10)).isoformat() + "Z"})
+
+        # 그 리비전 Sync가 막 시작했으면(ArgoCD startedAt) 행이 오래돼도 알리지 않는다 — 11-09 첫 실제 알림이 이것을 틀렸다
+        state["live"] = {"sync": "Synced", "health": "Progressing", "revision": "2" * 40, "phase": "Running",
+                         "op_revision": "2" * 40, "started_at": (t0 + timedelta(minutes=58)).isoformat() + "Z",
+                         "finished_at": None, "message": ""}
+        assert await pm.check_argo_running(t0 + timedelta(minutes=62)) == []
+
+        async def broken(app):
+            raise RuntimeError("종료 코드 1: connection refused")
+        pm.argo_reader = broken
+        k2 = await pm.check_argo_running(t0 + timedelta(minutes=70))
+        assert k2 == [f"argo_stuck:runshoes:{r2['build']}"] and "읽지 못했습니다: 종료 코드 1" in notifier.sent[-1][2]
     finally:
         await engine.dispose()

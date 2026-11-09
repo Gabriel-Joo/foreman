@@ -27,6 +27,12 @@ alert_after = 5                # 연달아 이만큼(5분) 응답이 없으면 �
 retire_after_h = 24            # STALE로 이만큼 지나면 퇴장(retired_at). 다시 응답하거나 웹훅이 오면 돌아온다
 ingress = "http://192.168.122.240"   # ingress-nginx VIP(MetalLB) — 호스트에서 *.ronanlab.dev 이름은 Cloudflare Access로 간다
 
+# ArgoCD 직접 읽기(11-09) — 끝 알림(Healthy)이 안 와 "진행 중"에 남은 행을 10분 뒤 읽어 닫는다. 30분이 지나도 안 끝났거나
+# 못 읽으면 행마다 텔레그램 한 번("배포가 끝나지 않습니다"). 호스트에 kubectl이 없어 vagrant ssh로(읽기 전용 kubectl get)
+[argocd_read]
+vagrant_dir = "~/k8s-cluster"
+vm = "m-k8s"
+namespace = "argocd"
 # 인프라 캐릭터 — 첫 웹훅을 받으면 프로젝트마다 등장한다(README 2.2). 생존은 이 주소를 폴링한다(Host 헤더로 ingress에)
 [infra.jenkins]
 name = "Jenkins"
