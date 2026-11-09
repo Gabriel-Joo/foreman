@@ -151,3 +151,16 @@ mode = "observe"
 
 [projects.foreman]
 mode = "enforce"
+
+# ── 다른 저장소는 읽기만(11-09 사용자, bridge/reposcope.py) ───────────
+# 여기 적은 프로젝트의 세션은 자기 저장소(+ 그 worktree) 밖의 git 저장소를 고치지 않는다 — 승인 모드와 상관없이 거부.
+#   Edit · Write · MultiEdit · NotebookEdit: 대상 파일이 다른 git 저장소 안이면 거부
+#   git: -C · cd · --git-dir · --work-tree · GIT_DIR로 다른 저장소를 가리키며 읽기 명령(아래 read) 밖을 쓰면 거부
+#        (fetch도 그 저장소 .git에 쓴다 → 상태는 git ls-remote, 손볼 일은 /tmp · 스크래치 복제본에서)
+#   /tmp 아래(스크래치 복제본)와 git 저장소가 아닌 곳(~/.claude 등)은 막지 않는다
+#   Bash의 그 밖 쓰기(sed -i · > 리디렉션 등)는 보지 않는다 — CC 샌드박스로 막을지는 일상 명령을 시험한 뒤(사용자)
+[repo_scope]
+read_only_elsewhere = ["foreman"]
+read = ["status", "log", "show", "diff", "ls-files", "ls-tree", "ls-remote", "rev-parse", "rev-list", "blame",
+        "grep", "cat-file", "describe", "shortlog", "whatchanged", "for-each-ref", "show-ref", "name-rev",
+        "merge-base", "count-objects", "check-ignore", "help", "version"]

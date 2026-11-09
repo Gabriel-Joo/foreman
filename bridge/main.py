@@ -33,6 +33,7 @@ from bridge.losscheck import LossChecker
 from bridge.model_choice import Models
 from bridge.liveness import live_sessions
 from bridge.previews import Previews
+from bridge.reposcope import RepoScope
 from bridge.schemalock import SchemaLock
 from bridge.approval import load_policy
 from bridge.approvals import ApprovalManager
@@ -275,6 +276,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             log.warning("미리보기 정리 실패: %s", e)
         if app.state.approvals:
             app.state.approvals.schema = app.state.schema_lock
+            # 11-09 — 다른 저장소는 읽기만(config/approval.toml [repo_scope])
+            asm_ = app.state.assembler
+            app.state.approvals.scope = RepoScope(
+                Path(__file__).resolve().parent.parent / "config" / "approval.toml",
+                repos=lambda: {name: repo for repo, _pid, name, _c in (asm_.projects if asm_ else [])})
         # 11단계 — 포먼 디스패처(사람이 말하면 계획 → 승인하면 시작). 부를 때만 claude -p
         async def _pipe_snap() -> dict:
             pm = app.state.pipeline_mgr
