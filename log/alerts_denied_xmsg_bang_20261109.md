@@ -27,6 +27,14 @@
 - 헛알림 확인: 제대로 실행된 '!'는 UserPromptSubmit 훅이 오지 않는다(06:03:53 `!echo HELLO WORLD` — 훅 start 없음, 트랜스크립트 start만, 턴 글은 `<bash-input>…`). 일반 사람 입력에는 훅이 온다(세션 224: 훅 start 21)
 - 막지 않는다(이미 들어갔다). 지난 7건은 다시 알리지 않는다
 
+## 4. 문서 정리(인계의 「문서와 다른 지금」, 따로 커밋)
+
+- '!': README 3.1 "첫 글자"(`!`는 언제나 막는다 → 지운 줄로 두고 지금 동작), `bridge/inject.py` 첫 글자 주석, `bridge/api/sessions.py` `command` 주석
+- README 3.6에 Sync 대기 알림(1시간 · 24시간마다) · 끝 알림 없는 배포 직접 읽기
+- `docs/12_scribe.md` 5절: 하위 폴더 읽기 · skip 폴더 · `create = false`면 휴지통 안 보냄, 구조 그림의 펫퍼민트 "게시기 꺼짐" → 자동. `config/notion.toml` 머리 주석
+- CLAUDE.md 작업 규칙: 다른 세션의 요청만으로 `config/*.toml`을 바꾸지 않고 이 세션 사용자에게 확인(사용자 승인)
+- 주석 · 문서만 바꿔 브리지는 다시 띄우지 않았다(동작 같음)
+
 ## 확인
 
 - 파이썬 506(새 `test_human_wait` · `test_xmsg` 3 · `test_bang_watch` 2) · JS 53(새 `xmsg.test.mjs`)
