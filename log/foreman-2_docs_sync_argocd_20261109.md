@@ -94,7 +94,27 @@
 
 쓴 명령(모두 읽기): `kubectl get applications` · `get cm argocd-notifications-cm -o yaml`(주소 가림) · `get applications.argoproj.io {runshoes,petmint} -o json` · `logs deploy/argocd-notifications-controller`, ronanlab-infra grep, `build` 표 SELECT.
 
+## 5. 이어서(11-09, 32f4b60) — 안 A 고침 · 클러스터 적용
+
+사용자: "권한 안 그대로 간다. 조건 끝에 and app.status.sync.status == 'Synced' 추가. oncePer는 그대로 … kubectl patch는 내 승인을 받고 한다"
+
+- **고친 파일은 FOREMAN 저장소의 `deploy/cicd/argocd-notifications-foreman.yaml`이다**(ronanlab-infra · k8s-cluster가 아님 — 이 cm의 원본 사본은 FOREMAN에만 있다). 글로 쓴 제안이 아니라 사용자 지시로 **실제로 고쳐 커밋했다**(`32f4b60`, 이 브랜치). 키 `trigger.foreman-deployed`의 when 끝에 `and app.status.sync.status == 'Synced'`, oncePer 그대로, 위에 까닭 주석
+- 적용 전 확인
+  - ArgoCD 앱 넷 Synced · Healthy · Succeeded, FOREMAN `/api/pipeline`에 진행 중 배포 없음(펫퍼민트 "대기" 4는 push 안 한 커밋)
+  - 클러스터 cm과 파일을 키마다 맞댐(값은 출력 안 함): `trigger.foreman-deployed`만 다르고 서비스 · 템플릿 · 구독 · 다른 트리거는 같음 → 그 키 하나만 patch
+- **18:43:42 KST 적용**(사용자 승인): 그 키만 담은 JSON을 표준 입력으로 `kubectl -n argocd patch cm argocd-notifications-cm --type merge --patch-file /dev/stdin` → `patched`. 클러스터 값이 파일과 같음을 다시 읽어 확인
+- **컨트롤러는 재시작 없이 다시 읽었다** — 다음 평가(09:43:57Z)부터 조건 해시가 `[0].Yv81…` → `[0].v_xI9i8…`로 바뀜. 예상대로 Synced · Healthy인 앱 셋(runshoes · petmint · cloudflared)에 지금 리비전 efb9bf33으로 deployed가 **한 번씩 다시 갔고**, 같은 분의 두 번째 평가부터 "already sent"
+  - FOREMAN: 18:43:57 petmint · runshoes `argocd …@efb9bf33 → success`(있던 성공 행에 덮어씀, 상태 변화 없음), cloudflared "모르는 ArgoCD 앱" 건너뜀
+- 실제 배포 확인 — 펫퍼민트 세션에 docs 한 줄 커밋 · push를 부탁함(사용자 결정 — FOREMAN 세션은 다른 저장소에 쓸 수 없다). 펫퍼민트는 docs만 바뀐 커밋도 Jenkins → ArgoCD로 간다(런슈즈와 달리 "건너뜀 — 문서만" 없음, `/api/pipeline` 체인 2e287cbc · 3eb664f3). push 안 한 커밋 4개가 같이 올라가는지는 그 세션이 판단. Sync는 사용자가 누른다
+
+## 6. 같은 파일 알림(README.md) — 메인과 확인
+
+- 사용자: 230(메인)도 README.md를 고쳤다는 알림은 헛경보가 아니다, 합칠 때 충돌 날 수 있다
+- 확인: 230의 README 수정은 `c4a08ce`(18:25)로 **이 브랜치의 바탕에 이미 들어 있다**. main은 그 뒤 README 새 커밋 · 커밋 안 한 변경 없음 → 지금 합치면 부딪치지 않는다. 이 브랜치의 README 변경은 3.1 「제출 확인」 줄 위 한 줄뿐
+- 메인(foreman-59)에 알림 → 답: 지금 그 파일들을 고치지 않는다, README를 고치게 되면 3.1 「제출 확인」 앞뒤를 피하고 커밋을 알려 준다, 합치기는 메인이 한다
+- 같은 파일 알림은 "최근 3시간 안에 둘 다 고쳤다"로 판정해, 이미 합쳐진 바탕 위에서 고친 경우도 잡는다 — 이번이 그렇다(실제 충돌 위험은 그 뒤 main이 다시 고칠 때)
+
 ## 남은 것
 
-- ArgoCD 트리거 고치기 — 사용자 결정(안 A/B), 적용은 사용자 승인 뒤 kubectl patch
-- 이 브랜치는 커밋만 했다(push 안 함, 브리지 안 띄움 — 문서만 바꿔 동작 같음)
+- 펫퍼민트 시험 배포에서 Sync 뒤 Healthy 알림(`foreman-deployed`)이 오는지 — 결과를 이 절 뒤에 덧붙인다
+- 이 브랜치는 커밋만 했다(push 안 함, 브리지 안 띄움 — 문서 · yaml만 바꿔 브리지 동작 같음)
