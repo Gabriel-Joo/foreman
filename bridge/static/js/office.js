@@ -6,6 +6,7 @@ import { resolveAction, infraAction, groupSubagents, tokenRate, viewState } from
 import { loadSprites } from './sprites.js';
 import { createSidePanel } from './opanel.js';
 import { mountNewSession } from './newsession.js';
+import { mountTodoInbox } from './todoinbox.js';
 import { showTip, hideTip, themeTips, attachDomTips, textTip, softEsc, tipAudit as tipAuditOf } from './tip.js';
 import { buildGrid, findPath, footprint, RES } from './walk.js';
 import { uiScale } from './uiscale.js';
@@ -38,6 +39,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         <button id="oAll" class="ghost" title="전체 — 모든 현장을 한 화면에 봅니다.">전체</button>
         <nav id="oProj" class="oproj" aria-label="프로젝트"></nav>
         <button id="oNew" class="ghost onew" title="새 세션 — 프로젝트나 폴더를 골라 새 세션을 띄웁니다.">＋ 세션</button>
+        <button id="oTodo" class="ghost onew" title="할 일 — 세션을 띄우지 않고 할 일을 적어 둡니다. 서기가 모아 README 표로 옮깁니다.">＋ 할 일</button>
         <span id="oAlerts" class="oalerts"></span>
       </div>
       <div class="otop-row otop-sub">
@@ -2759,6 +2761,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // + 새 세션(11-05) — 지금 보고 있는 현장을 기본 프로젝트로. 띄우면 그 세션을 골라 패널에 연다
   const newSession = mountNewSession(store, { onCreated: (sid) => setTimeout(() => openSession(sid), 300) });
   $('oNew').onclick = () => newSession.open(view !== 'hq' && view !== 'map' && view !== '_lounge' ? view : null);
+  // 11-09 [＋ 할 일] — 받는 함에 적는다(세션 없음). 적으면 서기 머리 위 "할 일 N"을 다시 센다
+  const todoInbox = mountTodoInbox(store, { onSaved: () => loadScribeTodo() });
+  $('oTodo').onclick = () => todoInbox.open(view !== 'hq' && view !== 'map' && view !== '_lounge' ? view : null);
   window.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Escape') return;
     if (ev.target.closest && ev.target.closest('input, textarea, select')) return;   // 입력 칸에서 친 Esc는 칸이 처리

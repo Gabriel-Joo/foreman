@@ -116,6 +116,11 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
         later = await _later_count(engine, name, repo)
         if later:
             items.append({"kind": "later", "title": f"나중에 할 일 정리 — \"나중에\" {later}번", "why": "지난 정리가 합쳐진 뒤(없으면 처음부터) 사람이 미룬 말"})
+        inbox = await inbox_new(engine, name)
+        if inbox:
+            age = (datetime.now(UTC).replace(tzinfo=None) - inbox[0]["created_at"]).days
+            items.append({"kind": "later", "title": f"받은 할 일 {len(inbox)}개" + (f" — 가장 오래된 것 {age}일째" if age >= INBOX_STALE_DAYS else ""),
+                          "why": "머리줄 [＋ 할 일]로 받은 글 — 「나중에 할 일 정리」가 README 표로 옮깁니다"})
         if (pub := publishers.get(name)) is not None:
             # 11-09 런슈즈 요청 3-1 — 파일마다 한 줄이던 것을 묶음마다 한 줄로. 포트폴리오는 사람이 [게시](바깥 독자에게 내는 글)
             try:
@@ -214,6 +219,65 @@ async def _later_count(engine: Any, project: str, repo: str) -> int:
     return len(await later_prompts(engine, project, await later_since(engine, project)))
 
 
+# ── 할 일 받는 함(11-09, migrations/0027) ─────────────────────────
+# 사람이 머리줄 [＋ 할 일]에 적은 글 — 세션을 거치지 않고 그대로 둔다. 「나중에 할 일 정리」 서기가 재료로 받아 README 표로 옮긴다.
+# 상태는 계산한다: 버림(dropped_at) / 새로(아무도 안 가져감 · 가져간 정리를 버림) / 정리 중(가져간 세션이 아직 열림) / 옮김(합쳐짐)
+INBOX_MAX = 8000
+INBOX_STALE_DAYS = 3        # 새로인 채 이만큼 지나면 서기 할 일 글에 "N일째"를 붙여 눈에 띄게(조용히 쌓이지 않게)
+_INBOX_STATE = ("CASE WHEN i.dropped_at IS NOT NULL THEN 'dropped' WHEN i.taken_by IS NULL THEN 'new' "
+                "WHEN EXISTS (SELECT 1 FROM session_action m WHERE m.session_id = i.taken_by AND m.action = 'wt-merge' AND m.ok) THEN 'moved' "
+                "WHEN EXISTS (SELECT 1 FROM session_action m WHERE m.session_id = i.taken_by AND m.action = 'wt-discard' AND m.ok) THEN 'new' "
+                "ELSE 'taking' END")
+INBOX_LABEL = {"new": "새로", "taking": "서기가 정리 중", "moved": "옮김", "dropped": "버림"}
+
+
+async def inbox_add(engine: Any, project: str, body: str) -> int:
+    from bridge.inject import Refused
+    body = (body or "").strip()
+    if not body:
+        raise Refused("적을 글이 비어 있습니다")
+    if len(body) > INBOX_MAX:
+        raise Refused(f"글이 너무 깁니다({len(body)}자) — {INBOX_MAX}자까지 받습니다")
+    async with engine.begin() as c:
+        if not (await c.execute(text("SELECT 1 FROM project WHERE name = :p"), {"p": project})).first():
+            raise Refused(f"모르는 프로젝트입니다: {project}")
+        r = await c.execute(text("INSERT INTO todo_inbox (project, body) VALUES (:p, :b)"), {"p": project, "b": body})
+        return int(r.lastrowid)
+
+
+async def inbox_list(engine: Any, project: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    """최근 것부터 — 버린 것도 보인다(나중에 다시 볼 수 있게)."""
+    q = (f"SELECT i.id, i.project, i.body, i.created_at, i.taken_by, i.dropped_at, {_INBOX_STATE} AS state FROM todo_inbox i "
+         + ("WHERE i.project = :p " if project else "") + "ORDER BY i.id DESC LIMIT :n")
+    async with engine.connect() as c:
+        rows = (await c.execute(text(q), {"p": project, "n": limit})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+async def inbox_new(engine: Any, project: str) -> list[dict[str, Any]]:
+    """서기가 가져갈 것 — 새로인 것만, 오래된 것부터."""
+    async with engine.connect() as c:
+        rows = (await c.execute(text(
+            f"SELECT i.id, i.body, i.created_at FROM todo_inbox i WHERE i.project = :p AND {_INBOX_STATE} = 'new' ORDER BY i.id"),
+            {"p": project})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+async def inbox_drop(engine: Any, iid: int) -> bool:
+    async with engine.begin() as c:
+        r = await c.execute(text("UPDATE todo_inbox SET dropped_at = UTC_TIMESTAMP(3) WHERE id = :i AND dropped_at IS NULL"), {"i": iid})
+        return r.rowcount > 0
+
+
+async def _inbox_take(engine: Any, ids: list[int], session_id: int) -> None:
+    if not ids:
+        return
+    from sqlalchemy import bindparam
+    async with engine.begin() as c:
+        await c.execute(text("UPDATE todo_inbox SET taken_by = :s, taken_at = UTC_TIMESTAMP(3) WHERE id IN :ids")
+                        .bindparams(bindparam("ids", expanding=True)), {"s": session_id, "ids": ids})
+
+
 async def later_prompts(engine: Any, project: str, since: datetime | None, limit: int = 300) -> list[dict[str, Any]]:
     """사람이 "나중에 · 미루"라고 한 턴 — since(UTC) 뒤, None이면 처음부터. 오래된 것부터, limit개까지."""
     async with engine.connect() as c:
@@ -252,8 +316,9 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
 - 옮긴 규칙마다 목적지를 표로: `log/trim_{today}.md`
 - 사용자 원문 인용 · 날짜 표시는 그대로 둔다"""
     elif task == "later":
-        body = f"""할 일: 대화에서 "나중에 하자"고 한 것을 README 「나중에 할 일 (정해 두고 미룬 것)」 표에 넣는다.
-- 재료(저장소 밖, 사람 말 원문): `{e.get('materials') or '(없음)'}` — 지난 정리가 합쳐진 뒤(없으면 처음부터) "나중에 · 미루"가 나온 사람 말
+        body = f"""할 일: 대화에서 "나중에 하자"고 한 것과 사람이 [＋ 할 일]로 적은 것을 README 「나중에 할 일 (정해 두고 미룬 것)」 표에 넣는다.
+- 재료(저장소 밖, 사람 말 원문): `{e.get('materials') or '(없음)'}` — 받은 할 일(모두 넣는다) + 지난 정리가 합쳐진 뒤(없으면 처음부터) "나중에 · 미루"가 나온 사람 말
+- 받은 할 일은 근거 칸에 `받은 할 일 #번호`를 적는다. 같은 일이 표에 이미 있으면 새 줄을 만들지 않고 그 줄에 보탠다
 - 항목마다 무엇 · 언제 · 조건 · 근거(결과 문서 · log). 이미 한 것은 표에서 뺀다. 그때뿐인 "나중에"(잠깐 뒤에)는 넣지 않는다
 - README.md만 고친다"""
     elif task == "portfolio":
@@ -319,12 +384,18 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
     elif task == "later":
         when = await later_since(engine, project)
         rows = await later_prompts(engine, project, when)
-        if not rows:                       # 빈손으로 Opus 세션을 띄우지 않는다(11-06 — 범위가 비어 사람 턴 0개로 떴다)
-            raise Refused(f"{'지난 정리 뒤로' if when else '지금까지'} \"나중에 · 미루\"라고 한 사람 말이 없습니다 — 띄우지 않았습니다")
+        inbox = await inbox_new(engine, project)
+        if not rows and not inbox:         # 빈손으로 Opus 세션을 띄우지 않는다(11-06 — 범위가 비어 사람 턴 0개로 떴다)
+            raise Refused(f"{'지난 정리 뒤로' if when else '지금까지'} \"나중에 · 미루\"라고 한 사람 말도, 받은 할 일도 없습니다 — 띄우지 않았습니다")
         from bridge.mask import Masker
         mk = Masker()
-        lines = [f"# 미룬 말 — {project} ({(sc.kst(when) + ' 뒤') if when else '처음부터'}, 사람 턴 {len(rows)}개)",
+        lines = [f"# 미룬 말 · 받은 할 일 — {project} ({(sc.kst(when) + ' 뒤') if when else '처음부터'}, 사람 턴 {len(rows)}개 · 받은 할 일 {len(inbox)}개)",
                  "README 「나중에 할 일」 표에 이미 있는 것은 빼고, 이미 한 일도 뺀다(지난 정리를 버렸으면 같은 범위를 다시 본다).", ""]
+        if inbox:
+            lines += ["# 받은 할 일 — 사람이 머리줄 [＋ 할 일]로 직접 적은 것. 모두 할 일이다(\"그때뿐\"으로 거르지 않는다)", ""]
+            for x in inbox:
+                lines += [f"## 받은 할 일 #{x['id']} {sc.kst(x['created_at'])}", mk.text(x["body"]) or "", ""]
+            lines += ["# 대화에서 미룬 말", ""]
         for x in rows:
             lines += [f"## [t:{x['id']}] {sc.kst(x['started_at'])}", mk.text(sc._clip(x["prompt_text"], 1500)) or "", ""]
         mat = sc.write(sc.OUT_ROOT / f"{project}_{day}" / "later.md", "\n".join(lines))
@@ -346,5 +417,7 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
         await m._act(res["session_id"], TASK_ACT, res.get("pid"), True, f"{task} {tp['slug']}" if tp else task)
     if task == "later" and res.get("session_id"):
         # 어디까지 봤나 — 이 세션이 합쳐지면 다음 정리의 기준점이 된다(later_since)
-        await m._act(res["session_id"], LATER_ACT, res.get("pid"), True, f"{now.isoformat()} 미룬 말 {len(rows)}개")
+        await m._act(res["session_id"], LATER_ACT, res.get("pid"), True, f"{now.isoformat()} 미룬 말 {len(rows)}개 받은 할 일 {len(inbox)}개")
+        # 받은 할 일은 이 세션이 가져간다 — 합쳐지면 "옮김", 버려지면 다시 "새로"(상태는 계산, _INBOX_STATE)
+        await _inbox_take(engine, [x["id"] for x in inbox], res["session_id"])
     return {"task": task, "project": project, "topic": tp["slug"] if tp else None, **{k: res.get(k) for k in ("tmux", "cc_session_id", "worktree", "note", "injected")}}

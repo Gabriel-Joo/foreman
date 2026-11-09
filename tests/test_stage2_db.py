@@ -1257,6 +1257,45 @@ async def test_later_since_counts_only_merged_runs(env):
     assert await sr.later_since(engine, proj) == datetime(2026, 11, 6, 6, 5)  # 합쳤다(커밋 0개여도) → 그 뒤부터
 
 
+async def test_todo_inbox_states(env):
+    """할 일 받는 함(11-09) — 적으면 새로, 서기가 가져가면 정리 중, 합치면 옮김, 버린 정리면 다시 새로, 사람이 버리면 버림."""
+    from sqlalchemy import text as T
+    from bridge import scribe_room as sr
+    from bridge.inject import Refused
+    s, _main = env
+    await run(s)
+    engine = make_engine(s)
+    ENGINES.append(engine)
+    sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
+    proj = q(s, "SELECT p.name FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
+                "JOIN project p ON p.id = ch.project_id WHERE cs.id = %s", sid)[0][0]
+    for bad in ("  ", "x" * (sr.INBOX_MAX + 1)):
+        with pytest.raises(Refused):
+            await sr.inbox_add(engine, proj, bad)
+    with pytest.raises(Refused):
+        await sr.inbox_add(engine, "없는-프로젝트", "할 일")
+    a = await sr.inbox_add(engine, proj, "질문 카드 — 답한 뒤 한 줄로 접기\n둘째 줄")
+    b = await sr.inbox_add(engine, proj, "터미널 입력 칸 겹침")
+    async def state():
+        return {r["id"]: r["state"] for r in await sr.inbox_list(engine, proj)}
+    assert await state() == {a: "new", b: "new"}
+    assert [x["id"] for x in await sr.inbox_new(engine, proj)] == [a, b]      # 서기에게는 오래된 것부터
+    assert [x["id"] for x in await sr.inbox_list(engine, proj)] == [b, a]     # 화면 목록은 최근 것부터
+    todo = await sr.todo(engine)
+    assert any(i["title"] == "받은 할 일 2개" and i["kind"] == "later" for i in todo[proj]["items"])
+    await sr._inbox_take(engine, [a, b], sid)
+    assert await state() == {a: "taking", b: "taking"} and await sr.inbox_new(engine, proj) == []
+    async with engine.begin() as c:
+        await c.execute(T("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, 'wt-discard', 1, 'x')"), {"s": sid})
+    assert await state() == {a: "new", b: "new"}                               # 정리를 버렸다 → 다시 새로
+    assert await sr.inbox_drop(engine, b) is True and await sr.inbox_drop(engine, b) is False
+    async with engine.begin() as c:
+        await c.execute(T("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, 'wt-merge', 1, 'x')"), {"s": sid})
+    assert await state() == {a: "moved", b: "dropped"}                         # 합쳤다 → 옮김, 사람이 버린 것은 버림
+    todo = await sr.todo(engine)
+    assert not any("받은 할 일" in i["title"] for v in todo.values() for i in v["items"])   # 새로가 없으면 할 일 줄도 없다
+
+
 # ── 11-06 사람이 붙인 이름이 항상 이긴다 ─────────────
 async def test_custom_title_survives_ai_title_and_passes_to_handoff(env):
     from types import SimpleNamespace

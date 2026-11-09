@@ -197,6 +197,18 @@ body { --term-h:0px; }
 .ns .ns-opt.off { opacity:.55; cursor:default; }
 .ns-act { justify-content:flex-end; margin-top:6px; }
 /* 역할 · 모델 두 칸(11-05) — 좁으면 위아래로 */
+/* [＋ 할 일](11-09, todoinbox.js) — [＋ 세션] 창 모양을 따른다 */
+.ti textarea { width:100%; min-height:8em; resize:vertical; font:inherit; }
+.ti-list { border-top:1px solid var(--line); padding-top:6px; margin-top:4px; }
+.ti-list #tiList { display:grid; gap:4px; max-height:32vh; overflow:auto; margin-top:4px; }
+.ti-item { display:flex; gap:8px; align-items:flex-start; }
+.ti-item .ti-st { flex:none; min-width:5.5em; }
+.ti-item .ti-body { flex:1; min-width:0; }
+.ti-item .ti-body summary { cursor:pointer; overflow-wrap:anywhere; }
+.ti-item .ti-body pre { max-height:24vh; margin:4px 0 0; white-space:pre-wrap; }
+.ti-item.st-new .ti-st { color:var(--warn); font-weight:600; }
+.ti-item.st-moved .ti-st { color:var(--ok); }
+.ti-item.st-dropped { opacity:.6; }
 .ns-two { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
 .ns-two label { display:flex; flex-direction:column; gap:2px; }
 @media (max-width:480px) { .ns-two { grid-template-columns:1fr; } }
