@@ -48,4 +48,4 @@ title = "keep"                      # 제목 그대로("00. 모델 준비" — �
 order = "keep"                      # 자리 · 차례 그대로(18쪽은 「02. 파이프라인 설계」 아래)
 header = "footer"                   # 사본 상자 대신 맨 아래 회색 한 줄 "마지막 갱신 — 커밋 · 시각"
 keep_notion = ["inline_code", "image", "heading", "shape"]   # 모양은 Notion 기준, 쪽 단위 글 비교(docs/12_scribe.md 5절 — 잃는 것)
-skip = ["docs/README.md", "docs/next_rebuild.md"]
+skip = ["docs/README.md", "docs/next_rebuild.md", "docs/저녁실행.md", "docs/모드검증.md"]   # 뒤 둘은 운영 기록 · 체크리스트(11-09 사용자)
