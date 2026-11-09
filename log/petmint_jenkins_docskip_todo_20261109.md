@@ -47,6 +47,13 @@
 - `a498cb5..16727bc` push(펫퍼민트 사용자 승인). FOREMAN `build` #145 `petmint-app#56` `16727bc0` running(20:17:16 시작) — 받는 것 확인. 이 빌드는 정상 빌드 · Sync 대기 1개 예정
 - 펫퍼민트가 #56 성공 뒤 **한글 파일명 docs/ops 문서만 바꾼 확인 커밋**을 push하고 해시를 보낸다 → 그 빌드가 "건너뜀 — 문서만" · `skipped: true` · 태그 · Sync 대기 없음인지 FOREMAN에서 본다(quotePath 수정까지 같이 확인됨)
 
+## 실제 확인 — 끝(20:3x)
+
+- 펫퍼민트 확인 커밋 `5af21d5`(한글 파일명 `docs/ops/배포기록.md` 한 줄) → Jenkins #57 "skip (16727bc0a761..5af21d5bce61 파일 1개, 모두 문서)", SUCCESS, "건너뜀 — 문서만(5af21d5bce61)". 인프라 newTag 커밋 없음(펫퍼민트 확인). `core.quotePath=false`가 한글 경로에 듣는다
+- FOREMAN DB: `build` #148 `petmint-app#57` success · payload `skipped: true` · tag 없음 · **ArgoCD 행 없음**, `/api/pipeline` 사슬 단계 "건너뜀 — 문서만" `skipped: true` → **배포 대기 안 생김** ✓
+- #56(`16727bc`, Jenkinsfile)은 정상 빌드 → ArgoCD #147 20:20 KST "successfully synced" — Sync 대기도 남지 않음
+- **조용히 넘어간 것**: `5af21d5` push(약 20:18 KST)의 GitHub 웹훅이 Jenkins에 오지 않아 #57은 15분 폴링(cause `poll`, 20:33)으로 돌았다. FOREMAN `webhook_broken: false` — 한 번 빠진 웹훅은 아무 표시가 없다(끊김 판정은 이어서 빠질 때만으로 보임). README 「나중에 할 일」
+
 ## 같이 볼 것
 
 - 지금 쌓인 문서만 바뀐 태그를 Sync할지는 사용자가 정한다(그 기록의 남은 항목)
