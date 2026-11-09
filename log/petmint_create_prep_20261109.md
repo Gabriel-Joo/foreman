@@ -53,3 +53,4 @@
   - FOREMAN이 서브에이전트 기록으로 다시 셈: 저장소 안 새 세션 `cf4dd796` Explore → **sonnet 7**(+ opus 1줄 — general-purpose에서도 보인 응답 아닌 줄), 저장소 밖 비교 `639dd193` 기본 제공 Explore → opus 9 ✓
   - 같은 찾기 일(compare.view 쓰는 곳)에서 둘 다 정답 8곳(런슈즈 보고)
   - FOREMAN · 펫퍼민트에 넣을지는 사용자가 정한다
+- **FOREMAN · 펫퍼민트에도(사용자 20:5x)**: FOREMAN은 교장 경로 dispatch #157 → 코더 worktree 세션 238(`foreman-3`, 작은 일이라 sonnet으로 바꿔 시작), 펫퍼민트는 그 세션(`petmint-rag-chatbot-b7`)에 세션 간 메시지 — 먼저 보여 주고 확인 뒤 고치게. 펫퍼민트는 이 커밋이 정상 빌드되면 Sync 대기가 생길 수 있음을 함께 알리게 함
