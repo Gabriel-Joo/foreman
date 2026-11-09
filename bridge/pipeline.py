@@ -138,6 +138,9 @@ def jenkins_status(body: dict[str, Any]) -> tuple[str, str | None]:
 
 
 SKIP_STEP = "건너뜀 — 문서만"
+# ArgoCD 수동 Sync 대기 알림(11-09) — 보통은 빌드 뒤 몇 분 안에 Sync한다(배포 약 5분). 1시간이면 잊은 것, 그 뒤 하루마다 다시
+SYNC_WAIT_FIRST = timedelta(hours=1)
+SYNC_WAIT_EVERY = timedelta(hours=24)
 
 
 def jenkins_skipped(body: dict[str, Any]) -> bool:
@@ -402,7 +405,51 @@ class PipelineManager:
                 continue
         return False
 
+    async def check_sync_wait(self, now: datetime | None = None) -> list[str]:
+        """ArgoCD 수동 Sync 대기가 오래 남으면 알린다(11-09 사용자 — 펫퍼민트가 11-02부터 일주일 밀렸는데 아무도 몰랐다).
+        처음 SYNC_WAIT_FIRST 뒤 한 번, 그 뒤 풀릴 때까지 SYNC_WAIT_EVERY마다 — 한 번만 보내면 그 한 통을 놓쳤을 때 다시 일주일이 간다.
+        기준 시각: 대기 중 이미지 중 가장 오래된 빌드의 Jenkins 끝 시각(ArgoCD 행의 started_at은 지난 Sync 작업 시각이라 쓰지 않는다).
+        같은 회차는 notification.rule 키로 한 번만(브리지를 다시 띄워도). 돌려주는 값: 이번에 보낸 rule 키들"""
+        now = now or _now()
+        sent = []
+        if self.notifier is None:
+            return sent
+        for p in self.rules.projects.values():
+            if not p.argocd_app:
+                continue
+            async with self.engine.connect() as c:
+                rows = (await c.execute(text(
+                    "SELECT j.external_id, j.ended_at FROM build a JOIN build j ON j.project_id = a.project_id "
+                    "AND j.stage = 'jenkins' AND j.commit_sha = a.commit_sha AND j.status = 'success' "
+                    "WHERE a.project_id = :p AND a.stage = 'argocd' AND a.status = 'waiting' AND j.ended_at IS NOT NULL "
+                    "ORDER BY j.ended_at"), {"p": p.project_id})).all()
+            if not rows:
+                continue
+            since = rows[0][1]
+            age = now - since
+            if age < SYNC_WAIT_FIRST:
+                continue
+            k = int((age - SYNC_WAIT_FIRST) / SYNC_WAIT_EVERY)        # 몇 번째 알림인가(0 = 첫 알림)
+            key = f"sync_wait:{p.name}:{since.isoformat()}:{k}"
+            async with self.engine.connect() as c:
+                if (await c.execute(text("SELECT 1 FROM notification WHERE rule = :r LIMIT 1"), {"r": key[:64]})).first():
+                    continue
+            rule = self.notifier.rules.for_project(p.name)
+            argo = self.rules.infra.get("argocd")
+            url = f"https://{argo.host}/applications/{p.argocd_app}" if argo else None
+            hours = int(age.total_seconds() // 3600)
+            msg = "\n".join([
+                f"{rule.prefix if rule else '[' + p.name + ']'} ⏸ 배포 대기 {hours // 24}일 {hours % 24}시간째 — ArgoCD에서 Sync를 눌러야 올라갑니다",
+                f"▶ 배포 안 된 이미지 {len(rows)}개 · 가장 오래된 빌드 {rows[0][0]}",
+                "FOREMAN에는 누를 곳이 없습니다. 올리지 않을 거면 그대로 두셔도 됩니다(풀릴 때까지 하루에 한 번 알립니다)",
+                *([url] if url else [])])
+            log.warning("파이프라인 알림 %s: 배포 대기 %d시간(%d개)", p.name, hours, len(rows))
+            self.notifier.send_direct(p.name, "syncwait", None, msg, rule=key[:64])     # kind는 8자까지(notification.kind)
+            sent.append(key)
+        return sent
+
     async def check_watch(self) -> None:
+        await self.check_sync_wait()
         now = _now()
         for p in self.rules.projects.values():
             if not p.jenkins_job:
