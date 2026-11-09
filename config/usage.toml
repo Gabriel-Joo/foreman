@@ -7,6 +7,15 @@ poll_s = 600            # /usage 읽기 간격(초)
 fail_alert = 3          # 연달아 이만큼 못 읽으면 텔레그램 한 번(돌아오면 한 번)
 tz = "Asia/Seoul"
 
+# 사용 크레딧(추가 사용) — 사람이 넣는 값(11-09). FOREMAN이 읽을 길이 없다: `claude -p "/usage"`에도, 대화형 /usage에도 잔액이 없고
+# (대화형은 "Usage credits are off"), 값은 claude.ai 설정 > 사용량에만 있다. **충전 · 한도를 바꿀 때** 고치고 브리지를 다시 띄운다.
+# as_of의 달이 지나면 화면이 "갱신 필요"로 바뀐다(월 사용액은 그달 값이라 달이 바뀌면 틀린 숫자가 된다)
+[credits]
+balance_usd = 0.0          # 사용 크레딧 잔액
+monthly_cap_usd = 50.0     # 월간 지출 한도
+monthly_used_usd = 51.30   # 이번 달 쓴 돈(설정 화면의 "US$50 중 US$51.30 사용")
+auto_reload = false        # 자동 충전
+as_of = "2026-11-09"       # 위 값을 본 날(KST)
 # 100만 토큰당 달러 — 모델 이름에 이 글자가 들어 있으면. 캐시 쓰기는 1시간짜리(CC가 ephemeral_1h로 쓴다 — 입력의 2배)
 [prices.opus]
 input = 4.0

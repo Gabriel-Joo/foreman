@@ -379,6 +379,13 @@ def test_heading_md_keeps_markdown_levels():
     assert kinds(nt.Ctx(heading_md=True)) == ["heading_2", "heading_3", "heading_4", "heading_4"]
 
 
+def test_file_order():
+    assert nt.file_order("docs/02_pipeline/17_x.md") == (17, 0)
+    assert nt.file_order("docs/02_pipeline/03a_citation.md") == (3, 1)
+    assert nt.file_order("docs/02_pipeline/05a_q.md") < nt.file_order("docs/02_pipeline/16_code.md")   # 중간 번호
+    assert nt.file_order("docs/requirements.md") is None
+
+
 def test_archive_separate_from_create():
     """11-09 사용자 — 새 페이지 만들기와 옛 페이지 지우기는 다른 기능. archive = false면 create = true여도 휴지통으로 안 보낸다."""
     p = nt.Publisher(None, None, "a" * 32, ".", project="x", opts={"create": True, "archive": False})

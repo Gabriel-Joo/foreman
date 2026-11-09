@@ -43,6 +43,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       <div class="otop-row otop-sub">
         <span id="oStat" class="ostat"></span>
         <a id="oUsage" class="ghost ousage" href="/usage" data-tip="사용량 — 누르면 한도 · 어디서 나가는지 봅니다.">사용량</a>
+        <a id="oCredit" class="ghost ousage" href="/usage" hidden></a>
         <!-- 11-08 도형 · 클래식은 머리말에서 뺐다(사용자 — 안 쓴다). 주소 /?theme=plain · /classic으로는 그대로 열린다 -->
         <span class="otheme" role="group" aria-label="테마">${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장']].map(([k, v]) => k === theme.name
           ? `<span class="oproj-b on" aria-current="true" title="${v} — 지금 테마입니다.">${v}</span>` : `<a class="oproj-b" href="/?theme=${k}" title="${v} — 이 테마로 바꿉니다.">${v}</a>`).join('')}</span>
@@ -122,6 +123,28 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     usageChip();
   }
   let usageTipRows = { lines: [], why: '' };
+  // 사용 크레딧(추가 사용) 칩(11-09 사용자) — FOREMAN이 읽을 길이 없어 사람이 config/usage.toml [credits]에 넣은 값.
+  // 막힘: 한도에 닿으면 넘쳐 쓸 돈이 없다(월 한도를 다 씀 · 잔액 0에 자동 충전 꺼짐) → 100%가 곧 멈춤. 값을 본 달이 지나면 "갱신 필요"
+  function creditChip(c) {
+    const el = document.getElementById('oCredit');
+    if (!el) return;
+    el.hidden = !c;
+    if (!c) return;
+    const usd = (v) => `US$${Number(v).toFixed(2).replace(/\.00$/, '')}`;
+    const rows = [`크레딧 ${usd(c.balance_usd)}`, c.monthly_cap_usd != null ? `월간 한도 ${usd(c.monthly_cap_usd)} 중 ${usd(c.monthly_used_usd)} 사용` : '월간 한도 없음',
+      `자동 충전 ${c.auto_reload ? '켜짐' : '꺼짐'}`, `${c.as_of || '날짜 없음'}에 직접 넣은 값`];
+    const where = ' 값은 claude.ai 설정 > 사용량에서 보고 config/usage.toml [credits]에 넣습니다(충전 · 한도를 바꿀 때). CC의 /usage에는 잔액이 나오지 않습니다.';
+    if (c.stale) {
+      el.className = 'ghost ousage warn'; el.textContent = '크레딧 갱신 필요';
+      el.dataset.tip = `크레딧 갱신 필요 — 넣은 값이 지난달 것이라 지금 상태를 알 수 없습니다.${where}\n${rows.join('\n')}`;
+    } else if (c.blocked) {
+      el.className = 'ghost ousage bad'; el.textContent = '⛔ 추가 사용 막힘';
+      el.dataset.tip = `추가 사용 막힘 — 5시간 · 주간 한도에 닿으면 리셋까지 세션이 멈춥니다. 넘쳐 쓸 크레딧이 없습니다.${where}\n${rows.join('\n')}`;
+    } else {
+      el.className = 'ghost ousage'; el.textContent = `추가 사용 ${usd(c.available_usd)} 남음`;
+      el.dataset.tip = `추가 사용 — 한도에 닿은 뒤 크레딧으로 이어 쓸 수 있는 돈입니다.${where}\n${rows.join('\n')}`;
+    }
+  }
   const usagePct = (l) => (l.est_pct ?? l.measured_pct);
   const usageMax = () => Math.max(0, ...((usage && usage.limits) || []).map((l) => usagePct(l) ?? 0));
   function usageChip() {
@@ -130,8 +153,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const ls = usage.limits || [], rd = usage.reading || {};
     // 11-09 "5h"를 몰랐다 — 5시간 · 주간, 추정이면 "약"
     const short = { session_5h: '5시간', weekly_all: '주간', weekly_fable: 'Fable 주간' };
+    // 11-09 사용자 — "이 속도면 언제 바닥나나"(설정 화면의 "수요일 밤에 소진"). 리셋 전에 100%가 될 때만, 요일 · 시각으로
+    const etaKo = (iso) => {
+      const d = new Date(iso), now = new Date(), hh = String(d.getHours()).padStart(2, '0');
+      return d.toDateString() === now.toDateString() ? `오늘 ${hh}:${String(d.getMinutes()).padStart(2, '0')}` : `${'일월화수목금토'[d.getDay()]} ${hh}시`;
+    };
     const parts = ls.filter((l) => usagePct(l) != null && (l.key !== 'weekly_fable' || usagePct(l) >= 1))
-      .map((l) => `${short[l.key] || l.label} ${(l.est_pct != null && l.measured_pct != null && Math.abs(l.est_pct - l.measured_pct) >= 0.5) ? '약 ' : ''}${Math.round(usagePct(l))}%`);
+      .map((l) => `${short[l.key] || l.label} ${(l.est_pct != null && l.measured_pct != null && Math.abs(l.est_pct - l.measured_pct) >= 0.5) ? '약 ' : ''}${Math.round(usagePct(l))}%`
+        + (l.eta_before_reset && l.eta_100 ? ` · ${etaKo(l.eta_100)} 소진 예상` : ''));
     const bad = usage.failed || !rd.ok;
     const max = usageMax();
     el.className = 'ghost ousage' + (bad ? ' bad' : max >= 95 ? ' bad' : max >= 80 ? ' warn' : '');
@@ -143,13 +172,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       return d.toDateString() === now.toDateString() ? hm : `${d.getMonth() + 1}월 ${d.getDate()}일 ${hm}`;
     };
     const lines = ls.filter((l) => l.key !== 'weekly_fable' || (usagePct(l) || 0) >= 1).map((l) =>
-      `${short[l.key] || l.label} ${usagePct(l) == null ? '—' : Math.round(usagePct(l)) + '%'}${l.reset_at ? ` — ${resetKo(l.reset_at)} 리셋` : ''}${l.eta_before_reset ? ' (이 속도면 리셋 전에 100%)' : ''}`);
+      `${short[l.key] || l.label} ${usagePct(l) == null ? '—' : Math.round(usagePct(l)) + '%'}${l.reset_at ? ` — ${resetKo(l.reset_at)} 리셋` : ''}${l.eta_before_reset ? ` (이 속도면 ${l.eta_100 ? resetKo(l.eta_100) + '에 ' : '리셋 전에 '}100%)` : ''}`);
     const why = usage.failed ? ` 지금은 불러오지 못했습니다(${usage.failed}).` : !rd.ok ? ` 지금은 /usage를 읽지 못하고 있습니다(${rd.error || '오래됐습니다'}).` : '';
     usageTipRows = { lines, why };                     // 감독실 경고등 호버도 같은 줄을 쓴다(11-09)
+    creditChip(usage.credits);
     el.dataset.tip =`사용량 — 구독 한도를 몇 % 썼는지입니다. "약"은 마지막으로 읽은 뒤 FOREMAN이 더해 본 추정입니다. 누르면 어디서 나가는지 봅니다.${why}\n${lines.join('\n')}`;
   }
   if (new URLSearchParams(location.search).get('demo')) {   // 시연 재생은 /api를 막는다 — 칩을 숨긴다(⚠로 찍히지 않게)
-    setTimeout(() => { const el = document.getElementById('oUsage'); if (el) el.hidden = true; }, 0);
+    setTimeout(() => { for (const id of ['oUsage', 'oCredit']) { const el = document.getElementById(id); if (el) el.hidden = true; } }, 0);
   } else {
     setTimeout(loadUsage, 800);
     setInterval(loadUsage, 60000);                  // 읽기 사이 추정 %가 오르는 것 · 이벤트를 놓친 때
