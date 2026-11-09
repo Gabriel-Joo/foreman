@@ -41,6 +41,8 @@ WAIT_S = 600.0           # 요약이 돌아오기를 기다리는 시간
 HANDOFF_DIR = Path.home() / ".foreman" / "handoff"
 KEEP_FULL = ("진행", "미완", "다음", "주의")      # 분량을 줄일 때도 통째로 넣는 절
 ROLE_KO = {"coder": "코더", "inspector": "점검", "cicd": "CI/CD", "scribe": "서기"}   # 역할 캐릭터 이름(0017 재배치와 같다, 서기는 12a)
+REST_ACT = "rest"                 # session_action — [쉬게 하기](11-09). 합치기 · 버리기 전까지 그 worktree는 "합치기 기다림"
+REST_RESUME_ACT = "rest-resume"   # session_action — [이어서]. 'resume'(일시정지 되살리기)과 섞이지 않게 따로
 
 REQUEST_PROMPT = """{head}
 이 세션을 새 세션으로 넘기려고 한다. 새 세션은 이 대화를 전혀 모르고, 아래 인계 문서만 받는다.
@@ -362,6 +364,7 @@ class HandoffManager:
             "headless": not live and bool(row.cc and row.cwd) and not pending,
             "compact": bool(row.transcript),
             "exit": ok_live and not busy,
+            "rest": ok_live and not busy and bool(row.cwd and wt.split(row.cwd)[1]),   # 쉬게 하기(11-09) — worktree 세션만
             "stop": ok_live and not busy,
             "resume": bool(live and live.state == "T" and stopped_pid == live.pid),
             "interrupt": ok_live and busy,
@@ -995,6 +998,13 @@ class HandoffManager:
         out["preview_ok"] = bool(self.previews and row.project in self.previews.cmds)
         if out.get("exists") and await self._role(row.id) == "scribe":
             out["review"] = await self._scribe_review(row, repo, out)
+        # 쉬게 하기(11-09) — 마지막 쉬게 하기 시각(살아 있지 않을 때만 "쉬는 중"), [이어서]를 켤지
+        async with self.engine.connect() as c:
+            r = (await c.execute(text(
+                "SELECT created_at FROM session_action WHERE session_id = :s AND action = :a AND ok ORDER BY id DESC LIMIT 1"),
+                {"s": row.id, "a": REST_ACT})).first()
+        out["rested_at"] = r[0].isoformat() + "Z" if r and not out["live"] else None
+        out["resume_ok"] = bool(out.get("exists") and not out["live"] and row.cc)
         return out
 
     async def _role(self, sid: int) -> str | None:
@@ -1093,6 +1103,130 @@ class HandoffManager:
         if self.on_change:
             self.on_change()
         return res
+
+    # ── 쉬게 하기 · 이어서(11-09, log/coder_resident_20261109.md) ──────────────
+    # 쉬게 하기 = 지금까지를 이 브랜치에 커밋 → 세션만 /exit, worktree는 남긴다. 캐릭터는 자리로 돌아가 "합치기 기다림".
+    # 이어서 = 같은 worktree에서 그 CC 세션을 --resume으로 다시 붙인다(같은 일의 맥락을 잇는다). 새 일은 새 세션이다.
+    # 실패(커밋 · 뒤에서 도는 일 · 끝내기 확인 창 · resume)는 모두 화면에 까닭으로 돌려준다 — 조용히 넘어가지 않는다
+    async def _running_work(self, row: SessionRow, pid: int | None) -> list[str]:
+        """뒤에서 도는 일 — 백그라운드 Bash · Monitor(끝 알림 없음, 이 CC 프로세스가 뜬 뒤 시작) · 도는 서브에이전트.
+        대시보드 「뒤에서 도는 일」과 같은 기준(bridge/api/dashboard.py background_running). 이것이 있으면 /exit가 CC 확인 창에 걸린다
+        (log/old_session_exit_bg_20261109.md)."""
+        from datetime import UTC, datetime, timedelta
+        started = None
+        if pid:
+            try:
+                ms = json.loads(Path(self.sessions_dir, f"{pid}.json").read_text(encoding="utf-8")).get("startedAt")
+                if isinstance(ms, (int, float)):
+                    started = datetime.fromtimestamp(ms / 1000, UTC).replace(tzinfo=None)
+            except (OSError, ValueError):
+                pass
+        async with self.engine.connect() as c:
+            bg = (await c.execute(text(
+                "SELECT s.tool, JSON_UNQUOTE(JSON_EXTRACT(s.payload, '$.description')), s.ts FROM event s "
+                "WHERE s.session_id = :s AND s.type = 'bg_start' AND s.ts > :cut AND NOT EXISTS (SELECT 1 FROM event e "
+                "WHERE e.session_id = s.session_id AND e.type = 'bg_end' AND e.target = s.target) ORDER BY s.ts"),
+                {"s": row.id, "cut": datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24)})).all()
+            subs = (await c.execute(text("SELECT description FROM subagent_run WHERE session_id = :s AND status = 'running'"),
+                                    {"s": row.id})).all()
+        out = [f"{tool or '셸'}{f' — {desc}' if desc and desc != 'null' else ''}"
+               for tool, desc, ts in bg if not (started and ts and ts < started)]
+        out += [f"서브에이전트{f' — {d}' if d else ''}" for (d,) in subs]
+        return out
+
+    async def _exit_blocker(self, pane: str) -> str | None:
+        """/exit 뒤 안 내려갔을 때 그 까닭 — CC 끝내기 확인 창이 떠 있으면 그렇다고."""
+        try:
+            screen = await tmux(self.socket, "capture-pane", "-p", "-t", pane)
+        except Refused:
+            return None
+        if re.search(r"Background work is running|will stop when you exit|Exit and stop tasks", screen):
+            return "CC 끝내기 확인 창에 걸렸습니다(뒤에서 도는 일이 있어 CC가 묻고 기다립니다)"
+        return None
+
+    async def rest(self, row: SessionRow) -> dict[str, Any]:
+        """[쉬게 하기] — 커밋(커밋 안 한 변경이 있으면) → 세션만 끝냄 → worktree는 남김. session_action 'rest'에 남긴다."""
+        repo, name = self._wt_of(row)
+        if not row.cc or row.cc not in live_sessions(self.sessions_dir):
+            raise Refused("이미 끝난 세션입니다 — 「따로 작업」에서 [이어서] · [합치기] · [버리기]를 고릅니다")
+        t, ls, busy = await resolve(row.cc, self.sessions_dir)
+        if busy:
+            raise Refused("작업 중입니다 — 작업이 끝난 뒤에 쉬게 해 주세요. 세션은 그대로입니다")
+        bg = await self._running_work(row, ls.pid)
+        if bg:
+            raise Refused(f"뒤에서 도는 일이 {len(bg)}개 있습니다({'; '.join(bg[:3])}{' …' if len(bg) > 3 else ''}) — 지금 끝내면 CC가 "
+                          "끝내기 확인 창에서 멈춥니다. 그 일이 끝난 뒤에 쉬게 해 주세요. 커밋도 하지 않았습니다")
+        title = (row.title or "").strip() or f"세션 {row.id}"
+        path = os.path.join(repo, wt.WT_DIR, name)
+        try:
+            saved = await wt.save_progress(path, f"쉬게 하기: 진행 중 저장 — {title}"[:200])
+        except Refused as e:
+            await self._act(row.id, REST_ACT, ls.pid, False, f"{name} 커밋 실패: {e}")
+            raise
+        saved_txt = (f"커밋 {saved['commit']}(파일 {saved['files']}개)" if saved["commit"] else "커밋할 변경 없음") + (
+            f" · 넣지 않은 것 {len(saved['skipped'])}개({', '.join(saved['skipped'][:4])})" if saved["skipped"] else "")
+        r = await self.action(row, "exit")
+        if not r.get("ok"):
+            why = await self._exit_blocker(t.pane) or r.get("note") or "45초 안에 끝나지 않았습니다"
+            await self._act(row.id, REST_ACT, ls.pid, False, f"{name} {saved_txt} 끝내기 실패: {why}")
+            if self.on_change:
+                self.on_change()
+            return {"ok": False, "commit": saved["commit"], "skipped": saved["skipped"],
+                    "note": f"{saved_txt}까지 했지만 세션이 끝나지 않았습니다 — {why}. 터미널(tmux)에서 확인해 주세요."}
+        await self._act(row.id, REST_ACT, ls.pid, True, f"{name} {saved_txt}")
+        if self.on_change:
+            self.on_change()
+        return {"ok": True, "commit": saved["commit"], "files": saved["files"], "skipped": saved["skipped"],
+                "tmux_closed": r.get("tmux_closed"),
+                "note": f"쉬게 했습니다 — {saved_txt}. worktree {wt.BRANCH_PREFIX}{name}는 남아 있습니다. [이어서] · [합치기] · [버리기]로 이어 갑니다."}
+
+    async def rest_resume(self, row: SessionRow) -> dict[str, Any]:
+        """[이어서] — 같은 worktree에서 그 CC 세션을 `claude --resume`으로 다시 붙인다. 새 tmux 창에서."""
+        repo, name = self._wt_of(row)
+        path = os.path.join(repo, wt.WT_DIR, name)
+        if not Path(path).is_dir():
+            raise Refused("worktree가 없습니다 — 이미 합쳤거나 버렸습니다")
+        if not row.cc:
+            raise Refused("CC 세션 ID가 없어 이어 붙일 수 없습니다")
+        if row.cc in live_sessions(self.sessions_dir):
+            raise Refused("이미 살아 있는 세션입니다 — 패널에서 그대로 이어 쓰면 됩니다")
+        cwd = row.cwd if row.cwd and Path(row.cwd).is_dir() else path
+        if not Path(transcript_path(cwd, row.cc)).is_file():
+            raise Refused("이 세션의 대화 기록 파일을 찾지 못해 이어 붙일 수 없습니다 — 새 세션으로 띄워 주세요")
+        async with self.engine.connect() as c:
+            model = (await c.execute(text("SELECT model FROM character_session WHERE id = :i"), {"i": row.id})).scalar()
+        if model and not self.models.valid(model):
+            model = None
+        base = "cc-" + (re.sub(r"[^a-z0-9]+", "-", (row.project or "session").lower()).strip("-") or "session")
+        existing = set((await tmux(self.socket, "list-sessions", "-F", "#{session_name}")).split())
+        tname, n = base, 2
+        while tname in existing:
+            tname, n = f"{base}-{n}", n + 1
+        await tmux(self.socket, "new-session", "-d", "-s", tname, "-c", cwd)
+        pane = (await tmux(self.socket, "display-message", "-p", "-t", tname, "#{pane_id}")).strip()
+        await tmux(self.socket, "send-keys", "-t", pane, "-l", f"{self.claude_bin} --resume {row.cc}" + (f" --model {model}" if model else ""))
+        await tmux(self.socket, "send-keys", "-t", pane, "Enter")
+        cc, pid, trust = await self._wait_ready(pane, 45)
+        if cc is None:
+            why = "폴더 신뢰 확인 창이 떴습니다" if trust else "45초 안에 이어 붙은 세션을 찾지 못했습니다"
+            await self._act(row.id, REST_RESUME_ACT, None, False, f"{tname} {pane} {why}")
+            return {"ok": False, "tmux": tname, "note": f"{why} — 터미널(tmux {tname})에서 확인해 주세요."}
+        sid = row.id
+        if cc != row.cc:
+            # CC가 다른 id로 이었으면 새 행에 이름 · 역할 · 자리를 물려준다(같은 캐릭터)
+            sid = await self._ensure_row(cc, cwd, row.title)
+            async with self.engine.begin() as c:
+                await c.execute(text(
+                    "UPDATE character_session n JOIN character_session o ON o.id = :o SET n.role = o.role, "
+                    "n.worktree_path = o.worktree_path, n.character_id = o.character_id, n.model = o.model, "
+                    "n.custom_title = COALESCE(n.custom_title, o.custom_title) WHERE n.id = :n"), {"o": row.id, "n": sid})
+        # tmux 정리(_cleanup_tmux)는 'spawn' 기록으로 FOREMAN이 띄운 창을 알아본다
+        await self._act(sid, "spawn", pid, True, f"{tname} {pane} cc={cc} 이어서(--resume {row.cc[:8]})")
+        await self._act(row.id, REST_RESUME_ACT, pid, True, f"{tname} {pane} cc={cc}" + (f" 새 행 {sid}" if sid != row.id else ""))
+        if self.on_change:
+            self.on_change()
+        return {"ok": True, "tmux": tname, "session_id": sid, "cc_session_id": cc,
+                "note": f"이어서 붙였습니다(tmux {tname}). 같은 대화를 그대로 이어 갑니다."}
 
     async def _resume(self, row: SessionRow) -> dict[str, Any]:
         live = live_sessions(self.sessions_dir).get(row.cc or "")

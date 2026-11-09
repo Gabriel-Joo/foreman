@@ -16,14 +16,32 @@ export const firstLine = (s, n = 60) => {
   return t.length > n ? t.slice(0, n - 1) + '…' : t;
 };
 
+// 받은 할 일 상태 호버 글(11-09 받는 사람별) — 서기 정리 · 코더에게. 이름(label)은 브리지가 받는 사람에 맞게 준다
+export function stateTip(x) {
+  const coder = x.assignee === 'coder';
+  const why = {
+    new: coder ? '아직 아무 세션도 가져가지 않았습니다. 그 방 코더를 누르면 맡길 수 있습니다.' : '아직 서기가 가져가지 않았습니다.',
+    taking: coder ? `세션 ${x.taken_by}이 이 일을 하는 중입니다.` : `서기 세션 ${x.taken_by}이 README 표로 옮기는 중입니다.`,
+    moved: coder ? `세션 ${x.taken_by}이 이 일을 마쳤습니다(합쳐짐).` : '서기가 README 「나중에 할 일」 표로 옮겼습니다.',
+    dropped: '사람이 버렸습니다.',
+  }[x.state] || '';
+  return `${x.label} — ${why}`;
+}
+export const TO = { scribe: '서기 정리', coder: '코더에게' };
+
 export function mountTodoInbox(store, { onSaved } = {}) {
   const dlg = document.createElement('div');
   dlg.id = 'tiDlg'; dlg.className = 'overlay';
   dlg.innerHTML = `<div class="box ns ti" role="dialog" aria-label="할 일 적기">
     <h2 class="plain">할 일 적기</h2>
-    <div class="small muted">세션을 띄우지 않고 그대로 적어 둡니다. 서기가 「나중에 할 일 정리」로 모아 README 표에 옮깁니다.</div>
+    <div class="small muted">세션을 띄우지 않고 그대로 적어 둡니다. 서기 정리는 「나중에 할 일 정리」가 README 표로 옮기고, 코더에게는 그 방 코더 머리 위 "맡길 일"에 뜹니다.</div>
     <label class="small muted" for="tiProj">프로젝트</label>
     <select id="tiProj"></select>
+    <div class="small muted">누구에게</div>
+    <div class="row ti-to" role="radiogroup" aria-label="누구에게">
+      <label class="small ns-opt" title="서기 정리 — 서기가 「나중에 할 일 정리」로 모아 README 「나중에 할 일」 표에 옮깁니다."><input type="radio" name="tiTo" value="scribe" checked><span>서기 정리</span></label>
+      <label class="small ns-opt" title="코더에게 — 그 방 코더 머리 위 「맡길 일」에 뜹니다. 코더를 눌러 줄을 고르면 계획 창에 이 글이 채워집니다."><input type="radio" name="tiTo" value="coder"><span>코더에게</span></label>
+    </div>
     <label class="small muted" for="tiBody">할 일(붙여 넣어도 됩니다 — 줄바꿈 그대로 둡니다)</label>
     <textarea id="tiBody" rows="8" maxlength="${MAX}" placeholder="예: 질문 카드 — 답한 뒤에도 자리를 먹는다. 한 줄로 접고 [×]로 치우게"></textarea>
     <div class="row ns-act"><span id="tiMsg" class="small"></span>
@@ -51,9 +69,9 @@ export function mountTodoInbox(store, { onSaved } = {}) {
       const nNew = items.filter((x) => x.state === 'new').length;
       $('tiListHead').textContent = `받은 할 일 — ${label($('tiProj').value)} ${items.length ? `최근 ${items.length}개 · 새로 ${nNew}` : '없음'}`;
       $('tiList').innerHTML = items.map((x) => `<div class="ti-item st-${esc(x.state)}">
-          <span class="ti-st small" data-tip="${esc(x.label)} — ${x.state === 'new' ? '아직 서기가 가져가지 않았습니다.' : x.state === 'taking' ? `서기 세션 ${x.taken_by}이 README 표로 옮기는 중입니다.` : x.state === 'moved' ? '서기가 README 「나중에 할 일」 표로 옮겼습니다.' : '사람이 버렸습니다.'}">${esc(x.label)}</span>
-          <details class="ti-body"><summary class="small">${esc(kst(x.created_at))} · ${esc(firstLine(x.body))}</summary><pre class="hand-body">${esc(x.body)}</pre></details>
-          ${x.state === 'new' ? `<button type="button" class="ghost small" data-drop="${x.id}" title="버리기 — 이 할 일을 서기에게 넘기지 않습니다. 목록에는 「버림」으로 남습니다.">버리기</button>` : ''}
+          <span class="ti-st small" data-tip="${esc(stateTip(x))}">${esc(x.label)}</span>
+          <details class="ti-body"><summary class="small">${esc(kst(x.created_at))} · ${x.assignee === 'coder' ? '코더 · ' : ''}${esc(firstLine(x.body))}</summary><pre class="hand-body">${esc(x.body)}</pre></details>
+          ${x.state === 'new' ? `<button type="button" class="ghost small" data-drop="${x.id}" title="버리기 — 이 할 일을 아무에게도 넘기지 않습니다. 목록에는 「버림」으로 남습니다.">버리기</button>` : ''}
         </div>`).join('');
     } catch (e) { $('tiListHead').textContent = `받은 할 일 — 불러오지 못했습니다(${e.message})`; }
   }
@@ -63,10 +81,11 @@ export function mountTodoInbox(store, { onSaved } = {}) {
     if (busy) return;
     if (!body) { msg('적을 글이 비어 있습니다.', 'bad'); $('tiBody').focus(); return; }
     busy = true; $('tiGo').disabled = true;
+    const to = dlg.querySelector('input[name=tiTo]:checked').value;
     try {
-      const r = await api('POST', '/api/scribe/inbox', { project: $('tiProj').value, body });
+      const r = await api('POST', '/api/scribe/inbox', { project: $('tiProj').value, body, assignee: to });
       $('tiBody').value = '';
-      msg(`적었습니다 — ${label($('tiProj').value)} 받은 할 일 #${r.id}. 서기가 정리할 때 README 표로 옮깁니다.`, 'ok');
+      msg(`적었습니다 — ${label($('tiProj').value)} 받은 할 일 #${r.id}. ${to === 'coder' ? '그 방 코더의 「맡길 일」에 뜹니다.' : '서기가 정리할 때 README 표로 옮깁니다.'}`, 'ok');
       if (onSaved) onSaved(r.id);
       await loadList();
     } catch (e) { msg(`적지 못했습니다 — ${e.message}. 글은 칸에 그대로 있습니다.`, 'bad'); }
@@ -88,10 +107,13 @@ export function mountTodoInbox(store, { onSaved } = {}) {
   dlg.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !busy) { ev.stopPropagation(); close(); } });
 
   function close() { dlg.classList.remove('on'); }
-  function open(project) {
-    const names = store.state.projects.map((p) => p.name);
+  // to — 'coder'면 코더에게를 고른 채(코더 목록의 [＋ 할 일]에서 열 때). 기본은 서기 정리
+  function open(project, to = 'scribe') {
+    const names = store.state.projects.map((p) => p.name).filter(Boolean);
     $('tiProj').innerHTML = names.map((n) => `<option value="${esc(n)}">${esc(label(n))}</option>`).join('');
     $('tiProj').value = names.includes(project) ? project : (names.includes('foreman') ? 'foreman' : names[0] || '');
+    const r = dlg.querySelector(`input[name=tiTo][value=${to === 'coder' ? 'coder' : 'scribe'}]`);
+    if (r) r.checked = true;
     msg('');
     dlg.classList.add('on');
     loadList();

@@ -299,6 +299,39 @@ async def worktree_act(sid: int, body: WorktreeIn, request: Request) -> JSONResp
         r = await m.worktree_act(row, body.action, end=body.end)
     except Refused as e:
         return _refused(e)
+    from bridge.api import coder
+    coder.invalidate()            # 쉬게 한 일 · 코더가 가져간 할 일의 상태가 바뀐다
+    return JSONResponse(r)
+
+
+@router.post("/sessions/{sid}/rest")
+async def rest(sid: int, request: Request) -> JSONResponse:
+    """[쉬게 하기](11-09) — 지금까지를 이 worktree 브랜치에 커밋하고 세션만 끝낸다. worktree는 남는다."""
+    m = _mgr(request)
+    row = await _row(m, sid)
+    try:
+        r = await m.rest(row)
+    except Refused as e:
+        return _refused(e)
+    from bridge.api import coder, dashboard
+    dashboard.invalidate()
+    coder.invalidate()
+    return JSONResponse(r)
+
+
+@router.post("/sessions/{sid}/rest-resume")
+async def rest_resume(sid: int, request: Request) -> JSONResponse:
+    """[이어서](11-09) — 쉬게 한 worktree에서 그 CC 세션을 --resume으로 다시 붙인다."""
+    m = _mgr(request)
+    row = await _row(m, sid)
+    try:
+        r = await m.rest_resume(row)
+    except Refused as e:
+        await m._act(sid, "rest-resume", None, False, f"거부: {e}")
+        return _refused(e)
+    from bridge.api import coder, dashboard
+    dashboard.invalidate()
+    coder.invalidate()
     return JSONResponse(r)
 
 
@@ -325,6 +358,30 @@ async def preview_off(sid: int, request: Request) -> JSONResponse:
 async def schema_lock(request: Request) -> dict[str, Any]:
     sl = getattr(request.app.state, "schema_lock", None)
     return sl.view() if sl else {}
+
+
+@router.get("/schema-lock/board")
+async def schema_lock_board(request: Request) -> dict[str, Any]:
+    """화면 방 배너(11-09) — 잠금마다 쥔 세션 · 막힌 세션의 화면 번호를 붙이고, 일찍 푼 것(released)도 같이."""
+    from sqlalchemy import text
+    sl = getattr(request.app.state, "schema_lock", None)
+    if not sl:
+        return {"locks": {}, "released": {}}
+    locks = sl.view()
+    ccs = {h["cc"] for h in locks.values()} | {(h.get("blocked") or {}).get("cc") for h in locks.values()} - {None}
+    ids: dict[str, int] = {}
+    if ccs:
+        from sqlalchemy import bindparam
+        async with request.app.state.store.engine.connect() as c:
+            ids = {r[0]: r[1] for r in (await c.execute(text(
+                "SELECT cc_session_id, MAX(id) FROM character_session WHERE cc_session_id IN :c GROUP BY cc_session_id")
+                .bindparams(bindparam("c", expanding=True)), {"c": list(ccs)})).all()}
+    out = {}
+    for p, h in locks.items():
+        b = h.get("blocked")
+        out[p] = {**{k: h.get(k) for k in ("wt", "since", "what", "held")}, "session_id": ids.get(h["cc"]), "cc": h["cc"][:8],
+                  "blocked": {**{k: b.get(k) for k in ("at", "what")}, "session_id": ids.get(b.get("cc")), "cc": (b.get("cc") or "")[:8]} if b else None}
+    return {"locks": out, "released": sl.released_view()}
 
 
 @router.delete("/schema-lock/{project}")

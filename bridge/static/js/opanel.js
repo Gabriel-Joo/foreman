@@ -12,6 +12,7 @@ import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
 import { mountHandoff, FLOW_TIP } from './handoff.js';
 import { createScribe } from './scribe.js';
+import { createCoder } from './coder.js';
 import { createForemanPanel } from './fmpanel.js';
 
 const KEY_OPEN = 'foremanPanelOpen', KEY_TAB = 'foremanPanelTab', KEY_MODE = 'foremanPanelMode';
@@ -78,9 +79,12 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   // 서기실 창(12a) — 서기를 누르면 pSel에 그린다. 버튼은 여기서 한 번만 받는다(다시 그려도 그대로)
   const scribe = createScribe(store);
   const fmp = createForemanPanel(store);       // 감독실 캐릭터(11-08) — 노트 · 지난 디스패치 · 자동 제안
+  const coder = createCoder(store);           // 코더 상주(11-09) — 맡길 일 · 지금 일
   $('pSel').addEventListener('click', (ev) => {
     if (target && target.kind === 'scribe') scribe.onClick(ev, target.room, projectLabel(store.state, target.room),
       (sid) => { onSelectSession(sid); setTab('sess'); });     // 열린 서기 일 → 그 세션의 「따로 작업」(11-06)
+    if (target && target.kind === 'coder') coder.onClick(ev, target.room, (sid) => { onSelectSession(sid); setTab('sess'); },
+      (p, to) => window.office && window.office.openTodo && window.office.openTodo(p, to));
     if (target && target.kind === 'foreman') fmp.onClick(ev);
   });
   window.addEventListener('foreman-state', () => { if (target && target.kind === 'foreman') fmp.load([], true); });
@@ -579,7 +583,13 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     }
     if (target && target.kind === 'scribe') {
       $('pTitle').textContent = `서기 · ${projectLabel(st, target.room)}`;
-      $('pSel').innerHTML = scribe.html(target.room, projectLabel(st, target.room));
+      $('pSel').innerHTML = scribe.html(target.room, projectLabel(st, target.room), target.pick || null);
+      if (target.pick) { const r = $('pSel').querySelector('.sc-pick'); if (r) r.scrollIntoView({ block: 'nearest' }); }
+      return;
+    }
+    if (target && target.kind === 'coder') {
+      $('pTitle').textContent = `코더 · ${projectLabel(st, target.room)}`;
+      $('pSel').innerHTML = coder.html(target.room, projectLabel(st, target.room));
       return;
     }
     if (target && target.kind === 'foreman') {
@@ -604,7 +614,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   // office.js가 고를 때마다 부른다 — 같은 대상이면 다시 그리지 않는다(입력 칸 · 스크롤 유지)
   function show(t) {
-    const key = t ? `${t.kind}:${t.kind === 'session' ? store.state.selected : (t.room || '') + ':' + (t.infra || '') + ':' + (t.status || '')}` : '';
+    const key = t ? `${t.kind}:${t.kind === 'session' ? store.state.selected : (t.room || '') + ':' + (t.infra || '') + ':' + (t.status || '') + ':' + (t.pick || '')}` : '';
     if (key === targetKey) return;
     targetKey = key; target = t;
     if (t && !open) setOpen(true, false);

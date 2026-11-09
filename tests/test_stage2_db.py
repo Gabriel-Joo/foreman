@@ -1296,6 +1296,67 @@ async def test_todo_inbox_states(env):
     assert not any("받은 할 일" in i["title"] for v in todo.values() for i in v["items"])   # 새로가 없으면 할 일 줄도 없다
 
 
+async def test_inbox_assignee_coder_jobs_and_rest(env, tmp_path):
+    """11-09 받는 사람(0028) — 서기 몫 · 코더 몫이 섞이지 않고, 코더 몫은 계획으로 띄운 세션이 가져가 합치면 「끝남」.
+    쉬게 한 일은 합치거나 버리기 전까지(그리고 다시 살아나지 않은 동안) 코더 맡길 일에 든다. 서기 제안은 기준(새로 · 일수)을 넘을 때만."""
+    from datetime import datetime, timedelta
+    from sqlalchemy import text as T
+    from bridge import coder_room as cr
+    from bridge import scribe_room as sr
+    from bridge.inject import Refused
+    s, _main = env
+    await run(s)
+    engine = make_engine(s)
+    ENGINES.append(engine)
+    sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
+    proj = q(s, "SELECT p.name FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
+                "JOIN project p ON p.id = ch.project_id WHERE cs.id = %s", sid)[0][0]
+    with pytest.raises(Refused):
+        await sr.inbox_add(engine, proj, "할 일", "nobody")
+    a = await sr.inbox_add(engine, proj, "서기 몫")
+    c = await sr.inbox_add(engine, proj, "코더 몫 — 화면 고치기", "coder")
+    assert [x["id"] for x in await sr.inbox_new(engine, proj)] == [a]                  # 서기 정리는 서기 몫만 가져간다
+    assert [x["id"] for x in await sr.inbox_new(engine, proj, "coder")] == [c]
+    rows = {r["id"]: r for r in await sr.inbox_list(engine, proj)}
+    assert rows[c]["assignee"] == "coder" and rows[a]["assignee"] == "scribe"
+    # 코더 몫 — 이 세션(worktree 아님)이 가져가면 하는 중, 끝나면 끝남. 서기 몫에는 손대지 않는다
+    assert await sr.inbox_take_coder(engine, a, sid) is False
+    assert await sr.inbox_take_coder(engine, c, sid) is True and await sr.inbox_take_coder(engine, c, sid) is False
+    st = {r["id"]: (r["state"], sr.inbox_label(r["state"], r["assignee"])) for r in await sr.inbox_list(engine, proj)}
+    assert st[c] == ("taking", "코더가 하는 중") and st[a] == ("new", "새로")
+    async with engine.begin() as cn:
+        await cn.execute(T("UPDATE character_session SET detached_at = UTC_TIMESTAMP(3) WHERE id = :s"), {"s": sid})
+    st = {r["id"]: (r["state"], sr.inbox_label(r["state"], r["assignee"])) for r in await sr.inbox_list(engine, proj)}
+    assert st[c] == ("moved", "끝남")
+    assert sr.inbox_label("moved", "scribe") == "옮김"
+    # 쉬게 한 일 — worktree 폴더가 있고 세션이 살아 있지 않으면 센다. 합치면 빠진다
+    wtp = tmp_path / "proj" / ".worktrees" / "rest-a"
+    wtp.mkdir(parents=True)
+    async with engine.begin() as cn:
+        await cn.execute(T("UPDATE character_session SET cwd = :w, worktree_path = :w WHERE id = :s"), {"w": str(wtp), "s": sid})
+        await cn.execute(T("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, 'rest', 0, '커밋 실패')"), {"s": sid})
+    assert await cr.rested(engine, s.sessions_dir) == []                                 # 실패한 쉬게 하기는 세지 않는다
+    async with engine.begin() as cn:
+        await cn.execute(T("INSERT INTO session_action (session_id, action, ok, detail, created_at) VALUES "
+                           "(:s, 'rest', 1, 'rest-a 커밋 abc', UTC_TIMESTAMP(3) - INTERVAL 2 DAY)"), {"s": sid})
+    r = await cr.rested(engine, s.sessions_dir, proj)
+    assert [(x["session_id"], x["branch"], x["days"]) for x in r] == [(sid, "cc/rest-a", 2)]
+    todo = await cr.todo(engine, s.sessions_dir)
+    assert todo[proj]["rested"][0]["session_id"] == sid and todo[proj]["inbox"] == []    # 코더 몫은 이미 가져갔다
+    async with engine.begin() as cn:
+        await cn.execute(T("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, 'wt-merge', 1, 'x')"), {"s": sid})
+    assert await cr.rested(engine, s.sessions_dir) == []
+    # 서기 제안 — 새로 3개 이상 또는 가장 오래된 것 3일(config/scribe.toml)
+    now = datetime(2026, 11, 9, 12, 0)
+    one = [{"created_at": now - timedelta(hours=1)}]
+    conf = {"new_min": 3, "oldest_days": 3}
+    assert sr.nudge_of([], conf, now) is None and sr.nudge_of(one, conf, now) is None
+    assert sr.nudge_of(one * 3, conf, now)["n"] == 3
+    old = sr.nudge_of([{"created_at": now - timedelta(days=4)}], conf, now)
+    assert old["days"] == 4 and "4일째" in old["why"]
+    assert sr.nudge_conf(tmp_path / "없음.toml") == sr.NUDGE_DEFAULT
+
+
 # ── 11-06 사람이 붙인 이름이 항상 이긴다 ─────────────
 async def test_custom_title_survives_ai_title_and_passes_to_handoff(env):
     from types import SimpleNamespace

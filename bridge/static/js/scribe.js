@@ -36,15 +36,17 @@ export function createScribe(store) {
     return rows || '<p class="small muted">게시할 글이 없습니다(main의 portfolio/*.md — 회고는 git에만 둡니다).</p>';
   }
 
-  function html(room, label) {
+  // pick — 서기 머리 위 "정리할까요?"(11-09)를 눌러 열면 그 일(later)을 고른 채: 그 줄을 밝히고 [시키기]를 primary로.
+  // 고르기만 한다 — 세션은 사람이 [시키기]를 눌러야 뜬다(자동은 제안까지만)
+  function html(room, label, pick = null) {
     load();
     const tasks = (todo && todo.tasks) || {};
     const pj = (todo && todo.projects && todo.projects[room]) || {};
     const items = pj.items || [], opened = pj.open || [], blocked = pj.blocked || {};
     // 동시에 시키기(11-06) — 같은 일 · 같은 파일 · 둘 넘게는 막는다. 막힌 버튼은 끄고 까닭을 호버로(서버도 같은 판단)
-    const go = (k, label = '시키기') => {
+    const go = (k, label = '시키기', pri = false) => {
       const why = blocked[k];
-      return `<button type="button" class="small" data-sc-task="${esc(k)}"${busy || why ? ' disabled' : ''} title="${esc(why ? `${(tasks[k] || {}).title || k} — 지금은 시킬 수 없습니다. ${why}` : `${(tasks[k] || {}).title || k} — 서기 세션을 따로 작업(worktree)으로 띄워 맡깁니다. 끝나면 [끝내고 합치기]로 검토해 합칩니다.`)}">${label}</button>`;
+      return `<button type="button" class="small${pri && !why ? ' primary' : ''}" data-sc-task="${esc(k)}"${busy || why ? ' disabled' : ''} title="${esc(why ? `${(tasks[k] || {}).title || k} — 지금은 시킬 수 없습니다. ${why}` : `${(tasks[k] || {}).title || k} — 서기 세션을 따로 작업(worktree)으로 띄워 맡깁니다. 끝나면 [끝내고 합치기]로 검토해 합칩니다.`)}">${label}</button>`;
     };
     const todoHtml = items.length ? items.map((x) => `<div class="sc-row"><div class="small"><b>${esc(x.title)}</b> <span class="muted">— ${esc(x.why)}</span></div>
         ${x.kind !== 'publish' ? go(x.kind) : x.act === 'docsync'
@@ -56,8 +58,10 @@ export function createScribe(store) {
     const openHtml = opened.length ? `<div class="small"><b>열려 있는 일 ${opened.length}</b> <span class="muted">— 합치거나 버리기 전까지(동시에 2개까지, 같은 파일을 고치는 일은 하나씩)</span>${
       opened.map((o) => `<div class="sc-row"><div class="small">· ${esc((tasks[o.task] || {}).title || o.task)}${o.topic ? ` — ${esc(o.topic)}` : ''} <span class="muted">세션 ${o.session_id}</span></div>
         <button type="button" class="small" data-sc-open="${o.session_id}" title="세션 열기 — 이 서기 세션의 [세션] 탭을 엽니다. 「따로 작업」에서 diff를 보고 합치거나 버립니다(끝난 세션은 화면에서 사라져도 여기서 엽니다).">세션 열기</button></div>`).join('')}</div>` : '';
-    const taskHtml = openHtml + ORDER.filter((k) => k !== 'publish' && tasks[k]).map((k) => `<div class="sc-row"><div class="small"><b>${esc(tasks[k].title)}</b> <span class="muted">${esc(blocked[k] ? blocked[k] : tasks[k].desc)}</span></div>
-        ${go(k)}</div>`).join('');
+    const nudge = pj.nudge;
+    const pickHead = pick && tasks[pick] ? `<div class="small warn">정리할까요? — 받은 할 일이 쌓였습니다(${esc(nudge ? nudge.why : '')}). 「${esc(tasks[pick].title)}」을 골라 두었습니다. [시키기]를 눌러야 서기 세션이 뜹니다.</div>` : '';
+    const taskHtml = pickHead + openHtml + ORDER.filter((k) => k !== 'publish' && tasks[k]).map((k) => `<div class="sc-row${k === pick ? ' sc-pick' : ''}"><div class="small"><b>${esc(tasks[k].title)}</b> <span class="muted">${esc(blocked[k] ? blocked[k] : tasks[k].desc)}</span></div>
+        ${go(k, '시키기', k === pick)}</div>`).join('');
     // 포트폴리오 쓰기(12c, 11-06) — 주제마다 따로 연다(다른 주제는 다른 파일이라 동시에 둘까지 된다). 주제는 config/portfolio.toml
     const tps = pj.topics || [];
     const tpHtml = tps.length && tasks.portfolio ? `<details class="hand"${keep(`scribe:${room}:portfolio`)}><summary title="포트폴리오 쓰기 — 주제를 골라 서기가 portfolio/에 씁니다. 바깥 독자용이라 저장소 링크 없이 게시됩니다."><b>포트폴리오 쓰기</b> <span class="muted">${tps.filter((t) => t.written).length}/${tps.length} 씀</span></summary>${
@@ -66,7 +70,7 @@ export function createScribe(store) {
     return `<div class="small muted">${esc(label)} · 서기 — 문서 담당. 시킨 일은 따로 작업(worktree) 세션으로 돌고, 끝나면 사람이 diff를 보고 합칩니다.</div>
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}"${note.tip ? ` title="${esc(note.tip)}"` : ''}>${esc(note.msg)}</div>` : ''}
       <details class="hand"${keep(`scribe:${room}:todo`, true)}><summary title="문서 할 일 — 브리지가 CC를 부르지 않고 센 문서 정리 거리입니다(커밋은 쌓였는데 README가 그대로 등)."><b>문서 할 일 ${items.length}</b></summary>${todoHtml}</details>
-      <details class="hand"${keep(`scribe:${room}:tasks`, true)}><summary title="시킬 일 —고르면 서기 세션이 뜹니다."><b>시킬 일</b></summary>${taskHtml}${tpHtml}</details>
+      <details class="hand"${pick ? ' open' : keep(`scribe:${room}:tasks`, true)}><summary title="시킬 일 —고르면 서기 세션이 뜹니다."><b>시킬 일</b></summary>${taskHtml}${tpHtml}</details>
       <details class="hand"${keep(`scribe:${room}:publish`, true)}><summary title="Notion 게시 —원본은 git 마크다운, Notion은 게시판입니다. 버튼을 눌러야만 올라갑니다."><b>Notion 게시</b></summary>${pubBlock(room)}</details>`;
   }
 

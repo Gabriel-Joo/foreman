@@ -21,6 +21,7 @@ class AskIn(BaseModel):
 class StartIn(BaseModel):
     dispatch_id: int
     plan: dict[str, Any]
+    inbox_id: int | None = None       # 11-09 코더에게 받은 할 일에서 연 계획 — 시작하면 그 세션이 가져간다(taken_by)
 
 
 def _d(request: Request) -> Any:
@@ -44,7 +45,7 @@ async def plan(body: AskIn, request: Request) -> JSONResponse:
 
 @router.post("/start")
 async def start(body: StartIn, request: Request) -> JSONResponse:
-    return await _run(_d(request).start(body.dispatch_id, body.plan))
+    return await _run(_d(request).start(body.dispatch_id, body.plan, inbox_id=body.inbox_id))
 
 
 @router.get("/dispatch/{dispatch_id}")

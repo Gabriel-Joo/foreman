@@ -160,6 +160,10 @@ body { --term-h:0px; }
 .sc-row > .small { flex:1; min-width:0; line-height:1.4; }
 .sc-row .hand-btns { margin:0; flex:none; }
 .sc-row > button { flex:none; width:auto; padding:2px 10px; }
+/* 11-09 서기 "정리할까요?"로 연 창 — 고른 일 줄을 밝힌다(누르는 것은 사람) */
+.sc-row.sc-pick { outline:2px solid var(--warn); outline-offset:2px; border-radius:4px; }
+/* 11-09 [쉬게 하기] 결과 · 쉬는 중 줄 */
+.wt-rest { margin:4px 0; }
 .hand-item-h { line-height:1.4; }
 .hand-item-h .muted { display:block; }
 
@@ -199,6 +203,7 @@ body { --term-h:0px; }
 /* 역할 · 모델 두 칸(11-05) — 좁으면 위아래로 */
 /* [＋ 할 일](11-09, todoinbox.js) — [＋ 세션] 창 모양을 따른다 */
 .ti textarea { width:100%; min-height:8em; resize:vertical; font:inherit; }
+.ti-to { gap:14px; justify-content:flex-start; }
 .ti-list { border-top:1px solid var(--line); padding-top:6px; margin-top:4px; }
 .ti-list #tiList { display:grid; gap:4px; max-height:32vh; overflow:auto; margin-top:4px; }
 .ti-item { display:flex; gap:8px; align-items:flex-start; }

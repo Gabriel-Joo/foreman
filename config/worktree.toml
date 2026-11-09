@@ -10,10 +10,13 @@
 [preview.foreman]
 cmd = "{py} -m bridge.preview --port {port} --static {wt}/bridge/static --upstream {upstream} --label {label}"
 
+# 11-09 — 명령은 마이그레이션을 "돌리는" 것만. 전에는 'bridge\.db\.migrate'가 `from bridge.db.migrate import connect`(읽기 조회)까지 잡아
+# 읽기만 한 세션이 잠금을 쥐었다(메인 17:16). `--status`(적용 상태 보기)도 바꾸지 않으니 뺀다. 런슈즈도 같은 눈으로 —
+# `\bflyway\w*\b`는 `SELECT … FROM flyway_schema_history`(읽기)도 잡았다 → flyway 실행 작업(gradle flywayMigrate · flyway migrate …)만
 [schema_lock.foreman]
 paths = ["migrations/"]
-commands = ['bridge\.db\.migrate']
+commands = ['-m\s+bridge\.db\.migrate\b(?![^\n;&|]*--status)', '\bpython[\w.]*\s+(\S*/)?bridge/db/migrate\.py\b(?![^\n;&|]*--status)']
 
 [schema_lock.runshoes]
 paths = ["backend/src/main/resources/db/migration/"]
-commands = ['\bflyway\w*\b']
+commands = ['\bflyway(Migrate|Clean|Repair|Baseline|Undo)\b', '\bflyway\s+(migrate|clean|repair|baseline|undo)\b']

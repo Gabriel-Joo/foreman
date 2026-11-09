@@ -26,6 +26,7 @@ class StartIn(BaseModel):
 class InboxIn(BaseModel):
     project: str = Field(min_length=1, max_length=64)
     body: str = Field(min_length=1, max_length=sr.INBOX_MAX)
+    assignee: str = Field(default="scribe", max_length=8)      # 11-09 받는 사람 — scribe(서기 정리) · coder(코더에게)
 
 
 def _iso(v: Any) -> Any:
@@ -36,23 +37,28 @@ def _iso(v: Any) -> Any:
 async def inbox_add(body: InboxIn, request: Request) -> JSONResponse:
     """할 일 받는 함(11-09) — 머리줄 [＋ 할 일]. 세션을 거치지 않고 그대로 적는다. 정리는 서기의 「나중에 할 일 정리」."""
     try:
-        iid = await sr.inbox_add(request.app.state.store.engine, body.project, body.body)
+        iid = await sr.inbox_add(request.app.state.store.engine, body.project, body.body, body.assignee)
     except Refused as e:
         return JSONResponse({"refused": str(e)}, status_code=409)
     _cache["data"] = None
+    from bridge.api import coder
+    coder.invalidate()
     return JSONResponse({"id": iid}, status_code=201)
 
 
 @router.get("/inbox")
 async def inbox_list(request: Request, project: str | None = None, limit: int = 50) -> dict[str, Any]:
     rows = await sr.inbox_list(request.app.state.store.engine, project, max(1, min(limit, 200)))
-    return {"items": [{**{k: _iso(v) for k, v in r.items()}, "label": sr.INBOX_LABEL.get(r["state"], r["state"])} for r in rows]}
+    return {"items": [{**{k: _iso(v) for k, v in r.items()}, "label": sr.inbox_label(r["state"], r.get("assignee")),
+                       "to": sr.ASSIGNEE_KO.get(r.get("assignee") or "scribe", "")} for r in rows]}
 
 
 @router.post("/inbox/{iid}/drop")
 async def inbox_drop(iid: int, request: Request) -> dict[str, Any]:
     ok = await sr.inbox_drop(request.app.state.store.engine, iid)
     _cache["data"] = None
+    from bridge.api import coder
+    coder.invalidate()
     return {"ok": ok}
 
 

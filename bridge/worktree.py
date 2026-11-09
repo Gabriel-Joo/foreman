@@ -144,6 +144,44 @@ async def status(repo: str, name: str) -> dict[str, Any]:
     return out
 
 
+def _forbidden(wt_path: str, rel: str) -> bool:
+    """쉬게 하기 커밋에 넣으면 안 되는 것 — 원본을 가리키는 링크(.venv · .env* · node_modules)와 worktree 밖을 가리키는 링크.
+    .gitignore가 없는 저장소에서도 막는다(`.venv/` 패턴은 링크(파일)에 안 걸린다 — EXCLUDE 주석). 견본(.env*.example)은 넣는다."""
+    top = rel.split("/", 1)[0]
+    if "node_modules" in rel.split("/"):
+        return True
+    if top == ".venv" or (top.startswith(".env") and not top.endswith(".example")):
+        return True
+    p = Path(wt_path) / rel
+    if p.is_symlink():
+        target = os.path.realpath(p)
+        return not (target == os.path.realpath(wt_path) or target.startswith(os.path.realpath(wt_path) + os.sep))
+    return False
+
+
+async def save_progress(wt_path: str, message: str) -> dict[str, Any]:
+    """[쉬게 하기](11-09) — 커밋 안 한 변경을 이 브랜치에 커밋한다. `git add -A`(.gitignore를 지킨다) 뒤 넣으면 안 되는 것(_forbidden)은
+    빼고, 빠진 것은 결과에 적는다(조용히 넘어가지 않는다). 변경이 없으면 커밋하지 않는다. 실패는 Refused로 — 세션을 끝내기 전에 멈춘다."""
+    _, dirty = await git(wt_path, "status", "--porcelain")
+    if not dirty.strip():
+        return {"commit": None, "files": 0, "skipped": []}
+    await git(wt_path, "add", "-A")
+    _, staged = await git(wt_path, "diff", "--cached", "--name-only", "-z")
+    names = [n for n in staged.split("\0") if n]
+    skipped = [n for n in names if _forbidden(wt_path, n)]
+    if skipped:
+        await git(wt_path, "reset", "-q", "--", *skipped)
+    keep = [n for n in names if n not in skipped]
+    if not keep:
+        return {"commit": None, "files": 0, "skipped": skipped}
+    rc, out = await git(wt_path, "commit", "-q", "-m", message, check=False)
+    if rc:
+        await git(wt_path, "reset", "-q", check=False)       # 올려 둔 것을 내린다 — 작업 트리는 그대로
+        raise Refused(f"커밋하지 못했습니다 — {out[-300:] or 'git commit 실패'}. 세션은 끝내지 않았습니다")
+    _, h = await git(wt_path, "rev-parse", "--short", "HEAD")
+    return {"commit": h, "files": len(keep), "skipped": skipped}
+
+
 async def merge(repo: str, name: str) -> dict[str, Any]:
     """rebase(worktree에서) → fast-forward(원본에서) → worktree · 브랜치 지우기. 충돌이면 rebase를 되돌리고 멈춘다.
     push는 하지 않는다(런슈즈는 push가 곧 배포 — 사람이 따로)."""
