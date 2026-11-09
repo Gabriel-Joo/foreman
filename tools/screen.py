@@ -247,6 +247,10 @@ async def run(a: argparse.Namespace) -> int:
                         na = await p.ev("window.office.nameAudit ? window.office.nameAudit() : []") or []
                         base.setdefault("nameAudit", {})[view] = na
                         bad += len(na)
+                        # [전체] 카드 · [⌂] 현황판 이름(11-09) — 겹침 · 그림 덮음 · 화면 · 칸 밖 · 잘림. 전엔 --eval로 따로 불러야 봤다
+                        ca = await p.ev("window.office.cardAudit ? window.office.cardAudit().problems : []") or []
+                        base.setdefault("cardAudit", {})[view] = ca
+                        bad += len(ca)
                         if a.eval:
                             base.setdefault("eval", {})[view] = await p.ev(a.eval)
                         f = out / f"{th}_{size}_{view}.png"
@@ -262,7 +266,8 @@ async def run(a: argparse.Namespace) -> int:
                     p.errors.clear()
                     report["runs"].append(base)
                     n_names = sum(len(v) for v in base.get("nameAudit", {}).values())
-                    print(f"{th} {size}: layoutAudit {len(la or [])} · nameAudit {n_names} · propAudit {len(base['propAudit_issues'])} · "
+                    n_cards = sum(len(v) for v in base.get("cardAudit", {}).values())
+                    print(f"{th} {size}: layoutAudit {len(la or [])} · nameAudit {n_names} · cardAudit {n_cards} · propAudit {len(base['propAudit_issues'])} · "
                           f"audit(고정 안 됨) {len(au or [])} · 페이지 오류 {len(base['page_errors'])} · 사진 {len(shots)}")
     finally:
         proc.terminate()

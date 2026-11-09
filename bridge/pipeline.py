@@ -78,6 +78,10 @@ class PipeRules:
     watch_alert_s: float = 1020
     watch_end_s: float = 2100
     hook_break_after: int = 2
+    # ArgoCD 직접 읽기(11-09) — 호스트에 kubectl이 없어 vagrant ssh로. vagrant_dir가 비면 읽지 않고 알림만
+    argo_vagrant_dir: str | None = None
+    argo_vm: str = "m-k8s"
+    argo_ns: str = "argocd"
     infra: dict[str, InfraDef] = field(default_factory=dict)
     projects: dict[str, PipeProject] = field(default_factory=dict)
 
@@ -94,6 +98,8 @@ def load_pipeline(path: str | Path) -> PipeRules:
                   retire_after_h=i.get("retire_after_h", 24), ingress=i.get("ingress", "http://192.168.122.240"),
                   watch_warn_s=w.get("started_warn_s", 180), watch_alert_s=w.get("started_alert_s", 1020),
                   watch_end_s=w.get("completed_alert_s", 2100), hook_break_after=w.get("webhook_break_after", 2))
+    a = raw.get("argocd_read", {})
+    r.argo_vagrant_dir, r.argo_vm, r.argo_ns = a.get("vagrant_dir"), a.get("vm", "m-k8s"), a.get("namespace", "argocd")
     for k in STAGES:
         d = i.get(k)
         if isinstance(d, dict):
@@ -141,6 +147,44 @@ SKIP_STEP = "건너뜀 — 문서만"
 # ArgoCD 수동 Sync 대기 알림(11-09) — 보통은 빌드 뒤 몇 분 안에 Sync한다(배포 약 5분). 1시간이면 잊은 것, 그 뒤 하루마다 다시
 SYNC_WAIT_FIRST = timedelta(hours=1)
 SYNC_WAIT_EVERY = timedelta(hours=24)
+# ArgoCD 끝 알림이 안 와 "진행 중"에 남는 것(11-09 펫퍼민트 #109 — 13:53 "Synced · Progressing" 뒤 Healthy 알림이 오지 않았다.
+# 클러스터는 이미 Healthy). running이 CHECK_AFTER를 넘으면 ArgoCD를 직접 읽어 그 리비전이 끝났으면 닫고,
+# STUCK_ALERT가 지나도 안 끝났거나 읽지 못하면 행마다 한 번 알린다. 배포는 보통 5분
+ARGO_CHECK_AFTER = timedelta(minutes=10)
+ARGO_READ_EVERY = timedelta(minutes=5)      # 같은 앱을 다시 읽는 간격(vagrant ssh 한 번 약 2초)
+ARGO_STUCK_ALERT = timedelta(minutes=30)
+ARGO_READ_NOTE = " [끝 알림이 없어 ArgoCD를 읽어 확인]"
+_APP_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+
+
+def argocd_live(app: dict[str, Any]) -> dict[str, Any]:
+    """`kubectl get application -o json` → 판정에 쓰는 칸만. op_rev는 마지막 동기화 작업의 리비전."""
+    st = app.get("status") or {}
+    op = st.get("operationState") or {}
+    return {"sync": (st.get("sync") or {}).get("status") or "", "health": (st.get("health") or {}).get("status") or "",
+            "revision": (st.get("sync") or {}).get("revision") or "", "phase": op.get("phase") or "",
+            "op_revision": (op.get("syncResult") or {}).get("revision") or ((op.get("operation") or {}).get("sync") or {}).get("revision") or "",
+            "started_at": op.get("startedAt"), "finished_at": op.get("finishedAt"), "message": (op.get("message") or "")[:300]}
+
+
+def live_verdict(live: dict[str, Any], rev: str) -> tuple[str, str | None] | None:
+    """진행 중 행(리비전 rev)이 ArgoCD에서 끝났나 — (status, step) 또는 아직 모름(None).
+    성공: 그 리비전의 마지막 작업이 Succeeded이고 Healthy(OutOfSync여도 — 수동 Sync 앱은 다음 리비전이 이미 와 있다).
+    실패: 그 리비전 작업이 Failed · Error, 또는 그 리비전이 배포된 채 Degraded."""
+    if not rev or rev == "?":
+        return None
+    mine_op = live.get("op_revision") == rev
+    # OutOfSync일 때 sync.revision은 아직 안 올라간 목표 리비전이다 — Synced일 때만 배포된 것으로 본다
+    deployed = mine_op or (live.get("revision") == rev and live.get("sync") == "Synced")
+    if mine_op and live.get("phase") in ("Failed", "Error"):
+        return "failed", "sync"
+    if not deployed:
+        return None
+    if live.get("health") == "Degraded":
+        return "failed", "health"
+    if live.get("health") == "Healthy" and (live.get("phase") in ("Succeeded", "") or not mine_op):
+        return "success", None
+    return None
 
 
 def jenkins_skipped(body: dict[str, Any]) -> bool:
@@ -293,6 +337,9 @@ class PipelineManager:
         self._down_since: dict[str, datetime] = {}
         self._down_alerted: set[str] = set()
         self._down_why: dict[str, str] = {}
+        # ArgoCD 직접 읽기 — 앱 → (읽은 때, 읽은 것 또는 None, 못 읽은 이유). 시험은 argo_reader를 바꿔 끼운다
+        self._argo_read: dict[str, tuple[datetime, dict[str, Any] | None, str | None]] = {}
+        self.argo_reader: Any = self.read_argocd_app
 
     # ── 수명 ──
     async def start(self, loops: bool = True) -> None:
@@ -448,8 +495,98 @@ class PipelineManager:
             sent.append(key)
         return sent
 
+    async def read_argocd_app(self, app: str) -> dict[str, Any]:
+        """ArgoCD 앱 상태를 읽는다(읽기 전용) — `vagrant ssh m-k8s -c 'kubectl get application …'`. ArgoCD API 토큰은 두지 않는다
+        (Jenkins API 토큰을 안 쓰는 것과 같은 이유 — 이 서버에 새 열쇠를 늘리지 않는다)."""
+        if not self.rules.argo_vagrant_dir:
+            raise RuntimeError("읽기 설정 없음(pipeline.toml [argocd_read])")
+        if not _APP_RE.match(app) or not _APP_RE.match(self.rules.argo_ns) or not _APP_RE.match(self.rules.argo_vm):
+            raise RuntimeError("앱 · 네임스페이스 이름이 이상합니다")
+        cmd = f"kubectl get applications.argoproj.io -n {self.rules.argo_ns} {app} -o json"
+        p = await asyncio.create_subprocess_exec(
+            "vagrant", "ssh", self.rules.argo_vm, "-c", cmd, cwd=str(Path(self.rules.argo_vagrant_dir).expanduser()),
+            stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            out, err = await asyncio.wait_for(p.communicate(), 60)
+        except TimeoutError:
+            p.kill()
+            raise RuntimeError("60초 안에 답하지 않았습니다") from None
+        if p.returncode:
+            tail = [ln for ln in err.decode(errors="replace").splitlines() if ln.strip() and "[fog]" not in ln]
+            raise RuntimeError(f"종료 코드 {p.returncode}: {(tail[-1] if tail else '')[:200]}")
+        try:
+            return argocd_live(json.loads(out.decode(errors="replace")))
+        except ValueError:
+            raise RuntimeError("JSON이 아닌 답입니다") from None
+
+    async def check_argo_running(self, now: datetime | None = None) -> list[str]:
+        """끝 알림 없이 "진행 중"에 남은 ArgoCD 행 — 직접 읽어 닫거나, 안 끝났으면 알린다. 돌려주는 값: 닫은 · 알린 것(시험용)"""
+        now = now or _now()
+        done: list[str] = []
+        for p in self.rules.projects.values():
+            if not p.argocd_app:
+                continue
+            async with self.engine.connect() as c:
+                rows = (await c.execute(text(
+                    "SELECT id, external_id, commit_sha, tag, started_at, message, infra_character_id FROM build "
+                    "WHERE project_id = :p AND stage = 'argocd' AND status = 'running' AND started_at < :t ORDER BY id"),
+                    {"p": p.project_id, "t": now - ARGO_CHECK_AFTER})).all()
+            if not rows:
+                continue
+            got = self._argo_read.get(p.argocd_app)
+            if got is None or now - got[0] >= ARGO_READ_EVERY:
+                try:
+                    got = (now, await self.argo_reader(p.argocd_app), None)
+                except Exception as e:  # noqa: BLE001 — 못 읽은 것도 알림 글에 넣는다(조용히 넘어가지 않게)
+                    got = (now, None, str(e)[:200] or type(e).__name__)
+                    log.warning("ArgoCD 읽기 실패 %s: %s", p.argocd_app, got[2])
+                self._argo_read[p.argocd_app] = got
+            _, live, err = got
+            for bid, ext, sha, tag, started, message, infra in rows:
+                rev = ext.split("@", 1)[1] if "@" in ext else ""
+                v = live_verdict(live, rev) if live else None
+                if v:
+                    status, step = v
+                    at = _ts(live.get("finished_at")) if live.get("finished_at") else now
+                    await self._upsert(p, "argocd", ext, sha, tag, status, step, max(at, started), None,
+                                       (message or "") + ARGO_READ_NOTE, infra,
+                                       {**{k: live.get(k) for k in ("sync", "health", "phase", "revision", "op_revision")},
+                                        "source": "read"})
+                    log.warning("파이프라인 %s ArgoCD %s — 끝 알림이 없어 읽어서 %s로 닫음", p.name, ext, status)
+                    done.append(f"closed:{bid}:{status}")
+                    continue
+                # 기준은 그 리비전 Sync 작업이 시작한 때(11-09 첫 알림이 틀렸다 — 수동 Sync 앱은 행이 "Sync 대기"로 먼저 생겨
+                # started_at이 대기 시작 시각이라, 막 누른 Sync를 "106분째"로 셌다). 못 읽으면 행 시각
+                if live and live.get("op_revision") == rev and live.get("started_at"):
+                    started = max(started, _ts(live["started_at"]))
+                if now - started < ARGO_STUCK_ALERT or self.notifier is None:
+                    continue
+                key = f"argo_stuck:{p.name}:{bid}"
+                async with self.engine.connect() as c:
+                    if (await c.execute(text("SELECT 1 FROM notification WHERE rule = :r LIMIT 1"), {"r": key})).first():
+                        continue
+                rule = self.notifier.rules.for_project(p.name)
+                argo = self.rules.infra.get("argocd")
+                mins = int((now - started).total_seconds() // 60)
+                now_line = (f"▶ 지금 ArgoCD: 동기화 {live.get('sync') or '?'} · 상태 {live.get('health') or '?'} · "
+                            f"마지막 작업 {live.get('phase') or '?'}" + (f" — {live['message'][:120]}" if live.get("message") else "")
+                            if live else f"▶ ArgoCD를 읽지 못했습니다: {err}")
+                msg = "\n".join([
+                    f"{rule.prefix if rule else '[' + p.name + ']'} ⏳ 배포가 끝나지 않습니다 — ArgoCD Sync 시작 뒤 {mins}분째 끝 알림이 없습니다",
+                    now_line, f"▶ 리비전 {rev[:8] or '?'} · 이미지 {(tag or '?')[:12]}",
+                    "ArgoCD 화면에서 파드 · 이벤트를 확인해 주세요",
+                    *([f"https://{argo.host}/applications/{p.argocd_app}"] if argo else [])])
+                log.warning("파이프라인 알림 %s: 배포 안 끝남 %s %d분", p.name, ext, mins)
+                self.notifier.send_direct(p.name, "argorun", None, msg, rule=key)
+                done.append(key)
+        return done
+
     async def check_watch(self) -> None:
         await self.check_sync_wait()
+        try:
+            await self.check_argo_running()
+        except Exception as e:  # noqa: BLE001 — 아래 빌드 알림 감시를 막지 않는다
+            log.warning("ArgoCD 진행 중 확인 실패: %s: %s", type(e).__name__, str(e)[:200])
         now = _now()
         for p in self.rules.projects.values():
             if not p.jenkins_job:
@@ -829,13 +966,19 @@ class PipelineManager:
                 bid, prev = r[0], r[1]
                 if RANK[status] < RANK.get(prev, 0):
                     status = prev            # 늦게 온 running이 끝난 상태를 덮지 않는다
+                # Sync 대기 → 진행: 시작 시각을 누른 때로(11-09 — 대기 시작 시각이 남아 "진행 중 106분"으로 셌다)
+                # 대기 행은 만들 때 ended_at이 채워진다 — 대기에서 나오면 끝 시각도 다시(진행 중이면 비우고, 끝났으면 그때)
+                restart = stage == "argocd" and prev == "waiting" and status == "running"
+                from_wait = stage == "argocd" and prev == "waiting" and status != "waiting"
                 await c.execute(text(
-                    "UPDATE build SET status = :st, step = COALESCE(:step, step), commit_sha = COALESCE(commit_sha, :sha), "
+                    "UPDATE build SET started_at = IF(:restart, :at, started_at), "
+                    "status = :st, step = COALESCE(:step, step), commit_sha = COALESCE(commit_sha, :sha), "
                     "tag = IF(:skip, NULL, COALESCE(tag, :tag)), character_id = COALESCE(character_id, :ch), "
-                    "ended_at = IF(:st = 'running', ended_at, COALESCE(ended_at, :at)), log_url = COALESCE(:url, log_url), "
+                    "ended_at = CASE WHEN :st = 'running' THEN IF(:fromwait, NULL, ended_at) WHEN :fromwait THEN :at "
+                    "ELSE COALESCE(ended_at, :at) END, log_url = COALESCE(:url, log_url), "
                     "message = COALESCE(:msg, message), payload = :pl WHERE id = :id"),
                     # 건너뜀(문서만)은 시작 알림 때 붙은 태그를 지운다 — 이미지가 없다(11-09). 단계 글은 실패 · 건너뜀일 때만
-                    {"st": status, "step": step if status == "failed" or step == SKIP_STEP else None, "sha": sha, "tag": tag, "ch": char,
+                    {"restart": restart, "fromwait": from_wait, "st": status, "step": step if status == "failed" or step == SKIP_STEP else None, "sha": sha, "tag": tag, "ch": char,
                      "skip": bool(payload.get("skipped")) and status == "success",
                      "at": at, "url": str(url)[:512] if url else None, "msg": message,
                      "pl": json.dumps(payload, ensure_ascii=False, default=str), "id": bid})

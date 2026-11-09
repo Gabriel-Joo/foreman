@@ -121,6 +121,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     for (const h of (usage && usage.hot) || []) hotOf.set(h.session_id, h.usd_h);
     usageChip();
   }
+  let usageTipRows = { lines: [], why: '' };
   const usagePct = (l) => (l.est_pct ?? l.measured_pct);
   const usageMax = () => Math.max(0, ...((usage && usage.limits) || []).map((l) => usagePct(l) ?? 0));
   function usageChip() {
@@ -144,7 +145,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const lines = ls.filter((l) => l.key !== 'weekly_fable' || (usagePct(l) || 0) >= 1).map((l) =>
       `${short[l.key] || l.label} ${usagePct(l) == null ? '—' : Math.round(usagePct(l)) + '%'}${l.reset_at ? ` — ${resetKo(l.reset_at)} 리셋` : ''}${l.eta_before_reset ? ' (이 속도면 리셋 전에 100%)' : ''}`);
     const why = usage.failed ? ` 지금은 불러오지 못했습니다(${usage.failed}).` : !rd.ok ? ` 지금은 /usage를 읽지 못하고 있습니다(${rd.error || '오래됐습니다'}).` : '';
-    el.dataset.tip = `사용량 — 구독 한도를 몇 % 썼는지입니다. "약"은 마지막으로 읽은 뒤 FOREMAN이 더해 본 추정입니다. 누르면 어디서 나가는지 봅니다.${why}\n${lines.join('\n')}`;
+    usageTipRows = { lines, why };                     // 감독실 경고등 호버도 같은 줄을 쓴다(11-09)
+    el.dataset.tip =`사용량 — 구독 한도를 몇 % 썼는지입니다. "약"은 마지막으로 읽은 뒤 FOREMAN이 더해 본 추정입니다. 누르면 어디서 나가는지 봅니다.${why}\n${lines.join('\n')}`;
   }
   if (new URLSearchParams(location.search).get('demo')) {   // 시연 재생은 /api를 막는다 — 칩을 숨긴다(⚠로 찍히지 않게)
     setTimeout(() => { const el = document.getElementById('oUsage'); if (el) el.hidden = true; }, 0);
@@ -759,7 +761,13 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.restore();                                  // 한 방 자르기(focusRect) 끝
     // 글자는 화면 좌표로(선명하게)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    HITS = []; NAMES = []; MAP_BOXES = [];
+    HITS = []; NAMES = []; MAP_BOXES = []; BOARD_NAMES = [];
+    if (LAMP) {                                     // 경고등 호버(11-09) — 왜 켜졌는지
+      const [lx, ly] = toScreen(LAMP.x, LAMP.y), rr = Math.max(10, 8 * cam.s);
+      const head = LAMP.max >= 90 ? `사용량 경고등 — 구독 한도를 ${Math.round(LAMP.max)}% 썼습니다. 100%가 되면 리셋까지 모든 세션이 멈춥니다.`
+        : `사용량 경고등 — 사용량을 읽지 못하고 있습니다. 한도 %가 낡았을 수 있습니다.${usageTipRows.why}`;
+      HITS.push({ x: lx - rr, y: ly - rr, w: 2 * rr, h: 2 * rr, soft: true, tip: textTip([head, ...usageTipRows.lines].join('\n')) });
+    }
     const zoomedIn = view !== 'map';
     for (const r of [...world.rooms, world.lounge]) drawBadge(r, zoomedIn);
     if (view === 'hq') {
@@ -1833,12 +1841,16 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.globalAlpha = 1;
   }
   // 현황판 경고등 — 한도(추정) 90% 넘으면 판 오른쪽 위에서 붉게 깜빡(95% 넘으면 빠르게). 못 읽으면 노란 등
+  // 감독실 현황판 오른쪽 위 경고등 — 빨강: 사용량 90% 이상, 노랑: 사용량을 못 읽음. 호버 이유는 화면 좌표 단계에서(LAMP → HITS)
+  let LAMP = null;
   function drawUsageLamp(now) {
+    LAMP = null;
     if (!usage) return;
     const max = usageMax(), bad = usage.failed || (usage.reading && !usage.reading.ok);
     if (max < 90 && !bad) return;
     const b = HQ.board || {}, q = world.hq;
     const x = (q.x + (b.x ?? 3) + (b.w ?? 22) - 0.5) * T, y = (q.y + (b.y ?? 0.4) - 0.05) * T;
+    LAMP = { x, y, max, bad: !!bad };
     const col = max >= 90 ? '#ff3b30' : '#ffcc00';
     const on = 0.55 + 0.45 * Math.sin(now / (max >= 95 ? 150 : 400));
     glow(x, y, 30 * on, col, 0.6 * on);
@@ -2026,7 +2038,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 구역 이름표 · 앞서 그린 이름과 겹치면 비켜 그린다(11-06 — 글씨를 키우자 오피스 1024에서 서버룸 사람 이름이 「서버룸」을 덮었다).
     // 후보: 발밑(기본) → 겹친 칸의 아래 · 왼쪽 · 오른쪽. 사람에게서 멀어지지 않게 두 줄 높이 · 이름 폭 안에서만.
     // 그래도 겹치면 이름을 앞 10자로 줄여 한 번 더(나란히 앉은 서기 둘의 긴 이름)
-    const others = [...HITS.map((h) => [h.x, h.y, h.w, h.h]), ...NAMES.map((m) => m.rect)];
+    const others = [...HITS.filter((h) => !h.soft).map((h) => [h.x, h.y, h.w, h.h]), ...NAMES.map((m) => m.rect)];   // soft = 호버만(그림 위 넓은 칸)
     const place = (ls) => {
       const ws = ls.map(([t]) => ctx.measureText(t).width + 6), mw = Math.max(...ws), bh = ls.length * (NH + 1) - 1;
       const cover = (cx, top) => others.reduce((s, o) => s + areaOf([cx - mw / 2, top, mw, bh], o), 0);
@@ -2187,7 +2199,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const s = siteState(r);
     return [[r.label, s === 'fail' ? P.bad : s === 'alert' ? P.warn : P.label, 'bold 17px'], state];
   }
-  function hqCardTip(r) {
+  function hqCardTip(r, head = null) {
     const st = r.stats || {}, pp = r.pipe;
     const span = Math.round((r.rateSpan || 0) / 60000);
     const rows = [
@@ -2204,7 +2216,17 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       r.rate ? `최근 ${Math.max(1, Math.min(10, span))}분 ${fmt(r.rate)} 토큰 씀 (출력 ${fmt(r.rateOut)})`
         : (r.rateSpan || 0) < 60000 ? '최근 사용량 재는 중(화면을 연 뒤부터)' : `최근 ${Math.min(10, span)}분 사용 없음`,
     ];
-    return textTip([`${r.label} — 현장 상태입니다. 누르면 그 현장으로 갑니다.`, ...rows].join('\n'));
+    return textTip([head || `${r.label} — 현장 상태입니다. 누르면 그 현장으로 갑니다.`, ...rows].join('\n'));
+  }
+  // 감독실 현황판 칸 호버(11-09 사용자 — 빨간 표시가 왜 켜졌는지). 표시 종류는 테마마다 다르고 판단은 siteState 하나다:
+  //   ❗(이름 뒤) · 붉은 촛불(마법학교) · 노란 모니터 띠 · 테두리 깜빡 + "!"(오피스) · 빨간 자석(현장, 칸 오른쪽 위) = 사람이 풀어야 하는 대기
+  //   🔥 · 꺼진 촛불 + 연기 · 빨간 모니터 + "✕" · 빨간 자석 = 파이프라인 실패 · 웹훅 끊김 의심 · 빌드 알림 없음
+  //   현장 테마 아래 줄의 작은 빨간 자석 = 승인 대기 한 건에 하나(최대 4)
+  function boardTip(r) {
+    const s = siteState(r);
+    const head = s === 'alert' ? `${r.label} — 빨간 표시: 사람이 풀어야 하는 대기가 있습니다. 아래 줄이 무엇을 어디서 푸는지입니다. 누르면 그 현장으로 갑니다.`
+      : s === 'fail' ? `${r.label} — 빨간 표시: 파이프라인이 깨졌거나 빌드 알림이 끊겼습니다. 누르면 그 현장으로 갑니다.` : null;
+    return hqCardTip(r, head);
   }
   // [전체] 현장 카드 — 방마다 그 방 바로 아래, 한 줄(같은 y · 같은 높이). 폭은 그 방 폭(목표 배율 camT.s로 재서 흔들리지 않게)
   let MAPC = null;                               // 이번 프레임의 카드 줄 · 높이(syncBanner가 잰다, 높이는 MAP_H)
@@ -2259,19 +2281,54 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       if (a.h !== bs[0].h || a.y !== bs[0].y) out.push(`줄 안 맞음 ${a.label}`);
       if (a.lines.some((t) => t.endsWith('…'))) out.push(`잘림 ${a.label}`);
     });
-    return { n: bs.length, lines: bs.map((b) => b.lines.length), problems: out };
+    // [⌂] 현황판 이름 · 표시(11-09) — 다른 칸 이름과 겹침 · 칸 밖으로 나감 · 낱말 가운데서 끊김
+    const bn = BOARD_NAMES;
+    const box = ([x, y, w, h]) => ({ x, y, w, h });
+    bn.forEach((a, i) => {
+      bn.slice(i + 1).forEach((b) => {
+        if (a.rects.some((ra) => b.rects.some((rb) => hit(box(ra), box(rb))))) out.push(`현황판 이름 겹침 ${a.label} · ${b.label}`);
+      });
+      if (a.rects.some(([x, , w]) => x < a.slot[0] || x + w > a.slot[1])) out.push(`현황판 이름 칸 밖 ${a.label}`);
+      if (a.lines.some((t, k) => k && !/^[(（]/.test(t) && !a.label.includes(a.lines[k - 1] + ' ' + t))) out.push(`현황판 이름 낱말 끊김 ${a.label}`);
+    });
+    return { n: bs.length, lines: bs.map((b) => b.lines.length), board: bn.length, problems: out };
   }
   // 감독실 — 현황판 위 현장 이름만(11-09 카드는 [전체]로 — 감독실도 그 방만 보인다)
+  // 11-09 사용자: ❗가 붙으면 이름이 밀려 잘렸다 — 바탕 상자는 이름 폭만 쟀는데 글은 "이름 ❗"를 가운데에 그려 이름이 왼쪽 상자 밖으로
+  // 나갔고, 1024에서는 옆 칸 이름과 겹쳤다. 이제 이름은 표시와 상관없이 늘 칸 가운데 — 칸 폭에 들어갈 때까지 글씨를 줄이고(12px까지),
+  // 그래도 넘치면 자르지 않고 줄을 바꾼다("라운지" / "(떠돌이)"). 표시(❗ · 🔥)는 이름 오른쪽에 자리가 있으면 거기, 없으면 이름 아래
+  let BOARD_NAMES = [];
   function drawHQCards() {
     for (const s of boardSlots()) {
-      // 현황판 위 이름 — 지도 위 땅 · 모니터 위
+      const [x0, y0] = toScreen(s.x * T, s.y * T), [x1, y1] = toScreen((s.x + s.w) * T, (s.y + s.h) * T);
       const [lx, ly] = toScreen((s.x + s.w / 2) * T, (s.y + 0.35) * T);
       const st = siteState(s.r);
-      ctx.font = `bold ${fpx(17)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-      const tw = ctx.measureText(s.r.label).width + 10;
-      ctx.fillStyle = '#000000aa'; ctx.fillRect(lx - tw / 2, ly, tw, fpx(17) + 5);
-      ctx.fillStyle = st === 'fail' ? P.bad : st === 'alert' ? P.warn : P.label;
-      ctx.fillText(s.r.label + (st === 'alert' ? ' ❗' : st === 'fail' ? ' 🔥' : ''), lx, ly + 2);
+      const mark = st === 'alert' ? '❗' : st === 'fail' ? '🔥' : '';
+      const room = x1 - x0 - 6;                                    // 옆 칸과 3px씩 띄운다
+      let px = fpx(17);
+      for (; px > fpx(12); px--) {
+        ctx.font = `bold ${px}px system-ui, sans-serif`;
+        if (ctx.measureText(s.r.label).width + 10 <= room) break;
+      }
+      ctx.font = `bold ${px}px system-ui, sans-serif`;
+      const lines = wrapText(s.r.label, room - 10), LH = px + 5;
+      const nw = Math.max(...lines.map((t) => ctx.measureText(t).width)) + 10, mw = ctx.measureText('❗').width + 6;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      lines.forEach((t, i) => {
+        ctx.fillStyle = '#000000aa'; ctx.fillRect(lx - nw / 2, ly + i * LH, nw, LH);
+        ctx.fillStyle = st === 'fail' ? P.bad : st === 'alert' ? P.warn : P.label;
+        ctx.fillText(t, lx, ly + i * LH + 2);
+      });
+      const rects = [[lx - nw / 2, ly, nw, lines.length * LH]];
+      if (mark) {
+        const right = lx + nw / 2 + mw <= x1 - 3;
+        const mx = right ? lx + nw / 2 : lx - mw / 2, my = right ? ly : ly + lines.length * LH;
+        ctx.fillStyle = '#000000aa'; ctx.fillRect(mx, my, mw, LH);
+        ctx.fillText(mark, mx + mw / 2, my + 2);
+        rects.push([mx, my, mw, LH]);
+      }
+      BOARD_NAMES.push({ label: s.r.label, lines, slot: [x0, x1], rects: rects.map((r) => r.map(Math.round)) });
+      HITS.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0, soft: true, tip: boardTip(s.r) });
     }
   }
 
