@@ -40,7 +40,7 @@ docs_page = "3ea3218bb5248091aa0bc1eb58ae9ccb"        # [기술문서](사람이
 portfolio_page = "4133218bb5248142883af1f21788f6ca"   # [포트폴리오](11-09 만듦)
 github = "https://github.com/Gabriel-Joo/petmint-rag-chatbot"
 ref = "origin/main"
-docs = "auto"  # 11-09 사용자 결정으로 켬 — 사람이 옮겨 둔 20쪽(짝은 doc_publish)에 맞춘다. README · next_rebuild는 대상 아님
+docs = "off"   # 11-09 켰다가 docs 폴더를 Notion 구조에 맞게 옮기는 동안 끔(경로가 바뀌면 짝이 끊긴다 — log/petmint_docs_move_20261109.md)
 quiet_min = 30
 # 아래는 펫퍼민트만(사용자 결정 11-09, log/petmint_docsync_dryrun_20261109.md). 없으면 런슈즈 · FOREMAN처럼 기본 동작
 create = false                      # 짝이 없으면 새 페이지를 만들지 않고 실패로 남긴다
@@ -48,4 +48,4 @@ title = "keep"                      # 제목 그대로("00. 모델 준비" — �
 order = "keep"                      # 자리 · 차례 그대로(18쪽은 「02. 파이프라인 설계」 아래)
 header = "footer"                   # 사본 상자 대신 맨 아래 회색 한 줄 "마지막 갱신 — 커밋 · 시각"
 keep_notion = ["inline_code", "image", "heading", "shape"]   # 모양은 Notion 기준, 쪽 단위 글 비교(docs/12_scribe.md 5절 — 잃는 것)
-skip = ["docs/README.md", "docs/next_rebuild.md", "docs/저녁실행.md", "docs/모드검증.md"]   # 뒤 둘은 운영 기록 · 체크리스트(11-09 사용자)
+skip = ["docs/README.md", "docs/next_rebuild.md", "docs/ops/"]   # docs/ops/ = 운영 기록 · 체크리스트 폴더 통째로(11-09 사용자 — 저녁실행 · 모드검증)

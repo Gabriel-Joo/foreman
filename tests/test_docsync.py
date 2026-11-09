@@ -27,8 +27,41 @@ def _git(repo, *args):
                         "GIT_COMMITTER_EMAIL": "t@t", "PATH": "/usr/bin:/bin", "HOME": str(repo)})
 
 
+def test_docs_files_subfolders_and_skip_folders(tmp_path):
+    """11-09 — 하위 폴더도 읽는다(펫퍼민트 docs/02_pipeline/). docs/archive/는 늘, skip의 "…/"는 폴더 통째로, 파일 이름은 그대로 뺀다."""
+    for d in ("archive", "02_pipeline", "ops"):
+        (tmp_path / "docs" / d).mkdir(parents=True)
+    (tmp_path / "docs" / "README.md").write_text("목차\n")
+    (tmp_path / "docs" / "02_pipeline.md").write_text("# 파이프라인\n")
+    (tmp_path / "docs" / "02_pipeline" / "00_model.md").write_text("# 모델\n")
+    (tmp_path / "docs" / "archive" / "old.md").write_text("# 옛\n")
+    (tmp_path / "docs" / "ops" / "저녁실행.md").write_text("# 운영\n")
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-q", "-m", "docs")
+    got = ds.docs_files(str(tmp_path), "HEAD", ["docs/README.md", "docs/ops/"])
+    assert got == ["docs/02_pipeline.md", "docs/02_pipeline/00_model.md"]
+    assert ds.last_docs_commit(str(tmp_path), "HEAD") is not None          # 하위 폴더 커밋도 docs 커밋으로 센다
+
+
+def test_sync_never_archives_when_create_false(monkeypatch):
+    """11-09 — create = false(사람이 옮겨 둔 페이지)는 원본이 사라져도 휴지통으로 보내지 않고 실패로 남긴다.
+    경로만 바뀐 것(git mv)을 그냥 맞췄으면 펫퍼민트 20쪽이 모두 휴지통으로 갈 뻔했다."""
+    _status(monkeypatch, deleted=["docs/00_model_setup.md"])
+    pub = _Pub()
+    pub.create = False
+    r = asyncio.run(ds.sync(pub, "지금"))
+    assert pub.calls == [] and r["failed"][0]["path"] == "docs/00_model_setup.md" and "휴지통" in r["failed"][0]["error"]
+    p = nt.Publisher(None, FakeNotion(see_all=True), "root", "/repo", opts={"create": False})
+    try:
+        asyncio.run(p.archive("docs/x.md"))
+        raise AssertionError("archive가 막히지 않았다")
+    except nt.OutOfScope:
+        pass
+
+
 def test_docs_files_only_top_level_md_at_ref(tmp_path):
-    """docs/ 바로 아래 .md만 — docs/archive/는 올리지 않는다(런슈즈 docs/README). ref에 커밋된 것만(작업 트리 아님)."""
+    """docs/archive/는 올리지 않는다(런슈즈 docs/README). ref에 커밋된 것만(작업 트리 아님)."""
     (tmp_path / "docs" / "archive").mkdir(parents=True)
     (tmp_path / "docs" / "README.md").write_text("| `b.md` |\n| `a.md` |\n")
     (tmp_path / "docs" / "a.md").write_text("# A\n")

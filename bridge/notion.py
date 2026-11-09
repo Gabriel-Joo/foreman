@@ -1022,6 +1022,8 @@ class Publisher:
 
     async def archive(self, path: str) -> dict[str, Any]:
         """내리기 = 휴지통. 우리가 만든 페이지이고 지금도 루트 아래일 때만."""
+        if not self.create:
+            raise OutOfScope("create = false 프로젝트는 페이지를 휴지통으로 보내지 않습니다 — 사람이 옮겨 둔 페이지입니다")
         row = await self._row(path)
         if not row or row["status"] != "published" or not row["notion_page_id"]:
             raise OutOfScope("게시한 기록이 없는 글입니다 — 우리가 만든 페이지만 내립니다")

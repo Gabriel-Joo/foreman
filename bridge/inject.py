@@ -144,11 +144,31 @@ LEADING = ("/", "!")
 
 
 def guarded(text: str, command: bool = False) -> tuple[str, bool]:
-    """(보낼 텍스트, 보호를 붙였나)."""
+    """(보낼 텍스트, 보호를 붙였나). command=True면 '/' · '!'를 그대로(명령으로) — '!'는 입력 API가 승인 규칙을 먼저 본다(11-09).
+    전엔 '!'에 늘 공백을 붙였다: 사용자가 보낸 "!bash …dump.sh" · "!scripts/load-prod.sh --apply" 7건이 실행되지 않고
+    모델에게 글로 갔고, 아무도 몰랐다(조용한 고장)."""
     first = text[:1]
-    if first == "!" or (first == "/" and not command):
+    if first in LEADING and not command:
         return GUARD + text, True
     return text, False
+
+
+def bang_check(text: str, decide: Any) -> str:
+    """'!' 셸 명령(bash 모드)을 보내도 되나 — 보낼 명령을 돌려주고, 안 되면 Refused(이유 · 어떻게 하면 되는지).
+    bash 모드는 CC 도구 호출이 아니라 승인 훅(approval.toml)을 거치지 않는다. 그래서 같은 명령을 Bash 도구로 쳤을 때
+    승인을 묻는 규칙에 걸리면 여기서 막는다 — 그 밖은 보낸다(11-09 사용자: 명령에 공백은 당연히 들어간다, 막을 것만 막아라)."""
+    cmd = text[1:].strip()
+    if not cmd:
+        raise Refused("! 뒤에 명령이 없습니다 — 예: !ls -la")
+    if "\n" in cmd:
+        raise Refused("! 명령은 한 줄만 보냅니다 — 여러 줄은 && 로 잇거나 스크립트 파일로 실행해 주세요")
+    if re.search(r"(^|[;&|]\s*)sudo\b", cmd):
+        raise Refused("sudo는 비밀번호를 물어 그 세션 입력이 멈춥니다 — 서버 터미널에서 직접 쳐 주세요(CLAUDE.md: sudo는 사람이 친다)")
+    d = decide("Bash", {"command": cmd})
+    if d.verdict == "ask":
+        raise Refused(f"승인 규칙 '{d.rule}'에 걸리는 명령입니다({d.reason}). ! 명령은 승인 창을 거치지 않아 패널에서 보내지 않습니다 — "
+                      f"그 세션에 \"{cmd[:60]} 실행해 줘\"처럼 맡기면 승인을 묻고 실행합니다")
+    return "!" + cmd
 
 
 def recorded_forms(sent: str) -> set[str]:

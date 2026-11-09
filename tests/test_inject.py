@@ -13,9 +13,26 @@ SID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 def test_guarded():
     assert inj.guarded("/compact") == (" /compact", True)
     assert inj.guarded("/compact", command=True) == ("/compact", False)
-    assert inj.guarded("!rm -rf x", command=True) == (" !rm -rf x", True)   # '!'는 언제나 막는다
+    # 11-09 '!'도 command=True면 그대로(입력 API가 bang_check로 승인 규칙을 먼저 본다). 글로 보낼 때만 공백 보호
+    assert inj.guarded("!ls -la", command=True) == ("!ls -la", False)
+    assert inj.guarded("!ls -la") == (" !ls -la", True)
     assert inj.guarded("@file 봐줘") == ("@file 봐줘", False)
     assert inj.guarded("보통 입력") == ("보통 입력", False)
+
+
+def test_bang_check():
+    """11-09 — 공백이 든 명령은 보내고, 승인을 묻는 규칙 · sudo · 여러 줄 · 빈 명령만 막는다(이유와 할 일을 글로)."""
+    from types import SimpleNamespace as NS
+    allow = lambda t, i: NS(verdict="pass", rule="unmatched", reason="")              # noqa: E731
+    ask = lambda t, i: NS(verdict="ask", rule="git-강제push", reason="되돌릴 수 없는 명령")  # noqa: E731
+    assert inj.bang_check("!  bash ~/x/dump.sh --apply ", allow) == "!bash ~/x/dump.sh --apply"
+    for bad, why in [("!git push --force", "승인 규칙 'git-강제push'"), ("!sudo systemctl restart x", "sudo"),
+                     ("!echo a\necho b", "한 줄"), ("!   ", "명령이 없습니다")]:
+        try:
+            inj.bang_check(bad, ask if "push" in bad else allow)
+            raise AssertionError(bad)
+        except inj.Refused as e:
+            assert why in str(e), (bad, str(e))
 
 
 def _write(path, *objs):
