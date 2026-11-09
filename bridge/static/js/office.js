@@ -107,7 +107,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   setInterval(loadCoderTodo, 60000);
   // 스키마 잠금(11-09 사용자 — "설계는 사람이 푼다인데 누를 곳이 없다") — 방 배너에 누가 · 언제부터 · 무엇으로, 막힌 세션, 일찍 푼 것.
   // 줄을 누르면 확인 창 뒤 [풀기](DELETE /api/schema-lock/{project})
-  let schemaBoard = { locks: {}, released: {} };
+  let schemaBoard = { locks: {}, released: {} }, lockTip = '';
   async function loadSchemaBoard() {
     try {
       const r = await fetch('/api/schema-lock/board', { headers: store.headers() });
@@ -122,8 +122,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (lk && lk.held) {
       const who = lk.session_id ? `세션 ${lk.session_id}` : `세션 ${lk.cc}`, where = lk.wt ? `worktree ${lk.wt}` : '원본 폴더';
       const b = lk.blocked;
-      if (b) out.push([`🔒 멈춤 — ${b.session_id ? `세션 ${b.session_id}` : `세션 ${b.cc}`}이 스키마 잠금에 막혔습니다. 쥔 ${who}(${where}, ${hmOf(lk.since)}부터) — 눌러서 풉니다`, P.warn, 'bold 15px', true, 'schemalock']);
-      else out.push([`🔒 DB 구조 잠금 — ${who}(${where})이 ${hmOf(lk.since)}부터 쥐고 있습니다(${lk.what || '?'}) — 눌러서 풉니다`, P.muted, '15px', true, 'schemalock']);
+      // 겉은 짧게(한 줄), 쥔 곳 · 무엇으로는 호버(BANNER_LOCK tip) — 11-09 두 줄로 넘쳐 방이 줄고 이름이 겹쳤다
+      if (b) out.push([`🔒 멈춤 — ${b.session_id ? `세션 ${b.session_id}` : `세션 ${b.cc}`}이 스키마 잠금에 막혔습니다(쥔 ${who}) — 눌러서 풉니다`, P.warn, 'bold 15px', true, 'schemalock']);
+      else out.push([`🔒 DB 구조 잠금 — ${who}이 ${hmOf(lk.since)}부터 쥐고 있습니다 — 눌러서 풉니다`, P.muted, '15px', true, 'schemalock']);
+      lockTip = `스키마 잠금 풀기 — ${who}(${where})이 ${hmOf(lk.since)}부터 쥐고 있습니다(${lk.what || '?'}).${b ? ` 세션 ${b.session_id || b.cc}이 ${hmOf(b.at)}에 ${b.what || '?'}를 하려다 막혔습니다.` : ''} 쥔 세션이 스키마 일을 끝냈으면 누르고 확인해 풉니다.`;
     }
     if (rel && Date.now() - Date.parse(rel.at) < 10 * 60000) out.push([`🔓 잠금을 풀었습니다 — ${rel.why}`, P.ok || P.act, '15px', true]);
     return out;
@@ -801,7 +803,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       }
     });
     if (BANNER_LINK) HITS.push({ ...BANNER_LINK, tip: textTip('ArgoCD Sync 대기 — 수동 Sync 앱이라 ArgoCD 화면에서 Sync를 눌러야 올라갑니다. FOREMAN에는 누를 곳이 없습니다. 누르면 ArgoCD가 새 탭으로 열립니다.') });
-    if (BANNER_LOCK) HITS.push({ ...BANNER_LOCK, tip: textTip('스키마 잠금 풀기 — 한 프로젝트의 DB 구조(마이그레이션)는 한 세션만 바꿉니다. 쥔 세션이 스키마 일을 끝냈으면 누르고 확인해 풉니다. 풀면 다음에 시도하는 세션이 잠금을 쥡니다.') });
+    if (BANNER_LOCK) HITS.push({ ...BANNER_LOCK, tip: textTip(lockTip || '스키마 잠금 풀기 — 한 프로젝트의 DB 구조(마이그레이션)는 한 세션만 바꿉니다. 쥔 세션이 스키마 일을 끝냈으면 누르고 확인해 풉니다.') });
     return { x: 0, y: 0, w: W, h: b.h };
   }
   // 점검(tools/screen.py --eval) — 배너 높이와 방 윗벽의 화면 y. 방이 배너 밑에서 시작하면 roomTop >= h
