@@ -47,6 +47,7 @@
 
 - 시험: 새 파이썬 4 — `test_save_progress_never_commits_links`(.gitignore · info/exclude 없이도 `.env.bridge` · `.venv` · `web/node_modules` · 밖 링크 안 들어감, 견본은 들어감, 뺀 것을 올린 채 두지 않음) · `test_save_progress_commit_failure_unstages`(pre-commit 실패 → 거부 · 내림) · `test_schema_lock_blocked_notice_and_early_release` · `test_inbox_assignee_coder_jobs_and_rest`(받는 사람 분리 · 코더 끝남 · 쉬게 한 일 셈(실패 ok=0 안 셈, 합치면 빠짐) · 제안 기준). `test_schema_lock_commands_only_running_migrations`(실제 config — import만 하는 읽기 · `--status` · `grep … migrate.py` · `flyway_schema_history` 읽기 · `flywayInfo`는 잡지도 막히지도 않음, 돌리는 명령은 잡음). JS `coder.test.mjs` 5(맡길 일 · 말풍선 · 코더 판정 · 상태 호버 · 날수). 전체 pytest 533 통과 · 1 건너뜀(④ 시험 더하기 전, 다른 pytest 없을 때) — ④ 뒤 `tests/test_worktree.py` 9 통과
 - 화면(미리보기 :8200, `--ui-scale 1.25`, 시연 `coder_resident`): 세 테마 × 1920 · 1366 · 1024 × [⌂] · [전체] · 펫퍼민트 · 런슈즈 · FOREMAN — layoutAudit · cardAudit · tipAudit · propAudit 0, `coder_home`의 audit(가구 안 · 가림) 0
+  - 잠금 배너가 처음엔 두 줄로 넘쳐 방이 줄고 오피스 1366 FOREMAN 「서기 — 정리」가 「QA 부스」와 겹쳤다 → 배너 줄을 한 줄로 줄이고 쥔 곳 · 무엇으로 · 막힌 시도는 호버로(style_guide 4-1 "겉은 쉽게, 호버는 친절하게") → 1366 0
   - **nameAudit 1(오피스 1024 FOREMAN 「서기 — 정리」)은 이번 변경 전부터 있다** — main 화면에 같은 still 장면을 띄워도 같은 1건. 실제 데이터 화면의 오피스 1366 「서기」 1건도 main에서 같은 자리 · 같은 값(지금 도는 세션 배치 때문). 고치지 않았다
 - 사진으로 본 것: 런슈즈 오피스 1366 라운지의 코더 + "맡은 일 1 — 합치기 기다림 · 2일째", 마법학교 FOREMAN의 "임시 · 코더 — 조사" · "임시 · 코더 — 시험" 점선 이름표, 현장 펫퍼민트의 "맡길 일 1" · 서기 "정리할까요?"
 
