@@ -544,6 +544,84 @@ def shape_text(flat: list[tuple[str, str]], subpage_titles: set[str]) -> str:
                    and (c := compact(x)) and not doc_list(t, c))
 
 
+def _btext(b: dict[str, Any]) -> str:
+    t = b.get("type")
+    return plain((b.get(t) or {}).get("rich_text") or [])
+
+
+async def shape_patch(client: Any, pid: str, prev: list[dict[str, Any]], new: list[dict[str, Any]], path: str,
+                      url: str | None) -> dict[str, int]:
+    """지난 git(prev) → 새 git(new)에서 바뀐 맨 위 블록만 Notion에 옮긴다. Notion 블록은 같은 글(compact)로 찾고, 종류는 Notion 것.
+    - 글이 바뀐 블록: 그 Notion 블록의 글만 고친다   - 빠진 블록: 그 Notion 블록을 지운다   - 새 블록: 앞 블록 뒤에 끼운다
+    짝이 하나로 안 맞으면(그 글의 Notion 블록이 없거나 여럿 · 표 · 자식이 있는 블록 · 빈 블록) 아무것도 쓰기 전에 멈춘다(HumanEdited)."""
+    import difflib
+    st = {"kept": 0, "updated": 0, "replaced": 0, "added": 0, "deleted": 0, "reset": 0}
+    old = [b for b in await client.children(pid) if b.get("type") not in SUBPAGES
+           and not (b.get("type") == "paragraph" and _btext(b).startswith(FOOTER_HEAD))]
+    oc = [compact(_btext(b)) for b in old]
+
+    def find(c: str, what: str) -> int:
+        hits = [k for k, x in enumerate(oc) if x == c]
+        if not c or len(hits) != 1:
+            raise HumanEdited(path, [f"git에서 바뀐 블록({what})이 Notion에서 {'빈 블록' if not c else f'{len(hits)}곳'}이라 "
+                                     f"자동으로 맞추지 않았습니다 — 그 자리를 Notion에서 직접 고치거나 [Notion 수정 버리고 덮기]"], url)
+        return hits[0]
+
+    def simple(b: dict[str, Any]) -> bool:
+        t = b.get("type")
+        return t not in ("table", "image", "video") and "children" not in (b.get(t) or {})
+
+    pc, nc = [compact(_btext(b)) for b in prev], [compact(_btext(b)) for b in new]
+    plan: list[tuple[str, Any, Any]] = []                       # 먼저 다 정하고(멈출 일이 있으면 아무것도 안 쓴다) 나중에 쓴다
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=pc, b=nc, autojunk=False).get_opcodes():
+        if tag == "equal":
+            continue
+        for b in prev[i1:i2] + new[j1:j2]:
+            if not simple(b):
+                raise HumanEdited(path, [f"git에서 바뀐 곳에 표 · 그림 · 안쪽 목록이 있어 자동으로 맞추지 않았습니다({_btext(b)[:30] or b.get('type')})"], url)
+        if tag == "replace" and i2 - i1 == j2 - j1:
+            for pb, nb in zip(prev[i1:i2], new[j1:j2]):
+                plan.append(("update", find(compact(_btext(pb)), _btext(pb)[:30]), nb))
+            continue
+        for pb in prev[i1:i2]:
+            plan.append(("delete", find(compact(_btext(pb)), _btext(pb)[:30]), None))
+        if j2 > j1:
+            anchor = find(pc[i1 - 1], _btext(prev[i1 - 1])[:30]) if i1 > 0 else None
+            if anchor is None:
+                raise HumanEdited(path, ["git 맨 앞에 블록이 생겨 자동으로 맞추지 않았습니다(Notion API는 맨 앞에 끼울 수 없다)"], url)
+            plan.append(("insert", anchor, new[j1:j2]))
+    for op, k, nb in plan:
+        ob = old[k]
+        if op == "update":
+            ot = ob["type"]
+            await client.update_block(ob["id"], {"type": ot, ot: {"rich_text": (nb.get(nb["type"]) or {}).get("rich_text") or []}})
+            st["updated"] += 1
+        elif op == "delete":
+            await client.delete_block(ob["id"])
+            st["deleted"] += 1
+        else:
+            await append_tree(client, pid, nb, after=ob["id"])
+            st["added"] += len(nb)
+    return st
+
+
+def renamed_from(repo: str, old_ref: str, new_ref: str, path: str) -> str:
+    """new_ref의 path가 old_ref에서는 어느 경로였나(git 이름 바꾸기 기록). 못 찾으면 path 그대로."""
+    r = subprocess.run(["git", "-C", repo, "-c", "core.quotePath=false", "diff", "-M", "--name-status", "-z", old_ref, new_ref],
+                       capture_output=True, timeout=20)
+    parts = r.stdout.decode("utf-8", "replace").split("\0") if r.returncode == 0 else []
+    i = 0
+    while i < len(parts):
+        st = parts[i]
+        if st.startswith(("R", "C")) and i + 2 < len(parts):
+            if parts[i + 2] == path:
+                return parts[i + 1]
+            i += 3
+        else:
+            i += 2
+    return path
+
+
 def shape_diff(a: str, b: str, n: int = 5) -> list[str]:
     """Notion 글(a)과 git 글(b)이 갈리는 곳 몇 군데 — 알림 · 서기 할 일에 "▶ Notion '…' ↔ git '…'"."""
     import difflib
@@ -984,20 +1062,28 @@ class Publisher:
         if old_t == new_t:
             st = await self._ensure_footer(pid, footer)
         else:
-            prev_t = None
+            prev_t, pbl = None, None
             if row.get("commit_sha"):
                 try:
-                    pb, _ = git_show(self.repo, path, row["commit_sha"])
+                    # 지난번 맞춘 글 — 그 뒤 옮겼으면(git mv) 그때 경로로 읽는다(11-09 펫퍼민트 docs/02_pipeline/ 이동)
+                    pb, _ = git_show(self.repo, renamed_from(self.repo, row["commit_sha"], self.ref, path), row["commit_sha"])
                     _, pbl = md_to_blocks(pb, Ctx(path, row["commit_sha"], self.gh))
                     prev_t = shape_text(flat_md(pbl), subs)
                 except (FileNotFoundError, OutOfScope):
-                    prev_t = None
-            if old_t != prev_t and not force:
-                raise HumanEdited(path, shape_diff(old_t, new_t), row["url"])
-            old = await self.c.children(pid)
-            body = adopt_by_compact(old, adopt_notion_shape(old, body, self.keep_notion))
-            body = await resolve_uploads(self.c, self.repo, body, await self._upload_limit(), self.ref)
-            st = await sync_children(self.c, pid, body + ([footer] if footer else []))
+                    prev_t, pbl = None, None
+            if old_t != prev_t or pbl is None:
+                if not force:
+                    raise HumanEdited(path, shape_diff(old_t, new_t), row["url"])
+                old = await self.c.children(pid)
+                body = adopt_by_compact(old, adopt_notion_shape(old, body, self.keep_notion))
+                body = await resolve_uploads(self.c, self.repo, body, await self._upload_limit(), self.ref)
+                st = await sync_children(self.c, pid, body + ([footer] if footer else []))
+            else:
+                # Notion은 지난번 git 그대로 — git에서 바뀐 블록만 그 자리에서 고친다(11-09: 쪽 전체를 다시 맞추면 바뀌지 않은 곳의
+                # Notion 모양 — 나뉜 인용 · 빈 줄 — 까지 git 모양으로 바뀌었다). 짝이 하나로 안 맞으면 맞추지 않고 멈춘다
+                st = await shape_patch(self.c, pid, pbl, body, path, row["url"])
+                st2 = await self._ensure_footer(pid, footer)
+                st = {k: st.get(k, 0) + st2.get(k, 0) for k in set(st) | set(st2)}
         await self._save(path, kind="doc", title=title, commit_sha=commit, content_hash=digest, status="published", error=None)
         return {"path": path, "action": "footer" if old_t == new_t else "updated", "page_id": pid, "url": row["url"],
                 "commit": commit, "sync": st}
