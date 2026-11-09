@@ -895,13 +895,18 @@ class PipelineManager:
                     "SELECT commit_sha FROM build WHERE project_id = :p AND commit_sha IS NOT NULL "
                     "GROUP BY commit_sha ORDER BY MAX(started_at) DESC LIMIT :n"), {"p": p.project_id, "n": chains})).all()]
                 rows = []
+                # 11-09 수동 Sync 앱의 "배포 대기"는 ArgoCD 화면에서 Sync를 눌러야 풀린다(FOREMAN은 보여 주기만) — 그 화면으로 가는 링크
+                argo = self.rules.infra.get("argocd")
+                argocd_url = f"https://{argo.host}/applications/{p.argocd_app}" if argo and p.argocd_app else None
                 for h in heads:
                     stages = {}
                     for r in (await c.execute(text(
                             "SELECT stage, status, step, external_id, started_at, ended_at, log_url, message FROM build "
                             "WHERE project_id = :p AND commit_sha = :h ORDER BY id"), {"p": p.project_id, "h": h})).all():
                         stages[r[0]] = {"status": r[1], "step": r[2], "ext": r[3], "started_at": _iso(r[4]),
-                                        "ended_at": _iso(r[5]), "url": r[6], "message": (r[7] or "")[:500] or None,
+                                        "ended_at": _iso(r[5]), "url": r[6] or (argocd_url if r[0] == "argocd" else None),
+                                        # waiting의 message는 지난 Sync 작업의 것("successfully synced")이라 지금 상태와 반대로 읽힌다
+                                        "message": None if r[1] == "waiting" else (r[7] or "")[:500] or None,
                                         "skipped": r[0] == "jenkins" and r[1] == "success" and r[2] == SKIP_STEP}
                     commits = await self._commits(c, p, h)
                     order = ["commit", "jenkins", "harbor", "argocd"]
@@ -921,6 +926,7 @@ class PipelineManager:
                 watch = {"state": pend["state"], "short": pend["short"], "subject": pend["subject"],
                          "since": _iso(pend["at"])} if pend else None
                 out.append({"project": p.name, "infra": infra, "chains": rows, "waiting": waiting, "watch": watch,
+                            "argocd_url": argocd_url,
                             "webhook_broken": self._hook_broken.get(p.name, False)})
         return {"projects": out, "generated_at": _iso(_now())}
 
