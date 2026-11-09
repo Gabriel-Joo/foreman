@@ -25,7 +25,16 @@ from bridge.notion import HumanEdited, OutOfScope, content_digest, git_show
 log = logging.getLogger("foreman.docsync")
 
 MARK = "@docs-sync"          # doc_publish 행 — commit_sha = 마지막으로 다 맞춘 ref 커밋(전체 해시)
-DOCS_SPEC = ":(glob)docs/*.md"   # docs/ 바로 아래 .md만(git의 기본 *는 /도 넘는다 — archive가 섞인다)
+# 11-09 하위 폴더도 읽는다(펫퍼민트 docs/02_pipeline/ — Notion 하위 페이지 구조를 따라). 빼는 것은 경로 앞부분으로:
+# docs/archive/는 늘(런슈즈 docs/README "노션 · 발표 자료에 옮기지 않는다"), 프로젝트 skip의 "…/"로 끝나는 항목은 폴더 통째로
+DOCS_SPEC = ":(glob)docs/**/*.md"
+ALWAYS_SKIP = ("docs/archive/",)
+
+
+def skipped(path: str, skip: Any = ()) -> bool:
+    """대상이 아닌가 — 파일 이름 그대로 또는 "…/"로 끝나는 폴더 아래."""
+    rules = (*ALWAYS_SKIP, *(skip or ()))
+    return any(path == r or (r.endswith("/") and path.startswith(r)) for r in rules)
 
 
 def _git(repo: str, *args: str) -> str:
@@ -33,11 +42,11 @@ def _git(repo: str, *args: str) -> str:
     return r.stdout if r.returncode == 0 else ""
 
 
-def docs_files(repo: str, ref: str) -> list[str]:
-    """ref에 있는 docs/*.md(바로 아래만), docs/README.md 표 순서로."""
-    raw = subprocess.run(["git", "-C", repo, "ls-tree", "-z", "--name-only", ref, "docs/"],
+def docs_files(repo: str, ref: str, skip: Any = ()) -> list[str]:
+    """ref에 있는 docs/ 아래 .md(하위 폴더 포함, docs/archive/ · skip 빼고), docs/README.md 표 순서로."""
+    raw = subprocess.run(["git", "-C", repo, "ls-tree", "-r", "-z", "--name-only", ref, "docs/"],
                          capture_output=True, timeout=20).stdout.decode("utf-8", "replace")
-    files = [f for f in raw.split("\0") if f.endswith(".md") and f.count("/") == 1]
+    files = [f for f in raw.split("\0") if f.endswith(".md") and not skipped(f, skip)]
     return order(files, _git(repo, "show", f"{ref}:docs/README.md"))
 
 
@@ -100,7 +109,7 @@ def commits_behind(repo: str, synced: str | None, ref: str) -> int | None:
 
 async def status(pub: Any) -> dict[str, Any]:
     """한 프로젝트의 기술 문서 상태 — new · changed · deleted 파일, 뒤처진 커밋 수, 마지막 docs 커밋 시각."""
-    files = [f for f in docs_files(pub.repo, pub.ref) if f not in getattr(pub, "skip", ())]     # 대상이 아닌 파일(11-09 펫퍼민트)
+    files = docs_files(pub.repo, pub.ref, getattr(pub, "skip", ()))     # 대상이 아닌 파일 · 폴더(11-09 펫퍼민트)
     names = titles(files, _git(pub.repo, "show", f"{pub.ref}:docs/README.md"))
     async with pub.e.connect() as c:
         rows = {r["path"]: dict(r) for r in (await c.execute(text(
@@ -147,6 +156,12 @@ async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset
         except Exception as e:  # noqa: BLE001 — 파일 하나가 막혀도 나머지는 올린다
             failed.append({"path": f, "error": f"{type(e).__name__}: {str(e)[:200]}"})
     for f in st["deleted"]:
+        if not getattr(pub, "create", True):
+            # 11-09 — 사람이 옮겨 둔 페이지에 맞추는 프로젝트(create = false)는 원본이 사라져도 휴지통으로 보내지 않는다.
+            # 경로만 바뀐 것(git mv)이면 짝을 새 경로로 옮기면 풀린다. 그냥 옮겼으면 펫퍼민트 20쪽이 모두 휴지통으로 갈 뻔했다
+            failed.append({"path": f, "error": "원본이 사라졌습니다 — create = false라 휴지통으로 보내지 않습니다. "
+                                               "경로가 바뀌었으면 짝(doc_publish)을 새 경로로 옮겨 주세요"})
+            continue
         try:
             await pub.archive(f)
             done.append({"path": f, "action": "archived"})

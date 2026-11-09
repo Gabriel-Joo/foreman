@@ -17,7 +17,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from bridge.api.auth import require_api_token
-from bridge.inject import Refused, _status, _tmux_env, deliver, tmux
+from bridge.approval import load_policy
+from bridge.inject import Refused, _status, _tmux_env, bang_check, deliver, tmux
 from bridge.liveness import live_sessions
 from bridge.mask import Masker
 from bridge.models import EventIn, EventSource, EventStatus, EventType
@@ -80,7 +81,14 @@ async def inject_input(session_id: int, body: InputIn, request: Request) -> JSON
     try:
         if not cc:
             raise Refused("CC 세션 ID가 없습니다")
-        res = await deliver(cc, body.text, sessions_dir=s.sessions_dir, transcript=transcript, command=body.command)
+        sent, command = body.text, body.command
+        if body.text.strip().startswith("!"):
+            # 11-09 '!' 셸 명령 — 앞뒤 공백을 떼고, 승인을 묻는 규칙에 걸리지 않으면 bash 모드로 보낸다(bridge/inject.bang_check)
+            pol = load_policy(s.approval_config)
+            sent = bang_check(body.text.strip(), lambda tool, inp: pol.decide(tool, inp, None, None, project))
+            command = True
+            payload["bang"] = True
+        res = await deliver(cc, sent, sessions_dir=s.sessions_dir, transcript=transcript, command=command)
     except Refused as e:
         log.warning("주입 거부 session=%d(%s): %s", sid, (cc or "")[:8], e)
         payload["refused"] = str(e)
