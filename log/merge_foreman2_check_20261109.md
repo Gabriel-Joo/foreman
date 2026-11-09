@@ -18,6 +18,14 @@
 
 - 시험할 때 알게 된 것: `screen.py --session N`이 먼저 그 세션을 열면 eval에서 같은 세션을 다시 열어도 흐름(localStorage)을 다시 읽지 않는다(`setSession`이 같은 id면 그냥 돌아감). 인계 칸은 패널 [세션] 탭 안이라 탭을 열어야 보인다
 
+## 문서 세션(232, worktree foreman-2 두 번째) 합침 — 19:0x KST
+
+- 지시문: 문서 반영 + ArgoCD Healthy(이 세션이 씀) + 화면 worktree 「문서 세션이 옮길 것」. 결과 [foreman-2_docs_sync_argocd_20261109.md](foreman-2_docs_sync_argocd_20261109.md)
+- 합치기 전: 양쪽 커밋 안 한 변경 0, `git merge-tree` 충돌 없음, 세션 하위 프로세스 0(끝내기 확인 창에 걸리지 않게 — [old_session_exit_bg_20261109.md](old_session_exit_bg_20261109.md))
+- `POST /api/sessions/232/worktree {merge, end}` → 세션 끝냄 · tmux 닫힘 · 커밋 4개 rebase 합침(`38a7d64` … `aa04d9f`). 시험 529 통과(다른 pytest 없음 확인 뒤), push
+- 바뀐 것은 docs 다섯 · README 한 줄 · `deploy/cicd/argocd-notifications-foreman.yaml` · log — 브리지 코드 · config 없음 → **브리지는 다시 띄우지 않음**. ArgoCD cm은 그 세션이 18:43:42에 사용자 승인으로 적용, 펫퍼민트 1998617f Sync 뒤 Healthy(18:50:30)에 deployed가 와서 행이 닫힘(직접 읽기 아님)
+- 지시와 달랐던 것: 처음 지시는 ArgoCD를 "글로만"이었으나 그 세션 사용자가 고치기 · 적용을 지시 · 승인함(그 기록 5절)
+
 ## 할 일로 적은 것(사용자 11-09, README 「나중에 할 일」)
 
 - office 1366 「서기」 이름표 가려짐 — 재현 명령 포함
