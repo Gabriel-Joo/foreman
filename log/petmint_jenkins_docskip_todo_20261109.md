@@ -42,6 +42,11 @@
 - **런슈즈에도 있을 수 있는 버그**(펫퍼민트가 찾음): `git diff --name-only`는 기본값(`core.quotePath=true`)에서 한글 경로를 `"docs/ops/\353…"`처럼 따옴표로 감싸 `^docs/`에 안 걸린다 → 문서만 바뀐 커밋도 build. 펫퍼민트는 `git -c core.quotePath=false diff`로 고침
   - 런슈즈 확인(읽기만): 지금 한글 이름 파일 0개, Jenkinsfile 79줄 `git diff --name-only`(quotePath 그대로) — 아직 터지지 않음. 한글 이름 문서가 생기면 건너뛸 것을 빌드한다(더 도는 쪽이라 안전하지만 배포 대기가 생긴다). 고치기는 런슈즈 세션 몫 — README 「나중에 할 일」
 
+## push(20:17)
+
+- `a498cb5..16727bc` push(펫퍼민트 사용자 승인). FOREMAN `build` #145 `petmint-app#56` `16727bc0` running(20:17:16 시작) — 받는 것 확인. 이 빌드는 정상 빌드 · Sync 대기 1개 예정
+- 펫퍼민트가 #56 성공 뒤 **한글 파일명 docs/ops 문서만 바꾼 확인 커밋**을 push하고 해시를 보낸다 → 그 빌드가 "건너뜀 — 문서만" · `skipped: true` · 태그 · Sync 대기 없음인지 FOREMAN에서 본다(quotePath 수정까지 같이 확인됨)
+
 ## 같이 볼 것
 
 - 지금 쌓인 문서만 바뀐 태그를 Sync할지는 사용자가 정한다(그 기록의 남은 항목)
