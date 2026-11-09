@@ -469,6 +469,19 @@ def adopt_notion_shape(old: list[dict[str, Any]], new: list[dict[str, Any]], kee
             if cand and _norm_rt(rt) != _norm_rt((cand[0].get(t) or {}).get("rich_text")):
                 ob = cand.pop(0)
                 out[i] = {**nb, t: {**v, "rich_text": (ob.get(t) or {}).get("rich_text")}}
+    if "heading" in keep:
+        # 펫퍼민트 Notion 쪽 제목은 한 단계씩 낮다(## → heading_3 등 334건, 글은 같음 — 사용자 결정: Notion 단계 그대로)
+        hp: dict[str, list[str]] = {}
+        for ob in old:
+            if str(ob.get("type", "")).startswith("heading_"):
+                hp.setdefault(plain((ob.get(ob["type"]) or {}).get("rich_text") or []), []).append(ob["type"])
+        for i, nb in enumerate(out):
+            t = nb.get("type", "")
+            if t.startswith("heading_"):
+                cand = hp.get(plain((nb.get(t) or {}).get("rich_text") or []))
+                if cand and cand[0] != t:
+                    ot = cand.pop(0)
+                    out[i] = {**{k: v for k, v in nb.items() if k != t}, "type": ot, ot: nb[t]}
     if "image" in keep:
         imgs = [ob for ob in old if ob.get("type") == "image"]
         for i, nb in enumerate(out):
