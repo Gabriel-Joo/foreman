@@ -6,9 +6,10 @@ import { resolveAction, infraAction, groupSubagents, tokenRate, viewState } from
 import { loadSprites } from './sprites.js';
 import { createSidePanel } from './opanel.js';
 import { mountNewSession } from './newsession.js';
-import { showTip, hideTip, themeTips, attachDomTips } from './tip.js';
+import { showTip, hideTip, themeTips, attachDomTips, textTip } from './tip.js';
 import { buildGrid, findPath, footprint, RES } from './walk.js';
 import { uiScale } from './uiscale.js';
+import { wrapWords } from './wrap.js';
 
 // 픽셀 화면 글씨(화면 좌표로 그리는 것 — 구역 · 캐릭터 이름표, 말풍선, 방 카드, 단계 이름) 배율(11-09 사용자:
 // "130%로 보는데 맨 윗줄 탭 글씨 정도면 좋겠다", [가+ · 가−]도 따라가게). 탭은 17px × 배율 — 이름표 14px × 배율 × 1.2가 그쯤
@@ -269,7 +270,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (!p) return '쉬는 중';
     if (p.handing) return '일감 받는 중';
     if (!p.at) return '쉬는 중 — 진행 중인 빌드 없음';
-    return `${STAGE_KO[p.at]} ${({ running: '진행 중', waiting: '배포 승인 기다림', success: '✓ 끝', failed: '✗ 실패' })[p.st] || ''}`;
+    return `${STAGE_KO[p.at]} ${({ running: '진행 중', waiting: 'ArgoCD Sync 대기', success: '✓ 끝', failed: '✗ 실패' })[p.st] || ''}`;
   }
   function laterRebuild(key, ms) {
     clearTimeout(COURIER.timers.get(key));
@@ -584,17 +585,72 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function aim() {
     const q = view === 'hq' ? world.hq : view === 'map' ? null : roomByView();
     const r = !q ? { x: -1, y: -3, w: world.w + 2, h: world.h + 4 }
-      : q.hq ? { x: q.x - 0.3, y: q.y - 0.3, w: q.w + 0.6, h: q.h + 5.6 }      // 아래에 현장 카드 자리
+      : q.hq ? { x: q.x - 0.3, y: q.y - 0.3, w: q.w + 0.6, h: q.h + 0.6 }      // 현장 카드는 방 아래 HQ_H px(11-09 — 전엔 5.6칸을 비웠는데 카드가 더 길어 덮었다)
       // 11-08 위 2.5 → 0.5칸(방 위 카드를 평소엔 빼서 — drawBadge) · 아래 0.4(사용자 — 여백이 많다)
       // 11-09 0.4 → 0.2칸(사용자: 방이 다 들어가는 선에서 최대한)
       : { x: q.x - 0.2, y: q.y - 0.3, w: q.w + 0.4, h: q.h + 0.6 };
-    const s = Math.min(W / (r.w * T), H / (r.h * T)) * 0.99;
-    camT.s = s; camT.x = (r.x + r.w / 2) * T; camT.y = (r.y + r.h / 2) * T;
+    // 11-09 경고 배너(한 방 볼 때, 캔버스 맨 위) 높이만큼 방을 아래 칸에 맞춘다 — 겹쳐 그리지 않는다. 배너가 없으면 0
+    // 한 방은 위에 붙인다(배너 밑, 없으면 탭 줄 밑) — 폭에 맞춰져 세로가 남으면 남는 자리는 아래로(전엔 가운데라 위에 빈 띠가 생겼다)
+    // 감독실도 위에 붙이고 아래 HQ_H px를 현장 카드에 비운다(겹치지 않게)
+    const room = q && !q.hq, hq = q && q.hq;
+    const bh = room ? BANNER_H : 0, below = hq ? HQ_H + 10 : 0;
+    const s = Math.min(W / (r.w * T), (H - bh - below) / (r.h * T)) * 0.99;
+    camT.s = s; camT.x = (r.x + r.w / 2) * T;
+    camT.y = q ? r.y * T + (H / 2 - bh) / s : (r.y + r.h / 2) * T;
   }
   // 방 하나를 볼 때의 카메라 배율(aim과 같은 식) — 이름표 칸 재기용
   function roomViewScale() {
     const q = L.room || { w: 28, h: 18 };
-    return Math.min(W / ((q.w + 0.4) * T), H / ((q.h + 0.6) * T)) * 0.99;
+    return Math.min(W / ((q.w + 0.4) * T), (H - BANNER_H) / ((q.h + 0.6) * T)) * 0.99;
+  }
+
+  // ── 한 방 볼 때의 경고 배너(11-09 사용자) ──────────────
+  // 탭 줄 바로 밑(캔버스 맨 위)에 폭 전체로 붙이고, 방은 그 아래에서 시작한다(aim이 BANNER_H를 뺀 칸에 맞춘다).
+  // 전에는 방 윗벽 위 빈칸에 그리려다 모자라면 방 위에 겹쳤다. 글이 폭을 넘으면 자르지 않고 낱말 단위로 줄을 바꾸고, 그만큼 방이 내려간다
+  let BANNER = null, BANNER_H = 0, HQ_H = 0, BANNER_LINK = null;
+  const wrapText = (t, maxW) => wrapWords(t, maxW, (s) => ctx.measureText(s).width);
+  function bannerLayout(r) {
+    const src = cardLines(r, true);
+    if (!src.length) return null;
+    const lines = [];
+    for (const [t, c, f, , link] of src) {
+      ctx.font = `${sizeFont(f)} system-ui, sans-serif`;
+      for (const s of wrapText(t, W - 12)) lines.push([s, c, f, link]);
+    }
+    return { lines, h: lines.length * cardLH() + 8, border: badgeLines(r).border, argocd: r.pipe && r.pipe.argocd_url };
+  }
+  // 프레임마다 — 경고가 생기거나 사라지거나 줄 수가 바뀌면 카메라를 다시 맞춘다(방이 부드럽게 내려가고 올라붙는다)
+  function syncBanner() {
+    const room = view === 'hq' || view === 'map' ? null : roomByView();
+    BANNER = room ? bannerLayout(room) : null;
+    if (!BANNER) BANNER_LINK = null;
+    const h = BANNER ? BANNER.h : 0;
+    HQC = view === 'hq' && world.hq ? hqLayout() : null;
+    const hh = HQC ? HQC.h : 0;
+    if (h !== BANNER_H || hh !== HQ_H) { BANNER_H = h; HQ_H = hh; aim(); }
+  }
+  function drawBanner(b) {
+    ctx.fillStyle = '#0d0f14'; ctx.fillRect(0, 0, W, b.h);
+    ctx.strokeStyle = b.border; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, b.h - 1); ctx.lineTo(W, b.h - 1); ctx.stroke();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    BANNER_LINK = null;
+    b.lines.forEach(([t, c, f, link], i) => {
+      ctx.font = `${sizeFont(f)} system-ui, sans-serif`; ctx.fillStyle = c; ctx.fillText(t, 6, 5 + i * cardLH());
+      if (link === 'argocd' && b.argocd) {             // 배포 대기 줄 — 밑줄 · 누르면 ArgoCD 앱 화면(새 탭)
+        const w = ctx.measureText(t).width, y = 5 + i * cardLH();
+        ctx.fillRect(6, y + fpx(15) + 1, w, 1);
+        const box = { x: 0, y: y - 2, w: w + 12, h: cardLH(), url: b.argocd };
+        BANNER_LINK = BANNER_LINK && BANNER_LINK.url === box.url ? { ...BANNER_LINK, h: box.y + box.h - BANNER_LINK.y, w: Math.max(BANNER_LINK.w, box.w) } : box;
+      }
+    });
+    if (BANNER_LINK) HITS.push({ ...BANNER_LINK, tip: textTip('ArgoCD Sync 대기 — 수동 Sync 앱이라 ArgoCD 화면에서 Sync를 눌러야 올라갑니다. FOREMAN에는 누를 곳이 없습니다. 누르면 ArgoCD가 새 탭으로 열립니다.') });
+    return { x: 0, y: 0, w: W, h: b.h };
+  }
+  // 점검(tools/screen.py --eval) — 배너 높이와 방 윗벽의 화면 y. 방이 배너 밑에서 시작하면 roomTop >= h
+  function bannerAudit() {
+    const q = view === 'hq' || view === 'map' ? null : roomByView();
+    return { h: BANNER_H, lines: BANNER ? BANNER.lines.map((l) => l[0]) : [], roomTop: q ? Math.round(toScreen(0, q.y * T)[1]) : null };
   }
   function toWorld(px, py) { return [(px - W / 2) / cam.s + cam.x, (py - H / 2) / cam.s + cam.y]; }
   function toScreen(wx, wy) { return [(wx - cam.x) * cam.s + W / 2, (wy - cam.y) * cam.s + H / 2]; }
@@ -615,6 +671,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // rAF 시각은 그 프레임의 시작이라 앞서 잰 performance.now()보다 이를 수 있다 — 음수 dt면 제자리(d = 0)에서 0/0 = NaN이 됐다
     const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
     last = now;
+    syncBanner();
     const k = Math.min(1, dt * 6);
     cam.x += (camT.x - cam.x) * k; cam.y += (camT.y - cam.y) * k; cam.s += (camT.s - cam.s) * k;
     for (const a of actors.values()) {
@@ -1828,7 +1885,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
 
   const WAIT_TIP = 'ArgoCD에서 Sync를 눌러야 올라갑니다.';
-  const STATUS_KO = { running: '진행 중', success: '성공', failed: '실패', waiting: '배포 승인 기다림', stale: '나중 배포로 대체', none: '기록 없음' };
+  const STATUS_KO = { running: '진행 중', success: '성공', failed: '실패', waiting: 'ArgoCD Sync 대기', stale: '나중 배포로 대체', none: '기록 없음' };
   // 구역이 하는 일 — 테마마다 이름(비유)은 달라도 설명은 같다(theme.tags.roles: 구역 → 아래 열쇠). 이름표에 마우스를 올리면 뜬다(11-05)
   // 툴팁 글은 짧게 — "무엇" 한 마디 + 한 줄 설명. 화면 글은 "~습니다"로(11-05 사용자 요청: 도구 목록 · 판별 명령은 넣지 않는다)
   const ZONE_ROLE = {
@@ -1883,7 +1940,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const st = r['st_' + kind] || 'none';
       // 평소(기록 없음)엔 아무 표시도 없다 — "기록 없음"이라고 쓰면 뭔가 잘못된 것처럼 보였다(11-05). 성공 ✓ · 실패 ✗ 빨강
       const col = { running: P.act, success: P.ok, failed: P.bad, waiting: P.warn }[st] || null;
-      const mark = { running: '진행 중', success: '✓', failed: '✗ 실패', waiting: '배포 승인 기다림' }[st] || null;
+      const mark = { running: '진행 중', success: '✓', failed: '✗ 실패', waiting: 'ArgoCD Sync 대기' }[st] || null;
       const label = `${'①②③'[i]} ${it[kind] || (iz[kind] && iz[kind].label) || kind}`;
       // 11-09 글씨가 커지자 작은 창에서 다음 단계 이름표를 덮고 화면 밖으로 나갔다 — 다음 단계(마지막은 방 끝)까지 안 들어가면
       // 앞부분(「① 검수대」)만. 전체 이름은 툴팁에
@@ -2016,7 +2073,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const pp = r.pipe;
     const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
     if (broke) lines.push([`🔥 파이프라인 실패 · ${broke}`, P.bad, 'bold 15px', true]);
-    else if (r.st_argocd === 'waiting') lines.push(['⏸ 배포 승인 기다림', P.warn, '15px', true]);
+    // 11-09 "배포 승인 기다림"은 FOREMAN 안에서 승인할 것처럼 읽혔다 — 푸는 곳(ArgoCD)을 말에 넣는다. 배너에서 누르면 ArgoCD 앱 화면
+    else if (r.st_argocd === 'waiting') lines.push([`⏸ 배포 대기 — ArgoCD에서 Sync를 눌러야 올라갑니다${pp && pp.argocd_url ? ' ↗' : ''}`, P.warn, '15px', true, 'argocd']);
     if (pp && pp.webhook_broken) lines.push(['⚠ 빌드 알림 끊김 의심', P.bad, '15px', true]);
     if (pp && pp.watch && pp.watch.state !== 'ok') lines.push([`⚠ 빌드 알림 ${pp.watch.state === 'missing' ? '없음' : '늦음'}`, pp.watch.state === 'missing' ? P.bad : P.warn, '15px', true]);
     // 토큰 — 지금 어느 방이 쓰고 있나(사용자 요청 11-03). 오늘 누적 + 최근 10분 증가
@@ -2070,8 +2128,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const [sx, sy] = toScreen(r.x * T, r.y * T);
     const [ex] = toScreen((r.x + r.w) * T, 0);
     // 11-08 한 방을 볼 때는 경고(승인 대기 · 파이프라인 · 웹훅 · 빌드 알림)가 있을 때만 그 줄만 — 작업 수 · 토큰은 머리말
-    // (프로젝트 버튼 · 툴팁)과 겹쳐 뺐고, 그만큼 방을 키웠다(aim). 경고 카드는 방 윗벽 위에 겹쳐 그린다
-    if (zoomedIn && !cardLines(r, true).length) { r.badge = null; return; }
+    // (프로젝트 버튼 · 툴팁)과 겹쳐 뺐고, 그만큼 방을 키웠다(aim). 11-09 경고는 맨 위 배너로(syncBanner · drawBanner — 방 위에 겹치지 않는다)
+    if (zoomedIn) { r.badge = BANNER ? drawBanner(BANNER) : null; return; }
     const maxLines = zoomedIn ? 6 : Math.max(2, Math.floor((sy - 10 - 8) / cardLH()));      // 전체 화면: 방 위 공간에 들어가는 줄 수
     const h = fitLines(cardLines(r, zoomedIn), maxLines).length * cardLH() + 8;
     r.badge = drawCard(r, sx, Math.max(4, sy - h - 6), ex - sx, 210, 400, maxLines, zoomedIn);
@@ -2088,12 +2146,66 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
 
   // 현장 카드 — 감독실 아래에 현장마다(화면 좌표, 선명하게). 누르면 그 현장으로
+  // 11-09 사용자: 카드가 방을 덮고 다섯 줄이 잘렸다 → 방 아래로 떼고(aim이 HQ_H만큼 비운다) 두 줄 — 이름 · 지금 상태.
+  // 토큰 · Opus · 최근 사용량은 호버로. 폭을 넘으면 자르지 않고 줄을 바꾸고, 네 칸 높이는 가장 긴 카드에 맞춘다
+  function hqCardLines(r) {
+    const st = r.stats || {}, pp = r.pipe;
+    const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
+    let state;
+    if (broke) state = [`멈춤 — 파이프라인 실패(${broke})`, P.bad, 'bold 16px'];
+    else if (st.pending) state = [`멈춤 — 승인 대기 ${st.pending}`, P.warn, 'bold 16px'];
+    else if (st.question) state = [`멈춤 — 질문 ${st.question}`, P.warn, 'bold 16px'];
+    else if (st.ACTIVE) state = [`작업 중 ${st.ACTIVE}`, P.act, '16px'];
+    else if ((st.IDLE || 0) + (st.SUSPENDED || 0) + (st.DORMANT || 0)) state = ['쉼', P.muted, '16px'];
+    else state = ['세션 없음', P.muted, '16px'];
+    const s = siteState(r);
+    return [[r.label, s === 'fail' ? P.bad : s === 'alert' ? P.warn : P.label, 'bold 17px'], state];
+  }
+  function hqCardTip(r) {
+    const st = r.stats || {}, pp = r.pipe;
+    const span = Math.round((r.rateSpan || 0) / 60000);
+    const rows = [
+      `작업 ${st.ACTIVE || 0} · 쉼 ${st.IDLE || 0}${st.SUSPENDED ? ' · 멈춰 둠 ' + st.SUSPENDED : ''}${st.subs ? ' · 서브에이전트 ' + st.subs : ''}${r.overflow ? ' · 책상 없음 +' + r.overflow : ''}`,
+      ...(st.pending || st.question ? [`승인 대기 ${st.pending || 0} · 질문 ${st.question || 0}`] : []),
+      ...(r.st_argocd === 'waiting' ? ['배포 대기 — ArgoCD에서 Sync를 눌러야 올라갑니다'] : []),
+      ...(pp && pp.webhook_broken ? ['빌드 알림 끊김 의심'] : []),
+      ...(pp && pp.watch && pp.watch.state !== 'ok' ? [`빌드 알림 ${pp.watch.state === 'missing' ? '없음' : '늦음'}`] : []),
+      `토큰 오늘 출력 ${fmt(st.tout || 0)} · 입력 ${fmt(st.tin || 0)}`,
+      ...(st.opus_out && st.opus_out < st.all_out ? [`Opus 출력 ${fmt(st.opus_out)} (서브에이전트 포함 ${Math.round(100 * st.opus_out / st.all_out)}%)`]
+        : st.opus_out ? ['오늘은 전부 Opus'] : []),
+      r.rate ? `최근 ${Math.max(1, Math.min(10, span))}분 ${fmt(r.rate)} 토큰 씀 (출력 ${fmt(r.rateOut)})`
+        : (r.rateSpan || 0) < 60000 ? '최근 사용량 재는 중(화면을 연 뒤부터)' : `최근 ${Math.min(10, span)}분 사용 없음`,
+    ];
+    return textTip([`${r.label} — 현장 상태입니다. 누르면 그 현장으로 갑니다.`, ...rows].join('\n'));
+  }
+  let HQC = null;                                // 이번 프레임의 카드 배치 · 높이(syncBanner가 잰다, 높이는 HQ_H)
+  function hqLayout() {
+    const ss = sites(), gap = 6, cw = (W - gap * (ss.length + 1)) / Math.max(1, ss.length);
+    const cards = ss.map((r) => {
+      const lines = [];
+      for (const [t, c, f] of hqCardLines(r)) { ctx.font = `${sizeFont(f)} system-ui, sans-serif`; for (const x of wrapText(t, cw - 12)) lines.push([x, c, f]); }
+      return { r, lines };
+    });
+    const n = Math.max(2, ...cards.map((c) => c.lines.length));
+    return { cards, cw, gap, h: n * cardLH() + 8 };
+  }
   function drawHQCards() {
     const q = world.hq;
+    const L2 = HQC || hqLayout();
+    const [, top] = toScreen(0, (q.y + q.h + 0.3) * T);
+    const y = Math.round(top + 4);
+    L2.cards.forEach(({ r, lines }, i) => {
+      const x = L2.gap + i * (L2.cw + L2.gap);
+      const { border, thick } = badgeLines(r);
+      ctx.fillStyle = '#0d0f14'; ctx.fillRect(x, y, L2.cw, L2.h);
+      ctx.strokeStyle = border; ctx.lineWidth = thick ? 2 : 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, L2.cw - 1, L2.h - 1);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      lines.forEach(([t, c, f], k) => { ctx.font = `${sizeFont(f)} system-ui, sans-serif`; ctx.fillStyle = c; ctx.fillText(t, x + 6, y + 5 + k * cardLH()); });
+      r.badge = { x, y, w: L2.cw, h: L2.h };
+      HITS.push({ ...r.badge, tip: hqCardTip(r) });
+    });
     for (const s of boardSlots()) {
-      const [sx, sy] = toScreen((s.x + 0.15) * T, (q.y + q.h + 0.4) * T);
-      const [ex] = toScreen((s.x + s.w - 0.15) * T, 0);
-      s.r.badge = drawCard(s.r, sx, sy, ex - sx, 120, 400);
       // 현황판 위 이름 — 지도 위 땅 · 모니터 위
       const [lx, ly] = toScreen((s.x + s.w / 2) * T, (s.y + 0.35) * T);
       const st = siteState(s.r);
@@ -2365,6 +2477,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const px = ev.clientX - r.left, py = ev.clientY - r.top;
     for (const room of [...world.rooms, world.lounge]) {
       const b = room.badge;
+      const k = BANNER_LINK;
+      if (k && view !== 'hq' && view !== 'map' && px >= k.x && px <= k.x + k.w && py >= k.y && py <= k.y + k.h) { window.open(k.url, '_blank', 'noopener'); return; }
       if (b && px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) { go(room.name || '_lounge'); return; }
     }
     const [wx, wy] = toWorld(px, py);
@@ -2497,7 +2611,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
   return { go, theme, openSession, panel, actors, newSession: (p) => newSession.open(p), foremanName: FM_NAME,
-           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(),
+           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bannerAudit: () => bannerAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(),
     // 시연 사진(13) — 이름표 자리(캔버스 기준 화면 좌표)와 캐릭터 발밑 화면 좌표. 툴팁을 띄워 찍을 때 마우스를 그 자리로 보낸다
     hits: () => HITS.map((h) => ({ x: h.x, y: h.y, w: h.w, h: h.h, zone: h.zone || null })),
     actorScreen: (key) => { const a = actors.get(key); return a ? toScreen(a.x * T, a.y * T) : null; }, layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,

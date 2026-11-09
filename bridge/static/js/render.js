@@ -359,7 +359,7 @@ export function toolDetailHtml(d) {
 
 // ── 8단계 파이프라인 — 프로젝트마다 인프라 캐릭터와 최근 체인(커밋 → Jenkins → Harbor → ArgoCD), 깨진 곳은 붉게 ──
 const PIPE_STAGES = [['jenkins', 'Jenkins'], ['harbor', 'Harbor'], ['argocd', 'ArgoCD']];
-const PIPE_MARK = { success: '✓', failed: '✗', running: '…', waiting: '⏸ 배포 승인 기다림', stale: '– 나중 배포로 대체' };   // waiting — 수동 Sync 앱, 실패 아님(11-03). stale — 끝 알림 없이 남았던 것(11-05)
+const PIPE_MARK = { success: '✓', failed: '✗', running: '…', waiting: '⏸ ArgoCD Sync 대기', stale: '– 나중 배포로 대체' };   // waiting — 수동 Sync 앱, 실패 아님(11-03). stale — 끝 알림 없이 남았던 것(11-05)
 const INFRA_LABEL = { IDLE: '응답', ACTIVE: '일하는 중', STALE: '응답 없음' };
 export function pipeBlock(pp) {
   if (!pp) return '';
@@ -382,7 +382,7 @@ export function pipeBlock(pp) {
       const x = ch.stages[k];
       if (!x && skip && k !== 'jenkins') return `<span class="ps ps-none muted" title="${esc(label)} 건너뜀 — 문서만 바뀐 빌드라 이미지 · 배포를 하지 않았습니다. 정상입니다.">${label} –</span>`;
       const cls = x ? `ps-${x.status}` : 'ps-none';
-      const tip = x ? `${label} ${x.status}${x.step ? ' · ' + x.step : ''}${x.status === 'waiting' ? '\n배포 승인 기다림 — ArgoCD에서 Sync를 눌러야 올라갑니다.' : ''}${x.message ? '\n' + x.message : ''}` : `${label} 아직`;
+      const tip = x ? `${label} ${x.status}${x.step ? ' · ' + x.step : ''}${x.status === 'waiting' ? '\nArgoCD Sync 대기 — 수동 Sync 앱이라 ArgoCD 화면에서 Sync를 눌러야 올라갑니다. FOREMAN에는 누를 곳이 없습니다. 누르면 ArgoCD가 열립니다.' : ''}${x.message ? '\n' + x.message : ''}` : `${label} 아직`;
       const inner = `${label} ${x ? PIPE_MARK[x.status] || '' : '·'}${x && x.step && x.status === 'failed' ? ` <b>${esc(x.step)}</b>` : ''}`;
       return x && x.url ? `<a class="ps ${cls}" href="${esc(x.url)}" target="_blank" rel="noopener" title="${esc(tip)}">${inner}</a>`
         : `<span class="ps ${cls}" title="${esc(tip)}">${inner}</span>`;
