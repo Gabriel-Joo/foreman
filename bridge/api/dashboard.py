@@ -345,9 +345,20 @@ async def activity(session_id: int, request: Request, limit: int = 40) -> dict[s
             " AND r.tool_use_id = e.tool_use_id LIMIT 1) "
             "FROM event e WHERE e.session_id = :s AND e.type = 'tool_use' ORDER BY e.id DESC LIMIT :n"),
             {"s": session_id, "n": limit})).all()
+        # 11-09 세션 간 메시지 — 받는 쪽 트랜스크립트(대기열 줄)로 도착 · 읽음
+        sends = [r[0] for r in rows if r[2] == "SendMessage"]
+        xm: dict[int, dict[str, Any]] = {}
+        if sends:
+            from bridge import xmsg
+            got = (await c.execute(text(
+                "SELECT id, ts, JSON_UNQUOTE(JSON_EXTRACT(payload, '$.input.message')), JSON_UNQUOTE(JSON_EXTRACT(payload, '$.input.to')) "
+                "FROM event WHERE id IN :ids").bindparams(bindparam("ids", expanding=True)), {"ids": sends})).all()
+            xm = await xmsg.statuses(c, [(r[0], r[1], r[2] or "") for r in got if xmsg.is_session_target(r[3])])
     return {"session_id": session_id, "items": [
         {"id": r[0], "ts": _iso(r[1]), "tool": r[2], "target": (r[3] or "")[:200], "subagent": bool(r[4]),
-         "has_body": bool(r[5]), "status": r[6]} for r in reversed(rows)]}
+         "has_body": bool(r[5]), "status": r[6],
+         **({"xmsg": {k: (_iso(v) if isinstance(v, datetime) else v) for k, v in xm[r[0]].items()}} if r[0] in xm else {})}
+        for r in reversed(rows)]}
 
 
 @router.get("/events/{event_id}/detail")

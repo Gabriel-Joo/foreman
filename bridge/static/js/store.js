@@ -7,6 +7,16 @@ const EMIT_MS = 250;          // 그리기 알림 최소 간격
 const RESNAP_MS = 15000;      // 스냅샷으로 맞추는 주기
 const FEED_MAX = 40;          // 세션별 최근 활동 줄 수
 
+// 세션 간 메시지(SendMessage) 줄 꼬리 — 받는 쪽 트랜스크립트로 본 도착 · 읽음(11-09, bridge/xmsg.py)
+export function xmsgText(x) {
+  if (!x || !Object.keys(x).length) return '';
+  const hm = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const to = x.to_label ? ` (${x.to_label})` : '';
+  if (x.read_at) return ` — ✓ 읽음 ${hm(x.read_at)}${x.how === 'mid_turn' ? ' · 작업 중에' : ''}${to}`;
+  if (x.arrived_at) return ` — 도착 ${hm(x.arrived_at)}, 아직 안 읽음${to}`;
+  return ' — 도착 기록 없음(받는 세션이 꺼졌거나 FOREMAN이 보지 않는 세션)';
+}
+
 export function charState(proc, ccStatus, openTurn) {
   // 서버(bridge/api/dashboard.py char_state)와 같은 규칙 — 살아 있으면 CC가 적는 status가 기준, 열린 턴은 status를 모를 때만
   if (proc == null) return 'DORMANT';
@@ -381,10 +391,11 @@ export class Store {
       const j = await r.json();
       const s = this.state.sessions.get(id);
       if (!s) return;
-      const have = new Set(s.feed.filter((f) => f.eid).map((f) => f.eid));
+      const have = new Map(s.feed.filter((f) => f.eid).map((f) => [f.eid, f]));
+      const line = (x) => `${x.tool}${x.subagent ? ' ↳서브' : ''} ${x.target || ''}`.slice(0, 300) + xmsgText(x.xmsg);
+      for (const x of j.items) { const f = have.get(x.id); if (f && x.xmsg) f.text = line(x); }   // 읽음은 나중에 바뀐다
       const add = j.items.filter((x) => !have.has(x.id)).map((x) => ({
-        ts: x.ts, kind: x.status === 'error' ? 'error' : 'tool', eid: x.has_body ? x.id : null,
-        text: `${x.tool}${x.subagent ? ' ↳서브' : ''} ${x.target || ''}`.slice(0, 300) }));
+        ts: x.ts, kind: x.status === 'error' ? 'error' : 'tool', eid: x.has_body ? x.id : null, text: line(x) }));
       s.feed = [...add, ...s.feed].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0)).slice(-FEED_MAX);
       if (this.state.selected === id) this.touch('panel');
     } catch { /* 화면 편의 — 못 받아도 실시간 줄은 쌓인다 */ }
