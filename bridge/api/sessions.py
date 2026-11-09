@@ -86,7 +86,7 @@ async def inject_input(session_id: int, body: InputIn, request: Request) -> JSON
         payload["refused"] = str(e)
         _record(pipeline, sid, char_id, body.text, payload, EventStatus.ERROR)
         return JSONResponse({"refused": str(e)}, status_code=409)
-    payload |= {k: res[k] for k in ("queued", "guarded", "pane")} | {"delivered": res["delivered"]}
+    payload |= {k: res[k] for k in ("queued", "guarded", "pane")} | {"delivered": res["delivered"], "esc": res.get("esc", 0)}
     turn_id = await _turn_for(request, sid, res["delivered"])
     _record(pipeline, sid, char_id, body.text, payload,
             EventStatus.WAITING if res["queued"] else (EventStatus.WORKING if res["delivered"] else EventStatus.ERROR),

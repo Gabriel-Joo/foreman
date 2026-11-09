@@ -226,10 +226,7 @@ async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, trans
         # Enter가 그 제안을 제출하는지 문서에 없다(11-05) — 사람이 쓰지 않은 글이 실행될 수 있으니 보내지 않는다
         raise Refused("빈 입력입니다 — 공백이나 줄바꿈만으로는 보내지 않습니다")
     t, _ls, busy = await resolve(session_id, sessions_dir)
-    if not await prompt_showing(t):
-        # 입력 줄(❯)이 안 보이면 CC가 설정 · 사용량 같은 다른 화면을 띄운 것이다. 거기 붙여넣은 글은 제출되지 않고
-        # 화면 확인도 못 해 "확인하지 못했습니다"로만 떴다(11-08 cc-foreman-2 — /usage 화면이 떠 있었다). 보내지 않고 이유를 말한다
-        raise Refused("CC가 입력 줄 대신 다른 화면(설정 · 사용량 등)을 띄워 두고 있습니다. 그 세션 터미널에서 Esc로 닫아 주세요")
+    escs = await clear_screen(t, busy)
     send, guarded_ = guarded(text, command)
     offset = os.path.getsize(transcript) if transcript and os.path.exists(transcript) else None
     steps = await paste_and_submit(t, send, delay_s=delay_s)
@@ -244,7 +241,7 @@ async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, trans
             if delivered:
                 break
     out = {"pane": t.pane, "queued": busy or bool(delivered and delivered["as"] == "queued"), "guarded": guarded_,
-           "steps": steps, "delivered": delivered, "chars": len(text), "lines": text.count("\n") + 1}
+           "steps": (["Escape"] * escs) + steps, "esc": escs, "delivered": delivered, "chars": len(text), "lines": text.count("\n") + 1}
     if transcript and not delivered:
         # 기록에서 못 찾았다 — 화면의 입력 칸을 직접 본다(11-05). 보낸 글 앞부분이 입력 칸(❯ 줄 아래)에 보이면 남은 것,
         # 안 보이면 제출된 것(기록 모양이 달라 못 맞췄을 뿐 — 11-05 끝 공백 건이 그랬다). 사람이 쓰던 글일 수 있어 지우지 않는다
@@ -252,6 +249,32 @@ async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, trans
         log.warning("주입 제출 확인 안 됨 %s %s(%d자) — 입력 칸에 %s", session_id[:8], t.pane, len(text),
                     "남아 있다" if out["left_in_box"] else "없다(제출된 것으로 보임)" if out["left_in_box"] is False else "모름")
     return out
+
+
+ESC_TRIES = 3
+ESC_WAIT_S = 0.6          # Esc 뒤 화면이 바뀔 때까지(끝내기에서 쓰던 값)
+
+
+async def clear_screen(t: Target, busy: bool, tries: int = ESC_TRIES) -> int:
+    """입력 줄(❯)이 없으면 CC가 설정 · 사용량 같은 다른 화면을 띄운 것이다 — 거기 붙여넣은 글은 제출되지 않는다
+    (11-08 cc-foreman-2 /usage, 11-09 하루 세 번 — 사용자: "보내기 전에 Esc를 자동으로 보내고 다시 시도"). 사람이 하듯
+    Esc로 닫고 입력 줄이 돌아오는지 본다(최대 tries번, 끝내기와 같은 방식). 보낸 Esc 수를 돌려준다.
+    **작업 중이면 Esc를 보내지 않는다** — Esc는 작업을 끊고, 승인 · 질문 창(도구가 도는 중이라 busy)에서는 거부 · 취소가 된다.
+    그래도 안 풀리면 Refused — 화면에 그 이유가 뜬다(조용히 실패하지 않게)."""
+    if await prompt_showing(t):
+        return 0
+    if busy:
+        raise Refused("CC가 입력 줄 대신 다른 화면을 띄워 두고 있습니다. 작업 중이라 Esc를 보내지 않았습니다"
+                      "(작업이 끊길 수 있습니다) — 그 세션 터미널에서 확인해 주세요")
+    for n in range(1, tries + 1):
+        await tmux(t.socket, "send-keys", "-t", t.pane, "Escape")
+        await asyncio.sleep(ESC_WAIT_S)
+        if await prompt_showing(t):
+            log.warning("입력 줄이 없어 Esc %d번으로 닫음 %s", n, t.pane)
+            return n
+    log.warning("Esc %d번에도 입력 줄이 돌아오지 않음 %s", tries, t.pane)
+    raise Refused(f"CC가 입력 줄 대신 다른 화면을 띄워 두고 있고, Esc를 {tries}번 보내도 닫히지 않았습니다 — "
+                  "그 세션 터미널에서 확인해 주세요")
 
 
 async def prompt_showing(t: Target) -> bool:

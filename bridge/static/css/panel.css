@@ -282,11 +282,33 @@ button.danger:not(:disabled):hover { background:color-mix(in srgb, var(--bad) 14
 .fm-row { justify-content:flex-end; align-items:center; gap:8px; }
 .fm-row > span { flex:1; }
 .fm-plan { display:flex; flex-direction:column; gap:6px; }
-.fm-grid { display:grid; grid-template-columns:auto 1fr; gap:4px 8px; align-items:center; }
+.fm-grid { display:grid; grid-template-columns:7em 1fr; gap:8px 12px; align-items:center; }
 .fm-grid input, .fm-grid select { width:100%; box-sizing:border-box; }
+.fm-grid [hidden] { display:none; }
 .fm-plan input[type=checkbox] { width:auto; }
-.fm-first { font-family:inherit; min-height:9em; }
+.fm-first { font-family:inherit; min-height:14em; }
 .fm-q { padding:6px 8px; border-left:3px solid var(--warn); }
+/* 계획 창 · [+ 세션] 창(11-09 사용자 — 작고 복잡하다): 글씨 배율(가+ · 가−)을 따르고 넓게, 덜 중요한 것은 접는다 */
+#nsDlg .box.ns { zoom:var(--ui-zoom, 1.2); width:880px; max-width:calc(94vw / var(--ui-zoom, 1.2)); max-height:calc(92vh / var(--ui-zoom, 1.2));
+  font-size:17px; gap:10px; padding:18px 22px; }
+#nsDlg .box.ns h2 { margin:0 0 2px; }
+.fm-lbl { display:flex; flex-direction:column; gap:2px; }
+.fm-hint { font-size:15px; }
+#fmText { min-height:8em; }
+.fm-status { white-space:pre-line; padding:9px 12px; border-radius:8px; border-left:4px solid var(--line); background:var(--card); line-height:1.5; }
+.fm-status.busy { border-left-color:var(--act); }
+.fm-status.busy::before { content:''; display:inline-block; width:12px; height:12px; margin-right:8px; vertical-align:-1px;
+  border:2px solid var(--act); border-right-color:transparent; border-radius:50%; animation:fm-spin 1s linear infinite; }
+@keyframes fm-spin { to { transform:rotate(360deg); } }
+.fm-status.ok { border-left-color:var(--ok); } .fm-status.bad { border-left-color:var(--bad); } .fm-status.warn { border-left-color:var(--warn); }
+.fm-warn { padding:8px 12px; border-left:4px solid var(--warn); border-radius:6px; background:color-mix(in srgb, var(--warn) 10%, transparent); }
+.fm-fold { border:1px solid var(--line); border-radius:8px; padding:6px 10px; }
+.fm-fold > summary, .fm-manual > summary { cursor:pointer; font-weight:600; }
+.fm-fold[open] > summary { margin-bottom:8px; }
+#fmMoreSum { font-weight:400; margin-left:6px; }
+.fm-fold > summary .muted, .fm-manual > summary .muted { font-weight:400; }
+.fm-check { display:flex; gap:6px; align-items:baseline; margin:6px 0 2px; }
+.fm-check input { width:auto; }
 .fm-notes { display:flex; flex-direction:column; gap:4px; padding:6px 8px; border-left:3px solid var(--line); }
 .fm-note { display:flex; gap:6px; align-items:flex-start; }
 .fm-note input { margin-top:3px; }
