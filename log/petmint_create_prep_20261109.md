@@ -36,4 +36,10 @@
 
 - 켜기 전 상태(쓰기 없음): 새 0 · 바뀜 0 · 지워짐 0 · 못 읽음 0, `@docs-sync` = origin/main `2e287cb` — 펫퍼민트에 새 docs 커밋 없음(상태를 보려고 펫퍼민트 저장소에서 `git fetch` 한 번 — 원격 추적 기록만)
 - **16:51:18 KST `create = true`로 브리지 다시 띄움**(승인 대기 0 뒤). 첫 맞추기(뜬 뒤 60초)는 할 일이 없어 쓰기 0 · 새 페이지 0
-- **heading_4 만들기는 아직 확인 못 함** — 펫퍼민트가 `####`가 든 새 문서나 절을 push해야 처음 쓴다. 안 되면 그 파일이 실패로 남고 텔레그램으로 온다
+- **heading_4 만들기는 아직 확인 못 함** — 펫퍼민트가 `####`가 든 새 문서나 절을 push해야 처음 쓴다. 안 되면 그 파일이 실패로 남고 텔레그램으로 온다(사용자: 그때 보면 된다)
+
+## 런슈즈 서브에이전트 기본 모델 sonnet(사용자 지시, 런슈즈 저장소)
+
+- CC 문서(code.claude.com/docs/en/sub-agents.md 「Choose a model」): 환경 변수 `CLAUDE_CODE_SUBAGENT_MODEL`(별칭 가능). 순서 = 호출의 `model` → 에이전트 정의 `model:` → 이 변수 → 부모 모델. `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`는 호출 인자까지 무시하게 해 넣지 않았다. 기본 제공 Explore · Plan은 이 변수로 안 바뀐다. 떠 있는 세션에 바로 걸리는지는 문서에 분명하지 않다. CC 2.1.319
+- 런슈즈 `4576062`(커밋만, push는 그 세션 몫): 새 `.claude/settings.json` `{"env": {"CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"}}`, CLAUDE.md 「서브에이전트 모델」 절 — 판단이 결과를 좌우하는 일(데이터 검증 · 판정, 여러 파일 설계 변경, 코드 리뷰)은 부를 때 `model: "opus"`. 런슈즈 세션의 커밋 안 한 docs 두 파일은 건드리지 않음
+- 확인: 16:58 KST 이후 런슈즈 서브에이전트 응답 없음 — 첫 응답의 모델을 지켜보는 중
