@@ -55,6 +55,10 @@ def cli_rows(out: dict[str, Any] | None) -> list[dict[str, Any]]:
     return rows
 
 
+# claude -p 사용 기록의 source → 화면 이름(사용량 화면 「어디서 나가나」 · 세션별 표)
+_CLI_LABEL = {"dispatch": "계획 세우기", "losscheck": "압축으로 잊은 것 찾기"}
+
+
 async def record_cli(engine: Any, source: str, ref_id: int | None, project: str | None, out: dict[str, Any] | None) -> int:
     """기록한 행 수. 실패하면 0(로그만)."""
     rows = cli_rows(out)
@@ -408,7 +412,9 @@ async def breakdown(engine: Any, cfg: UsageConfig, start: datetime, end: datetim
         t = _tok(r)
         add("model", r.model, r.model, t, int(r.n))
         add("project", r.project or "(모름)", r.model, t, int(r.n))
-        add("session", f"claude -p · {r.source}", r.model, t, int(r.n), title=f"claude -p({r.source})", project=r.project)
+        # 화면 이름 — "dispatch"가 그대로 보였다(11-09, 화면엔 디스패치를 쓰지 않는다: style_guide 「4-1.」)
+        name = _CLI_LABEL.get(r.source, r.source)
+        add("session", f"claude -p · {r.source}", r.model, t, int(r.n), title=f"claude -p({name})", project=r.project)
         add("hour", r.h, r.model, t, int(r.n))
     total = sum(x["usd"] for x in tables["model"].values()) or 0.0
     out: dict[str, Any] = {"total_usd": round(total, 2),

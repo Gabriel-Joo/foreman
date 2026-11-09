@@ -463,7 +463,7 @@ class HandoffManager:
     async def request_live(self, row: SessionRow, kind: str = "snapshot", fmt: str = "v2") -> dict[str, Any]:
         """살아 있는 tmux 세션에 요약을 시킨다. 보내고 바로 돌아오고, 응답은 뒤에서 기다린다."""
         if not row.cc:
-            raise Refused("세션 기록을 찾지 못했습니다")
+            raise Refused("CC 세션 ID가 없습니다")
         if await self._pending(row.id) or await self._promote_busy(row.id):
             raise Refused("이미 요약 · 대화 결정 문서에 적기를 기다리는 중입니다")
         _t, ls, busy = await resolve(row.cc, self.sessions_dir)
@@ -910,7 +910,7 @@ class HandoffManager:
     # ── 세션 조작 ────────────────────────────────────────
     async def action(self, row: SessionRow, act: str) -> dict[str, Any]:
         if not row.cc:
-            raise Refused("세션 기록을 찾지 못했습니다")
+            raise Refused("CC 세션 ID가 없습니다")
         if act == "resume":
             return await self._resume(row)
         t, ls, busy = await resolve(row.cc, self.sessions_dir)

@@ -53,6 +53,8 @@ document.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('#oFontDn, #oFontUp');
   if (b) step(b.id === 'oFontUp' ? 1 : -1);
 });
+// 다른 탭에서 [가−][가+]를 누르면 이 탭도 따라간다(11-09 — 사용량 화면 /usage도 같은 배율을 쓴다)
+addEventListener('storage', (e) => { if (e.key === KEY) { scale = load(); apply(); } });
 apply();
 new MutationObserver((_, ob) => { if (document.getElementById('oFontV')) { apply(); ob.disconnect(); } })
   .observe(document.documentElement, { childList: true, subtree: true });

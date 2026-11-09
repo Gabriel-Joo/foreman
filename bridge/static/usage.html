@@ -17,12 +17,15 @@
   button, select { font:inherit; padding:4px 10px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
   button:disabled { opacity:.5; cursor:default; }
   .muted { color:var(--muted); } .small { font-size:12px; } .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
-  .top { position:sticky; top:0; z-index:5; display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:8px 16px;
-         background:var(--bg); border-bottom:1px solid var(--line); }
-  .brand { font-weight:700; letter-spacing:.04em; }
-  .read { margin-left:auto; font-size:12px; padding:2px 8px; border-radius:10px; border:1px solid var(--line); }
+  /* 머리 — 메인 화면 머리말(office.html .otop)과 같은 크기 · 글씨 배율(--ui-zoom, js/uiscale.js — 메인의 [가−][가+])를 따른다(11-09 사용자) */
+  .top { position:sticky; top:0; z-index:5; display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:6px 14px;
+         background:var(--bg); border-bottom:1px solid var(--line); font-size:17px; zoom:var(--ui-zoom, 1.2); }
+  .top button, .top select { font-size:17px; padding:4px 10px; }
+  .brand { font-weight:700; letter-spacing:.04em; font-size:19px; }
+  .read { margin-left:auto; font-size:15px; padding:2px 9px; border-radius:14px; border:1px solid var(--line); }
   .read.bad { border-color:var(--bad); }
-  main { max-width:1180px; margin:0 auto; padding:12px 16px 40px; }
+  /* 11-09 사용자 — 가운데 1180px만 쓰고 양옆이 비었다. 창 폭을 쓰되 아주 넓은 화면에서만 멈춘다 */
+  main { max-width:2400px; margin:0 auto; padding:12px 24px 40px; }
   .band { margin:10px 0; padding:8px 12px; border:1px solid var(--bad); border-left:5px solid var(--bad); border-radius:8px; }
   .band.warn { border-color:var(--warn); }
   h2 { font-size:15px; margin:22px 0 8px; }
@@ -198,12 +201,17 @@ function where(d) {
   $('why').innerHTML = lines.join('<br>') || '<span class="muted">눈에 띄는 쏠림이 없습니다.</span>';
 }
 
+let lastChart = null, chartTimer = 0;
+addEventListener('resize', () => { clearTimeout(chartTimer); chartTimer = setTimeout(() => lastChart && chart(lastChart), 150); });
 function chart(d) {
   const hours = d.by_hour || [];
   if (!hours.length) { $('chart').innerHTML = '<div class="small muted">이 기간에 쓴 것이 없습니다.</div>'; return; }
   const t0 = D(d.period.start).getTime(), t1 = D(d.period.end).getTime();
   const nH = Math.max(1, Math.ceil((t1 - t0) / 36e5));
-  const bw = Math.max(3, Math.min(14, Math.floor(1100 / nH))), W = nH * bw + 50, H = 190, top = 10, base = H - 24;
+  lastChart = d;
+  // 막대 폭은 칸 폭에 맞춘다(11-09 — 전에는 1100px 고정이라 넓힌 화면에서 왼쪽에 몰렸다). 칸 안쪽 여백 16 · 왼쪽 축 40 · 오른쪽 10
+  const avail = Math.max(300, ($('chart').clientWidth || 1116) - 66);
+  const bw = Math.max(3, Math.min(160, avail / nH)), W = Math.ceil(nH * bw + 50), H = 190, top = 10, base = H - 24;
   const vals = hours.map((h) => KINDS.reduce((s, [k]) => s + h[`usd_${k}`], 0));
   const max = Math.max(...vals, 0.01);
   const x = (t) => 40 + (t - t0) / 36e5 * bw;
@@ -279,5 +287,6 @@ $('tokForm').addEventListener('submit', (e) => {
 if (!tok()) $('tokDlg').classList.add('on'); else load();
 setInterval(() => { if (tok() && !document.hidden) load(); }, 60000);
 </script>
+<script type="module" src="/static/js/uiscale.js"></script>
 </body>
 </html>

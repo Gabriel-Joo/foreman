@@ -259,7 +259,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const html = `<span class="${late ? 'bad' : 'warn'}" title="대화 자동 요약 — 대화가 길어 앞부분을 요약해 줄였습니다. 줄일수록 처음에 정한 것을 잊습니다.">📦 대화 자동 요약 ${c.count}번 — ${late
         ? '늦었습니다. 앞에서 정한 결정 · 금지가 이미 많이 빠졌을 수 있습니다.'
         : '넘어갈 때입니다. 처음에 정한 것이 빠지기 시작합니다.'}${c.short ? ' 요약 간격도 짧습니다.' : ''}</span>
-      ${s.injectable ? `<button type="button" data-cmp="handoff" class="small" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
+      ${s.injectable ? `<button type="button" data-cmp="handoff" class="small primary" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
       <button type="button" data-cmp="loss" class="small" title="압축으로 잊은 것 찾기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. 내가 보낸 말 20개당 약 0.4달러 · 1.5분이 들고, 결과는 [세션] 탭 「넘기기 전 정리」에 나옵니다.">압축으로 잊은 것 찾기</button>
       <button type="button" data-cmp="later" class="ghost small" title="나중에 — 다음 압축까지 이 띠를 숨깁니다.">나중에</button>`;
     put('pCmp', 'cmp', html);
@@ -281,7 +281,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       + `\n토큰 ${koNum(x.tokens)}\n한글 약 ${koNum(Math.round(x.tokens * 0.9 / 10000) * 10000)} 자 (책 ${koBooks(x.tokens * 0.9 / 100000)}쯤)`
       + (x.usd_reply != null ? `\n응답당 약 $${x.usd_reply.toFixed(2)}` : '');
     const html = `<span class="${late ? 'bad' : 'warn'}" title="${esc(tip)}">🧠 지금까지 쌓인 대화 ${Math.round(x.tokens / 1000)}k${usd}</span>
-      ${s.injectable ? `<button type="button" data-cmp="handoff" class="small" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
+      ${s.injectable ? `<button type="button" data-cmp="handoff" class="small primary" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
       <button type="button" data-cmp="ctxlater" class="ghost small" title="나중에 — 다음 단계(500k)까지 이 띠를 숨깁니다.">나중에</button>`;
     put('pCmp', 'cmp', html);
     $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;

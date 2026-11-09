@@ -180,7 +180,7 @@ function questionCard(a, st, done) {
       ${a.error ? `<div class="small bad">${esc(a.error)}</div>` : ''}
     </div>
     <div class="appr-act">${done ? `<span class="small ${(APPR_DONE[a.status] || [])[1] || ''}">${esc(doneTxt)}</span>`
-      : qs ? (instant ? '' : `<button data-aid="${a.id}" data-act="answer" ${ready ? '' : 'disabled'} title="답 보내기 — 고른 답을 세션에 넣습니다.">답 보내기</button>`)
+      : qs ? (instant ? '' : `<button data-aid="${a.id}" data-act="answer" class="primary" ${ready ? '' : 'disabled'} title="답 보내기 — 고른 답을 세션에 넣습니다.">답 보내기</button>`)
         : '<span class="small warn" title="터미널에서 답합니다 — 브리지가 다시 떠서 이 질문의 선택지를 잃었습니다.">터미널에서 답합니다</span>'}
       ${a.session_id ? `<button data-aid="${a.id}" data-sid="${a.session_id}" data-act="open" class="ghost small" title="세션 — 이 질문을 한 세션의 패널을 엽니다.">세션</button>` : ''}</div>
   </div>`;
@@ -430,13 +430,13 @@ export function createRenderer(root, store) {
     </main>
     <div id="down" class="overlay" role="alert" aria-live="assertive"><div class="box">
       <h2>서버 연결 끊김</h2><p id="downWhy"></p><p id="downNext"></p>
-      <button id="retryNow">지금 다시 연결</button>
+      <button id="retryNow" class="primary">지금 다시 연결</button>
     </div></div>
     <div id="tokDlg" class="overlay"><form class="box" id="tokForm">
       <h2 class="plain">API 토큰</h2>
       <p class="muted small">.env.bridge의 FOREMAN_API_TOKEN 값입니다. 이 브라우저에만 저장합니다.</p>
       <input id="tokInput" type="password" autocomplete="new-password" placeholder="FOREMAN_API_TOKEN 값">
-      <p><button type="submit">연결</button> <span id="tokLen" class="small muted"></span></p>
+      <p><button type="submit" class="primary">연결</button> <span id="tokLen" class="small muted"></span></p>
     </form></div>`;
 
   const $ = (id) => root.querySelector('#' + id);

@@ -79,7 +79,7 @@ async def inject_input(session_id: int, body: InputIn, request: Request) -> JSON
     payload: dict[str, Any] = {"chars": len(body.text), "lines": body.text.count("\n") + 1, "command": body.command}
     try:
         if not cc:
-            raise Refused("세션 기록을 찾지 못했습니다")
+            raise Refused("CC 세션 ID가 없습니다")
         res = await deliver(cc, body.text, sessions_dir=s.sessions_dir, transcript=transcript, command=body.command)
     except Refused as e:
         log.warning("주입 거부 session=%d(%s): %s", sid, (cc or "")[:8], e)

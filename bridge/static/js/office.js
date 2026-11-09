@@ -53,7 +53,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       <div id="oStage" class="ostage"><canvas id="oCv"></canvas>
         <div id="oDown" class="odown" role="alert" aria-live="assertive" hidden>
           <b>⚠ 서버 연결 끊김</b> <span id="oDownWhy" class="small"></span> <span id="oDownNext" class="small muted"></span>
-          <button id="oRetry" class="small">지금 다시 연결</button>
+          <button id="oRetry" class="small primary">지금 다시 연결</button>
           <div class="small muted">화면의 캐릭터는 끊기기 전 상태입니다. 다시 연결되면 맞춥니다.</div>
         </div>
       </div>
@@ -62,7 +62,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       <h2 class="plain">접속 키</h2>
       <p class="muted small">이 화면이 브리지에 접속할 때 쓰는 열쇠(API 토큰)입니다. .env.bridge의 FOREMAN_API_TOKEN 값을 넣습니다. 이 브라우저에만 저장합니다(클래식 화면과 같이 씁니다).</p>
       <input id="tokInput" type="password" autocomplete="new-password" placeholder="FOREMAN_API_TOKEN 값">
-      <p><button type="submit">연결</button> <button type="button" id="tokCancel" class="ghost">닫기</button> <span id="tokLen" class="small muted"></span></p>
+      <p><button type="submit" class="primary">연결</button> <button type="button" id="tokCancel" class="ghost">닫기</button> <span id="tokLen" class="small muted"></span></p>
     </form></div>`;
   const $ = (id) => root.querySelector('#' + id);
   const cv = $('oCv'), ctx = cv.getContext('2d');
@@ -1934,7 +1934,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     const lines = [[text, a.kind === 'foreman' ? P.warn : P.label]];
     const n = a.kind === 'session' && a.s ? a.s.subagents_running || 0 : 0;
-    if (n) lines.push([`일꾼 ${n}${a.subLabel ? ' · ' + short(a.subLabel, 22) : ''}${a.subHidden ? ` (+${a.subHidden} 접음)` : ''}`, P.act]);
+    if (n) lines.push([`서브에이전트 ${n}${a.subLabel ? ' · ' + short(a.subLabel, 22) : ''}${a.subHidden ? ` (+${a.subHidden} 접음)` : ''}`, P.act]);
     // 백그라운드 Bash · Monitor — "IDLE + 백그라운드 n개"(README 3.11). 일꾼 줄이 있으면 그 아래
     const bg = a.kind === 'session' && a.s ? a.s.background || [] : [];
     if (bg.length) {
@@ -2006,7 +2006,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const st = r.stats || {};
     const lines = [];
     lines.push([`${r.label}`, P.label, 'bold 17px']);
-    lines.push([`작업 ${st.ACTIVE || 0} · 쉼 ${st.IDLE || 0}${st.SUSPENDED ? ' · 멈춤 ' + st.SUSPENDED : ''}${st.subs ? ' · 일꾼 ' + st.subs : ''}${r.overflow ? ' · 책상 없음 +' + r.overflow : ''}`, P.muted, '15px']);
+    lines.push([`작업 ${st.ACTIVE || 0} · 쉼 ${st.IDLE || 0}${st.SUSPENDED ? ' · 멈춤 ' + st.SUSPENDED : ''}${st.subs ? ' · 서브에이전트 ' + st.subs : ''}${r.overflow ? ' · 책상 없음 +' + r.overflow : ''}`, P.muted, '15px']);
     // 넷째 칸 true = 경고 줄 — 한 방을 볼 때는 이 줄만 카드로 띄운다(11-08, 나머지는 머리말과 겹친다)
     if (st.pending) lines.push([`❗ 승인 대기 ${st.pending}`, P.warn, 'bold 16px', true]);
     if (st.question) lines.push([`❓ 질문 ${st.question} — 패널에서 답합니다`, P.warn, 'bold 16px', true]);
@@ -2276,7 +2276,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const stat = `작업 중 <b>${active}</b>/${live}${subs ? ` · 서브에이전트 ${subs}` : ''} · 출력 토큰 ${fmt(outToday)}`;
     if ($('oStat').innerHTML !== stat) $('oStat').innerHTML = stat;
     // data-tip으로 바로(11-09 — title을 매번 다시 붙여 기본 툴팁과 둘이 떴다)
-    $('oStat').dataset.tip = `지금 상태 — 일하는 세션 수와 오늘 쓴 양입니다. 출력 토큰은 AI가 쓴 글의 양입니다.`
+    $('oStat').dataset.tip = `지금 상태 — 일하는 세션 수와 오늘 쓴 양입니다. 출력 토큰은 CC가 쓴 글의 양입니다.`
       + `\n작업 중 ${active} / 켜진 세션 ${live}${subs ? `\n서브에이전트 ${subs}` : ''}\n오늘 출력 ${fmt(outToday)} 토큰`;
     $('oMap').disabled = view === 'hq';
     $('oAll').disabled = view === 'map';

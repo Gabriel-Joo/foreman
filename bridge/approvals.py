@@ -302,7 +302,8 @@ class ApprovalManager:
 
     def answer(self, aid: int, picks: dict[str, list[str]]) -> str:
         """패널에서 질문에 답한다. picks — 질문 글 → 고른 선택지 이름들. 돌려주는 값: ok · gone · bad(질문 · 선택지가 맞지 않음).
-        여러 개 고름은 쉼표로 잇는다(문서: "Multi-select answers join labels with commas")."""
+        여러 개 고름은 ", "로 잇는다(문서: "Multi-select answers join labels with commas" — 띄어쓰기는 문서에 없고,
+        ", "로 이은 답이 세션에 그대로 들어가는 것은 11-09 실측 #70)."""
         fut, qs = self.waiting.get(aid), self.questions_of(aid)
         if fut is None or fut.done() or qs is None:
             return "gone"

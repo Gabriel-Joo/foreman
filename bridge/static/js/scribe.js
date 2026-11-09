@@ -61,7 +61,7 @@ export function createScribe(store) {
         <button type="button" class="small" data-sc-task="portfolio" data-topic="${esc(t.slug)}" data-name="${esc(t.title)}"${busy || t.blocked ? ' disabled' : ''} title="${esc(t.blocked ? `포트폴리오 쓰기 — 지금은 시킬 수 없습니다. ${t.blocked}` : `포트폴리오 쓰기 — 「${t.title}」을 서기에게 맡깁니다. ${t.written ? '이미 쓴 글을 고쳐 씁니다.' : '새로 씁니다.'}`)}">${t.written ? '고쳐 쓰기' : '쓰기'}</button></div>`).join('')}</details>` : '';
     return `<div class="small muted">${esc(label)} · 서기 — 문서 담당. 시킨 일은 따로 작업(worktree) 세션으로 돌고, 끝나면 사람이 diff를 보고 합칩니다.</div>
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}"${note.tip ? ` title="${esc(note.tip)}"` : ''}>${esc(note.msg)}</div>` : ''}
-      <details class="hand"${keep(`scribe:${room}:todo`, true)}><summary title="문서 할 일 — 브리지가 AI 없이 센 문서 정리 거리입니다(커밋은 쌓였는데 README가 그대로 등)."><b>문서 할 일 ${items.length}</b></summary>${todoHtml}</details>
+      <details class="hand"${keep(`scribe:${room}:todo`, true)}><summary title="문서 할 일 — 브리지가 CC를 부르지 않고 센 문서 정리 거리입니다(커밋은 쌓였는데 README가 그대로 등)."><b>문서 할 일 ${items.length}</b></summary>${todoHtml}</details>
       <details class="hand"${keep(`scribe:${room}:tasks`, true)}><summary title="시킬 일 —고르면 서기 세션이 뜹니다."><b>시킬 일</b></summary>${taskHtml}${tpHtml}</details>
       <details class="hand"${keep(`scribe:${room}:publish`, true)}><summary title="Notion 게시 —원본은 git 마크다운, Notion은 게시판입니다. 버튼을 눌러야만 올라갑니다."><b>Notion 게시</b></summary>${pubBlock(room)}</details>`;
   }
