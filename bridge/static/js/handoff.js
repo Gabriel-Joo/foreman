@@ -38,6 +38,8 @@ export function flowStep(flow, summary, live) {
 export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) {
   let sid = null, data = null, mode = null, preview = null, note = null, open = open0;
   let flow = null, flowPrev = null, flowPrevAsk = false, handMore = false;    // 흐름 · ② 확인에 보여 줄 넣을 글 · 드문 버튼 펼침
+  let noteOpen = false, noteDraft = '';          // ② 확인의 [덧붙여서 보내기](11-09) — 인계 글 끝에 붙일 한 줄
+  let lastHtml = '';                             // 같은 글이면 다시 그리지 않는다(11-09 — 3초마다 다시 그려 글 상자 스크롤이 맨 위로 돌아갔다)
   // 접는 칸을 사람이 열고 닫은 것 — 다시 그려도 그대로(null이면 저절로: 문서 정리는 할 일이 있을 때만 연다)
   let docsOpen = null, moreOpen = false;
   // 고치던 값 — 15초마다 새로 그려도 날아가지 않게 따로 든다(요약 고치기 글 · 옮기기 목록 칸)
@@ -56,6 +58,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
   });
   el.addEventListener('input', (ev) => {
     if (ev.target.id === 'hEdit') editDraft = ev.target.value;
+    else if (ev.target.id === 'hNote') noteDraft = ev.target.value;
     else promField(ev.target);
   });
   let timer = null;
@@ -176,7 +179,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
   }
 
   function draw() {
-    if (sid == null || !data) { el.innerHTML = ''; return; }
+    if (sid == null || !data) { el.innerHTML = ''; lastHtml = ''; return; }
     const c = data.controls, can = c.can, s0 = data.summaries[0], ok = latest();
     const b = (act, label, on, cls = '', tip = '') => `<button data-act="${act}" class="small ${cls}"${tip ? ` title="${esc(tip)}"` : ''}${on ? '' : ' disabled'}>${label}</button>`;
     const sumCard = (x) => !x ? '<p class="small muted">아직 요약이 없습니다.</p>' : `
@@ -217,9 +220,16 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         const p = flowPrev && flowPrev.summary_id === flow.sumId ? flowPrev : null;
         if (!p && !flowPrevAsk) { flowPrevAsk = true; setTimeout(() => flowPreview().finally(() => { flowPrevAsk = false; }), 0); }
         body = !p ? '<div class="small muted">넣을 글을 불러오는 중입니다…</div>'
-          : `<div class="small">새 세션에 아래 글을 첫 입력으로 넣습니다. 확인하면 새 세션을 띄우고 이 세션을 끝냅니다.${p.cut ? ` <span class="warn">길어서 일부 절을 줄였습니다.</span>` : ''}</div>
+          : `<div class="small">새 세션에 아래 글을 첫 입력으로 넣습니다. 보내면 새 세션을 띄우고 이 세션을 끝냅니다.${p.cut ? ` <span class="warn">길어서 일부 절을 줄였습니다.</span>` : ''}</div>
             ${wtNext(p)}${driftList(p.drift, '요약 뒤 바뀐 것')}${p.v2 ? pointerList(p) : ''}<pre class="hand-body">${esc(p.text)}</pre>`;
-        body += `<div class="row flow-act">${b('flow-go', '확인 — 새 세션 띄우고 이 세션 끝내기', !!p && !p.blocked && can.spawn, 'primary', p && p.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다([더보기] → [요약 고치기]).' : '확인 — 같은 폴더에 새 세션을 띄워 위 글을 넣고, 이 세션을 /exit로 끝냅니다.')}${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 띄우지 않습니다. 요약은 남습니다.')}</div>`;
+        // 11-09 사용자 — 보내기 전에 한 줄 덧붙일 수 있게. 요약은 그대로 두고 넣는 글 끝에만 붙는다(bridge/handoff.py note_block)
+        if (p && noteOpen) body += `<div class="hand-note"><label class="small" for="hNote">덧붙일 말 — 위 글 맨 끝에 「사람이 덧붙인 말」로 붙습니다. 요약은 바뀌지 않습니다.</label>
+            <textarea id="hNote" rows="2" maxlength="2000" class="hand-edit" placeholder="예: 다음 할 일 중 3번부터 해 주세요.">${esc(noteDraft)}</textarea></div>`;
+        const go = !!p && !p.blocked && can.spawn;
+        const goTip = p && p.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다([더보기] → [요약 고치기]).' : '';
+        body += `<div class="row flow-act">${noteOpen
+          ? `${b('flow-go-note', '덧붙여서 보내기', go, 'primary', goTip || '덧붙여서 보내기 — 위 글 끝에 덧붙일 말을 붙여 새 세션에 넣고, 이 세션을 /exit로 끝냅니다.')}${b('flow-note-off', '덧붙이지 않기', true, 'ghost', '덧붙이지 않기 — 덧붙일 말 칸을 닫습니다. 적은 말은 버립니다.')}`
+          : `${b('flow-go', '이대로 보내기', go, 'primary', goTip || '이대로 보내기 — 같은 폴더에 새 세션을 띄워 위 글을 넣고, 이 세션을 /exit로 끝냅니다.')}${b('flow-note', '덧붙여서 보내기', go, 'ghost', goTip || '덧붙여서 보내기 — 보내기 전에 한 줄 덧붙일 칸을 엽니다.')}`}${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 띄우지 않습니다. 요약은 남습니다.')}</div>`;
       } else if (st.i === 2) body = '<div class="small muted">새 세션을 띄우고 요약을 넣는 중입니다…</div>';
       else if (st.i === 3) body = st.busy ? '<div class="small muted">옛 세션을 끝내는 중입니다… 맥락이 큰 세션은 수십 초 걸립니다.</div>'
         : `<div class="small">새 세션이 이어받았습니다. 옛 세션 끝내기만 남았습니다.</div><div class="row flow-act">${b('flow-end', '옛 세션 끝내기', can.exit, 'primary danger', '옛 세션 끝내기 — 이 세션을 /exit로 끝냅니다.')}${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 이 세션을 살려 둡니다.')}</div>`;
@@ -236,7 +246,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     const wtLive = !!(c.worktree && c.worktree.exists && c.worktree.live);   // 살아 있는 따로 작업 — 끝내기를 세 갈래로
     // 요약 카드 머리의 작은 [고치기] — 자주 안 쓰므로 버튼 줄에서 뺐다(11-06, 이력 1번)
     const editLink = ok && mode == null && !st ? b('edit', '고치기', true, 'ghost', '요약 고치기 — 저장된 요약을 직접 고칩니다. 원본은 두고 새 판으로 저장합니다.') : '';
-    el.innerHTML = `
+    const html = `
       <section class="hand">
         <div class="hand-h"><b>새 세션으로 옮기기</b>${s0 ? ` <span class="small muted" title="마지막 요약 — ${esc(KIND[s0.kind] || s0.kind)}, ${esc(STATUS[s0.status] || s0.status)}">· 요약 ${esc(STATUS[s0.status] || s0.status)} ${ago(s0.created_at)}</span>` : ''}</div>
         <div class="hand-btns">
@@ -270,6 +280,14 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         ${lossGroup(lc0, can.losscheck !== false && !!data.losschecks && !data.losschecks_error, data.losschecks_error)}
         ${promoteGroup(p0, !!can.promote, promDraft, data.promotions_error, data.promote_inputs, promIn)}
       </details>`;
+    if (html === lastHtml) return;
+    // 11-09 사용자 — "스크롤이 자동으로 맨 위로 되돌아가 끝까지 볼 수 없다". 다시 그려도 글 상자(.hand-body)와 패널 스크롤을 지킨다
+    const pres = [...el.querySelectorAll('pre.hand-body')].map((p) => p.scrollTop);
+    const box = el.closest('.oside-body'), top = box ? box.scrollTop : 0;
+    el.innerHTML = html;
+    lastHtml = html;
+    el.querySelectorAll('pre.hand-body').forEach((p, i) => { if (pres[i]) p.scrollTop = pres[i]; });
+    if (box && box.scrollTop !== top) box.scrollTop = top;
     // 그릴 때 open으로 그려도 toggle이 난다 — 그린 상태와 달라질 때만 사람이 바꾼 것으로 기억한다
     el.querySelector('details.hand-docs').addEventListener('toggle', (ev) => { if (ev.target.open !== docsOn) docsOpen = ev.target.open; });
   }
@@ -312,8 +330,16 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     }
     if (act === 'hand-more') { handMore = !handMore; draw(); return; }
     if (act === 'flow-start') return startFlow();
-    if (act === 'flow-stop' || act === 'flow-close') { setFlow(null); note = act === 'flow-stop' ? { msg: '옮기기를 멈췄습니다. 받은 요약은 남아 있습니다.' } : null; draw(); return; }
-    if (act === 'flow-go') return flowGo();
+    if (act === 'flow-stop' || act === 'flow-close') { setFlow(null); noteOpen = false; noteDraft = ''; note = act === 'flow-stop' ? { msg: '옮기기를 멈췄습니다. 받은 요약은 남아 있습니다.' } : null; draw(); return; }
+    if (act === 'flow-go') return flowGo(null);
+    if (act === 'flow-note') { noteOpen = true; draw(); const t = el.querySelector('#hNote'); if (t) t.focus(); return; }
+    if (act === 'flow-note-off') { noteOpen = false; noteDraft = ''; draw(); return; }
+    if (act === 'flow-go-note') {
+      const v = (el.querySelector('#hNote') || {}).value ?? noteDraft;
+      if (!v.trim()) { note = { bad: true, msg: '덧붙일 말이 비었습니다 — 적거나 [덧붙이지 않기]를 누릅니다.' }; draw(); return; }
+      noteDraft = v;
+      return flowGo(v);
+    }
     if (act === 'flow-end') return flowEnd();
     const fmt = 'v2';           // 1판(요약 통째로) 고르기는 11-06에 뺐다 — 2판이 생긴 뒤 한 번도 안 썼다. API는 v1도 받는다
     if (act === 'summary') return run('요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'snapshot', mode: 'live', fmt }).then(() => ({ msg: '요청을 보냈습니다. 세션이 요약을 쓰는 중입니다.' })));
@@ -427,11 +453,13 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     try { flowPrev = await api('GET', `/api/summaries/${flow.sumId}/injection?replace=1`); } catch (e) { setFlow({ ...flow, err: `넣을 글을 받지 못했습니다 — ${e.message}`, errAt: 1 }); }
     draw();
   }
-  async function flowGo() {                      // ③ 새 세션 → ④ 옛 세션 끝내기
+  async function flowGo(extra) {                 // ③ 새 세션 → ④ 옛 세션 끝내기. extra — [덧붙여서 보내기]의 말
     const id = sid, f = flow;
+    // 실패 뒤 [다시 시도](flow-go)도 덧붙일 말 칸이 열려 있으면 그 말을 같이 보낸다
+    const add = extra != null ? extra : (noteOpen && noteDraft.trim() ? noteDraft : null);
     setFlow({ ...f, err: null, errAt: null, phase: 'spawning' }); draw();
     try {
-      const r = await api('POST', `/api/sessions/${id}/spawn`, { summary_id: f.sumId, replace: true });   // 옮기기 — 옛 세션은 빼고 worktree 판단
+      const r = await api('POST', `/api/sessions/${id}/spawn`, { summary_id: f.sumId, replace: true, ...(add ? { note: add } : {}) });   // 옮기기 — 옛 세션은 빼고 worktree 판단
       if (!r.cc_session_id || !r.injected) throw new Error(r.note || '새 세션에 요약을 넣었는지 확인하지 못했습니다');
     } catch (e) { if (id === sid) { setFlow({ ...f, phase: null, err: `새 세션을 띄우지 못했습니다 — ${e.message}`, errAt: 2 }); await load(); } return; }
     await flowEnd(id);
@@ -453,7 +481,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     setSession(id) {
       if (id === sid) return;
       sid = id; data = null; mode = null; preview = null; note = null; editDraft = null; promDraft = {}; promId = null; promIn = null;
-      flow = id != null ? flowGet(id) : null; flowPrev = null; handMore = false;
+      flow = id != null ? flowGet(id) : null; flowPrev = null; handMore = false; noteOpen = false; noteDraft = ''; lastHtml = '';
       if (flow && flow.phase && flow.phase !== 'done') flow = { ...flow, phase: null };   // 띄우는 · 끝내는 중에 새로 고침 — 서버 데이터로 다시 판단
       el.innerHTML = '';
       clearTimeout(timer);

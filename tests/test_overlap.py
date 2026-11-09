@@ -1,8 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from bridge.overlap import (Corpus, OverlapRules, OverlapWatch, cross_message, is_ident, load_rules, match, message, same_text, score,
-                            skip, words)
+from bridge.overlap import (Corpus, OverlapRules, OverlapWatch, cross_message, file_word, files_message, is_ident, load_rules, match,
+                            message, named_edits, rel_path, same_files, same_text, score, skip, words)
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -128,3 +128,91 @@ def test_panel_band_expires(tmp_path):
     w.recent[1] = {"with": 2, "at": "x", "at_dt": now}
     w.recent[3] = {"with": 4, "at": "y", "at_dt": now - timedelta(minutes=w.rules.show_min + 1)}
     assert w.for_session(1) == {"with": 2, "at": "x"} and w.for_session(3) is None and w.for_session(9) is None
+    w.files_recent[1] = {"with": 5, "files": ["a.py"], "at_dt": now}               # 같은 파일 띠가 낱말 띠보다 먼저
+    assert w.for_session(1)["files"] == ["a.py"]
+
+
+# ── 11-09 실제로 고친 파일 ─────────────────────────────────
+ROOT = "/home/kopo17/AI_programming/foreman"
+
+
+def test_rel_path_joins_worktree_and_main():
+    assert rel_path(f"{ROOT}/bridge/static/js/opanel.js", ROOT) == "bridge/static/js/opanel.js"
+    assert rel_path(f"{ROOT}/.worktrees/foreman-2/bridge/static/js/opanel.js", f"{ROOT}/.worktrees/foreman-2") == "bridge/static/js/opanel.js"
+    assert rel_path(f"{ROOT}/.worktrees/foreman-2/bridge/x.py", ROOT) == "bridge/x.py"        # 원본 세션이 worktree 파일을
+    assert rel_path("/tmp/claude-1000/x/scratchpad/q.py", ROOT) is None                     # 세션 폴더 밖은 안 본다
+    assert rel_path("/home/kopo17/.claude/plans/p.md", ROOT) is None and rel_path(None, ROOT) is None
+
+
+def test_file_word():
+    assert file_word("opanel.js") and file_word("foreman_context_pct_20261109.md") and file_word("notify.toml")
+    assert not file_word("context.window") and not file_word("a6d6e83") and not file_word("window_over") and not file_word("1.25")
+
+
+# 11-09 헛경보 1143 — 세션 231(화면 worktree)에 넣은 지시서가 230(메인)의 지시서와 겹쳤다. 230은 그때 코드를 고치지 않았다
+W1143 = ["a6d6e83", "context.window", "foreman_context_pct_20261109.md", "opanel.js", "screen.py", "window_over", "cardaudit", "tipaudit"]
+
+
+def test_named_edits_tells_instruction_words_from_edits():
+    assert named_edits(W1143, ["log/old_session_exit_bg_20261109.md"]) == []                # 1143 — 말에 나왔을 뿐
+    assert named_edits(["dashboard.py", "opanel.js"], ["bridge/api/dashboard.py", "README.md"]) == ["dashboard.py"]   # 1132
+    assert named_edits(["readme.md"], ["README.md"]) == ["readme.md"]                          # 낱말은 소문자다
+
+
+def test_same_files_pairs_only_same_project_and_not_handoff():
+    t = datetime(2026, 11, 9, 8, 0)
+    edits = {230: {"README.md": t, "bridge/a.py": t}, 231: {"bridge/a.py": t, "bridge/static/js/opanel.js": t},
+             226: {"README.md": t}, 300: {"bridge/a.py": t}}
+    groups = {230: 1, 231: 1, 226: 1, 300: 2}
+    got = same_files(edits, groups, {frozenset((226, 230))})
+    assert got == {(230, 231): ["bridge/a.py"]}                                               # 226~230은 인계, 300은 다른 프로젝트
+    m = files_message("[FOREMAN]", 230, "main", 231, "화면", ["bridge/a.py"])
+    assert m.startswith("[FOREMAN] 같은 파일 — 세션 230「main」과 세션 231「화면」이 둘 다 고쳤습니다: bridge/a.py") and "그대로 두면" in m
+
+
+def test_scan_files_alerts_once_per_new_file(tmp_path, monkeypatch):
+    import asyncio
+
+    import bridge.liveness as lv
+    t = datetime(2026, 11, 9, 8, 0)
+
+    class P:
+        def __init__(self): self.state = "S"
+    monkeypatch.setattr(lv, "live_sessions", lambda _d: {"cc-a": P(), "cc-b": P()})
+
+    class Res:
+        def __init__(self, rows): self.rows = rows
+        def all(self): return self.rows
+        def first(self): return self.rows[0] if self.rows else None
+
+    class C:
+        edits = [(1, f"{ROOT}/bridge/a.py", t, ROOT), (2, f"{ROOT}/.worktrees/x/bridge/a.py", t, f"{ROOT}/.worktrees/x")]
+        async def execute(self, q, *_a, **_k):
+            s = str(q)
+            if "FROM event e" in s: return Res(self.edits)
+            if "FROM summary" in s: return Res([])
+            return Res([(1, 7, "foreman", "main", "cc-a"), (2, 7, "foreman", "화면", "cc-b")])
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+
+    class E:
+        def connect(self): return C()
+
+    class N:
+        def __init__(self): self.sent = []
+        def send_direct(self, *a): self.sent.append(a)
+
+    class R:
+        prefix = "[FOREMAN]"
+
+    class Rules:
+        def for_project(self, _p): return R()
+
+    n = N()
+    w = OverlapWatch(E(), n, Rules(), tmp_path / "없음.toml", tmp_path)
+    assert asyncio.run(w.scan_files(t)) == [(1, 2, ["bridge/a.py"])]
+    assert len(n.sent) == 1 and n.sent[0][1] == "overlap" and "같은 파일" in n.sent[0][3]
+    assert w.files_recent[1]["with"] == 2 and w.files_recent[2]["files"] == ["bridge/a.py"]
+    assert asyncio.run(w.scan_files(t)) == [] and len(n.sent) == 1                             # 같은 파일은 한 번만
+    C.edits = C.edits + [(1, f"{ROOT}/b.py", t, ROOT), (2, f"{ROOT}/.worktrees/x/b.py", t, f"{ROOT}/.worktrees/x")]
+    assert asyncio.run(w.scan_files(t)) == [(1, 2, ["b.py", "bridge/a.py"])] and len(n.sent) == 2   # 새 파일이 생기면 다시

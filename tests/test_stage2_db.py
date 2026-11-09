@@ -1290,6 +1290,7 @@ async def test_overlap_alert_on_human_prompt(env, tmp_path):
             {"pid": pid, "sessionId": sid, "cwd": CWD, "procStart": start, "status": "idle"}), encoding="utf-8")
     asm, n, tg = await _live(s, tmp_path)
     ow = OverlapWatch(asm.engine, n, n.rules, tmp_path / "없음.toml", s.sessions_dir)
+    ow.rules.edit_scan_sec = 0                    # 같은 파일 훑기(주기 작업)는 test_overlap.py에서 따로 본다
     asm.on_human_prompt = ow.on_prompt
 
     async def prompt(sid, text):
@@ -1302,20 +1303,22 @@ async def test_overlap_alert_on_human_prompt(env, tmp_path):
     assert tg.sent == []                                                   # 다른 세션의 요청은 오래전(10-01) 것뿐
     await prompt(SID, "tmux 이름 고쳐줘. jenkins-0이랑 harbor-jobservice CrashLoopBackOff 원인도 봐줘")
     me, other = (q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", x)[0][0] for x in (SID, SID2))
-    assert len(tg.sent) == 1 and tg.sent[0].startswith(f"[포먼] 겹침 — 세션 {me}")
-    assert f"세션 {other}" in tg.sent[0] and "harbor-jobservice, jenkins-0" in tg.sent[0]
-    assert q(s, "SELECT kind, decision, session_id FROM notification WHERE kind = 'overlap'") == (("overlap", "sent", me),)
+    # 11-09 — 낱말 겹침은 패널 띠만(텔레그램 없음). 상대가 그 파일을 고친 흔적이 없으면 "말에 나왔을 뿐"(weak)
+    assert tg.sent == [] and q(s, "SELECT kind FROM notification WHERE kind = 'overlap'") == ()
     band = ow.for_session(me)
     assert band["with"] == other and band["words"][:2] == ["harbor-jobservice", "jenkins-0"]
-    # 같은 두 세션은 한 시간 안에 다시 알리지 않는다 · 겹치지 않는 요청 · 서기 일감은 알리지 않는다
+    assert band["weak"] is True and band["edited"] == []
+    # 같은 두 세션은 한 시간 안에 다시 띄우지 않는다 · 겹치지 않는 요청 · 서기 일감은 보지 않는다
     await prompt(SID, "jenkins-0 harbor-jobservice 다시 봐줘")
+    assert ow.for_session(me)["at"] == band["at"]
     await prompt(SID2, "Notion 게시 기능 만들자")
     await prompt(SID2, "[FOREMAN 서기 일감 — 회고] jenkins-0 harbor-jobservice crashloopbackoff")
-    assert len(tg.sent) == 1
+    assert other not in ow.recent and tg.sent == []
 
     # 11-08 — 인계로 이어받은 세션은 겹침이 아니다(세션 214 ~ 211 헛알림). 인계 글이 넣음 기록보다 먼저 적재돼
     # summary.injected_cc_session이 아직 비어 있어도 글의 r=로 알아본다. 그 뒤 기록이 차면 r= 없는 요청도 뺀다
     ow2 = OverlapWatch(asm.engine, n, n.rules, tmp_path / "없음.toml", s.sessions_dir)   # 한 시간 막기를 비운 새 감시
+    ow2.rules.edit_scan_sec = 0
     asm.on_human_prompt = ow2.on_prompt
     ow = ow2
     conn = pymysql.connect(host=s.mysql_host, port=s.mysql_port, user=s.mysql_user,
@@ -1328,5 +1331,5 @@ async def test_overlap_alert_on_human_prompt(env, tmp_path):
     conn.close()
     await prompt(SID, "jenkins-0 harbor-jobservice CrashLoopBackOff 마저 봐줘")
     await prompt(SID2, "jenkins-0 harbor-jobservice CrashLoopBackOff 넘긴 쪽에서 다시")    # 넘겨준 쪽에서도
-    assert len(tg.sent) == 1 and ow2.recent == {}
+    assert tg.sent == [] and ow2.recent == {}
     await n.stop()

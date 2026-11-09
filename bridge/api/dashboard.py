@@ -86,6 +86,20 @@ def char_state(proc: str | None, cc_status: str | None, open_turn: bool) -> str:
     return "ACTIVE" if open_turn else "IDLE"
 
 
+async def _switch_status(c: Any, ctx: dict[int, dict[str, Any]], min_pct: int) -> dict[int, dict[str, Any]]:
+    """작업 전환 권유(11-09) — 쌓인 대화 ≥ min_pct%인 세션만 마지막 사람 턴을 본다(세션마다 질의 셋, 대개 몇 개 안 된다).
+    {turn_id, phrase, committed, idle, pct}. 판정은 텔레그램과 같은 함수(bridge/switchwatch.py)."""
+    from bridge.switchwatch import latest_signal, should_suggest
+    out: dict[int, dict[str, Any]] = {}
+    for sid, v in ctx.items():
+        if v.get("pct") is None or v["pct"] < min_pct:
+            continue
+        sig = await latest_signal(c, sid)
+        if sig and should_suggest(v["pct"], min_pct, sig.phrase, sig.committed, sig.idle):
+            out[sid] = {"turn_id": sig.turn_id, "phrase": sig.phrase, "committed": sig.committed, "idle": sig.idle, "pct": v["pct"]}
+    return out
+
+
 # 11-09 사람이 해야 풀리는 것(사용자: "사람 답을 기다리는 상태는 쉼이 아니다", "CC 자체 권한 거부는 화면에 아예 없다")
 DENIED_PREFIX = "Permission for this action was denied"          # CC auto mode 분류기 거부 — FOREMAN 승인 큐를 거치지 않는다
 _DENY_REASON = re.compile(r"Reason:\s*\[([^\]]+)\]")
@@ -210,6 +224,8 @@ async def dashboard(request: Request) -> dict[str, Any]:
         for v in ctx.values():
             p = ucfg.price(v["model"]) if ucfg else None
             v["usd_reply"] = round(v["tokens"] * p.get("cache_read", 0.0) / 1e6, 3) if p else None
+        # 작업 전환 권유(11-09, bridge/switchwatch.py) — 텔레그램과 같은 판정을 패널 띠에도. 쌓인 대화가 문턱 이상인 세션만 본다
+        switch = await _switch_status(c, ctx, request.app.state.compact_rules.switch_min_pct)
         # 지금 모델 — 본 대화(서브에이전트 아님)의 마지막 응답. 세션 안에서 /model로 바꾸면 따라간다
         cur_model = {r[0]: r[1] for r in (await c.execute(text(
             f"SELECT t.session_id, m.model FROM message m JOIN turn t ON t.id = m.turn_id JOIN ("
@@ -260,6 +276,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "model_family": model_family(cur_model.get(sid)), "model_req": model_req,
             "compact": cmp.get(sid),
             "context": ctx.get(sid),
+            "switch": switch.get(sid),
             "overlap": ovl.for_session(sid) if ovl else None,
             "last_ts": _iso(last_ts), "attached_at": _iso(attached), "detached_at": _iso(detached),
         })
