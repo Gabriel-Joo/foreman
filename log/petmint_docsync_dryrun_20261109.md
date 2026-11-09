@@ -49,6 +49,28 @@
   - 14 — git이 칸 안 줄바꿈을 한 줄로 바꾸며 마침표를 넣음("약관 청크. 컨테이너에서는" · "참조 그래프. 컨테이너에서는"), Notion엔 없음
   - 처음엔 pipeline도 멈췄다 — git 목록 "모니터링 (Prometheus·Grafana)"가 하위 페이지 "15. 모니터링"과 글자가 달라. 제목으로 시작하는 목록 줄도 문서 목록으로 보게 고침
 
+## 켬 · 첫 맞추기(사용자 "켜라 — 설정 그대로")
+
+- 남은 2쪽은 펫퍼민트 세션이 Notion을 git에 맞춤(03b `|` 지움 · 14 마침표) → 모의 실행 멈춤 0
+- `config/notion.toml` 펫퍼민트 칸: `docs = "auto"` + create · title · order · header · keep_notion(shape) · skip. 승인 대기 0 확인 뒤 **13:32:39 KST 브리지 다시 띄움**
+- **첫 맞추기 13:41:50**(마지막 docs 커밋 3eb664f 뒤 30분 조용): 올림 20 · 멈춤 0 · 실패 2 · **새 페이지 0**
+  - 실패 2 = 짝 목록에 없는 docs 파일 `docs/저녁실행.md` · `docs/모드검증.md` — `create = false`로 만들지 않고 실패로 남김(텔레그램 1통, 5분마다 같은 실패지만 알림은 한 번). 처음 셀 때 22편으로 본 것은 `git ls-tree` 출력이 한글 이름을 따옴표로 감싸 `.md$`에 안 걸려서였다 — 실제 24편
+  - 20쪽 확인(Notion API, 하위 블록까지): 우리 봇이 마지막으로 고친 블록은 쪽마다 맨 아래 "마지막 갱신 —" 한 줄뿐, 나머지 블록은 그대로
+- 잃는 것은 `docs/12_scribe.md` 5절에 적음
+
+## 펫퍼민트 ArgoCD "진행 중"이 안 끝남 — 클러스터는 이미 Healthy
+
+- 클러스터(`vagrant ssh m-k8s`): 앱 Synced · Healthy, 작업 끝 13:53:03 KST, 파드 2 Running(재시작 0) · init-db Completed
+- FOREMAN `build` #109: 13:53 알림이 "Synced · Progressing"(롤아웃 중) — 그 뒤 Healthy 알림이 오지 않아 running에 남음. 문서만 바뀐 이미지라 오래 걸린 것이 아니라, 끝 알림이 없는 것
+- 할 일 후보: ronanlab-infra ArgoCD notifications에 health Healthy(on-deployed) 트리거(다른 저장소), FOREMAN이 running이 N분 넘으면 ArgoCD 읽기 API로 직접 확인, "Sync 눌렀는데 안 끝남" 알림
+
+## 사용량이 풀린 뒤 할 일(사용자 지시)
+
+- 2 [전체] 이름 칸 ! · 이름 밀림, 3 빨간 표시 이유 · 호버, 3-2 크레딧 화면 · 알림, 4 권한 거부 30분 알림, 5 세션 간 메시지 읽음 보이기
+- "!" 입력 공백 막힘
+- ArgoCD 끝 알림 없음(위) · "Sync 눌렀는데 안 끝남" 알림
+- 펫퍼민트 짝 없는 docs 둘(`저녁실행` · `모드검증`) — skip에 넣을지 짝을 줄지
+
 ## 확인
 
 - 파이썬 491(새 `test_sync_never_deletes_subpages` · `test_adopt_notion_shape_inline_code_and_image`)
