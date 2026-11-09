@@ -43,7 +43,7 @@ ref = "origin/main"
 docs = "auto"  # 11-09 docs를 Notion 구조로 옮긴 뒤(2e287cb, 짝 18개 새 경로) 다시 켬 — log/petmint_docs_move_20261109.md
 quiet_min = 30
 # 아래는 펫퍼민트만(사용자 결정 11-09, log/petmint_docsync_dryrun_20261109.md). 없으면 런슈즈 · FOREMAN처럼 기본 동작
-create = false                      # 짝이 없으면 새 페이지를 만들지 않고 실패로 남긴다(11-09 true는 사용자가 모의 실행을 보고 정한다)
+create = true                       # 11-09 켬(사용자 — 모의 실행: 맨 뒤 번호만 만들고 중간 번호는 실패). 새 페이지는 new_parent · new_title대로
 archive = false                     # 원본이 사라져도 휴지통으로 보내지 않고 실패로만(create와 따로 — 11-09 사용자: 사람이 보고 판단)
 headings = "md"                     # 제목 단계를 마크다운 그대로(## → heading_2 · ### → 3 · #### → 4) — 사람이 옮긴 페이지 모양
 new_parent = "folder"               # 새 문서: docs/<폴더>/x.md는 같은 폴더 형제들의 부모 아래(docs/02_pipeline/ → 「02. 파이프라인 설계」)

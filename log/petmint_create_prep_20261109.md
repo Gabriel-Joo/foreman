@@ -31,3 +31,9 @@
 
 - 파이썬 508(새 `test_heading_md_keeps_markdown_levels` · `test_archive_separate_from_create`) · JS 53
 - 브리지 16:09:59 다시 띄움(승인 대기 0 뒤) — `archive = false` · `headings = "md"` 적용, `create = false` 그대로
+
+## 켬(사용자 — 모의 실행에서 17 만듦 · 05-1 실패 확인 뒤)
+
+- 켜기 전 상태(쓰기 없음): 새 0 · 바뀜 0 · 지워짐 0 · 못 읽음 0, `@docs-sync` = origin/main `2e287cb` — 펫퍼민트에 새 docs 커밋 없음(상태를 보려고 펫퍼민트 저장소에서 `git fetch` 한 번 — 원격 추적 기록만)
+- **16:51:18 KST `create = true`로 브리지 다시 띄움**(승인 대기 0 뒤). 첫 맞추기(뜬 뒤 60초)는 할 일이 없어 쓰기 0 · 새 페이지 0
+- **heading_4 만들기는 아직 확인 못 함** — 펫퍼민트가 `####`가 든 새 문서나 절을 push해야 처음 쓴다. 안 되면 그 파일이 실패로 남고 텔레그램으로 온다
