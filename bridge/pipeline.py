@@ -137,6 +137,15 @@ def jenkins_status(body: dict[str, Any]) -> tuple[str, str | None]:
     return "failed", (body.get("stage") or None)
 
 
+SKIP_STEP = "건너뜀 — 문서만"
+
+
+def jenkins_skipped(body: dict[str, Any]) -> bool:
+    """문서만 바뀐 빌드 — Jenkinsfile foremanNotify 본문의 "skipped": true(11-09 FOREMAN이 정한 칸 이름). 문자열 "true"도 받는다."""
+    v = body.get("skipped")
+    return v is True or (isinstance(v, str) and v.strip().lower() == "true")
+
+
 def build_cause(body: dict[str, Any]) -> str | None:
     """Jenkinsfile foremanNotify가 보내는 빌드 원인: webhook(GitHubPushCause) · poll(SCMTrigger) · manual · other."""
     c = str(body.get("cause") or "").lower()
@@ -690,10 +699,16 @@ class PipelineManager:
         head = await self.resolve(p, str(body.get("commit") or "").strip().lower())
         infra = await self.ensure_infra(p, "jenkins")
         msg = self.mask.text(str(body.get("message") or "")[:2000]) or None
-        bid, prev = await self._upsert(p, "jenkins", f"{job}#{number}", head, head[:12] if head else None, status, step,
+        # 11-09 런슈즈 요청 4절 — 문서만 바뀐 빌드는 이미지 빌드 · 태그 커밋을 건너뛰고 SUCCESS. foremanNotify가 "skipped": true를 보낸다.
+        # 이미지가 없으니 태그를 붙이지 않는다 → Harbor · ArgoCD를 기다리지 않고(_undeployed_tag가 고르지 않는다), 화면은 빌드에서 끝
+        skipped = jenkins_skipped(body)
+        if skipped and status == "success":
+            step = SKIP_STEP
+        tag = None if skipped else (head[:12] if head else None)
+        bid, prev = await self._upsert(p, "jenkins", f"{job}#{number}", head, tag, status, step,
                                        _ts(body.get("timestamp")), body.get("url"), msg, infra,
                                        {**{k: body.get(k) for k in ("phase", "result", "stage", "duration")},
-                                        "cause": build_cause(body)})
+                                        "cause": build_cause(body), "skipped": skipped})
         if head and prev is None:
             await self._link_commits(p, bid, head)
         if prev is None:
@@ -769,10 +784,12 @@ class PipelineManager:
                     status = prev            # 늦게 온 running이 끝난 상태를 덮지 않는다
                 await c.execute(text(
                     "UPDATE build SET status = :st, step = COALESCE(:step, step), commit_sha = COALESCE(commit_sha, :sha), "
-                    "tag = COALESCE(tag, :tag), character_id = COALESCE(character_id, :ch), "
+                    "tag = IF(:skip, NULL, COALESCE(tag, :tag)), character_id = COALESCE(character_id, :ch), "
                     "ended_at = IF(:st = 'running', ended_at, COALESCE(ended_at, :at)), log_url = COALESCE(:url, log_url), "
                     "message = COALESCE(:msg, message), payload = :pl WHERE id = :id"),
-                    {"st": status, "step": step if status == "failed" else None, "sha": sha, "tag": tag, "ch": char,
+                    # 건너뜀(문서만)은 시작 알림 때 붙은 태그를 지운다 — 이미지가 없다(11-09). 단계 글은 실패 · 건너뜀일 때만
+                    {"st": status, "step": step if status == "failed" or step == SKIP_STEP else None, "sha": sha, "tag": tag, "ch": char,
+                     "skip": bool(payload.get("skipped")) and status == "success",
                      "at": at, "url": str(url)[:512] if url else None, "msg": message,
                      "pl": json.dumps(payload, ensure_ascii=False, default=str), "id": bid})
         if stage == "argocd" and status in ("success", "failed"):
@@ -884,7 +901,8 @@ class PipelineManager:
                             "SELECT stage, status, step, external_id, started_at, ended_at, log_url, message FROM build "
                             "WHERE project_id = :p AND commit_sha = :h ORDER BY id"), {"p": p.project_id, "h": h})).all():
                         stages[r[0]] = {"status": r[1], "step": r[2], "ext": r[3], "started_at": _iso(r[4]),
-                                        "ended_at": _iso(r[5]), "url": r[6], "message": (r[7] or "")[:500] or None}
+                                        "ended_at": _iso(r[5]), "url": r[6], "message": (r[7] or "")[:500] or None,
+                                        "skipped": r[0] == "jenkins" and r[1] == "success" and r[2] == SKIP_STEP}
                     commits = await self._commits(c, p, h)
                     order = ["commit", "jenkins", "harbor", "argocd"]
                     broke = next((s for s in order[1:] if stages.get(s, {}).get("status") == "failed"), None)

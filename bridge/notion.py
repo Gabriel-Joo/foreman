@@ -36,6 +36,14 @@ class NotionError(Exception):
         self.status = status
 
 
+class HumanEdited(Exception):
+    """Notion에서 사람이 고친 블록이 있어 덮지 않았다(11-09) — git에 옮기면 풀리고, 버리려면 force로 다시 게시한다."""
+
+    def __init__(self, path: str, edits: list[str], url: str | None = None) -> None:
+        super().__init__(f"Notion에서 사람이 고친 곳 {len(edits)}개가 있어 덮지 않았습니다 — {path}")
+        self.path, self.edits, self.url = path, edits, url
+
+
 class OutOfScope(Exception):
     """범위 밖 — FOREMAN 페이지 아래가 아니거나 우리가 만든 페이지가 아니다."""
 
@@ -410,15 +418,16 @@ def portfolio_title(path: str, title: str) -> str:
     return f"{num} {title}" if num.isdigit() and not title.startswith(num + " ") else title
 
 
-def git_show(repo: str, path: str) -> tuple[str, str]:
-    """(본문, 그 파일을 마지막으로 바꾼 커밋 짧은 해시) — main HEAD에 커밋된 것만."""
+def git_show(repo: str, path: str, ref: str = "HEAD") -> tuple[str, str]:
+    """(본문, 그 파일을 마지막으로 바꾼 커밋 짧은 해시) — ref(FOREMAN은 main HEAD, 다른 프로젝트는 push된 origin/main)에 있는 것만."""
     p = PurePosixPath(path)
     if p.is_absolute() or ".." in p.parts or p.suffix != ".md" or not str(p).startswith(("log/", "docs/", "portfolio/")):
         raise OutOfScope("log/ · docs/ · portfolio/ 아래 .md만 게시합니다")
-    r = subprocess.run(["git", "-C", repo, "show", f"HEAD:{path}"], capture_output=True, text=True, timeout=15)
+    r = subprocess.run(["git", "-C", repo, "show", f"{ref}:{path}"], capture_output=True, text=True, timeout=15)
     if r.returncode != 0:
-        raise FileNotFoundError(f"main에 커밋된 {path}가 없습니다 — 합친 뒤에 게시해 주세요")
-    sha = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%h", "HEAD", "--", path],
+        where = "main" if ref == "HEAD" else ref
+        raise FileNotFoundError(f"{where}에 {path}가 없습니다 — 합친(push한) 뒤에 게시해 주세요")
+    sha = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%h", ref, "--", path],
                          capture_output=True, text=True, timeout=15).stdout.strip()
     return r.stdout, sha
 
@@ -601,7 +610,7 @@ async def _sync_positional(client: Any, parent: str, old: list[dict[str, Any]], 
     return st
 
 
-def content_digest(repo: str, path: str, body: str) -> str:
+def content_digest(repo: str, path: str, body: str, ref: str = "HEAD") -> str:
     """게시 내용의 지문 — 본문 + 글이 가리키는 사진 파일 내용(11-06 — 사진만 다시 찍어 바꿨는데 본문이 같아 "바뀐 것 없음"으로
     건너뛰었다). 사진을 못 읽으면 그 경로만 넣는다(게시 때 그 사실이 따로 드러난다)."""
     h = hashlib.sha256(body.encode())
@@ -610,17 +619,17 @@ def content_digest(repo: str, path: str, body: str) -> str:
         if "_upload" in b:
             h.update(b"\0" + b["_upload"].encode())
             try:
-                h.update(hashlib.sha256(git_bytes(repo, b["_upload"])).digest())
+                h.update(hashlib.sha256(git_bytes(repo, b["_upload"], ref)).digest())
             except (OutOfScope, FileNotFoundError):
                 pass
     return h.hexdigest()
 
 
-def git_bytes(repo: str, path: str) -> bytes:
+def git_bytes(repo: str, path: str, ref: str = "HEAD") -> bytes:
     p = PurePosixPath(path)
     if p.is_absolute() or ".." in p.parts or p.suffix.lower() not in CTYPES or not str(p).startswith(("portfolio/", "docs/", "log/")):
         raise OutOfScope(f"그림은 저장소 안 portfolio/ · docs/ · log/의 PNG · JPG · GIF · WebM만 올립니다: {path}")
-    r = subprocess.run(["git", "-C", repo, "show", f"HEAD:{path}"], capture_output=True, timeout=15)
+    r = subprocess.run(["git", "-C", repo, "show", f"{ref}:{path}"], capture_output=True, timeout=15)
     if r.returncode != 0:
         raise FileNotFoundError(f"main에 커밋된 그림 {path}가 없습니다")
     return r.stdout
@@ -629,14 +638,15 @@ def git_bytes(repo: str, path: str) -> bytes:
 CTYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webm": "video/webm"}
 
 
-async def resolve_uploads(client: Any, repo: str, blocks: list[dict[str, Any]], limit: int | None = None) -> list[dict[str, Any]]:
+async def resolve_uploads(client: Any, repo: str, blocks: list[dict[str, Any]], limit: int | None = None,
+                          ref: str = "HEAD") -> list[dict[str, Any]]:
     """그림 자리(_upload)를 파일로 올려 그림 블록으로 — 게시할 때마다 올린다(그림이 바뀌었을 수 있다).
     형식은 확장자로(11-06 — GIF를 image/jpeg로 보내고 있었다), .webm은 동영상 블록. limit(워크스페이스 파일 한도)를 넘으면
     보내지 않고 거부한다 — Notion에서 처음 알면 그 글이 반쯤 올라간 채로 남는다(13, 무료 5MB)."""
     out = []
     for b in blocks:
         if "_upload" in b:
-            data = git_bytes(repo, b["_upload"])
+            data = git_bytes(repo, b["_upload"], ref)
             if limit and len(data) > limit:
                 raise OutOfScope(f"{b['_upload']}가 {len(data) / 1e6:.1f}MB로 Notion 파일 한도 {limit / 1e6:.1f}MB를 넘습니다 — "
                                  "줄여서(tools/screen.py --colors · --every · --clip) 다시 커밋해 주세요")
@@ -649,7 +659,7 @@ async def resolve_uploads(client: Any, repo: str, blocks: list[dict[str, Any]], 
             t = b["type"]
             kids = (b.get(t) or {}).get("children")
             if kids and t != "table":
-                b = {**b, t: {**b[t], "children": await resolve_uploads(client, repo, kids, limit)}}
+                b = {**b, t: {**b[t], "children": await resolve_uploads(client, repo, kids, limit, ref)}}
         out.append(b)
     return out
 
@@ -657,9 +667,26 @@ async def resolve_uploads(client: Any, repo: str, blocks: list[dict[str, Any]], 
 class Publisher:
     """doc_publish 기록 + 범위 확인 + 게시 · 다시 게시 · 내리기. DB는 store(engine)로, Notion은 client로."""
 
-    def __init__(self, engine: Any, client: Any, root: str, repo: str, project: str = "foreman", gh: str = GH) -> None:
+    def __init__(self, engine: Any, client: Any, root: str, repo: str, project: str = "foreman", gh: str = GH,
+                 ref: str = "HEAD", docs_page: str | None = None, portfolio_page: str | None = None,
+                 docs_mode: str = "off", quiet_min: float = 30) -> None:
+        """Notion 구조(11-09 사용자 결정): 「프로젝트」 > 프로젝트 페이지(root) > [기술문서](docs_page) · [포트폴리오](portfolio_page).
+        ref — 어느 커밋을 원본으로 보나. FOREMAN은 HEAD(이 저장소 main), 다른 프로젝트는 origin/main(push된 것 — Notion은 GitHub에
+        있는 것의 사본이다, 런슈즈 요청 3-1). docs_mode — off(docs/를 올리지 않는다) · manual · auto(push 뒤 quiet_min분 조용하면
+        바뀐 파일만 자동으로, bridge/docsync.py)."""
         self.e, self.c, self.root, self.repo, self.project, self.gh = engine, client, norm(root), repo, project, gh
+        self.ref, self.docs_mode, self.quiet_min = ref, docs_mode, quiet_min
+        self.docs_page = norm(docs_page) if docs_page else None
+        self.portfolio_page = norm(portfolio_page) if portfolio_page else None
         self.scope = Scope(client, root)
+
+    async def parent_for(self, path: str) -> str:
+        """글이 놓일 페이지 — 포트폴리오는 [포트폴리오](없으면 루트 바로 아래, 11-06 방식), docs/는 [기술문서], 그 밖은 묶음 페이지."""
+        if path.startswith("portfolio/"):
+            return self.portfolio_page or self.root
+        if path.startswith("docs/") and self.docs_page:
+            return self.docs_page
+        return await self._section(section_of(path))
 
     async def _row(self, path: str) -> dict[str, Any] | None:
         from sqlalchemy import text
@@ -697,13 +724,45 @@ class Publisher:
                          status="published", url=p.get("url"), error=None)
         return norm(p["id"])
 
-    async def publish(self, path: str, when: str = "") -> dict[str, Any]:
-        body, commit = git_show(self.repo, path)
-        digest = content_digest(self.repo, path, body)
+    async def _me(self) -> str | None:
+        """우리 통합(봇)의 사용자 id — 블록을 마지막으로 고친 쪽이 우리인지 본다. 못 읽으면 None(사람 수정 검사를 건너뛴다)."""
+        if not hasattr(self, "_me_id"):
+            try:
+                self._me_id = norm((await self.c._call("GET", "/users/me"))["id"])
+            except Exception:  # noqa: BLE001 — 가짜 클라이언트 · 권한 없음
+                self._me_id = None
+        return self._me_id
+
+    async def human_edits(self, pid: str, new: list[dict[str, Any]]) -> list[str]:
+        """Notion에서 사람이 고친(또는 더한) 블록 — 마지막으로 고친 쪽이 우리 봇이 아니고, 글이 새 원본의 어느 블록과도 다른 것.
+        11-09 사용자 결정: git이 원본이지만, 사람이 고친 것을 덮지 않고 알린다("git과 Notion이 조용히 갈라진다"를 막는다).
+        mermaid 코드는 뺀다 — 미리보기로만 바꿔도 마지막으로 고친 쪽이 사람이 된다. 돌려주는 값: 블록 글 앞부분들."""
+        me = await self._me()
+        if not me:
+            return []
+        sigs = {_sig(b) for b in new}
+        out = []
+        for b in await self.c.children(pid):
+            t = b.get("type")
+            le = b.get("last_edited_by") or {}
+            if t in ("child_page", "child_database") or not le.get("id") or norm(le["id"]) == me:
+                continue
+            if t == "code" and (b.get("code") or {}).get("language") == "mermaid":
+                continue
+            if _sig(b) not in sigs:
+                out.append(plain((b.get(t) or {}).get("rich_text") or [])[:60] or f"({t})")
+        return out
+
+    async def publish(self, path: str, when: str = "", force: bool = False, title: str | None = None) -> dict[str, Any]:
+        """force — Notion에서 사람이 고친 블록이 있어도 git 원본으로 덮는다([Notion 수정 버리고 덮기]). 아니면 HumanEdited.
+        title — 페이지 제목을 정해 준다(기술문서: "파일 이름 — README 표 설명", bridge/docsync.titles). 없으면 첫 H1 · 파일 이름."""
+        given = title
+        body, commit = git_show(self.repo, path, self.ref)
+        digest = content_digest(self.repo, path, body, self.ref)
         portfolio = path.startswith("portfolio/")      # 바깥 사람이 읽는 글 — 저장소 링크 없이, 맨 위 "사본" 안내 없이(11-06)
         ctx = Ctx(path, commit or "HEAD", self.gh, links=not portfolio)
         title, blocks = md_to_blocks(body, ctx)
-        title = title or PurePosixPath(path).stem
+        title = given or title or PurePosixPath(path).stem
         if portfolio:
             title = portfolio_title(path, title)
         else:
@@ -712,25 +771,28 @@ class Publisher:
         if row and row["status"] == "published" and row["notion_page_id"]:
             pid = row["notion_page_id"]
             if await self.scope.under_root(pid):
-                # 포트폴리오는 루트 바로 아래(11-06 — 「포트폴리오」 묶음을 없앴다). 예전 자리에 있으면 옮긴다(옮긴 순서대로 쌓인다)
-                if portfolio and norm(row["parent_page_id"] or "") != self.root:
-                    await self.c.move_page(pid, self.root)
-                    await self._save(path, parent_page_id=self.root)
+                # 정해진 자리([포트폴리오] · [기술문서])가 아니면 옮긴다(옮긴 순서대로 쌓인다)
+                want = await self.parent_for(path)
+                if (portfolio or path.startswith("docs/")) and norm(row["parent_page_id"] or "") != want:
+                    await self.c.move_page(pid, want)
+                    await self._save(path, parent_page_id=want)
                 if row["title"] != title:
                     await self.c.set_title(pid, title)
                     await self._save(path, title=title)
                 if row["content_hash"] == digest:
                     return {"path": path, "action": "unchanged", "page_id": pid, "url": row["url"], "commit": commit,
                             "title": title}
-                blocks = await resolve_uploads(self.c, self.repo, blocks, await self._upload_limit())
+                if not force and (edits := await self.human_edits(pid, blocks)):
+                    raise HumanEdited(path, edits, row["url"])
+                blocks = await resolve_uploads(self.c, self.repo, blocks, await self._upload_limit(), self.ref)
                 st = await sync_children(self.c, pid, blocks)    # 같은 페이지 · 같은 URL, 바뀐 블록만(mermaid 미리보기가 남는다)
                 await self.c.set_title(pid, title)
                 await self._save(path, kind="doc", title=title, commit_sha=commit, content_hash=digest, status="published", error=None)
                 return {"path": path, "action": "updated", "page_id": pid, "url": row["url"], "commit": commit, "sync": st}
             # Notion에서 지워졌거나 범위 밖으로 옮겨졌다 — 그 페이지는 두고 새로 만든다
-        blocks = await resolve_uploads(self.c, self.repo, blocks, await self._upload_limit())
-        parent = self.root if portfolio else await self._section(section_of(path))
-        await self.scope.require(parent, not_root=not portfolio)
+        blocks = await resolve_uploads(self.c, self.repo, blocks, await self._upload_limit(), self.ref)
+        parent = await self.parent_for(path)
+        await self.scope.require(parent, not_root=parent != self.root)
         p = await self.c.create_page(parent, title, [])
         pid = norm(p["id"])
         n = await append_tree(self.c, pid, blocks)
@@ -768,14 +830,23 @@ class Publisher:
             rows = (await c.execute(text(
                 "SELECT path, notion_page_id FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' "
                 "AND path LIKE :pre ORDER BY path"), {"p": self.project, "pre": "portfolio/%"})).all()
-        for _, pid in rows:
+        return await self.reorder([(r[0], r[1]) for r in rows], self.portfolio_page or self.root, force=True)
+
+    async def reorder(self, rows: list[tuple[str, str]], parent: str, force: bool = False) -> dict[str, Any]:
+        """rows(경로, 페이지) 순서대로 parent 아래에 다시 세운다 — 임시 묶음 「정렬 중」으로 옮겼다가 순서대로 되돌린다(페이지 · URL ·
+        블록 그대로). parent 아래 우리 페이지들의 지금 순서가 이미 같으면 옮기지 않는다(force면 늘). 사람이 만든 페이지는 건드리지 않는다."""
+        mine = [norm(pid) for _, pid in rows]
+        now = [norm(k["id"]) for k in await self.c.children(parent) if k.get("type") == "child_page" and norm(k["id"]) in set(mine)]
+        if not force and now == mine:
+            return {"action": "unchanged", "order": [r[0] for r in rows]}
+        for pid in mine:
             await self.scope.require(pid)
         tmp = await self._section("정렬 중")
-        for _, pid in rows:
+        for pid in mine:
             await self.c.move_page(pid, tmp)
-        for path, pid in rows:
-            await self.c.move_page(pid, self.root)
-            await self._save(path, parent_page_id=self.root)
+        for (path, _), pid in zip(rows, mine):
+            await self.c.move_page(pid, parent)
+            await self._save(path, parent_page_id=parent)
         await self.archive_section("정렬 중")
         return {"action": "reordered", "order": [r[0] for r in rows]}
 
@@ -810,8 +881,8 @@ class Publisher:
             changed = None
             if r and r["status"] == "published":
                 try:
-                    body, _ = git_show(self.repo, f)
-                    changed = content_digest(self.repo, f, body) != r["content_hash"]
+                    body, _ = git_show(self.repo, f, self.ref)
+                    changed = content_digest(self.repo, f, body, self.ref) != r["content_hash"]
                 except (FileNotFoundError, OutOfScope):
                     changed = None
             out.append({"path": f, "title": r["title"] if r else None, "status": r["status"] if r else "new",

@@ -223,6 +223,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (a.status === 'success') return { k: 'argocd', st: 'success', end: Date.parse(a.ended_at || ch.at) };
     if (j.status === 'running') return { k: pushy ? 'harbor' : 'jenkins', st: 'running', active: true };
     if (j.status === 'failed') return { k: pushy ? 'harbor' : 'jenkins', st: 'failed', end: Date.parse(j.ended_at || ch.at) };
+    // 문서만 바뀐 빌드(11-09, foremanNotify "skipped") — 이미지 · 배포가 없는 게 정상이다. 빌드에서 끝난다
+    if (j.status === 'success' && j.skipped) return { k: 'jenkins', st: 'success', end: Date.parse(j.ended_at || ch.at) };
     if (j.status === 'success') {                          // 이미지가 올라갔고 배포를 기다린다 — 30분까지는 진행 중으로 본다
       const end = Date.parse(j.ended_at || ch.at);
       return Date.now() - end < FAIL_STAY_MS ? { k: 'harbor', st: 'running', active: true } : { k: 'harbor', st: 'success', end };
@@ -414,7 +416,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         const stages = (chain && chain.stages) || {};
         for (const kind of ['jenkins', 'harbor', 'argocd']) {
           let status = stages[kind] && stages[kind].status;
-          if (kind === 'harbor' && !status && stages.jenkins) status = stages.jenkins.status === 'failed' && stages.jenkins.step !== '빌드·push' ? 'success' : stages.jenkins.status;
+          if (kind === 'harbor' && !status && stages.jenkins && stages.jenkins.skipped) status = 'none';   // 문서만 — 이미지 없음(정상)
+          else if (kind === 'harbor' && !status && stages.jenkins) status = stages.jenkins.status === 'failed' && stages.jenkins.step !== '빌드·push' ? 'success' : stages.jenkins.status;
           room['st_' + kind] = status || 'none';
         }
         if (plan) {

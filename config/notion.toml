@@ -1,7 +1,44 @@
-# Notion 게시(12c, 11-06) — bridge/notion.py. 원본은 git 마크다운, Notion은 게시판.
-# 토큰은 저장소 맨 위 .env.notion의 NOTION_TOKEN(내부 통합, 권한 읽기 · 업데이트 · 삽입). 통합은 아래 루트 페이지에만 연결한다 —
-# 그 밖의 페이지는 Notion 권한이 막는다. 바꾸면 브리지를 다시 띄운다.
+# Notion 게시(12c, 11-06) — bridge/notion.py · bridge/docsync.py. 원본은 git 마크다운, Notion은 게시판(사본).
+# 토큰은 저장소 맨 위 .env.notion의 NOTION_TOKEN(내부 통합, 권한 읽기 · 업데이트 · 삽입). 통합은 「프로젝트」 페이지에 연결돼 있다(11-09) —
+# 게시기는 프로젝트마다 root 아래만 고친다(Scope). 바꾸면 브리지를 다시 띄운다.
+#
+# 구조(11-09 사용자 결정):
+#   프로젝트
+#   ├ <프로젝트 페이지 = root>
+#   │   ├ [기술문서]   = docs_page       docs/*.md(바로 아래만, docs/archive/ 빼고). 차례는 docs/README.md 표 순서
+#   │   └ [포트폴리오] = portfolio_page  portfolio/*.md(번호순)
+#   └ 인프라(게시기가 다루지 않는다 — 사람이 쓴 문서)
+#
+# 칸: [<프로젝트 이름 = DB project.name>]
+#   root · docs_page · portfolio_page  Notion 페이지 id(대시 없이)
+#   github     저장소 링크(사본 머리말 · 상대 링크)
+#   ref        원본 커밋. FOREMAN은 HEAD(이 저장소 main), 다른 프로젝트는 origin/main(push된 것 — Notion은 GitHub의 사본)
+#   docs       off(기술문서를 다루지 않음) · manual(뒤처짐만 보이고 [지금 맞추기]로) · auto(docs 커밋 뒤 quiet_min분 조용하면 자동)
+#   quiet_min  auto의 기다림(분)
+# 사람이 Notion에서 고친 블록이 있으면 덮지 않고 알린다(11-09 사용자 결정 — git이 원본, 조용히 갈라지지 않게).
 
 [foreman]
-root = "40f3218bb52480ec8033dd26aedd17d5"   # 「프로젝트」 > "FOREMAN - AI 에이전트 관제실"(사용자가 만듦, 11-06)
+root = "4133218bb52481309e43c865c460eda2"             # 「프로젝트」 > "FOREMAN - AI 에이전트 관제실"(11-09 만듦)
+docs_page = "40f3218bb52480ec8033dd26aedd17d5"        # [기술문서](11-06 사용자가 만든 옛 루트 — 이름만 바꿈)
+portfolio_page = "4133218bb524816b832acf6a07f583c7"   # [포트폴리오] — 포트폴리오 10편을 여기로 옮김(11-09)
 github = "https://github.com/Gabriel-Joo/foreman"
+ref = "HEAD"
+docs = "off"                                         # FOREMAN docs는 아직 올리지 않는다(요청 없음)
+
+[runshoes]
+root = "4133218bb524818e8a7df47d63345270"             # "RUNSHOES-러닝화 스펙·리뷰 아카이브"(11-09 만듦)
+docs_page = "3e33218bb52480ffa796c8a04d324a06"        # [기술문서](사용자가 만든 페이지 — 옮기고 이름만 바꿈)
+portfolio_page = "4133218bb52481dc803ce2938c011be0"   # [포트폴리오](11-09 만듦 — 런슈즈 포트폴리오는 아직 쓰지 않는다)
+github = "https://github.com/Gabriel-Joo/runshoes"
+ref = "origin/main"
+docs = "auto"                                        # 런슈즈 요청 3절 — 기술 문서는 자동(docs는 git에서 이미 사람이 합친 원본)
+quiet_min = 30
+
+[petmint-rag-chatbot]
+root = "4133218bb52481e9a348d79355fea5cd"             # "펫퍼민트 반려동물 보험약관 안내 챗봇"(11-09 만듦)
+docs_page = "3ea3218bb5248091aa0bc1eb58ae9ccb"        # [기술문서](사람이 옮겨 둔 사본 01 · 02 등이 이미 있다)
+portfolio_page = "4133218bb5248142883af1f21788f6ca"   # [포트폴리오](11-09 만듦)
+github = "https://github.com/Gabriel-Joo/petmint-rag-chatbot"
+ref = "origin/main"
+docs = "off"   # 펫퍼민트 docs/README에 노션 대응(01 · 02 상위 페이지, 옮기지 않는 문서 목록)이 따로 있다 — 그 세션이 정한 뒤 켠다
+quiet_min = 30
