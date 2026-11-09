@@ -6,7 +6,7 @@ import { resolveAction, infraAction, groupSubagents, tokenRate, viewState } from
 import { loadSprites } from './sprites.js';
 import { createSidePanel } from './opanel.js';
 import { mountNewSession } from './newsession.js';
-import { showTip, hideTip, themeTips, attachDomTips, textTip } from './tip.js';
+import { showTip, hideTip, themeTips, attachDomTips, textTip, softEsc, tipAudit as tipAuditOf } from './tip.js';
 import { buildGrid, findPath, footprint, RES } from './walk.js';
 import { uiScale } from './uiscale.js';
 import { wrapWords } from './wrap.js';
@@ -123,27 +123,40 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     usageChip();
   }
   let usageTipRows = { lines: [], why: '' };
-  // 사용 크레딧(추가 사용) 칩(11-09 사용자) — FOREMAN이 읽을 길이 없어 사람이 config/usage.toml [credits]에 넣은 값.
-  // 막힘: 한도에 닿으면 넘쳐 쓸 돈이 없다(월 한도를 다 씀 · 잔액 0에 자동 충전 꺼짐) → 100%가 곧 멈춤. 값을 본 달이 지나면 "갱신 필요"
-  function creditChip(c) {
+  // 추가 사용(크레딧) 칩(11-09 사용자) — 판정은 CC가 한도에 닿을 때 남긴 글(서버 credit_signal): 막힘 · 이어 씀 · 모름.
+  // 사람이 넣은 값(config/usage.toml [credits])은 넣은 지 3일 안일 때만 호버에 금액으로 — 지나면 숫자를 감추고 "확인 필요"
+  function creditChip(cv) {
     const el = document.getElementById('oCredit');
     if (!el) return;
-    el.hidden = !c;
-    if (!c) return;
+    el.hidden = !cv;
+    if (!cv) return;
+    const sig = cv.signal || {}, m = cv.manual;
     const usd = (v) => `US$${Number(v).toFixed(2).replace(/\.00$/, '')}`;
-    const rows = [`크레딧 ${usd(c.balance_usd)}`, c.monthly_cap_usd != null ? `월간 한도 ${usd(c.monthly_cap_usd)} 중 ${usd(c.monthly_used_usd)} 사용` : '월간 한도 없음',
-      `자동 충전 ${c.auto_reload ? '켜짐' : '꺼짐'}`, `${c.as_of || '날짜 없음'}에 직접 넣은 값`];
-    const where = ' 값은 claude.ai 설정 > 사용량에서 보고 config/usage.toml [credits]에 넣습니다(충전 · 한도를 바꿀 때). CC의 /usage에는 잔액이 나오지 않습니다.';
-    if (c.stale) {
-      el.className = 'ghost ousage warn'; el.textContent = '크레딧 갱신 필요';
-      el.dataset.tip = `크레딧 갱신 필요 — 넣은 값이 지난달 것이라 지금 상태를 알 수 없습니다.${where}\n${rows.join('\n')}`;
-    } else if (c.blocked) {
-      el.className = 'ghost ousage bad'; el.textContent = '⛔ 추가 사용 막힘';
-      el.dataset.tip = `추가 사용 막힘 — 5시간 · 주간 한도에 닿으면 리셋까지 세션이 멈춥니다. 넘쳐 쓸 크레딧이 없습니다.${where}\n${rows.join('\n')}`;
+    const when = (iso) => {
+      const d = new Date(iso), now = new Date(), hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      return d.toDateString() === now.toDateString() ? `오늘 ${hm}` : `${d.getMonth() + 1}월 ${d.getDate()}일 ${hm}`;
+    };
+    const money = m && cv.manual_fresh
+      ? [`크레딧 ${usd(m.balance_usd)} · 월간 한도 ${m.monthly_cap_usd != null ? usd(m.monthly_cap_usd) : '없음'} 중 ${usd(m.monthly_used_usd)} 사용`,
+        `자동 충전 ${m.auto_reload ? '켜짐' : '꺼짐'} — ${m.as_of} 직접 넣은 값(3일 지나면 감춤)`]
+      : [m ? `직접 넣은 금액은 ${m.as_of || '날짜 없음'} 값이라 감췄습니다 — 설정 > 사용량에서 보고 고치면 3일 보입니다` : '금액은 FOREMAN이 읽을 수 없습니다(설정 > 사용량에만 있음)'];
+    const seen = sig.at ? [`근거: ${when(sig.at)} CC가 남긴 글 — ${sig.text || ''}`] : [];
+    let cls = 'ghost ousage', label, tip;
+    if (sig.state === 'blocked') {
+      cls += ' bad'; label = `⛔ 추가 사용 막힘 · ${when(sig.at)}`;
+      tip = `추가 사용 막힘 — ${sig.why === 'spend' ? '월 지출 한도에 닿아 한도를 넘겨 이어 쓰지 못했습니다.' : '한도에 닿은 뒤 리셋까지 이어 쓴 응답이 없었습니다.'} 5시간 · 주간 한도에 닿으면 리셋까지 세션이 멈춥니다. 한도를 올렸다면 다음에 한도에 닿을 때 다시 판정합니다.`;
+    } else if (sig.state === 'flowing') {
+      cls += ' warn'; label = `추가 사용으로 이어 씀 · ${when(sig.since)}`;
+      tip = '추가 사용으로 이어 씀 — 한도에 닿은 뒤에도 응답이 이어졌습니다. 크레딧이 나가고 있을 수 있습니다.';
+    } else if (cv.blocked) {
+      cls += ' bad'; label = '⛔ 추가 사용 막힘(넣은 값)';
+      tip = '추가 사용 막힘 — 이번 달 한도에 닿은 적이 없어 직접 넣은 값으로 판정했습니다. 5시간 · 주간 한도에 닿으면 리셋까지 세션이 멈춥니다.';
     } else {
-      el.className = 'ghost ousage'; el.textContent = `추가 사용 ${usd(c.available_usd)} 남음`;
-      el.dataset.tip = `추가 사용 — 한도에 닿은 뒤 크레딧으로 이어 쓸 수 있는 돈입니다.${where}\n${rows.join('\n')}`;
+      label = '추가 사용 확인 필요';
+      tip = '추가 사용 확인 필요 — 이번 달 한도에 닿은 적이 없어 크레딧으로 이어 쓸 수 있는지 아직 모릅니다. 처음 한도에 닿을 때 FOREMAN이 판정합니다.';
     }
+    el.className = cls; el.textContent = label;
+    el.dataset.tip = [tip, ...seen, ...money].join('\n');
   }
   const usagePct = (l) => (l.est_pct ?? l.measured_pct);
   const usageMax = () => Math.max(0, ...((usage && usage.limits) || []).map((l) => usagePct(l) ?? 0));
@@ -2323,6 +2336,17 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     });
     return { n: bs.length, lines: bs.map((b) => b.lines.length), board: bn.length, problems: out };
   }
+  // 호버 잘림 점검(11-09 사용자) — 지금 화면의 모든 호버 글: 버튼 · 패널(data-tip · title) · 캔버스 칸(HITS) · 캐릭터
+  function tipAudit() {
+    const items = [];
+    for (const n of document.querySelectorAll('[data-tip], [title]')) {
+      const t = n.dataset.tip || n.getAttribute('title');
+      if (t) items.push({ name: (n.id || n.textContent || '').trim().slice(0, 30) || n.tagName, html: textTip(t) });
+    }
+    for (const h of HITS) if (h.tip) items.push({ name: `칸 ${Math.round(h.x)},${Math.round(h.y)}`, html: h.tip });
+    for (const a of actors.values()) items.push({ name: `캐릭터 ${a.name || a.key}`, html: actorTip(a) });
+    return { n: items.length, problems: tipAuditOf(items) };
+  }
   // 감독실 — 현황판 위 현장 이름만(11-09 카드는 [전체]로 — 감독실도 그 방만 보인다)
   // 11-09 사용자: ❗가 붙으면 이름이 밀려 잘렸다 — 바탕 상자는 이름 폭만 쟀는데 글은 "이름 ❗"를 가운데에 그려 이름이 왼쪽 상자 밖으로
   // 나갔고, 1024에서는 옆 칸 이름과 겹쳤다. 이제 이름은 표시와 상관없이 늘 칸 가운데 — 칸 폭에 들어갈 때까지 글씨를 줄이고(12px까지),
@@ -2666,7 +2690,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     };
     if (a.kind === 'session' && a.s) {
       const s = a.s;
-      const now = s.state === 'ACTIVE' ? (s.activity ? `${esc(s.activity.tool)} ${esc(short(s.activity.target || '', 70))}` : '생각 중') : '';
+      const now = s.state === 'ACTIVE' ? (s.activity ? `${esc(s.activity.tool)} ${softEsc(short(s.activity.target || '', 70))}` : '생각 중') : '';
       const vs = viewState(s), bg = s.background || [];
       return `<div class="tip-h">${esc(a.name)}</div><div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', WAITING: '기다리는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[vs] || vs)}${
         a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
@@ -2756,7 +2780,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
   return { go, theme, openSession, panel, actors, newSession: (p) => newSession.open(p), foremanName: FM_NAME,
-           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(),
+           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(),
     // 시연 사진(13) — 이름표 자리(캔버스 기준 화면 좌표)와 캐릭터 발밑 화면 좌표. 툴팁을 띄워 찍을 때 마우스를 그 자리로 보낸다
     hits: () => HITS.map((h) => ({ x: h.x, y: h.y, w: h.w, h: h.h, zone: h.zone || null })),
     actorScreen: (key) => { const a = actors.get(key); return a ? toScreen(a.x * T, a.y * T) : null; }, layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,

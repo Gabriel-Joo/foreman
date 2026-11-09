@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import text
 
 from bridge.api.auth import require_api_token
-from bridge.usage import UsageConfig, breakdown, credit_status, limit_status, load_config
+from bridge.usage import UsageConfig, breakdown, credit_signal, credit_status, credit_view, limit_status, load_config
 
 router = APIRouter(prefix="/api/usage", dependencies=[Depends(require_api_token)])
 _cache: dict[str, Any] = {"at": 0.0, "key": None, "data": None}
@@ -101,8 +101,9 @@ async def brief(request: Request) -> dict[str, Any]:
                                              "eta_before_reset")} for x in limits],
                "hot": [{"session_id": s["key"], "usd_h": round(s["usd"] * 2, 2)} for s in hot["by_session"]
                        if isinstance(s["key"], int) and s["usd"] > 0][:3],
-               # 11-09 사람이 넣은 크레딧 값(config/usage.toml [credits]) — 추가 사용이 막혔나 · 갱신이 필요한가
-               "credits": credit_status(cfg.credits, now.replace(tzinfo=UTC).astimezone(cfg.zone).date())})
+               # 11-09 추가 사용(크레딧) — CC가 한도에 닿을 때 남긴 글이 먼저(credit_signal), 사람이 넣은 값은 3일 안일 때만 참고
+               "credits": credit_view(await credit_signal(engine, cfg, now),
+                                      credit_status(cfg.credits, now.replace(tzinfo=UTC).astimezone(cfg.zone).date()))})
     _brief.update(at=time.monotonic(), data=data)
     return data
 

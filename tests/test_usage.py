@@ -253,21 +253,83 @@ def test_alerts_thresholds_eta_once_and_after_restart():
 
 
 def test_credit_status():
-    """11-09 사람이 넣은 크레딧 값 — 크레딧 0 · 월 한도 초과 · 자동 충전 꺼짐(지금 값)이면 막힘, 달이 지나면 갱신 필요."""
+    """11-09 사람이 넣은 크레딧 값 — 크레딧 0 · 월 한도 초과 · 자동 충전 꺼짐(지금 값)이면 막힘. 넣은 지 3일이 지나거나 달이 바뀌면
+    숫자를 믿지 않는다(stale — 화면은 숫자를 감추고 '확인 필요')."""
     from datetime import date
 
-    from bridge.usage import credit_status
+    from bridge.usage import credit_status, credit_view
     now_c = {"balance_usd": 0, "monthly_cap_usd": 50, "monthly_used_usd": 51.3, "auto_reload": False, "as_of": "2026-11-09"}
-    s = credit_status(now_c, date(2026, 11, 20))
+    s = credit_status(now_c, date(2026, 11, 11))
     assert s["blocked"] and not s["stale"] and s["room_usd"] == 0
-    s = credit_status(now_c, date(2026, 12, 1))                       # 달이 바뀜 — 그달 사용액이 아니다
+    s = credit_status(now_c, date(2026, 11, 12))                      # 3일 — 사람은 날짜를 안 본다
     assert s["stale"] and not s["blocked"]
+    assert credit_status(now_c, date(2026, 12, 1))["stale"]           # 달이 바뀜
     ok = {**now_c, "balance_usd": 20, "monthly_used_usd": 10}
-    s = credit_status(ok, date(2026, 11, 20))
+    s = credit_status(ok, date(2026, 11, 10))
     assert not s["blocked"] and s["available_usd"] == 20               # 잔액 20, 한도 여유 40 → 20
-    assert credit_status({**ok, "auto_reload": True}, date(2026, 11, 20))["available_usd"] == 40
+    assert credit_status({**ok, "auto_reload": True}, date(2026, 11, 10))["available_usd"] == 40
     assert credit_status(None, date(2026, 11, 20)) is None
     assert CFG.credits and CFG.credits["as_of"]                        # config/usage.toml에 칸이 있다
+    # 판정은 CC 한도 글이 먼저 — 넣은 값은 근거가 없을 때만(그것도 3일 안)
+    fresh = credit_status(now_c, date(2026, 11, 10))
+    assert credit_view({"state": "flowing"}, fresh)["blocked"] is False
+    assert credit_view({"state": "blocked"}, None)["blocked"] is True
+    assert credit_view({"state": "unknown"}, fresh)["blocked"] is True
+    assert credit_view({"state": "unknown"}, credit_status(now_c, date(2026, 11, 20)))["blocked"] is False
+
+
+def test_credit_signal_from_cc_limit_messages():
+    """11-09 실측 모양 — 13:10 5시간 한도 → 13:13부터 응답이 이어짐(추가 사용) → 13:32 월 지출 한도(막힘). 2001-02월 시각 · 이 시험만의 세션"""
+    from bridge.usage import credit_signal
+    cfg = UsageConfig(poll_s=600, fail_alert=3, tz="Asia/Seoul", prices=CFG.prices, limits=[])
+    t0 = datetime(2001, 2, 5, 4, 10)                                   # UTC — KST 13:10
+
+    async def go():
+        eng = make_engine(Settings(mysql_database="foreman_test"))
+        try:
+            async with eng.begin() as c:
+                ch = (await c.execute(text("SELECT id FROM `character` LIMIT 1"))).scalar()
+                sid = (await c.execute(text(
+                    "INSERT INTO character_session (character_id, type, role, cc_session_id, title, wake_reason) "
+                    "VALUES (:c, 'agent', 'coder', :cc, '한도 시험', 'user')"), {"c": ch, "cc": str(uuid.uuid4())})).lastrowid
+
+            async def err(at, msg):
+                async with eng.begin() as c:
+                    await c.execute(text("INSERT INTO event (session_id, character_id, source, ts, type, status, payload) VALUES "
+                                         "(:s, :c, 'transcript', :t, 'error', 'error', :p)"),
+                                    {"s": sid, "c": ch, "t": at, "p": f'{{"text": "{msg}", "error": "rate_limit"}}'})
+
+            async def reply(at, model="claude-opus-5-5"):
+                async with eng.begin() as c:
+                    await c.execute(text("INSERT INTO message (id, model, token_input, token_output, created_at) VALUES "
+                                         "(:i, :m, 1, 1, :t)"), {"i": "zzmsg-" + uuid.uuid4().hex, "m": model, "t": at})
+
+            assert (await credit_signal(eng, cfg, t0 - timedelta(minutes=1)))["state"] == "unknown"     # 이번 달 근거 없음
+            await err(t0, "You've hit your 5-hour limit · resets 2:10pm (Asia/Seoul)")
+            await reply(t0, "<synthetic>")
+            s = await credit_signal(eng, cfg, t0 + timedelta(minutes=2))
+            assert s["state"] == "blocked" and s["why"] == "limit"                              # 아직 이어 쓴 응답 없음
+            await reply(t0 + timedelta(minutes=3))
+            s = await credit_signal(eng, cfg, t0 + timedelta(minutes=5))
+            assert s["state"] == "flowing" and s["since"] == t0 + timedelta(minutes=3)          # 한도 뒤에도 응답 — 추가 사용
+            await err(t0 + timedelta(minutes=22), "You've hit your monthly spend limit · raise it at https://claude.ai/settings/usage"
+                                                  "?from=cc_cli_limit_message · your 5-hour limit resets 2:10pm (Asia/Seoul)")
+            async with eng.begin() as c:                                   # 같은 때 StopFailure 훅(글 없음)도 error로 — 이것을 고르면 안 된다
+                await c.execute(text("INSERT INTO event (session_id, character_id, source, ts, type, status, payload) VALUES "
+                                     "(:s, :c, 'hook', :t, 'error', 'error', :p)"),
+                                {"s": sid, "c": ch, "t": t0 + timedelta(minutes=22, seconds=1),
+                                 "p": '{"error": "rate_limit", "hook_event_name": "StopFailure"}'})
+            await reply(t0 + timedelta(minutes=61))                          # 리셋(14:10 KST) 뒤 응답 — 추가 사용이 아니다
+            s = await credit_signal(eng, cfg, t0 + timedelta(minutes=70))
+            assert s["state"] == "blocked" and s["why"] == "spend"
+            assert (await credit_signal(eng, cfg, datetime(2001, 3, 2)))["state"] == "unknown"     # 달이 바뀌면 다시 모름
+        finally:
+            async with eng.begin() as c:
+                await c.execute(text("DELETE FROM message WHERE id LIKE 'zzmsg-%'"))
+                await c.execute(text("DELETE FROM event WHERE session_id = :s"), {"s": sid})
+                await c.execute(text("DELETE FROM character_session WHERE id = :s"), {"s": sid})
+            await eng.dispose()
+    asyncio.run(go())
 
 
 def test_alerts_90_when_credits_blocked():
