@@ -313,6 +313,17 @@ def test_adopt_notion_shape_heading_level():
     assert st["updated"] == 0 and st["replaced"] == 0 and f.blocks["root"][0]["type"] == "heading_3"
 
 
+def test_shape_compare_ignores_form_but_catches_text():
+    """11-09 펫퍼민트 "shape" — 꾸밈 · 체크박스 · 블록 나눔 · 공백 · 제목 단계 · 하위 페이지 목록은 같게, 글이 바뀌면 다르게."""
+    _, git = nt.md_to_blocks("## 0. 목표\n\n- [ ] 할 일 **하나**\n\n> 첫 줄\n>\n> 둘째 줄\n\n1. 모델 준비\n")
+    notion = [("heading_3", "0. 목표"), ("to_do", "할 일 하나"), ("quote", "첫 줄"), ("quote", "둘째 줄"), ("paragraph", ""),
+              ("child_page", "00. 모델 준비")]
+    subs = {"00. 모델 준비"}
+    assert nt.shape_text(notion, subs) == nt.shape_text(nt.flat_md(git), subs)
+    notion2 = [*notion[:1], ("to_do", "할 일 둘"), *notion[2:]]          # 사람이 글을 고쳤다 — 잡힌다
+    assert nt.shape_text(notion2, subs) != nt.shape_text(nt.flat_md(git), subs)
+
+
 def test_sync_insert_near_top_keeps_later_blocks():
     """11-06 — 글 앞쪽에 사진을 끼우자 뒤 블록이 모두 밀려 새 블록이 되고 mermaid 미리보기가 풀렸다. 내용으로 짝지으면 그대로다."""
     f = FakeNotion(see_all=True)
