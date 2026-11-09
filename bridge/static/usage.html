@@ -12,11 +12,14 @@
           --code:#202125; --ok:#4ade80; --bad:#f87171; --warn:#f0b445; --act:#5aa2ff;
           --k-cache_read:#6f9cf5; --k-cache_write:#f0b445; --k-output:#e070b8; --k-input:#77777d; } }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, -apple-system, "Noto Sans KR", sans-serif; }
+  /* 11-09 사용자 — 글씨가 너무 작다(본문 14 · 설명 12 · 표 13px에 배율도 머리에만 걸렸다). 메인 옆 패널과 같게 본문 16px,
+     내용(main)도 글씨 배율(--ui-zoom, [가−][가+])을 받는다 */
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, -apple-system, "Noto Sans KR", sans-serif;
+         word-break:keep-all; overflow-wrap:anywhere; }   /* 한글은 낱말 단위로 줄바꿈("입니 / 다"로 끊기지 않게) */
   a { color:var(--act); }
   button, select { font:inherit; padding:4px 10px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
   button:disabled { opacity:.5; cursor:default; }
-  .muted { color:var(--muted); } .small { font-size:12px; } .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  .muted { color:var(--muted); } .small { font-size:14px; } .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
   /* 머리 — 메인 화면 머리말(office.html .otop)과 같은 크기 · 글씨 배율(--ui-zoom, js/uiscale.js — 메인의 [가−][가+])를 따른다(11-09 사용자) */
   .top { position:sticky; top:0; z-index:5; display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:6px 14px;
          background:var(--bg); border-bottom:1px solid var(--line); font-size:17px; zoom:var(--ui-zoom, 1.2); }
@@ -24,35 +27,39 @@
   .brand { font-weight:700; letter-spacing:.04em; font-size:19px; }
   .read { margin-left:auto; font-size:15px; padding:2px 9px; border-radius:14px; border:1px solid var(--line); }
   .read.bad { border-color:var(--bad); }
+  .ofont { display:inline-flex; align-items:center; gap:4px; }
+  .top .ofont button { padding:1px 8px; font-weight:700; }
+  .ofont button:disabled { opacity:.4; cursor:default; }
+  main { zoom:var(--ui-zoom, 1.2); }
   /* 11-09 사용자 — 가운데 1180px만 쓰고 양옆이 비었다. 창 폭을 쓰되 아주 넓은 화면에서만 멈춘다 */
   main { max-width:2400px; margin:0 auto; padding:12px 24px 40px; }
   .band { margin:10px 0; padding:8px 12px; border:1px solid var(--bad); border-left:5px solid var(--bad); border-radius:8px; }
   .band.warn { border-color:var(--warn); }
-  h2 { font-size:15px; margin:22px 0 8px; }
+  h2 { font-size:18px; margin:22px 0 8px; }
   .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(270px, 1fr)); gap:12px; }
   .card { border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:var(--card); }
-  .card .big { font-size:30px; font-weight:700; line-height:1.1; }
+  .card .big { font-size:34px; font-weight:700; line-height:1.1; }
   .bar { position:relative; height:10px; border-radius:5px; background:var(--code); overflow:hidden; margin:8px 0; }
   .bar i { position:absolute; left:0; top:0; bottom:0; border-radius:5px; }
   .bar .m { background:var(--act); } .bar .e { background:color-mix(in srgb, var(--act) 35%, transparent); }
   .bar.w80 .m { background:var(--warn); } .bar.w95 .m { background:var(--bad); }
-  .kv { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:13px; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:3px 12px; font-size:15px; }
   .kv dt { color:var(--muted); } .kv dd { margin:0; }
   .two { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .stack { display:flex; height:22px; border-radius:6px; overflow:hidden; margin:6px 0; background:var(--code); }
   .stack i { display:block; height:100%; }
-  .legend { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; }
+  .legend { display:flex; gap:12px; flex-wrap:wrap; font-size:14px; }
   .legend b { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
   .why { margin:8px 0 0; padding:8px 12px; border-radius:8px; background:var(--code); }
   .tbl { overflow-x:auto; border:1px solid var(--line); border-radius:8px; }
-  table { border-collapse:collapse; width:100%; font-size:13px; }
+  table { border-collapse:collapse; width:100%; font-size:15px; }
   th, td { padding:5px 9px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--line); }
   th { color:var(--muted); font-weight:600; background:var(--card); position:sticky; top:0; }
   td.l, th.l { text-align:left; } td.t { max-width:280px; overflow:hidden; text-overflow:ellipsis; }
   tr:last-child td { border-bottom:0; }
   .chart { border:1px solid var(--line); border-radius:8px; padding:8px; overflow-x:auto; }
   .chart svg { display:block; }
-  .chart text { fill:var(--muted); font-size:11px; }
+  .chart text { fill:var(--muted); font-size:13px; }
   #tokDlg { display:none; position:fixed; inset:0; background:#0008; align-items:center; justify-content:center; z-index:20; }
   #tokDlg.on { display:flex; } #tokDlg form { background:var(--bg); padding:16px; border-radius:10px; width:min(420px, 92vw); }
   #tokDlg input { width:100%; font:inherit; padding:7px 9px; margin:8px 0; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
@@ -66,6 +73,7 @@
   <select id="period" title="기간 — 아래 표 · 그래프의 기간을 고릅니다.">
     <option value="">이번 주(7일)</option><option value="24">최근 24시간</option><option value="72">최근 3일</option><option value="336">최근 2주</option>
   </select>
+  <span class="ofont" role="group" aria-label="글씨 크기"><button id="oFontDn" title="글씨 작게 — 이 화면과 메인 화면의 글씨를 한 단계 줄입니다.">가−</button><span id="oFontV" class="muted"></span><button id="oFontUp" title="글씨 크게 — 이 화면과 메인 화면의 글씨를 한 단계 키웁니다.">가+</button></span>
   <button id="pollBtn" title="지금 읽기 — CC의 /usage를 지금 한 번 읽습니다. 모델을 부르지 않아 비용이 없습니다.">지금 읽기</button>
   <span id="read" class="read">불러오는 중</span>
 </header>
@@ -202,7 +210,9 @@ function where(d) {
 }
 
 let lastChart = null, chartTimer = 0;
-addEventListener('resize', () => { clearTimeout(chartTimer); chartTimer = setTimeout(() => lastChart && chart(lastChart), 150); });
+const redraw = () => { clearTimeout(chartTimer); chartTimer = setTimeout(() => lastChart && chart(lastChart), 150); };
+addEventListener('resize', redraw);
+addEventListener('foreman-uiscale', redraw);   // [가−][가+] — 배율이 바뀌면 칸 폭(배율 안 px)이 달라진다
 function chart(d) {
   const hours = d.by_hour || [];
   if (!hours.length) { $('chart').innerHTML = '<div class="small muted">이 기간에 쓴 것이 없습니다.</div>'; return; }
