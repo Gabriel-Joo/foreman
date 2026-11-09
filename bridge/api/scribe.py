@@ -23,6 +23,39 @@ class StartIn(BaseModel):
     topic: str | None = Field(default=None, max_length=40)     # 포트폴리오 쓰기의 주제(config/portfolio.toml slug)
 
 
+class InboxIn(BaseModel):
+    project: str = Field(min_length=1, max_length=64)
+    body: str = Field(min_length=1, max_length=sr.INBOX_MAX)
+
+
+def _iso(v: Any) -> Any:
+    return v.isoformat() + "Z" if hasattr(v, "isoformat") else v
+
+
+@router.post("/inbox")
+async def inbox_add(body: InboxIn, request: Request) -> JSONResponse:
+    """할 일 받는 함(11-09) — 머리줄 [＋ 할 일]. 세션을 거치지 않고 그대로 적는다. 정리는 서기의 「나중에 할 일 정리」."""
+    try:
+        iid = await sr.inbox_add(request.app.state.store.engine, body.project, body.body)
+    except Refused as e:
+        return JSONResponse({"refused": str(e)}, status_code=409)
+    _cache["data"] = None
+    return JSONResponse({"id": iid}, status_code=201)
+
+
+@router.get("/inbox")
+async def inbox_list(request: Request, project: str | None = None, limit: int = 50) -> dict[str, Any]:
+    rows = await sr.inbox_list(request.app.state.store.engine, project, max(1, min(limit, 200)))
+    return {"items": [{**{k: _iso(v) for k, v in r.items()}, "label": sr.INBOX_LABEL.get(r["state"], r["state"])} for r in rows]}
+
+
+@router.post("/inbox/{iid}/drop")
+async def inbox_drop(iid: int, request: Request) -> dict[str, Any]:
+    ok = await sr.inbox_drop(request.app.state.store.engine, iid)
+    _cache["data"] = None
+    return {"ok": ok}
+
+
 @router.get("/todo")
 async def scribe_todo(request: Request) -> dict[str, Any]:
     """프로젝트마다 할 일 — 화면이 1분마다 부른다. git · 파일을 보므로 30초 동안은 같은 답을 준다."""
