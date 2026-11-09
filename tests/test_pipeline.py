@@ -169,7 +169,7 @@ class FakeNotifier:
         self.sent = []
         self.rules = SimpleNamespace(for_project=lambda n: SimpleNamespace(prefix="[런슈즈]") if n == "runshoes" else None)
 
-    def send_direct(self, project, kind, session_id, msg):
+    def send_direct(self, project, kind, session_id, msg, rule=None):
         self.sent.append((project, kind, msg))
 
 
@@ -410,6 +410,19 @@ async def test_argocd_sync_waiting_attaches_to_undeployed_build(env):
         snap = await pm.snapshot()
         chain = next(x for x in snap["projects"] if x["project"] == "runshoes")["chains"][0]
         assert chain["head"] == new and chain["stages"]["argocd"]["status"] == "waiting" and chain["broke"] is None
+        # 11-09 푸는 곳(ArgoCD) 링크, 지난 Sync 메시지는 내지 않는다
+        assert chain["stages"]["argocd"]["url"] == "https://argocd.ronanlab.dev/applications/runshoes"
+        assert chain["stages"]["argocd"]["message"] is None
+        # 11-09 오래 남으면 알림 — 1시간 전엔 없음, 1시간 뒤 한 번, 같은 회차는 다시 안 보냄(notification.rule), 하루 뒤 또
+        end = q(conn, "SELECT ended_at FROM build WHERE stage = 'jenkins' AND commit_sha = %s", new)[0][0]
+        assert await pm.check_sync_wait(end + timedelta(minutes=50)) == []
+        k1 = await pm.check_sync_wait(end + timedelta(hours=2))
+        assert len(k1) == 1 and notifier.sent[-1][1] == "syncwait" and "ArgoCD에서 Sync" in notifier.sent[-1][2]
+        with conn.cursor() as c:                                           # 진짜 알림기는 보낸 것을 rule 키로 남긴다
+            c.execute("INSERT INTO notification (kind, decision, rule, text) VALUES ('syncwait', 'sent', %s, 'x')", (k1[0],))
+        assert await pm.check_sync_wait(end + timedelta(hours=3)) == []
+        k2 = await pm.check_sync_wait(end + timedelta(hours=26))
+        assert len(k2) == 1 and k2 != k1
         await pm.on_argocd({"app": "runshoes", "sync": "Synced", "health": "Healthy", "phase": "Succeeded",
                             "revision": "2" * 40, "op_revision": "2" * 40, "images": img(new), "automated": False})
         assert q(conn, "SELECT status FROM build WHERE id = %s", out["build"])[0][0] == "success"

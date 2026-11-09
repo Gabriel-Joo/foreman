@@ -12,6 +12,7 @@
 
 import asyncio
 import os
+import re
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -83,6 +84,47 @@ def char_state(proc: str | None, cc_status: str | None, open_turn: bool) -> str:
     if cc_status is not None:
         return "ACTIVE" if cc_status == "busy" else "IDLE"
     return "ACTIVE" if open_turn else "IDLE"
+
+
+# 11-09 사람이 해야 풀리는 것(사용자: "사람 답을 기다리는 상태는 쉼이 아니다", "CC 자체 권한 거부는 화면에 아예 없다")
+DENIED_PREFIX = "Permission for this action was denied"          # CC auto mode 분류기 거부 — FOREMAN 승인 큐를 거치지 않는다
+_DENY_REASON = re.compile(r"Reason:\s*\[([^\]]+)\]")
+# 글로 묻고 끝난 응답 — 마지막 몇 줄에 묻는 말이 있으면(추정). 질문 카드(AskUserQuestion)는 따로 잡힌다
+_ASKS = re.compile(r"\?\s*$|까요[.?]?\s*$|(골라|말씀해|알려|정해|확인해|눌러) ?주세요|\(가\)|중 하나를", re.M)
+
+
+def asks_text(reply: str | None) -> bool:
+    """응답 끝부분(마지막 600자)이 사람에게 묻는가."""
+    return bool(reply and _ASKS.search(reply[-600:]))
+
+
+async def human_needs(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
+    """세션마다 — 마지막 사람 입력(origin human 턴) 뒤의 CC 권한 거부 마지막 한 건, 마지막 본 대화 응답이 묻는 말인지.
+    사람이 다시 입력하면(새 human 턴) 둘 다 풀린다."""
+    out: dict[int, dict[str, Any]] = {}
+    last_human = {r[0]: r[1] for r in (await c.execute(text(
+        f"SELECT session_id, MAX(started_at) FROM turn WHERE session_id IN {in_ids} AND origin = 'human' "
+        f"GROUP BY session_id"))).all()}
+    for sid, tool, ts, sub, prev in (await c.execute(text(
+            f"SELECT e.session_id, e.tool, e.ts, e.subagent_id, JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.error_preview')) "
+            f"FROM event e JOIN (SELECT session_id, MAX(id) mid FROM event WHERE session_id IN {in_ids} AND type = 'tool_result' "
+            f"  AND status = 'error' AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.error_preview')) LIKE :p GROUP BY session_id"
+            f") x ON x.mid = e.id"), {"p": DENIED_PREFIX + "%"})).all():
+        if last_human.get(sid) and ts < last_human[sid]:
+            continue
+        m = _DENY_REASON.search(prev or "")
+        out.setdefault(sid, {})["denied"] = {"tool": tool, "reason": m.group(1) if m else None, "at": _iso(ts),
+                                            "subagent": sub is not None}
+    for sid, reply, ts in (await c.execute(text(
+            f"SELECT e.session_id, JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.text')), e.ts FROM event e JOIN ("
+            f"  SELECT session_id, MAX(id) mid FROM event WHERE session_id IN {in_ids} AND type = 'assistant_msg' "
+            f"  AND subagent_id IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.block')) = 'text' GROUP BY session_id"
+            f") x ON x.mid = e.id"))).all():
+        if last_human.get(sid) and ts < last_human[sid]:
+            continue
+        if asks_text(reply):
+            out.setdefault(sid, {})["asks"] = {"at": _iso(ts), "tail": (reply or "")[-160:]}
+    return out
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -174,6 +216,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
             f"  SELECT t2.session_id, MAX(m2.created_at) mx FROM message m2 JOIN turn t2 ON t2.id = m2.turn_id "
             f"  WHERE t2.session_id IN {in_ids} AND m2.subagent_id IS NULL AND m2.model <> '<synthetic>' GROUP BY t2.session_id"
             f") x ON x.session_id = t.session_id AND x.mx = m.created_at WHERE m.subagent_id IS NULL"))).all()}
+        needs = await human_needs(c, in_ids)
         appr = (await c.execute(text(
             "SELECT id, session_id, tool, target, rule, reason, created_at, summary FROM approval WHERE status = 'pending' "
             "ORDER BY id"))).all()
@@ -201,6 +244,9 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "open_turn": {"id": ot[0], "origin": ot[1], "started_at": _iso(ot[2]), "prompt": ot[3]} if ot else None,
             "activity": {"tool": act[0], "target": (act[1] or "")[:200], "ts": _iso(act[2]),
                          "subagent": act[3] is not None} if act else None,
+            # 11-09 사람이 해야 풀리는 것 — CC 자체 권한 거부(auto mode) · 글로 묻고 기다림(일하지 않을 때만)
+            "denied": (needs.get(sid) or {}).get("denied"),
+            "asks": (needs.get(sid) or {}).get("asks") if cc_status != "busy" and ot is None else None,
             "subagents_running": len(subs.get(sid, [])),
             "subagent_descs": [d for d in subs.get(sid, []) if d][:10],
             # 턴이 끝나도 도는 일 — 백그라운드 Bash · Monitor. 상태 값은 늘리지 않고(README 3.11) 화면이 "기다림"으로 그린다

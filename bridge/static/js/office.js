@@ -15,6 +15,7 @@ import { wrapWords } from './wrap.js';
 // "130%로 보는데 맨 윗줄 탭 글씨 정도면 좋겠다", [가+ · 가−]도 따라가게). 탭은 17px × 배율 — 이름표 14px × 배율 × 1.2가 그쯤
 const FZ = () => uiScale() * 1.2;
 const fpx = (n) => Math.round(n * FZ());
+const MIN_CARD = () => fpx(80);           // [전체] 현장 카드 최소 폭(px) — "FOREMAN" · "(떠돌이)"가 한 줄에 들어가는 폭(11-09)
 const sizeFont = (f) => String(f).replace(/(\d+(?:\.\d+)?)px/, (m, n) => `${fpx(+n)}px`);
 
 const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'], ['foreman', 'FOREMAN']];
@@ -319,7 +320,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 패널 세션 목록의 "종료된 세션"에는 그대로 있다 — 거기서 골라 [새로 띄우기]. 멈춘 세션(SUSPENDED)은 그대로 보인다
       const shown = ss.filter((s) => !dormantGone(s, room.name));
       room.overflow = Math.max(0, shown.length - cap);
-      room.stats = { ACTIVE: 0, IDLE: 0, SUSPENDED: 0, DORMANT: 0, pending: 0, question: 0, subs: 0, tin: 0, tout: 0, opus_out: 0, all_out: 0 };
+      room.stats = { ACTIVE: 0, IDLE: 0, SUSPENDED: 0, DORMANT: 0, pending: 0, question: 0, denied: 0, asks: 0, subs: 0, tin: 0, tout: 0, opus_out: 0, all_out: 0 };
       let slot = 0;
       ss.forEach((s) => {
         // 기다림(IDLE + 자식 일)은 작업으로 센다 — 현장이 "쉼"으로 보이면 돌고 있는 일을 놓친다(11-06)
@@ -327,6 +328,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         room.stats[vs] = (room.stats[vs] || 0) + 1;
         room.stats.pending += pending.get(s.id) || 0;
         room.stats.question += asking.get(s.id) || 0;
+        // 11-09 사람이 해야 풀리는 대기(브리지 /api/dashboard denied · asks) — 쉼으로 세지 않고 따로
+        if (s.state !== 'DORMANT' && s.denied) room.stats.denied += 1;          // 종료된 세션의 옛 물음은 세지 않는다
+        else if (s.state !== 'DORMANT' && s.asks) room.stats.asks += 1;
         room.stats.subs += s.subagents_running || 0;
         room.stats.tin += (s.tokens && s.tokens.today_input) || 0;
         room.stats.tout += (s.tokens && s.tokens.today_output) || 0;
@@ -582,21 +586,34 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
 
   // ── 카메라 ──────────────────────────────────────────
   function roomByView() { return [...world.rooms, world.lounge].find((r) => (r.name || '_lounge') === view); }
-  function aim() {
+  // 한 방(감독실 포함)을 볼 때 카메라가 맞추는 사각형(월드 타일). 전체(map)면 null — 그리기도 이 사각형 밖은 자른다(frame)
+  function focusRect() {
     const q = view === 'hq' ? world.hq : view === 'map' ? null : roomByView();
-    const r = !q ? { x: -1, y: -3, w: world.w + 2, h: world.h + 4 }
-      : q.hq ? { x: q.x - 0.3, y: q.y - 0.3, w: q.w + 0.6, h: q.h + 0.6 }      // 현장 카드는 방 아래 HQ_H px(11-09 — 전엔 5.6칸을 비웠는데 카드가 더 길어 덮었다)
-      // 11-08 위 2.5 → 0.5칸(방 위 카드를 평소엔 빼서 — drawBadge) · 아래 0.4(사용자 — 여백이 많다)
-      // 11-09 0.4 → 0.2칸(사용자: 방이 다 들어가는 선에서 최대한)
-      : { x: q.x - 0.2, y: q.y - 0.3, w: q.w + 0.4, h: q.h + 0.6 };
-    // 11-09 경고 배너(한 방 볼 때, 캔버스 맨 위) 높이만큼 방을 아래 칸에 맞춘다 — 겹쳐 그리지 않는다. 배너가 없으면 0
-    // 한 방은 위에 붙인다(배너 밑, 없으면 탭 줄 밑) — 폭에 맞춰져 세로가 남으면 남는 자리는 아래로(전엔 가운데라 위에 빈 띠가 생겼다)
-    // 감독실도 위에 붙이고 아래 HQ_H px를 현장 카드에 비운다(겹치지 않게)
-    const room = q && !q.hq, hq = q && q.hq;
-    const bh = room ? BANNER_H : 0, below = hq ? HQ_H + 10 : 0;
-    const s = Math.min(W / (r.w * T), (H - bh - below) / (r.h * T)) * 0.99;
+    if (!q) return null;
+    // 11-08 위 2.5 → 0.5칸(방 위 카드를 평소엔 빼서 — drawBadge) · 아래 0.4(사용자 — 여백이 많다). 11-09 0.4 → 0.2칸(사용자: 최대한)
+    // 감독실 현장 카드는 11-09 [전체]로 옮겼다(사용자: 감독실도 방 — 그 방만 보인다)
+    return q.hq ? { x: q.x - 0.3, y: q.y - 0.3, w: q.w + 0.6, h: q.h + 0.6 } : { x: q.x - 0.2, y: q.y - 0.3, w: q.w + 0.4, h: q.h + 0.6 };
+  }
+  function aim() {
+    const f = focusRect();
+    const r = f || { x: -1, y: -3, w: world.w + 2, h: world.h + 4 };
+    // 11-09 한 방: 경고 배너(캔버스 맨 위) 높이만큼 아래 칸에 맞춘다. [전체]: 아래 MAP_H px를 현장 카드에 비운다 — 둘 다 겹쳐 그리지 않는다.
+    // 위에 붙인다(배너 밑, 없으면 탭 줄 밑) — 세로가 남으면 남는 자리는 아래로(전엔 가운데라 위에 빈 띠가 생겼다)
+    const bh = f && view !== 'hq' ? BANNER_H : 0, below = f ? 0 : MAP_H + 10;
+    const fit = () => Math.min(W / (r.w * T), (H - bh - below) / (r.h * T)) * 0.99;
+    if (!f && world.lounge && W > 0) {
+      // [전체] 맨 오른쪽 라운지는 좁다 — 그 카드(최소 폭 MIN_CARD)가 옆 카드와 겹치거나 화면 밖으로 나가지 않게 오른쪽에 자리를 더 둔다.
+      // 넓히면 배율이 줄어 카드가 차지하는 타일 수가 늘어난다 — 몇 번 번갈아 맞춘다
+      for (let i = 0; i < 4; i++) {
+        const need = world.lounge.x + (MIN_CARD() + 8) / (fit() * T) - r.x;
+        if (need <= r.w) break;
+        r.w = need;
+      }
+    }
+    const s = fit();
     camT.s = s; camT.x = (r.x + r.w / 2) * T;
-    camT.y = q ? r.y * T + (H / 2 - bh) / s : (r.y + r.h / 2) * T;
+    // 한 방은 위에 붙이고, [전체]는 카드 자리를 뺀 칸의 가운데(위로 남는 자리에 감독실이 보인다 — 위에 붙이면 잘려 나갔다)
+    camT.y = f ? r.y * T + (H / 2 - bh) / s : (r.y + r.h / 2) * T + below / (2 * s);
   }
   // 방 하나를 볼 때의 카메라 배율(aim과 같은 식) — 이름표 칸 재기용
   function roomViewScale() {
@@ -607,7 +624,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // ── 한 방 볼 때의 경고 배너(11-09 사용자) ──────────────
   // 탭 줄 바로 밑(캔버스 맨 위)에 폭 전체로 붙이고, 방은 그 아래에서 시작한다(aim이 BANNER_H를 뺀 칸에 맞춘다).
   // 전에는 방 윗벽 위 빈칸에 그리려다 모자라면 방 위에 겹쳤다. 글이 폭을 넘으면 자르지 않고 낱말 단위로 줄을 바꾸고, 그만큼 방이 내려간다
-  let BANNER = null, BANNER_H = 0, HQ_H = 0, BANNER_LINK = null;
+  let BANNER = null, BANNER_H = 0, MAP_H = 0, BANNER_LINK = null;
   const wrapText = (t, maxW) => wrapWords(t, maxW, (s) => ctx.measureText(s).width);
   function bannerLayout(r) {
     const src = cardLines(r, true);
@@ -625,9 +642,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     BANNER = room ? bannerLayout(room) : null;
     if (!BANNER) BANNER_LINK = null;
     const h = BANNER ? BANNER.h : 0;
-    HQC = view === 'hq' && world.hq ? hqLayout() : null;
-    const hh = HQC ? HQC.h : 0;
-    if (h !== BANNER_H || hh !== HQ_H) { BANNER_H = h; HQ_H = hh; aim(); }
+    MAPC = view === 'map' ? mapLayout() : null;
+    const mh = MAPC ? MAPC.h : 0;
+    if (h !== BANNER_H || mh !== MAP_H) { BANNER_H = h; MAP_H = mh; aim(); }
   }
   function drawBanner(b) {
     ctx.fillStyle = '#0d0f14'; ctx.fillRect(0, 0, W, b.h);
@@ -697,6 +714,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.fillRect(0, 0, W, H);
     ctx.setTransform(cam.s * dpr, 0, 0, cam.s * dpr, (W / 2 - cam.x * cam.s) * dpr, (H / 2 - cam.y * cam.s) * dpr);
     ctx.imageSmoothingEnabled = false;
+    // 11-09 한 방을 볼 때는 그 방 사각형 밖을 그리지 않는다 — 감독실 아래로 다른 방 선반이 잘린 채 비어져 나왔다(사용자). 밖은 배경색
+    const fr = focusRect();
+    ctx.save();
+    if (fr) { ctx.beginPath(); ctx.rect(fr.x * T, fr.y * T, fr.w * T, fr.h * T); ctx.clip(); }
     const list = [...actors.values()].sort((a, b) => a.y - b.y);
     if (SP) {
       // 시트 테마 — 바닥 · 벽은 먼저, 가구와 사람은 발밑(아래 끝) 순서로 함께 그린다: 탁자 뒤에 앉은 사람은 다리가 가려진다(앉기 흉내)
@@ -735,9 +756,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
     drawSummonsPuffs(now);
     drawWalkDebug();
+    ctx.restore();                                  // 한 방 자르기(focusRect) 끝
     // 글자는 화면 좌표로(선명하게)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    HITS = []; NAMES = [];
+    HITS = []; NAMES = []; MAP_BOXES = [];
     const zoomedIn = view !== 'map';
     for (const r of [...world.rooms, world.lounge]) drawBadge(r, zoomedIn);
     if (view === 'hq') {
@@ -2054,7 +2076,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const st = r.stats || {}, pp = r.pipe;
     const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
     if (broke || (pp && pp.webhook_broken) || (pp && pp.watch && pp.watch.state === 'missing')) return 'fail';
-    if (st.pending || st.question) return 'alert';
+    if (st.pending || st.question || st.denied || st.asks) return 'alert';
     if (st.ACTIVE) return 'busy';
     if ((st.IDLE || 0) + (st.SUSPENDED || 0) + (st.DORMANT || 0)) return 'idle';
     return 'empty';
@@ -2070,6 +2092,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 넷째 칸 true = 경고 줄 — 한 방을 볼 때는 이 줄만 카드로 띄운다(11-08, 나머지는 머리말과 겹친다)
     if (st.pending) lines.push([`❗ 승인 대기 ${st.pending}`, P.warn, 'bold 16px', true]);
     if (st.question) lines.push([`❓ 질문 ${st.question} — 패널에서 답합니다`, P.warn, 'bold 16px', true]);
+    // 11-09 FOREMAN 승인 카드로 오지 않는 것 — 무엇을 어디서 해야 풀리는지 글에 넣는다
+    if (st.denied) lines.push([`✋ 권한 거부 ${st.denied} — CC 자체 검사가 막았습니다. 그 세션에 허용하거나 다른 방법을 지시합니다`, P.warn, 'bold 16px', true]);
+    if (st.asks) lines.push([`💬 답 기다림 ${st.asks} — 묻고 끝났습니다. 패널 입력 칸이나 터미널에서 답합니다`, P.warn, 'bold 16px', true]);
     const pp = r.pipe;
     const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
     if (broke) lines.push([`🔥 파이프라인 실패 · ${broke}`, P.bad, 'bold 15px', true]);
@@ -2130,9 +2155,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 11-08 한 방을 볼 때는 경고(승인 대기 · 파이프라인 · 웹훅 · 빌드 알림)가 있을 때만 그 줄만 — 작업 수 · 토큰은 머리말
     // (프로젝트 버튼 · 툴팁)과 겹쳐 뺐고, 그만큼 방을 키웠다(aim). 11-09 경고는 맨 위 배너로(syncBanner · drawBanner — 방 위에 겹치지 않는다)
     if (zoomedIn) { r.badge = BANNER ? drawBanner(BANNER) : null; return; }
-    const maxLines = zoomedIn ? 6 : Math.max(2, Math.floor((sy - 10 - 8) / cardLH()));      // 전체 화면: 방 위 공간에 들어가는 줄 수
-    const h = fitLines(cardLines(r, zoomedIn), maxLines).length * cardLH() + 8;
-    r.badge = drawCard(r, sx, Math.max(4, sy - h - 6), ex - sx, 210, 400, maxLines, zoomedIn);
+    // 11-09 [전체] 카드 — 방 위에 다섯 줄로 겹쳐 그리던 것(감독실 그림을 덮고 …로 잘림)을 방 아래 두 줄로(사용자)
+    r.badge = drawMapCard(r);
   }
 
   // ── 감독실(1단) ────────────────────────────────────
@@ -2146,7 +2170,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
 
   // 현장 카드 — 감독실 아래에 현장마다(화면 좌표, 선명하게). 누르면 그 현장으로
-  // 11-09 사용자: 카드가 방을 덮고 다섯 줄이 잘렸다 → 방 아래로 떼고(aim이 HQ_H만큼 비운다) 두 줄 — 이름 · 지금 상태.
+  // 11-09 사용자: [전체] 카드가 방을 덮고 다섯 줄이 잘렸다 → 방 아래로 떼고(aim이 MAP_H만큼 비운다) 두 줄 — 이름 · 지금 상태.
   // 토큰 · Opus · 최근 사용량은 호버로. 폭을 넘으면 자르지 않고 줄을 바꾸고, 네 칸 높이는 가장 긴 카드에 맞춘다
   function hqCardLines(r) {
     const st = r.stats || {}, pp = r.pipe;
@@ -2155,6 +2179,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (broke) state = [`멈춤 — 파이프라인 실패(${broke})`, P.bad, 'bold 16px'];
     else if (st.pending) state = [`멈춤 — 승인 대기 ${st.pending}`, P.warn, 'bold 16px'];
     else if (st.question) state = [`멈춤 — 질문 ${st.question}`, P.warn, 'bold 16px'];
+    else if (st.denied) state = [`멈춤 — 권한 거부 ${st.denied}`, P.warn, 'bold 16px'];
+    else if (st.asks) state = [`멈춤 — 답 기다림 ${st.asks}`, P.warn, 'bold 16px'];
     else if (st.ACTIVE) state = [`작업 중 ${st.ACTIVE}`, P.act, '16px'];
     else if ((st.IDLE || 0) + (st.SUSPENDED || 0) + (st.DORMANT || 0)) state = ['쉼', P.muted, '16px'];
     else state = ['세션 없음', P.muted, '16px'];
@@ -2166,7 +2192,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const span = Math.round((r.rateSpan || 0) / 60000);
     const rows = [
       `작업 ${st.ACTIVE || 0} · 쉼 ${st.IDLE || 0}${st.SUSPENDED ? ' · 멈춰 둠 ' + st.SUSPENDED : ''}${st.subs ? ' · 서브에이전트 ' + st.subs : ''}${r.overflow ? ' · 책상 없음 +' + r.overflow : ''}`,
-      ...(st.pending || st.question ? [`승인 대기 ${st.pending || 0} · 질문 ${st.question || 0}`] : []),
+      ...(st.pending || st.question ? [`승인 대기 ${st.pending || 0} · 질문 ${st.question || 0} — 패널 카드에서 답합니다`] : []),
+      ...(st.denied ? [`권한 거부 ${st.denied} — CC 자체 검사, 그 세션에 허용 · 다른 방법 지시`] : []),
+      ...(st.asks ? [`답 기다림 ${st.asks} — 패널 입력 칸이나 터미널에서 답합니다`] : []),
       ...(r.st_argocd === 'waiting' ? ['배포 대기 — ArgoCD에서 Sync를 눌러야 올라갑니다'] : []),
       ...(pp && pp.webhook_broken ? ['빌드 알림 끊김 의심'] : []),
       ...(pp && pp.watch && pp.watch.state !== 'ok' ? [`빌드 알림 ${pp.watch.state === 'missing' ? '없음' : '늦음'}`] : []),
@@ -2178,33 +2206,63 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ];
     return textTip([`${r.label} — 현장 상태입니다. 누르면 그 현장으로 갑니다.`, ...rows].join('\n'));
   }
-  let HQC = null;                                // 이번 프레임의 카드 배치 · 높이(syncBanner가 잰다, 높이는 HQ_H)
-  function hqLayout() {
-    const ss = sites(), gap = 6, cw = (W - gap * (ss.length + 1)) / Math.max(1, ss.length);
-    const cards = ss.map((r) => {
+  // [전체] 현장 카드 — 방마다 그 방 바로 아래, 한 줄(같은 y · 같은 높이). 폭은 그 방 폭(목표 배율 camT.s로 재서 흔들리지 않게)
+  let MAPC = null;                               // 이번 프레임의 카드 줄 · 높이(syncBanner가 잰다, 높이는 MAP_H)
+  // 카드가 쓸 수 있는 폭(타일) — 그 방 왼쪽 끝부터 다음 방 왼쪽 끝까지(방 사이 틈 포함). 맨 끝(라운지)은 방 폭
+  function colW(r) {
+    const ss = sites(), i = ss.indexOf(r);
+    return i >= 0 && i < ss.length - 1 ? ss[i + 1].x - r.x : r.w;
+  }
+  function mapLayout() {
+    const cards = new Map();
+    for (const r of sites()) {
+      const cw = Math.max(MIN_CARD(), colW(r) * T * camT.s - 6);
       const lines = [];
       for (const [t, c, f] of hqCardLines(r)) { ctx.font = `${sizeFont(f)} system-ui, sans-serif`; for (const x of wrapText(t, cw - 12)) lines.push([x, c, f]); }
-      return { r, lines };
-    });
-    const n = Math.max(2, ...cards.map((c) => c.lines.length));
-    return { cards, cw, gap, h: n * cardLH() + 8 };
+      cards.set(r, lines);
+    }
+    const n = Math.max(2, ...[...cards.values()].map((l) => l.length));
+    return { cards, h: n * cardLH() + 8 };
   }
-  function drawHQCards() {
-    const q = world.hq;
-    const L2 = HQC || hqLayout();
-    const [, top] = toScreen(0, (q.y + q.h + 0.3) * T);
-    const y = Math.round(top + 4);
-    L2.cards.forEach(({ r, lines }, i) => {
-      const x = L2.gap + i * (L2.cw + L2.gap);
-      const { border, thick } = badgeLines(r);
-      ctx.fillStyle = '#0d0f14'; ctx.fillRect(x, y, L2.cw, L2.h);
-      ctx.strokeStyle = border; ctx.lineWidth = thick ? 2 : 1;
-      ctx.strokeRect(x + 0.5, y + 0.5, L2.cw - 1, L2.h - 1);
-      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      lines.forEach(([t, c, f], k) => { ctx.font = `${sizeFont(f)} system-ui, sans-serif`; ctx.fillStyle = c; ctx.fillText(t, x + 6, y + 5 + k * cardLH()); });
-      r.badge = { x, y, w: L2.cw, h: L2.h };
-      HITS.push({ ...r.badge, tip: hqCardTip(r) });
+  function drawMapCard(r) {
+    const M = MAPC || mapLayout();
+    const lines = M.cards.get(r);
+    if (!lines) return null;
+    const bottom = Math.max(...sites().map((s) => toScreen(0, (s.y + s.h) * T)[1]));
+    const [x0, ] = toScreen(r.x * T, 0), [x1] = toScreen((r.x + colW(r)) * T, 0);
+    const w = Math.min(W - 8, Math.max(MIN_CARD(), x1 - x0 - 6)), y = Math.round(bottom + 8);
+    const x = Math.round(Math.max(4, Math.min(x0, W - 4 - w)));         // 화면 밖으로 나가지 않게(좁은 창에서 라운지가 오른쪽 끝)
+    const { border, thick } = badgeLines(r);
+    ctx.fillStyle = '#0d0f14'; ctx.fillRect(x, y, w, M.h);
+    ctx.strokeStyle = border; ctx.lineWidth = thick ? 2 : 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, M.h - 1);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    lines.forEach(([t, c, f], k) => { ctx.font = `${sizeFont(f)} system-ui, sans-serif`; ctx.fillStyle = c; ctx.fillText(t, x + 6, y + 5 + k * cardLH()); });
+    const box = { x, y, w, h: M.h };
+    HITS.push({ ...box, tip: hqCardTip(r) });
+    MAP_BOXES.push({ ...box, label: r.label, lines: lines.map((l) => l[0]) });
+    return box;
+  }
+  // 점검(tools/screen.py --eval) — [전체] 카드끼리 겹침 · 화면 밖 · 방(감독실 포함) 그림과 겹침 · 높이가 다름 · 잘림(…)
+  let MAP_BOXES = [];
+  function cardAudit() {
+    const bs = MAP_BOXES, out = [];
+    const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    const pics = [...sites(), world.hq].filter(Boolean).map((r) => {
+      const [x0, y0] = toScreen(r.x * T, r.y * T), [x1, y1] = toScreen((r.x + r.w) * T, (r.y + r.h) * T);
+      return { x: x0, y: y0, w: x1 - x0, h: y1 - y0, label: r.label };
     });
+    bs.forEach((a, i) => {
+      bs.slice(i + 1).forEach((b) => { if (hit(a, b)) out.push(`카드 겹침 ${a.label} · ${b.label}`); });
+      pics.forEach((p) => { if (hit(a, p)) out.push(`그림 덮음 ${a.label} → ${p.label}`); });
+      if (a.x < 0 || a.x + a.w > W || a.y + a.h > H) out.push(`화면 밖 ${a.label}`);
+      if (a.h !== bs[0].h || a.y !== bs[0].y) out.push(`줄 안 맞음 ${a.label}`);
+      if (a.lines.some((t) => t.endsWith('…'))) out.push(`잘림 ${a.label}`);
+    });
+    return { n: bs.length, lines: bs.map((b) => b.lines.length), problems: out };
+  }
+  // 감독실 — 현황판 위 현장 이름만(11-09 카드는 [전체]로 — 감독실도 그 방만 보인다)
+  function drawHQCards() {
     for (const s of boardSlots()) {
       // 현황판 위 이름 — 지도 위 땅 · 모니터 위
       const [lx, ly] = toScreen((s.x + s.w / 2) * T, (s.y + 0.35) * T);
@@ -2611,7 +2669,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
   return { go, theme, openSession, panel, actors, newSession: (p) => newSession.open(p), foremanName: FM_NAME,
-           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bannerAudit: () => bannerAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(),
+           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(),
     // 시연 사진(13) — 이름표 자리(캔버스 기준 화면 좌표)와 캐릭터 발밑 화면 좌표. 툴팁을 띄워 찍을 때 마우스를 그 자리로 보낸다
     hits: () => HITS.map((h) => ({ x: h.x, y: h.y, w: h.w, h: h.h, zone: h.zone || null })),
     actorScreen: (key) => { const a = actors.get(key); return a ? toScreen(a.x * T, a.y * T) : null; }, layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,

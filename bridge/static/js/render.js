@@ -14,6 +14,21 @@ import { renderMarkdown } from './md.js';
 const ROLE_LABEL = { coder: '코더', foreman: '감독', cicd: 'CI/CD', inspector: '점검', helper: '도우미', infra: '인프라' };
 
 // 세션을 알아보는 이름 — CC가 붙인 제목 → CC 세션 이름 → 짧은 id. 캐릭터 이름은 아래 줄에(한 캐릭터에 세션 여럿)
+// 11-09 사람이 해야 풀리는 대기 — "대기"(쉼)와 따로. 무엇을 어디서 하는지 호버에(사용자: 사람 답을 기다리는 상태는 쉼이 아니다)
+export function humanNeed(s) {
+  if (!s || s.state === 'DORMANT') return null;
+  if (s.denied) {
+    const who = s.denied.subagent ? '서브에이전트의 ' : '';
+    return { label: '권한 거부', tip: `권한 거부 — CC 자체 권한 검사(auto mode)가 ${who}${s.denied.tool || '도구'}를 막았습니다${s.denied.reason ? '(' + s.denied.reason + ')' : ''}. FOREMAN 승인 카드로는 오지 않습니다. 그 세션에 허용 · 다른 방법을 지시하거나 settings에 허용 규칙을 넣어야 풀립니다.` };
+  }
+  if (s.asks) return { label: '답 기다림', tip: '답 기다림 — 마지막 응답이 사람에게 묻고 끝났습니다. 패널 입력 칸이나 그 세션 터미널에서 답하면 풀립니다.' };
+  return null;
+}
+export function stateBadge(s) {
+  const n = humanNeed(s);
+  return n ? `<span class="badge st-NEED" title="${esc(n.tip)}">${esc(n.label)}</span>`
+    : `<span class="badge st-${s.state}">${esc(STATE_LABEL[s.state] || s.state)}</span>`;
+}
 export function sessionName(s) { return s.custom_title || s.title || s.cc_name || s.short; }   // 사람이 붙인 이름이 먼저(11-05)
 export function sessionSub(s) {
   // 캐릭터 이름이 역할 이름으로 시작하면(0017 재배치 — "코더" · "코더 foreman-2") 역할은 다시 쓰지 않는다

@@ -7,7 +7,7 @@
 // 너비는 두 가지(좁게 = 픽셀 볼 때, 넓게 = 대화 읽을 때)를 오가고, 각각 끌어서 바꾼 값을 따로 기억한다.
 
 import { approvalCard, handleApprovalClick, sessionKv, modelChip, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
-         sessionName, sessionSub, sessionIds, projectLabel, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN } from './render.js';
+         sessionName, sessionSub, sessionIds, projectLabel, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed } from './render.js';
 import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
 import { mountHandoff, FLOW_TIP } from './handoff.js';
@@ -451,7 +451,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     // 제목 아래 한 줄 — 세션 정보 · 토큰은 여기 작게, 자세한 것은 [세션] 탭
     const t = s.tokens || {}, stuck = stuckTurn(s);
     const now = s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target || '', 60))}` : (s.state === 'ACTIVE' ? '생각 중' : '');
-    put('pMeta', 'meta', `<span class="badge st-${s.state}">${esc(STATE_LABEL[s.state] || s.state)}</span>
+    put('pMeta', 'meta', `${stateBadge(s)}
       <span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
       · <span class="muted" title="오늘 출력 토큰 — 이 세션이 오늘 쓴 글의 양입니다.">오늘 출력 토큰 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn" title="끝났는지 모름 — 작업이 끝났다는 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.">⚠ 끝났는지 모름</span>' : ''}`);
     $('pMeta').title = [sessionSub(s), sessionIds(s), projectLabel(st, s.project), s.cwd || ''].filter(Boolean).join(' · ');
@@ -495,7 +495,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   function sessionList(st, names) {
     const rows = [];
     const btn = (s) => `
-        <button class="plist" data-sid="${s.id}"><span class="badge st-${s.state}">${esc(STATE_LABEL[s.state])}</span>
+        <button class="plist" data-sid="${s.id}">${stateBadge(s)}
           <b>${esc(oneLine(sessionName(s), 40))}</b>${s.activity && s.state === 'ACTIVE' ? ` <span class="muted">${esc(s.activity.tool)}</span>` : ''}${s.state === 'DORMANT' ? ` <span class="muted small">${ago(s.last_ts)}</span>` : ''}</button>`;
     for (const p of st.projects) {
       if (names && !names.includes(p.name)) continue;
