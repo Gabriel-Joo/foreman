@@ -89,6 +89,7 @@ class ApprovalManager:
         self._tasks: set[asyncio.Task[Any]] = set()
         self._rule_notice: dict[str, float] = {}   # 안전 규칙 파일 도구 편집 알림 — 파일 → 마지막 알린 시각
         self.schema: Any = None                    # 스키마 잠금(bridge/schemalock.py) — main.py가 넣는다
+        self.scope: Any = None                     # 다른 저장소는 읽기만(bridge/reposcope.py, 11-09) — main.py가 넣는다
 
     def _bg(self, coro: Any) -> None:
         t = asyncio.create_task(coro)
@@ -115,8 +116,13 @@ class ApprovalManager:
         pp = self.policy.for_project(project)
         # 스키마 잠금 — 다른 세션이 이 프로젝트의 스키마를 바꾸는 중이면 거부. 승인 모드(observe)와 상관없이(11-05 사용자 지시)
         why_lock = self.schema.check(project, p.get("session_id"), p.get("cwd"), tool, inp) if self.schema else None
+        rule = "스키마-잠금"
+        if not why_lock and self.scope:
+            # 다른 저장소는 읽기만 — 역시 승인 모드와 상관없이(11-09 사용자)
+            why_lock = self.scope.check(project, p.get("cwd"), tool, inp, p.get("scratchpad_dir") or _scratchpad(p))
+            rule = "다른저장소-쓰기"
         if why_lock:
-            dec = Decision("deny", "스키마-잠금", why_lock)
+            dec = Decision("deny", rule, why_lock)
             log.warning("deny %s %s — %s", project, tool, why_lock)
             self._bg(self._record_pre(p, tool, inp, dec, pp.mode, True, None))
             return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
