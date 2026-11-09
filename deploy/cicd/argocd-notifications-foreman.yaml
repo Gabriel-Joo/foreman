@@ -53,8 +53,11 @@ data:
   trigger.foreman-health-degraded: |
     - when: app.status.health.status == 'Degraded'
       send: [foreman]
+  # 11-09 Synced 조건 더함 — 수동 Sync 앱은 새 리비전이 오면 sync.revision만 새 목표로 바뀌고 지난 작업(Succeeded) · 옛 파드(Healthy)는
+  # 그대로라, OutOfSync인 채로 이 조건이 참이 되어 Sync 전에 보내고 oncePer를 써 버렸다(펫퍼민트 9efe67d4: deployed · out-of-sync 같은 06:02:44Z,
+  # Sync 06:39 뒤 Healthy 알림 없음). log/foreman-2_docs_sync_argocd_20261109.md 4절
   trigger.foreman-deployed: |
-    - when: app.status.operationState != nil and app.status.operationState.phase in ['Succeeded'] and app.status.health.status == 'Healthy'
+    - when: app.status.operationState != nil and app.status.operationState.phase in ['Succeeded'] and app.status.health.status == 'Healthy' and app.status.sync.status == 'Synced'
       oncePer: app.status.sync.revision
       send: [foreman]
   subscriptions: |
