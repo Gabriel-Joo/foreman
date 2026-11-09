@@ -39,6 +39,13 @@ class TitleIn(BaseModel):
     title: str | None = Field(default=None, max_length=255)   # 빈 글 · null이면 자동 제목(CC가 붙인 것)으로
 
 
+SessionRole = Literal["coder", "inspector", "cicd", "scribe", "manager"]   # bridge.handoff.ROLE_KO와 같다(foreman은 감독실 캐릭터 몫)
+
+
+class RoleIn(BaseModel):
+    role: SessionRole
+
+
 class ActionIn(BaseModel):
     action: Literal["exit", "stop", "resume", "interrupt"]
 
@@ -213,7 +220,7 @@ class NewIn(BaseModel):
     title: str | None = Field(default=None, max_length=255)
     worktree: bool | None = None      # None: 그 프로젝트에 살아 있는 세션이 있으면 따로 작업(worktree)
     model: str | None = Field(default=None, max_length=40)   # config/models.toml id. None이면 역할(coder) 기본값
-    role: Literal["coder", "inspector", "cicd", "scribe"] | None = None
+    role: SessionRole | None = None
     first_prompt: str | None = Field(default=None, max_length=20000)   # 첫 입력(12a 서기 일감 등). 인계 요약과 같이 줄 수 없다
 
 
@@ -403,6 +410,20 @@ async def set_title(sid: int, body: TitleIn, request: Request) -> dict[str, Any]
         raise HTTPException(404, "세션이 없습니다")
     dashboard.invalidate()
     return {"id": sid, "custom_title": title}
+
+
+@router.put("/sessions/{sid}/role")
+async def set_role(sid: int, body: RoleIn, request: Request) -> JSONResponse:
+    """세션 역할 바꾸기(11-09) — 허용 값(RoleIn)만. character_session.role · 역할 캐릭터를 바꾸고 session_action 'role'에 남긴다."""
+    m = _mgr(request)
+    row = await _row(m, sid)
+    try:
+        r = await m.set_role(row, body.role)
+    except Refused as e:
+        return _refused(e)
+    from bridge.api import dashboard
+    dashboard.invalidate()
+    return JSONResponse(r)
 
 
 @router.post("/sessions/{sid}/action")

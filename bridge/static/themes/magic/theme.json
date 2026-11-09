@@ -19,6 +19,7 @@
     "corridors": [[1, 13.2, 26, 1.1], [20.6, 6.2, 1.35, 7.4]],
     "zones": {
       "foreman_office": { "_": "교장실", "x": 1, "y": 2, "w": 7, "h": 5, "floor": "wood", "seat": [4.5, 4.9] },
+      "manager": { "_": "관리자(11-09 사용자) — 교장실 안 옆자리. 관리자 세션이 있을 때만 선다(상주 아님). 일할 때도 이 자리", "seats": [[6.0, 4.4, "left"], [2.3, 4.6, "right"]] },
       "library": { "_": "A 서고 — 2층 책장 · 사다리", "x": 9, "y": 2, "w": 7, "h": 4, "face": "up",
                    "seats": [[10.5, 5.4], [12.5, 5.4], [14.2, 5.4], [11.5, 5.9]] },
       "window": { "_": "G 아치 창 — 스테인드글라스", "x": 8, "y": 2, "w": 1, "h": 1, "face": "up", "seats": [[8.3, 2.9], [8.0, 3.6]] },
@@ -65,7 +66,7 @@
 
   "roles": {
     "_": "역할 → 로브 색. 렌더러가 옷 픽셀의 색상만 바꾼다. 이름은 DB · 디스패처와 같다(11-05 통일). 미리 보기 ?roles=demo",
-    "colors": { "foreman": "#d4a72c", "coder": "#3f7fd0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "helper": "#8a8f98" },
+    "colors": { "foreman": "#d4a72c", "coder": "#3f7fd0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "manager": "#c0392b", "helper": "#8a8f98" },
     "idle": { "_": "역할별 쉼 자리(12a) — 서기는 필사실에서 읽는다", "scribe": { "go": "scribe", "anim": "read" } }
   },
 

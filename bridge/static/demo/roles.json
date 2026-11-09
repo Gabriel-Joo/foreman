@@ -1,0 +1,60 @@
+{
+ "title": "역할 이름표 · 관리자 자리",
+ "source": "script",
+ "note": "11-09 점검용 정지 장면 — 관리자 둘(감독실 옆자리 두 칸) · 상주 코더 · 임시 일꾼 · 서기, 런슈즈에 관리자 하나. tools/screen.py --demo roles",
+ "snapshot": {
+  "generated_at": "@+0",
+  "projects": [
+   {
+    "name": "runshoes",
+    "label": "런슈즈",
+    "sessions": [
+     {"id": 901, "cc_session_id": "demo-0901", "short": "demo0901", "character": "코더", "project": "runshoes", "title": "카탈로그 정리", "custom_title": null, "cc_name": null,
+      "role": "coder", "cwd": "/demo/runshoes", "pid": 10901, "proc": "S", "cc_status": "idle", "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+      "open_turn": null, "activity": null, "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"today_output": 0, "today_input": 0, "by_model": []},
+      "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null},
+     {"id": 905, "cc_session_id": "demo-0905", "short": "demo0905", "character": "관리자", "project": "runshoes", "title": "합친 뒤 배포 확인", "custom_title": null, "cc_name": null,
+      "role": "manager", "cwd": "/demo/runshoes", "pid": 10905, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+      "open_turn": null, "activity": {"tool": "Bash", "target": "git push"}, "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"today_output": 0, "today_input": 0, "by_model": []},
+      "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null}
+    ]
+   },
+   {
+    "name": "petmint-rag-chatbot",
+    "label": "펫퍼민트",
+    "sessions": []
+   },
+   {
+    "name": "foreman",
+    "label": "FOREMAN",
+    "sessions": [
+     {"id": 230, "cc_session_id": "demo-0230", "short": "demo0230", "character": "관리자", "project": "foreman", "title": "FOREMAN main", "custom_title": "FOREMAN main", "cc_name": null,
+      "role": "manager", "cwd": "/demo/foreman", "pid": 10230, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+      "open_turn": null, "activity": {"tool": "Bash", "target": ".venv/bin/python -m pytest -q"}, "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"today_output": 0, "today_input": 0, "by_model": []},
+      "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null},
+     {"id": 231, "cc_session_id": "demo-0231", "short": "demo0231", "character": "관리자 foreman-4", "project": "foreman", "title": "브리지 다시 띄우기 · 화면 점검", "custom_title": null, "cc_name": null,
+      "role": "manager", "cwd": "/demo/foreman/.worktrees/foreman-4", "pid": 10231, "proc": "S", "cc_status": "idle", "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+      "open_turn": null, "activity": null, "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"today_output": 0, "today_input": 0, "by_model": []},
+      "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null},
+     {"id": 242, "cc_session_id": "demo-0242", "short": "demo0242", "character": "코더 foreman-3", "project": "foreman", "title": "세션 역할 관리자(manager) · 제목 앞 역할 배지", "custom_title": null, "cc_name": null,
+      "role": "coder", "cwd": "/demo/foreman/.worktrees/foreman-3", "pid": 10242, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+      "open_turn": null, "activity": {"tool": "Edit", "target": "bridge/static/js/office.js"}, "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"today_output": 0, "today_input": 0, "by_model": []},
+      "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null},
+     {"id": 243, "cc_session_id": "demo-0243", "short": "demo0243", "character": "코더 foreman-5", "project": "foreman", "title": "알림 정리 — 텔레그램 묶기", "custom_title": null, "cc_name": null,
+      "role": "coder", "cwd": "/demo/foreman/.worktrees/foreman-5", "pid": 10243, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+      "open_turn": null, "activity": {"tool": "Read", "target": "bridge/notify.py"}, "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"today_output": 0, "today_input": 0, "by_model": []},
+      "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null},
+     {"id": 237, "cc_session_id": "demo-0237", "short": "demo0237", "character": "서기 foreman-2", "project": "foreman", "title": "서기 — 나중에 할 일 정리", "custom_title": null, "cc_name": null,
+      "role": "scribe", "cwd": "/demo/foreman/.worktrees/foreman-2", "pid": 10237, "proc": "S", "cc_status": "idle", "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+      "open_turn": null, "activity": null, "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"today_output": 0, "today_input": 0, "by_model": []},
+      "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null}
+    ]
+   }
+  ],
+  "approvals": [],
+  "hidden_dormant": 0,
+  "terminal": {"enabled": false},
+  "ingest": null
+ },
+ "steps": [{"at": 60000, "end": true}]
+}

@@ -410,6 +410,16 @@ export class Store {
     this.touch('grid', 'panel');
     return j;
   }
+  // 세션 역할 바꾸기(11-09) — 허용 값만(서버가 거부하면 그 사유를 던진다). 역할 캐릭터도 서버가 옮긴다 — 화면은 다음 스냅숏에서
+  async setRole(id, role) {
+    const r = await fetch(`/api/sessions/${id}/role`, { method: 'PUT', headers: this.headers(true), body: JSON.stringify({ role }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.refused || (r.status === 422 ? '고를 수 없는 역할입니다' : `HTTP ${r.status}`));
+    const s = this.state.sessions.get(id);
+    if (s) s.role = j.role;
+    this.touch('grid', 'panel');
+    return j;
+  }
   async eventDetail(eid) {
     const r = await fetch(`/api/events/${eid}/detail`, { headers: this.headers() });
     const j = await r.json().catch(() => ({}));

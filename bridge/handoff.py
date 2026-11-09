@@ -40,7 +40,10 @@ MAX_INJECT = 8000        # 새 세션에 넣는 글 상한
 WAIT_S = 600.0           # 요약이 돌아오기를 기다리는 시간
 HANDOFF_DIR = Path.home() / ".foreman" / "handoff"
 KEEP_FULL = ("진행", "미완", "다음", "주의")      # 분량을 줄일 때도 통째로 넣는 절
-ROLE_KO = {"coder": "코더", "inspector": "점검", "cicd": "CI/CD", "scribe": "서기"}   # 역할 캐릭터 이름(0017 재배치와 같다, 서기는 12a)
+# 역할 캐릭터 이름(0017 재배치와 같다, 서기는 12a, 관리자는 11-09 — 합치기 · 시험 · push · 브리지 다시 띄우기 · 기록, 상주 아님).
+# 세션이 가질 수 있는 역할이 이것뿐이다 — foreman은 감독실 캐릭터(세션 없음) 몫이라 넣지 않는다
+ROLE_KO = {"coder": "코더", "inspector": "점검", "cicd": "CI/CD", "scribe": "서기", "manager": "관리자"}
+ROLE_ACT = "role"                 # session_action — 역할 바꾸기(11-09). detail "옛 → 새"
 REST_ACT = "rest"                 # session_action — [쉬게 하기](11-09). 합치기 · 버리기 전까지 그 worktree는 "합치기 기다림"
 REST_RESUME_ACT = "rest-resume"   # session_action — [이어서]. 'resume'(일시정지 되살리기)과 섞이지 않게 따로
 
@@ -1011,6 +1014,23 @@ class HandoffManager:
         async with self.engine.connect() as c:
             r = (await c.execute(text("SELECT role FROM character_session WHERE id = :s"), {"s": sid})).first()
         return r[0] if r else None
+
+    async def set_role(self, row: SessionRow, role: str) -> dict[str, Any]:
+        """세션 역할 바꾸기(11-09) — character_session.role을 바꾸고 그 역할 캐릭터("관리자" · worktree면 "관리자 foreman-3")로
+        옮긴다(새 세션 역할 캐릭터와 같은 규칙, _character_for). 프로젝트 밖 세션은 캐릭터를 그대로 둔다. session_action 'role'에 남긴다."""
+        if role not in ROLE_KO:
+            raise Refused(f"바꿀 수 없는 역할입니다({role}) — {' · '.join(ROLE_KO.values())} 중에서 고릅니다")
+        old = await self._role(row.id)
+        if old == role:
+            return {"id": row.id, "role": role, "changed": False}
+        ch = await self._character_for(row.cwd or "", role)
+        async with self.engine.begin() as c:
+            await c.execute(text("UPDATE character_session SET role = :r, character_id = COALESCE(:ch, character_id) WHERE id = :i"),
+                            {"r": role, "ch": ch, "i": row.id})
+        await self._act(row.id, ROLE_ACT, None, True, f"{old} → {role}" + (f" 캐릭터 {ch}" if ch else ""))
+        if self.on_change:
+            self.on_change()
+        return {"id": row.id, "role": role, "old": old, "character_id": ch, "changed": True}
 
     async def _scribe_review(self, row: SessionRow, repo: str, st: dict[str, Any]) -> dict[str, Any] | None:
         """서기 브랜치 검토(12b) — 근거 확인 · 고친 양. 실패해도 따로 작업 칸은 뜬다."""

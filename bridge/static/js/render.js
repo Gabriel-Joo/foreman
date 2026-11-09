@@ -11,7 +11,18 @@ const END_LABEL = { stop: '끝남', stop_failure: 'API 오류', interrupted: '�
 import { stuckTurn } from './store.js';
 import { renderMarkdown } from './md.js';
 
-const ROLE_LABEL = { coder: '코더', foreman: '감독', cicd: 'CI/CD', inspector: '점검', helper: '도우미', infra: '인프라' };
+// 역할 화면 이름(11-09 — scribe · manager 보탬). foreman은 감독실 캐릭터 몫(테마 이름 팀장 · 교장 · 소장)이라 세션 역할로 고를 수 없다
+export const ROLE_LABEL = { coder: '코더', manager: '관리자', scribe: '서기', inspector: '점검', cicd: 'CI/CD', foreman: '감독', helper: '도우미', infra: '인프라' };
+// 세션 역할로 고를 수 있는 것 — bridge/api/handoff.py SessionRole과 같다
+export const SESSION_ROLES = ['coder', 'manager', 'scribe', 'inspector', 'cicd'];
+export const roleLabel = (r) => ROLE_LABEL[r] || null;
+// 제목 앞 역할 배지 글(11-09 사용자 — "서기인지 코더인지 모르고 지나쳤다"). 역할은 제목 글자가 아니라 따로 — 제목을 고쳐도 남는다
+export const roleTag = (r) => `[${roleLabel(r) || '역할?'}]`;
+export const ROLE_UNKNOWN_TIP = '역할? — 이 세션의 역할을 알 수 없습니다. 머리줄 역할을 눌러 정합니다.';
+export function roleBadge(s) {
+  const l = roleLabel(s.role);
+  return `<span class="rolebadge role-${esc(s.role || 'none')}" title="${esc(l ? `${l} — 이 세션이 맡은 역할입니다. 제목을 고쳐도 그대로입니다.` : ROLE_UNKNOWN_TIP)}">${esc(l || '역할?')}</span>`;
+}
 
 // 세션을 알아보는 이름 — CC가 붙인 제목 → CC 세션 이름 → 짧은 id. 캐릭터 이름은 아래 줄에(한 캐릭터에 세션 여럿)
 // 11-09 사람이 해야 풀리는 대기 — "대기"(쉼)와 따로. 무엇을 어디서 하는지 호버에(사용자: 사람 답을 기다리는 상태는 쉼이 아니다)
@@ -31,10 +42,14 @@ export function stateBadge(s) {
 }
 export function sessionName(s) { return s.custom_title || s.title || s.cc_name || s.short; }   // 사람이 붙인 이름이 먼저(11-05)
 export function sessionSub(s) {
-  // 캐릭터 이름이 역할 이름으로 시작하면(0017 재배치 — "코더" · "코더 foreman-2") 역할은 다시 쓰지 않는다
-  const role = ROLE_LABEL[s.role] || s.role;
-  // 겉은 캐릭터 · 역할만(11-09 — 짧은 id · tmux 창은 호버로, sessionIds)
-  return [s.character, s.character && role && s.character.startsWith(role) ? null : role].filter(Boolean).join(' · ');
+  // 역할은 제목 앞 배지(roleBadge)가 맡는다(11-09). 여기는 캐릭터 이름에서 역할 이름을 뗀 나머지만 —
+  // "코더 foreman-3" → "따로 작업 foreman-3", "코더" → 없음. 역할 캐릭터가 아닌 이름(떠돌이 등)은 그대로
+  const c = s.character || '';
+  for (const l of Object.values(ROLE_LABEL)) {
+    if (c === l) return '';
+    if (c.startsWith(l + ' ')) return `따로 작업 ${c.slice(l.length + 1)}`;
+  }
+  return c;
 }
 // 호버용 — 세션 짧은 id · tmux 창
 export function sessionIds(s) {
@@ -544,7 +559,7 @@ export function createRenderer(root, store) {
     return `<article class="card st-${s.state}${st.selected === s.id ? ' sel' : ''}" data-sid="${s.id}" tabindex="0" aria-label="${esc(sessionName(s))} ${STATE_LABEL[s.state]}">
       <div class="card-top">
         <span class="badge st-${s.state}">${s.state}</span>
-        <b class="title" title="${esc(sessionName(s))}">${esc(sessionName(s))}</b>
+        ${roleBadge(s)}<b class="title" title="${esc(sessionName(s))}">${esc(sessionName(s))}</b>
         <span class="right small muted">${s.state === 'DORMANT' ? ago(s.last_ts) : STATE_LABEL[s.state]}</span>
       </div>
       <div class="sub small muted" title="${esc(sessionIds(s))}">${esc(sessionSub(s))}</div>
@@ -583,7 +598,7 @@ export function createRenderer(root, store) {
       $('inputForm').hidden = true;
       return;
     }
-    $('panelHead').innerHTML = `<span class="badge st-${s.state}">${s.state}</span> <b>${esc(sessionName(s))}</b><div class="muted small" title="${esc(sessionIds(s))}">${esc(sessionSub(s))} · ${esc((s.cwd || '').replace(/^\/home\/[^/]+/, '~'))}</div>`;
+    $('panelHead').innerHTML = `<span class="badge st-${s.state}">${s.state}</span> ${roleBadge(s)} <b>${esc(sessionName(s))}</b><div class="muted small" title="${esc(sessionIds(s))}">${esc([sessionSub(s), (s.cwd || '').replace(/^\/home\/[^/]+/, '~')].filter(Boolean).join(' · '))}</div>`;
     $('panelInfo').innerHTML = sessionKv(s);
     const convo = $('convo');
     const atBottom = convo.scrollHeight - convo.scrollTop - convo.clientHeight < 40 || lastSel !== s.id;
