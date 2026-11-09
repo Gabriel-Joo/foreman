@@ -33,6 +33,15 @@
 
 - 11-09 20:1x KST 사용자 지시로 위 글을 그대로 펫퍼민트 세션(`petmint-rag-chatbot-b7`, tmux `cc-petmint-rag-chatbot-2`)에 세션 간 메시지로 보냄. 커밋 해시가 오면 FOREMAN에서 실제 빌드(건너뜀 · 배포 대기 없음 · 코드 커밋은 빌드)를 확인한다
 
+## 펫퍼민트 답(20:2x)
+
+- 커밋 `16727bc`, **push는 그 세션 사용자 승인 대기** — push하면 해시를 다시 보낸다
+- 방식은 런슈즈와 같음. 문서 범위 `docs/` · `data/review/` · 루트 `*.md`. Dockerfile은 web/ · app/ · db/ · data/*.py만 COPY, `.dockerignore`에 docs · *.md를 더해 이중으로 뺌
+- 판정 셸을 dash로 9가지 경우 시험(skip 3 · build 6) 맞음
+- 이 커밋 자체는 Jenkinsfile을 바꿔 **빌드된다**(이미지 + 태그 커밋 → Sync 대기 1개). 건너뛰기는 그다음 문서만 바꾼 커밋부터 확인된다
+- **런슈즈에도 있을 수 있는 버그**(펫퍼민트가 찾음): `git diff --name-only`는 기본값(`core.quotePath=true`)에서 한글 경로를 `"docs/ops/\353…"`처럼 따옴표로 감싸 `^docs/`에 안 걸린다 → 문서만 바뀐 커밋도 build. 펫퍼민트는 `git -c core.quotePath=false diff`로 고침
+  - 런슈즈 확인(읽기만): 지금 한글 이름 파일 0개, Jenkinsfile 79줄 `git diff --name-only`(quotePath 그대로) — 아직 터지지 않음. 한글 이름 문서가 생기면 건너뛸 것을 빌드한다(더 도는 쪽이라 안전하지만 배포 대기가 생긴다). 고치기는 런슈즈 세션 몫 — README 「나중에 할 일」
+
 ## 같이 볼 것
 
 - 지금 쌓인 문서만 바뀐 태그를 Sync할지는 사용자가 정한다(그 기록의 남은 항목)
