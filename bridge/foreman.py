@@ -32,7 +32,7 @@ from bridge.usage import record_cli
 log = logging.getLogger("foreman.dispatch")
 
 MODES = ("new", "handoff", "attach", "ask")
-ROLES = ("coder", "inspector", "cicd", "scribe")
+ROLES = ("coder", "inspector", "cicd", "scribe", "manager")
 PLAN_TIMEOUT_S = 180.0
 _cache: dict[str, tuple[float, str]] = {}
 
@@ -121,6 +121,8 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
    - scribe 일감(docs/12_scribe.md): 회고(retro) · 문서 맞추기(sync) · CLAUDE.md 정리(trim) · 압축 손실 반영(loss) · 포트폴리오
    - 회고 · 문서 정리 요청이면 scribe. 서기는 따로 작업(worktree)으로 띄우고, 합치기가 사람의 검토다
    - 회고의 first_prompt에는 기간(KST)을 꼭 적는다. 재료 묶음은 사람이 `python -m bridge.scribe`로 만든 경로를 준다
+   - "manager"(관리자): 코드를 고치지 않고 다른 세션의 일을 거두는 일 — worktree 합친 뒤 시험 · push · 브리지 다시 띄우기 · 화면 점검 · log 기록.
+     상주 세션이 아니다. 사람이 그런 일을 콕 집어 맡길 때만 고른다(코드를 고치는 일이면 coder)
 4. read_only — 원인 분석 · 조사만이면 true(CC 읽기 전용 모드로 띄운다). 고치는 일이면 false
 5. title — 세션 이름(한국어, 짧게)
 6. first_prompt — 새 세션(또는 attach 세션)에 넣을 첫 글. 한국어로:

@@ -14,6 +14,7 @@ coder     = "opus"
 inspector = "sonnet"
 cicd      = "sonnet"
 scribe    = "opus"
+manager   = "opus"     # 관리자(11-09) — 합치기 · 시험 · push · 기록. 판단이 많아 opus
 
 # 세션이 아닌 `claude -p` 일감의 모델(11-06). 바꾸면 브리지를 다시 띄운다
 [tasks]

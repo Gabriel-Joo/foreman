@@ -8,6 +8,7 @@ import { createSidePanel } from './opanel.js';
 import { mountNewSession } from './newsession.js';
 import { mountTodoInbox } from './todoinbox.js';
 import { coderJobs, coderBubble, isCoder, REST_DAYS } from './coder.js';
+import { roleTag } from './render.js';
 import { showTip, hideTip, themeTips, attachDomTips, textTip, softEsc, tipAudit as tipAuditOf } from './tip.js';
 import { buildGrid, findPath, footprint, RES } from './walk.js';
 import { uiScale } from './uiscale.js';
@@ -417,6 +418,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       ss.sort((a, b) => (a.state === 'DORMANT') - (b.state === 'DORMANT') || a.id - b.id);
       const cap = seatCount(room);
       let scribeN = 0;                 // 이 방의 서기 세션 수 — 둘이면 두 번째는 다음 자리(같은 자리에 겹치지 않게, 11-06)
+      // 관리자(11-09 사용자) — 감독실 안 옆자리(theme manager 구역)에 선다. 일할 때도 그 자리(도구 따라 구역으로 가지 않는다).
+      // 작업 책상 수에 들지 않는다. 상주가 아니라 세션이 있을 때만 보인다
+      let managerN = 0;
+      const mgrOf = (s) => !room.lounge && roleOf(s) === 'manager' && !!(L.zones.manager && L.zones.manager.seats);
       // 코더 상주(11-09) — 방마다 코더가 늘 있다. 살아 있는 코더 세션 중 가장 먼저 뜬 것이 상주 코더의 몸을 쓰고(책상으로 걸어가 일하고
       // 끝나면 자리로 돌아온다), 둘째부터는 임시 일꾼(반투명 · "임시" 이름표, 세션이 끝나면 사라진다). 끝난 코더 세션은 남기지 않는다
       const homed = !room.lounge && !!(L.zones.coder_home && L.zones.coder_home.seat);
@@ -427,7 +432,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 끝난 세션(DORMANT)은 끝나고 3분 동안만 흐리게 자리에 남았다가 화면에서 사라진다(11-05 사용자 요청).
       // 패널 세션 목록의 "종료된 세션"에는 그대로 있다 — 거기서 골라 [새로 띄우기]. 멈춘 세션(SUSPENDED)은 그대로 보인다
       const shown = ss.filter((s) => !dormantGone(s, room.name));
-      room.overflow = Math.max(0, shown.length - cap);
+      room.overflow = Math.max(0, shown.filter((s) => !mgrOf(s)).length - cap);
       room.stats = { ACTIVE: 0, IDLE: 0, SUSPENDED: 0, DORMANT: 0, pending: 0, question: 0, denied: 0, asks: 0, subs: 0, tin: 0, tout: 0, opus_out: 0, all_out: 0 };
       let slot = 0;
       ss.forEach((s) => {
@@ -449,8 +454,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         }
         if (dormantGone(s, room.name)) return;
         if (coderOf(s) && s.state === 'DORMANT') return;          // 코더 세션이 끝나면 상주 코더는 자리로, 임시 일꾼은 사라진다
-        const k = slot++;
-        if (k >= cap) return;
+        const mgr = mgrOf(s);
+        const k = mgr ? 0 : slot++;
+        if (!mgr && k >= cap) return;
         let act = resolveAction(theme, { state: viewState(s), role: roleOf(s), tool: s.activity && s.activity.tool, target: s.activity && s.activity.target,
                                          flags: { approval_pending: pending.has(s.id) || asking.has(s.id), stuck_turn: !!s.stuck_turn } });
         // 쉬는 모습은 사람마다 다르게(마법학교: 엎드려 자기 · 먹기 · 책) — 플래그가 덮은 동작은 그대로
@@ -472,8 +478,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
           }
           if (act.go === 'scribe') seatK = (seatK + scribeN++) % sz.seats.length;
         }
-        const desk = seat(room, k);
-        let [tx, ty, face] = spot(room, act.go, desk, act.go === 'scribe' ? seatK : k);
+        if (mgr) {                     // 승인 대기 같은 플래그의 모습(손 들기)은 그대로, 자리만 감독실
+          act = { ...act, go: 'manager' };
+          seatK = managerN++;
+        }
+        const desk = mgr ? null : seat(room, k);
+        let [tx, ty, face] = spot(room, act.go, desk, act.go === 'scribe' || mgr ? seatK : k);
         if (plan && plan.handing && plan.handing.sid === s.id) {      // 새 빌드 — 배송 담당에게 일감을 넘기러 간다
           const [hx, hy] = courierHome(room);
           tx = hx + HANDOFF_DX; ty = hy; face = 'left';
@@ -2152,10 +2162,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 붐비는 사람(11-06) — 발밑 기본 자리끼리 겹치면 둘 다 이름의 끝부분만 쓴다(「서기 — 포트폴리오 쓰기: 포먼 디스패처」 → 「포먼 디스패처」).
   // 먼저 그린 사람이 긴 이름으로 자리를 다 차지해 둘째가 갈 데가 없었다(오피스 1024 필사실)
   const nameTail = (s) => { const m = String(s || '').split(/:\s|\s—\s/); return m[m.length - 1] || s; };
+  // 세션 캐릭터 · 쉬는 상주 코더 · 서기의 이름표는 역할만(11-09 사용자 — 제목이 들어가 "임시 · 세션 역할 관리자(man…"처럼 잘렸다).
+  // 제목 · 세션 번호는 호버와 패널 머리줄에. 임시 일꾼이면 "임시"만 덧붙인다
+  const roleNamed = (a) => a.kind === 'session' || a.kind === 'coder' || a.kind === 'scribe';
+  const roleName = (a) => roleTag(a.role) + (a.temp ? ' 임시' : '');
   function markCrowd(as) {
     ctx.font = `${fpx(15)}px system-ui, sans-serif`;
     const bx = as.filter((a) => !(a.kind === 'mini' && a.key !== selected)).map((a) => {
-      const [sx, sy] = toScreen(a.x * T, a.y * T), w = ctx.measureText(short(a.name, 18)).width + 6;
+      const [sx, sy] = toScreen(a.x * T, a.y * T), w = ctx.measureText(roleNamed(a) ? roleName(a) : short(a.name, 18)).width + 6;
       a.crowd = false;
       return [a, [sx - w / 2, sy + 2, w, fpx(15) + 3]];
     });
@@ -2168,9 +2182,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const [sx, sy] = toScreen(a.x * T, a.y * T);
     // 끝난 세션(DORMANT)과 멈춘 세션(SUSPENDED)이 그림만으로는 헷갈렸다(11-05) — 이름 뒤에 글로 붙인다
     const suffix = a.kind === 'session' && a.s ? ({ DORMANT: ' · 끝남', SUSPENDED: ' · 멈춤' }[a.s.state] || '') : '';
-    const base = a.crowd && a.kind === 'session' ? nameTail(a.name) : a.name;
-    const pre = a.temp ? '임시 · ' : '';                       // 임시 일꾼(11-09) — 이름표 앞에 "임시", 테두리는 점선
-    const text = pre + (a.kind === 'session' ? short(base, a.temp ? 14 : 18) : short(base, 30)) + suffix;
+    const text = roleNamed(a) ? roleName(a) + suffix : short(a.name, 30) + suffix;   // 임시 일꾼은 테두리도 점선(11-09)
     // 11-06 글씨 키움(11 → 15px, 두 번) — 줄 높이 NH, 줄 사이 1px
     const NH = fpx(15) + 3;                                  // 11-09 글씨 배율을 따른다(배율 1에서 15px · 18)
     ctx.font = `${fpx(15)}px system-ui, sans-serif`;
@@ -2213,8 +2225,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       return best;
     };
     let best = place(lines);
-    if (best.c && text.length > 11) {
-      const alt = place([[pre + short(nameTail(a.name), 10) + suffix, lines[0][1]], ...lines.slice(1)]);
+    if (best.c && text.length > 11 && !roleNamed(a)) {
+      const alt = place([[short(nameTail(a.name), 10) + suffix, lines[0][1]], ...lines.slice(1)]);
       if (alt.c < best.c) best = alt;
     }
     const { ws, mw, bh } = best;
@@ -2839,7 +2851,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 코더 상주(11-09) — 상주 코더의 몸을 쓰는 세션은 "코더 · 일 N", 임시 일꾼은 어느 세션 · 무슨 일인지
       const who = a.resident ? `<div class="tip-s">코더 · 일 ${a.coders || 1} — 이 방 코더가 맡은 세션입니다.${a.coders > 1 ? ` 나머지 ${a.coders - 1}개는 임시 일꾼이 합니다.` : ''}</div>${coderJobsTip(a.jobs)}${a.jobs && a.jobs.length ? '<div class="tip-t">머리 위 말풍선을 누르면 맡길 일 목록이 열립니다.</div>' : ''}`
         : a.temp ? `<div class="tip-s">임시 일꾼 — 이 방에 코더 세션이 둘 이상이라 세션 ${s.id}을 맡았습니다. 세션이 끝나면 사라집니다.</div>` : '';
-      return `<div class="tip-h">${esc(a.temp ? `임시 · ${a.name}` : a.name)}</div>${who}<div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', WAITING: '기다리는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[vs] || vs)}${
+      // 11-09 사용자 — 이름표는 역할만이라 호버 첫 줄에 역할 · 세션 번호 · 제목("237 합쳐라"를 듣고 어느 세션인지 찾게)
+      return `<div class="tip-h">${esc(roleTag(roleOf(s)))} 세션 ${s.id}${a.temp ? ' · 임시' : ''}</div><div class="tip-b">${esc(a.name)}</div>${who}<div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', WAITING: '기다리는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[vs] || vs)}${
         a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
         s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎</div>` : ''}${
         bg.length ? `<div>뒤에서 도는 일 ${bg.length}개(백그라운드 명령)${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}</div>`).join('')}</div>` : ''}${

@@ -20,6 +20,7 @@
     "corridors": [[1, 12.7, 26, 1.2], [14.95, 6.0, 1.2, 7.1]],
     "zones": {
       "foreman_office": { "_": "팀장실 — 유리벽, 듀얼 모니터", "x": 1, "y": 2, "w": 7, "h": 5, "floor": "carpet", "seat": [3.9, 4.6] },
+      "manager": { "_": "관리자(11-09 사용자) — 팀장실 안 옆자리. 관리자 세션이 있을 때만 선다(상주 아님). 일할 때도 이 자리", "seats": [[6.0, 4.9, "left"], [2.0, 5.9, "right"]] },
       "library": { "_": "A 아카이브 — 책장, 바인더, 복합기", "x": 9, "y": 2, "w": 5, "h": 4, "face": "up",
                    "seats": [[9.8, 4.5], [11.4, 4.5], [12.7, 5.1]] },
       "server": { "_": "C 서버룸 — 랙, LED, 유리문", "x": 15, "y": 2, "w": 5, "h": 4, "face": "up",
@@ -70,7 +71,7 @@
   "roles": {
     "_": "역할 → 사원증 끈 색. 이름은 DB · 디스패처와 같다(11-05 통일: foreman coder inspector cicd helper). 미리 보기 ?roles=demo",
     "mode": "lanyard",
-    "colors": { "foreman": "#d4a72c", "coder": "#3f7fd0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "helper": "#8a8f98" },
+    "colors": { "foreman": "#d4a72c", "coder": "#3f7fd0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "manager": "#c0392b", "helper": "#8a8f98" },
     "idle": { "_": "역할별 쉼 자리(12a) — 서기는 문서팀에서 읽는다", "scribe": { "go": "scribe", "anim": "read" } }
   },
 

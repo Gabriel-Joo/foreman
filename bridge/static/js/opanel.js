@@ -7,7 +7,7 @@
 // 너비는 두 가지(좁게 = 픽셀 볼 때, 넓게 = 대화 읽을 때)를 오가고, 각각 끌어서 바꾼 값을 따로 기억한다.
 
 import { approvalCard, handleApprovalClick, sessionKv, modelChip, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
-         sessionName, sessionSub, sessionIds, projectLabel, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed } from './render.js';
+         sessionName, sessionSub, sessionIds, projectLabel, roleBadge, roleLabel, ROLE_LABEL, SESSION_ROLES, ROLE_UNKNOWN_TIP, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed } from './render.js';
 import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
 import { mountHandoff, FLOW_TIP } from './handoff.js';
@@ -39,7 +39,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     </button>
     <div class="oside-main">
       <div class="oside-bar">
-        <b id="pTitle">패널</b><span id="pCount" class="small"></span>
+        <button id="pRole" type="button" class="rolebadge" hidden></button><span id="pSid" class="small muted psid" hidden></span><b id="pTitle">패널</b><span id="pCount" class="small"></span>
         <button id="pWide" class="ghost small right" title="너비 — 대화를 읽을 땐 넓게, 픽셀을 볼 땐 좁게 합니다."></button>
         <button id="pClear" class="ghost small" title="선택 해제 — 고른 세션을 놓습니다." hidden>✕</button>
         <button id="pFold" class="ghost small" title="접기 — 패널을 접어 픽셀 화면을 넓힙니다.">▶</button>
@@ -113,6 +113,30 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (remember) ls.set(KEY_OPEN, v ? '1' : '0');
     if (onToggle) onToggle(v);
   }
+  // 세션 역할(11-09) — 머리줄 역할 배지를 누르면 그 자리에서 고른다. 제목 고치기와 따로(제목을 고쳐도 역할은 남는다)
+  let pickingRole = false;
+  $('pRole').addEventListener('click', () => {
+    const s = target && target.kind === 'session' && store.state.selected != null ? store.state.sessions.get(store.state.selected) : null;
+    if (!s || pickingRole) return;
+    pickingRole = true;
+    const btn = $('pRole');
+    const sel = document.createElement('select');
+    sel.className = 'prole-pick';
+    sel.innerHTML = SESSION_ROLES.map((r) => `<option value="${r}"${r === s.role ? ' selected' : ''}>${esc(ROLE_LABEL[r])}</option>`).join('');
+    btn.hidden = true;
+    btn.after(sel);
+    sel.focus();
+    const done = async (role) => {
+      if (!pickingRole) return;
+      pickingRole = false;
+      sel.remove(); btn.hidden = false;
+      if (!role || role === s.role) return;
+      try { await store.setRole(s.id, role); } catch (e) { $('pResult').innerHTML = `<span class="bad">역할을 바꾸지 못했습니다 — ${esc(e.message)}</span>`; }
+    };
+    sel.addEventListener('change', () => done(sel.value));
+    sel.addEventListener('blur', () => done(undefined));
+    sel.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); done(undefined); } });
+  });
   // 세션 이름 — 제목을 누르면 그 자리에서 고친다(11-05). Enter 저장 · Esc 취소 · [자동 제목]은 CC가 붙인 제목으로
   let editingTitle = false;
   $('pTitle').addEventListener('click', () => {
@@ -503,9 +527,21 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const switched = lastSel !== s.id;
     if (switched) { sessionMode(true); last.convo = last.feed = last.meta = last.info = ''; }
     hand.setSession(s.id);
+    // 머리줄 = 첫 줄 [역할] 세션 번호 + 버튼, 둘째 줄 제목(11-09 사용자 — 역할 + 지금 하는 일). 한 줄에 두면 좁은 패널에서 제목이 한 글자로 줄었다
+    if (!pickingRole) {
+      const rl = roleLabel(s.role);
+      $('pRole').textContent = rl || '역할?';
+      $('pRole').className = `rolebadge role-${s.role && rl ? s.role : 'none'}`;
+      $('pRole').dataset.tip = rl ? `${rl} — 이 세션이 맡은 역할입니다. 눌러서 바꿉니다. 제목을 고쳐도 역할은 그대로입니다.` : ROLE_UNKNOWN_TIP;
+      $('pRole').hidden = false;
+    }
+    $('pSid').textContent = `세션 ${s.id}`;
+    $('pSid').dataset.tip = `세션 ${s.id} — FOREMAN 세션 번호입니다. 기록 · 세션 사이 말에 이 번호로 나옵니다.${sessionIds(s) ? '\n' + sessionIds(s) : ''}`;
+    $('pSid').hidden = false;
+    $('pTitle').parentElement.classList.add('sess');
     if (!editingTitle) {
       $('pTitle').textContent = sessionName(s) + (s.custom_title ? '' : ' ');
-      $('pTitle').dataset.tip = `${sessionName(s)} — 눌러서 이름을 바꿉니다.${s.custom_title ? ` 자동 제목은 "${s.title || s.cc_name || s.short}"입니다.` : ''}`;
+      $('pTitle').dataset.tip = `제목 — 이 세션이 지금 하는 일입니다. 눌러서 고칩니다. 역할은 바뀌지 않습니다.${s.custom_title ? ` 자동 제목은 "${s.title || s.cc_name || s.short}"입니다.` : ''}\n${sessionName(s)}`;
       $('pTitle').classList.add('editable');
     }
     // 제목 아래 한 줄 — 세션 정보 · 토큰은 여기 작게, 자세한 것은 [세션] 탭
@@ -557,6 +593,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const rows = [];
     const btn = (s) => `
         <button class="plist" data-sid="${s.id}">${stateBadge(s)}
+          ${roleBadge(s)}<span class="muted small" title="세션 ${s.id} — FOREMAN 세션 번호입니다.">${s.id}</span>
           <b>${esc(oneLine(sessionName(s), 40))}</b>${s.activity && s.state === 'ACTIVE' ? ` <span class="muted">${esc(s.activity.tool)}</span>` : ''}${s.state === 'DORMANT' ? ` <span class="muted small">${ago(s.last_ts)}</span>` : ''}</button>`;
     for (const p of st.projects) {
       if (names && !names.includes(p.name)) continue;
@@ -573,6 +610,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   function drawHint(st) {
     lastSel = undefined;
+    $('pRole').hidden = $('pSid').hidden = true;
+    $('pTitle').parentElement.classList.remove('sess');
     $('pTitle').classList.remove('editable'); delete $('pTitle').dataset.tip;
     $('pClear').hidden = !target;
     if (target && target.kind === 'infra') {

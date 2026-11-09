@@ -20,6 +20,7 @@
     "corridors": [[1, 12.2, 26, 1.1], [8.1, 6.0, 1.5, 6.6]],
     "zones": {
       "foreman_office": { "_": "감독 컨테이너 — 안전모 걸이, 무전기, 커피", "x": 1, "y": 2, "w": 7, "h": 5, "floor": "plate", "seat": [4.4, 4.75] },
+      "manager": { "_": "관리자(11-09 사용자) — 소장실 안 옆자리. 관리자 세션이 있을 때만 선다(상주 아님). 일할 때도 이 자리", "seats": [[6.2, 5.3, "left"], [3.0, 6.6, "right"]] },
       "store": { "_": "A 자재창고 — 철제선반, 파이프 묶음, 자재 더미", "x": 9, "y": 2, "w": 6, "h": 4, "face": "up",
                  "seats": [[10.2, 4.6], [12.4, 4.6], [14.0, 5.2]] },
       "tools": { "_": "C 공구실 — 공구벽, 컴프레서, 기름통", "x": 16, "y": 2, "w": 6, "h": 4, "face": "up",
@@ -69,7 +70,7 @@
   "roles": {
     "_": "역할 → 안전모 색. 역할이 없으면 노란 안전모, 감독(foreman)은 흰 안전모. 이름은 DB · 디스패처와 같다(11-05 통일). 미리 보기 ?roles=demo",
     "mode": "helmet", "default": "#f2c14e", "foreman": "#f4f4f4",
-    "colors": { "foreman": "#f4f4f4", "coder": "#2f6fb0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "helper": "#8a8f98" },
+    "colors": { "foreman": "#f4f4f4", "coder": "#2f6fb0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "manager": "#c0392b", "helper": "#8a8f98" },
     "idle": { "_": "역할별 쉼 자리(12a) — 서기는 서류실에서 읽는다", "scribe": { "go": "scribe", "anim": "read" } }
   },
 
