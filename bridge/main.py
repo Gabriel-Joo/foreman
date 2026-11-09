@@ -251,7 +251,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         engine, client, ncfg["root"], repo, project=name, gh=ncfg.get("github") or "https://github.com/Gabriel-Joo/foreman",
                         ref=ncfg.get("ref") or "HEAD", docs_page=ncfg.get("docs_page"), portfolio_page=ncfg.get("portfolio_page"),
                         docs_mode=ncfg.get("docs") or "off", quiet_min=float(ncfg.get("quiet_min") or 30),
-                        opts={k: ncfg.get(k) for k in ("create", "title", "order", "header", "keep_notion", "skip") if k in ncfg})
+                        opts={k: ncfg.get(k) for k in ("create", "title", "order", "header", "keep_notion", "skip", "archive",
+                                                       "headings", "new_parent", "new_title") if k in ncfg})
                 app.state.publisher = app.state.publishers.get("foreman")
                 app.state.docsync = DocSync(app.state.publishers, app.state.notifier)
                 if any(p.docs_mode == "auto" for p in app.state.publishers.values()):
