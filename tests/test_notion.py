@@ -273,6 +273,34 @@ def test_sync_keeps_block_ids_and_replaces_only_changed():
     assert st3["reset"] == 1 and [b["type"] for b in f.blocks["root"]] == ["heading_1"]
 
 
+def test_sync_never_deletes_subpages():
+    """11-09 — 맞추기가 하위 페이지 블록(child_page)을 지우면 그 페이지가 휴지통으로 간다(펫퍼민트 01 · 02 아래 단계 문서). 맨 앞부터 달라도."""
+    f = FakeNotion(see_all=True)
+    _, b1 = nt.md_to_blocks("문단 하나\n")
+    asyncio.run(nt.append_tree(f, "root", b1))
+    f.pages["sub"] = {"parent": "root", "title": "단계 문서", "archived": False}
+    _, b2 = nt.md_to_blocks("## 맨 앞부터 다름\n")
+    asyncio.run(nt.sync_children(f, "root", b2))
+    assert not f.pages["sub"]["archived"] and any(b["type"] == "child_page" for b in asyncio.run(f.children("root")))
+
+
+def test_adopt_notion_shape_inline_code_and_image():
+    """11-09 펫퍼민트 — 파일명 인라인 코드 · 업로드 그림은 Notion 모양이 기준: 사람 수정으로 안 잡히고, 덮지도 다시 올리지도 않는다."""
+    f = FakeNotion(see_all=True)
+    notion_side = [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": nt._rt("설정은 ") + nt._rt("a.py", code=True) + nt._rt("에 있다")}},
+                   {"object": "block", "type": "image", "image": {"type": "file_upload", "file_upload": {"id": "f0"}}}]
+    asyncio.run(nt.append_tree(f, "root", notion_side))
+    old = asyncio.run(f.children("root"))
+    _, new = nt.md_to_blocks("설정은 a.py에 있다\n\n![그림](img/x.png)\n", nt.Ctx("docs/x.md", "abc"))
+    assert any("_upload" in b for b in new)
+    got = nt.adopt_notion_shape(old, new, {"inline_code", "image"})
+    assert [nt._sig(b) for b in got] == [nt._sig(b) for b in old]          # 맞대기에서 둘 다 "같음"
+    st = asyncio.run(nt.sync_children(f, "root", got))
+    assert st["updated"] == 0 and st["added"] == 0 and st["deleted"] == 0 and not any(c[0] == "upload" for c in f.calls)
+    assert nt.plain(f.blocks["root"][0]["paragraph"]["rich_text"]) == "설정은 a.py에 있다"
+    assert any(r.get("annotations", {}).get("code") for r in f.blocks["root"][0]["paragraph"]["rich_text"])   # 인라인 코드 그대로
+
+
 def test_sync_insert_near_top_keeps_later_blocks():
     """11-06 — 글 앞쪽에 사진을 끼우자 뒤 블록이 모두 밀려 새 블록이 되고 mermaid 미리보기가 풀렸다. 내용으로 짝지으면 그대로다."""
     f = FakeNotion(see_all=True)
