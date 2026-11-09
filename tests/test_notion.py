@@ -324,6 +324,33 @@ def test_shape_compare_ignores_form_but_catches_text():
     assert nt.shape_text(notion2, subs) != nt.shape_text(nt.flat_md(git), subs)
 
 
+def test_shape_patch_touches_only_changed_block():
+    """11-09 — git만 바뀌면 바뀐 블록만 그 자리에서(Notion 종류 그대로). 나뉜 인용 · 빈 줄 같은 Notion 모양은 건드리지 않는다.
+    짝이 하나로 안 맞으면 아무것도 쓰기 전에 멈춘다."""
+    f = FakeNotion(see_all=True)
+    notion = [{"object": "block", "type": "heading_3", "heading_3": {"rich_text": nt._rt("0. 목표")}},
+              {"object": "block", "type": "paragraph", "paragraph": {"rich_text": nt._rt("경로는 docs/a.md")}},
+              {"object": "block", "type": "quote", "quote": {"rich_text": nt._rt("첫 줄")}},
+              {"object": "block", "type": "quote", "quote": {"rich_text": []}},
+              {"object": "block", "type": "paragraph", "paragraph": {"rich_text": []}}]
+    asyncio.run(nt.append_tree(f, "root", notion))
+    ids = [b["_id"] for b in f.blocks["root"]]
+    _, prev = nt.md_to_blocks("## 0. 목표\n\n경로는 docs/a.md\n\n> 첫 줄\n")
+    _, new = nt.md_to_blocks("## 0. 목표\n\n경로는 docs/ops/a.md\n\n> 첫 줄\n")
+    st = asyncio.run(nt.shape_patch(f, "root", prev, new, "docs/x.md", None))
+    assert st["updated"] == 1 and st["deleted"] == 0 and st["added"] == 0
+    assert [b["_id"] for b in f.blocks["root"]] == ids and f.blocks["root"][0]["type"] == "heading_3"
+    assert nt.plain(f.blocks["root"][1]["paragraph"]["rich_text"]) == "경로는 docs/ops/a.md"
+    _, new2 = nt.md_to_blocks("## 0. 목표\n\n경로는 docs/ops/a.md\n\n> 첫 줄 고침\n")      # 바뀐 인용 — Notion엔 같은 글이 하나뿐이라 맞춤
+    _, prev2 = nt.md_to_blocks("## 0. 목표\n\n경로는 docs/ops/a.md\n\n> 다른 글\n")        # 지난 글이 Notion에 없음 → 멈춤, 쓰기 없음
+    n = len(f.calls)
+    try:
+        asyncio.run(nt.shape_patch(f, "root", prev2, new2, "docs/x.md", None))
+        raise AssertionError("멈추지 않았다")
+    except nt.HumanEdited:
+        assert len(f.calls) == n
+
+
 def test_sync_insert_near_top_keeps_later_blocks():
     """11-06 — 글 앞쪽에 사진을 끼우자 뒤 블록이 모두 밀려 새 블록이 되고 mermaid 미리보기가 풀렸다. 내용으로 짝지으면 그대로다."""
     f = FakeNotion(see_all=True)
