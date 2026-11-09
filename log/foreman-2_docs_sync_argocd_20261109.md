@@ -114,7 +114,23 @@
 - 메인(foreman-59)에 알림 → 답: 지금 그 파일들을 고치지 않는다, README를 고치게 되면 3.1 「제출 확인」 앞뒤를 피하고 커밋을 알려 준다, 합치기는 메인이 한다
 - 같은 파일 알림은 "최근 3시간 안에 둘 다 고쳤다"로 판정해, 이미 합쳐진 바탕 위에서 고친 경우도 잡는다 — 이번이 그렇다(실제 충돌 위험은 그 뒤 main이 다시 고칠 때)
 
+## 7. 이어서(11-09) — 실제 배포로 확인: Sync 뒤 Healthy 알림이 온다
+
+- 펫퍼민트 세션이 그 세션 사용자 승인으로 push(`2e287cb..a498cb5`, 시험 커밋 a498cb5 = `docs/ops/배포기록.md` · `docs/README.md` 한 줄 + 사용자가 지시했던 안 올린 커밋 3개). 사용자가 ArgoCD에서 Sync
+- 흐름(KST, ArgoCD 앱 상태 · 컨트롤러 전송 · FOREMAN 행 `petmint@1998617f`):
+
+| 시각 | ArgoCD | 컨트롤러가 보낸 것 | FOREMAN |
+|---|---|---|---|
+| 18:49:20 | — | — | jenkins `petmint-app#55` → success |
+| 18:49:25 ~ 27 | OutOfSync · Healthy · (지난 작업) Succeeded | **out-of-sync만** — deployed 없음(고치기 전엔 여기서 같이 나갔다) | → waiting(Sync 대기) |
+| 18:49:53 | Sync 누름 | sync-running | → running |
+| 18:50:11 | Synced · Progressing | sync-succeeded | → running |
+| 18:50:30 | Synced · Healthy | **foreman-deployed** | → **success**(끝 알림으로 닫힘 — 직접 읽기 `[끝 알림이 없어 ArgoCD를 읽어 확인]` 아님) |
+
+- **결론: 고친 조건이 맞게 동작한다. 컨트롤러 재시작은 필요 없었다**
+- 런슈즈는 같은 인프라 커밋(1998617f)에서 앱이 바뀌지 않아 Synced 그대로 → 18:49:25 바로 deployed → success. 안 A에서도 그대로인 동작(「위험」 둘째 줄)
+- 감시 스크립트 실수 한 번: 컨트롤러 "Sending" 줄에 리비전이 없는데 옛 리비전 이름으로 거르려 해서, 옛 deployed 줄을 새것으로 읽고 18:49:29에 일찍 끝났다 → 시각(`--since-time`)으로 걸러 다시 돌림. 결과 판단에는 영향 없음(위 표는 다시 돌린 것)
+
 ## 남은 것
 
-- 펫퍼민트 시험 배포에서 Sync 뒤 Healthy 알림(`foreman-deployed`)이 오는지 — 결과를 이 절 뒤에 덧붙인다
 - 이 브랜치는 커밋만 했다(push 안 함, 브리지 안 띄움 — 문서 · yaml만 바꿔 브리지 동작 같음)
