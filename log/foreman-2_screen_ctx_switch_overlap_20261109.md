@@ -83,6 +83,15 @@
 - 사람이 Edit 없이 Bash(sed · python)로 고친 파일은 보이지 않는다(이 저장소는 Edit · Write만 쓰는 규칙이라 FOREMAN 안에서는 맞다)
 - office 1366 「서기」 nameAudit 1건(기존)
 
+## 합친 뒤 확인 (브리지를 다시 띄운 세션이 본다)
+
+합치기 직전 main(3ec3294) 위로 rebase하고 혼자 돌린 시험: 528 통과 · 1 건너뜀, JS 53 통과(다른 시험 실행 없음 확인).
+- [ ] `/api/dashboard`의 세션에 `switch` 키가 있다(없으면 null). `context.pct`가 있는 세션의 패널 머리줄에 "쌓인 대화 N%"
+- [ ] 머리 칩이 "한도: 5시간 …"
+- [ ] 브리지 로그에 `같은 파일 확인 실패`가 반복되지 않는다(첫 사람 입력 뒤 60초마다 훑기)
+- [ ] `tools/screen.py --session <아무 세션> --ui-scale 1.25` 세 테마 × 세 폭 tipAudit · cardAudit 0(nameAudit office 1366 「서기」 1건은 기존)
+- [ ] 인계 ② 확인에서 글 상자를 끝까지 내리고 몇 초 기다려도 그대로 · [덧붙여서 보내기] 칸이 열린다
+
 ## 문서 세션이 옮길 것 (합친 뒤)
 
 - `docs/style_guide.md` 4-1
