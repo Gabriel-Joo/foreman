@@ -40,7 +40,7 @@ docs_page = "3ea3218bb5248091aa0bc1eb58ae9ccb"        # [기술문서](사람이
 portfolio_page = "4133218bb5248142883af1f21788f6ca"   # [포트폴리오](11-09 만듦)
 github = "https://github.com/Gabriel-Joo/petmint-rag-chatbot"
 ref = "origin/main"
-docs = "off"   # 11-09 켰다가 docs 폴더를 Notion 구조에 맞게 옮기는 동안 끔(경로가 바뀌면 짝이 끊긴다 — log/petmint_docs_move_20261109.md)
+docs = "auto"  # 11-09 docs를 Notion 구조로 옮긴 뒤(2e287cb, 짝 18개 새 경로) 다시 켬 — log/petmint_docs_move_20261109.md
 quiet_min = 30
 # 아래는 펫퍼민트만(사용자 결정 11-09, log/petmint_docsync_dryrun_20261109.md). 없으면 런슈즈 · FOREMAN처럼 기본 동작
 create = false                      # 짝이 없으면 새 페이지를 만들지 않고 실패로 남긴다

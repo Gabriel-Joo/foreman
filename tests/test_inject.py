@@ -20,6 +20,12 @@ def test_guarded():
     assert inj.guarded("보통 입력") == ("보통 입력", False)
 
 
+def test_recorded_forms_bash_mode():
+    """11-09 실측 — '!' 명령은 트랜스크립트에 "<bash-input>명령</bash-input>"으로 남는다(제출 확인이 알아봐야 한다)."""
+    assert "<bash-input>echo HELLO WORLD</bash-input>" in inj.recorded_forms("!echo HELLO WORLD")
+    assert inj.recorded_forms("보통 글\n") == {"보통 글"}
+
+
 def test_bang_check():
     """11-09 — 공백이 든 명령은 보내고, 승인을 묻는 규칙 · sudo · 여러 줄 · 빈 명령만 막는다(이유와 할 일을 글로)."""
     from types import SimpleNamespace as NS

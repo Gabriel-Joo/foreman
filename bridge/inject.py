@@ -175,7 +175,11 @@ def recorded_forms(sent: str) -> set[str]:
     """트랜스크립트 user 줄에 남을 모양. 여러 줄 붙여넣기는 <pasted_content id=…>로 감싸이고(정규식으로 확인),
     탭은 공백 4칸이 된다(실측). 앞뒤 공백 · 빈 줄은 CC가 다듬어 기록한다(11-05 실측: "확인\n" → "확인",
     끝에 빈 줄 둘인 붙여넣기 → 감싼 안쪽 끝이 한 줄) — 그래서 앞뒤 공백을 빼고 맞댄다."""
-    return {sent.replace("\t", "    ").strip()}
+    s = sent.replace("\t", "    ").strip()
+    if s.startswith("!"):
+        # 11-09 실측 — bash 모드('!')는 "<bash-input>명령</bash-input>"으로 남는다(사용자가 패널에서 !echo HELLO WORLD)
+        return {s, f"<bash-input>{s[1:].strip()}</bash-input>"}
+    return {s}
 
 
 _WRAP = re.compile(r'\n\n<pasted_content id="([0-9a-f]+)">\n(.*)\n</pasted_content id="\1">\n', re.S)
