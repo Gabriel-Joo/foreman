@@ -43,3 +43,8 @@
 - CC 문서(code.claude.com/docs/en/sub-agents.md 「Choose a model」): 환경 변수 `CLAUDE_CODE_SUBAGENT_MODEL`(별칭 가능). 순서 = 호출의 `model` → 에이전트 정의 `model:` → 이 변수 → 부모 모델. `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`는 호출 인자까지 무시하게 해 넣지 않았다. 기본 제공 Explore · Plan은 이 변수로 안 바뀐다. 떠 있는 세션에 바로 걸리는지는 문서에 분명하지 않다. CC 2.1.319
 - 런슈즈 `4576062`(커밋만, push는 그 세션 몫): 새 `.claude/settings.json` `{"env": {"CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"}}`, CLAUDE.md 「서브에이전트 모델」 절 — 판단이 결과를 좌우하는 일(데이터 검증 · 판정, 여러 파일 설계 변경, 코드 리뷰)은 부를 때 `model: "opus"`. 런슈즈 세션의 커밋 안 한 docs 두 파일은 건드리지 않음
 - 확인: 16:58 KST 이후 런슈즈 서브에이전트 응답 없음 — 첫 응답의 모델을 지켜보는 중
+- **결과(20:29 KST, 세션 168ece53이 이어받아 DB 감시)**: 첫 응답은 런슈즈 세션 234(`3d924709`, 19:57 KST 새로 뜸 — 설정 뒤에 뜬 세션)의 두 호출. 둘 다 호출에 `model` 인자 없음, 메타 `launchedWithDefaults: true`
+  - general-purpose("docs에서 낱말 위치 찾기 2"): 응답 **sonnet 4번** → 설정이 먹는다
+  - Explore("docs에서 낱말 위치 찾기"): 응답 **opus 5번** → 기본 제공 Explore는 이 변수로 안 바뀐다(문서 그대로). 부모 모델(opus)을 따른다
+  - Explore도 싸게 하려면: 부를 때 `model` 인자를 주거나, 같은 이름의 사용자 에이전트 정의로 덮는다 — 런슈즈 저장소 일(사용자가 시킬 때)
+  - 떠 있던 세션(225)에 설정이 걸리는지는 그 세션이 서브에이전트를 부르지 않아 아직 모름
