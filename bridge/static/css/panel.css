@@ -192,8 +192,13 @@ body { --term-h:0px; }
 .rolebadge.role-coder { --rc:#5b9be6; } .rolebadge.role-manager { --rc:#e0604f; } .rolebadge.role-scribe { --rc:#d08b4f; }
 .rolebadge.role-inspector { --rc:#3fbf85; } .rolebadge.role-cicd { --rc:#b07ad0; } .rolebadge.role-designer { --rc:#e8619f; }
 .rolebadge.role-none { --rc:var(--warn, #e0b040); }
+.rolebadge.role-foreman { --rc:#c9a227; }
+/* 11-10 display:inline-block이 hidden을 덮어 세션 패널의 배지([디자이너])가 서기 · 코더 패널까지 남았다 */
+.rolebadge[hidden] { display:none; }
 button.rolebadge { cursor:pointer; font-family:inherit; }
+button.rolebadge.fixed { cursor:default; }
 button.rolebadge:hover { background:color-mix(in srgb, var(--rc) 30%, transparent); }
+button.rolebadge.fixed:hover { background:color-mix(in srgb, var(--rc) 16%, transparent); }
 .prole-pick { flex:none; font-size:.9em; }
 .psid { flex:none; white-space:nowrap; }
 /* 세션을 고르면 머리줄 두 줄 — 제목은 둘째 줄 폭 전체(한 줄 말줄임). 고치는 칸도 그 자리 */

@@ -20,6 +20,19 @@ export const roleLabel = (r) => ROLE_LABEL[r] || null;
 // 제목 앞 역할 배지 글(11-09 사용자 — "서기인지 코더인지 모르고 지나쳤다"). 역할은 제목 글자가 아니라 따로 — 제목을 고쳐도 남는다
 export const roleTag = (r) => `[${roleLabel(r) || '역할?'}]`;
 export const ROLE_UNKNOWN_TIP = '역할? — 이 세션의 역할을 알 수 없습니다. 머리줄 역할을 눌러 정합니다.';
+// 패널 머리줄 배지(11-10 사용자 — "코더 패널에도 서기 패널에도 [디자이너]"): 배지는 그 캐릭터의 역할이다.
+// 세션 패널은 그 세션의 role, 세션 없는 캐릭터(서기실 · 코더 자리 · 감독)는 자기 역할. 파이프라인 캐릭터 · 빈 패널은 배지 없음(null)
+const TARGET_ROLE = { scribe: 'scribe', coder: 'coder', foreman: 'foreman' };
+export function panelRole(target, s) {
+  if (!target) return null;
+  if (target.kind === 'session') {
+    const l = s ? roleLabel(s.role) : null;
+    return { role: l ? s.role : 'none', label: l || '역할?', editable: !!s,
+             tip: l ? `${l} — 이 세션이 맡은 역할입니다. 눌러서 바꿉니다. 제목을 고쳐도 역할은 그대로입니다.` : ROLE_UNKNOWN_TIP };
+  }
+  const r = TARGET_ROLE[target.kind];
+  return r ? { role: r, label: roleLabel(r), editable: false, tip: `${roleLabel(r)} — 이 캐릭터의 역할입니다.` } : null;
+}
 export function roleBadge(s) {
   const l = roleLabel(s.role);
   return `<span class="rolebadge role-${esc(s.role || 'none')}" title="${esc(l ? `${l} — 이 세션이 맡은 역할입니다. 제목을 고쳐도 그대로입니다.` : ROLE_UNKNOWN_TIP)}">${esc(l || '역할?')}</span>`;

@@ -7,7 +7,7 @@
 // 너비는 두 가지(좁게 = 픽셀 볼 때, 넓게 = 대화 읽을 때)를 오가고, 각각 끌어서 바꾼 값을 따로 기억한다.
 
 import { approvalCard, handleApprovalClick, sessionKv, modelChip, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
-         sessionName, sessionSub, sessionIds, projectLabel, roleBadge, roleLabel, ROLE_LABEL, SESSION_ROLES, ROLE_UNKNOWN_TIP, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed } from './render.js';
+         sessionName, sessionSub, sessionIds, projectLabel, roleBadge, panelRole, ROLE_LABEL, SESSION_ROLES, ROLE_UNKNOWN_TIP, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed } from './render.js';
 import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
 import { mountHandoff, FLOW_TIP } from './handoff.js';
@@ -528,13 +528,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (switched) { sessionMode(true); last.convo = last.feed = last.meta = last.info = ''; }
     hand.setSession(s.id);
     // 머리줄 = 첫 줄 [역할] 세션 번호 + 버튼, 둘째 줄 제목(11-09 사용자 — 역할 + 지금 하는 일). 한 줄에 두면 좁은 패널에서 제목이 한 글자로 줄었다
-    if (!pickingRole) {
-      const rl = roleLabel(s.role);
-      $('pRole').textContent = rl || '역할?';
-      $('pRole').className = `rolebadge role-${s.role && rl ? s.role : 'none'}`;
-      $('pRole').dataset.tip = rl ? `${rl} — 이 세션이 맡은 역할입니다. 눌러서 바꿉니다. 제목을 고쳐도 역할은 그대로입니다.` : ROLE_UNKNOWN_TIP;
-      $('pRole').hidden = false;
-    }
+    if (!pickingRole) drawRole({ kind: 'session' }, s);
     $('pSid').textContent = `세션 ${s.id}`;
     $('pSid').dataset.tip = `세션 ${s.id} — FOREMAN 세션 번호입니다. 기록 · 세션 사이 말에 이 번호로 나옵니다.${sessionIds(s) ? '\n' + sessionIds(s) : ''}`;
     $('pSid').hidden = false;
@@ -608,9 +602,20 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     return rows.join('') || '<p class="small muted">세션이 없습니다.</p>';
   }
 
+  // 머리줄 배지 — 대상 캐릭터의 역할(panelRole). 세션 없는 캐릭터는 자기 역할, 누를 수 있는 것은 세션 배지만
+  function drawRole(t, s) {
+    const r = panelRole(t, s), b = $('pRole');
+    b.hidden = !r;
+    if (!r) return;
+    b.textContent = r.label;
+    b.className = `rolebadge role-${r.role}${r.editable ? '' : ' fixed'}`;
+    b.dataset.tip = r.tip;
+  }
+
   function drawHint(st) {
     lastSel = undefined;
-    $('pRole').hidden = $('pSid').hidden = true;
+    $('pSid').hidden = true;
+    drawRole(target, null);
     $('pTitle').parentElement.classList.remove('sess');
     $('pTitle').classList.remove('editable'); delete $('pTitle').dataset.tip;
     $('pClear').hidden = !target;

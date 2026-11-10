@@ -1,7 +1,24 @@
 // 세션 역할 이름표(11-09) — 제목 앞 역할 배지 · 캐릭터 이름표는 역할만 · 아래 줄은 캐릭터 이름에서 역할을 뗀 나머지
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { roleLabel, roleTag, roleBadge, sessionSub, sessionName, SESSION_ROLES, ROLE_LABEL } from '../../bridge/static/js/render.js';
+import { roleLabel, roleTag, roleBadge, sessionSub, sessionName, SESSION_ROLES, ROLE_LABEL, panelRole } from '../../bridge/static/js/render.js';
+
+// 11-10 사용자: 코더 패널에도 서기 패널에도 [디자이너] — 배지는 그 캐릭터의 역할이어야 한다
+test('패널 배지 — 세션 없는 캐릭터는 자기 역할, 세션이 있어도 다른 캐릭터 배지는 그대로', () => {
+  // 세션이 하나도 없을 때
+  assert.deepEqual([panelRole({ kind: 'coder', room: 'foreman' }, null).label, panelRole({ kind: 'scribe', room: 'foreman' }, null).label,
+    panelRole({ kind: 'foreman', room: null }, null).label], ['코더', '서기', '감독']);
+  assert.equal(panelRole({ kind: 'infra', room: 'foreman' }, null), null);     // 파이프라인 캐릭터 · 빈 패널은 배지 없음
+  assert.equal(panelRole(null, null), null);
+  // 디자이너 세션 하나만 돌 때 — 세션 패널은 [디자이너], 코더 · 서기 패널은 넘겨받는 세션이 있어도 자기 역할
+  const designer = { id: 251, role: 'designer' };
+  assert.equal(panelRole({ kind: 'session' }, designer).label, '디자이너');
+  assert.ok(panelRole({ kind: 'session' }, designer).editable);
+  assert.equal(panelRole({ kind: 'coder', room: 'foreman' }, designer).label, '코더');
+  assert.equal(panelRole({ kind: 'scribe', room: 'foreman' }, designer).label, '서기');
+  assert.ok(!panelRole({ kind: 'coder' }, null).editable);                      // 캐릭터 배지는 눌러서 바꾸지 않는다
+  assert.equal(panelRole({ kind: 'session' }, { id: 1, role: null }).label, '역할?');
+});
 import { ROLE_PICK } from '../../bridge/static/js/modelpick.js';
 
 test('세션 역할 여섯은 모두 화면 이름이 있다 — 서기 · 관리자 · 디자이너 포함', () => {
