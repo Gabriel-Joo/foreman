@@ -11,6 +11,40 @@ def test_parse_kst_and_clip():
     assert sc._clip("가" * 20, 5).startswith("가가가가가 …(뒤 15자")
 
 
+def _long_prompt() -> str:
+    # 1500자를 크게 넘고, 끝에 표지가 있고, Read가 자르는 2000자 넘는 한 줄이 섞인 사람 말(#14, 11-10)
+    return '<pasted_content id="x">\n' + "앞부분 " + "가" * 3000 + "\n" + "나" * 2500 + "\n끝표지-지금은 말고 다음에\n</pasted_content id=\"x\">"
+
+
+def test_full_keeps_every_char_and_wraps_long_lines():
+    raw = _long_prompt()
+    out = sc._full(raw)
+    assert "pasted_content" not in out and "줄임" not in out
+    assert out.replace("\n", "") == sc._unwrap(raw).replace("\n", "")    # 글자는 하나도 빠지지 않는다
+    assert max(len(ln) for ln in out.split("\n")) <= sc.LINE_WRAP < 2000  # Read가 자르는 길이의 줄이 없다
+    assert out.endswith("끝표지-지금은 말고 다음에")
+
+
+def test_render_human_section_not_clipped(tmp_path):
+    d = _data()
+    d["human"].append({"id": 6360, "started_at": datetime(2026, 11, 10, 3), "prompt_text": _long_prompt(), "title": "작업", "sid": 3, "role": "coder"})
+    body = sc.render("foreman", datetime(2026, 11, 4, 15), datetime(2026, 11, 10, 21), d, str(tmp_path))
+    sec8 = body.split("## 8. 사람이 한 말")[1]
+    assert "끝표지-지금은 말고 다음에" in sec8 and "…(뒤" not in sec8
+    assert sec8.count("가") >= 3000 and sec8.count("나") >= 2500
+    assert "[t:6360]" in body.split("## 2.")[0]                      # 요약 칸(1-1 후보)은 잘려도 t: 번호가 줄 앞에 남는다
+
+
+def test_later_material_not_clipped():
+    from bridge import scribe_room as sr
+    t = datetime(2026, 11, 10, 3)
+    body = sr.later_material("foreman", None, [{"id": 6383, "started_at": t, "prompt_text": _long_prompt()}],
+                             [{"id": 14, "created_at": t, "body": "받은 할 일"}])
+    assert "## [t:6383]" in body and "끝표지-지금은 말고 다음에" in body and "…(뒤" not in body
+    assert "## 받은 할 일 #14" in body
+    assert max(len(ln) for ln in body.split("\n")) < 2000
+
+
 def _data():
     t = datetime(2026, 11, 5, 3, 0)
     return {

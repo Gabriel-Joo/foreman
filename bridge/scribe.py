@@ -24,7 +24,10 @@ from sqlalchemy import text
 
 KST = timedelta(hours=9)
 OUT_ROOT = Path.home() / ".foreman" / "scribe"
-PROMPT_CLIP = 1500          # 사람 프롬프트 하나에 넣는 글자(넘으면 자르고 적는다)
+# 사람 말은 자르지 않는다(README 「나중에 할 일」 #14, 11-10 — 1500자에서 잘려 t:6360 · t:6383 뒤쪽이 빠졌다).
+# 11-10 잰 크기: FOREMAN 사람 턴 전체 330개 · 206k자, 가장 긴 턴 9.9k자 — 서기가 Read를 쪽으로 나눠 읽으면 된다.
+# Read는 2000자 넘는 한 줄을 조용히 자르므로, 긴 줄은 글자를 빼지 않고 LINE_WRAP자마다 줄만 나눈다.
+LINE_WRAP = 1500
 # 사람이 바로잡는 말의 신호(후보만 고른다 — 판단은 서기가 원문을 보고 한다)
 CORRECTION = re.compile(r"아니|아냐|잘못|틀렸|틀린|왜 |모르겠|어색|말고|다시 |안 맞|안 보|안 돼|안 되|이상해|거꾸로|오해|빠졌|잊")
 
@@ -39,10 +42,23 @@ def parse_kst(s: str) -> datetime:
     return datetime.strptime(s.strip(), fmt) - KST
 
 
-def _clip(t: str | None, n: int) -> str:
+def _unwrap(t: str | None) -> str:
     t = (t or "").strip()
-    t = re.sub(r"^<pasted_content[^>]*>\s*|\s*</pasted_content[^>]*>$", "", t)
+    return re.sub(r"^<pasted_content[^>]*>\s*|\s*</pasted_content[^>]*>$", "", t)
+
+
+def _clip(t: str | None, n: int) -> str:
+    """요약 칸(목록 한 줄 · 계획 · 승인 사유)용 — 사람 말 원문에는 쓰지 않는다(_full)."""
+    t = _unwrap(t)
     return t if len(t) <= n else t[:n] + f" …(뒤 {len(t) - n}자 줄임)"
+
+
+def _full(t: str | None) -> str:
+    """사람 말 원문 — 자르지 않는다. pasted_content 껍데기만 벗기고, Read가 자르지 않게 긴 줄만 나눈다."""
+    out = []
+    for ln in _unwrap(t).split("\n"):
+        out += [ln[i:i + LINE_WRAP] for i in range(0, len(ln), LINE_WRAP)] or [""]
+    return "\n".join(out)
 
 
 def git_commits(repo: str, start: datetime, end: datetime) -> list[dict[str, str]]:
@@ -258,11 +274,11 @@ def render(project: str, start: datetime, end: datetime, d: dict[str, Any], repo
     w("")
 
     # 8. 사람이 한 말
-    w(f"## 8. 사람이 한 말 {len(d['human'])}턴 (시간 순, 하나에 {PROMPT_CLIP}자까지)")
+    w(f"## 8. 사람이 한 말 {len(d['human'])}턴 (시간 순, 자르지 않은 원문 — 길면 쪽으로 나눠 끝까지 읽는다)")
     w("")
     for h in d["human"]:
         w(f"### [t:{h['id']}] {kst(h['started_at'])} · 세션 {h['sid']} {m(h['title'] or '')}")
-        w(m(_clip(h["prompt_text"], PROMPT_CLIP)))
+        w(m(_full(h["prompt_text"])))
         w("")
     return "\n".join(L)
 
