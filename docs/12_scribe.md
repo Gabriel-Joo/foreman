@@ -260,3 +260,11 @@ CC 세션들 ─hook·트랜스크립트→ 브리지 ─→ DB(턴 · 커밋 ·
 ### 11-6. 남은 것
 
 - 텔레그램으로 할 일 받기(밖에서 적기)는 하지 않았다 — 필요하면 같은 API로
+
+## 12. 물어보기 (11-10) [log:scribe_ask_20261110.md]
+
+**서기 세션이 없어도 문서 · 기록에 대해 한 번 물을 수 있다.** 서기 패널(상주 서기를 누르면 열리는 창) 맨 위 「물어보기」 칸.
+- 길: `POST /api/scribe/ask` `{project, text}` → `bridge/scribe_ask.py` → 읽기 전용 `claude -p` 한 번(`--no-session-persistence`, 도구는 `Read,Grep,Glob`만, Bash · Edit · Write 등은 막음 — `foreman.py` `_plan`과 같은 방식). 막는 것은 말이 아니라 도구다
+- 재료: 받은 할 일 최근 30개 · 최근 3일 커밋(Masker를 거침) + 저장소 파일을 직접 읽는다
+- 모델: 코드 기본값 sonnet, `config/models.toml [tasks] scribe_ask`로 바꿀 수 있다(없으면 sonnet). 사용량은 `usage_extra` source `scribe_ask`("서기에게 물어보기")
+- **문서를 고치는 일은 하지 않는다.** 고치려면 [시키기] → worktree 서기 세션 → [합치기]가 검토(2절). 이전 대화는 기억하지 않는다 — 이어서 일하려면 [시키기]
