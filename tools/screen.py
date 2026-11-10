@@ -291,9 +291,13 @@ async def run(a: argparse.Namespace) -> int:
                 await p.ev(f"localStorage.setItem('foremanUiScale', {json.dumps(str(a.ui_scale))}); 1")
             if a.record:                                   # 녹화(13) — 점검 대신
                 bad += await record(p, a, out, report)
+            # 패널 너비는 좁게 · 넓게 두 값뿐이다(11-10 모눈) — 둘 다 본다. 크기 이름에 붙인다(1366x768w = 넓게)
+            panels = [x.strip() for x in a.panel.split(",") if x.strip()]
             for th in ([] if a.record else a.themes.split(",")):
-                for size in a.sizes.split(","):
-                    w, h = (int(x) for x in size.lower().split("x"))
+                for size0, panel in [(s, q) for s in a.sizes.split(",") for q in panels]:
+                    size = size0 + ("w" if panel == "wide" else "")
+                    w, h = (int(x) for x in size0.lower().split("x"))
+                    await p.ev(f"localStorage.setItem('foremanPanelMode', {json.dumps(panel)}); localStorage.setItem('foremanPanelOpen', '1'); 1")
                     await p.call("Emulation.setDeviceMetricsOverride", width=w, height=h, deviceScaleFactor=1, mobile=False)
                     if a.demo:                             # 시연 장면으로 정지 사진(13e) — 실제 /api에 닿지 않게
                         await p.ev("localStorage.removeItem('foremanToken'); 1")
@@ -402,6 +406,7 @@ def main() -> None:
     ap.add_argument("--themes", default=",".join(THEMES))
     ap.add_argument("--sizes", default="1920x1080,1366x768,1024x700")
     ap.add_argument("--views", default="foreman", help="hq · map · 현장 이름(foreman · runshoes …)을 쉼표로")
+    ap.add_argument("--panel", default="narrow,wide", help="패널 너비 — narrow(좁게) · wide(넓게)를 쉼표로(11-10 두 값뿐, 기본 둘 다). 넓게는 크기 이름 끝에 w")
     ap.add_argument("--session", help="이 세션 패널을 연 채 찍는다(세션 id)")
     ap.add_argument("--eval", help="화면마다 돌려 결과를 report.json에 남길 JS 식")
     ap.add_argument("--no-term", action="store_true", help="터미널을 열어 보는 점검(termAudit 열림)을 건너뛴다 — 닫힌 채 점검은 한다")

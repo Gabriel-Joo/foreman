@@ -18,6 +18,8 @@ import { applyGrid, INFRA_STAGES } from './grid.js';
 // 픽셀 화면 글씨(화면 좌표로 그리는 것 — 구역 · 캐릭터 이름표, 말풍선, 방 카드, 단계 이름) 배율(11-09 사용자:
 // "130%로 보는데 맨 윗줄 탭 글씨 정도면 좋겠다", [가+ · 가−]도 따라가게). 탭은 17px × 배율 — 이름표 14px × 배율 × 1.2가 그쯤.
 // 1.2는 기본 배율이 아니라 이름표 ↔ 탭 글씨 비율이다 — 범위 · 처음 값은 uiscale.js STEPS · DEF 하나(11-10 80~110%, 처음 90%)
+// 11-10 모눈: 방 하나를 볼 때 방 안 글씨(방 이름표 · 캐릭터 이름 · 말풍선)는 글씨 배율이 아니라 방 배율을 따른다(createOffice 안 tpx · labelFont).
+// fpx는 경고 배너 · [전체] 카드 · 감독실 글씨에 남는다
 const FZ = () => uiScale() * 1.2;
 const fpx = (n) => Math.round(n * FZ());
 const MIN_CARD = () => fpx(80);           // [전체] 현장 카드 최소 폭(px) — "FOREMAN" · "(떠돌이)"가 한 줄에 들어가는 폭(11-09)
@@ -265,6 +267,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   let view = 'hq';                     // 'hq'(감독실, 1단) | 'map'(전체) | 방 이름(현장, 2단) | '_lounge'
   let selected = null;                 // actor key
   const cam = { x: 0, y: 0, s: 1 }, camT = { x: 0, y: 0, s: 1 };
+  // 방 안 글씨(캐릭터 이름 · 말풍선, 11-10 모눈) — 방 배율을 따른다(사용자: "화면 안의 글씨도 그 배율을 따른다, 글씨 크기에 흔들리지 않게").
+  // 배율 3에서 글씨 배율 기준(90%)과 같은 크기, 화면 9px 밑으로는 줄이지 않는다. 머리말 · 경고 배너 · [전체] 카드 · 감독실은 그대로 fpx(글씨 배율)
+  const inRoom = () => view !== 'hq' && view !== 'map';
+  const tpx = (n) => (inRoom() ? Math.max(9, Math.round(n * cam.s / 3)) : fpx(n));
   let W = 0, H = 0, dpr = 1, last = performance.now(), running = true;
 
   // ── 월드 만들기(store가 바뀔 때마다) ─────────────────
@@ -757,7 +763,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 11-09 한 방: 경고 배너(캔버스 맨 위) 높이만큼 아래 칸에 맞춘다. [전체]: 아래 MAP_H px를 현장 카드에 비운다 — 둘 다 겹쳐 그리지 않는다.
     // 위에 붙인다(배너 밑, 없으면 탭 줄 밑) — 세로가 남으면 남는 자리는 아래로(전엔 가운데라 위에 빈 띠가 생겼다)
     const bh = f && view !== 'hq' ? BANNER_H : 0, below = f ? 0 : MAP_H + 10;
-    const fit = () => Math.min(W / (r.w * T), (H - bh - below) / (r.h * T)) * 0.99;
+    const room = f && !f.hq && view !== 'hq';
+    // 한 방은 계단 배율(roomViewScale, 11-10 모눈) — 패널 좁게 · 넓게 두 값에 하나씩. [전체] · 감독실은 전처럼 맞춘다
+    const fit = () => (room ? roomViewScale() : Math.min(W / (r.w * T), (H - bh - below) / (r.h * T)) * 0.99);
     if (!f && world.lounge && W > 0) {
       // [전체] 맨 오른쪽 라운지는 좁다 — 그 카드(최소 폭 MIN_CARD)가 옆 카드와 겹치거나 화면 밖으로 나가지 않게 오른쪽에 자리를 더 둔다.
       // 넓히면 배율이 줄어 카드가 차지하는 타일 수가 늘어난다 — 몇 번 번갈아 맞춘다
@@ -771,11 +779,18 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     camT.s = s; camT.x = (r.x + r.w / 2) * T;
     // 한 방은 위에 붙이고, [전체]는 카드 자리를 뺀 칸의 가운데(위로 남는 자리에 감독실이 보인다 — 위에 붙이면 잘려 나갔다)
     camT.y = f ? r.y * T + (H / 2 - bh) / s : (r.y + r.h / 2) * T + below / (2 * s);
+    // 계단 배율로 방이 세로로 조금 넘치면(위 벽 한 칸까지 — roomViewScale) 아래를 맞추고 위 벽을 자른다. 방 칸(위 벽 아래)은 늘 보인다
+    if (room && r.h * T * s > H - bh) camT.y = (r.y + r.h) * T - H / (2 * s);
   }
-  // 방 하나를 볼 때의 카메라 배율(aim과 같은 식) — 이름표 칸 재기용
+  // 방 하나를 볼 때의 카메라 배율(11-10 모눈) — 0.25 계단(한 칸 = 4px 단위). 연속값이면 창 · 패널 · 글씨 배율이 바뀔 때마다 방이 조금씩
+  // 다른 크기가 됐다(1366 좁게: 글씨 80 · 90%는 2.0, 110%는 머리말이 커져 1.77). 이제 폭으로 정하고, 높이는 위 벽 한 칸까지 잘려도 된다고 본다
+  // — 잰 크기(1920 · 1366 · 1024 × 패널 좁게 · 넓게 × 글씨 80~110%)에서 글씨 배율이 바뀌어도 계단이 같다(log/designer_grid_20261110.md 「4.」).
+  // 넓은 쪽(패널 좁게)은 좁은 쪽을 통째로 키운 것 — 방 배치는 같고 배율만 다르다. 경고 배너가 뜨면 그 높이를 빼고 맞춘다
+  const SCALE_STEP = 0.25, WALL_CROP = 1.0;
   function roomViewScale() {
     const q = L.room || { w: 28, h: 18 };
-    return Math.min(W / ((q.w + 0.4) * T), (H - BANNER_H) / ((q.h + 0.6) * T)) * 0.99;
+    const sw = W / ((q.w + 0.4) * T), sh = (H - BANNER_H) / ((q.h + 0.6 - WALL_CROP) * T);
+    return Math.max(SCALE_STEP * 2, Math.floor(Math.min(sw, sh) / SCALE_STEP + 1e-6) * SCALE_STEP);
   }
 
   // ── 한 방 볼 때의 경고 배너(11-09 사용자) ──────────────
@@ -1156,10 +1171,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 겹치지 않게는 됐지만 이름표가 제각각 떠서 어수선했고(사용자), 화면 너비가 연속값이라 모든 중간 너비에서 자리를 골라야 했다.
   // 이제 자리 고르기가 없다: 방 왼쪽 위 + pad. 그 칸은 테마 배치가 비운다(가구 · 사람 머리 — gridAudit이 본다).
   // 글씨는 월드 크기(grid.json label.font, 월드 px) — 방 배율을 따라 함께 커지고 작아진다. 글씨 배율(가− · 가+)은 패널 · 머리말 몫이고
-  // 방 안 이름표에는 들어가지 않는다(11-10 사용자 — "브라우저 글씨 크기에 흔들리지 않게"). 화면 9px 밑으로는 줄이지 않는다(1024 · 패널 넓게)
+  // 방 안 이름표에는 들어가지 않는다(11-10 사용자 — "브라우저 글씨 크기에 흔들리지 않게"). 화면 8px 밑으로는 줄이지 않는다(1024 · 패널 넓게 =
+  // 배율 1에서 이름표 1.45배 — 판 바닥이 방 위에서 1.04칸. 9px로 했더니 1.64배 · 1.16칸이 되어 단계 그림 · 바로 밑 자리에 걸렸다)
   // 이름은 짧게 — 하는 일은 호버(「① 빌드 모니터 · Jenkins 빌드」 → 이름표 「빌드 모니터」, 호버 「Jenkins 빌드」). ① ② ③은 바닥 화살표 쪽
   const GL = (GRIDDEF && GRIDDEF.label) || { font: 6.5, h: 0.75, pad: 0.1 };
-  const LABEL_MIN_PX = 9;
+  const LABEL_MIN_PX = 8;
   const labelK = (s) => Math.max(1, LABEL_MIN_PX / (GL.font * s));                 // s = 월드 px 하나의 화면 px(cam.s)
   const labelFont = (s) => TAG0.font.replace(/(\d+(?:\.\d+)?)px/, `${(GL.font * s * labelK(s)).toFixed(2)}px`);
   const STAGE_DOT = { running: 'act', success: 'ok', failed: 'bad', waiting: 'warn' };
@@ -1963,7 +1979,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 지난 프레임의 이름표 칸(HITS)을 월드 픽셀로 바꿔 머리 위 → 오른쪽 → 왼쪽 → 발밑 순으로 안 겹치는 첫 자리에 둔다(없으면 가장 덜 겹치는 곳)
   const BUBBLES = new Map();
   // 서기 "할 일 N"은 화면 px로 고정(11-06 — 월드 8px이 줌 2.5~3배로 20px 넘게 커져 다른 글씨보다 훨씬 컸다)
-  const todoPx = () => fpx(12);                  // 11-09 글씨 배율을 따른다
+  const todoPx = () => tpx(12);                  // 11-10 방 안에서는 방 배율을 따른다(감독실은 글씨 배율)
   // 서기 말풍선(11-09) — 받은 할 일이 쌓이면(config/scribe.toml [nudge]) "정리할까요?" — 누르면 「나중에 할 일 정리」를 고른 창(세션은 사람이)
   const scribeBubble = (a) => (a.todo && a.todo.nudge ? '정리할까요?' : a.todo && a.todo.items && a.todo.items.length ? `문서 할 일 ${a.todo.items.length}` : null);
   // 코더 말풍선(11-09) — 쉬는 상주 코더, 또는 상주 코더의 몸을 쓰는 세션. 임시 일꾼에는 띄우지 않는다
@@ -2200,11 +2216,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   const roleNamed = (a) => a.kind === 'session' || a.kind === 'coder' || a.kind === 'scribe';
   const roleName = (a) => roleTag(a.role) + (a.temp ? ' 임시' : '');
   function markCrowd(as) {
-    ctx.font = `${fpx(15)}px system-ui, sans-serif`;
+    ctx.font = `${tpx(15)}px system-ui, sans-serif`;
     const bx = as.filter((a) => !(a.kind === 'mini' && a.key !== selected)).map((a) => {
       const [sx, sy] = toScreen(a.x * T, a.y * T), w = ctx.measureText(roleNamed(a) ? roleName(a) : short(a.name, 18)).width + 6;
       a.crowd = false;
-      return [a, [sx - w / 2, sy + 2, w, fpx(15) + 3]];
+      return [a, [sx - w / 2, sy + 2, w, tpx(15) + 3]];
     });
     for (let i = 0; i < bx.length; i++) for (let j = i + 1; j < bx.length; j++) {
       if (areaOf(bx[i][1], bx[j][1]) > 0) bx[i][0].crowd = bx[j][0].crowd = true;
@@ -2217,8 +2233,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const suffix = a.kind === 'session' && a.s ? ({ DORMANT: ' · 끝남', SUSPENDED: ' · 멈춤' }[a.s.state] || '') : '';
     const text = roleNamed(a) ? roleName(a) + suffix : short(a.name, 30) + suffix;   // 임시 일꾼은 테두리도 점선(11-09)
     // 11-06 글씨 키움(11 → 15px, 두 번) — 줄 높이 NH, 줄 사이 1px
-    const NH = fpx(15) + 3;                                  // 11-09 글씨 배율을 따른다(배율 1에서 15px · 18)
-    ctx.font = `${fpx(15)}px system-ui, sans-serif`;
+    const NH = tpx(15) + 3;                                  // 11-10 방 안은 방 배율(배율 3에서 15px · 18), 감독실은 글씨 배율
+    ctx.font = `${tpx(15)}px system-ui, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     const lines = [[text, a.kind === 'foreman' ? P.warn : P.label]];
     const n = a.kind === 'session' && a.s ? a.s.subagents_running || 0 : 0;
