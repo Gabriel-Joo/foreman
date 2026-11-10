@@ -31,4 +31,5 @@
 - 265는 저절로 안 옮겨진다(이미 '미분류' 캐릭터 4에 붙음, 266 기록) → `UPDATE character_session SET character_id=36 WHERE id=265 AND character_id=4`(1행)
 - `approval.toml` `[defaults] mode` observe → **enforce로 되돌림**(인프라 임시 observe는 `[projects.ronanlab-infra]`가 맡음). 승인 대기 0 → **브리지 19:43:18 다시 띄움**(경고 없음)
 - 확인: `/api/dashboard` 인프라(label 「인프라」)에 265 coder ACTIVE. `screen.py --no-term` 오피스 · 현장 1366 좁게 · 넓게 × [⌂] · 인프라 방 점검 0, 사진: 머리줄 「인프라 작업 1」, 방 아래 줄 「출하장 없음」 · 코더가 커밋 데스크, 현장 현황판 넷째 칸 「인프라」, 패널 목록 「인프라 — 265」
-- **알아둘 것**: 265 지시문에는 "push도 네가 한다"가 있었는데, 이제 런슈즈 · 펫퍼민트 docs는 커밋까지만 되고 push는 막힌다(사용자가 266에 정한 규칙). 그 두 저장소 docs push는 누가 할지 사용자에게
+- **알아둘 것(뒤에 정함)**: 사용자 — 런슈즈 · 펫퍼민트 docs 커밋은 관리자가 확인하고 push. 265에 "커밋까지만 · 해시 남기기" 보냄. 첫 커밋 런슈즈 `d27e1ba`(docs 3개, 265)를 관리자가 확인했으나 **관리자 push도 reposcope에 막혀** 사용자가 직접 push(`3dc5e3b..d27e1ba`) → 사용자: 규칙 고쳐라 → 코더 267(dispatch 232) `49d1585` `[repo_scope.manager_push]`(role manager + 원본 폴더 세션만, origin/main보다 앞선 커밋이 전부 docs/일 때) → `merge-tree` 충돌 없음 · `end:true` 합침 · **570 통과** · push · 244 DB 역할 manager · cwd 원본 · worktree 없음 확인 · 승인 대기 0 → **브리지 21:00:50**. 실제 push는 다음 docs 커밋 때(먼저 `log --stat origin/main..main`)
+- (처음 적은 것) 265 지시문에는 "push도 네가 한다"가 있었는데, 이제 런슈즈 · 펫퍼민트 docs는 커밋까지만 되고 push는 막힌다(사용자가 266에 정한 규칙). 그 두 저장소 docs push는 누가 할지 사용자에게
