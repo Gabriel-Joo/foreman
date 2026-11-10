@@ -185,13 +185,67 @@ export function projectLabel(st, name) { return (st.projects.find((p) => p.name 
 const APPR_DONE = { allowed: ['허용했습니다', 'ok'], denied: ['거부했습니다', 'bad'], timeout: ['시간 초과 — CC가 기본값대로 정했습니다', 'warn'],
   terminal: ['터미널에서 답했습니다', ''], abandoned: ['브리지가 다시 떠서 정리했습니다', 'muted'], pending: ['기다리는 중입니다', 'warn'] };
 const APPR_BY = { browser: '화면에서', terminal: '터미널에서', bridge: '브리지가' };
+// ── 카드가 어디에 뜨나(11-10 사용자 — 받은 할 일 #5 · #11) ──────────────────────────
+// 전에는 패널 맨 위에 모든 세션의 카드가 떠서, FOREMAN 질문이 [런슈즈]에서 · 런슈즈 승인이 라운지에서 보였고 그 자리에서 답할 수 있었다.
+// 이제: 답하는 카드는 그 세션 패널에만(mine). 다른 세션 것은 한 줄로 보이기만 하고 [세션 열기]로 간다(peek — 답 버튼 없음).
+// 답한 카드는 그 세션 패널에서 한 줄로 접힌다(folded). 세션을 모르는 것(session_id 없음)만 어디서나 답할 수 있게 둔다 — 갈 패널이 없다
+export function apprPlace(list, sid) {
+  const out = { mine: [], peek: [], folded: [] };
+  for (const a of list) {
+    const own = a.session_id == null || (sid != null && a.session_id === sid);
+    if (a.status === 'pending') (own ? out.mine : out.peek).push(a);
+    else if (own && a.session_id != null) out.folded.push(a);
+  }
+  return out;
+}
+// 어느 세션 것인지 — 「프로젝트 · [역할] 세션 N」(카드 머리 · 한 줄 모두)
+export function apprWho(a, st) {
+  const s = a.session_id != null ? st.sessions.get(a.session_id) : null;
+  const sess = a.session_id == null ? '세션 모름' : `${s ? roleTag(s.role) + ' ' : ''}세션 ${a.session_id}`;
+  return `${projectLabel(st, a.project)} · ${sess}`;
+}
+const firstQ = (a) => (Array.isArray(a.questions) && a.questions[0] ? a.questions[0].question : '') || a.summary || a.target || '';
+// 답한 것 — 이 화면에서 고른 답(PICKS · NOTES), 없으면 브리지가 보낸 message("질문 → 답; … · 글: …")에서 질문을 뗀 것
+export function apprAnswer(a) {
+  const p = PICKS.get(a.id), note = (NOTES.get(a.id) || '').trim();
+  if (p && Object.values(p).some((v) => v && v.length)) return Object.values(p).map((v) => (v || []).join(', ')).filter(Boolean).join(' · ') + (note ? ` · 글: ${note}` : '');
+  if (!a.message) return note ? `글: ${note}` : '';
+  return a.message.split('; ').map((x) => { const i = x.indexOf(' → '); return i < 0 ? x : x.slice(i + 3); }).join(' · ');
+}
+const FOLD_HEAD = { allowed: ['✓', 'ok'], denied: ['✕', 'bad'], timeout: ['⏰', 'warn'], terminal: ['✓', ''], abandoned: ['·', 'muted'] };
+// 접힌 한 줄 — 누르면 펼침(EXPANDED), 끝 [×]는 치우기(store.dismissApproval)
+export const EXPANDED = new Set();
+export function apprFoldLine(a, st) {
+  const q = a.tool === 'AskUserQuestion';
+  const [mark, cls] = FOLD_HEAD[a.status] || ['·', 'muted'];
+  const verb = q ? ({ allowed: '답함', terminal: '터미널에서 답함', timeout: '시간 초과', abandoned: '정리됨', denied: '거부함' }[a.status] || a.status)
+    : ({ allowed: '허용함', denied: '거부함', terminal: '터미널에서 답함', timeout: '시간 초과', abandoned: '정리됨' }[a.status] || a.status);
+  const ans = apprAnswer(a);
+  const what = q ? `「${oneLine(firstQ(a), 60)}」` : `▶ ${oneLine(a.summary || a.target || a.tool, 60)}`;
+  const open = EXPANDED.has(a.id);
+  return `<div class="appr-fold${open ? ' open' : ''}">
+    <button class="appr-fold-b" data-aid="${a.id}" data-act="fold" aria-expanded="${open}"
+      data-tip="${esc(`${q ? '답한 질문' : '처리한 승인'} — 누르면 ${open ? '접습니다' : '펼쳐 전체를 봅니다'}. ${apprWho(a, st)}`)}"><span class="${cls}">${mark} ${esc(verb)}</span> — ${esc(what)}${ans ? ` → <b>${esc(oneLine(ans, 80))}</b>` : ''}</button>
+    <button class="ghost small appr-x" data-aid="${a.id}" data-act="dismiss" data-tip="치우기 — 이 줄을 지웁니다. 답은 [세션] 탭 승인 기록에 남습니다." aria-label="치우기">×</button>
+  </div>${open ? approvalCard(a, st) : ''}`;
+}
+// 다른 세션 것 — 보이기만(답 버튼 없음). [세션 열기]로 그 세션 패널에 가서 답한다
+export function apprPeekLine(a, st) {
+  const q = a.tool === 'AskUserQuestion';
+  const what = q ? `「${oneLine(firstQ(a), 50)}」` : `▶ ${oneLine(a.summary || a.target || a.tool, 50)}`;
+  return `<div class="appr-peek">
+    <span class="appr-peek-t" data-tip="${esc(`${q ? '다른 세션의 질문' : '다른 세션의 승인 요청'} — ${apprWho(a, st)}. 답은 그 세션 패널에서 합니다.\n${q ? firstQ(a) : (a.summary || a.target || '')}`)}"><span class="warn">${q ? '❓' : '🔐'}</span> <b>${esc(apprWho(a, st))}</b> ${esc(what)}</span>
+    <button class="ghost small" data-aid="${a.id}" data-sid="${a.session_id}" data-act="open" data-tip="세션 열기 — 이 ${q ? '질문' : '승인'}을 한 세션의 패널을 엽니다. 답은 거기서 합니다.">세션 열기</button>
+  </div>`;
+}
+
 export function approvalCard(a, st) {      // 버튼은 data-aid · data-act(allow · deny · open) — 누르면 handleApprovalClick
   const done = a.status !== 'pending';
   // 질문(AskUserQuestion)은 승인이 아니다 — 선택지를 버튼으로, 누르면 그 답이 세션에 바로 들어간다(11-09 사용자)
   if (a.tool === 'AskUserQuestion') return questionCard(a, st, done);
   return `<div class="appr ${done ? 'done' : ''}">
     <div class="appr-main">
-      <div><b>🔐 ${esc(projectLabel(st, a.project))}</b> · <span title="${esc(a.tool)} — 승인 #${a.id} · 걸린 규칙 ${esc(a.rule)}">${esc(a.tool)}</span></div>
+      <div><b>🔐 ${esc(apprWho(a, st))}</b> · <span title="${esc(a.tool)} — 승인 #${a.id} · 걸린 규칙 ${esc(a.rule)}">${esc(a.tool)}</span></div>
       ${a.summary ? `<div class="appr-sum">▶ ${esc(a.summary)}</div>` : ''}
       ${a.summary ? `<details class="small"${keep(`appr:${a.id}:cmd`)}><summary class="muted">명령 전체</summary><code>${esc(a.target)}</code></details>` : `<code>${esc(a.target)}</code>`}
       <div class="small muted">${esc(a.reason || '')}${a.error ? ` · <span class="bad">${esc(a.error)}</span>` : ''}</div>
@@ -204,12 +258,16 @@ export function approvalCard(a, st) {      // 버튼은 data-aid · data-act(all
 }
 // 질문 카드 — 고른 것은 다시 그려도 남게 여기에(aid → 질문 번호 → 고른 선택지 이름들)
 const PICKS = new Map();
+// 답과 함께 보낼 글(11-10, 받은 할 일 #2) — aid → 글. 카드를 다시 그려도 남게 여기에(칸 값은 그린 뒤 opanel이 되살린다)
+export const NOTES = new Map();
 function questionCard(a, st, done) {
   const qs = !done && Array.isArray(a.questions) ? a.questions : null;
   const picks = PICKS.get(a.id) || {};
-  // 질문이 하나 · 하나만 고름이면 누르는 즉시 보낸다. 여럿이거나 여러 개 고름이면 고른 뒤 [답 보내기]
+  // 질문이 하나 · 하나만 고름이면 누르는 즉시 보낸다(적어 둔 글도 같이). 여럿이거나 여러 개 고름이면 고른 뒤 [답 보내기]
   const instant = qs && qs.length === 1 && !qs[0].multi;
   const ready = qs && qs.every((q, i) => (picks[i] || []).length);
+  const note = qs ? `<textarea class="appr-note" data-note-aid="${a.id}" rows="2" placeholder="답과 함께 보낼 글(없어도 됩니다)"
+      data-tip="글 — 고른 답과 함께 세션에 갑니다. 고르지 않고 글만 보내도 됩니다(아래 [글만 보내기])."></textarea>` : '';
   const body = qs ? qs.map((q, i) => `<div class="appr-qq">
         <div class="appr-sum">${q.header ? `<span class="muted">[${esc(q.header)}]</span> ` : ''}${esc(q.question)}${q.multi ? ' <span class="small muted">(여러 개 고를 수 있습니다)</span>' : ''}</div>
         ${q.options.map((o, j) => `<button class="appr-opt ${(picks[i] || []).includes(o.label) ? 'on' : ''}" data-aid="${a.id}" data-act="pick" data-qi="${i}" data-oi="${j}"
@@ -219,12 +277,13 @@ function questionCard(a, st, done) {
   const doneTxt = a.status === 'allowed' ? '답했습니다 · 화면에서' : a.status === 'terminal' ? '답했습니다 · 터미널에서' : (APPR_DONE[a.status] || [a.status])[0];
   return `<div class="appr appr-ask ${done ? 'done' : ''}">
     <div class="appr-main">
-      <div><b>❓ ${esc(projectLabel(st, a.project))}</b> · <span title="세션의 질문 — 세션이 고를 것을 묻고 답을 기다립니다. 선택지를 누르면 그 답이 세션에 바로 들어갑니다. 터미널에서 답해도 됩니다.">세션이 묻습니다</span></div>
+      <div><b>❓ ${esc(apprWho(a, st))}</b> · <span title="세션의 질문 — 세션이 고를 것을 묻고 답을 기다립니다. 선택지를 누르면 그 답이 세션에 바로 들어갑니다. 터미널에서 답해도 됩니다.">세션이 묻습니다</span></div>
       ${body}
+      ${note}
       ${a.error ? `<div class="small bad">${esc(a.error)}</div>` : ''}
     </div>
     <div class="appr-act">${done ? `<span class="small ${(APPR_DONE[a.status] || [])[1] || ''}">${esc(doneTxt)}</span>`
-      : qs ? (instant ? '' : `<button data-aid="${a.id}" data-act="answer" class="primary" ${ready ? '' : 'disabled'} title="답 보내기 — 고른 답을 세션에 넣습니다.">답 보내기</button>`)
+      : qs ? `${instant ? '' : `<button data-aid="${a.id}" data-act="answer" class="primary" ${ready ? '' : 'disabled'} title="답 보내기 — 고른 답을 적은 글과 함께 세션에 넣습니다.">답 보내기</button>`}<button data-aid="${a.id}" data-act="note" class="ghost small" ${(NOTES.get(a.id) || '').trim() ? '' : 'disabled'} title="글만 보내기 — 고르지 않고 적은 글만 답으로 보냅니다. 고른 것이 있으면 같이 갑니다.">글만 보내기</button>`
         : '<span class="small warn" title="터미널에서 답합니다 — 브리지가 다시 떠서 이 질문의 선택지를 잃었습니다.">터미널에서 답합니다</span>'}
       ${a.session_id ? `<button data-aid="${a.id}" data-sid="${a.session_id}" data-act="open" class="ghost small" title="세션 — 이 질문을 한 세션의 패널을 엽니다.">세션</button>` : ''}</div>
   </div>`;
@@ -232,13 +291,36 @@ function questionCard(a, st, done) {
 function sendAnswer(store, a, picks) {
   const out = {};
   a.questions.forEach((q, i) => { out[q.question] = picks[i] || []; });
-  store.answer(a.id, out);
+  store.answer(a.id, out, (NOTES.get(a.id) || '').trim() || null);
+}
+// 글 칸 — 친 글을 NOTES에 두고 [글만 보내기]를 켜고 끈다(카드를 다시 그리지 않는다 — 치는 중 칸이 날아가지 않게)
+export function handleApprovalInput(ev) {
+  const t = ev.target.closest('textarea[data-note-aid]');
+  if (!t) return;
+  NOTES.set(Number(t.dataset.noteAid), t.value);
+  const b = t.closest('.appr').querySelector('button[data-act="note"]');
+  if (b) b.disabled = !t.value.trim();
+}
+// 다시 그린 뒤 글 칸 값을 되살린다
+export function restoreNotes(root) {
+  for (const t of root.querySelectorAll('textarea[data-note-aid]')) t.value = NOTES.get(Number(t.dataset.noteAid)) || '';
 }
 
 export function handleApprovalClick(ev, store, openSession) {
   const b = ev.target.closest('button[data-aid]');
   if (!b) return;
   const aid = Number(b.dataset.aid);
+  if (b.dataset.act === 'fold') {
+    if (EXPANDED.has(aid)) EXPANDED.delete(aid); else EXPANDED.add(aid);
+    store.touch('approvals');
+    return;
+  }
+  if (b.dataset.act === 'dismiss') { EXPANDED.delete(aid); store.dismissApproval(aid); return; }
+  if (b.dataset.act === 'note') {
+    const a = store.state.approvals.get(aid);
+    if (a && Array.isArray(a.questions) && (NOTES.get(aid) || '').trim()) sendAnswer(store, a, PICKS.get(aid) || {});
+    return;
+  }
   if (b.dataset.act === 'pick' || b.dataset.act === 'answer') {
     const a = store.state.approvals.get(aid);
     if (!a || !Array.isArray(a.questions)) return;
@@ -336,7 +418,9 @@ export function mountApprovalHistory(det, head, body, store) {
       head.title = '답 확인 못 함 — 터미널에서 직접 답했거나 시간이 지나, 어떻게 됐는지 FOREMAN이 알 수 없는 것입니다.';
       const yes = h.by_rule.filter((b) => b.always_yes);
       const rules = h.by_rule.map((b) => `<tr${b.always_yes ? ' class="warn"' : ''}><td>${esc(b.rule)}</td><td>${b.n}</td><td>${b.approved}</td><td>${b.denied}</td><td>${b.unknown}</td><td>${b.always_yes ? '늘 허락함 — 묻지 않게 바꿀 후보' :''}</td></tr>`).join('');
-      const items = h.items.slice(0, 30).map((x) => `<li><span class="${OUT[x.outcome][1]}">${OUT[x.outcome][0]}</span> <span class="muted">${ago(x.at)} · ${esc(x.project || '미분류')} · ${esc(x.rule)}</span> ${esc(oneLine(x.summary || '', 140))}</li>`).join('');
+      // 질문은 고른 답(DB message)까지 — 답한 질문 줄을 치운 뒤 다시 보는 곳(11-10)
+      const items = h.items.slice(0, 30).map((x) => `<li><span class="${OUT[x.outcome][1]}">${x.tool === 'AskUserQuestion' ? (x.message ? '답함' : '질문') : OUT[x.outcome][0]}</span> <span class="muted">${ago(x.at)} · ${esc(x.project || '미분류')}${x.session_id ? ` · 세션 ${x.session_id}` : ''} · ${esc(x.rule)}</span> ${esc(oneLine(x.summary || '', 140))}${
+        x.tool === 'AskUserQuestion' && x.message ? ` <b>→ ${esc(oneLine(x.message, 160))}</b>` : ''}</li>`).join('');
       const obs = h.observe.length ? `<div class="muted" title="묻지 않고 지켜보기만 한 것 — 관찰 모드인 규칙입니다. 승인 창을 띄우지 않고, 창을 띄웠다면 걸렸을 것만 셉니다.">묻지 않고 지켜보기만 한 것:${h.observe.map((o) => `${esc(o.project)} ${esc(o.rule)} ${o.n}`).join(' · ')}</div>` : '';
       body.innerHTML = `
         <div class="row"><button class="ghost small" data-days="1">오늘</button><button class="ghost small" data-days="7">7일</button><button class="ghost small" data-days="30">30일</button></div>
@@ -500,6 +584,7 @@ export function createRenderer(root, store) {
   });
   $('back').onclick = () => store.select(null);
   $('approvals').addEventListener('click', (ev) => handleApprovalClick(ev, store, (sid) => store.select(sid)));
+  $('approvals').addEventListener('input', handleApprovalInput);
   mountApprovalHistory($('apprHist'), $('apprHistHead'), $('apprHistBody'), store);
   $('inputForm').onsubmit = async (ev) => {
     ev.preventDefault();
@@ -558,9 +643,12 @@ export function createRenderer(root, store) {
       `<span class="muted">오늘 출력 ${tok(outToday)}</span>`;
   }
 
+  let lastApprHtml = '';
   function drawApprovals(st) {
     const list = [...st.approvals.values()].sort((a, b) => a.id - b.id);
-    $('approvals').innerHTML = list.map((a) => approvalCard(a, st)).join('');
+    // 클래식은 모든 세션을 한 곳에서 보는 확인 페이지라 답 카드를 다 띄운다. 답한 것은 한 줄로 접는다(11-10)
+    const html = list.map((a) => (a.status === 'pending' ? approvalCard(a, st) : apprFoldLine(a, st))).join('');
+    if (lastApprHtml !== html) { lastApprHtml = html; $('approvals').innerHTML = html; restoreNotes($('approvals')); }
   }
 
   function card(s, st) {

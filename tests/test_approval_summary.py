@@ -102,3 +102,32 @@ def test_answer_question_from_panel():
         assert ApprovalManager.questions_of(m, 8) is None
 
     asyncio.run(run())
+
+
+def test_answer_with_note():
+    """11-10 — 답하면서 글도 보낸다: 글은 첫 질문의 notes로, 글만 보내면 고르지 않은 질문은 CC의 "(notes only)"."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from bridge.approvals import NOTES_ONLY, ApprovalManager
+
+    async def run():
+        inp = {"questions": [{"question": "A?", "multiSelect": False, "options": [{"label": "x"}, {"label": "y"}]},
+                             {"question": "B?", "multiSelect": False, "options": [{"label": "p"}]}]}
+        loop = asyncio.get_running_loop()
+        m = SimpleNamespace(waiting={7: loop.create_future()}, questions={7: inp}, answers={}, notes={})
+        m.questions_of = lambda aid: ApprovalManager.questions_of(m, aid)
+        assert ApprovalManager.answer(m, 7, {"A?": ["x"]}, "  ") == "bad"                 # 빈 글은 글이 아니다 — B? 안 골랐다
+        assert ApprovalManager.answer(m, 7, {"A?": ["x"]}, " 이유는 이렇다 ") == "ok"
+        assert m.answers[7] == {"A?": "x", "B?": NOTES_ONLY} and m.notes[7] == {"A?": "이유는 이렇다"}
+        m.waiting[8] = loop.create_future()
+        m.questions[8] = inp
+        assert ApprovalManager.answer(m, 8, {}, "둘 다 아니고 다른 길로") == "ok"           # 글만 먼저
+        assert m.answers[8] == {"A?": NOTES_ONLY, "B?": NOTES_ONLY}
+        assert ApprovalManager.answer(m, 8, {"A?": ["z"]}, "글") == "gone"
+        m.waiting[9] = loop.create_future()
+        m.questions[9] = inp
+        assert ApprovalManager.answer(m, 9, {"A?": ["z"]}, "글") == "bad"                 # 없는 선택지는 글이 있어도 안 된다
+        assert ApprovalManager.answer(m, 9, {"A?": ["y"], "B?": ["p"]}) == "ok" and 9 not in m.notes
+
+    asyncio.run(run())

@@ -195,6 +195,33 @@ async def test_prefill_then_result(shell):
     await m.stop()
 
 
+async def test_project_windows(shell):
+    """11-10 — 프로젝트마다 창: 고르면 그 창이 보이고(없으면 만든다 · FOREMAN_PROJECT), 처음 창은 foreman으로 이름만 바뀐다.
+    부탁은 부탁한 세션의 프로젝트 창에 채운다."""
+    p = FakePipeline()
+    m = TerminalManager(None, shell, p, MK, publish=p.publish)
+    await m.start()
+    await _wait_for(m, "[foreman] $")
+    cur = await m.open_project("runshoes")
+    assert cur["project"] == "runshoes" and cur["window"] == "runshoes"
+    await tmux(m.socket, "send-keys", "-t", m.target, "-l", "echo P=$FOREMAN_PROJECT")
+    await tmux(m.socket, "send-keys", "-t", m.target, "Enter")
+    await _wait_for(m, "P=runshoes")
+    again = await m.open_project("runshoes")               # 두 번 골라도 창은 하나
+    assert again["window"] == "runshoes"
+    names = (await tmux(m.socket, "list-windows", "-t", f"={shell.terminal_tmux_session}", "-F", "#{window_name}")).split()
+    assert names.count("runshoes") == 1 and len(names) == 2
+    cur = await m.open_project("foreman")                  # 처음 창 — 새로 만들지 않고 이름만
+    assert cur["project"] == "foreman"
+    names = (await tmux(m.socket, "list-windows", "-t", f"={shell.terminal_tmux_session}", "-F", "#{window_name}")).split()
+    assert sorted(names) == ["foreman", "runshoes"]
+    assert (await m.open_project(None))["project"] == "foreman"      # 모르면 지금 창 그대로
+    r = await m.request(9, 90, "runshoes", None, ["echo from-runshoes"])
+    assert r.prefilled and r.window and (await m.current())["project"] == "runshoes"
+    await _wait_for(m, "echo from-runshoes")
+    await m.stop()
+
+
 async def test_prefill_refuses_when_shell_busy(shell):
     p = FakePipeline()
     m = TerminalManager(None, shell, p, MK, publish=p.publish)

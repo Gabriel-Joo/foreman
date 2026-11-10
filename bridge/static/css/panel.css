@@ -21,6 +21,17 @@ code { display:block; white-space:pre-wrap; word-break:break-all; background:var
 table.hist { border-collapse:collapse; margin:6px 0; } table.hist td, table.hist th { padding:2px 8px; border-bottom:1px solid var(--line); text-align:left; }
 .hist-items { margin:6px 0; padding-left:18px; } .hist-items li { margin:2px 0; }
 .appr-act { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+/* 11-10 답한 카드는 한 줄로 접힘(누르면 펼침 · [×] 치우기), 다른 세션 것은 보기만 하는 한 줄, 질문 카드 아래 글 칸 */
+.appr-fold { display:flex; gap:4px; align-items:center; margin:2px 0; }
+.appr-fold-b { flex:1; min-width:0; text-align:left; background:none; border:1px solid var(--line); border-radius:6px; padding:2px 8px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font:inherit; font-size:.92em; color:inherit; cursor:pointer; }
+.appr-fold.open .appr-fold-b { white-space:normal; }
+.appr-x { flex:none; padding:0 8px; }
+.appr-peeks { margin-top:4px; }
+.appr-peek { display:flex; gap:6px; align-items:center; margin:2px 0; font-size:.92em; }
+.appr-peek-t { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.appr-peek button { flex:none; }
+.appr-note { width:100%; box-sizing:border-box; margin:4px 0 0; resize:vertical; font:inherit; font-size:.92em; }
 
 /* 세션 정보 · 대화 · 활동 · 입력 */
 .kv { display:grid; grid-template-columns:max-content 1fr; gap:3px 10px; }
@@ -105,12 +116,15 @@ code.sha { display:inline; padding:0 4px; margin:0; font-size:14px; }
 
 /* 7단계 터미널 패널 — 아래에 붙는다. 닫히면 막대 하나, 열리면 화면 아래 45%. 높이는 body의 --term-h로 알린다 */
 body { --term-h:0px; }
-.term { position:fixed; left:0; right:0; bottom:0; z-index:8; background:var(--bg); border-top:1px solid var(--line);
+.term { position:fixed; left:0; right:var(--term-right, 0px); bottom:0; z-index:8;   /* 11-10 픽셀 화면은 오른쪽 패널 폭만큼 비운다(office) */ background:var(--bg); border-top:1px solid var(--line);
         display:flex; flex-direction:column; box-shadow:0 -2px 10px rgba(0,0,0,.08); }
 .term[hidden] { display:none; }
 .term.open { height:55dvh; min-height:min(320px, 45dvh); max-height:65dvh; }   /* 11-08 45 → 55dvh(사용자 — 더 높게) */   /* 작은 창에서도 위에 머리말 · 픽셀 화면이 남게 창 높이 비율로 */
 .term-bar { display:flex; gap:10px; align-items:center; height:36px; flex:none; padding:0 12px; overflow:hidden; }
 .term-bar button { padding:3px 10px; font-weight:600; }
+.term-pick { width:auto; flex:none; padding:2px 6px; font-weight:600; }   /* 11-10 지금 열린 프로젝트 터미널 · 바꾸기 */
+.term-pick[hidden] { display:none; }
+.term-bar .warn { flex:none; white-space:nowrap; }
 .term-last { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:ui-monospace, monospace; }
 .term-note { flex:none; }
 .term-reqs { flex:none; display:grid; gap:6px; padding:0 12px; max-height:30%; overflow:auto; }

@@ -9,12 +9,16 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const PROJ = { runshoes: '런슈즈', 'petmint-rag-chatbot': '펫퍼민트', foreman: 'FOREMAN' };
 const BAR_H = 36;
 
-export function createTerminal(store) {
+// getProject(11-10) — 지금 보는 현장 · 고른 세션의 프로젝트(office.js currentProject). 열 때 그 프로젝트의 셸 창을 보인다.
+// 전에는 셸 창이 하나라 [런슈즈]에서 열어도 FOREMAN 셸이 떴다. 프로젝트마다 tmux 창(bridge/terminal.py window_for)
+export function createTerminal(store, { getProject } = {}) {
   const el = document.createElement('section');
   el.className = 'term';
   el.innerHTML = `
     <div class="term-bar">
       <button id="termToggle" class="ghost" aria-expanded="false">▲ 터미널</button>
+      <select id="termPick" class="term-pick" hidden data-tip="터미널 프로젝트 — 지금 보이는 셸 창입니다. 바꾸면 그 프로젝트 폴더의 셸 창으로 갑니다(프로젝트마다 셸이 따로 있습니다)." aria-label="터미널 프로젝트"></select>
+      <span id="termProjWarn" class="small warn" hidden></span>
       <span id="termBadge"></span>
       <span id="termLast" class="small muted term-last"></span>
       <span class="right small muted term-note">사람이 직접 치는 셸 · 승인 정책 없음 · 친 명령은 비밀값을 가려 기록</span>
@@ -47,13 +51,36 @@ export function createTerminal(store) {
       if (ta) ta.focus();
     } catch { /* 아직 안 떴다 */ }
   }
-  function setOpen(v) {
+  // ── 프로젝트 창(11-10) ── want = 고른 것, shown = 브리지가 돌려준 실제 창. 다르면 막대에 경고(고른 것과 다르면 틀린 것)
+  let want = null, shown = null;
+  const plabel = (p) => (store.state.projects.find((x) => x.name === p) || {}).label || PROJ[p] || p;
+  function drawProj(err) {
+    const pick = $('termPick'), names = store.state.projects.map((x) => x.name).filter((n) => n && PROJ[n]);
+    const cur = shown && shown.project;
+    const opts = names.map((n) => `<option value="${esc(n)}"${n === cur ? ' selected' : ''}>${esc(plabel(n))} 터미널</option>`).join('')
+      + (cur ? '' : `<option value="" selected>${esc(shown ? shown.window || '터미널' : '터미널')}</option>`);
+    if (pick.innerHTML !== opts) pick.innerHTML = opts;
+    pick.hidden = !shown;
+    if (shown && shown.cwd) pick.dataset.tip = `터미널 프로젝트 — 지금 보이는 셸 창입니다. 바꾸면 그 프로젝트 폴더의 셸 창으로 갑니다.\n지금 폴더 ${shown.cwd.replace(/^\/home\/[^/]+/, '~')}`;
+    frame.title = cur ? `${plabel(cur)} 터미널` : 'FOREMAN 터미널';
+    const w = $('termProjWarn');
+    const bad = err ? `터미널 창을 고르지 못했습니다 — ${err}` : want && cur !== want ? `고른 것(${plabel(want)})과 다른 터미널입니다` : '';
+    w.textContent = bad; w.hidden = !bad;
+  }
+  async function pickProject(p) {
+    want = p || null;
+    try { shown = await store.terminalOpen(want); drawProj(); } catch (e) { drawProj(e.message || String(e)); }
+  }
+  $('termPick').addEventListener('change', (ev) => { pickProject(ev.target.value || null).then(() => setTimeout(focusShell, 100)); });
+
+  function setOpen(v, project) {           // project를 안 주면 지금 보는 현장의 것(getProject)
     open = v;
     el.classList.toggle('open', v);
     document.body.classList.toggle('term-open', v);
     $('termToggle').textContent = v ? '▼ 터미널' : '▲ 터미널';
     $('termToggle').setAttribute('aria-expanded', String(v));
-    if (v) connect(false).then(() => setTimeout(focusShell, 300));
+    // 열 때 지금 보는 현장의 프로젝트 창으로(감독실 · 라운지 · 전체 지도면 지금 창 그대로)
+    if (v) Promise.all([connect(false), pickProject(project !== undefined ? project : getProject ? getProject() : null)]).then(() => setTimeout(focusShell, 300));
     requestAnimationFrame(setHeight);
   }
   $('termToggle').onclick = () => setOpen(!open);
@@ -105,7 +132,11 @@ export function createTerminal(store) {
     $('termReqs').innerHTML = html;
     if (t.openReq !== seenOpenReq) {          // 새 부탁(WS로 막 왔다) — 패널을 올리고 셸에 초점
       seenOpenReq = t.openReq;
-      if (!open) setOpen(true); else setTimeout(focusShell, 100);
+      // 브리지가 부탁한 세션의 프로젝트 창에 채우고 그 창을 보였다(11-10) — 막대도 그 프로젝트로
+      const r = [...t.requests.values()].sort((a, b) => b.id - a.id)[0];
+      const p = r && PROJ[r.project] ? r.project : null;
+      if (!open) setOpen(true, p);
+      else { pickProject(p); setTimeout(focusShell, 100); }
     }
     // 다시 연결됐다(브리지를 다시 띄웠을 수 있다) — store가 쿠키를 새로 받으면 화면도 다시 붙인다
     if (t.cookieAt && t.cookieAt !== seenCookie) {

@@ -6,7 +6,7 @@
 // 위를 보고 있으면 그대로 두고 [새 답 ↓]만 띄운다.
 // 너비는 두 가지(좁게 = 픽셀 볼 때, 넓게 = 대화 읽을 때)를 오가고, 각각 끌어서 바꾼 값을 따로 기억한다.
 
-import { approvalCard, handleApprovalClick, sessionKv, modelChip, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
+import { approvalCard, handleApprovalClick, handleApprovalInput, restoreNotes, apprPlace, apprFoldLine, apprPeekLine, keep, sessionKv, modelChip, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
          sessionName, sessionSub, sessionIds, projectLabel, roleBadge, panelRole, ROLE_LABEL, SESSION_ROLES, ROLE_UNKNOWN_TIP, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed } from './render.js';
 import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
@@ -65,6 +65,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         </div>
       </div>
       <form id="pForm" class="input" hidden>
+        <button type="button" id="pAskHint" class="ghost small pask" data-tip="입력 칸 — 세션이 질문의 답을 기다리는 동안은 질문 카드의 글 칸으로 보냅니다. 누르면 이 입력 칸을 펼칩니다.">질문에 답하는 중 — 글은 질문 카드의 글 칸으로 · 입력 칸 펼치기</button>
         <textarea id="pText" rows="6"placeholder="이 세션에 보낼 입력 (Ctrl+Enter로 보냅니다)"></textarea>
         <div class="row prow">
           <span id="pWhy" class="pwhy small"></span>
@@ -192,6 +193,16 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     grip.addEventListener('pointerup', up);
   });
   window.addEventListener('resize', applyWidth);
+  // 터미널은 패널 왼쪽까지만(11-10) — 패널이 오른쪽에 붙어 있으면(휴대폰 폭은 아래에 쌓여 아님) 터미널 오른쪽을 패널 폭만큼 비우고,
+  // 패널은 office.html body.term-beside 규칙으로 창 바닥까지 늘어난다. 너비를 끌거나 접고 펴면 ResizeObserver가 따라간다
+  function syncTermSide() {
+    const r = el.getBoundingClientRect(), beside = r.width > 0 && r.left > 0 && Math.abs(r.right - window.innerWidth) < 2;
+    document.body.classList.toggle('term-beside', beside);
+    document.body.style.setProperty('--term-right', beside ? `${Math.round(window.innerWidth - r.left)}px` : '0px');
+  }
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(syncTermSide).observe(el);
+  window.addEventListener('resize', syncTermSide);
+  requestAnimationFrame(syncTermSide);
   applyWidth();
   setOpen(open, false);
 
@@ -226,6 +237,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   // ── 동작 ────────────────────────────────────────────
   $('pAppr').addEventListener('click', (ev) => handleApprovalClick(ev, store, onSelectSession));
+  $('pAppr').addEventListener('input', handleApprovalInput);
+  $('pAppr').addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && ev.target.matches('textarea')) { ev.stopPropagation(); ev.target.blur(); } });
   $('pSel').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-sid]');
     if (b) onSelectSession(Number(b.dataset.sid));
@@ -495,16 +508,31 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   });
 
   // ── 그리기 ──────────────────────────────────────────
+  // 승인 · 질문 칸(11-10 다시 짬 — render.js apprPlace): 답하는 카드는 그 세션 패널에만, 다른 세션 것은 한 줄(보기만 · [세션 열기]),
+  // 답한 것은 그 세션 패널에서 한 줄로 접힘. 같은 내용이면 다시 그리지 않는다 — 치는 중인 글 칸이 날아가지 않게
+  let lastAppr = '', askOpen = '', askNow = '';
+  $('pAskHint').addEventListener('click', () => { askOpen = askNow; drawAppr(store.state); $('pText').focus(); });
   function drawAppr(st) {
     const list = [...st.approvals.values()].sort((a, b) => a.id - b.id);
-    const sel = st.selected;
-    list.sort((a, b) => (b.session_id === sel) - (a.session_id === sel));    // 고른 세션 것을 맨 위에
+    const sid = target && target.kind === 'session' ? st.selected : null;
+    const { mine, peek, folded } = apprPlace(list, sid);
     const pend = list.filter((a) => a.status === 'pending');
     // 질문(AskUserQuestion)은 승인이 아니다 — 머리말도 따로 센다(11-09)
-    const nq = pend.filter((a) => a.tool === 'AskUserQuestion').length, na = pend.length - nq;
-    const head = [na ? `승인 대기 ${na}` : '', nq ? `질문 ${nq}` : ''].filter(Boolean).join(' · ') || '처리됨';
-    $('pAppr').innerHTML = list.length ? `<h3>${head}</h3>` + list.map((a) => approvalCard(a, st)).join('') : '';
-    $('pCount').innerHTML = pend.length ? `<span class="warn">❗${pend.length}</span>` : '';
+    const cnt = (xs) => { const nq = xs.filter((a) => a.tool === 'AskUserQuestion').length, na = xs.length - nq;
+      return [na ? `승인 대기 ${na}` : '', nq ? `질문 ${nq}` : ''].filter(Boolean).join(' · '); };
+    // 이 세션의 답 카드가 맨 위(좁은 패널에서 카드 머리 · 질문이 먼저 보이게 — 카드가 ❓ · 세션을 적어 머리 줄은 두지 않는다),
+    // 그 아래 답한 줄, 끝에 다른 세션 것 한 줄 요약(누르면 펼침). 답은 그 세션 패널에서(사용자: 보여 주는 것은 되지만 그 자리에서 답하면 안 된다)
+    const html = mine.map((a) => approvalCard(a, st)).join('')
+      + folded.map((a) => apprFoldLine(a, st)).join('')
+      + (peek.length ? `<details class="appr-peeks"${keep('appr:peeks', false)}><summary class="small" data-tip="다른 세션 — 다른 세션이 기다리는 것입니다. 여기서는 보기만 하고, 답은 [세션 열기]로 그 세션 패널에서 합니다."><span class="warn">다른 세션 ${cnt(peek)}</span> <span class="muted">— 답은 그 세션 패널에서</span></summary>${peek.map((a) => apprPeekLine(a, st)).join('')}</details>` : '');
+    if (html !== lastAppr) { lastAppr = html; $('pAppr').innerHTML = html; restoreNotes($('pAppr')); }
+    $('pAppr').classList.toggle('has-mine', mine.length > 0);    // 이 세션이 답할 카드 — 좁은 패널에서도 칸을 지킨다(office.html)
+    // 이 세션이 질문의 답을 기다리면 패널 입력 칸은 한 줄 안내로 접는다 — 카드에 글 칸이 있고, 좁은 패널에서 카드가 입력 칸 밑에 묻혔다(11-10).
+    // 사람이 [입력 칸 펼치기]를 누르면 그 질문 동안은 펼친 채
+    askNow = mine.filter((a) => a.tool === 'AskUserQuestion').map((a) => a.id).join(',');
+    el.classList.toggle('asking', !!askNow && askNow !== askOpen);
+    // 머리줄 숫자는 이 패널에서 답할 것만(11-10) — 전에는 모든 세션 수라 FOREMAN 세션에 런슈즈 승인까지 셌다. 접은 띠 배지는 전체
+    $('pCount').innerHTML = mine.length ? `<span class="warn" data-tip="이 세션이 기다리는 것 — 승인 · 질문 ${mine.length}개입니다.">❗${mine.length}</span>` : '';
     $('pStripBadge').innerHTML = pend.length ? `<span class="oside-badge">${pend.length}</span>` : '';
     // 새 승인 요청이 오면 접혀 있어도 편다 — 승인은 기다리는 사람이 있다
     let fresh = false;
@@ -672,6 +700,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (seen.panel !== st.ver.panel || (!sessionView && (seen.pipe !== st.ver.pipe || seen.grid !== st.ver.grid))) {
       seen.panel = st.ver.panel; seen.pipe = st.ver.pipe; seen.grid = st.ver.grid;
       draw(st);
+      drawAppr(st);                // 고른 세션이 바뀌면 카드 자리도(같은 내용이면 다시 그리지 않는다)
     }
   });
 

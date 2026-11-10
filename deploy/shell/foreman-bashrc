@@ -25,4 +25,5 @@ __foreman_after_cmd() {
   return $ec
 }
 PROMPT_COMMAND="__foreman_after_cmd${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
-PS1="[foreman] $PS1"
+# 프로젝트마다 tmux 창(11-10, bridge/terminal.py window_for) — 창을 만들 때 FOREMAN_PROJECT를 넣는다. 처음부터 있던 창은 foreman
+PS1="[${FOREMAN_PROJECT:-foreman}] $PS1"

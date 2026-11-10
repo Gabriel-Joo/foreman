@@ -6,6 +6,7 @@
 
 - 테마 × 창 크기 × 화면마다 `window.office.layoutAudit()`(사람이 가구 · 소품 · 이름표에 가려지나) · `propAudit()`(소품 그림) ·
   `audit()`(고정 안 된 것)을 돌리고, 화면마다 `nameAudit()`(사람 이름이 구역 이름표 · 다른 이름과 겹치나, 11-06)를 세고 PNG를 찍는다. 결과는 `<out>/report.json`, 사진은 `<out>/<테마>_<크기>_<화면>.png`
+- 테마 × 크기마다 `termAudit`(11-10) — 패널 입력 칸이 패널 · 창 밖으로 넘치나 · 터미널과 겹치나, 터미널을 연 채로 한 번 더(`<…>_term.png`, `--no-term`이면 닫힌 채만)
 - 브라우저: playwright가 받아 둔 `~/.cache/ms-playwright/chromium_headless_shell-*/…/chrome-headless-shell`(설치 없음)
 - API 토큰은 `.env.bridge`에서 읽어 그 페이지의 localStorage에만 넣는다 — 출력 · 파일에 남기지 않는다
 - 문제가 하나라도 있으면 종료 코드 1(CLAUDE.md: 테마 자리 · 가구를 바꾸면 세 테마 모두 0건)
@@ -104,6 +105,23 @@ class Page:
         r = await self.call("Page.captureScreenshot", **kw)
         path.write_bytes(base64.b64decode(r["data"]))
 
+
+# 터미널 · 입력 칸 겹침(11-10 — README 「터미널 — 입력 칸이 터미널 글자를 덮어 오른쪽이 잘린다」). 문제 글 목록을 돌려준다.
+# 패널 입력 칸(pForm)이 패널 밖 · 창 밖으로 넘치나, 터미널 칸과 겹치나, 패널과 터미널이 겹치나, xterm 글자 칸이 iframe보다 넓은가
+TERM_AUDIT_JS = """(()=>{
+  const R=(e)=>{if(!e||e.hidden||!e.getClientRects().length)return null;const r=e.getBoundingClientRect();return [r.left,r.top,r.width,r.height]};
+  const ov=(a,b)=>a&&b?Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1])):0;
+  const side=R(document.querySelector('.oside')), form=R(document.getElementById('pForm')), term=R(document.querySelector('.term'));
+  const out=[]; const H=innerHeight, W=innerWidth;
+  if(form){ if(side&&form[1]+form[3]>side[1]+side[3]+1) out.push(`입력 칸이 패널 아래로 넘침 ${Math.round(form[1]+form[3]-side[1]-side[3])}px`);
+    if(form[1]+form[3]>H+1) out.push(`입력 칸이 창 아래로 넘침 ${Math.round(form[1]+form[3]-H)}px`);
+    const o=ov(form,term); if(o>0) out.push(`입력 칸 · 터미널 겹침 ${Math.round(o)}px²`); }
+  const os=ov(side,term); if(side&&side[0]>0&&os>0) out.push(`패널 · 터미널 겹침 ${Math.round(os)}px²`);
+  const f=document.getElementById('termFrame');
+  if(term&&f&&document.querySelector('.term.open')){ let sw=0; try{const s=f.contentDocument.querySelector('.xterm-screen'); sw=s?s.getBoundingClientRect().width:0}catch(e){}
+    const fw=f.getBoundingClientRect().width; if(sw>fw+1) out.push(`터미널 글자 칸(${Math.round(sw)})이 터미널(${Math.round(fw)})보다 넓음`);
+    if(term[0]+term[2]>W+1) out.push('터미널이 창 오른쪽 밖으로 넘침'); }
+  return out})()"""
 
 VIEW_JS = """(()=>{const v=%s; if(v==='hq'||v==='map'){window.office.go(v); return v}
   const b=[...document.querySelectorAll('[data-room]')].find(b=>b.dataset.room===v||b.textContent.includes(v));
@@ -264,6 +282,20 @@ async def run(a: argparse.Namespace) -> int:
                             cf = out / f"{th}_{size}_{view}_clip.png"
                             await p.shot(cf, tuple(float(v) for v in a.clip.split(",")))  # type: ignore[arg-type]
                             shots.append({"view": view, "clip": a.clip, "png": str(cf)})
+                    # 터미널 · 입력 칸 겹침(11-10) — 닫힌 채, 그리고 터미널을 연 채(마지막 화면 · --session 패널 그대로). 사진 한 장 더
+                    ta = {"closed": await p.ev(TERM_AUDIT_JS) or [], "open": None}
+                    if not a.demo and not a.no_term and await p.ev(
+                            "!!document.getElementById('termToggle') && !document.querySelector('.term[hidden]')"):
+                        await p.ev("document.getElementById('termToggle').click(); 1")
+                        await p.wait("(()=>{try{return !!document.getElementById('termFrame').contentWindow.term}catch(e){return false}})()", 8)
+                        await asyncio.sleep(1.0)
+                        ta["open"] = await p.ev(TERM_AUDIT_JS) or []
+                        f = out / f"{th}_{size}_term.png"
+                        await p.shot(f)
+                        shots.append({"view": "term", "png": str(f)})
+                        await p.ev("document.getElementById('termToggle').click(); 1")
+                    base["termAudit"] = ta
+                    bad += len(ta["closed"]) + len(ta["open"] or [])
                     base["shots"] = shots
                     base["page_errors"] = p.errors[:]
                     bad += len(p.errors)
@@ -273,8 +305,10 @@ async def run(a: argparse.Namespace) -> int:
                     n_cards = sum(len(v) for v in base.get("cardAudit", {}).values())
                     n_tips = sum(len(v.get("problems") or []) for v in base.get("tipAudit", {}).values())
                     n_tipn = sum(v.get("n") or 0 for v in base.get("tipAudit", {}).values())
+                    n_term = len(ta["closed"]) + len(ta["open"] or [])
                     print(f"{th} {size}: layoutAudit {len(la or [])} · nameAudit {n_names} · cardAudit {n_cards} · "
                           f"tipAudit {n_tips}/{n_tipn} · propAudit {len(base['propAudit_issues'])} · "
+                          f"termAudit {n_term}{'' if ta['open'] is not None else '(닫힘만)'} · "
                           f"audit(고정 안 됨) {len(au or [])} · 페이지 오류 {len(base['page_errors'])} · 사진 {len(shots)}")
     finally:
         proc.terminate()
@@ -296,6 +330,7 @@ def main() -> None:
     ap.add_argument("--views", default="foreman", help="hq · map · 현장 이름(foreman · runshoes …)을 쉼표로")
     ap.add_argument("--session", help="이 세션 패널을 연 채 찍는다(세션 id)")
     ap.add_argument("--eval", help="화면마다 돌려 결과를 report.json에 남길 JS 식")
+    ap.add_argument("--no-term", action="store_true", help="터미널을 열어 보는 점검(termAudit 열림)을 건너뛴다 — 닫힌 채 점검은 한다")
     ap.add_argument("--wait", type=float, default=2.0, help="화면을 바꾼 뒤 기다릴 초(캐릭터가 걸어 들어갈 시간)")
     ap.add_argument("--clip", help="x,y,w,h(CSS 픽셀) — 그 부분만 2배로 한 장 더(<…>_clip.png)")
     ap.add_argument("--out")

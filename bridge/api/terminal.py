@@ -2,6 +2,7 @@
 
   POST /api/terminal/session     API 토큰 → 쿠키(HttpOnly · SameSite=Strict · Path=/terminal). 패널을 열 때 받는다
   GET  /api/terminal             상태 + 기다리는 부탁(CC가 "이 명령을 실행해 주세요"라고 한 것)
+  POST /api/terminal/open        {project} — 그 프로젝트의 셸 창을 보인다(없으면 그 저장소 폴더에서 만든다, 11-10)
   DELETE /api/terminal/requests/{id}   부탁을 닫는다(결과를 전달하지 않는다)
   POST /api/terminal/requests/{id}/prefill   셸 입력 줄에 다시 채운다
   GET  /terminal/…  · WS /terminal/ws       쿠키를 확인하고 ttyd(UNIX 소켓)로 그대로 넘긴다
@@ -19,11 +20,13 @@ from urllib.parse import urlsplit
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 from fastapi.responses import JSONResponse, RedirectResponse, Response
+from pydantic import BaseModel
 from websockets.asyncio.client import unix_connect
 
 from bridge.api.auth import require_api_token
 from bridge.api.hooks import _authed_body
-from bridge.terminal import COOKIE
+from bridge.inject import Refused
+from bridge.terminal import COOKIE, TERM_PROJECTS
 
 log = logging.getLogger("foreman.terminal")
 api = APIRouter(prefix="/api/terminal", dependencies=[Depends(require_api_token)])
@@ -52,6 +55,22 @@ async def open_session(request: Request) -> JSONResponse:
 @api.get("")
 async def state(request: Request) -> dict[str, Any]:
     return _mgr(request).snapshot()
+
+
+class OpenIn(BaseModel):
+    project: str | None = None     # None이면 지금 보이는 창 그대로(라운지 · 감독실)
+
+
+@api.post("/open")
+async def open_project(body: OpenIn, request: Request) -> dict[str, Any]:
+    """[터미널]을 열 때 — 고른 프로젝트의 창(없으면 그 저장소 폴더에서 만든다)을 보이고 실제 보이는 창을 돌려준다(11-10)."""
+    m = _mgr(request)
+    if body.project is not None and body.project not in TERM_PROJECTS:
+        raise HTTPException(422, "모르는 프로젝트입니다")
+    try:
+        return await m.open_project(body.project)
+    except Refused as e:
+        raise HTTPException(503, f"터미널 창을 고르지 못했습니다 — {e}") from e
 
 
 @api.delete("/requests/{rid}")

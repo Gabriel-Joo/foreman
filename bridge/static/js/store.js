@@ -6,6 +6,11 @@
 const EMIT_MS = 250;          // 그리기 알림 최소 간격
 const RESNAP_MS = 15000;      // 스냅샷으로 맞추는 주기
 const FEED_MAX = 40;          // 세션별 최근 활동 줄 수
+export const FOLD_KEEP = 3;   // 세션마다 남기는 답한 카드(접힌 줄) 수(11-10) — 넘으면 오래된 것부터 지운다. 다시 보기는 승인 기록에
+export function pruneResolved(approvals, sid) {
+  const done = [...approvals.values()].filter((x) => x.status !== 'pending' && x.session_id === sid).sort((x, y) => x.id - y.id);
+  for (const x of done.slice(0, Math.max(0, done.length - FOLD_KEEP))) approvals.delete(x.id);
+}
 
 // 세션 간 메시지(SendMessage) 줄 꼬리 — 받는 쪽 트랜스크립트로 본 도착 · 읽음(11-09, bridge/xmsg.py)
 export function xmsgText(x) {
@@ -307,8 +312,13 @@ export class Store {
     const a = { ...m.approval, project: m.approval.project ?? this.projectOf(m.approval.session_id) };
     if (m.op === 'pending') a.status = 'pending';
     this.state.approvals.set(a.id, a);
-    if (m.op === 'resolved') setTimeout(() => { this.state.approvals.delete(a.id); this.touch('approvals', 'grid'); }, 30000);
+    // 11-10 답한 카드는 30초 뒤 지우지 않고 그 세션 패널에서 한 줄로 접힌다 — 사람이 [×]로 치운다. 세션마다 최근 FOLD_KEEP줄만 남긴다
+    if (m.op === 'resolved') pruneResolved(this.state.approvals, a.session_id);
     this.touch('approvals', 'grid');
+  }
+  dismissApproval(aid) {
+    const a = this.state.approvals.get(aid);
+    if (a && a.status !== 'pending') { this.state.approvals.delete(aid); this.touch('approvals'); }
   }
 
   onEvent(e) {
@@ -488,6 +498,13 @@ export class Store {
     if (!r.ok) throw new Error(r.status === 503 ? '터미널 패널이 꺼져 있습니다' : `HTTP ${r.status}`);
     return r.json();
   }
+  // 프로젝트마다 터미널 창(11-10) — project의 셸 창을 보인다(null이면 지금 창 그대로). 돌려받은 것 = 실제로 보이는 창
+  async terminalOpen(project) {
+    const r = await fetch('/api/terminal/open', { method: 'POST', headers: this.headers(true), body: JSON.stringify({ project: project || null }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+    return j;
+  }
   async terminalDismiss(id) {
     await fetch(`/api/terminal/requests/${id}`, { method: 'DELETE', headers: this.headers() });
     this.state.terminal.requests.delete(id);
@@ -500,8 +517,9 @@ export class Store {
     if (q) { q.prefilled = !!j.ok; q.note = j.note || null; this.touch('term'); }
   }
   // 세션의 질문(AskUserQuestion)에 답한다(11-09) — picks: 질문 글 → 고른 선택지 이름들
-  async answer(aid, picks) {
-    const r = await fetch(`/api/approvals/${aid}/answer`, { method: 'POST', headers: this.headers(true), body: JSON.stringify({ picks }) });
+  // note — 답과 함께 보낼 글(11-10). 글만 보내면 고르지 않은 질문은 "(글만)"으로 간다(브리지 approvals.answer)
+  async answer(aid, picks, note = null) {
+    const r = await fetch(`/api/approvals/${aid}/answer`, { method: 'POST', headers: this.headers(true), body: JSON.stringify({ picks, note }) });
     const a = this.state.approvals.get(aid);
     if (!a) return;
     a.error = r.ok ? null : ((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
