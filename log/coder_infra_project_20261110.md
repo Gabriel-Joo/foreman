@@ -71,4 +71,12 @@
 - **Notion 자동 게시 켜기** — 인프라 저장소에 `docs/`가 생긴 뒤(인프라 세션 묶음 1 문서 단계). root 페이지를 사용자에게 묻고 `docs = "auto"`
 - **[⌂] 현황판 다섯 칸 자리**(디자이너 몫) — 1024 넓게에서 칸이 약 60px라 「FOREMAN」이 8px까지 줄어든다. 현장이 더 늘면 줄 바꿈 · 줄임으로도 못 버틴다(판 두 줄 · 라운지 칸 빼기 등)
 - 인프라 묶음 1이 끝나면 `approval.toml` 인프라 줄을 enforce로(사용자 확인)
-- 인프라 세션도 `repo_scope.read_only_elsewhere`(다른 저장소 읽기만)에 넣을지 — 지금은 foreman만. 인프라 일이 다른 저장소를 고칠 수 있는지 사용자에게
+- ~~인프라도 「다른 저장소 읽기만」에 넣을지~~ → 아래 「더한 것」에서 넣음(사용자 11-10)
+
+## 더한 것 — 인프라도 다른 저장소 읽기만, 단 런슈즈 · 펫퍼민트 docs/는 고친다 (사용자 11-10)
+- 사용자: "인프라도 「다른 저장소 읽기만」에 넣어라. 다만 문서(docs)는 고칠 수 있어야 한다. 묶음 1에서 펫퍼민트 · 런슈즈 문서를 고쳐야 한다"
+- `approval.toml` `read_only_elsewhere = ["foreman", "ronanlab-infra"]` + 새 칸 `[repo_scope.writable]` `ronanlab-infra = ["runshoes/docs/", "petmint-rag-chatbot/docs/"]`
+- `bridge/reposcope.py` — 그 프로젝트의 **원본 저장소**(DB repo_path, realpath) 안 그 경로 아래면 Edit · Write를 거부하지 않는다. 그 저장소의 worktree · `docsx/` 같은 비슷한 이름 · `docs/../` 빠져나가기 · 설정의 `..` 항목은 예외가 아니다. FOREMAN 세션은 예외 없음
+- **git 쓰기(add · commit · push)는 그대로 막는다** — 인프라 세션이 고친 docs는 그 저장소 작업 트리에 커밋 안 된 채 남는다. 커밋은 그 저장소 세션 · 사용자가(또는 사용자가 정하면 docs 경로만 git add · commit을 푸는 것을 따로)
+- 시험 `test_infra_may_edit_docs_of_listed_repos_only`, 실제 approval.toml · 실제 경로로 판정 확인(펫퍼민트 · 런슈즈 docs 허용, 런슈즈 CLAUDE.md · FOREMAN docs 거부). pytest 562 통과
+- 합친 뒤 브리지를 다시 띄워야 걸린다(approval.toml · reposcope.py). 지금 도는 인프라 세션 265는 그 전까지 막힘 없음(인프라가 아직 프로젝트가 아니다), 다시 띄운 뒤 265를 인프라로 옮기면 그때부터 걸린다

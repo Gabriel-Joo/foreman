@@ -40,6 +40,43 @@ def test_edit_other_repo_denied_own_and_free_allowed(tmp_path):
     assert not s.check("runshoes", str(rs), "Edit", {"file_path": str(fm / "README.md")}, sc)
 
 
+CFG_INFRA = CFG.replace('["foreman"]', '["foreman", "ronanlab-infra"]') + """
+[repo_scope.writable]
+ronanlab-infra = ["runshoes/docs/", "petmint-rag-chatbot/docs/", "foreman/../x/", "nopath"]
+"""
+
+
+def test_infra_may_edit_docs_of_listed_repos_only(tmp_path):
+    """11-10 — 인프라는 다른 저장소 읽기만, 단 런슈즈 · 펫퍼민트 docs/는 Edit · Write로 고친다. git 쓰기 · 다른 경로 · worktree는 막는다."""
+    fm, rs, pm, inf = (tmp_path / n for n in ("foreman", "runshoes", "petmint", "infra"))
+    for d in (fm, rs, pm, inf):
+        (d / ".git").mkdir(parents=True)
+    (rs / ".worktrees" / "rs-2").mkdir(parents=True)
+    (rs / ".worktrees" / "rs-2" / ".git").write_text("gitdir: x")
+    cfg = tmp_path / "approval.toml"
+    cfg.write_text(CFG_INFRA)
+    s = RepoScope(cfg, repos=lambda: {"foreman": str(fm), "runshoes": str(rs), "petmint-rag-chatbot": str(pm),
+                                      "ronanlab-infra": str(inf)}, free=())
+    cwd = str(inf)
+
+    def ed(p, tool="Edit"):
+        return s.check("ronanlab-infra", cwd, tool, {"file_path": str(p)})
+
+    assert not ed(rs / "docs" / "ops" / "nodes.md")
+    assert not ed(pm / "docs" / "README.md", "Write")
+    assert not ed(inf / "anything.yaml")                            # 자기 저장소
+    assert ed(rs / "backend" / "a.java")                            # docs 밖
+    assert ed(rs / "docsx" / "a.md")                                # docs/로 시작하는 다른 폴더
+    assert ed(rs / "docs" / ".." / "CLAUDE.md")                     # .. 로 빠져나가기
+    assert ed(fm / "docs" / "a.md")                                 # 적지 않은 저장소
+    assert ed(fm / "x" / "a.md")                                    # 설정의 ".." 항목은 버린다
+    assert ed(rs / ".worktrees" / "rs-2" / "docs" / "a.md")         # 그 저장소의 worktree는 아니다
+    assert s.check("ronanlab-infra", cwd, "Bash", {"command": f"git -C {rs} commit -m docs"})   # git 쓰기는 그대로
+    assert not s.check("ronanlab-infra", cwd, "Bash", {"command": f"git -C {pm} status"})
+    # FOREMAN 세션은 예외가 없다
+    assert s.check("foreman", str(fm), "Edit", {"file_path": str(rs / "docs" / "a.md")})
+
+
 def test_git_writes_in_other_repo(tmp_path):
     s, fm, rs, sc = _setup(tmp_path)
     cwd = str(fm)
