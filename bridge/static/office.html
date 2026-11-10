@@ -74,7 +74,7 @@
   /* 11-10 터미널은 패널 왼쪽까지만(opanel.js syncTermSide — --term-right = 패널 폭), 패널은 터미널 높이만큼 아래로 늘려 창 바닥까지.
      전에는 터미널이 펴지면 패널도 같이 줄어(1024에서 101px) 줄지 않는 입력 칸이 패널 밖으로 넘쳐 터미널 글자를 덮었다 */
   body.term-beside .oside { margin-bottom:calc(-1 * var(--term-h, 0px)); z-index:9; }
-  .oside-grip { position:absolute; left:-3px; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:2; }
+  .oside-grip { position:absolute; left:-3px; top:0; bottom:0; width:6px; cursor:pointer; z-index:2; }   /* 11-10 끌기 없음 — 두 번 눌러 좁게 ↔ 넓게 */
   .oside.folded .oside-grip { display:none; }
   .oside-strip { display:none; width:34px; border:0; border-radius:0; background:var(--card); padding:8px 0; flex-direction:column; align-items:center; gap:8px; }
   .oside.folded .oside-strip { display:flex; }

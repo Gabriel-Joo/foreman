@@ -22,14 +22,14 @@
       "foreman_office": { "_": "팀장실(hq) — 유리벽, 듀얼 모니터", "floor": "carpet", "seat": [4.6, 1.4, "down"] },
       "manager": { "_": "관리자(11-09 사용자) — 팀장실 안 옆자리. 관리자 세션이 있을 때만 선다(상주 아님). 일할 때도 이 자리", "in": "foreman_office",
                    "seats": [[6.4, 2.9, "left"], [2.3, 2.6, "right"]] },
-      "library": { "_": "A 아카이브(read) — 책장, 바인더, 복합기", "face": "up", "seats": [[2.6, 2.6], [3.6, 3.2], [2.1, 3.75]] },
-      "server": { "_": "C 서버룸(bash) — 랙, LED, 유리벽", "face": "up", "seats": [[2.1, 2.4], [3.1, 2.4], [1.0, 2.9]] },
+      "library": { "_": "A 아카이브(read) — 책장, 바인더, 복합기", "face": "up", "seats": [[3.4, 2.6], [2.2, 3.2], [3.6, 3.75]] },
+      "server": { "_": "C 서버룸(bash) — 랙, LED, 유리벽", "face": "up", "seats": [[2.6, 2.6], [3.6, 2.6], [1.0, 3.0]] },
       "window": { "_": "G 창가 바(web) — 바깥으로 나가는 방이라 위 · 오른쪽 벽에 붙였다. 창밖 도시", "face": "up", "seats": [[1.65, 2.6], [4.05, 2.6], [2.8, 3.4]] },
       "lounge": { "_": "F 라운지(idle) — 소파 · 빈백 · 커피머신", "floor": "wood",
                   "seats": [[3.0, 1.8, "down"], [1.2, 3.8, "down"], [3.5, 4.4, "down"], [4.7, 3.0, "down"], [2.2, 2.6, "down"]] },
-      "desks": { "_": "B 워크스테이션(edit) — 긴 책상 줄 + 아래 책상. 왼쪽 열은 디자이너 자리", "seats": [[4.2, 2.05, "down"], [5.5, 2.05, "down"], [6.8, 2.05, "down"], [8.0, 2.05, "down"], [4.4, 4.15, "down"]] },
-      "designer": { "_": "디자이너(11-10 사용자) — 워크스테이션 왼쪽 열, 코더 책상 줄과 나란히(책상 5자리와 따로). 디자이너 세션이 있을 때만 선다(상주 아님). 일할 때도 이 자리", "in": "desks",
-                    "seats": [[1.3, 2.7, "down"], [1.3, 4.4, "down"]] },
+      "desks": { "_": "B 워크스테이션(edit) — 긴 책상 줄 + 아래 책상. 왼쪽은 디자이너 책상 둘", "seats": [[4.6, 2.05, "down"], [5.8, 2.05, "down"], [7.0, 2.05, "down"], [8.2, 2.05, "down"], [4.4, 4.15, "down"]] },
+      "designer": { "_": "디자이너(11-10 사용자) — 워크스테이션 왼쪽 책상 둘, 코더 책상 줄과 나란히(책상 5자리와 따로). 디자이너 세션이 있을 때만 선다(상주 아님). 일할 때도 이 자리", "in": "desks",
+                    "seats": [[1.1, 3.05, "down"], [2.75, 3.05, "down"]] },
       "scribe": { "_": "S 문서팀(scribe) — PC 책상(쓰기) · 책장(서가) · 서류 더미(대조). 자리 순서 = 쓰기 · 서가 · 대조",
                   "seats": [[2.8, 2.3, "down"], [4.1, 4.9, "up"], [1.1, 4.3, "down"]] },
       "coder_home": { "_": "코더 상주(11-09) — 세션이 없을 때 코더가 쉬는 자리(라운지 커피머신 옆). 일하면 책상으로 간다. anim = 이 테마의 쉬는 동작", "in": "lounge",
@@ -37,7 +37,7 @@
       "test": { "_": "D QA 부스(test) — 테스트 모니터, 체크리스트. 책상 앞에서 모니터를 본다", "seats": [[2.4, 2.9, "up"], [0.9, 3.4, "right"]] },
       "meeting": { "_": "E 회의실(sub) — 화이트보드, 긴 테이블(Agent · 서브에이전트가 모인다)",
                    "seats": [[3.6, 2.2, "up"], [1.5, 3.25, "down"], [2.5, 3.25, "down"], [2.2, 4.85, "up"], [4.3, 3.6, "left"]] },
-      "commit": { "_": "H 커밋 데스크(git) — 프린터. 배포 파이프 바로 왼쪽(커밋 → ①)", "seats": [[1.8, 2.35, "down"]] },
+      "commit": { "_": "H 커밋 데스크(git) — 프린터. 배포 파이프 바로 왼쪽(커밋 → ①)", "seats": [[1.8, 2.6, "down"]] },
       "infra": {
         "_": "배포 파이프(ship) — 단계 칸 x는 grid.json ship. stands: 단계 왼쪽 위 기준(home은 배포 파이프 기준)",
         "stands": { "jenkins": [1.3, 3.2], "harbor": [3.6, 3.3], "argocd": [1.6, 3.2], "home": [0.9, 3.3] },
@@ -179,13 +179,13 @@
       { "s": "plant", "in": "foreman_office", "x": 6.0, "y": 0.2 }, { "s": "cat", "in": "foreman_office", "x": 0.5, "y": 2.9 },
 
       { "_": "A 아카이브" },
-      { "s": "shelf", "in": "library", "x": 2.0, "y": -0.2 }, { "s": "shelf", "in": "library", "x": 3.5, "y": -0.2 },
+      { "s": "shelf", "in": "library", "x": 2.7, "y": -0.2 },
       { "s": "copier", "in": "library", "x": 0.3, "y": 2.4 },
-      { "s": "box_r", "in": "library", "x": 4.2, "y": 2.3 }, { "s": "box_b", "in": "library", "x": 4.2, "y": 2.8 }, { "s": "box_g", "in": "library", "x": 4.2, "y": 3.3 },
+      { "s": "box_r", "in": "library", "x": 4.3, "y": 2.3 }, { "s": "box_b", "in": "library", "x": 4.3, "y": 2.8 }, { "s": "box_g", "in": "library", "x": 4.3, "y": 3.3 },
 
-      { "_": "C 서버룸 — 유리벽 안 랙 셋" },
+      { "_": "C 서버룸 — 유리벽 안 랙 둘(이름표 오른쪽)" },
       { "fx": "glasswall", "in": "server", "x": 0, "y": 0, "w": 5, "h": 4 },
-      { "s": "server_rack", "in": "server", "x": 1.6, "y": -0.6 }, { "s": "server_rack", "in": "server", "x": 2.6, "y": -0.6 }, { "s": "server_rack", "in": "server", "x": 3.6, "y": -0.6 },
+      { "s": "server_rack", "in": "server", "x": 2.2, "y": -0.6 }, { "s": "server_rack", "in": "server", "x": 3.2, "y": -0.6 },
 
       { "_": "D QA 부스" },
       { "s": "table_s", "in": "test", "x": 2.0, "y": 1.4 }, { "s": "pc", "in": "test", "x": 2.6, "y": 0.6, "z": "top" }, { "s": "paper1", "in": "test", "x": 2.1, "y": 1.5, "z": "top" },
@@ -202,12 +202,12 @@
 
       { "_": "B 워크스테이션 — 긴 책상 줄(자리 앞), 아래 책상 하나, 왼쪽 열은 디자이너 책상" },
       { "s": "counter", "in": "desks", "x": 3.6, "y": 0.9 },
-      { "s": "monitor_side", "in": "desks", "x": 3.8, "y": 0.15, "z": "top" }, { "s": "monitor_side", "in": "desks", "x": 5.1, "y": 0.15, "z": "top" },
+      { "s": "monitor_side", "in": "desks", "x": 4.0, "y": 0.15, "z": "top" }, { "s": "monitor_side", "in": "desks", "x": 5.2, "y": 0.15, "z": "top" },
       { "s": "monitor_side", "in": "desks", "x": 6.4, "y": 0.15, "z": "top" }, { "s": "monitor_side", "in": "desks", "x": 7.6, "y": 0.15, "z": "top" },
       { "s": "mug", "in": "desks", "x": 4.9, "y": 1.0, "z": "top" }, { "s": "paper2", "in": "desks", "x": 7.2, "y": 1.0, "z": "top" },
       { "s": "table_s", "in": "desks", "x": 3.6, "y": 3.0 }, { "s": "monitor_side", "in": "desks", "x": 3.8, "y": 2.25, "z": "top" },
-      { "s": "table_s", "in": "desks", "x": 0.5, "y": 1.6 }, { "s": "monitor_side", "in": "desks", "x": 0.7, "y": 0.85, "z": "top" },
-      { "s": "table_s", "in": "desks", "x": 0.5, "y": 3.3 }, { "s": "monitor_side", "in": "desks", "x": 0.7, "y": 2.55, "z": "top" },
+      { "s": "table_s", "in": "desks", "x": 0.3, "y": 1.95 }, { "s": "monitor_side", "in": "desks", "x": 0.5, "y": 1.2, "z": "top" },
+      { "s": "table_s", "in": "desks", "x": 1.95, "y": 1.95 }, { "s": "monitor_side", "in": "desks", "x": 2.15, "y": 1.2, "z": "top" },
 
       { "_": "S 문서팀 — PC 책상(쓰기) · 책장(서가) · 서류 더미(대조)" },
       { "s": "table_s", "in": "scribe", "x": 2.0, "y": 1.2 }, { "s": "pc", "in": "scribe", "x": 2.2, "y": 0.45, "z": "top" },
@@ -221,14 +221,14 @@
       { "s": "paper3", "in": "meeting", "x": 1.6, "y": 2.85, "z": "top" }, { "s": "mug", "in": "meeting", "x": 2.9, "y": 2.9, "z": "top" },
 
       { "_": "H 커밋 데스크" },
-      { "s": "table_s", "in": "commit", "x": 1.0, "y": 1.9 }, { "s": "paper3", "in": "commit", "x": 1.4, "y": 1.95, "z": "top" },
-      { "s": "copier", "in": "commit", "x": 2.7, "y": 0.9 }
+      { "s": "table_s", "in": "commit", "x": 1.0, "y": 2.15 }, { "s": "paper3", "in": "commit", "x": 1.4, "y": 2.2, "z": "top" },
+      { "s": "copier", "in": "commit", "x": 2.75, "y": 1.2 }
     ],
     "infra_decor": {
       "_": "출하 라인 — 빌드 모니터 → 저장소 → 배포 보드. 단계 왼쪽 위 기준, 위 0.9칸은 이름표 줄",
-      "jenkins": [{ "s": "build_monitor", "x": 0.4, "y": 1.0 }, { "s": "chair_b", "x": 2.4, "y": 1.4 }],
-      "harbor": [{ "s": "server_rack", "x": 0.4, "y": 0.9 }, { "s": "box_r", "x": 1.6, "y": 2.4 }, { "s": "box_b", "x": 1.6, "y": 2.9 }, { "s": "box_g", "x": 2.5, "y": 2.9 }],
-      "argocd": [{ "s": "whiteboard", "x": 0.6, "y": 1.0 }]
+      "jenkins": [{ "s": "build_monitor", "x": 0.4, "y": 1.15 }, { "s": "chair_b", "x": 2.4, "y": 1.4 }],
+      "harbor": [{ "s": "server_rack", "x": 0.4, "y": 1.1 }, { "s": "box_r", "x": 1.6, "y": 2.4 }, { "s": "box_b", "x": 1.6, "y": 2.9 }, { "s": "box_g", "x": 2.5, "y": 2.9 }],
+      "argocd": [{ "s": "whiteboard", "x": 0.6, "y": 1.15 }]
     },
     "chars": {
       "_comment": "2dPig 사람 5명 — 정면 한 장뿐(걷기는 엔진 흉내: 출렁 + 좌우 뒤집기)",

@@ -4,7 +4,8 @@
 //   탭: [대화](기본) · [활동](도구 호출 — 누르면 입력 · 결과 본문을 트랜스크립트에서) · [세션](정보 · 인계 · 세션 조작 · 승인 이력)
 // 대화는 내용이 바뀔 때만 다시 그린다 — 읽던 자리 · 고른 글자가 10초마다 날아가지 않게. 아래를 보고 있으면 새 답을 따라 내려가고,
 // 위를 보고 있으면 그대로 두고 [새 답 ↓]만 띄운다.
-// 너비는 두 가지(좁게 = 픽셀 볼 때, 넓게 = 대화 읽을 때)를 오가고, 각각 끌어서 바꾼 값을 따로 기억한다.
+// 너비는 두 가지(좁게 = 픽셀 볼 때, 넓게 = 대화 읽을 때)뿐이다(11-10 사용자 — 손잡이를 끌어 만든 중간 너비마다 픽셀 화면 자리가
+// 달라져 이름표 자리 고르기가 복잡해졌다. 끌기를 막고 두 값만). 손잡이는 두 번 누르면 오간다.
 
 import { approvalCard, handleApprovalClick, handleApprovalInput, restoreNotes, apprPlace, apprFoldLine, apprPeekLine, keep, sessionKv, modelChip, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
          sessionName, sessionSub, sessionIds, projectLabel, roleBadge, panelRole, ROLE_LABEL, SESSION_ROLES, ROLE_UNKNOWN_TIP, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed } from './render.js';
@@ -16,7 +17,7 @@ import { createCoder } from './coder.js';
 import { createForemanPanel } from './fmpanel.js';
 
 const KEY_OPEN = 'foremanPanelOpen', KEY_TAB = 'foremanPanelTab', KEY_MODE = 'foremanPanelMode';
-const KEY_W = { narrow: 'foremanPanelW', wide: 'foremanPanelWideW' };
+const KEY_W = { narrow: 'foremanPanelW', wide: 'foremanPanelWideW' };      // 11-10 전 끌어서 기억한 너비 — 읽지 않고 지운다
 const WIDTH = {                                   // 기본 너비 · 창에 대한 최대 비율
   // 11-08 1920 기준 360 → 420(글씨를 키워 — uiscale 120% — 안쪽 폭이 좁아졌다). 작은 창은 예전 360 그대로
   narrow: { def: () => Math.round(Math.min(420, Math.max(360, window.innerWidth * 0.3))), max: 0.4 },
@@ -25,7 +26,8 @@ const WIDTH = {                                   // 기본 너비 · 창에 대
 const MIN_W = 280;
 const TABS = [['convo', '대화'], ['act', '활동'], ['sess', '세션']];
 const ls = { get(k) { try { return localStorage.getItem(k); } catch { return null; } },
-             set(k, v) { try { localStorage.setItem(k, v); } catch { /* 저장 못 해도 이 탭에서는 된다 */ } } };
+             set(k, v) { try { localStorage.setItem(k, v); } catch { /* 저장 못 해도 이 탭에서는 된다 */ } },
+             del(k) { try { localStorage.removeItem(k); } catch { /* 없어도 된다 */ } } };
 
 // target: null | { kind:'session' } (store.state.selected) | { kind:'infra', room, infra, name, status } | { kind:'foreman', room } (room=null이면 감독실)
 export function createSidePanel(host, store, { onSelectSession, onToggle, onClear }) {
@@ -33,7 +35,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   el.className = 'oside';
   el.setAttribute('aria-label', '패널');
   el.innerHTML = `
-    <div class="oside-grip" title="너비 — 끌어서 바꿉니다. 두 번 누르면 넓게와 좁게를 오갑니다."></div>
+    <div class="oside-grip" title="너비 — 두 번 누르면 넓게와 좁게를 오갑니다. 너비는 이 둘뿐입니다."></div>
     <button id="pStrip" class="oside-strip" title="패널 — 접은 패널을 폅니다.">
       <span>◀</span><span id="pStripBadge"></span><span class="oside-vert">패널</span>
     </button>
@@ -103,8 +105,9 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   const last = { convo: '', convoSid: null, feed: '', meta: '', info: '' };
 
   // ── 접기 · 너비(좁게 / 넓게) ─────────────────────────
+  for (const k of Object.values(KEY_W)) ls.del(k);
   function applyWidth() {
-    const w = Number(ls.get(KEY_W[mode])) || WIDTH[mode].def();
+    const w = WIDTH[mode].def();
     el.style.setProperty('--side-w', Math.max(MIN_W, Math.min(w, window.innerWidth * WIDTH[mode].max)) + 'px');
     $('pWide').textContent = mode === 'wide' ? '⇥ 좁게' : '⇤ 넓게';
     el.classList.toggle('wide', mode === 'wide');
@@ -183,17 +186,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   $('pClear').onclick = () => { store.select(null); show(null); if (onClear) onClear(); };
   setInterval(() => { if (open && target) store.touch('panel'); }, 10000);   // "n분 전" 같은 시간 표시만 갱신
   const grip = el.querySelector('.oside-grip');
-  grip.addEventListener('dblclick', () => setMode(mode === 'wide' ? 'narrow' : 'wide'));
-  grip.addEventListener('pointerdown', (ev) => {
-    if (!open) return;
-    ev.preventDefault();
-    grip.setPointerCapture(ev.pointerId);
-    const right = el.getBoundingClientRect().right;
-    const move = (e) => { ls.set(KEY_W[mode], String(Math.round(right - e.clientX))); applyWidth(); if (onToggle) onToggle(open); };
-    const up = () => { grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); };
-    grip.addEventListener('pointermove', move);
-    grip.addEventListener('pointerup', up);
-  });
+  grip.addEventListener('dblclick', () => setMode(mode === 'wide' ? 'narrow' : 'wide'));   // 끌기는 없다(11-10) — 두 값만
   window.addEventListener('resize', applyWidth);
   // 터미널은 패널 왼쪽까지만(11-10) — 패널이 오른쪽에 붙어 있으면(휴대폰 폭은 아래에 쌓여 아님) 터미널 오른쪽을 패널 폭만큼 비우고,
   // 패널은 office.html body.term-beside 규칙으로 창 바닥까지 늘어난다. 너비를 끌거나 접고 펴면 ResizeObserver가 따라간다
