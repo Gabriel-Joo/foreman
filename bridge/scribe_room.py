@@ -340,6 +340,23 @@ async def later_prompts(engine: Any, project: str, since: datetime | None, limit
     return [dict(r) for r in rows if LATER.search(r["prompt_text"] or "")][:limit]
 
 
+def later_material(project: str, when: datetime | None, rows: list[dict[str, Any]], inbox: list[dict[str, Any]], mk: Any = None) -> str:
+    """「나중에 할 일 정리」 재료(later.md) — 사람 말은 자르지 않는다(#14, 11-10)."""
+    from bridge import scribe as sc
+    m = mk.text if mk else (lambda s: s)
+    lines = [f"# 미룬 말 · 받은 할 일 — {project} ({(sc.kst(when) + ' 뒤') if when else '처음부터'}, 사람 턴 {len(rows)}개 · 받은 할 일 {len(inbox)}개)",
+             "README 「나중에 할 일」 표에 이미 있는 것은 빼고, 이미 한 일도 뺀다(지난 정리를 버렸으면 같은 범위를 다시 본다).",
+             "사람 말은 자르지 않은 원문이다 — 길면 쪽으로 나눠 끝까지 읽는다.", ""]
+    if inbox:
+        lines += ["# 받은 할 일 — 사람이 머리줄 [＋ 할 일]로 직접 적은 것. 모두 할 일이다(\"그때뿐\"으로 거르지 않는다)", ""]
+        for x in inbox:
+            lines += [f"## 받은 할 일 #{x['id']} {sc.kst(x['created_at'])}", m(x["body"]) or "", ""]
+        lines += ["# 대화에서 미룬 말", ""]
+    for x in rows:
+        lines += [f"## [t:{x['id']}] {sc.kst(x['started_at'])}", m(sc._full(x["prompt_text"])) or "", ""]
+    return "\n".join(lines)
+
+
 COMMON = """
 지켜야 할 것
 - 먼저 이 저장소의 CLAUDE.md와 `docs/style_guide.md`(있으면)를 읽는다
@@ -439,17 +456,7 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
         if not rows and not inbox:         # 빈손으로 Opus 세션을 띄우지 않는다(11-06 — 범위가 비어 사람 턴 0개로 떴다)
             raise Refused(f"{'지난 정리 뒤로' if when else '지금까지'} \"나중에 · 미루\"라고 한 사람 말도, 받은 할 일도 없습니다 — 띄우지 않았습니다")
         from bridge.mask import Masker
-        mk = Masker()
-        lines = [f"# 미룬 말 · 받은 할 일 — {project} ({(sc.kst(when) + ' 뒤') if when else '처음부터'}, 사람 턴 {len(rows)}개 · 받은 할 일 {len(inbox)}개)",
-                 "README 「나중에 할 일」 표에 이미 있는 것은 빼고, 이미 한 일도 뺀다(지난 정리를 버렸으면 같은 범위를 다시 본다).", ""]
-        if inbox:
-            lines += ["# 받은 할 일 — 사람이 머리줄 [＋ 할 일]로 직접 적은 것. 모두 할 일이다(\"그때뿐\"으로 거르지 않는다)", ""]
-            for x in inbox:
-                lines += [f"## 받은 할 일 #{x['id']} {sc.kst(x['created_at'])}", mk.text(x["body"]) or "", ""]
-            lines += ["# 대화에서 미룬 말", ""]
-        for x in rows:
-            lines += [f"## [t:{x['id']}] {sc.kst(x['started_at'])}", mk.text(sc._clip(x["prompt_text"], 1500)) or "", ""]
-        mat = sc.write(sc.OUT_ROOT / f"{project}_{day}" / "later.md", "\n".join(lines))
+        mat = sc.write(sc.OUT_ROOT / f"{project}_{day}" / "later.md", later_material(project, when, rows, inbox, Masker()))
         extra["materials"] = str(mat)
         prompt = task_prompt(task, project, repo, extra)
     else:
