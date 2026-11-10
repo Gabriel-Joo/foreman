@@ -34,6 +34,9 @@ min_turn_s = 300
 [projects.foreman]
 prefix = "[FOREMAN]"
 
+[projects.ronanlab-infra]
+prefix = "[인프라]"
+
 # 압축 알림(11-05, docs/11_handoff_v2.md 3장) — 압축 손실 점검 두 번에서 지시 · 결정의 약 63%가 빠졌고,
 # 가장 많이 빠진 때가 말한 뒤 두 번째 압축이었다. 압축 직후(맥락이 가벼울 때) 알린다. 접두어 있는 프로젝트만 보낸다
 [compact]

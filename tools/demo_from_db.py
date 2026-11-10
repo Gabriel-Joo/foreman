@@ -25,7 +25,7 @@ from bridge.db.engine import make_engine  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 OUT = REPO / "bridge" / "static" / "demo"
-LABEL = {"runshoes": "런슈즈", "petmint-rag-chatbot": "펫퍼민트", "foreman": "FOREMAN"}
+LABEL = {"runshoes": "런슈즈", "petmint-rag-chatbot": "펫퍼민트", "foreman": "FOREMAN", "ronanlab-infra": "인프라"}
 WANDER_TURN, SUB_TURN, APPROVAL_ID = 5762, 5823, 1        # 11-06 고른 실제 기록(아래 각 함수)
 
 

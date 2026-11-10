@@ -25,7 +25,10 @@ const fpx = (n) => Math.round(n * FZ());
 const MIN_CARD = () => fpx(80);           // [전체] 현장 카드 최소 폭(px) — "FOREMAN" · "(떠돌이)"가 한 줄에 들어가는 폭(11-09)
 const sizeFont = (f) => String(f).replace(/(\d+(?:\.\d+)?)px/, (m, n) => `${fpx(+n)}px`);
 
-const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'], ['foreman', 'FOREMAN']];
+const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'], ['foreman', 'FOREMAN'], ['ronanlab-infra', '인프라']];
+// 출하장(Jenkins → Harbor → ArgoCD)이 없는 현장(11-10) — 빌드하는 앱이 아니다(config/pipeline.toml에 없음). 모눈 칸은 같게 두고
+// 단계 칸 · 가구 · 화살표 · 배송 담당을 그리지 않는다. 이름표는 "출하장 없음"
+const NO_SHIP = new Set(['ronanlab-infra']);
 const RATE_WIN = 10 * 60 * 1000;          // 토큰 속도 창 — 최근 10분
 const SPEED = 3.2;                         // 걷는 속도(타일/초)
 // 역할 고정 자리(11-09 관리자 · 11-10 디자이너) — 테마 layout.zones.<역할>.seats에 서고, 일할 때도 그 자리. 작업 책상 수 · "+N"에 들지 않는다
@@ -282,7 +285,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const p = byName.get(name);
       const label = (p && p.label) || (KNOWN.find(([k]) => k === name) || [])[1] || name;
       out.push({ name, label, x: i * (L.room.w + L.gap), y: 0, w: L.room.w, h: L.room.h,
-                 sessionIds: p ? p.sessionIds : [] });
+                 sessionIds: p ? p.sessionIds : [], noShip: NO_SHIP.has(name) });
     });
     const lp = byName.get(null);
     const lx = out.length * (L.room.w + L.gap);
@@ -427,7 +430,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
     const seen = new Set();
     for (const room of [...world.rooms, world.lounge]) {
-      const plan = !room.lounge && L.zones.infra ? courierPlan(room, st.pipeline.get(room.name)) : null;
+      const plan = !room.lounge && !room.noShip && L.zones.infra ? courierPlan(room, st.pipeline.get(room.name)) : null;
       room.courier = plan;
       // 세션 — 깨어 있는 것 먼저 자리를 준다. 자리가 모자라면 배지에 "+N"
       const ss = room.sessionIds.map((id) => st.sessions.get(id)).filter(Boolean);
@@ -995,7 +998,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 파이프라인 구역
     const iz = z.infra;
     rect(r.x + 1, r.y + iz.y, r.w - 2, iz.h, P.infraFloor);
-    for (const kind of ['jenkins', 'harbor', 'argocd']) {
+    if (!r.noShip) for (const kind of ['jenkins', 'harbor', 'argocd']) {
       const st = r['st_' + kind] || 'none';
       const c = { running: P.act, success: P.ok, failed: P.bad, waiting: P.warn, none: P.muted }[st] || P.muted;
       rect(r.x + iz[kind].x, r.y + iz.y + 0.5, 4, 2, '#1f252c');
@@ -1200,7 +1203,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       out.push({ zone: key, text: label, x: z.x, y: z.y, role: roles[key] });
     }
     const iz = L.zones.infra, it = (theme.tags && theme.tags.infra) || {};
-    if (iz && iz.jenkins) {
+    if (iz && iz.jenkins && room && room.noShip) {
+      out.push({ zone: 'infra', text: '출하장 없음', x: GRIDDEF ? iz.x : 1, y: GRIDDEF ? iz.y : iz.y - 0.9, role: 'ship', noShip: true });
+    } else if (iz && iz.jenkins) {
       // 모눈이 없는 테마(도형 plain)는 출하 라인 위 한 줄에
       if (it.title) out.push({ zone: 'infra', text: it.title, x: GRIDDEF ? iz.x : 1, y: GRIDDEF ? iz.y : iz.y - 0.9, role: 'ship' });
       INFRA_STAGES.forEach((k, i) => {
@@ -1453,13 +1458,13 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     else ctx.fillRect((r.x + 1) * T, (r.y + iz.y) * T, (r.w - 2) * T, iz.h * T);
     drawCorridors(r);
     drawRoomBounds(r);
-    if (GRIDDEF) drawShipArrows(r);
+    if (GRIDDEF && !r.noShip) drawShipArrows(r);
     drawWalls(r);
     const b = RS.banners;
     if (b) for (let i = b.from, k = 0; i < r.w - 1; i += b.every, k++) SP.draw(ctx, b.s[(k + r.x) % b.s.length], (r.x + i) * T, (r.y + 1) * T);
     for (const d of theme.sprites.decor || []) if (d.s || d.fx) placeDecor(d, r.x, r.y, now, sorted);
-    // 출하 라인 — 구역마다 가구 + 상태 테두리(실패 연기 · Sync 대기 표지)
-    for (const kind of ['jenkins', 'harbor', 'argocd']) {
+    // 출하 라인 — 구역마다 가구 + 상태 테두리(실패 연기 · Sync 대기 표지). 출하장 없는 현장(NO_SHIP)은 바닥만
+    if (!r.noShip) for (const kind of ['jenkins', 'harbor', 'argocd']) {
       const ox = r.x + iz[kind].x, oy = r.y + iz.y;
       for (const d of (theme.sprites.infra_decor || {})[kind] || []) placeDecor(d, ox, oy, now, sorted);
       const st = r['st_' + kind] || 'none';
@@ -2176,6 +2181,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       return `<div class="tip-h">${'①②③'[l.i]} ${esc(stageName(l.stage).name)}</div><div class="tip-b">${esc(l.what || INFRA_ROLE[l.stage].what)}</div><div>${INFRA_ROLE[l.stage].desc}</div>` +
         (st !== 'none' ? `<div class="tip-s">${esc(STATUS_KO[st] || st)}${st === 'waiting' ? ' — ' + WAIT_TIP : ''}</div>` : '');
     }
+    if (l.noShip) return `<div class="tip-h">${esc(l.text)}</div><div class="tip-b">출하 라인 없음</div><div>빌드해 내보내는 앱이 아니라 빌드 → 이미지 → 배포 줄이 없습니다. 클러스터 · 서버 작업은 이 현장 세션에서 봅니다.</div>`;
     if (l.zone === 'infra') return `<div class="tip-h">${esc(l.text)}</div><div class="tip-b">출하 라인</div><div>커밋이 빌드 → 이미지 → 배포 순서로 나가는 곳입니다. 바닥 화살표 ① ② ③이 그 순서입니다.</div>`;
     const role = ZONE_ROLE[l.role];
     return `<div class="tip-h">${esc(l.text)}</div>${role ? tipOf(role) : ''}`;
@@ -2716,7 +2722,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const mark = st === 'alert' ? '❗' : st === 'fail' ? '🔥' : '';
       const room = x1 - x0 - 6;                                    // 옆 칸과 3px씩 띄운다
       let px = fpx(17);
-      for (; px > fpx(12); px--) {
+      // 11-10 현장 넷(인프라)이 되자 1024 넓게에서 "FOREMAN"이 낱말 가운데서 끊겼다 — 띄어쓰기 없는 이름은 줄을 못 바꾸니 8px까지 더 줄인다
+      const minPx = fpx(/\s/.test(s.r.label) ? 12 : 8);
+      for (; px > minPx; px--) {
         ctx.font = `bold ${px}px system-ui, sans-serif`;
         if (ctx.measureText(s.r.label).width + 10 <= room) break;
       }

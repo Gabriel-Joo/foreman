@@ -59,3 +59,6 @@ branch = "main"
 jenkins_job = "petmint-app"
 harbor_project = "petmint"
 argocd_app = "petmint"
+
+# ronanlab-infra(인프라, 11-10)는 넣지 않는다 — 빌드하는 앱이 아니다(클러스터 · 노드 설정 저장소).
+# 화면의 인프라 방은 같은 모눈을 쓰되 출하장이 비어 있다(bridge/static/js/office.js NO_SHIP)

@@ -154,6 +154,12 @@ mode = "observe"
 [projects.foreman]
 mode = "enforce"
 
+# 인프라(11-10 프로젝트 등록) — 사용자가 인프라 묶음 1(노드 증설 · 가용성) 동안 승인 카드를 풀었다(세션 265가 클러스터 작업 중).
+# 그동안 관리자가 위 [defaults] mode도 임시로 observe로 해 두었다 — 합친 뒤 관리자가 defaults를 enforce로 되돌리고,
+# 묶음 1이 끝나면 이 줄도 enforce로 바꾼다(사용자 확인 뒤). log/coder_infra_project_20261110.md
+[projects.ronanlab-infra]
+mode = "observe"
+
 # ── 다른 저장소는 읽기만(11-09 사용자, bridge/reposcope.py) ───────────
 # 여기 적은 프로젝트의 세션은 자기 저장소(+ 그 worktree) 밖의 git 저장소를 고치지 않는다 — 승인 모드와 상관없이 거부.
 #   Edit · Write · MultiEdit · NotebookEdit: 대상 파일이 다른 git 저장소 안이면 거부

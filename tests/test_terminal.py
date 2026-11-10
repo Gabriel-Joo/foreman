@@ -347,6 +347,58 @@ async def test_tab_views_do_not_drag_each_other(shell, own_sock):
     await m.stop()
 
 
+class _RepoEngine:
+    """_repo_dir만 읽는 가짜 엔진 — SELECT repo_path FROM project WHERE name = :n."""
+
+    def __init__(self, repos: dict[str, str]):
+        self.repos = repos
+
+    def connect(self):
+        eng = self
+
+        class _C:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def execute(self, _q, params):
+                class _R:
+                    def scalar(self_inner):
+                        return eng.repos.get(params["n"])
+                return _R()
+        return _C()
+
+
+async def test_infra_window_opens_in_its_repo(shell, own_sock, tmp_path):
+    """11-10 인프라 등록 — [ronanlab-infra] 창이 그 저장소 폴더에서 열리고(FOREMAN_PROJECT), 탭 그룹 세션에서 골라도
+    다른 탭은 끌려가지 않는다. 시험만의 tmux 서버(own_sock) — 라이브 foreman-shell에 창을 만들지 않는다."""
+    repo = tmp_path / "ronanlab-infra"
+    repo.mkdir()
+    p = FakePipeline()
+    m = TerminalManager(None, shell, p, MK, publish=p.publish)
+    m.socket = own_sock
+    await m.start()
+    m.engine = _RepoEngine({"ronanlab-infra": str(repo)})
+    base = shell.terminal_tmux_session
+    await m.window_for("foreman")
+    for tab in ("tabINFRA001", "tabOTHER002"):
+        await tmux(m.socket, "new-session", "-d", "-t", f"={base}", "-s", f"{base}-v-{tab}")
+    b = await m.open_project("foreman", "tabOTHER002")
+    a = await m.open_project("ronanlab-infra", "tabINFRA001")
+    assert a["project"] == "ronanlab-infra" and a["window"] == "ronanlab-infra" and a["view"] is True
+    assert a["cwd"] == str(repo)
+    assert (await m.current_view("tabOTHER002"))["project"] == "foreman" == b["project"]
+    t = await m.window_for("ronanlab-infra")
+    await tmux(m.socket, "send-keys", "-t", t, "-l", "echo P=$FOREMAN_PROJECT")
+    await tmux(m.socket, "send-keys", "-t", t, "Enter")
+    await _wait_pane(m, t, "P=ronanlab-infra")
+    names = (await tmux(m.socket, "list-windows", "-t", f"={base}", "-F", "#{window_name}")).split()
+    assert names.count("ronanlab-infra") == 1
+    await m.stop()
+
+
 async def test_view_script_attaches_then_cleans_up(shell, own_sock):
     """deploy/shell/foreman-term-view — ttyd가 연결마다 띄우는 것을 pty로 띄운다: 탭 세션이 그 프로젝트 창으로 붙고,
     연결이 끝나면(프로세스 끝) 사라진다. 처음에 destroy-unattached를 붙기 전에 걸어 그 자리에서 사라지던 것 · 대상 표기(=이름:)를 다시 막는다."""
