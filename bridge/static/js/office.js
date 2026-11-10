@@ -10,10 +10,10 @@ import { mountTodoInbox } from './todoinbox.js';
 import { coderJobs, coderBubble, isCoder, REST_DAYS } from './coder.js';
 import { roleTag } from './render.js';
 import { showTip, hideTip, themeTips, attachDomTips, textTip, softEsc, tipAudit as tipAuditOf } from './tip.js';
-import { buildGrid, findPath, footprint, RES } from './walk.js';
+import { buildGrid, findPath, footprint, nearestFree, RES } from './walk.js';
 import { uiScale } from './uiscale.js';
 import { wrapWords } from './wrap.js';
-import { applyGrid, INFRA_STAGES } from './grid.js';
+import { applyGrid, INFRA_STAGES, gridProblems } from './grid.js';
 
 // 픽셀 화면 글씨(화면 좌표로 그리는 것 — 구역 · 캐릭터 이름표, 말풍선, 방 카드, 단계 이름) 배율(11-09 사용자:
 // "130%로 보는데 맨 윗줄 탭 글씨 정도면 좋겠다", [가+ · 가−]도 따라가게). 탭은 17px × 배율 — 이름표 14px × 배율 × 1.2가 그쯤.
@@ -1176,7 +1176,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 이름은 짧게 — 하는 일은 호버(「① 빌드 모니터 · Jenkins 빌드」 → 이름표 「빌드 모니터」, 호버 「Jenkins 빌드」). ① ② ③은 바닥 화살표 쪽
   const GL = (GRIDDEF && GRIDDEF.label) || { font: 6.5, h: 0.75, pad: 0.1 };
   const LABEL_MIN_PX = 8;
-  const labelK = (s) => Math.max(1, LABEL_MIN_PX / (GL.font * s));                 // s = 월드 px 하나의 화면 px(cam.s)
+  // s = 월드 px 하나의 화면 px(cam.s). 키우는 배수는 1.45(배율 1 — 1024 패널 넓게)에서 멈춘다: 터미널을 열어 방이 그보다 작아지면(배율 0.75 등)
+  // 글씨도 8px 밑으로 함께 작아진다 — 이름표 판이 비워 둔 칸(방 위 1.1칸)을 넘지 않게
+  const LABEL_K_MAX = 1.45;
+  const labelK = (s) => Math.min(LABEL_K_MAX, Math.max(1, LABEL_MIN_PX / (GL.font * s)));
   const labelFont = (s) => TAG0.font.replace(/(\d+(?:\.\d+)?)px/, `${(GL.font * s * labelK(s)).toFixed(2)}px`);
   const STAGE_DOT = { running: 'act', success: 'ok', failed: 'bad', waiting: 'warn' };
   const STAGE_SYM = { running: '…', success: '✓', failed: '✗', waiting: '⏸' };     // 이름표엔 기호만, 말은 호버(STATUS_KO)
@@ -2352,6 +2355,98 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (iz) for (const k of ['jenkins', 'harbor', 'argocd']) for (const d of (theme.sprites.infra_decor || {})[k] || []) add(d, iz[k].x, iz.y);
     return out;
   }
+  // ── 모눈 점검(11-10 — 「화면 모눈으로 다시 짜기」) ─────────────────────────────
+  // 테마 · 창 크기와 상관없는 배치 점검(방 좌표). tools/screen.py가 테마마다 부르고, ⑤ 테마 셋의 방 자리가 같은지는 rooms를 견준다.
+  // ① 두 방이 같은 칸 · ② 복도가 끊김 · 복도에 안 닿는 방 — grid.js gridProblems(grid.json만)
+  // ② 걸어서 못 가는 자리 — 실제 걷기 격자(가구가 막은 칸)에서 복도에서 모든 자리(좌석 · 출하 담당 자리)까지 이어지나
+  // ③ 가구가 방 밖으로 — 그림의 불투명 범위가 제 방(in) 안인가. 위 벽에 붙은 방은 위 벽(y 0~)까지, 출하 단계 그림은 그 단계 칸 안. 자리도 제 방 안
+  // ④ 이름표가 방 왼쪽 위 칸에 — 왼쪽 위 + pad에 있고 방 안이며, 가구(불투명) · 자리의 몸과 겹치지 않는가. 가장 작은 배율(배율 1 — 이름표가 가장 크다)과 지금 배율 둘 다
+  function gridAudit() {
+    if (!GRIDDEF) return { problems: [], rooms: null };
+    const out = gridProblems(GRIDDEF).map((t) => ({ kind: '모눈', text: t }));
+    const rooms = gridRooms(), byKey = Object.fromEntries(rooms.map((q) => [q.key, q]));
+    const roleRect = Object.fromEntries(rooms.map((q) => [q.role, [q.x, q.y, q.w, q.h]]));
+    const inside = (r, q, top = q.y) => r[0] >= q.x - 0.01 && r[1] >= top - 0.01 && r[0] + r[2] <= q.x + q.w + 0.01 && r[1] + r[3] <= q.y + q.h + 0.01;
+    const fmtR = (r) => r.map((v) => +v.toFixed(2)).join(',');
+    // ③ 가구
+    const iz = L.zones.infra;
+    const opq = (d, ox, oy) => {
+      if (d.fx === 'glasswall') return [[ox + d.x, oy + d.y, d.w || 1, d.h || 1]];
+      if (d.fx) return [[ox + d.x, oy + d.y, 0, 0]];                                   // 빛 · 촛불 — 점
+      const [w, h] = sizeT(d), [l, t, rr, b] = opaqueBox(d.s), list = [];
+      for (let i = 0; i < (d.n || 1); i++) list.push([ox + d.x + i * (d.dx || 1) + l * w, oy + d.y + t * h, (rr - l) * w, (b - t) * h]);
+      return list;
+    };
+    for (const d of theme.sprites.decor || []) {
+      if (!d.s && !d.fx) continue;
+      const q = byKey[d.in];
+      if (!q) { out.push({ kind: '가구 방 없음', text: `${d.s || d.fx} — in(방)이 없습니다` }); continue; }
+      const top = q.y <= INNER_TOP ? 0 : q.y;                                         // 위 벽에 붙은 방은 벽에 건 것까지
+      for (const r of opq(d, 0, 0)) if (!inside(r, q, top)) out.push({ kind: '가구 방 밖', text: `${d.s || d.fx}(${d.in}) [${fmtR(r)}] — 방 [${fmtR([q.x, q.y, q.w, q.h])}]` });
+    }
+    if (iz) for (const k of INFRA_STAGES) {
+      const q = { x: iz[k].x, y: iz.y, w: iz.stageW || 4.5, h: iz.h };
+      for (const d of (theme.sprites.infra_decor || {})[k] || []) for (const r of opq(d, iz[k].x, iz.y)) {
+        if (!inside(r, q)) out.push({ kind: '가구 방 밖', text: `${d.s}(출하 ${k}) [${fmtR(r)}] — 단계 칸 [${fmtR([q.x, q.y, q.w, q.h])}]` });
+      }
+    }
+    // 자리도 제 방 안(관리자 · 디자이너 · 상주 코더는 in의 방)
+    const spotRoom = (where) => {
+      const name = where.split(/[#.]/)[0];
+      if (name === 'infra') return byKey.infra;
+      const z = L.zones[name];
+      return z && byKey[z.in || name];
+    };
+    const spots = standSpots();
+    for (const p of spots) {
+      const q = spotRoom(p.where);
+      if (q && !inside([p.x, p.y, 0, 0], q)) out.push({ kind: '자리 방 밖', text: `${p.where} (${p.x}, ${p.y}) — 방 [${fmtR([q.x, q.y, q.w, q.h])}]` });
+    }
+    // ② 걸어서 닿는가 — 복도 첫 칸 가운데에서 걷기 격자를 훑는다
+    const g = GRID && GRID.room;
+    if (g) {
+      const c0 = GRIDDEF.corridors[0], start = nearestFree(g, Math.floor((c0[0] + 0.5) * RES), Math.floor((c0[1] + 0.5) * RES));
+      const seen = new Uint8Array(g.cols * g.rows);
+      if (start) {
+        const q = [start[1] * g.cols + start[0]]; seen[q[0]] = 1;
+        while (q.length) {
+          const i = q.pop(), c = i % g.cols, r = Math.floor(i / g.cols);
+          for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const cc = c + dc, rr = r + dr, j = rr * g.cols + cc;
+            if (cc < 0 || rr < 0 || cc >= g.cols || rr >= g.rows || seen[j] || g.block[j]) continue;
+            seen[j] = 1; q.push(j);
+          }
+        }
+      }
+      for (const p of spots) {
+        const f = nearestFree(g, Math.floor(p.x * RES), Math.floor(p.y * RES));
+        if (!f || !seen[f[1] * g.cols + f[0]]) out.push({ kind: '못 가는 자리', text: `${p.where} (${p.x}, ${p.y}) — 복도에서 걸어서 닿지 않습니다` });
+      }
+    }
+    // ④ 이름표 — 가장 큰 꼴(배율 1)과 지금 방 배율
+    const [bw, bh] = bodySize();
+    const furn = furnRects('room').map((f) => [f.x, f.y, f.w, f.h, f.s]);
+    for (const s of [...new Set([1, roomViewScale()])]) {
+      for (const l of roomLabels()) {
+        const q = l.stage ? { x: iz[l.stage].x, y: iz.y, w: iz.stageW || 4.5, h: iz.h } : byKey[l.zone];
+        if (!q) continue;
+        const b = labelBox(l, s), tag = `이름표 「${l.text}」(배율 ${s})`;
+        if (Math.abs(b[0] - (q.x + GL.pad)) > 0.01 || Math.abs(b[1] - (q.y + GL.pad)) > 0.01) out.push({ kind: '이름표 자리', text: `${tag} [${fmtR(b)}] — 방 왼쪽 위가 아닙니다` });
+        if (!inside(b, q)) out.push({ kind: '이름표 방 밖', text: `${tag} [${fmtR(b)}] — 방 [${fmtR([q.x, q.y, q.w, q.h])}]` });
+        for (const f of furn) {
+          const a = areaOf(b, f);
+          if (a > 0.02) out.push({ kind: '이름표↔가구', text: `${tag} ↔ ${f[4]} ${a.toFixed(2)}칸²` });
+        }
+        for (const p of spots) {
+          const body = [p.x - bw / 2 + 0.05, p.y - bh, bw - 0.1, bh], a = areaOf(b, body);
+          if (a > 0.02) out.push({ kind: '이름표↔자리', text: `${tag} ↔ ${p.where} 몸 ${a.toFixed(2)}칸²` });
+        }
+      }
+    }
+    return { problems: out, rooms: roleRect };
+  }
+  const INNER_TOP = 2;                                                             // 위 벽 아래 첫 줄(grid.js INNER.y0)
+
   function labelAudit() {
     const out = [];
     const bub = [...BUBBLES.entries()].filter(([k]) => actors.has(k)).map(([, b]) => ({ kind: '말풍선', text: b.text, r: toScr(b.rect) }));
@@ -3095,7 +3190,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
   return { go, theme, openSession, panel, actors, newSession: (p) => newSession.open(p), openTodo: (p, to) => todoInbox.open(p, to), foremanName: FM_NAME,
-           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: (o) => layoutAudit(o), labelAudit: () => labelAudit(), camScale: () => ({ cam: cam.s, room: roomViewScale() }), roomLabels: (name) => roomLabels(world.rooms.find((r) => r.name === name) || null).map((l) => ({ ...l, box: labelBox(l) })),furnRects: (w) => furnRects(w), standSpots: () => standSpots(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(), names: () => NAMES.slice(),
+           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: (o) => layoutAudit(o), labelAudit: () => labelAudit(), gridAudit: () => gridAudit(), camScale: () => ({ cam: cam.s, room: roomViewScale() }), roomLabels: (name) => roomLabels(world.rooms.find((r) => r.name === name) || null).map((l) => ({ ...l, box: labelBox(l) })),furnRects: (w) => furnRects(w), standSpots: () => standSpots(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(), names: () => NAMES.slice(),
            // 터미널을 열 때 고를 프로젝트(11-10) — 보고 있는 현장, 없으면(감독실 · 지도 · 라운지) 고른 세션의 프로젝트, 그것도 없으면 null
            currentProject: () => (world.rooms.some((r) => r.name === view) ? view
              : ((store.state.sessions.get(store.state.selected) || {}).project || null)),

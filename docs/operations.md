@@ -43,6 +43,8 @@
     - `tipAudit` — 툴팁 넘침 · 낱말 끊김 · 화면보다 큼(`docs/style_guide.md` 「4-1. 화면 글」)
     - `labelAudit`(화면마다, 11-10) — 지금 그린 그대로: 이름표(구역 · 출하 라인 · 캐릭터 이름 · 말풍선) ↔ 사람 몸, 이름표끼리, 구역 · 출하 라인 이름표 ↔ 가구(그림의 불투명 범위). `layoutAudit`은 좌석 자리 기준이라 이 겹침을 못 봤다. `layoutAudit()`를 콘솔에서 부르면 둘 다 나온다 [log:foreman_term_office_three_20261110.md]
     - `termAudit`(테마 × 크기마다, 11-10) — 패널 입력 칸이 패널 · 창 밖으로 넘치나, 터미널과 겹치나, 패널 · 터미널 겹침, xterm 글자 칸이 터미널보다 넓은가. 닫힌 채 한 번, 터미널을 연 채 한 번(`<…>_term.png`). `--no-term`이면 닫힌 채만 [log:designer_screen_six_20261110.md]
+    - `gridAudit`(테마 × 크기마다, 11-10 모눈) — 두 방이 같은 칸 · 방도 복도도 아닌 칸 · 끊긴 복도 · 복도에 안 닿는 방(grid.json, `js/grid.js gridProblems`), 복도에서 걸어서 못 가는 자리, 방 밖으로 나간 가구 · 자리, 이름표가 방 왼쪽 위 칸이 아니거나 가구 · 자리 몸에 걸림(배율 1과 지금 배율). 끝에 **테마 셋의 방 자리가 같은지** 견준다 [log:designer_grid_20261110.md]
+  - 패널 너비는 좁게 · 넓게 두 값뿐이라(11-10) 크기마다 둘 다 본다(`--panel narrow,wide` 기본, 넓게는 크기 이름 끝 `w`)
   - 옵션: `--views hq,map,<현장>` · `--session <id>` · `--base`(미리보기 82xx) · `--eval` · `--ui-scale <배율>`(사용자가 보는 글씨 배율로 찍는다 — 범위 0.8~1.1 · 5씩, 처음 값 0.9(11-10). 양 끝 예 0.8 · 1.1) [log:pixel_bigger_question_card_20261109.md]
   - 통과는 "고른 화면에서 문제 0"일 뿐이다 — 사용자가 말한 화면을 [⌂] · [전체] 같은 탭 글자로 확인하고 그 화면을 고른다 [log:screen_mismatch_waits_20261109.md]
   - 자동 재배치 계획은 `--eval "window.office.layoutPlan()"`
