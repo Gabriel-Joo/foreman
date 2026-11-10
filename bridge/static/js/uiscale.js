@@ -45,20 +45,43 @@ export function step(d) {
   apply();
 }
 
-// 터미널(ttyd iframe, 같은 출처) — 안의 xterm이 window.term으로 있다. 글씨를 바꾸고 resize로 다시 맞춘다(행 · 열 수)
+// xterm 칸 폭 보정(11-10 사용자 — 왼쪽이 잘려 "it push", 커서가 줄 끝이 아니라 `chatbot`의 `b` 자리).
+// xterm은 장치 칸 폭 = floor(글자 폭 × dpr) + round(letterSpacing)(letterSpacing은 장치 px — dpr을 곱하지 않는다, 헤드리스로 잼)
+// → 글자 폭(0.6em)이 장치 px로 정수가 아닌 크기(13 · 14 · 18px, 브라우저 확대 70% …)에서 칸이 글자보다 좁았다(14px: 칸 8 · 글자 8.4).
+// 모자란 1 장치 px를 letterSpacing으로 채워 칸 ≥ 글자(장치 px 올림)가 되게 한다. 글씨 크기는 그대로(배율 5% 단위 세밀함 유지)
+export function cellSpacing(glyphCss, dpr = 1) {
+  const g = glyphCss * dpr;
+  if (!(g > 0)) return 0;
+  return Math.max(0, Math.ceil(g - 0.02) - Math.floor(g + 1e-6));   // 0.02 — 측정 소수 오차로 정수 크기(10 · 15 · 20px)에 1을 더하지 않게
+}
+function glyphWidth(w, t) {                  // xterm이 재는 것과 같은 값(캔버스 measureText — 헤드리스에서 _charSizeService.width와 같았다)
+  const cv = w.document.createElement('canvas').getContext('2d');
+  cv.font = `${t.options.fontSize}px ${t.options.fontFamily}`;
+  return cv.measureText('W'.repeat(50)).width / 50;
+}
+
+// 터미널(ttyd iframe, 같은 출처) — 안의 xterm이 window.term으로 있다. 글씨 · 칸 폭을 바꾸고 resize로 다시 맞춘다(행 · 열 수)
 export function applyTermFont(frame) {
   try {
     const w = frame && frame.contentWindow, t = w && w.term;
     if (!t || !t.options) return false;
-    if (t.options.fontSize !== termFont()) {
-      t.options.fontSize = termFont();
-      w.dispatchEvent(new Event('resize'));
-    }
+    let changed = false;
+    if (t.options.fontSize !== termFont()) { t.options.fontSize = termFont(); changed = true; }
+    const ls = cellSpacing(glyphWidth(w, t), w.devicePixelRatio || 1);
+    if ((t.options.letterSpacing || 0) !== ls) { t.options.letterSpacing = ls; changed = true; }
+    if (changed) w.dispatchEvent(new Event('resize'));
     return true;
   } catch { return false; }
 }
 
-if (typeof document !== 'undefined') {     // node 시험(snapScale · STEPS)에서 불러도 되게
+// 브라우저 확대(dpr)가 바뀌면 — 칸 폭 내림이 달라져 다시 맞춰야 한다(xterm은 스스로 칸을 다시 재지만 letterSpacing은 그대로 둔다)
+export function onDprChange(cb) {
+  if (typeof matchMedia !== 'function') return;
+  const mq = matchMedia(`(resolution: ${devicePixelRatio}dppx)`);
+  mq.addEventListener('change', () => { cb(); onDprChange(cb); }, { once: true });
+}
+
+if (typeof document !== 'undefined') {     // node 시험(snapScale · STEPS · cellSpacing)에서 불러도 되게
   document.addEventListener('click', (e) => {
     const b = e.target.closest && e.target.closest('#oFontDn, #oFontUp');
     if (b) step(b.id === 'oFontUp' ? 1 : -1);
