@@ -41,6 +41,7 @@
   - **화면마다 `nameAudit()` · `cardAudit()` · `tipAudit()`도 기본으로 센다**(11-09 — 전엔 `--eval`로 따로 불러야 봐서 빠뜨리면 안 보였다). 줄 끝에 `layoutAudit N · nameAudit N · cardAudit N · tipAudit 문제/호버 수 · propAudit N`, 모두 문제 수에 든다 [log:screen_argocd_read_20261109.md] [log:tips_and_credit_signal_20261109.md]
     - `cardAudit` — [전체] 카드 겹침 · 그림 덮음 · 화면 밖 · 줄 어긋남 · 잘림, [⌂] 현황판 이름 겹침 · 칸 밖 · 낱말 가운데 끊김
     - `tipAudit` — 툴팁 넘침 · 낱말 끊김 · 화면보다 큼(`docs/style_guide.md` 「4-1. 화면 글」)
+    - `termAudit`(테마 × 크기마다, 11-10) — 패널 입력 칸이 패널 · 창 밖으로 넘치나, 터미널과 겹치나, 패널 · 터미널 겹침, xterm 글자 칸이 터미널보다 넓은가. 닫힌 채 한 번, 터미널을 연 채 한 번(`<…>_term.png`). `--no-term`이면 닫힌 채만 [log:designer_screen_six_20261110.md]
   - 옵션: `--views hq,map,<현장>` · `--session <id>` · `--base`(미리보기 82xx) · `--eval` · `--ui-scale <배율>`(사용자가 보는 글씨 배율로 찍는다 — 예 1.25 · 1.3) [log:pixel_bigger_question_card_20261109.md]
   - 통과는 "고른 화면에서 문제 0"일 뿐이다 — 사용자가 말한 화면을 [⌂] · [전체] 같은 탭 글자로 확인하고 그 화면을 고른다 [log:screen_mismatch_waits_20261109.md]
   - 자동 재배치 계획은 `--eval "window.office.layoutPlan()"`

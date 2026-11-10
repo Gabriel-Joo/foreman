@@ -29,6 +29,7 @@ from bridge.approval_summary import summarize
 from bridge.models import EventIn, EventSource, EventStatus, EventType
 
 log = logging.getLogger("foreman.approval")
+NOTES_ONLY = "(notes only)"   # CC가 "고르지 않고 글만"에 쓰는 답 값(CC 코드 oAn) — 결과에는 "(no option selected) notes: …"
 
 
 def _questions_text(inp: dict[str, Any]) -> str:
@@ -86,6 +87,7 @@ class ApprovalManager:
         # 질문(AskUserQuestion) 대기 — aid → 원래 입력. 패널에서 답하면 answers를 붙여 updatedInput으로 돌려준다(11-09)
         self.questions: dict[int, dict[str, Any]] = {}
         self.answers: dict[int, dict[str, str]] = {}
+        self.notes: dict[int, dict[str, str]] = {}  # 답과 함께 보낸 글(11-10) — 질문 글 → 글. annotations[질문].notes로 간다
         self._tasks: set[asyncio.Task[Any]] = set()
         self._rule_notice: dict[str, float] = {}   # 안전 규칙 파일 도구 편집 알림 — 파일 → 마지막 알린 시각
         self.schema: Any = None                    # 스키마 잠금(bridge/schemalock.py) — main.py가 넣는다
@@ -269,20 +271,30 @@ class ApprovalManager:
             self.waiting.pop(aid, None)
             q_inp = self.questions.pop(aid, None)
             answers = self.answers.pop(aid, None)
+            notes = self.notes.pop(aid, None)
             if tuid:
                 self.by_tool_use.pop(tuid, None)
         if outcome == "answer":                    # 패널에서 질문에 답했다 — 기록은 "허용 · 화면에서", 메시지 칸에 고른 답
-            outcome, message = "allow", _short("; ".join(f"{k} → {v}" for k, v in (answers or {}).items()), 250)
+            note = next(iter((notes or {}).values()), "")
+            # 질문은 80자로 먼저 줄인다(11-10) — 칸이 255자라 긴 질문 뒤의 답이 잘려 기록 · 접힌 줄에서 사라질 수 있었다
+            outcome, message = "allow", _short("; ".join(f"{_short(k, 80)} → {v}" for k, v in (answers or {}).items())
+                                               + (f" · 글: {note}" if note else ""), 250)
         status = {"allow": "allowed", "deny": "denied"}.get(outcome, outcome)
         terminal = message if outcome == "terminal" else None   # 터미널이면 두 번째 값은 CC가 기록한 결정
         message = None if outcome == "terminal" else message
         await self._finish(aid, status, {"allow": "browser", "deny": "browser"}.get(outcome, outcome), message, terminal)
-        self.pipeline.publish({"type": "approval", "op": "resolved", "approval": item | {"status": status}})
+        # 고른 답 · 거부 이유(message)와 누가 정했는지도 — 화면이 답한 카드를 "✓ 답함 — 질문 → 답" 한 줄로 접는다(11-10)
+        self.pipeline.publish({"type": "approval", "op": "resolved", "approval": item | {
+            "status": status, "message": message, "decided_by": {"allow": "browser", "deny": "browser"}.get(outcome, outcome)}})
         self._bg(self._record_res(p, tool, target, aid, status, rule, message))
         if outcome == "allow" and q_inp is not None and answers:
-            # 문서(hooks — AskUserQuestion): 원래 입력 전체 + answers(질문 글 → 고른 선택지 이름)를 updatedInput으로
+            # 문서(hooks — AskUserQuestion): 원래 입력 전체 + answers(질문 글 → 고른 선택지 이름)를 updatedInput으로.
+            # 덧붙인 글은 annotations[질문].notes — CC가 도구 결과에 `"질문"="답" notes: 글`로 모델에게 넘긴다(11-10 CC 2.x 코드에서 확인)
+            upd = {**q_inp, "answers": answers}
+            if notes:
+                upd["annotations"] = {**(q_inp.get("annotations") or {}), **{q: {"notes": n} for q, n in notes.items()}}
             return {"hookSpecificOutput": {"hookEventName": "PermissionRequest",
-                                           "decision": {"behavior": "allow", "updatedInput": {**q_inp, "answers": answers}}}}
+                                           "decision": {"behavior": "allow", "updatedInput": upd}}}
         if outcome == "allow":
             return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}
         if outcome == "deny":
@@ -333,21 +345,29 @@ class ApprovalManager:
                              for o in q.get("options") or [] if isinstance(o, dict)]}
                 for q in inp.get("questions") or [] if isinstance(q, dict)]
 
-    def answer(self, aid: int, picks: dict[str, list[str]]) -> str:
+    def answer(self, aid: int, picks: dict[str, list[str]], note: str | None = None) -> str:
         """패널에서 질문에 답한다. picks — 질문 글 → 고른 선택지 이름들. 돌려주는 값: ok · gone · bad(질문 · 선택지가 맞지 않음).
         여러 개 고름은 ", "로 잇는다(문서: "Multi-select answers join labels with commas" — 띄어쓰기는 문서에 없고,
-        ", "로 이은 답이 세션에 그대로 들어가는 것은 11-09 실측 #70)."""
+        ", "로 이은 답이 세션에 그대로 들어가는 것은 11-09 실측 #70).
+        note — 답과 함께 보낸 글(11-10). 첫 질문의 annotations notes로 간다. 글이 있으면 고르지 않은 질문은 CC의
+        "(notes only)"로 둔다(CC가 쓰는 값 — 결과에는 "(no option selected)"로 나온다). 글도 선택도 없는 질문이 있으면 bad"""
         fut, qs = self.waiting.get(aid), self.questions_of(aid)
         if fut is None or fut.done() or qs is None:
             return "gone"
+        note = (note or "").strip()[:4000]
         out: dict[str, str] = {}
         for q in qs:
             got = picks.get(q["question"]) or []
             labels = [o["label"] for o in q["options"]]
+            if not got and note:
+                out[q["question"]] = NOTES_ONLY
+                continue
             if not got or any(g not in labels for g in got) or (len(got) > 1 and not q["multi"]):
                 return "bad"
             out[q["question"]] = ", ".join(got)
         self.answers[aid] = out
+        if note and qs:
+            self.notes[aid] = {qs[0]["question"]: note}
         fut.set_result(("answer", None))
         return "ok"
 

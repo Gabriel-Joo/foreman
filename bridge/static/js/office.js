@@ -2193,13 +2193,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     const lines = [[text, a.kind === 'foreman' ? P.warn : P.label]];
     const n = a.kind === 'session' && a.s ? a.s.subagents_running || 0 : 0;
-    if (n) lines.push([`서브에이전트 ${n}${a.subLabel ? ' · ' + short(a.subLabel, 22) : ''}${a.subHidden ? ` (+${a.subHidden} 접음)` : ''}`, P.act]);
+    // 11-10 사용자(받은 할 일 #9) — 캐릭터 아래는 수만("뒤에서 도는 일 2"). 무슨 일인지는 호버(세션 호버에 하나씩 적는다).
+    // 전에는 "· 세 테마 × 세 폭 × 다섯 화면 다시…"처럼 설명이 붙어 이름표가 길게 깔렸다
+    if (n) lines.push([`서브에이전트 ${n}`, P.act]);
     // 백그라운드 Bash · Monitor — "IDLE + 백그라운드 n개"(README 3.11). 일꾼 줄이 있으면 그 아래
     const bg = a.kind === 'session' && a.s ? a.s.background || [] : [];
-    if (bg.length) {
-      const d = bg[0].description || bg[0].tool;
-      lines.push([`뒤에서 도는 일 ${bg.length}${d ? ' · ' + short(d, 22) : ''}`, P.act]);
-    }
+    if (bg.length) lines.push([`뒤에서 도는 일 ${bg.length}`, P.act]);
     // 구역 이름표 · 앞서 그린 이름과 겹치면 비켜 그린다(11-06 — 글씨를 키우자 오피스 1024에서 서버룸 사람 이름이 「서버룸」을 덮었다).
     // 후보: 발밑(기본) → 겹친 칸의 아래 · 왼쪽 · 오른쪽. 사람에게서 멀어지지 않게 두 줄 높이 · 이름 폭 안에서만.
     // 그래도 겹치면 이름을 앞 10자로 줄여 한 번 더(나란히 앉은 서기 둘의 긴 이름)
@@ -2681,8 +2680,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
     const igWhy = !ig ? '' : ig.stalled ? `화면 갱신 멈춤 — 세션 기록을 읽어 화면을 바꾸는 감시가 멈췄습니다.\n트랜스크립트 감시가 ${ig.tick_age_s}초째 멈춰 있습니다`
       : '기록 못 읽는 세션 — 브리지가 이 세션들의 대화 기록을 읽지 못해 화면이 늦습니다.\n' + (ig.stuck || []).map((x) => `${x.session} ${x.minutes}분 · ${x.failures}번 — ${x.error}`).join('\n');
-    $('oAlerts').innerHTML = (pend ? `<button id="oPend" class="ghost warn" title="승인 대기 — 패널에서 승인하거나 거부합니다.">❗ 승인 대기 ${pend}</button>` : '') +
-      (ques ? `<button id="oAsk" class="ghost warn" title="질문 — 세션이 고를 것을 묻고 있습니다. 패널에서 선택지를 누르면 답이 들어갑니다.">❓ 질문 ${ques}</button>` : '') +
+    $('oAlerts').innerHTML = (pend ? `<button id="oPend" class="ghost warn" title="승인 대기 — 누르면 그 세션 패널을 엽니다. 거기서 승인하거나 거부합니다.">❗ 승인 대기 ${pend}</button>` : '') +
+      (ques ? `<button id="oAsk" class="ghost warn" title="질문 — 세션이 고를 것을 묻고 있습니다. 누르면 그 세션 패널을 엽니다. 선택지를 누르면 답이 들어갑니다.">❓ 질문 ${ques}</button>` : '') +
       (ig && !ig.ok ? `<span class="bad" title="${esc(igWhy)}">⚠ ${ig.stalled ? '화면 갱신 멈춤' : `기록 못 읽는 세션 ${(ig.stuck || []).length}`}</span>` : '');
     const stat = `작업 중 <b>${active}</b>/${live}${subs ? ` · 서브에이전트 ${subs}` : ''} · 출력 토큰 ${fmt(outToday)}`;
     if ($('oStat').innerHTML !== stat) $('oStat').innerHTML = stat;
@@ -2858,7 +2857,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 11-09 사용자 — 이름표는 역할만이라 호버 첫 줄에 역할 · 세션 번호 · 제목("237 합쳐라"를 듣고 어느 세션인지 찾게)
       return `<div class="tip-h">${esc(roleTag(roleOf(s)))} 세션 ${s.id}${a.temp ? ' · 임시' : ''}</div><div class="tip-b">${esc(a.name)}</div>${who}<div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', WAITING: '기다리는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[vs] || vs)}${
         a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
-        s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎</div>` : ''}${
+        s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎${(s.subagent_descs || []).map((d) => `<div class="tip-s">· ${esc(short(d, 50))}</div>`).join('')}</div>` : ''}${
         bg.length ? `<div>뒤에서 도는 일 ${bg.length}개(백그라운드 명령)${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}</div>`).join('')}</div>` : ''}${
         a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝났는지 모름 — 끝 신호가 오지 않았습니다' }[a.act.flag] || a.act.flag)}</div>` : ''}${
         a.subHidden ? `<div class="tip-s">+${a.subHidden} — 서브에이전트가 많아 화면에 다 그리지 않고 접은 수입니다.</div>` : ''}${
@@ -2928,7 +2927,16 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if ($('tokDlg').classList.contains('on')) { $('tokDlg').classList.remove('on'); return; }
     go('hq');
   });
-  $('oAlerts').addEventListener('click', (ev) => { if (ev.target.closest('#oPend, #oAsk')) panel.setOpen(true); });
+  // 11-10 답은 그 세션 패널에서만 — 누르면 기다리는 것 중 가장 오래된 것의 세션 패널을 연다(세션을 모르면 패널만)
+  $('oAlerts').addEventListener('click', (ev) => {
+    const b = ev.target.closest('#oPend, #oAsk');
+    if (!b) return;
+    const ask = b.id === 'oAsk';
+    const a = [...store.state.approvals.values()].filter((x) => x.status === 'pending' && (x.tool === 'AskUserQuestion') === ask)
+      .sort((x, y) => x.id - y.id).find((x) => x.session_id != null);
+    if (a) openSession(a.session_id);
+    panel.setOpen(true);
+  });
   $('oRetry').onclick = () => store.retryNow();
   $('oTok').onclick = () => { $('tokDlg').classList.add('on'); $('tokInput').focus(); };
   $('tokCancel').onclick = () => $('tokDlg').classList.remove('on');
@@ -2952,7 +2960,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
   return { go, theme, openSession, panel, actors, newSession: (p) => newSession.open(p), openTodo: (p, to) => todoInbox.open(p, to), foremanName: FM_NAME,
-           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(),
+           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: () => layoutAudit(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(), names: () => NAMES.slice(),
+           // 터미널을 열 때 고를 프로젝트(11-10) — 보고 있는 현장, 없으면(감독실 · 지도 · 라운지) 고른 세션의 프로젝트, 그것도 없으면 null
+           currentProject: () => (world.rooms.some((r) => r.name === view) ? view
+             : ((store.state.sessions.get(store.state.selected) || {}).project || null)),
+           hits: () => HITS.filter((h) => !h.soft).map((h) => ({ rect: [h.x, h.y, h.w, h.h].map(Math.round), zone: h.zone || null })),
     // 시연 사진(13) — 이름표 자리(캔버스 기준 화면 좌표)와 캐릭터 발밑 화면 좌표. 툴팁을 띄워 찍을 때 마우스를 그 자리로 보낸다
     hits: () => HITS.map((h) => ({ x: h.x, y: h.y, w: h.w, h: h.h, zone: h.zone || null })),
     actorScreen: (key) => { const a = actors.get(key); return a ? toScreen(a.x * T, a.y * T) : null; }, layoutPlan: () => layoutPlan(), debug: () => [...actors.values()].map((a) => ({ key: a.key, room: a.room, x: String(a.x), y: String(a.y), tx: a.tx, ty: a.ty,

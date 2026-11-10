@@ -36,6 +36,8 @@ log = logging.getLogger("foreman.terminal")
 
 PROMPT_MARK = "[foreman] "      # foreman-bashrc의 PS1 머리 — 출력 범위를 찾는 표지
 COOKIE = "foreman_term"
+# 프로젝트마다 터미널 창(11-10) — 창 이름이 이것이면 그 프로젝트 창이다(bridge/api/dashboard.py PROJECT_ORDER와 같은 이름)
+TERM_PROJECTS = ("runshoes", "petmint-rag-chatbot", "foreman")
 
 # ── 마스킹(셸 명령 · 출력) ─────────────────────────────────────────
 # Masker(정확한 값 · 토큰 모양 · KEY=값)에 더해 명령줄에서 비밀이 오는 자리
@@ -214,6 +216,7 @@ class Request:
     prefilled: bool = False
     note: str | None = None
     done: bool = False
+    window: str | None = None   # 채운 tmux 창(11-10 — 프로젝트마다 창). 결과 출력도 이 창에서 읽는다
 
     @property
     def head(self) -> str:
@@ -302,6 +305,54 @@ class TerminalManager:
         await tmux(self.socket, "new-session", "-d", "-s", self.s.terminal_tmux_session, "-x", "160", "-y", "40",
                    "-c", str(Path.home()), self._shell_cmd())
         log.info("터미널 셸 tmux 세션 만듦: %s", self.s.terminal_tmux_session)
+
+    # ── 프로젝트마다 창(11-10 사용자 — "런슈즈에서 터미널을 열었는데 FOREMAN 터미널이 떴다") ──
+    # 같은 tmux 세션 안에 프로젝트 이름의 창을 하나씩 둔다(없으면 그 저장소 폴더에서 만든다). 고르면 select-window로 그 창을 보인다.
+    # 열 때 그 저장소로 cd를 쳐 넣는 방식은 쓰지 않는다 — 셸에서 명령이 돌고 있으면 그 입력으로 들어가고, 프로젝트를 오가면 앞 위치를 잃는다.
+    # 처음부터 있던 창(이름 bash 등)은 FOREMAN 창으로 이름만 바꾼다. 프로젝트를 모르면(라운지 세션) 지금 보이는 창 그대로
+    async def _repo_dir(self, project: str) -> str:
+        if self.engine is not None:
+            try:
+                async with self.engine.connect() as c:
+                    p = (await c.execute(text("SELECT repo_path FROM project WHERE name = :n"), {"n": project})).scalar()
+                if p and Path(p).is_dir():
+                    return str(p)
+            except Exception as e:  # noqa: BLE001 — 폴더를 못 찾으면 집에서 연다
+                log.warning("터미널 프로젝트 폴더 조회 실패 %s: %s", project, type(e).__name__)
+        return str(Path.home())
+
+    async def window_for(self, project: str | None) -> str:
+        """그 프로젝트의 창 대상(=세션:번호). 없으면 만든다. project가 None이면 지금 보이는 창."""
+        if not project:
+            return self.target
+        await self.ensure_shell()
+        sess = self.s.terminal_tmux_session
+        rows = [ln.split("\t", 1) for ln in (await tmux(self.socket, "list-windows", "-t", f"={sess}",
+                                                       "-F", "#{window_index}\t#{window_name}")).splitlines() if "\t" in ln]
+        for idx, name in rows:
+            if name == project:
+                return f"={sess}:{idx}"
+        if project == "foreman" and rows and rows[0][1] not in TERM_PROJECTS:
+            await tmux(self.socket, "rename-window", "-t", f"={sess}:{rows[0][0]}", "foreman")   # 처음부터 있던 창
+            return f"={sess}:{rows[0][0]}"
+        out = await tmux(self.socket, "new-window", "-d", "-P", "-F", "#{window_index}", "-t", f"={sess}:", "-n", project,
+                         "-c", await self._repo_dir(project), "-e", f"FOREMAN_PROJECT={project}", self._shell_cmd())
+        log.info("터미널 창 만듦: %s (%s)", project, out.strip())
+        return f"={sess}:{out.strip()}"
+
+    async def open_project(self, project: str | None) -> dict[str, Any]:
+        """화면이 [터미널]을 열 때 — 그 프로젝트 창을 보이고, 실제로 보이는 창 이름 · 폴더를 돌려준다(화면이 고른 것과 대 본다)."""
+        t = await self.window_for(project)
+        if project:
+            await tmux(self.socket, "select-window", "-t", t)
+        return await self.current()
+
+    async def current(self) -> dict[str, Any]:
+        out = (await tmux(self.socket, "display-message", "-p", "-t", self.target,
+                          "#{window_name}\t#{pane_current_path}")).strip().split("\t")
+        name = out[0] if out else ""
+        return {"project": name if name in TERM_PROJECTS else None, "window": name,
+                "cwd": out[1] if len(out) > 1 else None}
 
     async def _supervise(self) -> None:
         delay = 1.0
@@ -426,14 +477,14 @@ class TerminalManager:
             self._spawn(self._send_result(match, cmd, masked, ec))
         return {"recorded": True, "request_id": match.id if match else None}
 
-    async def _capture(self) -> list[str]:
-        out = await tmux(self.socket, "capture-pane", "-p", "-J", "-t", self.target, "-S", "-3000")
+    async def _capture(self, target: str | None = None) -> list[str]:
+        out = await tmux(self.socket, "capture-pane", "-p", "-J", "-t", target or self.target, "-S", "-3000")
         return out.splitlines()
 
     async def _send_result(self, r: Request, cmd: str, masked: str, ec: int) -> None:
         try:
             await asyncio.sleep(0.4)    # 훅은 새 프롬프트가 찍히기 전에 불린다
-            lines, found = extract_output(await self._capture(), cmd, self.s.terminal_output_lines)
+            lines, found = extract_output(await self._capture(r.window), cmd, self.s.terminal_output_lines)
         except Exception as e:  # noqa: BLE001
             lines, found = [f"(출력을 읽지 못했다: {type(e).__name__})"], False
         n = self.s.terminal_output_lines
@@ -532,16 +583,21 @@ class TerminalManager:
         """셸 입력 줄을 비우고 채운다. Enter는 누르지 않는다. 셸이 다른 일을 하면(암호 입력 중 등) 건드리지 않는다."""
         try:
             await self.ensure_shell()
-            cur = (await tmux(self.socket, "display-message", "-p", "-t", self.target,
+            # 부탁한 세션의 프로젝트 창에 채우고 그 창을 보인다(11-10). 프로젝트를 모르면 지금 보이는 창
+            proj = r.project if r.project in TERM_PROJECTS else None
+            t = r.window = await self.window_for(proj)
+            if proj:
+                await tmux(self.socket, "select-window", "-t", t)
+            cur = (await tmux(self.socket, "display-message", "-p", "-t", t,
                               "#{pane_current_command}\t#{pane_in_mode}")).strip().split("\t")
             if len(cur) == 2 and cur[1] == "1":
-                await tmux(self.socket, "send-keys", "-t", self.target, "-X", "cancel")   # 복사 모드에서 나온다
+                await tmux(self.socket, "send-keys", "-t", t, "-X", "cancel")   # 복사 모드에서 나온다
             if cur[0] != "bash":
                 return False, f"셸이 다른 일을 하는 중({cur[0]}) — 직접 붙여넣는다"
-            await tmux(self.socket, "send-keys", "-t", self.target, "C-e", "C-u")
-            await tmux(self.socket, "send-keys", "-t", self.target, "-l", "--", r.fill)
+            await tmux(self.socket, "send-keys", "-t", t, "C-e", "C-u")
+            await tmux(self.socket, "send-keys", "-t", t, "-l", "--", r.fill)
             if r.left:
-                await tmux(self.socket, "send-keys", "-t", self.target, "-N", str(r.left), "Left")
+                await tmux(self.socket, "send-keys", "-t", t, "-N", str(r.left), "Left")
             return True, None
         except Refused as e:
             return False, str(e)

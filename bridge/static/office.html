@@ -71,6 +71,9 @@
   .oside { --side-w:360px; position:relative; flex:none; width:var(--side-w); max-width:calc(100vw - 160px); border-left:1px solid var(--line); background:var(--bg);
            display:flex; min-height:0; }
   .oside.folded { width:34px; }
+  /* 11-10 터미널은 패널 왼쪽까지만(opanel.js syncTermSide — --term-right = 패널 폭), 패널은 터미널 높이만큼 아래로 늘려 창 바닥까지.
+     전에는 터미널이 펴지면 패널도 같이 줄어(1024에서 101px) 줄지 않는 입력 칸이 패널 밖으로 넘쳐 터미널 글자를 덮었다 */
+  body.term-beside .oside { margin-bottom:calc(-1 * var(--term-h, 0px)); z-index:9; }
   .oside-grip { position:absolute; left:-3px; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:2; }
   .oside.folded .oside-grip { display:none; }
   .oside-strip { display:none; width:34px; border:0; border-radius:0; background:var(--card); padding:8px 0; flex-direction:column; align-items:center; gap:8px; }
@@ -85,7 +88,7 @@
   .oside-bar button { flex:none; white-space:nowrap; }   /* 11-06 글씨를 키우자 좁은 패널에서 "넓게"가 두 줄로 꺾였다 */
   .oside-body { flex:1; min-height:0; overflow:auto; padding:6px 12px 10px; display:flex; flex-direction:column; gap:6px; }
   .oside-body h3 { font-size:16px; margin:8px 0 2px; color:var(--muted); }
-  .papprs { display:grid; gap:6px; }
+  .papprs { display:grid; grid-template-columns:minmax(0, 1fr); gap:6px; }   /* 11-10 한 줄로 자르는 줄(접힌 답 · 다른 세션)이 칸을 넓히지 않게 */
   .papprs:empty { display:none; }
   .papprs .appr { flex-direction:column; gap:4px; }
   .psel-head { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
@@ -95,7 +98,19 @@
   .pmeta { padding:3px 10px 5px; border-bottom:1px solid var(--line); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:none; }
   .pmeta[hidden] { display:none; }
   .pmeta .badge { font-size:15px; }
-  .oside > .oside-main > .papprs { padding:6px 10px; border-bottom:1px solid var(--line); max-height:45vh; overflow:auto; flex:none; }
+  /* 11-10 45vh → 패널의 40% — .oside-main은 글씨 배율(zoom)을 받아 vh가 배율만큼 커졌다(1920 · 125%에서 608px, 대화 칸 30px) */
+  .oside > .oside-main > .papprs { padding:6px 10px; border-bottom:1px solid var(--line); max-height:40%; overflow:auto; flex:0 1 auto; min-height:2.6em; }
+  /* 낮은 창 · 큰 글씨(1024 · 125%, 150%)에서 띠(겹침 · 옮기기 · 비교)와 승인 칸이 줄지 않아 입력 칸이 패널 아래로 밀렸다 — 줄어들고 안에서 스크롤 */
+  /* 띠가 먼저 준다(한 줄까지) — 이 세션이 답할 카드(has-mine)는 패널의 45% · 14em까지 지킨다(1366 · 125%에서 질문 카드가 64px 칸에 묻혔다) */
+  .oside-main > .pcmp { flex:0 20 auto; min-height:1.9em; overflow:auto; }
+  .oside > .oside-main > .papprs.has-mine { min-height:min(14em, 45%); }
+  /* 그래도 모자라면(1366 · 125%에 질문 카드 + 띠 둘) 패널 본체가 스크롤되고 입력 칸은 패널 바닥에 붙어 늘 보인다 — 창 밖으로 밀리지 않게 */
+  .oside-main { overflow-y:auto; }
+  .oside .input { flex:none; position:sticky; bottom:0; background:var(--bg); z-index:1; }
+  /* 이 세션이 질문의 답을 기다리는 동안 입력 칸은 한 줄 안내(opanel.js asking) — 글은 질문 카드의 글 칸으로 */
+  .oside .input .pask { display:none; width:100%; text-align:left; white-space:normal; }
+  .oside.asking .input .pask { display:block; }
+  .oside.asking .input textarea, .oside.asking .input .prow { display:none; }
   .ptabs { display:flex; gap:2px; padding:4px 8px 0; border-bottom:1px solid var(--line); flex:none; }
   .ptabs[hidden] { display:none; }
   .ptabs button { border:0; border-bottom:3px solid transparent; border-radius:0; background:none; padding:6px 14px; color:var(--muted); font-size:19px; }   /* 11-08 17 → 19px(사용자 — 탭이 작다) */
@@ -111,10 +126,12 @@
   .pnew[hidden] { display:none; }
   .oside .feed { max-height:none; }
   .oside .input { padding:8px 12px; flex:none; }
-  .oside .input textarea { resize:vertical; min-height:6.5em; max-height:45dvh; }
+  /* 11-10 rows=6가 정한 높이(약 9em)가 낮은 창 · 큰 글씨에서 입력 칸을 패널 밖으로 밀었다 — 높이를 CSS로 정한다(끌어서 키울 수 있다) */
+  .oside .input textarea { resize:vertical; height:6.5em; min-height:2.6em; max-height:45dvh; }
   /* 글씨 크기(11-08, js/uiscale.js) — 패널 안쪽 전체를 한 배율로. 폭은 그대로(안쪽 글이 그만큼 접힌다) */
   .oside-main { zoom:var(--ui-zoom, 1.2); }
-  @media (max-height: 860px) { .oside .input textarea { min-height:3.6em; } }   /* 낮은 창 — 대화가 보이게(끌어서 키울 수 있다) */
+  @media (max-height: 860px) { .oside .input textarea { height:3.6em; } }
+  @media (max-height: 800px) { .oside .input textarea { height:2.6em; } }   /* 11-10 1366×768 · 150%에서 입력 칸이 20px 넘쳤다 */   /* 낮은 창 — 대화가 보이게(끌어서 키울 수 있다) */
   .ofont { display:inline-flex; align-items:center; gap:4px; }
   .ofont button { padding:1px 8px; font-weight:700; }
   .ofont button:disabled { opacity:.4; cursor:default; }
@@ -168,7 +185,9 @@
     })
     .catch((err) => { document.getElementById('app').textContent = '픽셀 화면을 띄우지 못했다: ' + err; console.error(err); });
   // 7단계 터미널 — 아래 접이식. 깨져도 픽셀 화면은 돈다
-  try { createTerminal(store); } catch (err) { console.error('터미널 패널 실패', err); }
+  // 열 때 지금 보는 현장의 프로젝트 터미널(11-10)
+  try { createTerminal(store, { getProject: () => (window.office && window.office.currentProject ? window.office.currentProject() : null) }); }
+  catch (err) { console.error('터미널 패널 실패', err); }
 </script>
 </body>
 </html>

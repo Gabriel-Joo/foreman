@@ -63,7 +63,7 @@ async def history(request: Request, days: int = 1) -> dict[str, Any]:
         rows = (await c.execute(text(
             "SELECT a.id, a.created_at, a.rule, a.status, a.decided_by, a.terminal_decision, a.summary, a.target, a.tool, "
             "p.name, (SELECT IF(JSON_EXTRACT(ev.payload, '$.is_error') = TRUE, 0, 1) FROM event ev "
-            "WHERE ev.tool_use_id = a.tool_use_id AND ev.type = 'tool_result' LIMIT 1) "
+            "WHERE ev.tool_use_id = a.tool_use_id AND ev.type = 'tool_result' LIMIT 1), a.message, a.session_id "
             "FROM approval a LEFT JOIN character_session cs ON cs.id = a.session_id "
             "LEFT JOIN `character` ch ON ch.id = cs.character_id LEFT JOIN project p ON p.id = ch.project_id "
             "WHERE a.created_at >= :t ORDER BY a.id DESC"), {"t": since})).all()
@@ -77,7 +77,8 @@ async def history(request: Request, days: int = 1) -> dict[str, Any]:
     for r in rows:
         o = outcome(r[3], r[4], r[5], r[10])
         items.append({"id": r[0], "at": r[1].isoformat() + "Z" if r[1] else None, "rule": r[2], "status": r[3],
-                      "by": r[4], "outcome": o, "summary": r[6] or (r[7] or "")[:160], "tool": r[8], "project": r[9]})
+                      "by": r[4], "outcome": o, "summary": r[6] or (r[7] or "")[:160], "tool": r[8], "project": r[9],
+                      "message": r[11], "session_id": r[12]})
         b = by_rule.setdefault(r[2], {"rule": r[2], "n": 0, "approved": 0, "denied": 0, "unknown": 0})
         b["n"] += 1
         b[o] += 1
@@ -93,6 +94,7 @@ async def history(request: Request, days: int = 1) -> dict[str, Any]:
 
 class AnswerIn(BaseModel):
     picks: dict[str, list[str]]       # 질문 글 → 고른 선택지 이름들(AskUserQuestion, 11-09)
+    note: str | None = Field(default=None, max_length=4000)   # 답과 함께 보내는 글(11-10) — 글만 보내도 된다
 
 
 @router.post("/{approval_id}/answer")
@@ -101,11 +103,11 @@ async def answer(approval_id: int, body: AnswerIn, request: Request) -> dict[str
     mgr = getattr(request.app.state, "approvals", None)
     if mgr is None:
         raise HTTPException(503, "승인 기능이 꺼져 있습니다")
-    r = mgr.answer(approval_id, body.picks)
+    r = mgr.answer(approval_id, body.picks, body.note)
     if r == "gone":
         raise HTTPException(409, "이미 답했거나(터미널 · 시간 초과) 기다리는 질문이 없습니다")
     if r == "bad":
-        raise HTTPException(422, "모든 질문에 선택지를 하나씩 골라 주세요(여러 개 고름이 아닌 질문은 하나만)")
+        raise HTTPException(422, "모든 질문에 선택지를 하나씩 고르거나 글을 적어 주세요(여러 개 고름이 아닌 질문은 하나만)")
     log.warning("화면에서 질문에 답함 #%d", approval_id)
     return {"id": approval_id, "decision": "answer"}
 
