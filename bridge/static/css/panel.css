@@ -190,7 +190,7 @@ body { --term-h:0px; }
 .rolebadge { --rc:#8a8f98; display:inline-block; flex:none; white-space:nowrap; font-size:.85em; font-weight:700; line-height:1.3;
   padding:0 6px; margin-right:4px; border-radius:4px; color:var(--rc); border:1px solid var(--rc); background:color-mix(in srgb, var(--rc) 16%, transparent); }
 .rolebadge.role-coder { --rc:#5b9be6; } .rolebadge.role-manager { --rc:#e0604f; } .rolebadge.role-scribe { --rc:#d08b4f; }
-.rolebadge.role-inspector { --rc:#3fbf85; } .rolebadge.role-cicd { --rc:#b07ad0; }
+.rolebadge.role-inspector { --rc:#3fbf85; } .rolebadge.role-cicd { --rc:#b07ad0; } .rolebadge.role-designer { --rc:#e8619f; }
 .rolebadge.role-none { --rc:var(--warn, #e0b040); }
 button.rolebadge { cursor:pointer; font-family:inherit; }
 button.rolebadge:hover { background:color-mix(in srgb, var(--rc) 30%, transparent); }

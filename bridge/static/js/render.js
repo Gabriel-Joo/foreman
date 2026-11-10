@@ -12,9 +12,10 @@ import { stuckTurn } from './store.js';
 import { renderMarkdown } from './md.js';
 
 // 역할 화면 이름(11-09 — scribe · manager 보탬). foreman은 감독실 캐릭터 몫(테마 이름 팀장 · 교장 · 소장)이라 세션 역할로 고를 수 없다
-export const ROLE_LABEL = { coder: '코더', manager: '관리자', scribe: '서기', inspector: '점검', cicd: 'CI/CD', foreman: '감독', helper: '도우미', infra: '인프라' };
+// 11-10 designer(디자이너 — 화면 담당) 보탬
+export const ROLE_LABEL = { coder: '코더', designer: '디자이너', manager: '관리자', scribe: '서기', inspector: '점검', cicd: 'CI/CD', foreman: '감독', helper: '도우미', infra: '인프라' };
 // 세션 역할로 고를 수 있는 것 — bridge/api/handoff.py SessionRole과 같다
-export const SESSION_ROLES = ['coder', 'manager', 'scribe', 'inspector', 'cicd'];
+export const SESSION_ROLES = ['coder', 'designer', 'manager', 'scribe', 'inspector', 'cicd'];
 export const roleLabel = (r) => ROLE_LABEL[r] || null;
 // 제목 앞 역할 배지 글(11-09 사용자 — "서기인지 코더인지 모르고 지나쳤다"). 역할은 제목 글자가 아니라 따로 — 제목을 고쳐도 남는다
 export const roleTag = (r) => `[${roleLabel(r) || '역할?'}]`;

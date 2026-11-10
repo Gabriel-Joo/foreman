@@ -24,6 +24,8 @@ const sizeFont = (f) => String(f).replace(/(\d+(?:\.\d+)?)px/, (m, n) => `${fpx(
 const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'], ['foreman', 'FOREMAN']];
 const RATE_WIN = 10 * 60 * 1000;          // 토큰 속도 창 — 최근 10분
 const SPEED = 3.2;                         // 걷는 속도(타일/초)
+// 역할 고정 자리(11-09 관리자 · 11-10 디자이너) — 테마 layout.zones.<역할>.seats에 서고, 일할 때도 그 자리. 작업 책상 수 · "+N"에 들지 않는다
+export const FIXED_SEAT_ROLES = ['manager', 'designer'];
 
 export async function createOffice(root, store, themeUrl = '/static/themes/office/theme.json') {
   const theme = await (await fetch(themeUrl, { cache: 'no-cache' })).json();
@@ -419,9 +421,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const cap = seatCount(room);
       let scribeN = 0;                 // 이 방의 서기 세션 수 — 둘이면 두 번째는 다음 자리(같은 자리에 겹치지 않게, 11-06)
       // 관리자(11-09 사용자) — 감독실 안 옆자리(theme manager 구역)에 선다. 일할 때도 그 자리(도구 따라 구역으로 가지 않는다).
-      // 작업 책상 수에 들지 않는다. 상주가 아니라 세션이 있을 때만 보인다
-      let managerN = 0;
-      const mgrOf = (s) => !room.lounge && roleOf(s) === 'manager' && !!(L.zones.manager && L.zones.manager.seats);
+      // 작업 책상 수에 들지 않는다. 상주가 아니라 세션이 있을 때만 보인다.
+      // 디자이너(11-10 사용자)도 같은 규칙 — 자리만 작업 책상 옆(theme designer 구역, 코더 책상과 나란히 · 책상 5자리와 따로)
+      const fixedN = {};
+      const mgrOf = (s) => { const r = roleOf(s); return !room.lounge && FIXED_SEAT_ROLES.includes(r) && !!(L.zones[r] && L.zones[r].seats) ? r : null; };
       // 코더 상주(11-09) — 방마다 코더가 늘 있다. 살아 있는 코더 세션 중 가장 먼저 뜬 것이 상주 코더의 몸을 쓰고(책상으로 걸어가 일하고
       // 끝나면 자리로 돌아온다), 둘째부터는 임시 일꾼(반투명 · "임시" 이름표, 세션이 끝나면 사라진다). 끝난 코더 세션은 남기지 않는다
       const homed = !room.lounge && !!(L.zones.coder_home && L.zones.coder_home.seat);
@@ -478,9 +481,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
           }
           if (act.go === 'scribe') seatK = (seatK + scribeN++) % sz.seats.length;
         }
-        if (mgr) {                     // 승인 대기 같은 플래그의 모습(손 들기)은 그대로, 자리만 감독실
-          act = { ...act, go: 'manager' };
-          seatK = managerN++;
+        if (mgr) {                     // 승인 대기 같은 플래그의 모습(손 들기)은 그대로, 자리만 그 역할 구역(감독실 · 작업 책상 옆)
+          act = { ...act, go: mgr };
+          seatK = fixedN[mgr] || 0;
+          fixedN[mgr] = seatK + 1;
         }
         const desk = mgr ? null : seat(room, k);
         let [tx, ty, face] = spot(room, act.go, desk, act.go === 'scribe' || mgr ? seatK : k);

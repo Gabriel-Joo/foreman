@@ -34,6 +34,8 @@
                  "_seats12a": "11-06 8 → 5자리 — 위 줄 4 + 아래 줄 맨 왼쪽 1, 아래 줄 오른쪽은 문서팀",
                  "seats": [[10.6, 9.45, "down"], [11.9, 9.45, "down"], [13.2, 9.45, "down"], [14.4, 9.45, "down"],
                            [10.6, 12.45, "down"]] },
+      "designer": { "_": "디자이너(11-10 사용자) — 워크스테이션 왼쪽 빈 바닥, 코더 책상 두 줄과 나란히(책상 5자리와 따로). 디자이너 세션이 있을 때만 선다(상주 아님). 일할 때도 이 자리",
+                    "seats": [[9.1, 9.45, "right"], [9.1, 11.7, "right"]] },
       "scribe": { "_": "S 문서팀(12a 서기) — PC 책상(쓰기) · 책장(서가) · 서류 더미(대조). 자리 순서 = 쓰기 · 서가 · 대조",
                   "x": 11.6, "y": 10.4, "w": 3.3, "h": 2.6, "seats": [[12.1, 12.45, "down"], [14.15, 12.75, "up"], [13.0, 12.45, "down"]] },
       "coder_home": { "_": "코더 상주(11-09) — 세션이 없을 때 코더가 쉬는 자리(라운지). 일하면 책상으로 간다. anim = 이 테마의 쉬는 동작",
@@ -71,7 +73,7 @@
   "roles": {
     "_": "역할 → 사원증 끈 색. 이름은 DB · 디스패처와 같다(11-05 통일: foreman coder inspector cicd helper). 미리 보기 ?roles=demo",
     "mode": "lanyard",
-    "colors": { "foreman": "#d4a72c", "coder": "#3f7fd0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "manager": "#c0392b", "helper": "#8a8f98" },
+    "colors": { "foreman": "#d4a72c", "coder": "#3f7fd0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "manager": "#c0392b", "designer": "#d6408a", "helper": "#8a8f98" },
     "idle": { "_": "역할별 쉼 자리(12a) — 서기는 문서팀에서 읽는다", "scribe": { "go": "scribe", "anim": "read" } }
   },
 

@@ -141,9 +141,24 @@ test('잘못된 target 정규식은 안 맞는 것으로', () => {
 });
 
 test('역할 색 이름은 DB · 디스패처와 같다(11-05 — 전에는 lead · builder …라 실제 세션 색이 한 번도 안 맞았다)', () => {
-  const ROLES = ['foreman', 'coder', 'inspector', 'cicd', 'scribe', 'manager', 'helper'];   // scribe = 12a 서기, manager = 11-09 관리자(bridge/foreman.py ROLES)
+  // scribe = 12a 서기, manager = 11-09 관리자, designer = 11-10 디자이너(bridge/foreman.py ROLES)
+  const ROLES = ['foreman', 'coder', 'inspector', 'cicd', 'scribe', 'manager', 'designer', 'helper'];
   for (const name of ['office', 'magic', 'site', 'plain']) {
     const t = JSON.parse(readFileSync(new URL(`../../bridge/static/themes/${name}/theme.json`, import.meta.url)));
     assert.deepEqual(Object.keys(t.roles.colors).sort(), [...ROLES].sort(), name);
+    // 역할 색끼리 겹치지 않는다(11-10 디자이너를 더할 때) — 끈 · 망토 색만으로 역할을 알아보게
+    const cs = Object.values(t.roles.colors).map((c) => c.toLowerCase());
+    assert.equal(new Set(cs).size, cs.length, `${name} 역할 색 겹침`);
+  }
+});
+
+test('디자이너 자리(11-10) — 테마 넷 모두 두 자리, 작업 책상 · 서기 구역과 따로', () => {
+  for (const name of ['office', 'magic', 'site', 'plain']) {
+    const t = JSON.parse(readFileSync(new URL(`../../bridge/static/themes/${name}/theme.json`, import.meta.url)));
+    const z = t.layout.zones;
+    assert.ok(z.designer && Array.isArray(z.designer.seats) && z.designer.seats.length >= 2, name);
+    const key = (p) => `${p[0]},${p[1]}`;
+    const used = new Set([...(z.desks.seats || []), ...((z.scribe && z.scribe.seats) || []), ...((z.manager && z.manager.seats) || [])].map(key));
+    for (const s of z.designer.seats) assert.ok(!used.has(key(s)), `${name} ${key(s)}`);
   }
 });
