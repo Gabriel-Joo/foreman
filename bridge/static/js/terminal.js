@@ -21,7 +21,6 @@ export function createTerminal(store, { getProject } = {}) {
       <span id="termProjWarn" class="small warn" hidden></span>
       <span id="termBadge"></span>
       <span id="termLast" class="small muted term-last"></span>
-      <span class="right small muted term-note">사람이 직접 치는 셸 · 승인 정책 없음 · 친 명령은 비밀값을 가려 기록</span>
     </div>
     <div id="termReqs" class="term-reqs"></div>
     <div class="term-body"><iframe id="termFrame" aria-label="FOREMAN 터미널"></iframe><div id="termMsg" class="term-msg"></div></div>`;
