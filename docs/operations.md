@@ -22,7 +22,7 @@
 | 브리지(FastAPI, 수집 · API · WS · 알림 · 승인 · 입력 주입 · 인계) | `bridge/` — 시작 `bridge/main.py`, 트랜스크립트 적재 `assembler.py` · `transcript/`, 입력 `inject.py`, 인계 · 세션 조작 `handoff.py`, 파이프라인 `pipeline.py`, 승인 `approval*.py`, 알림 `notify.py` |
 | 화면 | `bridge/static/` — `/` 픽셀 화면(`office.html` · `js/office.js` · `js/opanel.js`), `/classic` 카드 목록(`dashboard.html` · `js/render.js`), 공통 CSS `css/panel.css`, 테마 `themes/<이름>/theme.json`(magic · office · site · plain) |
 | DB(MySQL, 호스트 도커 `127.0.0.1:3308`) | 마이그레이션 `migrations/NNNN_*.sql` — `.venv/bin/python -m bridge.db.migrate` |
-| 설정 | `config/approval.toml` · `notify.toml` · `pipeline.toml` · `worktree.toml` · `models.toml`(세션 모델 · 역할 기본값), 비밀은 `.env.bridge` · `.env.telegram`(커밋 안 함) |
+| 설정 | `config/approval.toml` · `notify.toml` · `pipeline.toml` · `worktree.toml` · `models.toml`(세션 모델 · 역할 기본값) · `scribe.toml`(서기 "정리할까요?" 기준, `docs/12_scribe.md` 「11-4.」), 비밀은 `.env.bridge` · `.env.telegram`(커밋 안 함) |
 | 설계 · 브리프 / 결과 | `README.md`, `docs/NN_*.md` / `log/*.md` |
 | 시험 | `.venv/bin/python -m pytest -q`(DB `foreman_test`), `node --test tests/js/` — 두 세션이 동시에 돌리지 않는다(같은 `foreman_test` 표를 서로 지워 11-09 31건 실패 → 혼자 돌려 통과 [log:repo_scope_readonly_20261109.md]). `tests/test_app_db.py`는 운영 DB에 대고 앱을 띄우므로 설정 `losscheck_recover`를 끈다 — 켜 두면 앱이 뜰 때 도는 압축 손실 점검을 모두 failed로 바꾼다(11-09 시험만 돌렸는데 운영 점검 #2가 실패로 적혔다) [log:cross_paste_20261109.md] |
 
@@ -54,6 +54,11 @@
 - **CI/CD**(11-03 결정, README 3.12): FOREMAN은 한 덩어리로 두고 배포는 systemd, 시험은 GitHub Actions. 둘 다 아직 만들지 않았다(옮기기 전 CLAUDE.md 문구 그대로 — 11-06에 다시 확인하지 않았다)
 - **시험 세션 숨김**: 0018 `hidden_at` — `hidden_reason='test'`로 숨기면 카드 · 토큰 집계 · 디스패처 상황 묶음에서 빠지고 행은 남는다
 - **worktree 링크**: `.venv` · `.env*` · `node_modules` · CC 메모리는 원본을 가리키는 링크다(그대로 쓰면 된다). 단 `.venv`가 원본 폴더의 `bridge`를 가리켜서, worktree에서 pytest 밖 스크립트는 `PYTHONPATH=.`를 붙여야 이 폴더 코드를 쓴다(pytest는 rootdir 때문에 괜찮다) [log:foreman_context_pct_20261109.md]. 합치기(rebase → fast-forward) · 미리보기(82xx) · 스키마 잠금 상세는 `docs/11_worktree.md`
+- **`pgrep -f`는 자기 셸에 걸린다**(11-09 · 11-10 실제). CC는 Bash 명령 전체를 `bash -c '…'`로 돌려, 그 셸의 명령 글에 패턴이 들어 있다 → `pgrep -f "<패턴>"`이 자기 자신을 찾는다 [log:coder_resident_20261109.md] [log:merge_237_242_20261110.md]
+  - 11-09 관리자는 "다른 pytest 있음"을 세 번 헛보았고, 코더 233은 `until ! pgrep -f "tools/screen.py"; do sleep 3; done` 셸이 영원히 안 끝나 합치기 직전에 걸렸다(그대로 끝냈으면 CC 끝내기 확인 창)
+  - 대괄호 트릭(`pgrep -af '[p]ython -m pytest'`)은 패턴 글자가 자기와 다르게 해 준다. **그러나 같은 명령 안에서 그 프로그램을 돌리면** 뒤쪽 글자(`.venv/bin/python -m pytest …`)에 또 걸린다(11-10 관리자)
+  - 그래서: **확인과 실행을 따로 친다.** 기다릴 때는 `pgrep -f`로 자기를 찾지 말고 그 작업의 PID나 결과 파일을 본다
+  - 막는 장치(PreToolUse 거부)는 아직 없다 — README 「나중에 할 일」
 
 ## 5. 알림(텔레그램) 상세
 

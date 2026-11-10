@@ -12,10 +12,10 @@ README 3.4("한 프로젝트에 캐릭터를 둘 이상 붙이면 같은 파일�
 | git이 안 보게 | `.git/info/exclude`(로컬 전용, 저장소 파일 아님)에 `/.worktrees/` · `/.venv` · `/.env*` · `node_modules` |
 | 링크 | 저장소 맨 위 `.venv` · `.env*`와 한 단계 아래 `*/node_modules` → 원본을 가리키는 링크 |
 | CC 메모리 | `~/.claude/projects/<worktree 경로>/memory` → 원본 메모리 폴더 링크. 시험 세션이 원본 MEMORY.md 첫 줄을 그대로 말했다 |
-| 합치기 | 세션을 끝낸 뒤 패널 [합치기] → 확인 창 → worktree에서 `rebase <base>` → 원본에서 `merge --ff-only` → worktree · 브랜치 지움. **push는 안 한다**(런슈즈는 push = 배포) |
-| 충돌 | rebase가 멈추면 `rebase --abort`로 되돌리고 충돌 파일 목록을 보여 준다. worktree는 그대로 — 세션을 다시 띄워 풀고 커밋한 뒤 다시 합친다 |
+| 합치기 | 세션을 끝낸 뒤 패널 [합치기] → 확인 창 → worktree에서 `rebase <base>` → 원본에서 `merge --ff-only` → worktree · 브랜치 지움. **push는 안 한다**(런슈즈는 push = 배포). 11-10부터 실제로는 관리자가 같은 API로 합친다 — 「6. 합치기」 |
+| 충돌 | rebase가 멈추면 `rebase --abort`로 되돌리고 충돌 파일 목록을 보여 준다. worktree는 그대로 — 세션을 다시 띄워 풀고 커밋한 뒤 다시 합친다. 합치기 전에 충돌을 미리 보는 법은 「6. 합치기」 |
 | 막는 것 | 세션이 살아 있으면 합치기 · 버리기 불가. 커밋 안 된 변경이 있으면 합치기 불가(끝내기 확인 창에서 미리 경고). 버리기는 이름을 그대로 적어야 한다 |
-| 스키마 잠금 | `config/worktree.toml` — 프로젝트별 마이그레이션 경로 · 명령. 처음 쓴 세션이 잠금을 갖고, 다른 세션의 같은 시도는 PreToolUse에서 **거부**(승인 모드가 observe인 런슈즈도). 풀림: worktree 세션은 합치기 · 버리기 때, 원본 폴더 세션은 끝날 때, 사람이 `DELETE /api/schema-lock/<프로젝트>` |
+| 스키마 잠금 | `config/worktree.toml` — 프로젝트별 마이그레이션 경로 · 명령. 처음 쓴 세션이 잠금을 갖고, 다른 세션의 같은 시도는 PreToolUse에서 **거부**(승인 모드가 observe인 런슈즈도). 풀림: worktree 세션은 합치기 · 버리기 때, 원본 폴더 세션은 끝날 때, 사람이 `DELETE /api/schema-lock/<프로젝트>`(11-09부터 화면 배너에서도 — 「5.」) |
 | 잠겨 있을 때(세션의 방침) | 잠금을 가진 앞 세션이 살아 있으면 스키마 변경 없이 할 수 있는 일부터 하고, 스키마가 필요한 단계를 시작할 때 잠금을 다시 본다. 잠금을 가진 세션이 이미 끝났으면(잠금 파일에 이름이 남아 있어도) 가져가 써도 된다 |
 
 API: `POST /api/spawn`의 `worktree`(null · true · false), `POST /api/sessions/{id}/worktree` `{action: merge|discard, confirm}`, `GET /api/schema-lock`.
@@ -90,3 +90,72 @@ cmd = "npm --prefix frontend run dev -- --port {port} --strictPort"
 ## 3. 같이 도는 세션의 범위
 
 - **UI(화면)를 맡은 세션이 다른 세션과 같이 돌 때는 테마 `roles` · 역할 색 · 패널의 캐릭터 · 역할 표시(`render.js` `sessionMeta`)를 건드리지 않는다.** 역할 · 색은 역할 작업 쪽이 갖는다(사용자 합의 — "테마 `roles` · 역할 색 · 패널의 캐릭터 · 역할 표시(`render.js` `sessionMeta`)는 건드리지 마라")
+
+## 4. 쉬게 하기 · 이어서 (11-09, 세션 233) [log:coder_resident_20261109.md]
+
+worktree 세션을 **끝내지 않고 잠깐 내려놓는** 길. 끝내면 합치거나 버리는 것밖에 없어서, 하다 만 일이 "합치기 기다림"으로 남을 곳이 필요했다.
+
+**[쉬게 하기]** — 패널 「세션」 맨 앞, worktree 세션만. `POST /api/sessions/{sid}/rest`
+1. 작업 중이거나 뒤에서 도는 일(백그라운드 Bash · Monitor · 서브에이전트 — 대시보드와 같은 기준)이 있으면 **먼저 막고 까닭을 띄운다.** 커밋도 하지 않는다. 그대로 끝내면 CC가 끝내기 확인 창에서 멈춘다 [log:old_session_exit_bg_20261109.md]
+2. 없으면 `git add -A` → 넣으면 안 되는 것을 내린다: `.env*`(견본 빼고) · `.venv` · `node_modules` · worktree 밖을 가리키는 링크. 거부가 아니라 **빼고 진행하고, 뺀 것은 결과 글에 적는다**(링크 하나 때문에 진행 중 저장 전체를 못 하는 것보다 낫고, 조용히 빼지 않는다)
+3. 커밋 "쉬게 하기: 진행 중 저장 — <제목>". 커밋이 실패하면(pre-commit 등) 거부하고 올린 것을 내린다
+4. `/exit`. 안 내려가면 tmux 화면에서 CC 끝내기 확인 창을 찾아 "CC 끝내기 확인 창에 걸렸습니다"로 알린다
+- `session_action` `rest`에 남긴다(실패는 ok=0). worktree · 브랜치는 그대로
+
+**[이어서]** — 「따로 작업」, 끝난 worktree 세션. `POST /api/sessions/{sid}/rest-resume`
+- 새 tmux 창에서 `claude --resume <cc> [--model]`. 대화 기록 파일이 없거나 45초 안에 안 붙으면 까닭을 띄운다. 이미 살아 있는 세션이면 거부한다
+- `rest-resume` · `spawn` 기록을 남긴다(끝낼 때 tmux 정리가 알아보게). 다른 cc id로 이어지면 새 행에 이름 · 역할 · 캐릭터를 물려준다
+
+**「따로 작업」 칸** — "쉬는 중 — 합치기 기다림 · …부터 · N일째"(하루 넘으면 N일째). [합치기] · [버리기]는 그대로. 코더 말풍선과 「코더」 패널의 맡길 일에도 센다(`docs/10_office_design.md` 「코더 상주 · 임시 일꾼 · 맡길 일」)
+
+한계: [쉬게 하기] 뒤 이어 붙인 세션이 다른 cc id를 받는 경우는 시험하지 못했다(CC `--resume`은 같은 id로 잇는 것으로 알고 있다 — 실제 확인 전).
+
+## 5. 스키마 잠금 화면 (11-09, 세션 233) [log:coder_resident_20261109.md]
+
+「1.」의 잠금은 거부만 하고 화면이 없었다. 11-09 원본 폴더 세션이 쥔 잠금 때문에 worktree 코더가 막혔는데, **설계는 "사람이 푼다"인데 누를 곳이 없었고, 막힌 것도 그 세션이 메시지를 보내서야 알았다**(조용한 고장). 그래서 넷을 더했다.
+
+| | 무엇 |
+|---|---|
+| ① 배너 + [풀기] | 방 배너 줄 "🔒 DB 구조 잠금 — 세션 N(원본 폴더\|worktree x)이 HH:MM부터 쥐고 있습니다(무엇) — 눌러서 풉니다". 누르면 확인 창 → `DELETE /api/schema-lock/{project}`. 화면용 `GET /api/schema-lock/board`가 세션 번호를 붙여 준다. 원본 폴더 세션이 쥔 것도 보인다 |
+| ② 막힘 알림 | 다른 세션이 잠금에 막히면 잠금 상태에 `blocked`를 남기고 배너가 "🔒 멈춤 — 세션 M이 스키마 잠금에 막혔습니다. 쥔 세션 N(…부터)"로 바뀐다. 텔레그램은 막힌 세션마다 한 번(`notification.kind = schlock`) |
+| ③ 일찍 풀기 | 원본 폴더 세션이 쥔 FOREMAN 잠금은 1분마다 본다 — 그 작업 트리 `migrations/NNNN_*.sql`이 모두 `schema_migrations`에 있고 `git status -- migrations/`가 비면 푼다(`SchemaLock.try_release_early`). 로그 "스키마 잠금을 일찍 풀었다 — …", 배너가 10분 "🔓 잠금을 풀었습니다 — 적용 · 커밋 끝 — …". worktree 세션이 쥔 것은 합치기 전까지 그대로(그 스키마가 main에 없다). **FOREMAN 저장소만** — 런슈즈(flyway)의 적용 기록은 다른 DB라 브리지가 모른다 |
+| ④ 잠그는 명령만 | `config/worktree.toml`의 `commands`를 마이그레이션을 **돌리는** 명령으로 좁혔다 |
+
+**④ 명령 패턴** (11-09 사용자 확인 "config 고침")
+- FOREMAN: `-m bridge.db.migrate` · `python …bridge/db/migrate.py` — 둘 다 `--status`는 뺀다
+- 런슈즈: flyway 실행 작업만(`flywayMigrate` · `flyway migrate` 등)
+- 까닭: 전에는 `bridge\.db\.migrate`가 `from bridge.db.migrate import connect`(DB에 붙으려고 가져오기만)에도 맞아 관리자가 17:16에 **읽기만 하고 잠금을 쥐었다.** 20:1x에는 반대로 그 읽기 조회가 코더의 잠금에 거부됐다. 런슈즈 `\bflyway\w*\b`도 `SELECT … FROM flyway_schema_history`(읽기)를 잡았다
+- 처음엔 "0027을 적용할 때 잡힌 잠금"으로 기록했다가 확인하고 바로잡았다 [log:dispatch_flow_decision_20261109.md]
+
+## 6. 합치기 — 누가 어떻게 (11-10, 코드 확인) [log:merge_237_242_20261110.md]
+
+합치기의 몸(`bridge/worktree.py` `merge`)은 「1.」 그대로다 — worktree에서 `rebase`, 원본에서 `merge --ff-only`, worktree · 브랜치 지움, push 없음. 달라진 것은 **누가 부르는가**다.
+
+- **관리자(원본 폴더 세션)가 `POST /api/sessions/{sid}/worktree` `{"action":"merge"}`로 합친다.** 사용자가 패널 [합치기]를 누르던 때와 같은 API다
+- **사용자가 패널로 하는 길도 남아 있다**(`bridge/static/js/handoff.js`): 끝난 세션의 「따로 작업」 [합치기], 살아 있는 세션의 「세션」 [끝내고 합치기](`end: true`)
+- **합치기 전에 충돌을 따로 본다.** 예: `git merge-tree --write-tree <base> cc/<이름>`의 결과를 읽는다. 충돌이 없다고 나온 것을 **본 뒤에** 합치기 API를 부른다. 확인과 합치기를 한 명령에 묶지 않는다
+- **충돌이면 `end: true`로 부르지 않는다.** `end: true`는 세션을 먼저 끝낸 뒤 합치므로(`HandoffManager.worktree_act`) 충돌이 나면 풀 세션이 이미 없다. 화면 확인 창도 "충돌이 나면 되돌리고 멈춥니다(세션은 이미 끝난 뒤입니다)"라고 적는다
+- **살아 있는 세션의 충돌은 그 세션이 푼다**(main을 가져와 rebase하고 커밋한 뒤 다시 합친다). 세션이 이미 끝났으면 관리자가 푼다 — 예: README 「나중에 할 일」 표처럼 줄만 합치면 되는 충돌을 `git rebase main` 뒤 두 쪽을 다 남기고 `--continue`(CLAUDE.md 「작업 규칙」 관리자 기준 2)
+- 합친 뒤 시험 · push · 브리지 다시 띄우기 · 화면 점검은 관리자 몫이다. 커밋 안 된 변경이 있으면 합칠 수 없다 — 세션이 끝내기 전에 커밋을 마친다
+
+**11-10 실수** (237 합치기): `merge-tree`와 합치기 API를 한 명령에 묶어, 충돌로 "충돌 없음"이 안 찍혔는데도 합치기를 불렀고, `end: true`로 불러 세션 237이 먼저 끝났다(tmux도 닫힘). 다음 242는 살아 있는 채 충돌을 그 세션이 풀게 했다. 이 일로 위 두 줄을 정했다.
+
+**`pgrep -f` 같은 함정**: 시험이 끝났는지 같은 확인을 합치기와 같은 명령에 묶으면 확인용 글자가 자기 셸에 걸린다 → `docs/operations.md` 「4. 작업 규칙의 상세」.
+
+## 7. 다른 저장소는 읽기만 (11-09, `bridge/reposcope.py`) [log:repo_scope_readonly_20261109.md]
+
+FOREMAN 세션은 다른 저장소(runshoes · petmint-rag-chatbot · ronanlab-infra · k8s-cluster)를 **읽기만** 한다. 훅으로 막는다(1단계). 11-09 하루만 봐도 다른 저장소에 쓰는 일이 있었다(Jenkinsfile · values.yaml · 런슈즈 settings.json · CLAUDE.md, 펫퍼민트 fetch).
+
+- 설정: `config/approval.toml [repo_scope]` — `read_only_elsewhere = ["foreman"]`(이 프로젝트의 세션만 대상), 읽기 명령 목록
+- 자리: PreToolUse에서 스키마 잠금 바로 뒤. **승인 모드와 상관없이** 거부한다(규칙 이름 `다른저장소-쓰기`)
+- 막는 것
+  - Edit · Write · MultiEdit · NotebookEdit: 대상이 자기 저장소(+ `.worktrees/*`) 밖의 git 저장소 안일 때
+  - git: `-C` · `cd`(줄을 넘어 이어짐) · `--git-dir` · `--work-tree` · `GIT_DIR=`로 다른 저장소를 가리키며 읽기가 아닌 것. `fetch` · `pull`도 막는다(그 저장소 `.git`에 쓴다)
+- 막지 않는 것: `/tmp` · 스크래치 아래(복제본), git 저장소가 아닌 곳(`~/.claude` · 메모리), heredoc 본문(커밋 메시지 안 글자)
+- 저장소 경로는 DB `project.repo_path`. 프로젝트가 아닌 `ronanlab-infra` · `k8s-cluster`도 git 저장소라 막힌다
+- 거부 사유(화면 글): "다른 저장소 쓰기 막힘 — 이 세션은 다른 저장소(runshoes)를 읽기만 합니다(git push). 고칠 것은 그 저장소의 세션에 맡기거나(세션 간 메시지) 사용자에게 요청하세요. 상태만 볼 때는 git ls-remote, 손볼 시험은 /tmp · 스크래치 복제본에서 합니다."
+- 상태 보기는 `git ls-remote` · 스크래치 복제본으로
+
+**시도했던 것** — 지난 7일 FOREMAN 세션 호출(Bash 4,505 · Edit 3,093 · Write 290)에 다시 돌렸다. 첫 판 24건 중 헛거부 4(`git reflog show` · `git remote get-url origin`(`$(…)` 안) · `git apply --check` · `git fetch --dry-run`) → 명령마다 "읽기로 치는 인자"로 고친 뒤 20건, 모두 막으려던 것(다른 저장소 Edit · Write 13, commit · add · pull · fetch 7).
+
+**한계**: Bash의 그 밖 쓰기(`sed -i` · `>` · `cp`)는 보지 않는다(샌드박스 단계). `cd $X`처럼 변수 경로 cd는 따라가지 않고, `git -C $X` 쓰기는 판정할 수 없어 막는다. 이제 그 저장소 일은 그 저장소 세션에 맡기므로 왕복이 하나 는다. 2단계(docs 뒤처짐 신호) · 3단계(역할 나누기)는 README 「나중에 할 일」.
