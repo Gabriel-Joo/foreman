@@ -29,6 +29,23 @@ class InboxIn(BaseModel):
     assignee: str = Field(default="scribe", max_length=8)      # 11-09 받는 사람 — scribe(서기 정리) · coder(코더에게)
 
 
+class AskIn(BaseModel):
+    project: str = Field(min_length=1, max_length=64)
+    text: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/ask")
+async def scribe_ask(body: AskIn, request: Request) -> JSONResponse:
+    """서기에게 물어보기(11-10) — 세션 없이 읽기 전용 `claude -p` 한 번. 답만 하고 파일은 고치지 않는다."""
+    from bridge import scribe_ask as sa
+    from bridge.model_choice import Models
+    try:
+        r = await sa.ask(request.app.state.store.engine, body.project, body.text, model=Models().task("scribe_ask"))
+    except Refused as e:
+        return JSONResponse({"refused": str(e)}, status_code=409)
+    return JSONResponse(r)
+
+
 def _iso(v: Any) -> Any:
     return v.isoformat() + "Z" if hasattr(v, "isoformat") else v
 

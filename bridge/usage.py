@@ -56,7 +56,7 @@ def cli_rows(out: dict[str, Any] | None) -> list[dict[str, Any]]:
 
 
 # claude -p 사용 기록의 source → 화면 이름(사용량 화면 「어디서 나가나」 · 세션별 표)
-_CLI_LABEL = {"dispatch": "계획 세우기", "losscheck": "압축으로 잊은 것 찾기"}
+_CLI_LABEL = {"dispatch": "계획 세우기", "losscheck": "압축으로 잊은 것 찾기", "scribe_ask": "서기에게 물어보기"}
 
 
 async def record_cli(engine: Any, source: str, ref_id: int | None, project: str | None, out: dict[str, Any] | None) -> int:

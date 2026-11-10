@@ -88,6 +88,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       (p, to) => window.office && window.office.openTodo && window.office.openTodo(p, to));
     if (target && target.kind === 'foreman') fmp.onClick(ev);
   });
+  $('pSel').addEventListener('input', (ev) => { if (target && target.kind === 'scribe') scribe.onInput(ev); });
+  $('pSel').addEventListener('keydown', (ev) => { if (target && target.kind === 'scribe') scribe.onKey(ev, target.room); });
   window.addEventListener('foreman-state', () => { if (target && target.kind === 'foreman') fmp.load([], true); });
   mountApprovalHistory($('pHist'), $('pHistHead'), $('pHistBody'), store);
 
@@ -655,7 +657,9 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     }
     if (target && target.kind === 'scribe') {
       $('pTitle').textContent = `서기 · ${projectLabel(st, target.room)}`;
+      const typing = document.activeElement && document.activeElement.id === 'scAskText';     // 다시 그려도 쓰던 칸을 놓치지 않는다
       $('pSel').innerHTML = scribe.html(target.room, projectLabel(st, target.room), target.pick || null);
+      if (typing) { const q = $('pSel').querySelector('#scAskText'); if (q && !q.disabled) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
       if (target.pick) { const r = $('pSel').querySelector('.sc-pick'); if (r) r.scrollIntoView({ block: 'nearest' }); }
       return;
     }
