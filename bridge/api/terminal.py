@@ -3,6 +3,7 @@
   POST /api/terminal/session     API 토큰 → 쿠키(HttpOnly · SameSite=Strict · Path=/terminal). 패널을 열 때 받는다
   GET  /api/terminal             상태 + 기다리는 부탁(CC가 "이 명령을 실행해 주세요"라고 한 것)
   POST /api/terminal/open        {project} — 그 프로젝트의 셸 창을 보인다(없으면 그 저장소 폴더에서 만든다, 11-10)
+  POST /api/terminal/respawn     {project, force} — 그 창의 셸을 새로 띄운다(바뀐 셸 설정을 읽게, 11-10)
   DELETE /api/terminal/requests/{id}   부탁을 닫는다(결과를 전달하지 않는다)
   POST /api/terminal/requests/{id}/prefill   셸 입력 줄에 다시 채운다
   GET  /terminal/…  · WS /terminal/ws       쿠키를 확인하고 ttyd(UNIX 소켓)로 그대로 넘긴다
@@ -81,6 +82,24 @@ async def open_project(body: OpenIn, request: Request) -> dict[str, Any]:
         return await m.open_project(body.project)
     except Refused as e:
         raise HTTPException(503, f"터미널 창을 고르지 못했습니다 — {e}") from e
+
+
+class RespawnIn(BaseModel):
+    project: str
+    force: bool = False            # 돌고 있는 명령 · 친 글이 있어도(사람이 확인 창에서 [확인]을 눌렀다)
+
+
+@api.post("/respawn")
+async def respawn(body: RespawnIn, request: Request) -> dict[str, Any]:
+    """[새 셸](11-10) — 그 프로젝트 창의 셸을 새로 띄워 바뀐 셸 설정을 읽힌다. 명령이 돌고 있거나 친 글이 있으면
+    force 없이는 띄우지 않고 {respawned:false, busy}를 돌려준다(화면이 확인 창을 띄운다 — 사람의 sudo · ssh가 돌 수 있는 셸이다)."""
+    m = _mgr(request)
+    if body.project not in TERM_PROJECTS:
+        raise HTTPException(422, "모르는 프로젝트입니다")
+    try:
+        return await m.respawn(body.project, body.force)
+    except Refused as e:
+        raise HTTPException(503, f"셸을 새로 띄우지 못했습니다 — {e}") from e
 
 
 @api.delete("/requests/{rid}")

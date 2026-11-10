@@ -18,6 +18,7 @@ export function createTerminal(store, { getProject } = {}) {
     <div class="term-bar">
       <button id="termToggle" class="ghost" aria-expanded="false">▲ 터미널</button>
       <select id="termPick" class="term-pick" hidden data-tip="터미널 프로젝트 — 지금 보이는 셸 창입니다. 바꾸면 그 프로젝트 폴더의 셸 창으로 갑니다(프로젝트마다 셸이 따로 있습니다)." aria-label="터미널 프로젝트"></select>
+      <button id="termRespawn" class="ghost" hidden data-tip="새 셸 — 이 창의 셸을 새로 띄워 바뀐 설정을 읽습니다. 돌고 있는 명령이나 친 글이 있으면 먼저 묻습니다.">새 셸</button>
       <span id="termProjWarn" class="small warn" hidden></span>
       <span id="termBadge"></span>
       <span id="termLast" class="small muted term-last"></span>
@@ -67,11 +68,41 @@ export function createTerminal(store, { getProject } = {}) {
     const now = cur ? `${plabel(cur)} 터미널` : (shown && shown.window) || '알 수 없는 창';
     // 창 이름은 맞아도 셸이 다른 프로젝트 폴더로 옮겨 가 있을 수 있다(11-10 — FOREMAN 창에서 cd로 petmint 폴더에 들어가 있었다)
     const inDir = shown && shown.cwd ? shown.cwd.split('/').find((seg) => PROJ[seg]) : null;
-    const bad = err ? `터미널 창을 고르지 못했습니다 — ${err}`
+    // 셸이 뜬 뒤 셸 설정 파일이 바뀌었다(11-10) — 열린 창은 옛 설정 그대로라 알린다. [새 셸]을 눌러야 할 버튼(primary)으로
+    const old = !err && shown && shown.shell_old;
+    const bad = err ? err
       : want && cur !== want ? `고른 것(${plabel(want)})과 다른 터미널입니다 — 지금 보이는 것은 ${now}입니다`
-      : cur && inDir && inDir !== cur ? `${plabel(cur)} 터미널인데 셸은 ${plabel(inDir)} 폴더에 들어가 있습니다` : '';
+      : cur && inDir && inDir !== cur ? `${plabel(cur)} 터미널인데 셸은 ${plabel(inDir)} 폴더에 들어가 있습니다`
+      : old ? '셸 설정이 바뀌었습니다 — 이 창은 옛 설정입니다. [새 셸]을 누르면 새 설정을 읽습니다' : '';
     w.textContent = bad; w.hidden = !bad;
+    if (old) w.dataset.tip = `옛 셸 — 셸이 뜬 뒤 셸 설정 파일이 바뀌었습니다.\n바뀐 파일 ${old.files.join(' · ')} · ${hm(old.changed_at)}\n셸이 뜬 시각 ${hm(old.started_at)}`;
+    else delete w.dataset.tip;
+    const rb = $('termRespawn');
+    rb.hidden = !cur;
+    rb.className = old ? 'primary' : 'ghost';
   }
+  const hm = (iso) => { const d = new Date(iso); return isNaN(d) ? '?' : `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  // [새 셸](11-10) — 명령이 돌고 있거나 친 글이 남아 있으면 확인 창 먼저(사람의 sudo · ssh가 돌 수 있는 셸이다)
+  async function respawnShell() {
+    const p = shown && shown.project;
+    if (!p) return;
+    const rb = $('termRespawn');
+    rb.disabled = true;
+    try {
+      let j = await store.terminalRespawn(p, false);
+      if (!j.respawned) {
+        const b = j.busy || {};
+        const what = b.cmd ? `돌고 있는 명령(${b.cmd})이 끝납니다.` : `입력 줄에 친 글(${b.typed})이 지워집니다.`;
+        if (!confirm(`${plabel(p)} 터미널의 셸을 새로 띄웁니다. ${what} 계속할까요?`)) return;
+        j = await store.terminalRespawn(p, true);
+      }
+      shown = j; drawProj();
+      setTimeout(focusShell, 200);
+    } catch (e) {
+      drawProj(`셸을 새로 띄우지 못했습니다 — ${e.message || e}`);
+    } finally { rb.disabled = false; }
+  }
+  $('termRespawn').addEventListener('click', respawnShell);
   // 열려 있는 동안 실제 보이는 창을 3초마다 확인한다(11-10) — tmux의 보이는 창은 세션에 하나라 다른 탭 · CC 부탁 · tmux 키가 바꿀 수 있고,
   // 열 때 받은 값만 쥐고 있으면 이름표가 거짓이 된다("런슈즈 터미널"인데 petmint 셸). 못 읽으면 이름표를 못 믿는다고 경고한다
   let winErr = false;
@@ -80,7 +111,7 @@ export function createTerminal(store, { getProject } = {}) {
     try {
       const j = await store.terminalWindow();
       const was = winErr; winErr = false;
-      if (was || !shown || shown.window !== j.window || shown.cwd !== j.cwd) { shown = j; drawProj(); }
+      if (was || !shown || shown.window !== j.window || shown.cwd !== j.cwd || !shown.shell_old !== !j.shell_old) { shown = j; drawProj(); }
     } catch (e) {
       if (!winErr) { winErr = true; drawProj(`지금 보이는 창을 확인하지 못했습니다 — ${e.message || e}`); }
     }
@@ -88,7 +119,7 @@ export function createTerminal(store, { getProject } = {}) {
   setInterval(checkWindow, 3000);
   async function pickProject(p) {
     want = p || null;
-    try { shown = await store.terminalOpen(want); drawProj(); } catch (e) { drawProj(e.message || String(e)); }
+    try { shown = await store.terminalOpen(want); drawProj(); } catch (e) { drawProj(`터미널 창을 고르지 못했습니다 — ${e.message || e}`); }
   }
   $('termPick').addEventListener('change', (ev) => { pickProject(ev.target.value || null).then(() => setTimeout(focusShell, 100)); });
 

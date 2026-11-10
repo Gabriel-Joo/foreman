@@ -35,6 +35,12 @@ from bridge.models import EventIn, EventSource, EventStatus, EventType
 log = logging.getLogger("foreman.terminal")
 
 PROMPT_MARK = "[foreman] "      # foreman-bashrc의 PS1 머리 — 출력 범위를 찾는 표지
+# 프로젝트 창은 머리가 창 이름이다("[runshoes] ", 11-10). venv를 다시 activate하면 "(llm_env) "가 앞에 붙는다(256 기록)
+_PROMPT_HEAD = re.compile(r"^(?:\([^()\s]+\) )?\[[\w.-]+\] ")
+
+
+def is_prompt(line: str) -> bool:
+    return _PROMPT_HEAD.match(line) is not None
 COOKIE = "foreman_term"
 # 프로젝트마다 터미널 창(11-10) — 창 이름이 이것이면 그 프로젝트 창이다(bridge/api/dashboard.py PROJECT_ORDER와 같은 이름)
 TERM_PROJECTS = ("runshoes", "petmint-rag-chatbot", "foreman")
@@ -191,11 +197,11 @@ def extract_output(lines: list[str], cmd: str, max_lines: int) -> tuple[list[str
     while ls and not ls[-1]:
         ls.pop()
     end = len(ls)
-    if ls and ls[-1].startswith(PROMPT_MARK) and _norm(cmd)[:60] not in _norm(ls[-1]):
+    if ls and is_prompt(ls[-1]) and _norm(cmd)[:60] not in _norm(ls[-1]):
         end -= 1
     key = _norm(cmd)[:60]
     for i in range(end - 1, -1, -1):
-        if ls[i].startswith(PROMPT_MARK) and key and key in _norm(ls[i]):
+        if is_prompt(ls[i]) and key and key in _norm(ls[i]):
             return ls[i + 1:end], True
     return ls[max(0, end - max_lines):end], False
 
@@ -231,6 +237,27 @@ class Request:
 
 def _iso(t: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+
+
+def _proc_start(pid: int) -> float | None:
+    """프로세스가 뜬 시각(epoch) — /proc/<pid>/stat의 starttime(부팅 뒤 틱) + 부팅 시각."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        ticks = int(stat.rsplit(")", 1)[1].split()[19])
+        btime = next(int(ln.split()[1]) for ln in Path("/proc/stat").read_text().splitlines() if ln.startswith("btime "))
+        return btime + ticks / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError, StopIteration):
+        return None
+
+
+def typed_text(line: str) -> str:
+    """커서 줄에서 프롬프트(… $ ) 뒤에 친 글. 프롬프트가 없는 줄(긴 입력이 줄을 넘김)은 줄 전체.
+    capture-pane은 줄 끝 공백을 지우므로 빈 프롬프트는 '$'로 끝난다."""
+    line = line.rstrip()
+    if not line or line.endswith(("$", "#")):
+        return ""
+    i = line.find("$ ")
+    return (line[i + 2:] if i >= 0 else line).strip()
 
 
 def default_tmux_socket() -> str:
@@ -347,12 +374,68 @@ class TerminalManager:
             await tmux(self.socket, "select-window", "-t", t)
         return await self.current()
 
-    async def current(self) -> dict[str, Any]:
-        out = (await tmux(self.socket, "display-message", "-p", "-t", self.target,
-                          "#{window_name}\t#{pane_current_path}")).strip().split("\t")
+    async def current(self, target: str | None = None) -> dict[str, Any]:
+        """보이는 창(또는 target 창)의 이름 · 폴더 · 셸이 옛 설정인지(shell_old — 셸이 뜬 뒤 셸 설정 파일이 바뀌었다, 11-10)."""
+        out = (await tmux(self.socket, "display-message", "-p", "-t", target or self.target,
+                          "#{window_name}\t#{pane_current_path}\t#{pane_pid}")).strip().split("\t")
         name = out[0] if out else ""
-        return {"project": name if name in TERM_PROJECTS else None, "window": name,
-                "cwd": out[1] if len(out) > 1 else None}
+        res: dict[str, Any] = {"project": name if name in TERM_PROJECTS else None, "window": name,
+                               "cwd": out[1] if len(out) > 1 else None, "shell_old": None}
+        try:
+            res["shell_old"] = self.shell_old(int(out[2]))
+        except (IndexError, ValueError):
+            pass
+        return res
+
+    # ── 열린 창을 새 셸로(11-10 사용자 — "열린 창을 새 셸로 바꾸는 방법이 화면에 있어야 한다. 매번 명령을 칠 수는 없다") ──
+    # 셸 설정(foreman-bashrc · ~/.bashrc)은 셸이 뜰 때만 읽는다. 설정을 바꿔도 열린 창은 옛 프롬프트 그대로라, 셸이 뜬 시각과
+    # 설정 파일 시각을 대 보고 막대에 알린다(조용한 고장). [새 셸]은 respawn-pane -k — 창을 만들 때와 같은 폴더 · FOREMAN_PROJECT · rcfile
+    def config_files(self) -> list[Path]:
+        return [Path(self.s.terminal_rcfile), Path.home() / ".bashrc"]
+
+    def shell_old(self, pid: int) -> dict[str, Any] | None:
+        """셸(pid)이 뜬 뒤 바뀐 셸 설정 파일 — 없으면 None. 못 재면 None(경고하지 않는다)."""
+        started = _proc_start(pid)
+        if started is None:
+            return None
+        newer = []
+        for f in self.config_files():
+            try:
+                mt = f.stat().st_mtime
+            except OSError:
+                continue
+            if mt > started + 1:
+                newer.append((mt, f.name))
+        if not newer:
+            return None
+        mt, _ = max(newer)
+        return {"files": [n for _, n in sorted(newer)], "changed_at": _iso(mt), "started_at": _iso(started)}
+
+    async def busy(self, target: str) -> dict[str, Any]:
+        """새 셸로 바꾸면 사라지는 것 — 돌고 있는 명령(셸이 아닌 것) · 입력 줄에 친 글. 둘 다 없으면 빈 dict."""
+        cur = (await tmux(self.socket, "display-message", "-p", "-t", target,
+                          "#{pane_current_command}\t#{cursor_y}\t#{pane_in_mode}")).strip().split("\t")
+        cmd = cur[0] if cur else ""
+        if cmd != "bash":
+            return {"cmd": cmd or "?"}
+        try:
+            y = int(cur[1])
+        except (IndexError, ValueError):
+            return {}
+        line = (await tmux(self.socket, "capture-pane", "-p", "-t", target, "-S", str(y), "-E", str(y))).rstrip("\n")
+        typed = typed_text(line)
+        return {"typed": mask_shell(self.mask, typed)[:60]} if typed else {}
+
+    async def respawn(self, project: str, force: bool = False) -> dict[str, Any]:
+        """그 프로젝트 창의 셸을 새로 띄운다. 명령이 돌고 있거나 친 글이 남아 있으면 force 없이는 띄우지 않고 까닭을 돌려준다."""
+        t = await self.window_for(project)
+        b = await self.busy(t)
+        if b and not force:
+            return {"respawned": False, "busy": b}
+        await tmux(self.socket, "respawn-pane", "-k", "-t", t, "-c", await self._repo_dir(project),
+                   "-e", f"FOREMAN_PROJECT={project}", self._shell_cmd())
+        log.info("터미널 창 새 셸: %s%s", project, f" (끝낸 것: {b})" if b else "")
+        return {"respawned": True, "busy": b, **await self.current(t)}
 
     async def _supervise(self) -> None:
         delay = 1.0
