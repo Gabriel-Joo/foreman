@@ -167,6 +167,8 @@ TERM_HOVER_JS = """(async()=>{const f=document.getElementById('termFrame');
 # 글씨 배율 단계마다 바꾼 직후(한 프레임 뒤) 점검 — 가장 작은 단계부터 끝까지, 끝나면 처음 배율로 돌려놓는다
 TERM_SWEEP_JS = """(async()=>{const m=await import('/static/js/uiscale.js'), out=[], i0=m.STEPS.indexOf(m.uiScale());
   const frame=()=>new Promise(r=>requestAnimationFrame(()=>setTimeout(r,30)));
+  // 맨 위로 갔다가 맨 아래로 — 첫 측정 전에 글씨가 꼭 한 번 바뀌게(이미 맨 아래면 안 바뀌어, dpr을 바꾼 뒤 xterm이 옛 dpr 칸을 쥔 채였다)
+  for(let k=0;k<m.STEPS.length;k++) m.step(1);
   for(let k=0;k<m.STEPS.length;k++) m.step(-1);
   for(let i=0;i<m.STEPS.length;i++){ if(i) m.step(1); await frame();
     for(const x of await window.__fmTermCheck()) out.push(`배율 ${Math.round(m.uiScale()*100)}%: ${x}`)}
