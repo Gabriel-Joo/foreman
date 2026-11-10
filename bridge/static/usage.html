@@ -12,6 +12,8 @@
           --code:#202125; --ok:#4ade80; --bad:#f87171; --warn:#f0b445; --act:#5aa2ff;
           --k-cache_read:#6f9cf5; --k-cache_write:#f0b445; --k-output:#e070b8; --k-input:#77777d; } }
   * { box-sizing:border-box; }
+  /* 글씨 배율 처음 값(js/uiscale.js가 뜨기 전) — uiscale.js DEF와 같아야 한다(tests/js/uiscale_range.test.mjs). 이 화면은 panel.css를 안 쓴다 */
+  :root { --ui-zoom:0.9; }
   /* 11-09 사용자 — 글씨가 너무 작다(본문 14 · 설명 12 · 표 13px에 배율도 머리에만 걸렸다). 메인 옆 패널과 같게 본문 16px,
      내용(main)도 글씨 배율(--ui-zoom, [가−][가+])을 받는다 */
   body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, -apple-system, "Noto Sans KR", sans-serif;
@@ -22,7 +24,7 @@
   .muted { color:var(--muted); } .small { font-size:14px; } .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
   /* 머리 — 메인 화면 머리말(office.html .otop)과 같은 크기 · 글씨 배율(--ui-zoom, js/uiscale.js — 메인의 [가−][가+])를 따른다(11-09 사용자) */
   .top { position:sticky; top:0; z-index:5; display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:6px 14px;
-         background:var(--bg); border-bottom:1px solid var(--line); font-size:17px; zoom:var(--ui-zoom, 1.2); }
+         background:var(--bg); border-bottom:1px solid var(--line); font-size:17px; zoom:var(--ui-zoom); }
   .top button, .top select { font-size:17px; padding:4px 10px; }
   .brand { font-weight:700; letter-spacing:.04em; font-size:19px; }
   .read { margin-left:auto; font-size:15px; padding:2px 9px; border-radius:14px; border:1px solid var(--line); }
@@ -30,7 +32,7 @@
   .ofont { display:inline-flex; align-items:center; gap:4px; }
   .top .ofont button { padding:1px 8px; font-weight:700; }
   .ofont button:disabled { opacity:.4; cursor:default; }
-  main { zoom:var(--ui-zoom, 1.2); }
+  main { zoom:var(--ui-zoom); }
   /* 11-09 사용자 — 가운데 1180px만 쓰고 양옆이 비었다. 창 폭을 쓰되 아주 넓은 화면에서만 멈춘다 */
   main { max-width:2400px; margin:0 auto; padding:12px 24px 40px; }
   .band { margin:10px 0; padding:8px 12px; border:1px solid var(--bad); border-left:5px solid var(--bad); border-radius:8px; }

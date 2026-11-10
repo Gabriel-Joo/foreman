@@ -4,15 +4,24 @@
 // 이 브라우저에만 기억한다(localStorage — 못 쓰면 이 탭에서만).
 
 const KEY = 'foremanUiScale';
-// 11-09 사용자 — 120%부터 위로는 5씩(10씩 뛰면 한 번에 확 달라져 세밀하게 못 맞춘다)
-export const STEPS = [0.9, 1, 1.1, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5, 1.55, 1.6];
-const DEF = 1.2;                 // 1920 기준 — 11-08 전보다 한 단계 크게
-const TERM_BASE = 14;            // 배율 1의 터미널 글씨(px). 처음 값 1.2면 17px(ttyd 기본 13)
+// 11-10 사용자 — 전에는 브라우저 70%로 봐서 160%까지 키울 수 있게 했다. 이제 브라우저 100%에서 90%가 보기 좋아 그 둘레 80~110%, 5씩.
+// 글씨 배율이 들어가는 곳(패널 · 머리말 · 툴팁 · 새 세션 창 · 사용량 화면 · 픽셀 화면 글씨 · 터미널)은 모두 이 STEPS · DEF를 쓴다.
+// CSS의 처음 값(--ui-zoom, JS가 뜨기 전)은 panel.css · usage.html의 :root 한 줄 — DEF와 같은지 tests/js/uiscale_range.test.mjs가 본다
+export const STEPS = [0.8, 0.85, 0.9, 0.95, 1, 1.05, 1.1];
+export const DEF = 0.9;
+const TERM_BASE = 14;            // 배율 1의 터미널 글씨(px) — 90%면 13px(ttyd 기본과 같다), 80~110%는 11~15px
 
+// 저장된 값을 계단에 맞춘다 — 범위 밖(옛 120% 등)이거나 계단에 없으면 가장 가까운 계단, 없거나 숫자가 아니면 DEF
+export function snapScale(raw) {
+  if (raw === null || raw === undefined || String(raw).trim() === '') return DEF;
+  const v = Number(raw);
+  if (!Number.isFinite(v) || v <= 0) return DEF;
+  return STEPS.reduce((best, s) => (Math.abs(s - v) < Math.abs(best - v) - 1e-9 ? s : best), STEPS[0]);
+}
 function load() {
-  let v = NaN;
-  try { v = Number(localStorage.getItem(KEY)); } catch { /* 기억 못 함 */ }
-  return STEPS.includes(v) ? v : DEF;
+  let raw = null;
+  try { raw = localStorage.getItem(KEY); } catch { /* 기억 못 함 */ }
+  return snapScale(raw);
 }
 let scale = load();
 
@@ -49,12 +58,14 @@ export function applyTermFont(frame) {
   } catch { return false; }
 }
 
-document.addEventListener('click', (e) => {
-  const b = e.target.closest && e.target.closest('#oFontDn, #oFontUp');
-  if (b) step(b.id === 'oFontUp' ? 1 : -1);
-});
-// 다른 탭에서 [가−][가+]를 누르면 이 탭도 따라간다(11-09 — 사용량 화면 /usage도 같은 배율을 쓴다)
-addEventListener('storage', (e) => { if (e.key === KEY) { scale = load(); apply(); } });
-apply();
-new MutationObserver((_, ob) => { if (document.getElementById('oFontV')) { apply(); ob.disconnect(); } })
-  .observe(document.documentElement, { childList: true, subtree: true });
+if (typeof document !== 'undefined') {     // node 시험(snapScale · STEPS)에서 불러도 되게
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('#oFontDn, #oFontUp');
+    if (b) step(b.id === 'oFontUp' ? 1 : -1);
+  });
+  // 다른 탭에서 [가−][가+]를 누르면 이 탭도 따라간다(11-09 — 사용량 화면 /usage도 같은 배율을 쓴다)
+  addEventListener('storage', (e) => { if (e.key === KEY) { scale = load(); apply(); } });
+  apply();
+  new MutationObserver((_, ob) => { if (document.getElementById('oFontV')) { apply(); ob.disconnect(); } })
+    .observe(document.documentElement, { childList: true, subtree: true });
+}
