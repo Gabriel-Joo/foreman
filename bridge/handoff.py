@@ -194,7 +194,9 @@ def fit_body(body: str, limit: int = MAX_INJECT, full_path: str | None = None) -
 
 def wt_block(cwd: str | None) -> str:
     """받는 세션이 따로 작업(worktree)에서 떴으면 넣는 글 맨 앞에 붙일 절(11-09). 인계를 쓴 세션은 받을 세션이 어디서 뜰지
-    모른다 — 「지금 상태」에 "브랜치 main"이라고 적어도 실제는 worktree였다(11-05 · 11-09 두 번). 띄운 브리지가 안다."""
+    모른다 — 「지금 상태」에 "브랜치 main"이라고 적어도 실제는 worktree였다(11-05 · 11-09 두 번). 띄운 브리지가 안다.
+    11-10 — 모든 저장소에 들어가므로 공통 사실만(런슈즈 세션이 "README 로드맵 표" · log/ 같은 FOREMAN 규칙을 자기 규칙으로 읽었다).
+    저장소별 분기는 만들지 않고 나머지는 그 저장소 CLAUDE.md로(사용자 결정, 런슈즈 세션 요청)."""
     if not cwd:
         return ""
     _, name = wt.split(cwd)
@@ -203,9 +205,11 @@ def wt_block(cwd: str | None) -> str:
     return ("## 이 세션이 뜬 자리 (브리지가 띄울 때 정함)\n"
             f"- 이 세션은 원본 폴더가 아니라 **따로 작업(worktree) `.worktrees/{name}` · 브랜치 `{wt.BRANCH_PREFIX}{name}`**에서 떴다. "
             "아래 인계에 \"브랜치 main\"이라고 적혀 있어도 이것이 맞다(인계를 쓴 세션은 어디서 뜰지 몰랐다)\n"
-            "- 커밋은 이 브랜치에만 하고 **push하지 않는다**. 합치기는 세션을 끝낸 뒤 사람이 패널 [합치기]로 한다 — 끝내기 전에 커밋을 마친다\n"
-            "- 원본 폴더에서만 할 일(브리지 다시 띄우기 · README 로드맵 표 고치기 등)은 하지 않는다. 결과 기록은 자기 이름의 새 `log/` 파일에\n"
-            "- 저장소 CLAUDE.md의 worktree 절(FOREMAN은 「따로 작업(worktree)에서 일할 때」)을 따른다\n\n")
+            "- 커밋은 이 브랜치에 한다. push · 합치기는 기본으로 하지 않는다(사용자가 시키면 따른다) — "
+            "합치기는 사람(패널 [합치기]) 또는 관리 세션이 한다. 끝내기 전에 커밋을 마친다\n"
+            "- 브리지를 다시 띄우지 않는다 — 도는 브리지는 FOREMAN 원본 폴더의 코드다\n"
+            "- 그 밖에 원본 폴더에서만 할 일 · 결과를 남길 자리는 그 저장소의 CLAUDE.md가 정한 것을 따른다"
+            "(정한 것이 없으면 이 브랜치의 커밋과 최종 보고로 충분하다)\n\n")
 
 
 def inject_prompt(req: str, src: str, body: str) -> str:

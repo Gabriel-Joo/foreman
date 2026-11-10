@@ -31,7 +31,8 @@ def test_wt_block_only_for_worktree(tmp_path):
     repo = tmp_path / "foreman"
     (repo / ".worktrees" / "foreman-2").mkdir(parents=True)
     b = h.wt_block(str(repo / ".worktrees" / "foreman-2"))
-    assert b.startswith("## 이 세션이 뜬 자리") and "`cc/foreman-2`" in b and "push하지 않는다" in b
+    assert b.startswith("## 이 세션이 뜬 자리") and "`cc/foreman-2`" in b and "push" in b
+    assert "README 로드맵" not in b and "log/" not in b               # FOREMAN만의 규칙은 넣지 않는다(11-10, 모든 저장소에 들어간다)
     assert h.wt_block(str(repo)) == "" and h.wt_block(None) == ""
     # 인계 글로 감싸도 맨 앞 표지는 그대로(받은 세션 판정 handoff_in)
     assert Assembler._origin({}, h.inject_prompt("7f3a9c", "c5320140", b + "본문")) == "handoff_in"
