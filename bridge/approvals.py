@@ -111,8 +111,26 @@ class ApprovalManager:
         project, _char = self.asm._project_for(p.get("cwd"), Path(tp).parent.name if tp else "")
         return project
 
+    async def session_role(self, p: dict[str, Any]) -> str | None:
+        """다른 저장소 판정에 쓸 세션 역할(11-10 관리자 docs push) — 판정이 역할을 쓸 때(git push가 보일 때)만 DB에서 읽는다.
+        worktree 세션(worktree_path가 있음)이면 None — 관리자 예외는 원본 폴더 세션만. 못 읽으면 None(=막힘)."""
+        if not self.scope or not self.scope.wants_role(p.get("tool_name") or "", p.get("tool_input") or {}):
+            return None
+        cc = p.get("session_id")
+        if not cc:
+            return None
+        try:
+            async with self.engine.connect() as c:
+                r = (await c.execute(text(
+                    "SELECT role, worktree_path FROM character_session WHERE cc_session_id = :s ORDER BY id DESC LIMIT 1"),
+                    {"s": cc})).first()
+        except Exception as e:  # noqa: BLE001 — 못 읽으면 예외 없이(막힘) 간다
+            log.warning("세션 역할을 읽지 못함 %s: %s", cc, e)
+            return None
+        return r[0] if r and not r[1] else None
+
     # ── PreToolUse ─────────────────────────────────────────
-    def pre_tool_use(self, p: dict[str, Any]) -> dict[str, Any] | None:
+    def pre_tool_use(self, p: dict[str, Any], role: str | None = None) -> dict[str, Any] | None:
         tool, inp = p.get("tool_name") or "?", p.get("tool_input") or {}
         project = self._project(p)
         pp = self.policy.for_project(project)
@@ -121,7 +139,7 @@ class ApprovalManager:
         rule = "스키마-잠금"
         if not why_lock and self.scope:
             # 다른 저장소는 읽기만 — 역시 승인 모드와 상관없이(11-09 사용자)
-            why_lock = self.scope.check(project, p.get("cwd"), tool, inp, p.get("scratchpad_dir") or _scratchpad(p))
+            why_lock = self.scope.check(project, p.get("cwd"), tool, inp, p.get("scratchpad_dir") or _scratchpad(p), role)
             rule = "다른저장소-쓰기"
         if why_lock:
             dec = Decision("deny", rule, why_lock)

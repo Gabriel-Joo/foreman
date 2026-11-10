@@ -47,7 +47,7 @@ async def pre_tool_use(request: Request) -> Response:
     mgr = getattr(request.app.state, "approvals", None)
     if mgr is None:
         return Response(status_code=204)
-    out = mgr.pre_tool_use(body)
+    out = mgr.pre_tool_use(body, role=await mgr.session_role(body))   # 역할은 git push가 보일 때만 읽는다(11-10)
     return JSONResponse(out) if out else Response(status_code=204)
 
 

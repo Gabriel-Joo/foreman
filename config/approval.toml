@@ -179,3 +179,9 @@ read = ["status", "log", "show", "diff", "ls-files", "ls-tree", "ls-remote", "re
 # 11-10 사용자: 인프라 묶음 1에서 펫퍼민트 · 런슈즈 문서를 고친다
 [repo_scope.writable]
 ronanlab-infra = ["runshoes/docs/", "petmint-rag-chatbot/docs/"]
+
+# 예외 2 — 이 프로젝트의 관리자 세션(role manager, 원본 폴더 — worktree 아님)만 그 저장소 원본에서 git push [origin] [main]을 한다.
+# origin/main보다 앞선 커밋이 전부 그 경로만 건드렸을 때만(하나라도 밖 · 머지 커밋 · 뒤처짐 · 갈라짐 · 원격 못 읽음이면 거부).
+# 11-10 사용자: 인프라 세션의 docs 커밋은 FOREMAN 관리자가 확인하고 push한다. 강제 · 삭제 · 태그 · 다른 원격 · 브랜치는 막는다
+[repo_scope.manager_push]
+foreman = ["runshoes/docs/", "petmint-rag-chatbot/docs/"]
