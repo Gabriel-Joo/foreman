@@ -17,7 +17,7 @@ from bridge.config import Settings, get_settings
 from bridge.inject import tmux
 from bridge.mask import Masker
 from bridge.terminal import (TerminalManager, cmd_matches, default_tmux_socket, extract_output, find_requests,
-                             mask_shell, prefill_form)
+                             mask_shell, prefill_form, typed_text)
 
 MK = Masker(env_paths=[])
 
@@ -130,6 +130,21 @@ def test_extract_output():
     assert not found and out == ["y"]
 
 
+def test_extract_output_project_window_prompt():
+    """11-10 — 프로젝트 창 프롬프트는 머리가 창 이름("[runshoes] ")이고, venv를 다시 켜면 "(llm_env) "가 앞에 붙는다."""
+    lines = ["[runshoes] (llm_env) ~/r$ sudo ls /root", "a", "b", "(llm_env) [runshoes] ~/r$ "]
+    out, found = extract_output(lines, "sudo ls /root", 60)
+    assert found and out == ["a", "b"]
+
+
+def test_typed_text():
+    assert typed_text("[foreman] (llm_env) ~/x$") == ""                  # capture-pane이 끝 공백을 지운다
+    assert typed_text("[petmint-rag-chatbot] ~/p$ sf") == "sf"
+    assert typed_text("kopo17@host:~/p$ git st  ") == "git st"           # 옛 프롬프트도
+    assert typed_text("") == ""
+    assert typed_text("ong-input-continued") == "ong-input-continued"   # 긴 입력이 줄을 넘긴 줄
+
+
 # ── 시험용 tmux 셸: 채우기 → 사람이 친다 → 결과 ────────────────────
 class FakePipeline:
     def __init__(self):
@@ -219,6 +234,79 @@ async def test_project_windows(shell):
     r = await m.request(9, 90, "runshoes", None, ["echo from-runshoes"])
     assert r.prefilled and r.window and (await m.current())["project"] == "runshoes"
     await _wait_for(m, "echo from-runshoes")
+    await m.stop()
+
+
+@pytest.fixture
+def own_sock():
+    """시험만의 tmux 서버(소켓) — 라이브 tmux 서버(기본 소켓)에 세션을 만들지 않는다. 짧은 경로(UNIX 소켓 108자)."""
+    import tempfile
+    d = tempfile.mkdtemp(prefix="ft", dir="/tmp")
+    sock = f"{d}/t"
+    yield sock
+    subprocess.run(["tmux", "-S", sock, "kill-server"], capture_output=True)
+    Path(sock).unlink(missing_ok=True)
+    os.rmdir(d)
+
+
+async def _pane(m: TerminalManager, t: str, fmt: str) -> str:
+    return (await tmux(m.socket, "display-message", "-p", "-t", t, fmt)).strip()
+
+
+async def _wait_pane(m: TerminalManager, t: str, needle: str, tries: int = 50) -> str:
+    for _ in range(tries):
+        scr = await tmux(m.socket, "capture-pane", "-p", "-J", "-t", t)
+        if needle in scr:
+            return scr
+        await asyncio.sleep(0.1)
+    raise AssertionError(f"{t}에 {needle!r} 없음")
+
+
+async def test_respawn_asks_first_then_new_shell(shell, own_sock):
+    """11-10 [새 셸] — 친 글 · 돌고 있는 명령이 있으면 force 없이는 띄우지 않고 까닭을 돌려준다. 띄우면 같은 창 · FOREMAN_PROJECT · 새 pid.
+    셸이 뜬 뒤 셸 설정 파일이 바뀌면 shell_old로 알린다."""
+    p = FakePipeline()
+    m = TerminalManager(None, shell, p, MK, publish=p.publish)
+    m.socket = own_sock
+    await m.start()
+    await m.open_project("runshoes")
+    t = await m.window_for("runshoes")
+    await _wait_pane(m, t, "[foreman] $")
+    assert (await m.current(t))["shell_old"] is None
+    pid1 = await _pane(m, t, "#{pane_pid}")
+    assert await m.busy(t) == {}
+    await tmux(m.socket, "send-keys", "-t", t, "-l", "sf")                 # 친 글이 남아 있다(사용자 펫퍼민트 창처럼)
+    await _wait_pane(m, t, "$ sf")
+    r = await m.respawn("runshoes")
+    assert r == {"respawned": False, "busy": {"typed": "sf"}}
+    assert await _pane(m, t, "#{pane_pid}") == pid1                       # 띄우지 않았다
+    r = await m.respawn("runshoes", force=True)
+    assert r["respawned"] and r["project"] == "runshoes" and r["busy"] == {"typed": "sf"}
+    assert await _pane(m, t, "#{pane_pid}") != pid1
+    await _wait_pane(m, t, "[foreman] $")
+    await tmux(m.socket, "send-keys", "-t", t, "-l", "echo P=$FOREMAN_PROJECT")
+    await tmux(m.socket, "send-keys", "-t", t, "Enter")
+    await _wait_pane(m, t, "P=runshoes")
+    # 돌고 있는 명령
+    await tmux(m.socket, "send-keys", "-t", t, "-l", "sleep 30")
+    await tmux(m.socket, "send-keys", "-t", t, "Enter")
+    for _ in range(30):
+        if (await m.busy(t)).get("cmd") == "sleep":
+            break
+        await asyncio.sleep(0.1)
+    assert (await m.respawn("runshoes")) == {"respawned": False, "busy": {"cmd": "sleep"}}
+    # 셸 설정이 셸보다 새것 → shell_old, 새 셸 뒤에는 없다
+    now = time.time()
+    os.utime(shell.terminal_rcfile, (now + 2, now + 2))
+    old = (await m.current(t))["shell_old"]
+    assert old and old["files"] == [Path(shell.terminal_rcfile).name]
+    await asyncio.sleep(2.2)
+    r = await m.respawn("runshoes", force=True)
+    assert r["respawned"] and r["busy"] == {"cmd": "sleep"} and r["shell_old"] is None
+    await _wait_pane(m, t, "[foreman] $")
+    assert await m.busy(t) == {}
+    names = (await tmux(m.socket, "list-windows", "-t", f"={shell.terminal_tmux_session}", "-F", "#{window_name}")).split()
+    assert names.count("runshoes") == 1                                   # 같은 창(새 창을 만들지 않는다)
     await m.stop()
 
 

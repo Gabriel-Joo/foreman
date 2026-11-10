@@ -505,6 +505,13 @@ export class Store {
     if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
     return j;
   }
+  // [새 셸](11-10) — 그 프로젝트 창의 셸을 새로 띄운다. 명령이 돌거나 친 글이 있으면 force 없이는 {respawned:false, busy}
+  async terminalRespawn(project, force) {
+    const r = await fetch('/api/terminal/respawn', { method: 'POST', headers: this.headers(true), body: JSON.stringify({ project, force: !!force }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+    return j;
+  }
   // 지금 실제로 보이는 창(바꾸지 않는다, 11-10) — 다른 탭 · CC 부탁이 창을 바꿔도 이름표가 따라가게 열려 있는 동안 묻는다
   async terminalWindow() {
     const r = await fetch('/api/terminal/window', { headers: this.headers() });
