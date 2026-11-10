@@ -27,6 +27,7 @@ from bridge import foreman_note as notes
 from bridge.handoff import HandoffManager
 from bridge.inject import Refused, _tmux_env, deliver
 from bridge.liveness import live_sessions
+from bridge.mask import Masker
 from bridge.usage import record_cli
 
 log = logging.getLogger("foreman.dispatch")
@@ -335,8 +336,14 @@ class ForemanDispatcher:
         await record_cli(self.engine, "dispatch", did, self.running.get(did), j)
         plan = parse_plan(result)
         if plan is None:
-            await self._finish(did, None, "failed", "답에서 계획(JSON)을 찾지 못했습니다: " + (result or err.decode(errors="replace"))[:300], t0)
-            raise Refused("답에서 계획을 찾지 못했습니다. 다시 물어보거나 직접 골라 주세요")
+            # 11-10 원인을 가려 화면에 한 줄로, 답 앞부분 · JSON이 깨진 자리는 dispatch.error와 로그에(비밀값은 가린다)
+            kind, detail = diagnose(p.returncode, result, err.decode(errors="replace"), j)
+            why = FAIL_WHY[kind]
+            m = Masker()
+            rec = m.text(f"{why} [{kind}]" + (f" — {detail}" if detail else "") + "\n답 앞부분: " + (result or "")[:400]) or why
+            log.warning("계획 받기 실패 dispatch=%s [%s] %s", did, kind, (m.text(detail) or "")[:300])
+            await self._finish(did, None, "failed", rec, t0)
+            raise Refused(f"{why}. 다시 물어보거나 직접 골라 주세요")
         plan = await self.check(plan)
         await self._finish(did, plan, "planned", None, t0)
         return {"dispatch_id": did, "plan": plan, "ms": round((time.monotonic() - t0) * 1000), "context_chars": ctx_chars}
@@ -513,6 +520,40 @@ class ForemanDispatcher:
                             {"p": json.dumps(plan, ensure_ascii=False) if plan else None, "s": status, "e": (error or "")[:1000] or None,
                              "ms": round((time.monotonic() - t0) * 1000), "pj": (plan or {}).get("project") if (plan or {}).get("repo") else None,
                              "i": did})
+
+
+# 계획 받기 실패 원인(11-10) — 「답에서 계획을 찾지 못했습니다」 하나로는 한도 · 빈 답 · 깨진 JSON · 호출 실패를 가를 수 없었다
+LIMIT_RE = re.compile(r"usage limit|hit your (?:usage )?limit|limit reached|rate[ _-]?limit|out of (?:extra )?usage|사용량 한도", re.I)
+FAIL_WHY = {"limit": "사용량 한도에 막혔습니다", "call": "claude 호출이 실패했습니다", "empty": "답이 비어 있습니다",
+            "noblock": "답에 계획(JSON)이 없습니다", "broken": "답의 형식이 깨졌습니다"}
+
+
+def _json_fault(s: str) -> str:
+    """계획 후보를 읽을 때 난 JSON 오류와 그 자리 앞뒤 — 나중에 무엇이 깨졌는지 볼 수 있게."""
+    m = re.findall(r"```json\s*(\{.*?\})\s*```", s, re.S)
+    c = m[-1] if m else s[s.find("{"): s.rfind("}") + 1]
+    try:
+        d = json.loads(c)
+    except ValueError as e:
+        pos = getattr(e, "pos", None)
+        near = c[max(0, pos - 60): pos + 60].replace("\n", "⏎") if isinstance(pos, int) else ""
+        return f"{getattr(e, 'msg', type(e).__name__)} (줄 {getattr(e, 'lineno', '?')} 칸 {getattr(e, 'colno', '?')}) 근처: {near}"
+    return "JSON에 mode가 없습니다" if isinstance(d, dict) else "JSON이 객체가 아닙니다"
+
+
+def diagnose(rc: int | None, result: str, err: str, j: dict[str, Any] | None) -> tuple[str, str]:
+    """계획 받기가 실패한 까닭 — (종류, 자세히). 종류는 FAIL_WHY의 키. 자세히는 비밀값을 가리기 전의 짧은 글."""
+    result, err = result or "", err or ""
+    j = j if isinstance(j, dict) else {}
+    if LIMIT_RE.search(result) or LIMIT_RE.search(err) or j.get("api_error_status") == 429:
+        return "limit", (result or err)[:200]
+    if rc or j.get("is_error"):
+        return "call", f"종료 코드 {rc}" + (f" · {j.get('subtype')}" if j.get("subtype") else "") + f" — {(err or result)[:200]}"
+    if not result.strip():
+        return "empty", f"stderr: {err[:200]}" if err.strip() else ""
+    if "{" not in result:
+        return "noblock", ""
+    return "broken", _json_fault(result)
 
 
 def parse_plan(s: str) -> dict[str, Any] | None:
