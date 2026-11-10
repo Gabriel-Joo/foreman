@@ -123,10 +123,10 @@ body { --term-h:0px; }
 .term[hidden] { display:none; }
 .term.open { height:55dvh; min-height:min(320px, 45dvh); max-height:65dvh; }   /* 11-08 45 → 55dvh(사용자 — 더 높게) */   /* 작은 창에서도 위에 머리말 · 픽셀 화면이 남게 창 높이 비율로 */
 .term-bar { display:flex; gap:10px; align-items:center; height:36px; flex:none; padding:0 12px; overflow:hidden; }
-.term-bar button { padding:3px 10px; font-weight:600; }
+.term-bar button { padding:3px 10px; font-weight:600; flex:none; white-space:nowrap; }   /* 11-10 경고 글이 길면 [▼ 터미널]이 "터/미"로 세로로 접혀 높이 107px — 막대 밖(터미널 위)으로 나갔다 */
 .term-pick { width:auto; flex:none; padding:2px 6px; font-weight:600; }   /* 11-10 지금 열린 프로젝트 터미널 · 바꾸기 */
 .term-pick[hidden] { display:none; }
-.term-bar .warn { flex:none; white-space:nowrap; }
+.term-bar .warn { flex:0 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }   /* 11-10 줄어드는 것은 경고 글(말줄임) — 버튼 · 고르기 칸이 아니다 */
 .term-last { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:ui-monospace, monospace; }
 .term-note { flex:none; }
 .term-reqs { flex:none; display:grid; gap:6px; padding:0 12px; max-height:30%; overflow:auto; }

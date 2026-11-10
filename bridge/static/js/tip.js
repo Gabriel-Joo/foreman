@@ -148,6 +148,9 @@ export function attachDomTips(root = document) {
   root.addEventListener('mouseover', (ev) => {
     const t = ev.target.closest && ev.target.closest('[data-tip], [title]');
     if (!t || t === cur) return;
+    // iframe(터미널)에는 띄우지 않는다(11-10) — 안에서 움직이는 마우스는 이 문서에 mouseout · mousedown을 주지 않아
+    // 툴팁이 iframe 왼쪽 아래(= 셸 프롬프트 줄) 위에 그대로 남았다
+    if (t.tagName === 'IFRAME') return;
     if (t.hasAttribute('title')) { if (t.title) t.dataset.tip = t.title; t.removeAttribute('title'); }
     if (!t.dataset.tip) return;
     cur = t;

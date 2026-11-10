@@ -6,7 +6,10 @@
 
 - 테마 × 창 크기 × 화면마다 `window.office.layoutAudit()`(사람이 가구 · 소품 · 이름표에 가려지나) · `propAudit()`(소품 그림) ·
   `audit()`(고정 안 된 것)을 돌리고, 화면마다 `nameAudit()`(사람 이름이 구역 이름표 · 다른 이름과 겹치나, 11-06)를 세고 PNG를 찍는다. 결과는 `<out>/report.json`, 사진은 `<out>/<테마>_<크기>_<화면>.png`
-- 테마 × 크기마다 `termAudit`(11-10) — 패널 입력 칸이 패널 · 창 밖으로 넘치나 · 터미널과 겹치나, 터미널을 연 채로 한 번 더(`<…>_term.png`, `--no-term`이면 닫힌 채만)
+- 테마 × 크기마다 `termAudit`(11-10) — 패널 입력 칸이 패널 · 창 밖으로 넘치나 · 터미널과 겹치나, 터미널을 연 채로 한 번 더(`<…>_term.png`, `--no-term`이면 닫힌 채만).
+  연 채로는 xterm 칸 폭 ≥ 글자 폭 · 이름표 줄 ↔ 터미널 겹침 · 툴팁이 터미널을 덮나(마우스를 올린 뒤도), 글씨 배율 전 단계 × dpr 1 · 0.7(`--no-term-sweep`이면 건너뜀)
+- **터미널을 여는 점검은 `/api/terminal/open`을 불러 실제 tmux 창을 바꾼다(select-window)** — :8000(라이브 셸)에서는 `--no-term`으로 돌리거나,
+  시험 ttyd를 따로 띄운 서버를 `--base`로 준다(11-10 `log/terminal_cell_20261110.md`)
 - 브라우저: playwright가 받아 둔 `~/.cache/ms-playwright/chromium_headless_shell-*/…/chrome-headless-shell`(설치 없음)
 - API 토큰은 `.env.bridge`에서 읽어 그 페이지의 localStorage에만 넣는다 — 출력 · 파일에 남기지 않는다
 - 문제가 하나라도 있으면 종료 코드 1(CLAUDE.md: 테마 자리 · 가구를 바꾸면 세 테마 모두 0건)
@@ -122,6 +125,55 @@ TERM_AUDIT_JS = """(()=>{
     const fw=f.getBoundingClientRect().width; if(sw>fw+1) out.push(`터미널 글자 칸(${Math.round(sw)})이 터미널(${Math.round(fw)})보다 넓음`);
     if(term[0]+term[2]>W+1) out.push('터미널이 창 오른쪽 밖으로 넘침'); }
   return out})()"""
+
+# 터미널을 연 채 그리기 점검(11-10 사용자 — "git push"가 "it push", 커서가 줄 끝이 아니라 `b` 자리, 「런슈즈 터미널」이 프롬프트 줄을 가림).
+# ① xterm 칸 폭 ≥ 글자 폭(장치 px 올림) ② 글씨 = 배율의 터미널 글씨 ③ 이름표 줄 ↔ iframe 겹침 ④ 툴팁 등 떠 있는 것이 터미널을 덮음.
+# 함수 하나를 페이지에 두고(window.__fmTermCheck) 연 직후 · 마우스를 올린 뒤 · 배율 단계마다(dpr 1 · 0.7) 부른다
+TERM_CHECK_DEF = """window.__fmTermCheck = async () => {
+  const out=[], f=document.getElementById('termFrame');
+  if(!f||!document.querySelector('.term.open')) return out;
+  let w,t; try{w=f.contentWindow;t=w.term}catch(e){return ['터미널 안을 읽지 못함']}
+  if(!t||!t.options) return ['xterm이 뜨지 않음'];
+  const m=await import('/static/js/uiscale.js');
+  const dpr=w.devicePixelRatio||1, cv=w.document.createElement('canvas').getContext('2d');
+  cv.font=`${t.options.fontSize}px ${t.options.fontFamily}`;
+  const g=cv.measureText('W'.repeat(50)).width/50;
+  const d=t._core&&t._core._renderService&&t._core._renderService.dimensions;
+  let cell=d&&d.css&&d.css.cell?d.css.cell.width:0;
+  if(!cell){const s=w.document.querySelector('.xterm-screen'); cell=s&&t.cols?s.getBoundingClientRect().width/t.cols:0}
+  const tag=`글씨 ${t.options.fontSize}px · dpr ${+dpr.toFixed(3)} · 간격 ${t.options.letterSpacing||0}`;
+  if(!(cell>0)) out.push(`xterm 칸 폭을 읽지 못함 — ${tag}`);
+  else if(cell*dpr+0.01<Math.ceil(g*dpr-0.02)) out.push(`xterm 칸 폭(${cell.toFixed(2)})이 글자 폭(${g.toFixed(2)})보다 좁음 — ${tag}`);
+  if(t.options.fontSize!==m.termFont()) out.push(`터미널 글씨 ${t.options.fontSize}px ≠ 배율 글씨 ${m.termFont()}px`);
+  const fr=f.getBoundingClientRect();
+  const ov=(a,b)=>Math.max(0,Math.min(a.right,b.right)-Math.max(a.left,b.left))*Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top));
+  const bar=document.querySelector('.term-bar');
+  if(bar){const o=ov(bar.getBoundingClientRect(),fr); if(o>0.5) out.push(`이름표 줄 · 터미널 겹침 ${Math.round(o)}px²`);
+    for(const e of bar.querySelectorAll('select,button,span')){ if(e.hidden||!e.getClientRects().length) continue;
+      const r=e.getBoundingClientRect(), o2=ov(r,fr);
+      if(o2>0.5) out.push(`이름표 줄의 ${e.id||e.className||e.tagName} · 터미널 겹침 ${Math.round(o2)}px²(y ${Math.round(r.top)}~${Math.round(r.bottom)}, 터미널 ${Math.round(fr.top)}부터)`)}}
+  for(const e of document.querySelectorAll('.tip:not([hidden]), .term-msg:not(:empty)')){
+    const o=ov(e.getBoundingClientRect(),fr); if(o>0.5) out.push(`${e.className}이(가) 터미널을 덮음 — ${e.textContent.trim().slice(0,30)}`)}
+  return out};
+1"""
+
+# 마우스가 터미널(iframe)에 들어갈 때 툴팁이 뜨나(11-10 ③ — iframe의 title이 툴팁이 되어 프롬프트 줄 위에 남았다). 안에서는 mouseout이 안 와 남는다
+TERM_HOVER_JS = """(async()=>{const f=document.getElementById('termFrame');
+  f.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));
+  await new Promise(r=>setTimeout(r,500));
+  const out=(await window.__fmTermCheck()).map(x=>`마우스를 터미널에 올린 뒤: ${x}`);
+  document.body.dispatchEvent(new MouseEvent('mousedown',{bubbles:true})); return out})()"""
+
+# 글씨 배율 단계마다 바꾼 직후(한 프레임 뒤) 점검 — 가장 작은 단계부터 끝까지, 끝나면 처음 배율로 돌려놓는다
+TERM_SWEEP_JS = """(async()=>{const m=await import('/static/js/uiscale.js'), out=[], i0=m.STEPS.indexOf(m.uiScale());
+  const frame=()=>new Promise(r=>requestAnimationFrame(()=>setTimeout(r,30)));
+  for(let k=0;k<m.STEPS.length;k++) m.step(-1);
+  for(let i=0;i<m.STEPS.length;i++){ if(i) m.step(1); await frame();
+    for(const x of await window.__fmTermCheck()) out.push(`배율 ${Math.round(m.uiScale()*100)}%: ${x}`)}
+  while(m.STEPS.indexOf(m.uiScale())>Math.max(0,i0)) m.step(-1);
+  return out})()"""
+
+TERM_DPRS = (1, 0.7)            # 브라우저 확대 100% · 70%(11-10 사용자 측정 dpr 0.698)
 
 VIEW_JS = """(()=>{const v=%s; if(v==='hq'||v==='map'){window.office.go(v); return v}
   const b=[...document.querySelectorAll('[data-room]')].find(b=>b.dataset.room===v||b.textContent.includes(v));
@@ -289,10 +341,22 @@ async def run(a: argparse.Namespace) -> int:
                         await p.ev("document.getElementById('termToggle').click(); 1")
                         await p.wait("(()=>{try{return !!document.getElementById('termFrame').contentWindow.term}catch(e){return false}})()", 8)
                         await asyncio.sleep(1.0)
-                        ta["open"] = await p.ev(TERM_AUDIT_JS) or []
+                        await p.ev(TERM_CHECK_DEF)
+                        ta["open"] = (await p.ev(TERM_AUDIT_JS) or []) + (await p.ev("window.__fmTermCheck()") or [])
                         f = out / f"{th}_{size}_term.png"
                         await p.shot(f)
                         shots.append({"view": "term", "png": str(f)})
+                        ta["open"] += await p.ev(TERM_HOVER_JS) or []
+                        # 글씨 배율 전 단계 × 브라우저 확대(dpr 1 · 0.7). dpr을 바꾼 "직후"는 보지 않는다 — 헤드리스의 Emulation은
+                        # matchMedia(resolution) change를 내지 않아(11-10 잼) xterm도 uiscale.js onDprChange도 반응하지 않는다. 배율을 바꾸면 그때 dpr로 다시 잰다
+                        if not a.no_term_sweep:
+                            for dpr in TERM_DPRS:
+                                if dpr != 1:
+                                    await p.call("Emulation.setDeviceMetricsOverride", width=w, height=h, deviceScaleFactor=dpr, mobile=False)
+                                    await asyncio.sleep(0.4)
+                                ta["open"] += [f"dpr {dpr} {x}" for x in await p.ev(TERM_SWEEP_JS) or []]
+                            await p.call("Emulation.setDeviceMetricsOverride", width=w, height=h, deviceScaleFactor=1, mobile=False)
+                            await asyncio.sleep(0.3)
                         await p.ev("document.getElementById('termToggle').click(); 1")
                     base["termAudit"] = ta
                     bad += len(ta["closed"]) + len(ta["open"] or [])
@@ -331,6 +395,8 @@ def main() -> None:
     ap.add_argument("--session", help="이 세션 패널을 연 채 찍는다(세션 id)")
     ap.add_argument("--eval", help="화면마다 돌려 결과를 report.json에 남길 JS 식")
     ap.add_argument("--no-term", action="store_true", help="터미널을 열어 보는 점검(termAudit 열림)을 건너뛴다 — 닫힌 채 점검은 한다")
+    ap.add_argument("--no-term-sweep", action="store_true",
+                    help="터미널을 연 채 글씨 배율 전 단계 × dpr 1 · 0.7 점검(11-10)을 건너뛴다 — 연 직후 점검 · 마우스 올림 점검은 한다")
     ap.add_argument("--wait", type=float, default=2.0, help="화면을 바꾼 뒤 기다릴 초(캐릭터가 걸어 들어갈 시간)")
     ap.add_argument("--clip", help="x,y,w,h(CSS 픽셀) — 그 부분만 2배로 한 장 더(<…>_clip.png)")
     ap.add_argument("--out")

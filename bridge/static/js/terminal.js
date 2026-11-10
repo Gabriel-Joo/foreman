@@ -3,7 +3,7 @@
 // 사람이 Enter를 치고 암호를 넣는다. 결과는 브리지가 부탁한 세션에 돌려준다(terminal_result).
 
 import { keep } from './render.js';
-import { applyTermFont } from './uiscale.js';
+import { applyTermFont, onDprChange } from './uiscale.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const PROJ = { runshoes: '런슈즈', 'petmint-rag-chatbot': '펫퍼민트', foreman: 'FOREMAN' };
@@ -24,7 +24,7 @@ export function createTerminal(store, { getProject } = {}) {
       <span class="right small muted term-note">사람이 직접 치는 셸 · 승인 정책 없음 · 친 명령은 비밀값을 가려 기록</span>
     </div>
     <div id="termReqs" class="term-reqs"></div>
-    <div class="term-body"><iframe id="termFrame" title="FOREMAN 터미널"></iframe><div id="termMsg" class="term-msg"></div></div>`;
+    <div class="term-body"><iframe id="termFrame" aria-label="FOREMAN 터미널"></iframe><div id="termMsg" class="term-msg"></div></div>`;
   document.body.appendChild(el);
   const $ = (id) => el.querySelector('#' + id);
   const frame = $('termFrame');
@@ -62,7 +62,8 @@ export function createTerminal(store, { getProject } = {}) {
     if (pick.innerHTML !== opts) pick.innerHTML = opts;
     pick.hidden = !shown;
     if (shown && shown.cwd) pick.dataset.tip = `터미널 프로젝트 — 지금 보이는 셸 창입니다. 바꾸면 그 프로젝트 폴더의 셸 창으로 갑니다.\n지금 폴더 ${shown.cwd.replace(/^\/home\/[^/]+/, '~')}`;
-    frame.title = cur ? `${plabel(cur)} 터미널` : 'FOREMAN 터미널';
+    // title이 아니라 aria-label(11-10) — title은 tip.js가 툴팁으로 바꿔, 마우스가 터미널에 들어가면 「런슈즈 터미널」이 프롬프트 줄 위에 떠 남았다
+    frame.setAttribute('aria-label', cur ? `${plabel(cur)} 터미널` : 'FOREMAN 터미널');
     const w = $('termProjWarn');
     const bad = err ? `터미널 창을 고르지 못했습니다 — ${err}` : want && cur !== want ? `고른 것(${plabel(want)})과 다른 터미널입니다` : '';
     w.textContent = bad; w.hidden = !bad;
@@ -88,6 +89,7 @@ export function createTerminal(store, { getProject } = {}) {
   function fitFont(tries = 20) { if (!applyTermFont(frame) && tries > 0) setTimeout(() => fitFont(tries - 1), 250); }
   frame.addEventListener('load', () => { fitFont(); if (open) setTimeout(focusShell, 200); });
   window.addEventListener('foreman-uiscale', () => fitFont(0));
+  onDprChange(() => fitFont(0));           // 브라우저 확대가 바뀌면 칸 폭 보정(letterSpacing)을 다시(11-10)
   window.addEventListener('resize', setHeight);
 
   $('termReqs').addEventListener('click', (ev) => {
