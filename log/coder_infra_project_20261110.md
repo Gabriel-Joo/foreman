@@ -77,6 +77,15 @@
 - 사용자: "인프라도 「다른 저장소 읽기만」에 넣어라. 다만 문서(docs)는 고칠 수 있어야 한다. 묶음 1에서 펫퍼민트 · 런슈즈 문서를 고쳐야 한다"
 - `approval.toml` `read_only_elsewhere = ["foreman", "ronanlab-infra"]` + 새 칸 `[repo_scope.writable]` `ronanlab-infra = ["runshoes/docs/", "petmint-rag-chatbot/docs/"]`
 - `bridge/reposcope.py` — 그 프로젝트의 **원본 저장소**(DB repo_path, realpath) 안 그 경로 아래면 Edit · Write를 거부하지 않는다. 그 저장소의 worktree · `docsx/` 같은 비슷한 이름 · `docs/../` 빠져나가기 · 설정의 `..` 항목은 예외가 아니다. FOREMAN 세션은 예외 없음
-- **git 쓰기(add · commit · push)는 그대로 막는다** — 인프라 세션이 고친 docs는 그 저장소 작업 트리에 커밋 안 된 채 남는다. 커밋은 그 저장소 세션 · 사용자가(또는 사용자가 정하면 docs 경로만 git add · commit을 푸는 것을 따로)
-- 시험 `test_infra_may_edit_docs_of_listed_repos_only`, 실제 approval.toml · 실제 경로로 판정 확인(펫퍼민트 · 런슈즈 docs 허용, 런슈즈 CLAUDE.md · FOREMAN docs 거부). pytest 562 통과
+- 시험 `test_infra_may_edit_docs_of_listed_repos_only`, 실제 approval.toml · 실제 경로로 판정 확인(펫퍼민트 · 런슈즈 docs 허용, 런슈즈 CLAUDE.md · FOREMAN docs 거부)
+
+### git add · commit 풀기 (사용자 11-10 — "git add는 경로를 명시한 것만, -A · . 는 막고, commit 허용, push 막아라")
+- 예외 저장소(런슈즈 · 펫퍼민트 원본)에서만, 예외 경로(docs/) 안에서만:
+  - **add** — 경로를 적은 것만(그 경로가 docs/ 아래 · docs 폴더 자체). `-A` · `--all` · `-u` · `.` · `:/` · `:` 매직 · 경로 없음 · `-f` 등 다른 옵션 · docs 밖 경로가 하나라도 섞임 → 거부. 허용 옵션은 `-v` · `-n` · `--`뿐
+  - **commit** — `-a` · `-am` · `--amend` · `-i` 등 목록 밖 옵션은 거부. 경로를 적으면(`git commit -m … -- docs/x.md`) docs/ 아래만
+  - **더한 것(사용자 지시 밖)**: 경로 없는 `git commit`은 PreToolUse 때 그 저장소 `git diff --cached --name-only`를 보고 **docs/ 밖이 스테이지에 있으면 거부**(거부 글에 그 파일 이름 · "git commit -- <경로>로"). 경로를 적은 add만 허용해도 그 저장소 세션이 미리 올려 둔 변경이 있으면 commit에 섞이기 때문. 못 읽으면 거부
+  - **push** · reset · checkout 등 그 밖의 git 쓰기는 그대로 거부
+- 리디렉션(`<<'EOF'` · `2>&1` · `> 파일`)은 경로로 치지 않는다(커밋 메시지 heredoc이 "docs/ 밖"으로 막혔던 것 — 시험 중 발견)
+- 시험 `test_infra_docs_git_add_commit` — 실제 `git init` 저장소로 add 허용 4 · 거부 11, commit 허용 · 거부, 다른 변경이 스테이지에 있을 때 거부 → 경로 적으면 허용, push · reset · checkout 거부. 실제 경로로도 확인. pytest **563 통과**
+- 남는 틈: Bash의 다른 쓰기(`sed -i` · 리디렉션으로 docs 밖 파일 쓰기)는 원래부터 보지 않는다(모듈 머리 주석)
 - 합친 뒤 브리지를 다시 띄워야 걸린다(approval.toml · reposcope.py). 지금 도는 인프라 세션 265는 그 전까지 막힘 없음(인프라가 아직 프로젝트가 아니다), 다시 띄운 뒤 265를 인프라로 옮기면 그때부터 걸린다
