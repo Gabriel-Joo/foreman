@@ -11,7 +11,21 @@ const BAR_H = 36;
 
 // getProject(11-10) — 지금 보는 현장 · 고른 세션의 프로젝트(office.js currentProject). 열 때 그 프로젝트의 셸 창을 보인다.
 // 전에는 셸 창이 하나라 [런슈즈]에서 열어도 FOREMAN 셸이 떴다. 프로젝트마다 tmux 창(bridge/terminal.py window_for)
+// 탭 id(11-10) — 이 탭만의 tmux 그룹 세션(deploy/shell/foreman-term-view). iframe 주소 ?arg=<탭>&arg=<처음 프로젝트>로 ttyd에 가고,
+// /open · /window에도 같이 준다 → 이 탭에서 창을 바꿔도 다른 탭의 터미널이 끌려가지 않는다(전에는 보이는 창이 모든 탭에 하나였다)
+export function termTabId(rand = Math.random) {
+  let s = 't';
+  while (s.length < 17) s += Math.floor(rand() * 36).toString(36);
+  return s;
+}
+// 방을 따라갈 프로젝트(11-10) — 방(현장)이면 그 프로젝트, 아니면(감독실 · 전체 · 라운지) 고른 세션의 프로젝트, 그것도 없으면 FOREMAN 창
+export function followProject(getProject) {
+  if (!getProject) return null;          // 대시보드(방이 없다) — 따라가지 않는다
+  const p = getProject();
+  return p && PROJ[p] ? p : 'foreman';
+}
 export function createTerminal(store, { getProject } = {}) {
+  const TAB = termTabId();
   const el = document.createElement('section');
   el.className = 'term';
   el.innerHTML = `
@@ -29,6 +43,9 @@ export function createTerminal(store, { getProject } = {}) {
   const $ = (id) => el.querySelector('#' + id);
   const frame = $('termFrame');
   let open = false, loaded = false, seenOpenReq = 0, seenVer = -1, lastConn = null, seenCookie = 0;
+  // ── 프로젝트 창(11-10) ── want = 고른 것, shown = 브리지가 돌려준 실제 창. 다르면 막대에 경고(고른 것과 다르면 틀린 것)
+  let want = null, shown = null;
+  const termSrc = () => `/terminal/?arg=${TAB}&arg=${encodeURIComponent(want || '')}`;
 
   function setHeight() {
     const h = open ? el.getBoundingClientRect().height : BAR_H;
@@ -39,7 +56,7 @@ export function createTerminal(store, { getProject } = {}) {
       // 쿠키는 대시보드가 연결될 때 이미 받았다(store.js hello). 패널을 열 때 한 번 더 받아 만료 · 재시작에 대비한다
       const j = await store.terminalSession();
       $('termMsg').textContent = j.running ? '' : '터미널 서버가 꺼져 있습니다 — 브리지 로그를 봅니다';
-      if (!loaded || force) { frame.src = '/terminal/'; loaded = true; }
+      if (!loaded || force) { frame.src = termSrc(); loaded = true; }
     } catch (err) {
       $('termMsg').textContent = `터미널을 열지 못했습니다 — ${err.message || err}`;
     }
@@ -51,8 +68,6 @@ export function createTerminal(store, { getProject } = {}) {
       if (ta) ta.focus();
     } catch { /* 아직 안 떴다 */ }
   }
-  // ── 프로젝트 창(11-10) ── want = 고른 것, shown = 브리지가 돌려준 실제 창. 다르면 막대에 경고(고른 것과 다르면 틀린 것)
-  let want = null, shown = null;
   const plabel = (p) => (store.state.projects.find((x) => x.name === p) || {}).label || PROJ[p] || p;
   function drawProj(err) {
     const pick = $('termPick'), names = store.state.projects.map((x) => x.name).filter((n) => n && PROJ[n]);
@@ -105,13 +120,19 @@ export function createTerminal(store, { getProject } = {}) {
   $('termRespawn').addEventListener('click', respawnShell);
   // 열려 있는 동안 실제 보이는 창을 3초마다 확인한다(11-10) — tmux의 보이는 창은 세션에 하나라 다른 탭 · CC 부탁 · tmux 키가 바꿀 수 있고,
   // 열 때 받은 값만 쥐고 있으면 이름표가 거짓이 된다("런슈즈 터미널"인데 petmint 셸). 못 읽으면 이름표를 못 믿는다고 경고한다
-  let winErr = false;
+  // 탭 세션(view)을 두 번 연달아 못 찾으면 알린다 — 이 탭이 다른 탭과 보이는 창을 함께 쓰는 옛 방식으로 붙었다(첫 연결 중에는 잠깐 없을 수 있다)
+  let winErr = false, noView = 0, seq = 0;
   async function checkWindow() {
     if (!open) return;
+    const my = seq;
     try {
-      const j = await store.terminalWindow();
+      const j = await store.terminalWindow(TAB);
+      if (my !== seq) return;                 // 그 사이 창을 골랐다 — 옛 답으로 덮지 않는다
+      noView = j.view === false && loaded ? noView + 1 : 0;
       const was = winErr; winErr = false;
-      if (was || !shown || shown.window !== j.window || shown.cwd !== j.cwd || !shown.shell_old !== !j.shell_old) { shown = j; drawProj(); }
+      if (noView >= 2) { drawProj('이 탭의 터미널 연결을 찾지 못했습니다 — 다른 탭과 보이는 창을 함께 씁니다. 터미널을 닫았다 열면 다시 붙습니다'); return; }
+      if (was || noView === 0 && shown && shown.view === false && j.view
+        || !shown || shown.window !== j.window || shown.cwd !== j.cwd || !shown.shell_old !== !j.shell_old) { shown = j; drawProj(); }
     } catch (e) {
       if (!winErr) { winErr = true; drawProj(`지금 보이는 창을 확인하지 못했습니다 — ${e.message || e}`); }
     }
@@ -119,18 +140,32 @@ export function createTerminal(store, { getProject } = {}) {
   setInterval(checkWindow, 3000);
   async function pickProject(p) {
     want = p || null;
-    try { shown = await store.terminalOpen(want); drawProj(); } catch (e) { drawProj(`터미널 창을 고르지 못했습니다 — ${e.message || e}`); }
+    const my = ++seq;                         // 방을 빨리 옮기면 늦게 온 앞 답이 뒤 답을 덮지 않게
+    try { const j = await store.terminalOpen(want, TAB); if (my === seq) { shown = j; drawProj(); } }
+    catch (e) { if (my === seq) drawProj(`터미널 창을 고르지 못했습니다 — ${e.message || e}`); }
   }
   $('termPick').addEventListener('change', (ev) => { pickProject(ev.target.value || null).then(() => setTimeout(focusShell, 100)); });
 
-  function setOpen(v, project) {           // project를 안 주면 지금 보는 현장의 것(getProject)
+  // 방을 따라간다(11-10 사용자 — "방을 옮기면 터미널이 열려 있는 채여도 그 방 프로젝트로") — 방 · 고른 세션이 바뀐 때만 고른다.
+  // 그래서 CC 부탁이 다른 프로젝트 창을 띄운 것은 사람이 방을 옮기기 전까지 그대로 둔다. 방이 바뀌는 곳이 office.js 여러 곳이라 짧게 물어본다
+  let followed = null;
+  setInterval(() => {
+    if (!open || !getProject) return;
+    const p = followProject(getProject);
+    if (p !== followed) { followed = p; pickProject(p); }
+  }, 300);
+
+  function setOpen(v, project) {           // project를 안 주면 지금 보는 방의 것(followProject)
     open = v;
     el.classList.toggle('open', v);
     document.body.classList.toggle('term-open', v);
     $('termToggle').textContent = v ? '▼ 터미널' : '▲ 터미널';
     $('termToggle').setAttribute('aria-expanded', String(v));
-    // 열 때 지금 보는 현장의 프로젝트 창으로(감독실 · 라운지 · 전체 지도면 지금 창 그대로)
-    if (v) Promise.all([connect(false), pickProject(project !== undefined ? project : getProject ? getProject() : null)]).then(() => setTimeout(focusShell, 300));
+    if (v) {
+      followed = followProject(getProject);
+      want = project !== undefined ? project : followed;    // connect가 처음 iframe 주소에 쓴다
+      Promise.all([connect(false), pickProject(want)]).then(() => setTimeout(focusShell, 300));
+    }
     requestAnimationFrame(setHeight);
   }
   $('termToggle').onclick = () => setOpen(!open);
@@ -193,7 +228,7 @@ export function createTerminal(store, { getProject } = {}) {
     if (t.cookieAt && t.cookieAt !== seenCookie) {
       const again = seenCookie !== 0;
       seenCookie = t.cookieAt;
-      if (again && loaded) { frame.src = '/terminal/'; }
+      if (again && loaded) { frame.src = termSrc(); }
     }
     lastConn = st.conn.status;
     requestAnimationFrame(setHeight);

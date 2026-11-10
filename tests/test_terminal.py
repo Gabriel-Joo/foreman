@@ -310,6 +310,102 @@ async def test_respawn_asks_first_then_new_shell(shell, own_sock):
     await m.stop()
 
 
+async def test_tab_views_do_not_drag_each_other(shell, own_sock):
+    """11-10 — 탭마다 그룹 세션: 한 탭에서 창을 골라도 다른 탭 · 기준 세션의 보이는 창은 그대로. 탭 세션이 없으면 기준 세션(view=False).
+    붙은 사람 없이 남은 탭 세션은 치운다(창 · 셸은 남는다)."""
+    p = FakePipeline()
+    m = TerminalManager(None, shell, p, MK, publish=p.publish)
+    m.socket = own_sock
+    await m.start()
+    base = shell.terminal_tmux_session
+    await m.window_for("foreman")
+    await m.window_for("runshoes")
+    for tab in ("tabAAAA01", "tabBBBB02"):
+        await tmux(m.socket, "new-session", "-d", "-t", f"={base}", "-s", f"{base}-v-{tab}")
+    a = await m.open_project("runshoes", "tabAAAA01")
+    assert a["project"] == "runshoes" and a["view"] is True
+    b = await m.open_project("foreman", "tabBBBB02")
+    assert b["project"] == "foreman" and b["view"] is True
+    assert (await m.current_view("tabAAAA01"))["project"] == "runshoes"    # B가 골라도 A는 그대로
+    assert (await m.current_view("tabBBBB02"))["project"] == "foreman"
+    base_win = (await m.current())["window"]
+    await m.open_project("petmint-rag-chatbot", "tabAAAA01")
+    assert (await m.current())["window"] == base_win                       # 기준 세션은 끌려가지 않는다
+    assert (await m.current_view("tabBBBB02"))["project"] == "foreman"
+    # 없는 탭 · 모양이 틀린 탭 → 기준 세션
+    assert (await m.current_view("tabZZZZ99"))["view"] is False
+    assert m.view_name("../x;rm") is None and m.view_name("short") is None
+    t0 = time.monotonic()
+    r = await m.open_project("runshoes", "tabZZZZ99")
+    assert r["view"] is False and r["project"] == "runshoes" and time.monotonic() - t0 < 4.5
+    # 치우기 — 막 만든 것(30초 안)은 두고, min_age=0이면 붙은 사람 없는 탭 세션만
+    assert await m.sweep_views() == []
+    gone = sorted(await m.sweep_views(min_age=0))
+    assert gone == [f"{base}-v-tabAAAA01", f"{base}-v-tabBBBB02"]
+    names = (await tmux(m.socket, "list-windows", "-t", f"={base}", "-F", "#{window_name}")).split()
+    assert {"foreman", "runshoes", "petmint-rag-chatbot"} <= set(names)
+    await m.stop()
+
+
+async def test_view_script_attaches_then_cleans_up(shell, own_sock):
+    """deploy/shell/foreman-term-view — ttyd가 연결마다 띄우는 것을 pty로 띄운다: 탭 세션이 그 프로젝트 창으로 붙고,
+    연결이 끝나면(프로세스 끝) 사라진다. 처음에 destroy-unattached를 붙기 전에 걸어 그 자리에서 사라지던 것 · 대상 표기(=이름:)를 다시 막는다."""
+    import pty
+    p = FakePipeline()
+    m = TerminalManager(None, shell, p, MK, publish=p.publish)
+    m.socket = own_sock
+    await m.start()
+    base = shell.terminal_tmux_session
+    await m.window_for("runshoes")
+    mfd, sfd = pty.openpty()
+    env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "TMUX_PANE")} | {"TERM": "xterm-256color"}
+    proc = await asyncio.create_subprocess_exec(str(shell.terminal_view_script), own_sock, base, str(shell.terminal_rcfile),
+                                                "tabPTY0001", "runshoes", stdin=sfd, stdout=sfd, stderr=sfd, env=env)
+    os.close(sfd)
+    try:
+        view = None
+        for _ in range(50):
+            view = await m._view("tabPTY0001")
+            if view:
+                rows = await tmux(m.socket, "list-sessions", "-F", "#{session_name}\t#{session_attached}")
+                if f"{base}-v-tabPTY0001\t1" in rows:
+                    break
+            await asyncio.sleep(0.1)
+        assert view, "탭 세션이 안 생겼다"
+        cur = await m.current_view("tabPTY0001")
+        assert cur["view"] and cur["project"] == "runshoes"
+        opt = await tmux(m.socket, "show-options", "-t", f"{view}", "destroy-unattached")
+        assert opt.strip() == "destroy-unattached on"
+    finally:
+        proc.terminate()
+        try:
+            await asyncio.wait_for(proc.wait(), 3)
+        except TimeoutError:
+            proc.kill()
+        os.close(mfd)
+    for _ in range(30):
+        if await m._view("tabPTY0001") is None:
+            break
+        await asyncio.sleep(0.1)
+    assert await m._view("tabPTY0001") is None                              # 연결이 끝나면 사라진다
+    assert (await m.current())["window"] is not None                       # 기준 세션 · 창은 남는다
+    await m.stop()
+
+
+def test_ttyd_args_filter():
+    from bridge.api.terminal import _ttyd_args
+
+    class W:
+        def __init__(self, q):
+            from starlette.datastructures import QueryParams
+            self.query_params = QueryParams(q)
+    assert _ttyd_args(W("arg=tabAAAA01&arg=runshoes")) == "?arg=tabAAAA01&arg=runshoes"
+    assert _ttyd_args(W("arg=tabAAAA01&arg=")) == "?arg=tabAAAA01"
+    assert _ttyd_args(W("arg=tabAAAA01&arg=a%3Bb")) == "?arg=tabAAAA01"       # 프로젝트 모양이 틀리면 탭만
+    assert _ttyd_args(W("arg=..%2Fx&arg=runshoes")) == ""                      # 탭 모양이 틀리면 아무것도
+    assert _ttyd_args(W("")) == ""
+
+
 async def test_prefill_refuses_when_shell_busy(shell):
     p = FakePipeline()
     m = TerminalManager(None, shell, p, MK, publish=p.publish)
@@ -383,3 +479,24 @@ def test_proxy_cookie_origin_ws(shell, tmp_path):
         c.post("/api/terminal/open", headers=h, json={"project": "foreman"})
         w1 = c.get("/api/terminal/window", headers=h).json()
         assert w1["project"] == "foreman" and w1["window"] == "foreman"
+        # 11-10 탭마다 그룹 세션 — iframe 주소의 ?arg=<탭>&arg=<프로젝트>가 WS 프록시 → ttyd -a → foreman-term-view로 간다
+        tab = "tabPROXY01"
+        with c.websocket_connect(f"/terminal/ws?arg={tab}&arg=runshoes", subprotocols=["tty"],
+                                 headers={"origin": "http://testserver"}) as ws:
+            ws.send_text('{"AuthToken":"","columns":100,"rows":30}')
+            for _ in range(50):
+                v = c.get(f"/api/terminal/window?tab={tab}", headers=h).json()
+                if v["view"]:
+                    break
+                time.sleep(0.1)
+            assert v["view"] and v["project"] == "runshoes"
+            v = c.post("/api/terminal/open", headers=h, json={"project": "foreman", "tab": tab}).json()
+            assert v["view"] and v["project"] == "foreman"
+            assert c.get("/api/terminal/window", headers=h).json()["project"] == "foreman"   # 기준 세션 그대로
+            c.post("/api/terminal/open", headers=h, json={"project": "runshoes", "tab": tab})
+            assert c.get("/api/terminal/window", headers=h).json()["project"] == "foreman"   # 탭이 골라도 기준은 안 끌려감
+        for _ in range(50):
+            if not c.get(f"/api/terminal/window?tab={tab}", headers=h).json()["view"]:
+                break
+            time.sleep(0.1)
+        assert c.get(f"/api/terminal/window?tab={tab}", headers=h).json()["view"] is False   # 연결이 끝나면 탭 세션도 끝
