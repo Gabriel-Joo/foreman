@@ -174,7 +174,8 @@ read = ["status", "log", "show", "diff", "ls-files", "ls-tree", "ls-remote", "re
         "merge-base", "count-objects", "check-ignore", "help", "version"]
 
 # 예외 — 이 프로젝트 세션이 다른 저장소에서 Edit · Write로 고쳐도 되는 곳 "<프로젝트>/<경로>/"(그 프로젝트 원본 저장소만, worktree 아님).
-# git 쓰기(add · commit · push)는 그대로 막는다 — 커밋은 그 저장소 세션이나 사용자가
+# git은 그 경로 안의 add · commit만(11-10 사용자 — 다른 변경이 섞이지 않게, bridge/reposcope.py):
+#   add는 경로를 적은 것만(git add -A · . 막음), commit은 -a · --amend 막고 스테이지가 그 경로 밖을 담으면 막음, push는 막음
 # 11-10 사용자: 인프라 묶음 1에서 펫퍼민트 · 런슈즈 문서를 고친다
 [repo_scope.writable]
 ronanlab-infra = ["runshoes/docs/", "petmint-rag-chatbot/docs/"]

@@ -71,10 +71,57 @@ def test_infra_may_edit_docs_of_listed_repos_only(tmp_path):
     assert ed(fm / "docs" / "a.md")                                 # 적지 않은 저장소
     assert ed(fm / "x" / "a.md")                                    # 설정의 ".." 항목은 버린다
     assert ed(rs / ".worktrees" / "rs-2" / "docs" / "a.md")         # 그 저장소의 worktree는 아니다
-    assert s.check("ronanlab-infra", cwd, "Bash", {"command": f"git -C {rs} commit -m docs"})   # git 쓰기는 그대로
+    assert s.check("ronanlab-infra", cwd, "Bash", {"command": f"git -C {rs} push"})   # push는 그대로
     assert not s.check("ronanlab-infra", cwd, "Bash", {"command": f"git -C {pm} status"})
     # FOREMAN 세션은 예외가 없다
     assert s.check("foreman", str(fm), "Edit", {"file_path": str(rs / "docs" / "a.md")})
+    assert s.check("foreman", str(fm), "Bash", {"command": f"git -C {rs} add docs/a.md"})
+
+
+def test_infra_docs_git_add_commit(tmp_path):
+    """11-10 사용자 — 예외 저장소에서 add는 경로를 적은 docs/만, commit 허용(스테이지에 docs 밖이 있으면 막음), push는 막는다."""
+    import subprocess
+    rs, inf = tmp_path / "runshoes", tmp_path / "infra"
+    for d in (rs, inf):
+        subprocess.run(["git", "init", "-q", str(d)], check=True)
+    (rs / "docs").mkdir()
+    cfg = tmp_path / "approval.toml"
+    cfg.write_text(CFG_INFRA)
+    s = RepoScope(cfg, repos=lambda: {"runshoes": str(rs), "ronanlab-infra": str(inf)}, free=())
+
+    def bash(c, cwd=str(inf)):
+        return s.check("ronanlab-infra", cwd, "Bash", {"command": c})
+
+    # add — 경로를 적은 docs/만
+    assert not bash(f"git -C {rs} add docs/ops/nodes.md docs/README.md")
+    assert not bash(f"cd {rs} && git add -- docs/a.md")
+    assert not bash(f"git -C {rs}/docs add a.md")                 # docs 안에서 상대 경로
+    assert not bash(f"git -C {rs} add docs")                      # docs 폴더 통째(그 안만 담긴다)
+    for c in (f"git -C {rs} add -A", f"git -C {rs} add .", f"git -C {rs} add --all", f"git -C {rs} add -u",
+              f"git -C {rs} add", f"git -C {rs} add CLAUDE.md", f"git -C {rs} add docs/a.md backend/x.java",
+              f"git -C {rs} add ../infra/x", f"git -C {rs} add :/", f"git -C {rs} add -f docs/a.md",
+              f"cd {rs}/docs && git add ."):
+        assert bash(c), c
+    # commit — 경로를 적으면 docs/만, -a · --amend 막음
+    assert not bash(f"git -C {rs} commit -m 'docs: 노드' -- docs/a.md")
+    assert not bash(f"cd {rs} && git add docs/a.md && git commit -F - <<'EOF'\n노드 문서\n\nCo-Authored-By: x\nEOF")
+    assert not bash(f"git -C {rs} add docs/a.md 2>&1 > /tmp/out.txt")   # 리디렉션은 경로가 아니다
+    for c in (f"git -C {rs} commit -a -m x", f"git -C {rs} commit --amend -m x", f"git -C {rs} commit -am x",
+              f"git -C {rs} commit -m x -- src/a.py", f"git -C {rs} commit -i docs/a.md backend/b"):
+        assert bash(c), c
+    # commit — 경로 없이: 스테이지가 docs/만이면 허용, 다른 세션이 올려 둔 docs 밖이 있으면 막음
+    (rs / "docs" / "a.md").write_text("a")
+    subprocess.run(["git", "-C", str(rs), "add", "docs/a.md"], check=True)
+    assert not bash(f"git -C {rs} commit -m x")
+    (rs / "app.py").write_text("x")
+    subprocess.run(["git", "-C", str(rs), "add", "app.py"], check=True)
+    why = bash(f"git -C {rs} commit -m x")
+    assert why and "app.py" in why
+    assert not bash(f"git -C {rs} commit -m x -- docs/a.md")       # 경로를 적으면 그 경로만 커밋된다
+    # push · 그 밖은 막는다
+    for c in (f"git -C {rs} push", f"git -C {rs} push origin main", f"git -C {rs} reset --hard",
+              f"git -C {rs} checkout -- docs/a.md", f"git -C {rs} add docs/a.md && git -C {rs} push"):
+        assert bash(c), c
 
 
 def test_git_writes_in_other_repo(tmp_path):

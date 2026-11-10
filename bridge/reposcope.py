@@ -8,7 +8,12 @@
   branch · tag · remote · stash · worktree는 목록 보기만 읽기로 친다. fetch도 그 저장소 .git에 쓰므로 막는다
 - /tmp 아래(스크래치 복제본)와 git 저장소가 아닌 곳(~/.claude 등)은 막지 않는다
 - 예외(11-10 사용자 — 인프라 묶음 1에서 펫퍼민트 · 런슈즈 문서를 고친다): `[repo_scope.writable]`에 적은 "<프로젝트>/<경로>/" 아래는
-  Edit · Write로 고칠 수 있다. 그 프로젝트의 원본 저장소(DB project.repo_path)만 — 그 저장소의 worktree는 아니다. git 쓰기는 그대로 막는다
+  Edit · Write로 고칠 수 있다. 그 프로젝트의 원본 저장소(DB project.repo_path)만 — 그 저장소의 worktree는 아니다.
+  git은 add · commit만 그 경로 안에서(사용자 11-10 — 다른 변경이 섞이지 않게):
+    add    경로를 적은 것만(그 경로 아래). -A · -u · . · :/ · 그 밖 옵션은 막는다
+    commit -a · --amend · -i 등은 막는다. 경로를 적으면 그 경로 아래만, 안 적으면 그 저장소 스테이지가 그 경로 아래만 담을 때
+           (다른 세션이 올려 둔 변경이 섞이지 않게 — PreToolUse 때 git diff --cached로 본다)
+    push · 그 밖의 쓰기는 그대로 막는다
 - Bash의 그 밖 쓰기(sed -i · 리디렉션)는 보지 않는다 — CC 샌드박스는 일상 명령을 시험한 뒤(사용자)
 """
 
@@ -134,8 +139,8 @@ class RepoScope:
                     return self._why(other, f"{tool} {path}")
             return None
         if tool == "Bash":
-            for other, what in self._git_writes(str(inp.get("command") or ""), base, own, scratch):
-                return self._why(other, what)
+            for why in self._git_writes(project, str(inp.get("command") or ""), base, own, scratch):
+                return why
         return None
 
     def _other(self, full: str, own: str, scratch: str | None) -> str | None:
@@ -150,18 +155,92 @@ class RepoScope:
             return None
         return top
 
-    def _writable(self, project: str, full: str, other: str) -> bool:
-        """full(실제 경로)이 [repo_scope.writable]에 적은 다른 프로젝트 원본 저장소의 그 경로 아래인가."""
+    def _subs(self, project: str, other: str) -> list[str]:
+        """[repo_scope.writable]에서 이 세션 프로젝트가 저장소 other(맨 위, 실제 경로)에서 고쳐도 되는 경로들("docs/")."""
         repos = self.repos()
-        for name, sub in self.writable.get(project, []):
-            repo = repos.get(name)
-            if not repo or os.path.realpath(repo) != other:
-                continue
-            if full.startswith(other.rstrip("/") + "/" + sub):
+        return [sub for name, sub in self.writable.get(project, [])
+                if repos.get(name) and os.path.realpath(repos[name]) == other]
+
+    @staticmethod
+    def _under(full: str, other: str, subs: list[str]) -> bool:
+        """full이 other의 그 경로 아래(그 폴더 자체 포함)인가."""
+        for sub in subs:
+            d = other.rstrip("/") + "/" + sub.rstrip("/")
+            if full == d or full.startswith(d + "/"):
                 return True
         return False
 
-    def _git_writes(self, cmd: str, base: str, own: str, scratch: str | None):
+    def _writable(self, project: str, full: str, other: str) -> bool:
+        """full(실제 경로)이 [repo_scope.writable]에 적은 다른 프로젝트 원본 저장소의 그 경로 아래인가."""
+        return self._under(full, other, self._subs(project, other))
+
+    # ── 예외 저장소의 git(11-10 사용자) — add는 경로를 적은 것만 · commit은 그 경로만 담길 때 · 나머지(push 등)는 막는다 ──
+    _ADD_OK = {"-v", "--verbose", "-n", "--dry-run", "--"}
+    _COMMIT_OK = {"-q", "--quiet", "-v", "--verbose", "-s", "--signoff", "--no-edit", "--no-verify", "-n", "--"}
+    _COMMIT_VAL = {"-m", "--message", "-F", "--file", "--author", "--date", "--cleanup"}
+
+    def _docs_git(self, sub: str, rest: list[str], target: str, other: str, subs: list[str]) -> str | None:
+        """예외 저장소에서 add · commit이 허용 범위인지 — 거부 이유 또는 None. 그 밖의 git 쓰기는 부른 쪽이 막는다."""
+        where = " · ".join(subs)
+        # 리디렉션(<<'EOF' · > out · 2>&1)은 인자가 아니다 — 기호와 그 대상, 기호 바로 앞의 fd 숫자를 뺀다
+        args: list[str] = []
+        skip = False
+        for k, a in enumerate(rest):
+            if skip:
+                skip = False
+                continue
+            if a and set(a) <= set("<>&"):          # 다음 토큰(파일 · EOF 표지 · ">&" 뒤 fd)은 대상
+                skip = True
+                continue
+            if a.isdigit() and k + 1 < len(rest) and rest[k + 1] and set(rest[k + 1]) <= set("<>&"):
+                continue
+            args.append(a)
+        rest = args
+        paths: list[str] = []
+        i, dashdash = 0, False
+        while i < len(rest):
+            a = rest[i]
+            name = a.split("=", 1)[0]
+            if not dashdash and a == "--":
+                dashdash = True
+            elif not dashdash and a.startswith("-"):
+                ok, val = (self._ADD_OK, set()) if sub == "add" else (self._COMMIT_OK, self._COMMIT_VAL)
+                if name in val:
+                    i += 0 if "=" in a else 1          # 값은 경로가 아니다(-m '메시지')
+                elif name not in ok:
+                    return f"git {sub} {a} — 이 저장소에서는 {where} 아래 경로를 적은 git add · commit만 됩니다(다른 변경이 섞이지 않게)."
+            else:
+                paths.append(a)
+            i += 1
+        if sub == "add" and not paths:
+            return f"git add — 경로를 적어야 합니다({where} 아래 파일)."
+        for p in paths:
+            if p in (".", "*", ":/") or p.startswith(":") or "$" in p:
+                return f"git {sub} {p} — {where} 아래 경로를 적은 것만 됩니다(git add -A · . 는 막습니다)."
+            if not self._under(_resolve(p, target), other, subs):
+                return f"git {sub} {p} — {where} 밖입니다. 이 저장소에서는 {where} 아래만 add · commit합니다."
+        if sub == "commit" and not paths:
+            staged = self._staged(other)
+            if staged is None:
+                return "git commit — 스테이지에 무엇이 올라 있는지 확인하지 못해 막았습니다. 경로를 적어 git commit -- <경로>로 하세요."
+            bad = [f for f in staged if not self._under(os.path.join(other, f), other, subs)]
+            if bad:
+                return (f"git commit — 이 저장소 스테이지에 {where} 밖의 변경이 올라 있습니다({', '.join(bad[:3])}"
+                        f"{' …' if len(bad) > 3 else ''}). 다른 세션의 변경일 수 있어 섞지 않습니다 — git commit -- <경로>로 경로를 적으세요.")
+        return None
+
+    @staticmethod
+    def _staged(repo: str) -> list[str] | None:
+        """그 저장소 스테이지에 올라 있는 파일(저장소 기준 경로). 못 읽으면 None."""
+        import subprocess
+        try:
+            r = subprocess.run(["git", "-C", repo, "diff", "--cached", "--name-only", "-z"],
+                               capture_output=True, timeout=5, check=True)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return [f for f in r.stdout.decode("utf-8", "replace").split("\0") if f]
+
+    def _git_writes(self, project: str, cmd: str, base: str, own: str, scratch: str | None):
         cur = base
         for line in _heredoc_free(cmd):
             seg: list[str] = []
@@ -173,12 +252,12 @@ class RepoScope:
                     if seg[0] in ("cd", "pushd") and len(seg) > 1 and "$" not in seg[1]:
                         cur = _resolve(seg[1], cur)
                     else:
-                        hit = self._git_seg(seg, cur, own, scratch)
-                        if hit:
-                            yield hit
+                        why = self._git_seg(project, seg, cur, own, scratch)
+                        if why:
+                            yield why
                 seg = []
 
-    def _git_seg(self, seg: list[str], cur: str, own: str, scratch: str | None) -> tuple[str, str] | None:
+    def _git_seg(self, project: str, seg: list[str], cur: str, own: str, scratch: str | None) -> str | None:
         i, target = 0, cur
         while i < len(seg) and re.match(r"^[A-Za-z_]\w*=", seg[i]):   # GIT_DIR=… git …
             k, v = seg[i].split("=", 1)
@@ -206,9 +285,14 @@ class RepoScope:
         if _is_read(sub, rest):
             return None
         if "$" in target:
-            return target, "git " + sub
+            return self._why(target, "git " + sub)
         other = self._other(target, own, scratch)
-        return (other, "git " + sub) if other else None
+        if not other:
+            return None
+        subs = self._subs(project, other)
+        if subs and sub in ("add", "commit"):
+            return self._docs_git(sub, rest, target, other, subs)
+        return self._why(other, "git " + sub)
 
     @staticmethod
     def _why(other: str, what: str) -> str:
