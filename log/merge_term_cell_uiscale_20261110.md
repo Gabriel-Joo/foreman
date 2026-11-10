@@ -14,7 +14,12 @@
 - `merge-tree` 따로: main ← 254 충돌 없음, 254 ← cc/foreman(`e409e1f` · `439ba6a`, terminal.js 겹침) 충돌 없음
 - `end:true`로 합침 → 다른 pytest 없음 확인 뒤 **552 통과** → push(`fc5809b`)
 
+## 253 합침(사용자 "253도 합쳐라")
+
+- cc/foreman(세션 253, `e409e1f` · `439ba6a` — 창 이름표 확인 `GET /api/terminal/window` · 창 폴더 경고). 커밋 안 된 변경 0, `merge-tree` main ← 253 충돌 없음을 따로 본 뒤 `end:true`로 합침(→ `c294e40` · `6bb7b85`)
+- 다른 pytest 없음 확인 뒤 **552 통과** → push. 승인 대기 0 → **브리지 13:33:28 다시 띄움**(상태 확인 따로, 경고 로그 없음). worktree 남은 것 없음
+- `GET /api/terminal/window` 200 — 답 `{"project":"foreman","window":"foreman","cwd":"…/petmint-rag-chatbot"}`: 지금 FOREMAN 창의 셸이 펫퍼민트 폴더에 들어가 있다 → FOREMAN 터미널을 열면 439ba6a의 폴더 경고가 떠야 맞다
+
 ## 남은 것
 
-- cc/foreman(세션 253, `e409e1f` · `439ba6a` — 창 이름표 확인 · 폴더 경고)은 아직 안 합침. 새 main 위로도 충돌 없음. `bridge/api/terminal.py`가 바뀌므로 합치면 브리지를 다시 띄워야 한다
 - 사용자 브라우저에서 볼 것(254가 헤드리스로 못 본 것): 긴 줄 끝의 커서 위치, 터미널에 마우스를 올려도 이름표가 안 뜨는지, Ctrl+− · Ctrl+0 뒤 글자 간격(`onDprChange` 미검증)
