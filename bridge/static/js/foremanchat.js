@@ -18,6 +18,9 @@ export function josa(w, a = '이', b = '가') {
   const c = String(w).charCodeAt(String(w).length - 1);
   return w + (c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 ? a : b);
 }
+// [버리기]가 할 일(11-10) — 계획(dispatch)이 있고 아직 'planned'일 때만 서버에 버림을 적는다. 계획을 못 받았으면(실패한 계획은
+// 서버에 'failed'로 이미 남는다) 서버를 부르지 않고 카드만 치운다
+export const dropAction = (disp) => (disp && disp.dispatch_id != null && (disp.status || 'planned') === 'planned' ? 'server' : 'clear');
 const projLabel = (name) => ((window.foreman && window.foreman.state.projects.find((p) => p.name === name)) || {}).label || name;
 
 function headers(json) {
@@ -95,12 +98,18 @@ function mount(dlg) {
     dlg.classList.remove('on');
     window.foremanHandoff.start(Number(b.dataset.hand));
   });
+  // 계획 카드와 그 계획(disp)은 함께 치운다(11-10) — 전에는 disp만 비우고 카드는 남아(.fm-plan의 display가 hidden을 덮었다)
+  // 계획을 못 받은 뒤 남은 옛 카드의 [버리기]가 "disp is null"로 실패했다
+  function clearPlan() {
+    disp = null;
+    $('fmPlan').hidden = true;
+    $('fmPlan').innerHTML = '';
+  }
   function reset(project) {
     who();
-    disp = null;
+    clearPlan();
     inboxId = null;
     $('fmWake').hidden = true;
-    $('fmPlan').hidden = true;
     $('fmAsk').disabled = false;
     msg('');
     setRoom(project);
@@ -109,14 +118,16 @@ function mount(dlg) {
   async function ask() {
     const text = $('fmText').value.trim();
     if (!text) { msg('뭘 하려는지 적어 주세요.', 'bad'); return; }
-    $('fmAsk').disabled = true; $('fmPlan').hidden = true; $('fmWake').hidden = true;
+    if ($('fmAsk').disabled) return;        // Ctrl+Enter · [다시 물어보기]도 여기로 — 이미 묻는 중이면 겹치지 않는다
+    $('fmAsk').disabled = true; clearPlan(); $('fmWake').hidden = true;
     const t0 = Date.now();
     const wait = () => msg(`${josa(fmName())} 계획을 세우고 있습니다… ${Math.round((Date.now() - t0) / 1000)}초\n프로젝트 상황 · 노트 · 문서를 읽느라 보통 20초쯤 걸립니다.`);
     wait();
     const tick = setInterval(wait, 1000);
     try {
-      [disp, opts] = await Promise.all([api('POST', '/api/foreman/plan', { text, project: room }), opts || api('GET', '/api/spawn/options')]);
+      const [d, o] = await Promise.all([api('POST', '/api/foreman/plan', { text, project: room }), opts || api('GET', '/api/spawn/options')]);
       clearInterval(tick);
+      disp = d; opts = o;
       msg(`계획이 나왔습니다(${Math.round(disp.ms / 1000)}초). 아래에서 확인하고, 고칠 것은 고친 뒤 [이대로 시작]을 누릅니다.`, 'ok');
       draw(disp.plan);
     } catch (e) { clearInterval(tick); msg(`계획을 받지 못했습니다 — ${e.message}\n아래 "계획 없이 직접 띄우기"로 띄울 수 있습니다.`, 'bad'); }
@@ -136,8 +147,8 @@ function mount(dlg) {
         $('fmWake').innerHTML = `<b>실패 이벤트가 부른 제안입니다</b><div>• ${esc(d.wake_text || '')}</div>
           <div class="small muted">${esc(josa(fmName()))} 계획만 세웠습니다. [이대로 시작]을 눌러야 시작합니다.</div>`;
       }
-      if (!d.plan) { msg(`이 계획은 만들어지지 못했습니다 — ${d.error || d.status}`, 'bad'); return; }
-      disp = { dispatch_id: d.dispatch_id, plan: d.plan };
+      if (!d.plan) { clearPlan(); msg(`이 계획은 만들어지지 못했습니다 — ${d.error || d.status}`, 'bad'); return; }
+      disp = { dispatch_id: d.dispatch_id, plan: d.plan, status: d.status };
       draw(d.plan, d.status);
       msg(d.status === 'planned' ? '아래에서 확인하고, 고칠 것은 고친 뒤 [이대로 시작]을 누릅니다.' : `이미 ${d.status === 'started' ? '시작한' : '버린'} 계획입니다.`,
         d.status === 'planned' ? 'ok' : 'warn');
@@ -255,6 +266,7 @@ function mount(dlg) {
     }
   }
   async function drop() {
+    if (dropAction(disp) === 'clear') { clearPlan(); msg(''); return; }
     try {
       await api('POST', `/api/foreman/dispatch/${disp.dispatch_id}/discard`);
       $('fmStartMsg').className = 'small muted';
@@ -294,10 +306,11 @@ async function openWith(project, text, inboxId) {
   await open(project || null);
   if (ui) ui.prefill(text, inboxId);
 }
-window.foremanChat = { open, openDispatch, openWith };
-
-// [+ 세션] 창은 office.js가 처음 그릴 때 만든다 — 생기면 붙는다
-const watch = new MutationObserver(() => { const d = document.getElementById('nsDlg'); if (d) { mount(d); watch.disconnect(); } });
-watch.observe(document.body, { childList: true });
-const d0 = document.getElementById('nsDlg');
-if (d0) { mount(d0); watch.disconnect(); }
+// [+ 세션] 창은 office.js가 처음 그릴 때 만든다 — 생기면 붙는다. document가 없으면(node 시험) 붙이지 않는다
+if (typeof document !== 'undefined') {
+  window.foremanChat = { open, openDispatch, openWith };
+  const watch = new MutationObserver(() => { const d = document.getElementById('nsDlg'); if (d) { mount(d); watch.disconnect(); } });
+  watch.observe(document.body, { childList: true });
+  const d0 = document.getElementById('nsDlg');
+  if (d0) { mount(d0); watch.disconnect(); }
+}
