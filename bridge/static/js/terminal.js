@@ -66,7 +66,11 @@ export function createTerminal(store, { getProject } = {}) {
     frame.setAttribute('aria-label', cur ? `${plabel(cur)} 터미널` : 'FOREMAN 터미널');
     const w = $('termProjWarn');
     const now = cur ? `${plabel(cur)} 터미널` : (shown && shown.window) || '알 수 없는 창';
-    const bad = err ? `터미널 창을 고르지 못했습니다 — ${err}` : want && cur !== want ? `고른 것(${plabel(want)})과 다른 터미널입니다 — 지금 보이는 것은 ${now}입니다` : '';
+    // 창 이름은 맞아도 셸이 다른 프로젝트 폴더로 옮겨 가 있을 수 있다(11-10 — FOREMAN 창에서 cd로 petmint 폴더에 들어가 있었다)
+    const inDir = shown && shown.cwd ? shown.cwd.split('/').find((seg) => PROJ[seg]) : null;
+    const bad = err ? `터미널 창을 고르지 못했습니다 — ${err}`
+      : want && cur !== want ? `고른 것(${plabel(want)})과 다른 터미널입니다 — 지금 보이는 것은 ${now}입니다`
+      : cur && inDir && inDir !== cur ? `${plabel(cur)} 터미널인데 셸은 ${plabel(inDir)} 폴더에 들어가 있습니다` : '';
     w.textContent = bad; w.hidden = !bad;
   }
   // 열려 있는 동안 실제 보이는 창을 3초마다 확인한다(11-10) — tmux의 보이는 창은 세션에 하나라 다른 탭 · CC 부탁 · tmux 키가 바꿀 수 있고,
