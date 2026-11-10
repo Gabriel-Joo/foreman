@@ -128,7 +128,6 @@ body { --term-h:0px; }
 .term-pick[hidden] { display:none; }
 .term-bar .warn { flex:0 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }   /* 11-10 줄어드는 것은 경고 글(말줄임) — 버튼 · 고르기 칸이 아니다 */
 .term-last { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:ui-monospace, monospace; }
-.term-note { flex:none; }
 .term-reqs { flex:none; display:grid; gap:6px; padding:0 12px; max-height:30%; overflow:auto; }
 .term-reqs:not(:empty) { padding-bottom:6px; }
 .term-req { display:flex; gap:10px; align-items:flex-start; border:1px solid var(--warn); border-left:5px solid var(--warn); border-radius:8px; padding:6px 10px; background:var(--card); }
@@ -143,7 +142,6 @@ body { --term-h:0px; }
 
 @media (max-width: 760px) {
   .appr { flex-direction:column; }
-  .term-note { display:none; }
   .term.open { height:calc(100dvh - 50px); max-height:none; }   /* 휴대폰 폭 — 터미널이 화면을 거의 다 쓴다(원래 설계) */
   .term-req { flex-direction:column; }
 }
