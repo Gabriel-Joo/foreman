@@ -26,7 +26,7 @@
   label:has(> input[type=radio]), label:has(> input[type=checkbox]) { display:inline-flex; align-items:center; gap:0; cursor:pointer; }
   input[type=checkbox] { width:auto; }
   /* 머리말 두 줄(11-08) — 1줄 어디로 갈지 · 2줄 상태와 설정. 글씨 크기 배율(--ui-zoom)을 패널과 같이 받는다 */
-  .otop { display:flex; flex-direction:column; gap:5px; padding:6px 14px; border-bottom:1px solid var(--line); flex:none; zoom:var(--ui-zoom, 1.2); }
+  .otop { display:flex; flex-direction:column; gap:5px; padding:6px 14px; border-bottom:1px solid var(--line); flex:none; zoom:var(--ui-zoom); }
   .otop-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; min-width:0; }
   .otop-sub { gap:12px; font-size:16px; }
   .otop .brand { font-size:19px; }
@@ -129,7 +129,7 @@
   /* 11-10 rows=6가 정한 높이(약 9em)가 낮은 창 · 큰 글씨에서 입력 칸을 패널 밖으로 밀었다 — 높이를 CSS로 정한다(끌어서 키울 수 있다) */
   .oside .input textarea { resize:vertical; height:6.5em; min-height:2.6em; max-height:45dvh; }
   /* 글씨 크기(11-08, js/uiscale.js) — 패널 안쪽 전체를 한 배율로. 폭은 그대로(안쪽 글이 그만큼 접힌다) */
-  .oside-main { zoom:var(--ui-zoom, 1.2); }
+  .oside-main { zoom:var(--ui-zoom); }
   @media (max-height: 860px) { .oside .input textarea { height:3.6em; } }
   @media (max-height: 800px) { .oside .input textarea { height:2.6em; } }   /* 11-10 1366×768 · 150%에서 입력 칸이 20px 넘쳤다 */   /* 낮은 창 — 대화가 보이게(끌어서 키울 수 있다) */
   .ofont { display:inline-flex; align-items:center; gap:4px; }
