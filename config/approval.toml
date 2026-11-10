@@ -19,9 +19,9 @@
 # ask와 승인 결과는 로그에도 이유와 함께 남는다.
 
 [defaults]
-mode = "observe"        # enforce: 판정을 CC에 돌려준다 / observe: 기록만 하고 CC에는 아무것도 돌려주지 않는다
-                        # 11-10 임시 observe(사용자: 인프라 묶음 1 작업 동안 승인 카드를 풀어라, 끝나면 다시 건다) — 인프라 세션은
-                        # 프로젝트가 없어(떠돌이) 이 기본값을 따른다. FOREMAN은 아래 [projects.foreman] enforce 그대로. 끝나면 "enforce"로
+mode = "enforce"        # enforce: 판정을 CC에 돌려준다 / observe: 기록만 하고 CC에는 아무것도 돌려주지 않는다
+                        # 11-10 인프라 묶음 1 동안 임시 observe였다가, 인프라가 프로젝트로 등록돼(0029) 세션 265를 옮긴 뒤 되돌림 —
+                        # 인프라의 임시 observe는 아래 [projects.ronanlab-infra]
 # 규칙에 없는 도구 호출. "ask"로 하면 auto mode가 자동 통과시키던 평범한 작업(실측 20일 약 9,700건)이 모두 승인 창이 된다
 unmatched = "pass"
 remote_approval = true  # 승인 창이 뜨면(우리 ask든 CC 자체든) 텔레그램으로 알리고 브라우저에서 승인 · 거부를 받는다

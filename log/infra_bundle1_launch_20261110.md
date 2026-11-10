@@ -22,3 +22,13 @@
 - **세션 265**(opus, coder, `~/ronanlab-infra`, worktree 없이 — ArgoCD가 main을 본다): `/api/spawn`으로 띄움. 처음 쓰는 폴더라 CC 신뢰 확인 창(기본 선택이 "No, exit")이 떠 관리자가 "Yes, I trust this folder"로 옮겨 확정 → 지시문이 들어가 시작. 지시문: 사용자 원문 + 위 「미리 본 것」 + 다른 세션(259 런슈즈 코더 · 260 펫퍼민트 서기)과 docs 겹침 주의 + 되돌릴 수 없는 것은 하지 않기
   - 교장 경로가 아니라 계획 기록(dispatch)이 없다 — 인프라가 프로젝트가 아니어서
 - **세션 266**(코더 · opus, dispatch 218, `cc/foreman`): 인프라를 프로젝트 `ronanlab-infra`(화면 「인프라」)로 등록 — project 표 · 박힌 곳(terminal · office.js · overlap · notify · approval observe · notion off) · 출하장 비움 · 265가 합친 뒤 인프라 방 소속이 되는지
+
+## 266 합침 · 265 옮김 (19:4x)
+
+- 266 커밋 넷: 인프라 등록(0029 시드, 출하장 「출하장 없음」) · **사용자가 266에 직접 더 시킨 것** — 인프라도 「다른 저장소 읽기만」 + 예외 `[repo_scope.writable]`(런슈즈 · 펫퍼민트 원본 docs/만 Edit · Write), 그 저장소 git은 경로 적은 `add` · `commit`만 허용 · **push 막음** · worktree 안내(`wt_block`)에서 FOREMAN만의 규칙 빼기(런슈즈 세션 요청)
+- `merge-tree` 충돌 없음 → `end:true` 합침(`361801a` ~ `9adbc65`) → 다른 pytest 없음 확인 뒤 **564 통과** → push
+- `bridge.db.migrate` → 0029 적용(project id 4, 포먼 35 · 코더 36)
+- 265는 저절로 안 옮겨진다(이미 '미분류' 캐릭터 4에 붙음, 266 기록) → `UPDATE character_session SET character_id=36 WHERE id=265 AND character_id=4`(1행)
+- `approval.toml` `[defaults] mode` observe → **enforce로 되돌림**(인프라 임시 observe는 `[projects.ronanlab-infra]`가 맡음). 승인 대기 0 → **브리지 19:43:18 다시 띄움**(경고 없음)
+- 확인: `/api/dashboard` 인프라(label 「인프라」)에 265 coder ACTIVE. `screen.py --no-term` 오피스 · 현장 1366 좁게 · 넓게 × [⌂] · 인프라 방 점검 0, 사진: 머리줄 「인프라 작업 1」, 방 아래 줄 「출하장 없음」 · 코더가 커밋 데스크, 현장 현황판 넷째 칸 「인프라」, 패널 목록 「인프라 — 265」
+- **알아둘 것**: 265 지시문에는 "push도 네가 한다"가 있었는데, 이제 런슈즈 · 펫퍼민트 docs는 커밋까지만 되고 push는 막힌다(사용자가 266에 정한 규칙). 그 두 저장소 docs push는 누가 할지 사용자에게
