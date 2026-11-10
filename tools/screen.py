@@ -6,6 +6,8 @@
 
 - 테마 × 창 크기 × 화면마다 `window.office.layoutAudit()`(사람이 가구 · 소품 · 이름표에 가려지나) · `propAudit()`(소품 그림) ·
   `audit()`(고정 안 된 것)을 돌리고, 화면마다 `nameAudit()`(사람 이름이 구역 이름표 · 다른 이름과 겹치나, 11-06)를 세고 PNG를 찍는다. 결과는 `<out>/report.json`, 사진은 `<out>/<테마>_<크기>_<화면>.png`
+- 화면마다 `labelAudit()`(11-10) — 지금 그린 그대로: 이름표(구역 · 출하 라인 · 캐릭터 이름 · 말풍선) ↔ 사람 몸, 이름표끼리, 구역 · 출하 라인 이름표 ↔ 가구(그림의 불투명 범위).
+  layoutAudit(좌석 자리 기준) · nameAudit(이름 ↔ 구역 이름표)이 0건인데 실제로는 겹치던 것을 잡는다
 - 테마 × 크기마다 `termAudit`(11-10) — 패널 입력 칸이 패널 · 창 밖으로 넘치나 · 터미널과 겹치나, 터미널을 연 채로 한 번 더(`<…>_term.png`, `--no-term`이면 닫힌 채만).
   연 채로는 xterm 칸 폭 ≥ 글자 폭 · 이름표 줄 ↔ 터미널 겹침 · 툴팁이 터미널을 덮나(마우스를 올린 뒤도), 글씨 배율 전 단계 × dpr 1 · 0.7(`--no-term-sweep`이면 건너뜀)
 - **터미널을 여는 점검은 `/api/terminal/open`을 불러 실제 tmux 창을 바꾼다(select-window)** — :8000(라이브 셸)에서는 `--no-term`으로 돌리거나,
@@ -301,7 +303,8 @@ async def run(a: argparse.Namespace) -> int:
                         bad += 1
                         continue
                     await asyncio.sleep(a.wait)
-                    la = await p.ev("window.office.layoutAudit()")
+                    # 좌석 점검만 — 이름표 점검(labelAudit, 지금 화면 그대로)은 아래 화면마다 센다(11-10)
+                    la = await p.ev("window.office.layoutAudit({labels: false})")
                     pa = await p.ev("window.office.propAudit()")
                     au = await p.ev("window.office.audit().filter(x=>!x.fixed)")
                     base = {"theme": th, "size": size, "layoutAudit": la, "propAudit_issues": (pa or {}).get("issues", []),
@@ -319,6 +322,10 @@ async def run(a: argparse.Namespace) -> int:
                         na = await p.ev("window.office.nameAudit ? window.office.nameAudit() : []") or []
                         base.setdefault("nameAudit", {})[view] = na
                         bad += len(na)
+                        # 이름표 ↔ 가구 · 사람 몸 · 이름표끼리(11-10) — 지금 그린 그대로. nameAudit · layoutAudit이 못 잡던 겹침
+                        lb = await p.ev("window.office.labelAudit ? window.office.labelAudit() : []") or []
+                        base.setdefault("labelAudit", {})[view] = lb
+                        bad += len(lb)
                         # [전체] 카드 · [⌂] 현황판 이름(11-09) — 겹침 · 그림 덮음 · 화면 · 칸 밖 · 잘림. 전엔 --eval로 따로 불러야 봤다
                         ca = await p.ev("window.office.cardAudit ? window.office.cardAudit().problems : []") or []
                         base.setdefault("cardAudit", {})[view] = ca
@@ -368,11 +375,12 @@ async def run(a: argparse.Namespace) -> int:
                     p.errors.clear()
                     report["runs"].append(base)
                     n_names = sum(len(v) for v in base.get("nameAudit", {}).values())
+                    n_labels = sum(len(v) for v in base.get("labelAudit", {}).values())
                     n_cards = sum(len(v) for v in base.get("cardAudit", {}).values())
                     n_tips = sum(len(v.get("problems") or []) for v in base.get("tipAudit", {}).values())
                     n_tipn = sum(v.get("n") or 0 for v in base.get("tipAudit", {}).values())
                     n_term = len(ta["closed"]) + len(ta["open"] or [])
-                    print(f"{th} {size}: layoutAudit {len(la or [])} · nameAudit {n_names} · cardAudit {n_cards} · "
+                    print(f"{th} {size}: layoutAudit {len(la or [])} · labelAudit {n_labels} · nameAudit {n_names} · cardAudit {n_cards} · "
                           f"tipAudit {n_tips}/{n_tipn} · propAudit {len(base['propAudit_issues'])} · "
                           f"termAudit {n_term}{'' if ta['open'] is not None else '(닫힘만)'} · "
                           f"audit(고정 안 됨) {len(au or [])} · 페이지 오류 {len(base['page_errors'])} · 사진 {len(shots)}")
