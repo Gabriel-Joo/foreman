@@ -343,6 +343,7 @@ button.danger:not(:disabled):hover { background:color-mix(in srgb, var(--bad) 14
 .fm-row { justify-content:flex-end; align-items:center; gap:8px; }
 .fm-row > span { flex:1; }
 .fm-plan { display:flex; flex-direction:column; gap:6px; }
+.fm-plan[hidden] { display:none; }   /* 11-10 위 display가 hidden을 덮어 치운 계획 카드가 남았다 */
 .fm-grid { display:grid; grid-template-columns:7em 1fr; gap:8px 12px; align-items:center; }
 .fm-grid input, .fm-grid select { width:100%; box-sizing:border-box; }
 .fm-grid [hidden] { display:none; }
