@@ -13,6 +13,7 @@ import { showTip, hideTip, themeTips, attachDomTips, textTip, softEsc, tipAudit 
 import { buildGrid, findPath, footprint, RES } from './walk.js';
 import { uiScale } from './uiscale.js';
 import { wrapWords } from './wrap.js';
+import { applyGrid, INFRA_STAGES } from './grid.js';
 
 // 픽셀 화면 글씨(화면 좌표로 그리는 것 — 구역 · 캐릭터 이름표, 말풍선, 방 카드, 단계 이름) 배율(11-09 사용자:
 // "130%로 보는데 맨 윗줄 탭 글씨 정도면 좋겠다", [가+ · 가−]도 따라가게). 탭은 17px × 배율 — 이름표 14px × 배율 × 1.2가 그쯤.
@@ -30,7 +31,13 @@ export const FIXED_SEAT_ROLES = ['manager', 'designer'];
 
 export async function createOffice(root, store, themeUrl = '/static/themes/office/theme.json') {
   const theme = await (await fetch(themeUrl, { cache: 'no-cache' })).json();
+  // 방 모눈(11-10) — 세 테마가 한 벌(themes/_shared/grid.json)을 쓴다. 방 칸 · 복도 · 출하 단계를 받고 방 안 좌표(in)를 방 좌표로
+  if (theme.layout && theme.layout.grid) {
+    const g = await (await fetch(new URL(theme.layout.grid, new URL(themeUrl, location.href)), { cache: 'no-cache' })).json();
+    applyGrid(theme, g);
+  }
   const L = theme.layout, T = L.tile, P = theme.palette;
+  const GRIDDEF = theme.grid || null;
   // 10d: 시트 테마면 원본 PNG를 받아 둔다(자르기 · 외곽선 · 색조는 sprites.js). 도형 테마(office)는 그대로
   const SP = theme.sprites.kind === 'sheets' ? await loadSprites(theme, new URL(themeUrl, location.href)) : null;
   const CH = (SP && theme.sprites.chars) || {};
@@ -1185,7 +1192,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 출하 라인 단계 이름표 — 다음 단계(마지막은 방 끝)까지 안 들어가면 앞부분(「① 검수대」)만. s = 1칸의 화면 px
   function infraStageLabel(i, extraPx, s) {
     const iz = L.zones.infra, it = (theme.tags && theme.tags.infra) || {}, kind = INFRA_KINDS[i];
-    const label = `${'①②③'[i]} ${it[kind] || (iz[kind] && iz[kind].label) || kind}`;
+    const nm = Array.isArray(it[kind]) ? it[kind].join(' · ') : it[kind];
+    const label = `${'①②③'[i]} ${nm || (iz[kind] && iz[kind].label) || kind}`;
     const room = (i < 2 ? iz[INFRA_KINDS[i + 1]].x : (L.room ? L.room.w : 28) - 0.2) - iz[kind].x - 0.3;
     ctx.save(); ctx.font = TAG.font;
     const fits = (ctx.measureText(label).width + tagPadL() + 6 + extraPx) / s <= room;
@@ -1558,10 +1566,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       if (!zz || !zz.floor) continue;
       drawFloor(r.x + zz.x, r.y + zz.y, zz.w, zz.h, (RS.proc && RS.proc[zz.floor]) || zz.floor, 3);
     }
-    // 출하 라인 바닥은 조금 어둡게
+    // 출하 라인 바닥은 조금 어둡게(모눈이면 출하장 칸만 — 왼쪽은 출하 접수대 방)
     const iz = z.infra;
-    ctx.fillStyle = P.infraFloor; ctx.fillRect((r.x + 1) * T, (r.y + iz.y) * T, (r.w - 2) * T, iz.h * T);
+    ctx.fillStyle = P.infraFloor;
+    if (GRIDDEF) ctx.fillRect((r.x + iz.x) * T, (r.y + iz.y) * T, iz.w * T, iz.h * T);
+    else ctx.fillRect((r.x + 1) * T, (r.y + iz.y) * T, (r.w - 2) * T, iz.h * T);
     drawCorridors(r);
+    drawRoomBounds(r);
+    if (GRIDDEF) drawShipArrows(r);
     drawWalls(r);
     const b = RS.banners;
     if (b) for (let i = b.from, k = 0; i < r.w - 1; i += b.every, k++) SP.draw(ctx, b.s[(k + r.x) % b.s.length], (r.x + i) * T, (r.y + 1) * T);
@@ -1573,11 +1585,68 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const st = r['st_' + kind] || 'none';
       const c = { running: P.act, success: P.ok, failed: P.bad, waiting: P.warn, none: P.muted }[st] || P.muted;
       ctx.strokeStyle = c; ctx.globalAlpha = st === 'none' ? 0.35 : 0.9; ctx.lineWidth = 1;
-      ctx.strokeRect(ox * T + 0.5, (oy + 0.2) * T + 0.5, 4.5 * T, 2.6 * T);
+      // 단계 칸 — 모눈이면 이름표 줄(위 0.85칸) 아래부터 출하장 바닥까지
+      const sb = GRIDDEF ? [0, 0.85, iz.stageW || 4.5, iz.h - 1.0] : [0, 0.2, 4.5, 2.6];
+      ctx.strokeRect((ox + sb[0]) * T + 0.5, (oy + sb[1]) * T + 0.5, sb[2] * T, sb[3] * T);
       ctx.globalAlpha = 1;
-      if (st === 'waiting') sorted.push({ y: oy + 3, draw: () => drawSign(ox + 2.2, oy + 0.2, '⏸') });
-      if (st === 'failed') sorted.push({ y: oy + 3, draw: () => drawSmokeS(ox + 2, oy + 1.2, now) });
+      if (st === 'waiting') sorted.push({ y: oy + 3, draw: () => drawSign(ox + 2.2, oy + sb[1] + 0.1, '⏸') });
+      if (st === 'failed') sorted.push({ y: oy + 3, draw: () => drawSmokeS(ox + 2, oy + sb[1] + 1.0, now) });
     }
+  }
+
+  // 방 경계(11-10 모눈 — 사용자: "팀장실만 바닥색이 달라 나머지는 어디가 방인지 읽히지 않는다").
+  // 방마다 흐린 선, 이웃한 방은 바닥을 번갈아 조금 밝게. 선 색은 방 이름 색(테마의 팀장 · 교장 색)과 같다
+  const ROOM_INK = (theme.roles && ((theme.roles.colors && theme.roles.colors.foreman) || theme.roles.foreman)) || P.label;
+  function gridRooms() {
+    if (!GRIDDEF) return [];
+    const roles = (theme.tags && theme.tags.roles) || {};
+    const out = Object.entries(roles).filter(([k]) => L.zones[k] && L.zones[k].w).map(([k, role]) => ({ key: k, role, x: L.zones[k].x, y: L.zones[k].y, w: L.zones[k].w, h: L.zones[k].h }));
+    const iz = L.zones.infra;
+    if (iz && iz.w) out.push({ key: 'infra', role: 'ship', x: iz.x, y: iz.y, w: iz.w, h: iz.h });
+    return out;
+  }
+  function drawRoomBounds(r) {
+    const rs = gridRooms();
+    if (!rs.length) return;
+    rs.forEach((q, i) => {
+      if ((Math.floor(q.x / 4) + Math.floor(q.y / 5)) % 2 === 0) {          // 이웃한 방끼리 밝기가 엇갈리게(칸 자리로 정해 테마가 바뀌어도 같다)
+        ctx.fillStyle = '#ffffff0d'; ctx.fillRect((r.x + q.x) * T, (r.y + q.y) * T, q.w * T, q.h * T);
+      }
+      ctx.save();
+      ctx.strokeStyle = ROOM_INK; ctx.globalAlpha = 0.38; ctx.lineWidth = 1;
+      ctx.setLineDash([3, 2]);
+      ctx.strokeRect((r.x + q.x) * T + 1.5, (r.y + q.y) * T + 1.5, q.w * T - 3, q.h * T - 3);
+      ctx.restore();
+    });
+  }
+  // 출하장 바닥 화살표(11-10) — 출하 접수대 → ① · ① → ② · ② → ③. 번호는 화살표 쪽(이름표에서 뺐다)
+  function shipArrows() {
+    const iz = L.zones.infra, g = GRIDDEF;
+    if (!iz || !g) return [];
+    const y = iz.y + 1.6, w = iz.stageW || 4.5, out = [];
+    let from = iz.x + 0.2;
+    INFRA_STAGES.forEach((k, i) => {
+      out.push({ i, x0: from, x1: iz[k].x - 0.15, y });
+      from = iz[k].x + w + 0.15;
+    });
+    return out;
+  }
+  function drawShipArrows(r) {
+    ctx.save();
+    for (const a of shipArrows()) {
+      const X0 = (r.x + a.x0) * T, X1 = (r.x + a.x1) * T, Y = (r.y + a.y) * T;
+      if (X1 - X0 < 10) continue;
+      ctx.globalAlpha = 0.85;
+      ctx.strokeStyle = ROOM_INK; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(X0, Y); ctx.lineTo(X1 - 5, Y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = ROOM_INK; ctx.beginPath(); ctx.moveTo(X1, Y); ctx.lineTo(X1 - 6, Y - 4); ctx.lineTo(X1 - 6, Y + 4); ctx.closePath(); ctx.fill();
+      // 번호 — 화살표 가운데 위에 원 숫자(월드 px라 방 배율을 따른다)
+      const cx = (X0 + X1) / 2, cy = Y - 6;
+      ctx.fillStyle = '#000000aa'; ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = ROOM_INK; ctx.font = 'bold 8px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('①②③'[a.i], cx, cy + 0.5);
+    }
+    ctx.restore();
   }
 
   // ㅗ자 복도 — 바닥에 깐 길(마법학교 붉은 융단 · 오피스 회색 카펫 · 현장 초록 보행로 + 노란 선). 사각형이 겹친 곳은 테두리 없이 이어진다
