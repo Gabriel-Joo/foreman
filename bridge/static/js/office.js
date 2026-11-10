@@ -1151,183 +1151,65 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const k = (theme.sprites && theme.sprites.char_scale) ?? 1.5;    // 캐릭터 배율(11-09) — 상한도 같이
     return (bodySize._v = [Math.min(w, 1.3 * k), Math.min(h, 2.4 * k)]);
   }
-  // 구역 이름표의 방 좌표 칸 — 이름표는 화면에 같은 크기로 그리므로 칸 크기는 지금 확대 배율에 달렸다(방 하나를 보는 보통 배율로 잰다)
-  function tagRects(where = 'room') {
-    const out = [], fontPx = +((TAG.font.match(/(\d+)px/) || [0, 10])[1]);
-    // 11-09 지금 카메라가 아니라 방 하나를 볼 때의 배율로 — 카메라가 다가가는 중(지도 배율)에 재면 글씨가 커진 만큼 이름표가
-    // 방 좌표로 부풀어, 실제 방 화면에선 안 가리는 것을 가린다고 셌다(office 1024)
-    const padL = TAG.kind === 'hazard' ? 9 : TAG.kind === 'sign' ? 7 : 6, s = roomViewScale() * T;
-    ctx.save(); ctx.font = TAG.font;
-    if (where === 'hq') {
-      const label = HQ.label || '감독실';
-      ctx.font = TAG.font.replace(/(\d+)px/, (m, n) => `${+n + 3}px`);
-      out.push({ zone: 'hq', label, x: 0.3, y: 2.2, w: (padL + ctx.measureText(label).width + 6) / s, h: (fontPx + 10) / s });
-    } else {
-      for (const [key, v] of Object.entries((theme.tags && theme.tags.zones) || {})) {
-        const z = L.zones[key];
-        if (!z || z.x == null) continue;
-        const [label] = Array.isArray(v) ? v : [v];
-        const p = tagPlace(key, (padL + ctx.measureText(label).width + 6) / s, (fontPx + 7) / s);
-        out.push({ zone: key, label, x: p[0], y: p[1], w: p[2], h: p[3] });
-      }
-    }
-    ctx.restore();
-    return out;
-  }
-  // 구역 이름표 자리(11-05) — 이름표는 화면에 같은 크기로 그려서, 창이 작아 배율이 작으면 방 안에서 커진다. 테마에 적은 자리(dx · dy)는
-  // 한 배율에서만 맞았다(1100×700 창에서 사람 몸을 최대 25% 덮음). 그래서 배율에 맞춰 고른다 — 고르는 법은 아래 tagLayout(11-10). [x, y, w, h] 방 좌표
-  const tagPadL = () => (TAG.kind === 'hazard' ? 9 : TAG.kind === 'sign' ? 7 : 6);
-  function tagW(label) { ctx.save(); ctx.font = TAG.font; const w = ctx.measureText(label).width; ctx.restore(); return (tagPadL() + w + 6) / (cam.s * T); }
-  function tagH() { return (+((TAG.font.match(/(\d+)px/) || [0, 10])[1]) + 7) / (cam.s * T); }
-  // 11-10 다시 짬 — 위(11-05 · 11-09)는 사람 자리만 피하고, 가구는 보지 않았고, 다른 이름표는 "테마에 적은 첫 자리"하고만 대 봐서
-  // (그마저 0.001 감점) 「라운지」↔「배포 파이프」, 「워크스테이션」↔「문서팀」이 겹치고 「서고」 · 「자재창고」가 선반 위에 앉았다.
-  // 이제 방 하나를 보는 배율(roomViewScale)에서 한 번, 방의 이름표를 모두 차례로 놓는다 — 출하 라인 이름 · 세 단계 → 구역 이름표.
-  // 자리마다 매기는 값(작을수록 좋다, 0.1칸 격자로 자기 구역 둘레 1.5칸을 훑는다):
-  //   사람 자리(standSpots, 몸 전체)를 덮은 비율 · 이미 놓은 이름표 · 단계 사이 화살표와 겹친 비율 ×50 — 사실상 금지
-  //   가구 · 소품 · 벽 선반(furnRects — 바닥 깔개는 뺀다)을 덮은 비율 ×20
-  //   자기 구역에서 떨어진 거리 ×0.3, 다른 구역 안 +0.4, 테마가 적은 첫 자리에서 떨어진 거리 ×0.05
-  // 카메라가 다가가는 중에도 이 자리를 쓴다(그동안 크기만 다르다). 테마 · 창 크기 · 글씨 배율이 바뀌면 다시 놓는다
-  const TAG_LAYOUT = new Map();
-  const INFRA_KINDS = ['jenkins', 'harbor', 'argocd'];
-  // 출하 라인 단계 이름표 — 다음 단계(마지막은 방 끝)까지 안 들어가면 앞부분(「① 검수대」)만. s = 1칸의 화면 px
-  function infraStageLabel(i, extraPx, s) {
-    const iz = L.zones.infra, it = (theme.tags && theme.tags.infra) || {}, kind = INFRA_KINDS[i];
-    const nm = Array.isArray(it[kind]) ? it[kind].join(' · ') : it[kind];
-    const label = `${'①②③'[i]} ${nm || (iz[kind] && iz[kind].label) || kind}`;
-    const room = (i < 2 ? iz[INFRA_KINDS[i + 1]].x : (L.room ? L.room.w : 28) - 0.2) - iz[kind].x - 0.3;
-    ctx.save(); ctx.font = TAG.font;
-    const fits = (ctx.measureText(label).width + tagPadL() + 6 + extraPx) / s <= room;
-    ctx.restore();
-    return { label, shown: fits ? label : label.split(' · ')[0] };
-  }
-  const STAGE_COL = { running: 1, success: 1, failed: 1, waiting: 1 };
-  const STAGE_MARK = { running: '진행 중', success: '✓', failed: '✗ 실패', waiting: 'ArgoCD Sync 대기' };
-  const STAGE_MARK_SHORT = { failed: '✗', waiting: 'Sync 대기' };      // 자리가 모자랄 때(전체는 툴팁에)
-  const markExtra = (st, mark) => (STAGE_COL[st] ? 9 : 0) + (mark ? 16 + mark.length * fpx(9) : 0);
-  const stageExtra = (st) => markExtra(st, STAGE_MARK[st]);
-  // room을 주면 그 방 출하 라인의 지금 상태(진행 중 · ✓ · 실패 · Sync 대기)로 단계 이름표 폭을 잰다 — 방마다 자리표가 따로다
-  function tagLayout(room = null) {
-    const s = roomViewScale() * T, fontPx = +((TAG.font.match(/(\d+)px/) || [0, 10])[1]);
-    const zonesT = (theme.tags && theme.tags.zones) || {};
-    const sts = INFRA_KINDS.map((k) => (room && room['st_' + k]) || 'none');
-    const ck = `${s.toFixed(3)}|${TAG.font}|${Object.keys(zonesT).join(',')}|${L.room ? L.room.w : ''}|${sts.join(',')}`;
-    if (TAG_LAYOUT.has(ck)) return TAG_LAYOUT.get(ck);
-    if (TAG_LAYOUT.size > 20) TAG_LAYOUT.clear();
-    ctx.save(); ctx.font = TAG.font;
-    const tw = (t, extra = 0) => (tagPadL() + ctx.measureText(t).width + 6 + extra) / s;
-    const h = (fontPx + 7) / s;
-    const rw = L.room ? L.room.w : 28, rh = L.room ? L.room.h : 18;
-    const [bw, bh] = bodySize();
-    // 몸 칸은 0.1칸 여유를 둔다 — 실제 그림은 bodySize 칸보다 조금 클 수 있다(1024 「배포 파이프」가 출하 담당 몸을 8% 덮었다)
-    const bodies = standSpots().map((p) => [p.x - bw / 2 - 0.05, p.y - bh - 0.1, bw + 0.1, bh + 0.1]);
-    // 사람 이름 칸 — 이름은 발밑에 그린다(drawName). 이름표가 그 자리에 앉으면 이름이 비켜 갈 곳이 없다(1024 출하 담당 ↔ 「① 빌드 모니터」)
-    const nmH = (fpx(15) + 3) / s, nmW = (fpx(15) * 5) / s;
-    const nameSlots = standSpots().map((p) => [p.x - nmW / 2, p.y + 2 / s, nmW, nmH]);
-    const furn = furnRects('room').map((f) => [f.x, f.y, f.w, f.h]);
-    const zoneR = (z) => [z.x, z.y, z.w || 1, z.h || 1];
-    const zonesAll = Object.entries(L.zones).filter(([k, z]) => z && z.x != null && z.w && k !== 'infra' && k !== 'lounge_seats').map(([k, z]) => [k, zoneR(z)]);
-    let placed = [];
-    const items = [], out = new Map(), arrows = [];
-    const iz = L.zones.infra, it = (theme.tags && theme.tags.infra) || {};
-    if (iz) {
-      INFRA_KINDS.forEach((k, i) => {                 // 단계 사이 화살표(drawZoneTags)도 덮지 않는다
-        if (i < 2) arrows.push([iz[k].x + 4.6, iz.y + 1.3, iz[INFRA_KINDS[i + 1]].x - iz[k].x - 4.6, 0.4]);
-      });
-      // 출하 라인 이름 — 출하 라인 윗줄 어디든(왼쪽 끝은 출하 담당이 서 있어 1024에서 비켜 갈 폭이 없었다)
-      if (it.title) items.push({ key: 'infra:title', w: tw(it.title), pref: [1.1, iz.y - 0.6], area: [0.05, iz.y - 1.8, rw - 0.1, 2.6] });
-      INFRA_KINDS.forEach((k, i) => {
-        const end = i < 2 ? iz[INFRA_KINDS[i + 1]].x : rw - 0.2;
-        // 폭은 지금 상태로(가장 긴 「ArgoCD Sync 대기」까지 늘 잡으면 6.7칸이라 마법 1024 ③이 들어갈 자리가 없었다) — 상태가 바뀌면 다시 놓는다.
-        // 깨끗한 자리가 없으면 짧은 꼴(앞부분 이름 · 짧은 상태)로 한 번 더 — 어느 꼴을 썼는지 'infra:<단계>:v'에 둔다(drawZoneTags가 그대로 그린다)
-        const st = sts[i], { label, shown } = infraStageLabel(i, stageExtra(st), s), head = label.split(' · ')[0];
-        const short = STAGE_MARK_SHORT[st] || STAGE_MARK[st] || null;
-        const variants = [[shown, STAGE_MARK[st] || null], [head, STAGE_MARK[st] || null], [head, short]]
-          .filter((v, j, all) => all.findIndex((u) => u[0] === v[0] && u[1] === v[1]) === j)
-          .map(([text, mark]) => ({ text, mark, w: Math.min(tw(text, markExtra(st, mark)), end - iz[k].x - 0.1) }));
-        // 칸: 그 단계 폭, 위로 1.5칸(복도)까지 — 마법 1024에서 ③ 칸 안이 아치 그림으로 차 이름표가 아치 위에 앉았다
-        items.push({ key: 'infra:' + k, w: variants[0].w, variants, pref: [iz[k].x + 0.1, iz.y + 0.25], area: [iz[k].x + 0.05, iz.y - 1.5, end - iz[k].x - 0.1, rh - iz.y + 1.5] });
-      });
-    }
-    // 구역 이름표를 먼저 놓는다 — 출하 라인 이름표는 단계 폭 · 윗줄 전체를 쓸 수 있어 비켜 갈 곳이 더 많다(마법 1024 「봉인대」↔「② 보물창고」)
-    const zoneItems = [];
-    for (const [key, v] of Object.entries(zonesT)) {
+  // ── 방 이름표(11-10 모눈) — 방 왼쪽 위 칸에 고정한다 ─────────────────────────────
+  // 전에는 가구 · 사람 자리를 먼저 잡고 이름표가 빈 데를 찾아갔다(11-05 tagPlace → 11-10 tagLayout 한꺼번에 놓기 — 겹침 378 → 3건).
+  // 겹치지 않게는 됐지만 이름표가 제각각 떠서 어수선했고(사용자), 화면 너비가 연속값이라 모든 중간 너비에서 자리를 골라야 했다.
+  // 이제 자리 고르기가 없다: 방 왼쪽 위 + pad. 그 칸은 테마 배치가 비운다(가구 · 사람 머리 — gridAudit이 본다).
+  // 글씨는 월드 크기(grid.json label.font, 월드 px) — 방 배율을 따라 함께 커지고 작아진다. 글씨 배율(가− · 가+)은 패널 · 머리말 몫이고
+  // 방 안 이름표에는 들어가지 않는다(11-10 사용자 — "브라우저 글씨 크기에 흔들리지 않게"). 화면 9px 밑으로는 줄이지 않는다(1024 · 패널 넓게)
+  // 이름은 짧게 — 하는 일은 호버(「① 빌드 모니터 · Jenkins 빌드」 → 이름표 「빌드 모니터」, 호버 「Jenkins 빌드」). ① ② ③은 바닥 화살표 쪽
+  const GL = (GRIDDEF && GRIDDEF.label) || { font: 6.5, h: 0.75, pad: 0.1 };
+  const LABEL_MIN_PX = 9;
+  const labelK = (s) => Math.max(1, LABEL_MIN_PX / (GL.font * s));                 // s = 월드 px 하나의 화면 px(cam.s)
+  const labelFont = (s) => TAG0.font.replace(/(\d+(?:\.\d+)?)px/, `${(GL.font * s * labelK(s)).toFixed(2)}px`);
+  const STAGE_DOT = { running: 'act', success: 'ok', failed: 'bad', waiting: 'warn' };
+  const STAGE_SYM = { running: '…', success: '✓', failed: '✗', waiting: '⏸' };     // 이름표엔 기호만, 말은 호버(STATUS_KO)
+  const stageName = (k) => {
+    const v = ((theme.tags && theme.tags.infra) || {})[k], iz = L.zones.infra;
+    if (Array.isArray(v)) return { name: v[0], what: v[1] || '' };
+    const s = String(v || (iz[k] && iz[k].label) || k);
+    return { name: s.split(' · ')[0], what: s.split(' · ')[1] || '' };
+  };
+  // 방 하나의 이름표 목록(방 좌표 타일) — 구역 열 + 출하장 + 세 단계. room을 주면 단계 상태(점 · 기호)까지
+  function roomLabels(room = null) {
+    const out = [];
+    const names = (theme.tags && theme.tags.zones) || {}, roles = (theme.tags && theme.tags.roles) || {};
+    for (const [key, v] of Object.entries(names)) {
       const z = L.zones[key];
       if (!z || z.x == null) continue;
-      const [label, dx = 0, dy = 0] = Array.isArray(v) ? v : [v, 0, 0];
-      const zr = zoneR(z);
-      zoneItems.push({ key, w: tw(label), pref: [z.x + 0.1 + dx, z.y + 0.08 + dy], own: zr, area: [zr[0] - 1.5, zr[1] - 1.5, zr[2] + 3, zr[3] + 3] });
+      const [label] = Array.isArray(v) ? v : [v];
+      out.push({ zone: key, text: label, x: z.x, y: z.y, role: roles[key] });
     }
-    items.unshift(...zoneItems);
-    ctx.restore();
-    const others0 = (itm) => (itm.own ? zonesAll.filter(([k]) => k !== itm.key).map(([, r]) => r) : []);
-    function search(itm, [ax, ay, aw, ah], best) {
-      const { w } = itm;
-      const x0 = Math.max(0.05, ax), x1 = Math.min(rw - w - 0.05, ax + aw - w), y0 = Math.max(0.05, ay), y1 = Math.min(rh - h - 0.05, ay + ah - h);
-      const near = (r) => r[0] < ax + aw + 0.5 && r[0] + r[2] > ax - 0.5 && r[1] < ay + ah + 0.5 && r[1] + r[3] > ay - 0.5;
-      const B = bodies.filter(near), F = furn.filter(near), P = placed.filter(near), N = nameSlots.filter(near), others = others0(itm);
-      const score = (x, y) => {
-        const box = [x, y, w, h], a = w * h, cx = x + w / 2, cy = y + h / 2;
-        let body = 0, tag = 0, fu = 0, nm = 0;
-        for (const b of B) body = Math.max(body, areaOf(box, b) / (b[2] * b[3]));
-        for (const p of P) tag += areaOf(box, p) / a;
-        for (const f of F) fu += areaOf(box, f) / a;
-        for (const n of N) nm += areaOf(box, n) / a;
-        let sc = 50 * body + 50 * tag + 30 * Math.min(1, nm) + 20 * Math.min(1, fu) + 0.05 * Math.hypot(x - itm.pref[0], y - itm.pref[1]);
-        if (itm.own) {
-          const o = itm.own, dxz = Math.max(o[0] - cx, 0, cx - o[0] - o[2]), dyz = Math.max(o[1] - cy, 0, cy - o[1] - o[3]);
-          // 2칸 넘게 떨어지면 칸당 1.0 — 이름표가 엉뚱한 구역을 가리키는 것이 작은 겹침보다 나쁘다(1024 · 110%에서 「서고」가 물약실 옆으로 갔다)
-          const dz = Math.hypot(dxz, dyz);
-          sc += 0.3 * dz + 0.7 * Math.max(0, dz - 2);
-          if ((dxz || dyz) && others.some((r) => cx > r[0] && cx < r[0] + r[2] && cy > r[1] && cy < r[1] + r[3])) sc += 0.4;
-        }
-        return sc;
-      };
-      const consider = (x, y) => { const sc = score(x, y); if (!best || sc < best.sc - 1e-9) best = { sc, box: [x, y, w, h] }; };
-      if (itm.seed) consider(itm.seed[0], itm.seed[1]);       // 고치기 — 지금 자리를 나머지 전부 기준으로 다시 매긴다
-      if (!best) consider(Math.max(x0, Math.min(itm.pref[0], x1)), Math.max(y0, Math.min(itm.pref[1], y1)));
-      for (let y = y0; y <= y1 + 1e-9; y += 0.1) for (let x = x0; x <= x1 + 1e-9; x += 0.1) consider(x, y);
-      return best;
-    }
-    function placeOne(itm, seed = null, seedVi = 0) {
-      let best = null, vi = 0;
-      for (const [j, v] of (itm.variants || [{ w: itm.w }]).entries()) {     // 꼴마다(단계 이름표만 여럿) — 깨끗하면 거기서 멈춘다
-        const one = { ...itm, w: v.w, seed: j === seedVi ? seed : null };
-        let b = search(one, itm.area, null);
-        // 둘레에서 깨끗한 자리를 못 찾으면(사람 · 이름표 · 이름 칸을 덮거나 가구를 2.5% 넘게) 1.5칸씩 더 넓혀 한 번 더 — 멀어지는 값은 그대로 매긴다.
-        // 출하 라인 이름표도(1024 「배포 파이프」가 출하 담당 몸을 옆으로 비켜 갈 폭이 없었다)
-        const [ax, ay, aw, ah] = itm.area;
-        if (b.sc >= 0.5) b = search(one, [ax - 1.5, ay - 1.5, aw + 3, ah + 3], b);
-        if (b.sc >= 0.5 && itm.own) b = search(one, [ax - 4.5, ay - 4.5, aw + 9, ah + 9], b);   // 큰 글씨 · 작은 창(1024 · 110%)
-        if (!best || b.sc < best.sc - 1e-9) { best = b; vi = j; }
-        if (best.sc < 0.5) break;
-      }
-      return { best, vi };
-    }
-    placed = arrows.slice();
-    const res = items.map((itm) => { const r = placeOne(itm); placed.push(r.best.box); return r; });
-    // 고치기(11-10 — 글씨 105 · 110% · 1024에서 먼저 놓은 이름표가 나중 것의 자리를 막았다: 「커밋 데스크」↔「문서팀」).
-    // 아직 걸린 것이 있으면 이름표마다 나머지 전부를 보며 다시 놓는다(최대 3바퀴, 나아질 때만 바꾼다)
-    // (지금 자리를 첫 후보로 넣으니 다시 놓은 값은 지금보다 나빠지지 않는다)
-    let bad = res.some((r) => r.best.sc >= 0.5);
-    for (let pass = 0; pass < 3 && bad; pass++) {
-      let changed = false;
-      items.forEach((itm, i) => {
-        placed = arrows.concat(res.filter((_, j) => j !== i).map((r) => r.best.box));
-        const r = placeOne(itm, res[i].best.box, res[i].vi);
-        if (r.best.box.some((v, k) => Math.abs(v - res[i].best.box[k]) > 1e-9) || r.vi !== res[i].vi) changed = true;
-        res[i] = r;
+    const iz = L.zones.infra, it = (theme.tags && theme.tags.infra) || {};
+    if (iz && iz.jenkins) {
+      // 모눈이 없는 테마(도형 plain)는 출하 라인 위 한 줄에
+      if (it.title) out.push({ zone: 'infra', text: it.title, x: GRIDDEF ? iz.x : 1, y: GRIDDEF ? iz.y : iz.y - 0.9, role: 'ship' });
+      INFRA_STAGES.forEach((k, i) => {
+        const st = (room && room['st_' + k]) || 'none', { name, what } = stageName(k);
+        out.push({ zone: 'infra:' + k, stage: k, i, st, what, text: name + (STAGE_SYM[st] ? ' ' + STAGE_SYM[st] : ''), dot: STAGE_DOT[st] ? P[STAGE_DOT[st]] : null,
+                   x: iz[k].x, y: iz.y });
       });
-      bad = res.some((r) => r.best.sc >= 0.5);
-      if (!changed) break;
     }
-    items.forEach((itm, i) => {
-      out.set(itm.key, res[i].best.box);
-      if (itm.variants) out.set(itm.key + ':v', itm.variants[res[i].vi]);
-    });
-    TAG_LAYOUT.set(ck, out);
     return out;
   }
-  function tagPlace(key) { return tagLayout().get(key) || [0, 0, 0, 0]; }
+  // 이름표 칸(방 좌표 타일, [x, y, w, h]) — 왼쪽 위 + pad. s = 그릴 때의 배율(재기는 방 하나를 보는 배율)
+  function labelBox(l, s = roomViewScale()) {
+    const k = labelK(s), pad = GL.pad * T * k;                                     // 월드 px
+    ctx.save(); ctx.font = labelFont(s); const tw = ctx.measureText(l.text).width / s; ctx.restore();
+    const dot = l.dot ? GL.font * k : 0;
+    return [l.x + GL.pad, l.y + GL.pad, (tw + dot + 2 * pad) / T, GL.h * k];
+  }
+  // 이름표 칸 목록 — layoutAudit(사람 자리 ↔ 이름표) · gridAudit(왼쪽 위 칸 · 가구) · layoutPlan이 쓴다
+  function tagRects(where = 'room') {
+    if (where === 'hq') {                                                           // 감독실 이름표는 그대로(화면 크기 — 감독실은 모눈 밖)
+      const s = roomViewScale() * T, padL = TAG.kind === 'hazard' ? 9 : TAG.kind === 'sign' ? 7 : 6, fontPx = +((TAG.font.match(/(\d+)px/) || [0, 10])[1]);
+      ctx.save(); ctx.font = TAG.font.replace(/(\d+)px/, (m, n) => `${+n + 3}px`);
+      const label = HQ.label || '감독실', w = (padL + ctx.measureText(label).width + 6) / s;
+      ctx.restore();
+      return [{ zone: 'hq', label, x: 0.3, y: 2.2, w, h: (fontPx + 10) / s }];
+    }
+    return roomLabels().map((l) => { const [x, y, w, h] = labelBox(l); return { zone: l.zone, label: l.text, x, y, w, h }; });
+  }
   const areaOf = (a, b) => Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0])) *
                            Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]));
   function spotProblems(p, rects, tags) {
@@ -1358,35 +1240,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
     return out;
   }
-  // 자리 다시 짜기 — ① 이름표가 사람 몸을 가리면 이름표를 옮긴다 ② 소품이 가리면 소품을 받침 탁자 위에서 옆으로 ③ 그래도 가리면
-  // 사람 자리를 가장 가까운 깨끗한 곳으로(원래 가구 칸 안에 있던 자리는 그 가구 곁에서, 빈 바닥 자리는 걸을 수 있는 칸에서).
-  // 이 페이지 안의 테마 값을 바꿔 가며 풀고, 바뀐 값만 돌려준다 — theme.json에 옮겨 적는다
+  // 자리 다시 짜기 — ② 소품이 가리면 소품을 받침 탁자 위에서 옆으로 ③ 그래도 가리면 사람 자리를 가장 가까운 깨끗한 곳으로
+  // (원래 가구 칸 안에 있던 자리는 그 가구 곁에서, 빈 바닥 자리는 걸을 수 있는 칸에서). ① 이름표 옮기기는 11-10 모눈에서 뺐다(이름표는 방 왼쪽 위 고정).
+  // 이 페이지 안의 테마 값을 바꿔 가며 풀고, 바뀐 값만 돌려준다 — theme.json에 옮겨 적는다(모눈 테마는 방 왼쪽 위 기준으로 바꿔 적는다)
   function layoutPlan() {
     const before = layoutAudit({ labels: false });
     const spots = () => standSpots();
     const blocked = (x, y) => { const g = GRID && GRID.room; if (!g) return false; const c = Math.floor(x * RES), r = Math.floor(y * RES); return c < 0 || r < 0 || c >= g.cols || r >= g.rows || !!g.block[r * g.cols + c]; };
-    const changes = { tags: {}, items: [], seats: {}, stands: {}, unsolved: [] };
-    // ① 이름표
-    for (let pass = 0; pass < 2; pass++) {
-      const tags = tagRects('room');
-      for (const t of tags) {
-        const others = tags.filter((o) => o !== t);
-        const hits = (x, y) => spots().some((p) => spotProblems(p, [], [{ ...t, x, y }]).length) ||
-          others.some((o) => areaOf([x, y, t.w, t.h], [o.x, o.y, o.w, o.h]) > 0);
-        if (!hits(t.x, t.y)) continue;
-        const z = L.zones[t.zone], v = theme.tags.zones[t.zone];
-        const [, dx0 = 0, dy0 = 0] = Array.isArray(v) ? v : [v, 0, 0];
-        let best = null;
-        for (let dy = -0.6; dy <= 1.6; dy += 0.1) for (let dx = -0.8; dx <= 2.4; dx += 0.1) {
-          const x = z.x + 0.1 + dx0 + dx, y = z.y + 0.08 + dy0 + dy;
-          if (x < 0.7 || y < 1.9 || x + t.w > L.room.w - 0.7 || hits(x, y)) continue;
-          const d = Math.hypot(dx, dy * 1.4);
-          if (!best || d < best.d) best = { d, dx: +(dx0 + dx).toFixed(2), dy: +(dy0 + dy).toFixed(2) };
-        }
-        if (best) { theme.tags.zones[t.zone] = [t.label, best.dx, best.dy]; changes.tags[t.zone] = [t.label, best.dx, best.dy]; }
-        else changes.unsolved.push({ tag: t.zone });
-      }
-    }
+    const changes = { items: [], seats: {}, stands: {}, unsolved: [] };
     // ② 소품
     for (const r of decorRects('room').filter((x) => x.top && x.d._hostSpan)) {
       const covering = () => spots().filter((p) => spotProblems(p, [r], []).length);
@@ -2090,6 +1951,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (a.kind === 'foreman' && a.fm && a.fm.pending.length) {                   // 디스패처 — [시작]을 기다리는 자동 제안(누르면 그 계획)
       placeBubble(a, x, top, `시작할 일 ${a.fm.pending.length}`, P.warn, todoPx() / cam.s);
     }
+    if (a.kind === 'courier') {                                                  // 출하 대기 N(11-10 — 전엔 이름표 칸을 따로 골랐다. 호버는 drawZoneTags)
+      const rm = world.rooms.find((q) => q.name === a.room), q = rm && rm.courier && rm.courier.queue;
+      if (q && q.length) placeBubble(a, x, top, `대기 ${q.length}`, P.warn, todoPx() / cam.s);
+    }
     if (a.subHidden) drawBubble(x + 11, top + 4, `+${a.subHidden}`, P.act, 7);      // 10명 넘는 서브에이전트는 접는다
     if (a.key === selected) { const h = (a.drawH || 16) + 4, w = Math.round(h * 0.9); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - w / 2, top - 2, w, h); }
   }
@@ -2284,63 +2149,47 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   };
   const tipOf = (r) => r && `<div class="tip-b">${r.what}</div><div>${r.desc}</div>`;
   let HITS = [];                     // 이번 프레임에 그린 이름표 자리(화면 좌표) — 마우스를 올리면 설명
+  // 방 이름표 그리기(11-10 모눈) — 방 왼쪽 위 칸 고정(roomLabels · labelBox), 글씨 · 칸은 방 배율(cam.s)을 따른다.
+  // 글자색은 테마의 팀장(교장 · 소장) 색(ROOM_INK — 하드코딩하지 않는다), 바탕은 어두운 판 — 어느 바닥에서도 읽힌다. 하는 일은 호버
+  function labelTip(l) {
+    if (l.stage) {
+      const st = l.st;
+      return `<div class="tip-h">${'①②③'[l.i]} ${esc(stageName(l.stage).name)}</div><div class="tip-b">${esc(l.what || INFRA_ROLE[l.stage].what)}</div><div>${INFRA_ROLE[l.stage].desc}</div>` +
+        (st !== 'none' ? `<div class="tip-s">${esc(STATUS_KO[st] || st)}${st === 'waiting' ? ' — ' + WAIT_TIP : ''}</div>` : '');
+    }
+    if (l.zone === 'infra') return `<div class="tip-h">${esc(l.text)}</div><div class="tip-b">출하 라인</div><div>커밋이 빌드 → 이미지 → 배포 순서로 나가는 곳입니다. 바닥 화살표 ① ② ③이 그 순서입니다.</div>`;
+    const role = ZONE_ROLE[l.role];
+    return `<div class="tip-h">${esc(l.text)}</div>${role ? tipOf(role) : ''}`;
+  }
   function drawZoneTags(r) {
-    const names = (theme.tags && theme.tags.zones) || {};
-    for (const [key, v] of Object.entries(names)) {
-      const z = L.zones[key];
-      if (!z || z.x == null) continue;
-      const [label] = Array.isArray(v) ? v : [v];                    // ["아치 창", dx, dy] — dx · dy는 첫 후보 자리(tagPlace)
-      const role = ZONE_ROLE[((theme.tags && theme.tags.roles) || {})[key]];
-      const n0 = HITS.length;
-      const [tx, ty] = tagLayout(r).get(key) || [0, 0];
-      const box = drawTag(r.x + tx, r.y + ty, label, false, null, null, role ? `<div class="tip-h">${esc(label)}</div>${tipOf(role)}` : null);
-      if (HITS.length > n0) HITS[HITS.length - 1].zone = key; else HITS.push({ ...box, zone: key, tip: null });   // overTags가 쓴다
-      LABELS[LABELS.length - 1].zone = key;
-      if (!HITS[HITS.length - 1].tip) HITS[HITS.length - 1].tip = `<div class="tip-h">${esc(label)}</div>`;
+    const s = cam.s, k = labelK(s), fs = GL.font * s * k, pad = GL.pad * T * k * s;
+    ctx.save();
+    for (const l of roomLabels(r)) {
+      const [bx, by, bw, bh] = labelBox(l, s);
+      const [x0, y0] = toScreen((r.x + bx) * T, (r.y + by) * T);
+      const x = Math.round(x0), y = Math.round(y0), w = Math.round(bw * T * s), h = Math.round(bh * T * s);
+      ctx.fillStyle = '#000000b8'; ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = ROOM_INK; ctx.globalAlpha = 0.5; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); ctx.globalAlpha = 1;
+      let cx = x + pad;
+      if (l.dot) { ctx.fillStyle = l.dot; ctx.beginPath(); ctx.arc(cx + fs * 0.4, y + h / 2, fs * 0.3, 0, Math.PI * 2); ctx.fill(); cx += fs; }
+      ctx.font = labelFont(s); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = l.st === 'failed' ? P.bad : ROOM_INK;
+      ctx.fillText(l.text, cx, y + h / 2 + 0.5);
+      HITS.push({ x, y, w, h, zone: l.zone, tip: labelTip(l) });                       // overTags · 호버
+      LABELS.push({ text: l.text, rect: [x, y, w, h], zone: l.zone });
     }
-    // 출하 라인 — 이름 · 세 단계(번호 · 무엇 · 지금 상태) · 단계 사이 화살표
-    const iz = L.zones.infra, it = (theme.tags && theme.tags.infra) || {};
-    if (!iz) return;
-    const lay = tagLayout(r), tp = lay.get('infra:title') || [1.1, iz.y - 0.6];
-    if (it.title) drawTag(r.x + tp[0], r.y + tp[1], it.title, false, null, null,
-      `<div class="tip-h">${esc(it.title)}</div><div class="tip-b">출하 라인</div><div>커밋이 빌드 → 이미지 → 배포 순서로 나가는 곳입니다.</div>`);
-    // 한 방에 빌드가 여럿 — 담당은 가장 오래된 것을 맡고, 나머지는 담당 자리 옆에 줄 선다
+    ctx.restore();
+    // 출하 대기(한 방에 빌드가 여럿 — 담당은 가장 오래된 것을 맡고 나머지는 줄 선다) — 담당 머리 위 말풍선(drawOverlay)의 호버
     const q = r.courier && r.courier.queue;
-    if (q && q.length) {
-      const [hx, hy] = courierHome(r);
-      drawTag(hx - 0.6, hy - 2.6, `대기 ${q.length}`, false, P.warn, null,
-        `<div class="tip-h">출하 대기</div><div class="tip-b">대기 ${q.length}개</div><div>먼저 온 빌드가 끝나기를 기다리고 있습니다.</div>${q.map((ch) => {
-          const c = ch.commits && ch.commits[0];
-          return `<div class="tip-t">${esc(ch.short)} ${esc(short((c && c.subject) || '', 60))}</div>`;
-        }).join('')}`);
+    const ca = q && q.length ? [...actors.values()].find((a) => a.kind === 'courier' && a.room === r.name) : null;
+    const b = ca && BUBBLES.get(ca.key);
+    if (b) {
+      const [x, y, w, h] = toScr(b.rect);
+      HITS.push({ x, y, w, h, tip: `<div class="tip-h">출하 대기</div><div class="tip-b">대기 ${q.length}개</div><div>먼저 온 빌드가 끝나기를 기다리고 있습니다.</div>${q.map((ch) => {
+        const c = ch.commits && ch.commits[0];
+        return `<div class="tip-t">${esc(ch.short)} ${esc(short((c && c.subject) || '', 60))}</div>`;
+      }).join('')}` });
     }
-    const kinds = ['jenkins', 'harbor', 'argocd'];
-    kinds.forEach((kind, i) => {
-      const st = r['st_' + kind] || 'none';
-      // 평소(기록 없음)엔 아무 표시도 없다 — "기록 없음"이라고 쓰면 뭔가 잘못된 것처럼 보였다(11-05). 성공 ✓ · 실패 ✗ 빨강
-      const col = { running: P.act, success: P.ok, failed: P.bad, waiting: P.warn }[st] || null;
-      const mark = { running: '진행 중', success: '✓', failed: '✗ 실패', waiting: 'ArgoCD Sync 대기' }[st] || null;
-      // 11-09 글씨가 커지자 작은 창에서 다음 단계 이름표를 덮고 화면 밖으로 나갔다 — 다음 단계(마지막은 방 끝)까지 안 들어가면
-      // 앞부분(「① 검수대」)만. 전체 이름은 툴팁에. 자리는 tagLayout(11-10 — 단계 그림 위에 앉았다)
-      const { label, shown } = infraStageLabel(i, stageExtra(st), cam.s * T);
-      const sp = lay.get('infra:' + kind) || [iz[kind].x + 0.1, iz.y + 0.25], v = lay.get('infra:' + kind + ':v');
-      drawTag(r.x + sp[0], r.y + sp[1], v ? v.text : shown, false, col, v ? v.mark : mark,
-        `<div class="tip-h">${esc(label)}</div>${tipOf(INFRA_ROLE[kind])}${st !== 'none' ? `<div class="tip-s">${esc(STATUS_KO[st] || st)}${st === 'waiting' ? ' — ' + WAIT_TIP : ''}</div>` : ''}`);
-      if (i < kinds.length - 1) {                                     // 다음 단계로 화살표
-        const [ax, ay] = toScreen((r.x + iz[kind].x + 4.7) * T, (r.y + iz.y + 1.5) * T);
-        const [bx] = toScreen((r.x + iz[kinds[i + 1]].x - 0.1) * T, 0);
-        if (bx - ax > 16) {
-          // 이름표 바탕색(양피지 · 흰색 · 안전 노랑)에 테두리색 그림자 — 어느 바닥에서도 보이게
-          for (const [col, wdt] of [[TAG.border, 5], [TAG.bg.slice(0, 7), 3]]) {
-            ctx.strokeStyle = col; ctx.lineWidth = wdt; ctx.globalAlpha = 0.9;
-            ctx.setLineDash([8, 5]); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx - 9, ay); ctx.stroke(); ctx.setLineDash([]);
-          }
-          ctx.fillStyle = TAG.bg.slice(0, 7); ctx.strokeStyle = TAG.border; ctx.lineWidth = 1.5;
-          ctx.beginPath(); ctx.moveTo(bx, ay); ctx.lineTo(bx - 10, ay - 6); ctx.lineTo(bx - 10, ay + 6); ctx.closePath(); ctx.fill(); ctx.stroke();
-          ctx.globalAlpha = 1;
-        }
-      }
-    });
   }
 
   // 붐비는 사람(11-06) — 발밑 기본 자리끼리 겹치면 둘 다 이름의 끝부분만 쓴다(「서기 — 포트폴리오 쓰기: 포먼 디스패처」 → 「포먼 디스패처」).
@@ -3230,7 +3079,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
   return { go, theme, openSession, panel, actors, newSession: (p) => newSession.open(p), openTodo: (p, to) => todoInbox.open(p, to), foremanName: FM_NAME,
-           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: (o) => layoutAudit(o), labelAudit: () => labelAudit(), camScale: () => ({ cam: cam.s, room: roomViewScale() }), tagLayout: (name) => Object.fromEntries(tagLayout(world.rooms.find((r) => r.name === name) || null)), furnRects: (w) => furnRects(w), standSpots: () => standSpots(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(), names: () => NAMES.slice(),
+           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: (o) => layoutAudit(o), labelAudit: () => labelAudit(), camScale: () => ({ cam: cam.s, room: roomViewScale() }), roomLabels: (name) => roomLabels(world.rooms.find((r) => r.name === name) || null).map((l) => ({ ...l, box: labelBox(l) })),furnRects: (w) => furnRects(w), standSpots: () => standSpots(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(), names: () => NAMES.slice(),
            // 터미널을 열 때 고를 프로젝트(11-10) — 보고 있는 현장, 없으면(감독실 · 지도 · 라운지) 고른 세션의 프로젝트, 그것도 없으면 null
            currentProject: () => (world.rooms.some((r) => r.name === view) ? view
              : ((store.state.sessions.get(store.state.selected) || {}).project || null)),
