@@ -5,13 +5,16 @@ CLAUDE.md의 "항상 한국어로(도구 호출 사이 진행 글까지)" 규칙
 영어 도구 결과를 읽은 직후의 짧은 진행 글이 영어로 흐르는 것을 막지 못했다(11-05에 여러 번).
 이 hook은 도구가 끝날 때마다 트랜스크립트의 가장 최근 assistant 글 한 덩어리를 보고, 코드 · 경로 · URL을 뺀
 나머지에 한글이 거의 없으면 additionalContext로 경고를 넣는다. 같은 글에는 한 번만. 실패해도 조용히 지나간다.
+
+11-10: 알림에 모델이 쓴 글을 따옴표로 되돌려 넣지 않는다 — 서기 세션 245(sonnet)가 그 알림 직후 안전 분류기
+(reasoning_extraction)에 막혔고, 되돌려 보여 주는 것이 원인으로 짐작되어 인용을 뺐다.
 """
 import json
 import os
 import re
 import sys
 
-STATE_DIR = os.path.expanduser("~/.cache/foreman-kocheck")
+STATE_DIR = os.environ.get("FOREMAN_KOCHECK_STATE") or os.path.expanduser("~/.cache/foreman-kocheck")
 TAIL_BYTES = 400_000
 
 
@@ -66,9 +69,8 @@ def main() -> None:
         pass
     with open(mark, "w") as f:
         f.write(uid)
-    snippet = text.strip().replace("\n", " ")[:80]
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext":
-        f"[한국어 규칙] 직전 진행 글이 영어였습니다(\"{snippet}…\"). CLAUDE.md 작업 규칙: 도구 호출 사이의 짧은 진행 글까지 "
+        "[한국어 규칙] 직전 진행 글이 영어였습니다. CLAUDE.md 작업 규칙: 도구 호출 사이의 짧은 진행 글까지 "
         "전부 한국어로 씁니다. 다음 글부터 한국어로 쓰세요(도구 결과가 영어여도)."}}, ensure_ascii=False))
 
 
