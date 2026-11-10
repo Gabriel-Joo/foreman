@@ -37,7 +37,7 @@
       "test": { "_": "D QA 부스(test) — 테스트 모니터, 체크리스트. 책상 앞에서 모니터를 본다", "seats": [[2.4, 2.9, "up"], [0.9, 3.4, "right"]] },
       "meeting": { "_": "E 회의실(sub) — 화이트보드, 긴 테이블(Agent · 서브에이전트가 모인다)",
                    "seats": [[3.6, 2.2, "up"], [1.5, 3.25, "down"], [2.5, 3.25, "down"], [2.2, 4.85, "up"], [4.3, 3.6, "left"]] },
-      "commit": { "_": "H 커밋 데스크(git) — 프린터. 배포 파이프 바로 왼쪽(커밋 → ①)", "seats": [[1.8, 2.1, "down"]] },
+      "commit": { "_": "H 커밋 데스크(git) — 프린터. 배포 파이프 바로 왼쪽(커밋 → ①)", "seats": [[1.8, 2.35, "down"]] },
       "infra": {
         "_": "배포 파이프(ship) — 단계 칸 x는 grid.json ship. stands: 단계 왼쪽 위 기준(home은 배포 파이프 기준)",
         "stands": { "jenkins": [1.3, 3.2], "harbor": [3.6, 3.3], "argocd": [1.6, 3.2], "home": [0.9, 3.3] },
@@ -221,7 +221,7 @@
       { "s": "paper3", "in": "meeting", "x": 1.6, "y": 2.85, "z": "top" }, { "s": "mug", "in": "meeting", "x": 2.9, "y": 2.9, "z": "top" },
 
       { "_": "H 커밋 데스크" },
-      { "s": "table_s", "in": "commit", "x": 1.0, "y": 1.6 }, { "s": "paper3", "in": "commit", "x": 1.4, "y": 1.65, "z": "top" },
+      { "s": "table_s", "in": "commit", "x": 1.0, "y": 1.9 }, { "s": "paper3", "in": "commit", "x": 1.4, "y": 1.95, "z": "top" },
       { "s": "copier", "in": "commit", "x": 2.7, "y": 0.9 }
     ],
     "infra_decor": {
