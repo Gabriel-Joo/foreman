@@ -14,6 +14,10 @@
     commit -a · --amend · -i 등은 막는다. 경로를 적으면 그 경로 아래만, 안 적으면 그 저장소 스테이지가 그 경로 아래만 담을 때
            (다른 세션이 올려 둔 변경이 섞이지 않게 — PreToolUse 때 git diff --cached로 본다)
     push · 그 밖의 쓰기는 그대로 막는다
+- 예외 2(11-10 사용자 — 인프라 세션의 docs 커밋은 관리자가 확인하고 push): `[repo_scope.manager_push]`에 적은 저장소에서
+  관리자 세션(role manager, 그 프로젝트 원본 폴더 — worktree 아님)만 `git push [origin] [main]`을 할 수 있다.
+  origin/main(ls-remote로 읽음)보다 앞선 커밋이 전부 그 경로("docs/")만 건드렸을 때만. 하나라도 밖이면 · 머지 커밋 · 뒤처짐 · 갈라짐 ·
+  원격 못 읽음이면 거부. 역할은 부른 쪽(api/hooks.py)이 git push가 보일 때만 DB에서 읽어 넘긴다(wants_role)
 - Bash의 그 밖 쓰기(sed -i · 리디렉션)는 보지 않는다 — CC 샌드박스는 일상 명령을 시험한 뒤(사용자)
 """
 
@@ -77,6 +81,34 @@ def _is_read(sub: str, rest: list[str]) -> bool:
     return False
 
 
+def _strip_redir(rest: list[str]) -> list[str]:
+    """리디렉션(<<'EOF' · > out · 2>&1)은 인자가 아니다 — 기호와 그 대상, 기호 바로 앞의 fd 숫자를 뺀다."""
+    args: list[str] = []
+    skip = False
+    for k, a in enumerate(rest):
+        if skip:
+            skip = False
+            continue
+        if a and set(a) <= set("<>&"):          # 다음 토큰(파일 · EOF 표지 · ">&" 뒤 fd)은 대상
+            skip = True
+            continue
+        if a.isdigit() and k + 1 < len(rest) and rest[k + 1] and set(rest[k + 1]) <= set("<>&"):
+            continue
+        args.append(a)
+    return args
+
+
+def _git(repo: str, *args: str, timeout: float = 5) -> str | None:
+    """그 저장소에서 git 읽기 명령 — 표준 출력(끝 줄바꿈 뺌). 실패 · 시간 넘김이면 None."""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "-C", repo, *args], capture_output=True, timeout=timeout, check=True,
+                           stdin=subprocess.DEVNULL, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.decode("utf-8", "replace").rstrip("\n")
+
+
 def _heredoc_free(cmd: str) -> list[str]:
     """줄마다 나누되 heredoc 본문(커밋 메시지 등)은 뺀다."""
     out, end = [], None
@@ -107,29 +139,45 @@ class RepoScope:
         self.projects: set[str] = set()
         self.read: set[str] = set()
         self.writable: dict[str, list[tuple[str, str]]] = {}   # 세션 프로젝트 → [(다른 프로젝트, 경로 "docs/")]
+        self.manager_push: dict[str, list[tuple[str, str]]] = {}   # 같은 모양 — 관리자 세션의 docs 전용 push(11-10)
         p = Path(config)
         if p.exists():
             r = tomllib.loads(p.read_text()).get("repo_scope") or {}
             self.projects = set(r.get("read_only_elsewhere") or [])
             self.read = set(r.get("read") or [])
-            for proj, items in (r.get("writable") or {}).items():
-                for it in items or []:
-                    name, _, sub = str(it).partition("/")
-                    sub = sub.strip("/")
-                    if name and sub and ".." not in sub.split("/"):
-                        self.writable.setdefault(proj, []).append((name, sub + "/"))
+            self.writable = self._pairs(r.get("writable"))
+            self.manager_push = self._pairs(r.get("manager_push"))
         self.repos = repos   # 프로젝트 이름 → 저장소 경로(DB project.repo_path)
+
+    @staticmethod
+    def _pairs(table: Any) -> dict[str, list[tuple[str, str]]]:
+        """{세션 프로젝트: ["<다른 프로젝트>/<경로>/", …]} → {세션 프로젝트: [(다른 프로젝트, "경로/")]}. 경로 없음 · ..는 버린다."""
+        out: dict[str, list[tuple[str, str]]] = {}
+        for proj, items in (table or {}).items():
+            for it in items or []:
+                name, _, sub = str(it).partition("/")
+                sub = sub.strip("/")
+                if name and sub and ".." not in sub.split("/"):
+                    out.setdefault(proj, []).append((name, sub + "/"))
+        return out
+
+    def wants_role(self, tool: str, inp: dict[str, Any]) -> bool:
+        """판정에 세션 역할이 필요한가 — git push가 보이는 Bash만(관리자 docs push, 11-10). 부른 쪽이 DB에서 역할을 읽어 넘긴다."""
+        return tool == "Bash" and bool(self.manager_push) and bool(re.search(r"\bpush\b", str(inp.get("command") or "")))
 
     # ── 판정 ──────────────────────────────────────────────
     def check(self, project: str | None, cwd: str | None, tool: str, inp: dict[str, Any],
-              scratch: str | None = None) -> str | None:
-        """거부 이유 또는 None."""
+              scratch: str | None = None, role: str | None = None) -> str | None:
+        """거부 이유 또는 None. role은 그 세션의 역할(DB character_session.role, worktree 세션이면 부른 쪽이 None)."""
         if not project or project not in self.projects:
             return None
         own = self.repos().get(project)
         if not own:
             return None
         base = cwd or own
+        # 관리자 세션 — 그 프로젝트 원본 폴더(worktree 아님)에서 도는 role manager(11-10 사용자)
+        manager = (role == "manager" and bool(cwd)
+                   and _top(os.path.realpath(cwd or "")) == os.path.realpath(own))
         if tool in EDIT_TOOLS:
             path = inp.get("file_path") or inp.get("notebook_path")
             if isinstance(path, str) and path:
@@ -139,7 +187,7 @@ class RepoScope:
                     return self._why(other, f"{tool} {path}")
             return None
         if tool == "Bash":
-            for why in self._git_writes(project, str(inp.get("command") or ""), base, own, scratch):
+            for why in self._git_writes(project, str(inp.get("command") or ""), base, own, scratch, manager):
                 return why
         return None
 
@@ -155,10 +203,10 @@ class RepoScope:
             return None
         return top
 
-    def _subs(self, project: str, other: str) -> list[str]:
-        """[repo_scope.writable]에서 이 세션 프로젝트가 저장소 other(맨 위, 실제 경로)에서 고쳐도 되는 경로들("docs/")."""
+    def _subs(self, project: str, other: str, table: dict[str, list[tuple[str, str]]] | None = None) -> list[str]:
+        """[repo_scope.writable](또는 table)에서 이 세션 프로젝트가 저장소 other(맨 위, 실제 경로)에 대해 받은 경로들("docs/")."""
         repos = self.repos()
-        return [sub for name, sub in self.writable.get(project, [])
+        return [sub for name, sub in (self.writable if table is None else table).get(project, [])
                 if repos.get(name) and os.path.realpath(repos[name]) == other]
 
     @staticmethod
@@ -182,20 +230,7 @@ class RepoScope:
     def _docs_git(self, sub: str, rest: list[str], target: str, other: str, subs: list[str]) -> str | None:
         """예외 저장소에서 add · commit이 허용 범위인지 — 거부 이유 또는 None. 그 밖의 git 쓰기는 부른 쪽이 막는다."""
         where = " · ".join(subs)
-        # 리디렉션(<<'EOF' · > out · 2>&1)은 인자가 아니다 — 기호와 그 대상, 기호 바로 앞의 fd 숫자를 뺀다
-        args: list[str] = []
-        skip = False
-        for k, a in enumerate(rest):
-            if skip:
-                skip = False
-                continue
-            if a and set(a) <= set("<>&"):          # 다음 토큰(파일 · EOF 표지 · ">&" 뒤 fd)은 대상
-                skip = True
-                continue
-            if a.isdigit() and k + 1 < len(rest) and rest[k + 1] and set(rest[k + 1]) <= set("<>&"):
-                continue
-            args.append(a)
-        rest = args
+        rest = _strip_redir(rest)
         paths: list[str] = []
         i, dashdash = 0, False
         while i < len(rest):
@@ -240,7 +275,7 @@ class RepoScope:
             return None
         return [f for f in r.stdout.decode("utf-8", "replace").split("\0") if f]
 
-    def _git_writes(self, project: str, cmd: str, base: str, own: str, scratch: str | None):
+    def _git_writes(self, project: str, cmd: str, base: str, own: str, scratch: str | None, manager: bool = False):
         cur = base
         for line in _heredoc_free(cmd):
             seg: list[str] = []
@@ -252,12 +287,13 @@ class RepoScope:
                     if seg[0] in ("cd", "pushd") and len(seg) > 1 and "$" not in seg[1]:
                         cur = _resolve(seg[1], cur)
                     else:
-                        why = self._git_seg(project, seg, cur, own, scratch)
+                        why = self._git_seg(project, seg, cur, own, scratch, manager)
                         if why:
                             yield why
                 seg = []
 
-    def _git_seg(self, project: str, seg: list[str], cur: str, own: str, scratch: str | None) -> str | None:
+    def _git_seg(self, project: str, seg: list[str], cur: str, own: str, scratch: str | None,
+                 manager: bool = False) -> str | None:
         i, target = 0, cur
         while i < len(seg) and re.match(r"^[A-Za-z_]\w*=", seg[i]):   # GIT_DIR=… git …
             k, v = seg[i].split("=", 1)
@@ -292,7 +328,80 @@ class RepoScope:
         subs = self._subs(project, other)
         if subs and sub in ("add", "commit"):
             return self._docs_git(sub, rest, target, other, subs)
+        if sub == "push" and manager:
+            psubs = self._subs(project, other, self.manager_push)
+            if psubs:
+                return self._manager_docs_push(rest, other, psubs)
         return self._why(other, "git " + sub)
+
+    # ── 관리자 세션의 docs 전용 push(11-10 사용자) ──────────────────
+    # 관리자 세션에만, [repo_scope.manager_push]에 적은 저장소의 원본에서, origin보다 앞선 커밋이 전부 그 경로만 건드렸을 때.
+    # 모양은 git push [origin] [main]만(-q · -v 정도). 강제 · 삭제 · 미러 · 태그 · 다른 원격 · 다른 브랜치 · refspec은 막는다.
+    _PUSH_OK = {"-q", "--quiet", "-v", "--verbose"}
+    REMOTE, BRANCH = "origin", "main"
+    LS_REMOTE_TIMEOUT = 10.0
+
+    def _manager_docs_push(self, rest: list[str], other: str, subs: list[str]) -> str | None:
+        where = " · ".join(subs)
+        name = os.path.basename(other)
+        head = f"git push({name}) — "
+        pos: list[str] = []
+        for a in _strip_redir(rest):
+            if a.startswith("-"):
+                if a not in self._PUSH_OK:
+                    return head + f"{a}는 쓸 수 없습니다. 관리자 push는 git push [origin] [main]만 됩니다(강제 · 삭제 · 태그 · 미러 막음)."
+            else:
+                pos.append(a)
+        if len(pos) > 2 or (pos and pos[0] != self.REMOTE) or (len(pos) == 2 and pos[1] != self.BRANCH):
+            return head + f"'{' '.join(pos)}' — 관리자 push는 git push [origin] [main]만 됩니다(다른 원격 · 브랜치 · refspec 막음)."
+        # 원격 설정이 push를 바꾸지 않는지(미러 · push refspec)
+        if _git(other, "config", "--get", f"remote.{self.REMOTE}.mirror") not in (None, "", "false"):
+            return head + f"remote.{self.REMOTE}.mirror가 켜져 있어 막았습니다."
+        if _git(other, "config", "--get-all", f"remote.{self.REMOTE}.push"):
+            return head + f"remote.{self.REMOTE}.push 설정이 있어 막았습니다(무엇이 올라갈지 바뀝니다)."
+        if len(pos) < 2:   # 브랜치를 안 적으면 지금 브랜치가 main이고 push 대상이 origin/main이어야 한다
+            if _git(other, "symbolic-ref", "--short", "HEAD") != self.BRANCH:
+                return head + f"지금 브랜치가 {self.BRANCH}가 아닙니다 — git push origin main으로 적으세요."
+            if (_git(other, "config", "--get", "push.default") or "simple") == "matching":
+                return head + "push.default=matching이라 다른 브랜치도 올라갈 수 있어 막았습니다 — git push origin main으로 적으세요."
+            if not pos and _git(other, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{push}") != f"{self.REMOTE}/{self.BRANCH}":
+                return head + f"push 대상이 {self.REMOTE}/{self.BRANCH}가 아닙니다 — git push origin main으로 적으세요."
+        # 원격 머리(네트워크 — 시간 제한)
+        out = _git(other, "ls-remote", self.REMOTE, f"refs/heads/{self.BRANCH}", timeout=self.LS_REMOTE_TIMEOUT)
+        if out is None:
+            return head + f"원격({self.REMOTE})의 {self.BRANCH}를 읽지 못해 막았습니다(네트워크 · 인증 · {self.LS_REMOTE_TIMEOUT:.0f}초 넘김). 앞선 커밋이 docs만인지 확인할 수 없습니다."
+        remote = out.split()[0] if out.split() else ""
+        if not re.fullmatch(r"[0-9a-f]{40}([0-9a-f]{24})?", remote):
+            return head + f"원격({self.REMOTE})에 {self.BRANCH}가 없습니다 — 관리자 push는 이미 있는 {self.BRANCH}에 앞선 커밋만 올립니다."
+        local = _git(other, "rev-parse", "--verify", "-q", f"refs/heads/{self.BRANCH}^{{commit}}")
+        if not local:
+            return head + f"이 저장소에 {self.BRANCH} 브랜치가 없습니다."
+        if _git(other, "cat-file", "-e", f"{remote}^{{commit}}") is None:
+            return head + f"원격 {self.BRANCH}({remote[:8]})를 이 저장소가 갖고 있지 않습니다 — 뒤처졌거나 갈라졌습니다. 그 저장소 세션이 먼저 맞춥니다."
+        if _git(other, "merge-base", "--is-ancestor", remote, local) is None:
+            return head + f"로컬 {self.BRANCH}가 원격({remote[:8]})보다 앞선 상태가 아닙니다(뒤처짐 · 갈라짐)."
+        ahead = _git(other, "rev-list", f"{remote}..{local}")
+        if ahead is None:
+            return head + "앞선 커밋을 읽지 못해 막았습니다."
+        commits = ahead.split()
+        if not commits:
+            return None   # 올릴 것이 없다
+        merges = _git(other, "rev-list", "--min-parents=2", f"{remote}..{local}")
+        if merges is None or merges.split():
+            return head + f"앞선 커밋에 머지 커밋이 있습니다({', '.join(m[:8] for m in (merges or '').split()[:3])}) — 관리자 push는 머지 없는 docs 커밋만 올립니다."
+        bad: list[str] = []
+        for c in commits:
+            files = _git(other, "diff-tree", "--no-commit-id", "--name-only", "-r", "-z", c)
+            if files is None:
+                return head + f"커밋 {c[:8]}의 파일을 읽지 못해 막았습니다."
+            for f in (x for x in files.split("\0") if x):
+                if not self._under(os.path.join(other, f), other, subs):
+                    bad.append(f"{c[:8]} {f}")
+        if bad:
+            return (head + f"앞선 커밋 {len(commits)}개 중 {where} 밖을 건드린 것이 있어 막았습니다: "
+                    + ", ".join(bad[:5]) + (f" 외 {len(bad) - 5}개" if len(bad) > 5 else "")
+                    + ". docs 밖은 그 저장소 세션이 올립니다.")
+        return None
 
     @staticmethod
     def _why(other: str, what: str) -> str:

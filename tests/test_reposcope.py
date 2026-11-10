@@ -170,3 +170,140 @@ def test_reason_text(tmp_path):
     s, fm, rs, sc = _setup(tmp_path)
     why = s.check("foreman", str(fm), "Bash", {"command": f"git -C {rs} push"}, sc)
     assert why.startswith("다른 저장소 쓰기 막힘 — ") and "읽기만 합니다(git push)" in why and "ls-remote" in why
+
+
+# ── 관리자 세션의 docs 전용 push(11-10 사용자) — 실제 git 저장소 + 로컬 bare 원격 ──────────────
+import subprocess  # noqa: E402
+
+CFG_MGR = CFG_INFRA + """
+[repo_scope.manager_push]
+foreman = ["runshoes/docs/", "petmint-rag-chatbot/docs/"]
+"""
+
+
+def _g(repo, *args):
+    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+           "HOME": str(repo), "PATH": "/usr/bin:/bin", "GIT_CONFIG_NOSYSTEM": "1"}
+    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True, env=env).stdout
+
+
+def _commit(repo, files, msg="c"):
+    for f in files:
+        p = repo / f
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(p.read_text() + "x\n" if p.exists() else "x\n")
+        _g(repo, "add", f)
+    _g(repo, "commit", "-q", "-m", msg)
+    return _g(repo, "rev-parse", "HEAD").strip()
+
+
+def _mgr_setup(tmp_path):
+    fm, rs, pm, inf = (tmp_path / n for n in ("foreman", "runshoes", "petmint", "infra"))
+    for d in (fm, pm, inf):
+        (d / ".git").mkdir(parents=True)
+    (fm / ".worktrees" / "foreman-2").mkdir(parents=True)
+    (fm / ".worktrees" / "foreman-2" / ".git").write_text("gitdir: x")
+    bare = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
+    rs.mkdir()
+    _g(rs, "init", "-q", "-b", "main")
+    _commit(rs, ["README.md", "docs/a.md"], "init")
+    _g(rs, "remote", "add", "origin", str(bare))
+    _g(rs, "push", "-q", "-u", "origin", "main")
+    cfg = tmp_path / "approval.toml"
+    cfg.write_text(CFG_MGR)
+    s = RepoScope(cfg, repos=lambda: {"foreman": str(fm), "runshoes": str(rs), "petmint-rag-chatbot": str(pm),
+                                      "ronanlab-infra": str(inf)}, free=())
+    return s, fm, rs, bare, inf
+
+
+def _push(s, fm, cmd, role="manager", cwd=None):
+    return s.check("foreman", str(cwd or fm), "Bash", {"command": cmd}, None, role)
+
+
+def test_manager_push_docs_only_ahead_allowed(tmp_path):
+    s, fm, rs, bare, _ = _mgr_setup(tmp_path)
+    assert not _push(s, fm, f"git -C {rs} push origin main")          # 앞선 커밋 0개 — 할 일 없음
+    _commit(rs, ["docs/ops/nodes.md"])
+    _commit(rs, ["docs/a.md", "docs/b.md"])
+    for cmd in (f"git -C {rs} push origin main", f"git -C {rs} push", f"git -C {rs} push origin",
+                f"cd {rs} && git push origin main", f"git -C {rs} push -q origin main 2>&1"):
+        assert not _push(s, fm, cmd), cmd
+    assert not _push(s, fm, f"git -C {rs} push origin main", cwd=fm / "bridge")   # 원본 폴더 아래 하위 폴더도
+    assert s.wants_role("Bash", {"command": f"git -C {rs} push"})
+    assert not s.wants_role("Bash", {"command": f"git -C {rs} status"})
+    assert not s.wants_role("Edit", {"file_path": "push"})
+
+
+def test_manager_push_denied_when_any_commit_touches_outside_docs(tmp_path):
+    s, fm, rs, _, _ = _mgr_setup(tmp_path)
+    _commit(rs, ["docs/a.md"])
+    bad = _commit(rs, ["docs/b.md", "backend/App.java"])
+    _commit(rs, ["docs/c.md"])
+    why = _push(s, fm, f"git -C {rs} push origin main")
+    assert why and "backend/App.java" in why and bad[:8] in why and "docs/" in why
+    assert "docs/b.md" not in why
+    # docs로 시작하는 다른 폴더도 밖이다
+    s2, fm2, rs2, _, _ = _mgr_setup(tmp_path / "2")
+    _commit(rs2, ["docsx/a.md"])
+    assert "docsx/a.md" in _push(s2, fm2, f"git -C {rs2} push")
+
+
+def test_manager_push_denied_behind_diverged_merge(tmp_path):
+    s, fm, rs, bare, _ = _mgr_setup(tmp_path)
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", str(bare), str(other)], check=True)
+    _commit(other, ["docs/z.md"])
+    _g(other, "push", "-q", "origin", "main")
+    # 뒤처짐 — 원격 머리를 갖고 있지 않다
+    why = _push(s, fm, f"git -C {rs} push origin main")
+    assert why and "갖고 있지 않습니다" in why
+    # 갈라짐 — 가져왔지만 로컬 main이 원격을 품지 않는다
+    _commit(rs, ["docs/a.md"])
+    _g(rs, "fetch", "-q", "origin")
+    why = _push(s, fm, f"git -C {rs} push origin main")
+    assert why and "앞선 상태가 아닙니다" in why
+    # 머지 커밋 — 원격을 합친 뒤에는 앞섰지만 머지가 끼어 있다
+    _g(rs, "merge", "-q", "--no-edit", "origin/main")
+    why = _push(s, fm, f"git -C {rs} push origin main")
+    assert why and "머지 커밋" in why
+
+
+def test_manager_push_shape_narrow(tmp_path):
+    s, fm, rs, _, _ = _mgr_setup(tmp_path)
+    _commit(rs, ["docs/a.md"])
+    for cmd in (f"git -C {rs} push --force origin main", f"git -C {rs} push -f", f"git -C {rs} push origin +main",
+                f"git -C {rs} push --force-with-lease origin main", f"git -C {rs} push origin --delete main",
+                f"git -C {rs} push --mirror", f"git -C {rs} push --tags", f"git -C {rs} push --all",
+                f"git -C {rs} push origin dev", f"git -C {rs} push upstream main", f"git -C {rs} push origin main:main",
+                f"git -C {rs} push origin main dev", f"git -C {rs} push origin HEAD", f"git -C {rs} push -u origin main"):
+        assert _push(s, fm, cmd), cmd
+    # 다른 브랜치에 있으면 브랜치를 적지 않은 push는 막는다(그 브랜치가 올라간다)
+    _g(rs, "checkout", "-q", "-b", "dev")
+    assert "main가 아닙니다" in _push(s, fm, f"git -C {rs} push")
+    assert not _push(s, fm, f"git -C {rs} push origin main")
+    _g(rs, "checkout", "-q", "main")
+    # push 설정이 무엇이 올라갈지 바꾸면 막는다
+    _g(rs, "config", "remote.origin.push", "refs/heads/*:refs/heads/*")
+    assert "remote.origin.push" in _push(s, fm, f"git -C {rs} push origin main")
+
+
+def test_manager_push_only_manager_in_original_folder(tmp_path):
+    s, fm, rs, _, inf = _mgr_setup(tmp_path)
+    _commit(rs, ["docs/a.md"])
+    cmd = f"git -C {rs} push origin main"
+    for role in (None, "coder", "scribe", "inspector"):
+        assert "읽기만 합니다(git push)" in _push(s, fm, cmd, role=role), role
+    assert "읽기만 합니다(git push)" in _push(s, fm, cmd, cwd=fm / ".worktrees" / "foreman-2")   # worktree 관리자
+    # 인프라 세션 push는 그대로 막힘(역할과 상관없이)
+    assert s.check("ronanlab-infra", str(inf), "Bash", {"command": cmd}, None, "manager")
+    # 적지 않은 저장소(인프라)는 관리자도 막힘
+    assert _push(s, fm, f"git -C {inf} push origin main")
+
+
+def test_manager_push_denied_when_remote_unreadable(tmp_path):
+    s, fm, rs, _, _ = _mgr_setup(tmp_path)
+    _commit(rs, ["docs/a.md"])
+    _g(rs, "remote", "set-url", "origin", str(tmp_path / "nowhere.git"))
+    why = _push(s, fm, f"git -C {rs} push origin main")
+    assert why and "읽지 못해" in why
