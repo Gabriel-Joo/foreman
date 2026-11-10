@@ -499,8 +499,9 @@ export class Store {
     return r.json();
   }
   // 프로젝트마다 터미널 창(11-10) — project의 셸 창을 보인다(null이면 지금 창 그대로). 돌려받은 것 = 실제로 보이는 창
-  async terminalOpen(project) {
-    const r = await fetch('/api/terminal/open', { method: 'POST', headers: this.headers(true), body: JSON.stringify({ project: project || null }) });
+  // tab(11-10) — 이 탭의 그룹 세션에서 고른다(다른 탭의 터미널을 끌고 가지 않는다)
+  async terminalOpen(project, tab) {
+    const r = await fetch('/api/terminal/open', { method: 'POST', headers: this.headers(true), body: JSON.stringify({ project: project || null, tab: tab || null }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
     return j;
@@ -513,8 +514,8 @@ export class Store {
     return j;
   }
   // 지금 실제로 보이는 창(바꾸지 않는다, 11-10) — 다른 탭 · CC 부탁이 창을 바꿔도 이름표가 따라가게 열려 있는 동안 묻는다
-  async terminalWindow() {
-    const r = await fetch('/api/terminal/window', { headers: this.headers() });
+  async terminalWindow(tab) {
+    const r = await fetch('/api/terminal/window' + (tab ? `?tab=${encodeURIComponent(tab)}` : ''), { headers: this.headers() });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   }

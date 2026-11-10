@@ -89,6 +89,8 @@ class Settings(BaseSettings):
     terminal_socket: Path = REPO / ".run" / "ttyd.sock"
     terminal_tmux_session: str = "foreman-shell"
     terminal_rcfile: Path = REPO / "deploy" / "shell" / "foreman-bashrc"
+    # ttyd가 브라우저 연결마다 띄우는 것 — 탭마다 그룹 세션(보이는 창이 탭마다 따로, 11-10)
+    terminal_view_script: Path = REPO / "deploy" / "shell" / "foreman-term-view"
     terminal_request_ttl_s: float = 1800.0   # CC가 부탁한 명령을 이만큼 기다린다(그 뒤 친 명령은 결과를 전달하지 않는다)
     terminal_output_lines: int = 60          # 세션에 전달하는 출력 — 마지막 N줄(마스킹 후)
     terminal_cookie_ttl_s: float = 12 * 3600

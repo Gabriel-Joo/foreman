@@ -2,7 +2,8 @@
 
   POST /api/terminal/session     API 토큰 → 쿠키(HttpOnly · SameSite=Strict · Path=/terminal). 패널을 열 때 받는다
   GET  /api/terminal             상태 + 기다리는 부탁(CC가 "이 명령을 실행해 주세요"라고 한 것)
-  POST /api/terminal/open        {project} — 그 프로젝트의 셸 창을 보인다(없으면 그 저장소 폴더에서 만든다, 11-10)
+  POST /api/terminal/open        {project, tab} — 그 탭이 그 프로젝트의 셸 창을 보게 한다(없으면 그 저장소 폴더에서 만든다, 11-10)
+  GET  /api/terminal/window?tab= 그 탭이 지금 보는 창(바꾸지 않는다)
   POST /api/terminal/respawn     {project, force} — 그 창의 셸을 새로 띄운다(바뀐 셸 설정을 읽게, 11-10)
   DELETE /api/terminal/requests/{id}   부탁을 닫는다(결과를 전달하지 않는다)
   POST /api/terminal/requests/{id}/prefill   셸 입력 줄에 다시 채운다
@@ -15,8 +16,9 @@ WS는 Origin이 Host와 같아야 한다(다른 사이트가 브라우저 쿠키
 
 import asyncio
 import logging
+import re
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
@@ -27,7 +29,7 @@ from websockets.asyncio.client import unix_connect
 from bridge.api.auth import require_api_token
 from bridge.api.hooks import _authed_body
 from bridge.inject import Refused
-from bridge.terminal import COOKIE, TERM_PROJECTS
+from bridge.terminal import COOKIE, TAB_RE, TERM_PROJECTS
 
 log = logging.getLogger("foreman.terminal")
 api = APIRouter(prefix="/api/terminal", dependencies=[Depends(require_api_token)])
@@ -59,17 +61,18 @@ async def state(request: Request) -> dict[str, Any]:
 
 
 @api.get("/window")
-async def window(request: Request) -> dict[str, Any]:
+async def window(request: Request, tab: str | None = None) -> dict[str, Any]:
     """지금 tmux가 보이는 창(이름 · 폴더) — 창을 바꾸지 않는다. 화면 이름표가 거짓이 되지 않게 열려 있는 동안 묻는다(11-10).
     tmux의 "보이는 창"은 세션 하나에 하나라 다른 탭 · CC 부탁 · tmux 키가 바꿀 수 있다."""
     try:
-        return await _mgr(request).current()
+        return await _mgr(request).current_view(tab)
     except Refused as e:
         raise HTTPException(503, f"터미널 창을 읽지 못했습니다 — {e}") from e
 
 
 class OpenIn(BaseModel):
-    project: str | None = None     # None이면 지금 보이는 창 그대로(라운지 · 감독실)
+    project: str | None = None     # None이면 지금 보이는 창 그대로
+    tab: str | None = None         # 브라우저 탭 id(11-10) — 그 탭의 그룹 세션에서 고른다. 없으면 기준 세션(옛 화면)
 
 
 @api.post("/open")
@@ -79,7 +82,7 @@ async def open_project(body: OpenIn, request: Request) -> dict[str, Any]:
     if body.project is not None and body.project not in TERM_PROJECTS:
         raise HTTPException(422, "모르는 프로젝트입니다")
     try:
-        return await m.open_project(body.project)
+        return await m.open_project(body.project, body.tab)
     except Refused as e:
         raise HTTPException(503, f"터미널 창을 고르지 못했습니다 — {e}") from e
 
@@ -172,6 +175,21 @@ def _same_origin(headers: Any) -> bool:
     return urlsplit(origin).netloc == host
 
 
+_PROJ_ARG = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
+
+
+def _ttyd_args(ws: WebSocket) -> str:
+    """iframe 주소의 ?arg=<탭>&arg=<프로젝트>(ttyd 화면이 그대로 WS 주소에 붙인다) — 모양이 맞을 때만 ttyd로 넘긴다(11-10).
+    ttyd -a는 이것을 명령 인자로 붙인다(셸을 거치지 않는다). 틀리면 아무것도 넘기지 않아 기준 세션에 붙는다."""
+    a = ws.query_params.getlist("arg")
+    if not a or not TAB_RE.match(a[0]):
+        return ""
+    q = [("arg", a[0])]
+    if len(a) > 1 and _PROJ_ARG.match(a[1]):
+        q.append(("arg", a[1]))
+    return "?" + urlencode(q)
+
+
 @router.websocket("/terminal/ws")
 async def terminal_ws(ws: WebSocket) -> None:
     m = getattr(ws.app.state, "terminal", None)
@@ -185,7 +203,7 @@ async def terminal_ws(ws: WebSocket) -> None:
         await ws.close(1008)
         return
     try:
-        up = await unix_connect(str(m.s.terminal_socket), "ws://localhost/terminal/ws", subprotocols=["tty"],
+        up = await unix_connect(str(m.s.terminal_socket), "ws://localhost/terminal/ws" + _ttyd_args(ws), subprotocols=["tty"],
                                 max_size=None, open_timeout=5, ping_interval=None)
     except Exception as e:  # noqa: BLE001
         log.warning("터미널 WS: ttyd에 닿지 못했다: %s", type(e).__name__)

@@ -2,7 +2,9 @@
 
 구성
   tmux 세션 foreman-shell  ← bash --rcfile deploy/shell/foreman-bashrc (사람이 직접 치는 셸)
-  ttyd(.tools/ttyd)        ← 그 tmux 세션에 붙는다. TCP 포트를 열지 않고 UNIX 소켓(.run/ttyd.sock, 디렉토리 0700)에만
+    창은 프로젝트마다 하나(runshoes · petmint-rag-chatbot · foreman). 탭마다 그룹 세션 foreman-shell-v-<탭>이 같은 창을 보되
+    "보이는 창"만 따로 갖는다(11-10, deploy/shell/foreman-term-view — 연결이 끝나면 사라진다)
+  ttyd(.tools/ttyd)        ← 연결마다 foreman-term-view를 띄워 붙는다. TCP 포트를 열지 않고 UNIX 소켓(.run/ttyd.sock, 디렉토리 0700)에만
   브리지 /terminal/*       ← 쿠키 인증을 거쳐 ttyd 소켓으로 그대로 넘긴다(xterm.js 화면 그대로 — 파싱하지 않는다)
 
 기록 — 셸의 PROMPT_COMMAND가 명령마다 /hooks/shell로 보낸다. 마스킹해서 event(source=shell, type=shell_cmd)로.
@@ -44,6 +46,8 @@ def is_prompt(line: str) -> bool:
 COOKIE = "foreman_term"
 # 프로젝트마다 터미널 창(11-10) — 창 이름이 이것이면 그 프로젝트 창이다(bridge/api/dashboard.py PROJECT_ORDER와 같은 이름)
 TERM_PROJECTS = ("runshoes", "petmint-rag-chatbot", "foreman")
+# 브라우저 탭 id(11-10) — iframe 주소 · API로 온다. 이 모양만 tmux 세션 이름 · ttyd 인자로 쓴다(deploy/shell/foreman-term-view와 같은 규칙)
+TAB_RE = re.compile(r"^[A-Za-z0-9_-]{6,40}$")
 
 # ── 마스킹(셸 명령 · 출력) ─────────────────────────────────────────
 # Masker(정확한 값 · 토큰 모양 · KEY=값)에 더해 명령줄에서 비밀이 오는 자리
@@ -290,6 +294,7 @@ class TerminalManager:
         d.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(d, 0o700)
         await self.ensure_shell()
+        await self.sweep_views(min_age=0)       # 브리지가 내려가 있던 동안 남은 탭 세션(ttyd가 다시 뜨면 탭은 새로 붙는다)
         if self.engine is not None:
             await self._shell_session()
         if not os.access(self.s.ttyd_bin, os.X_OK):
@@ -367,12 +372,66 @@ class TerminalManager:
         log.info("터미널 창 만듦: %s (%s)", project, out.strip())
         return f"={sess}:{out.strip()}"
 
-    async def open_project(self, project: str | None) -> dict[str, Any]:
-        """화면이 [터미널]을 열 때 — 그 프로젝트 창을 보이고, 실제로 보이는 창 이름 · 폴더를 돌려준다(화면이 고른 것과 대 본다)."""
+    # ── 탭마다 보이는 창(11-10 사용자 — "방을 옮기면 터미널도 그 방 프로젝트로") ──
+    # tmux의 "보이는 창"은 세션 하나에 하나라, 모든 탭이 기준 세션에 붙어 있던 때는 한 탭 · CC 부탁이 창을 바꾸면 다른 탭도 끌려갔다.
+    # 이제 ttyd가 연결마다 deploy/shell/foreman-term-view로 그룹 세션 <기준>-v-<탭>을 만든다 — 창(셸)은 함께, 보이는 창은 탭마다.
+    # 화면은 탭 id를 iframe 주소와 /open · /window에 같이 준다. 탭 id가 없으면(옛 화면 · screen.py) 기준 세션 — 전과 같다
+    def view_name(self, tab: str | None) -> str | None:
+        return f"{self.s.terminal_tmux_session}-v-{tab}" if tab and TAB_RE.match(tab) else None
+
+    async def _view(self, tab: str | None, wait: float = 0.0) -> str | None:
+        """그 탭의 그룹 세션 대상(=이름:) — 아직 없으면 wait초까지 기다린다(iframe이 막 붙는 중일 수 있다). 끝내 없으면 None."""
+        name = self.view_name(tab)
+        if not name:
+            return None
+        for i in range(max(1, int(wait / 0.1) + 1)):
+            try:
+                await tmux(self.socket, "has-session", "-t", f"={name}")
+                return f"={name}:"
+            except Refused:
+                if i * 0.1 >= wait:
+                    break
+                await asyncio.sleep(0.1)
+        return None
+
+    async def sweep_views(self, min_age: float = 30.0) -> list[str]:
+        """붙은 사람 없이 남은 그룹 세션을 치운다 — 보통은 destroy-unattached로 사라지지만, 붙기 전에 끊기면 남는다.
+        막 만들어져 아직 붙는 중인 것(min_age초 안)은 두고 본다. 창 · 셸은 기준 세션에 그대로 남는다."""
+        pre = f"{self.s.terminal_tmux_session}-v-"
+        try:
+            rows = (await tmux(self.socket, "list-sessions", "-F",
+                               "#{session_name}\t#{session_attached}\t#{session_created}")).splitlines()
+        except Refused:
+            return []
+        gone = []
+        now = time.time()
+        for ln in rows:
+            p = ln.split("\t")
+            if len(p) == 3 and p[0].startswith(pre) and p[1] == "0" and now - float(p[2] or 0) >= min_age:
+                try:
+                    await tmux(self.socket, "kill-session", "-t", f"={p[0]}")
+                    gone.append(p[0])
+                except Refused:
+                    pass
+        if gone:
+            log.info("터미널 남은 탭 세션 치움: %s", ", ".join(gone))
+        return gone
+
+    async def open_project(self, project: str | None, tab: str | None = None) -> dict[str, Any]:
+        """화면이 [터미널]을 열 때 · 방을 옮길 때 — 그 탭이 그 프로젝트 창을 보게 하고, 실제로 보이는 창 이름 · 폴더를 돌려준다
+        (화면이 고른 것과 대 본다). 탭 세션이 아직 없으면 잠깐 기다리고, 끝내 없으면 기준 세션에서 고른다(view=False)."""
         t = await self.window_for(project)
+        await self.sweep_views()
+        vt = await self._view(tab, wait=3.0)
         if project:
-            await tmux(self.socket, "select-window", "-t", t)
-        return await self.current()
+            idx = t.rsplit(":", 1)[1]
+            await tmux(self.socket, "select-window", "-t", f"{vt}{idx}" if vt else t)
+        return {**await self.current(vt), "view": bool(vt)}
+
+    async def current_view(self, tab: str | None) -> dict[str, Any]:
+        """그 탭이 지금 보는 창(바꾸지 않는다). 탭 세션이 없으면 기준 세션의 보이는 창(view=False)."""
+        vt = await self._view(tab)
+        return {**await self.current(vt), "view": bool(vt)}
 
     async def current(self, target: str | None = None) -> dict[str, Any]:
         """보이는 창(또는 target 창)의 이름 · 폴더 · 셸이 옛 설정인지(shell_old — 셸이 뜬 뒤 셸 설정 파일이 바뀌었다, 11-10)."""
@@ -440,11 +499,11 @@ class TerminalManager:
     async def _supervise(self) -> None:
         delay = 1.0
         env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "TMUX_PANE")}
-        args = [str(self.s.ttyd_bin), "-i", str(self.s.terminal_socket), "-W", "-b", "/terminal", "-m", "4", "-d", "3",
+        # -a: iframe 주소의 ?arg=<탭>&arg=<프로젝트>가 명령 뒤에 붙는다(WS 프록시가 모양을 거른다) → 탭마다 그룹 세션(11-10)
+        args = [str(self.s.ttyd_bin), "-i", str(self.s.terminal_socket), "-W", "-a", "-b", "/terminal", "-m", "4", "-d", "3",
                 "-t", "disableLeaveAlert=true", "-t", "disableResizeOverlay=true", "-t", "titleFixed=FOREMAN 터미널",
                 "-t", "fontSize=13",
-                "tmux", "-S", self.socket, "new-session", "-A", "-s", self.s.terminal_tmux_session,
-                "-c", str(Path.home()), self._shell_cmd()]
+                str(self.s.terminal_view_script), self.socket, self.s.terminal_tmux_session, str(self.s.terminal_rcfile)]
         logf = self.s.terminal_socket.parent / "ttyd.log"
         while not self._stopping:
             try:
