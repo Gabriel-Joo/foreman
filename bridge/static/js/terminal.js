@@ -6,7 +6,7 @@ import { keep } from './render.js';
 import { applyTermFont, onDprChange } from './uiscale.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const PROJ = { runshoes: '런슈즈', 'petmint-rag-chatbot': '펫퍼민트', foreman: 'FOREMAN' };
+const PROJ = { runshoes: '런슈즈', 'petmint-rag-chatbot': '펫퍼민트', foreman: 'FOREMAN', 'ronanlab-infra': '인프라' };
 const BAR_H = 36;
 
 // getProject(11-10) — 지금 보는 현장 · 고른 세션의 프로젝트(office.js currentProject). 열 때 그 프로젝트의 셸 창을 보인다.

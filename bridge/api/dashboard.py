@@ -30,8 +30,8 @@ from bridge.uiver import ui_version
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
 
-PROJECT_ORDER = ["runshoes", "petmint-rag-chatbot", "foreman"]
-LABEL = {"runshoes": "런슈즈", "petmint-rag-chatbot": "펫퍼민트", "foreman": "FOREMAN", None: "미분류"}
+PROJECT_ORDER = ["runshoes", "petmint-rag-chatbot", "foreman", "ronanlab-infra"]
+LABEL = {"runshoes": "런슈즈", "petmint-rag-chatbot": "펫퍼민트", "foreman": "FOREMAN", "ronanlab-infra": "인프라", None: "미분류"}
 DORMANT_SHOW_H = 48          # 프로세스가 없는 세션은 이 시간 안에 활동이 있던 것만
 KST = timedelta(hours=9)
 _cache: dict[str, Any] = {"at": 0.0, "data": None}

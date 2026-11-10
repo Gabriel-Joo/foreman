@@ -2,7 +2,7 @@
 
 구성
   tmux 세션 foreman-shell  ← bash --rcfile deploy/shell/foreman-bashrc (사람이 직접 치는 셸)
-    창은 프로젝트마다 하나(runshoes · petmint-rag-chatbot · foreman). 탭마다 그룹 세션 foreman-shell-v-<탭>이 같은 창을 보되
+    창은 프로젝트마다 하나(runshoes · petmint-rag-chatbot · foreman · ronanlab-infra). 탭마다 그룹 세션 foreman-shell-v-<탭>이 같은 창을 보되
     "보이는 창"만 따로 갖는다(11-10, deploy/shell/foreman-term-view — 연결이 끝나면 사라진다)
   ttyd(.tools/ttyd)        ← 연결마다 foreman-term-view를 띄워 붙는다. TCP 포트를 열지 않고 UNIX 소켓(.run/ttyd.sock, 디렉토리 0700)에만
   브리지 /terminal/*       ← 쿠키 인증을 거쳐 ttyd 소켓으로 그대로 넘긴다(xterm.js 화면 그대로 — 파싱하지 않는다)
@@ -45,7 +45,7 @@ def is_prompt(line: str) -> bool:
     return _PROMPT_HEAD.match(line) is not None
 COOKIE = "foreman_term"
 # 프로젝트마다 터미널 창(11-10) — 창 이름이 이것이면 그 프로젝트 창이다(bridge/api/dashboard.py PROJECT_ORDER와 같은 이름)
-TERM_PROJECTS = ("runshoes", "petmint-rag-chatbot", "foreman")
+TERM_PROJECTS = ("runshoes", "petmint-rag-chatbot", "foreman", "ronanlab-infra")
 # 브라우저 탭 id(11-10) — iframe 주소 · API로 온다. 이 모양만 tmux 세션 이름 · ttyd 인자로 쓴다(deploy/shell/foreman-term-view와 같은 규칙)
 TAB_RE = re.compile(r"^[A-Za-z0-9_-]{6,40}$")
 

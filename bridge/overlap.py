@@ -40,12 +40,12 @@ _JOSA = ("에서는", "으로는", "에서", "으로", "에게", "까지", "부�
 # 어디서나 흔한 것 — 말뭉치가 작을 때도 드문 낱말로 잡히지 않게
 _STOP = frozenset("""
 the and for with from that this not you are was but can all any has have will into then than when what
-http https www com md py js json toml sql html css txt log docs bridge claude foreman runshoes petmint
+http https www com md py js json toml sql html css txt log docs bridge claude foreman runshoes petmint ronanlab
 home kopo17
 """.split())
 # 포먼이 내는 서기 일감(docs/12_scribe.md)은 일부러 나눠 시키는 틀 글이다 — 맞대지 않는다(11-06 다시 돌리기 헛알림의 대부분)
 _SKIP_HEAD = ("[FOREMAN 서기 일감",)
-_PROJ_KO = {"runshoes": "런슈즈", "petmint-rag-chatbot": "펫퍼민트", "foreman": "FOREMAN"}
+_PROJ_KO = {"runshoes": "런슈즈", "petmint-rag-chatbot": "펫퍼민트", "foreman": "FOREMAN", "ronanlab-infra": "인프라"}
 
 
 def projLabel(name: str | None) -> str:  # noqa: N802 — 화면(js)의 이름과 맞춘다
