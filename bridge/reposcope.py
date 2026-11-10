@@ -7,6 +7,8 @@
 - Bash의 git: `-C` · `cd` · `--git-dir` · `--work-tree` · `GIT_DIR=`로 다른 저장소를 가리키며 읽기 명령(`read`) 밖을 쓰면.
   branch · tag · remote · stash · worktree는 목록 보기만 읽기로 친다. fetch도 그 저장소 .git에 쓰므로 막는다
 - /tmp 아래(스크래치 복제본)와 git 저장소가 아닌 곳(~/.claude 등)은 막지 않는다
+- 예외(11-10 사용자 — 인프라 묶음 1에서 펫퍼민트 · 런슈즈 문서를 고친다): `[repo_scope.writable]`에 적은 "<프로젝트>/<경로>/" 아래는
+  Edit · Write로 고칠 수 있다. 그 프로젝트의 원본 저장소(DB project.repo_path)만 — 그 저장소의 worktree는 아니다. git 쓰기는 그대로 막는다
 - Bash의 그 밖 쓰기(sed -i · 리디렉션)는 보지 않는다 — CC 샌드박스는 일상 명령을 시험한 뒤(사용자)
 """
 
@@ -99,11 +101,18 @@ class RepoScope:
         self.free = free
         self.projects: set[str] = set()
         self.read: set[str] = set()
+        self.writable: dict[str, list[tuple[str, str]]] = {}   # 세션 프로젝트 → [(다른 프로젝트, 경로 "docs/")]
         p = Path(config)
         if p.exists():
             r = tomllib.loads(p.read_text()).get("repo_scope") or {}
             self.projects = set(r.get("read_only_elsewhere") or [])
             self.read = set(r.get("read") or [])
+            for proj, items in (r.get("writable") or {}).items():
+                for it in items or []:
+                    name, _, sub = str(it).partition("/")
+                    sub = sub.strip("/")
+                    if name and sub and ".." not in sub.split("/"):
+                        self.writable.setdefault(proj, []).append((name, sub + "/"))
         self.repos = repos   # 프로젝트 이름 → 저장소 경로(DB project.repo_path)
 
     # ── 판정 ──────────────────────────────────────────────
@@ -119,8 +128,9 @@ class RepoScope:
         if tool in EDIT_TOOLS:
             path = inp.get("file_path") or inp.get("notebook_path")
             if isinstance(path, str) and path:
-                other = self._other(_resolve(path, base), own, scratch)
-                if other:
+                full = _resolve(path, base)
+                other = self._other(full, own, scratch)
+                if other and not self._writable(project, full, other):
                     return self._why(other, f"{tool} {path}")
             return None
         if tool == "Bash":
@@ -139,6 +149,17 @@ class RepoScope:
         if top == own or top.startswith(own.rstrip("/") + "/"):
             return None
         return top
+
+    def _writable(self, project: str, full: str, other: str) -> bool:
+        """full(실제 경로)이 [repo_scope.writable]에 적은 다른 프로젝트 원본 저장소의 그 경로 아래인가."""
+        repos = self.repos()
+        for name, sub in self.writable.get(project, []):
+            repo = repos.get(name)
+            if not repo or os.path.realpath(repo) != other:
+                continue
+            if full.startswith(other.rstrip("/") + "/" + sub):
+                return True
+        return False
 
     def _git_writes(self, cmd: str, base: str, own: str, scratch: str | None):
         cur = base

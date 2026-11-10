@@ -168,7 +168,13 @@ mode = "observe"
 #   /tmp 아래(스크래치 복제본)와 git 저장소가 아닌 곳(~/.claude 등)은 막지 않는다
 #   Bash의 그 밖 쓰기(sed -i · > 리디렉션 등)는 보지 않는다 — CC 샌드박스로 막을지는 일상 명령을 시험한 뒤(사용자)
 [repo_scope]
-read_only_elsewhere = ["foreman"]
+read_only_elsewhere = ["foreman", "ronanlab-infra"]   # 11-10 인프라도(사용자)
 read = ["status", "log", "show", "diff", "ls-files", "ls-tree", "ls-remote", "rev-parse", "rev-list", "blame",
         "grep", "cat-file", "describe", "shortlog", "whatchanged", "for-each-ref", "show-ref", "name-rev",
         "merge-base", "count-objects", "check-ignore", "help", "version"]
+
+# 예외 — 이 프로젝트 세션이 다른 저장소에서 Edit · Write로 고쳐도 되는 곳 "<프로젝트>/<경로>/"(그 프로젝트 원본 저장소만, worktree 아님).
+# git 쓰기(add · commit · push)는 그대로 막는다 — 커밋은 그 저장소 세션이나 사용자가
+# 11-10 사용자: 인프라 묶음 1에서 펫퍼민트 · 런슈즈 문서를 고친다
+[repo_scope.writable]
+ronanlab-infra = ["runshoes/docs/", "petmint-rag-chatbot/docs/"]
