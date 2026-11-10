@@ -21,6 +21,7 @@
       "foreman_office": { "x": 1, "y": 1, "w": 7, "h": 6, "seat": [4, 4] },
       "manager": { "_": "관리자(11-09) — 감독실 안 옆자리", "seats": [[6, 4.5, "left"], [2, 4.5, "right"]] },
       "desks": { "x": 10, "y": 2, "cols": 4, "rows": 2, "dx": 4, "dy": 4 },
+      "designer": { "_": "디자이너(11-10) — 책상 두 줄 왼쪽, 코더 책상과 나란히(책상 자리와 따로)", "seats": [[8.6, 4, "right"], [8.6, 8, "right"]] },
       "server_rack": { "x": 1, "y": 8, "w": 3, "h": 3, "stand": [4, 9] },
       "window": { "x": 26, "y": 2, "w": 1, "h": 6, "stand": [24, 5] },
       "phone": { "x": 22, "y": 10, "stand": [22, 11] },
@@ -69,7 +70,7 @@
 
   "roles": {
     "_": "역할 → 사원증 끈 색. 이름은 DB · 디스패처와 같다(11-05 통일). 미리 보기 ?roles=demo",
-    "colors": { "foreman": "#d4a72c", "coder": "#3f7fd0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "manager": "#c0392b", "helper": "#8a8f98" },
+    "colors": { "foreman": "#d4a72c", "coder": "#3f7fd0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "manager": "#c0392b", "designer": "#d6408a", "helper": "#8a8f98" },
     "idle": { "_": "역할별 쉼 자리(12a) — 도형 테마는 구역이 없어 자기 책상에서 읽는다", "scribe": { "go": "desk", "anim": "read" } }
   },
 

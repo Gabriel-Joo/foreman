@@ -132,3 +132,10 @@
   - 11-10 관리자 세션 230을 이 API로 manager로 바꿨다(캐릭터 22) [log:merge_237_242_20261110.md]
 - 화면에서 바꾸기(패널 머리줄 배지) · 자리 · 이름표는 `docs/10_office_design.md` 「관리자 자리 · 이름표 · 머리줄」
 - "역할 없음"은 실제로 생기지 않는다: FOREMAN 밖에서 띄운 CC 세션은 `assembler.py`가 늘 `coder`로, 터미널 셸은 `helper`로 만든다. 아니면 배지로 바꾼다
+
+### 10-1. 역할 디자이너(designer) (11-10 사용자) [log:designer_role_20261110.md]
+
+- 값 `designer`, 화면 "디자이너". **화면 담당** — `office.js` · `panel.css` · 테마(자리 · 가구 · 색) · 캐릭터 · 이름표 · 카드 · 툴팁 글. 파이썬 · 브리지 · API · DB는 코더
+- 관리자와 같은 다섯 곳 + `ROLE_PICK` · `render.js` `ROLE_LABEL` · `SESSION_ROLES`에 넣었다. 역할 바꾸기 API · 배지 고르기 칸 · 인계 물려주기도 같은 규칙(원본 폴더 "디자이너", worktree "디자이너 <이름>"). 모델 기본 `opus`(코더와 같은 까닭 — 사진을 보고 자리 · 겹침을 판단, `office.js`가 크다)
+- 교장 계획 프롬프트: 화면 일은 designer, 파이썬 · 브리지 · DB는 coder. **둘이 걸치면**(새 API + 그 화면) 화면이 API에 기대니 coder를 먼저 내고 first_prompt에 "화면은 다음 디자이너 세션 몫 — API 응답 모양을 log에 적고 끝낸다", reasons에 나눈 까닭. 화면 쪽이 몇 줄뿐이면 coder 하나로. 계획은 한 번에 하나라 둘을 같이 내지는 못한다
+- 자리 · 이름표는 `docs/10_office_design.md` 「관리자 자리 · 이름표 · 머리줄」의 디자이너 줄

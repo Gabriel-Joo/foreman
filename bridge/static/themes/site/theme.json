@@ -32,6 +32,8 @@
                  "_seats12a": "11-06 8 → 5자리 — 위 줄 4 + 아래 줄 맨 왼쪽 1, 아래 줄 오른쪽은 서류실",
                  "seats": [[10.6, 8.65, "down"], [12.9, 8.65, "down"], [15.2, 8.65, "down"], [17.5, 8.65, "down"],
                            [10.6, 11.65, "down"]] },
+      "designer": { "_": "디자이너(11-10 사용자) — 작업대 왼쪽, 코더 작업대 두 줄과 나란히(작업대 5자리와 따로). 디자이너 세션이 있을 때만 선다(상주 아님). 일할 때도 이 자리",
+                    "seats": [[8.9, 8.65, "right"], [8.9, 11.0, "right"]] },
       "coder_home": { "_": "코더 상주(11-09) — 세션이 없을 때 코더가 쉬는 자리(함바). 일하면 작업대로 간다. anim = 이 테마의 쉬는 동작",
                       "seat": [4.3, 12.8, "down"], "anim": "coffee" },
       "scribe": { "_": "S 서류실(12a 서기) — 도면 탁자(쓰기) · 강철 선반(서가) · 계기 작업대(대조). 자리 순서 = 쓰기 · 서가 · 대조",
@@ -70,7 +72,7 @@
   "roles": {
     "_": "역할 → 안전모 색. 역할이 없으면 노란 안전모, 감독(foreman)은 흰 안전모. 이름은 DB · 디스패처와 같다(11-05 통일). 미리 보기 ?roles=demo",
     "mode": "helmet", "default": "#f2c14e", "foreman": "#f4f4f4",
-    "colors": { "foreman": "#f4f4f4", "coder": "#2f6fb0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "manager": "#c0392b", "helper": "#8a8f98" },
+    "colors": { "foreman": "#f4f4f4", "coder": "#2f6fb0", "inspector": "#2e9e6a", "cicd": "#8e44ad", "scribe": "#b0713a", "manager": "#c0392b", "designer": "#d6408a", "helper": "#8a8f98" },
     "idle": { "_": "역할별 쉼 자리(12a) — 서기는 서류실에서 읽는다", "scribe": { "go": "scribe", "anim": "read" } }
   },
 

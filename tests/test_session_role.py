@@ -59,7 +59,35 @@ def test_role_lists_agree():
     """세션 역할 목록이 한곳만 바뀌지 않게 — 화면 이름(ROLE_KO) · 교장 계획 · API · 알림 글 · 모델 기본값."""
     assert set(h.ROLE_KO) == set(foreman.ROLES) == set(api.SessionRole.__args__) == set(wake.ROLE_KO)
     assert h.ROLE_KO["manager"] == "관리자" and "foreman" not in h.ROLE_KO     # foreman은 감독실 캐릭터 몫
+    assert h.ROLE_KO["designer"] == "디자이너"                                 # 11-10 화면 담당
     assert Models().pick(None, "manager") == "opus"
+    assert Models().pick(None, "designer") == "opus"
+    assert "designer" in foreman.INSTRUCTIONS                                  # 교장이 화면 일 · 코더 일을 나누는 기준
+
+
+class _CharConn(_Conn):
+    """_character_for — 포먼 캐릭터는 있고, 같은 이름 캐릭터는 없어 새로 만든다."""
+
+    async def execute(self, q, params=None):
+        sql = " ".join(str(q).split())
+        self.db["sql"].append((sql, params))
+        if "current_role = 'foreman'" in sql:
+            return SimpleNamespace(first=lambda: (1, 9))
+        if sql.startswith("INSERT INTO `character`"):
+            return SimpleNamespace(lastrowid=88)
+        return SimpleNamespace(first=lambda: None)
+
+
+@pytest.mark.parametrize("cwd,name", [("/repo/foreman", "디자이너"), ("/repo/foreman/.worktrees/foreman-6", "디자이너 foreman-6")])
+async def test_designer_character_name(cwd, name):
+    """디자이너 캐릭터(11-10) — 관리자와 같은 규칙: 원본 폴더 "디자이너", worktree "디자이너 foreman-N"."""
+    db = {"sql": []}
+    m = h.HandoffManager.__new__(h.HandoffManager)
+    m.engine = SimpleNamespace(begin=lambda: _CharConn(db))
+    m.project_of = lambda c: ("foreman", None)
+    assert await m._character_for(cwd, "designer") == 88
+    ins = [p for s, p in db["sql"] if s.startswith("INSERT INTO `character`")]
+    assert ins == [{"pid": 9, "f": 1, "n": name, "r": "designer"}]
 
 
 async def test_set_role_updates_and_records():
@@ -117,10 +145,11 @@ async def test_role_api_allows_only_known_roles():
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=_app(mgr)), base_url="http://t") as c:
         r = await c.put("/api/sessions/230/role", json={"role": "manager"})
         assert r.status_code == 200 and r.json()["role"] == "manager"
+        assert (await c.put("/api/sessions/230/role", json={"role": "designer"})).status_code == 200
         for bad in ("foreman", "boss", None):
             assert (await c.put("/api/sessions/230/role", json={"role": bad})).status_code == 422
         assert (await c.put("/api/sessions/999/role", json={"role": "coder"})).status_code == 404
-    assert calls == [(230, "manager")]
+    assert calls == [(230, "manager"), (230, "designer")]
 
 
 async def test_role_api_refused_is_409():
@@ -137,3 +166,4 @@ async def test_role_api_refused_is_409():
 
 def test_new_session_accepts_manager():
     assert api.NewIn(cwd="/repo", role="manager").role == "manager"
+    assert api.NewIn(cwd="/repo", role="designer").role == "designer"

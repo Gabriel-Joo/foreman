@@ -15,6 +15,7 @@ inspector = "sonnet"
 cicd      = "sonnet"
 scribe    = "opus"
 manager   = "opus"     # 관리자(11-09) — 합치기 · 시험 · push · 기록. 판단이 많아 opus
+designer  = "opus"     # 디자이너(11-10) — 화면 · 테마 자리 · 캐릭터. 사진을 보고 자리 · 겹침을 판단하고 office.js가 커서 opus(코더와 같다)
 
 # 세션이 아닌 `claude -p` 일감의 모델(11-06). 바꾸면 브리지를 다시 띄운다
 [tasks]

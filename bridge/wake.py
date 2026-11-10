@@ -30,7 +30,7 @@ KINDS = {
     "ingest_stuck": "적재 막힘",
 }
 MODE_KO = {"new": "새 세션", "handoff": "인계해서 새 세션", "attach": "살아 있는 세션에 보내기", "ask": "되묻기"}
-ROLE_KO = {"inspector": "점검", "coder": "코더", "cicd": "CI/CD", "scribe": "서기", "manager": "관리자"}
+ROLE_KO = {"inspector": "점검", "coder": "코더", "cicd": "CI/CD", "scribe": "서기", "manager": "관리자", "designer": "디자이너"}
 
 
 @dataclass
