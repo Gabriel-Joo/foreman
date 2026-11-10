@@ -65,9 +65,24 @@ export function createTerminal(store, { getProject } = {}) {
     // title이 아니라 aria-label(11-10) — title은 tip.js가 툴팁으로 바꿔, 마우스가 터미널에 들어가면 「런슈즈 터미널」이 프롬프트 줄 위에 떠 남았다
     frame.setAttribute('aria-label', cur ? `${plabel(cur)} 터미널` : 'FOREMAN 터미널');
     const w = $('termProjWarn');
-    const bad = err ? `터미널 창을 고르지 못했습니다 — ${err}` : want && cur !== want ? `고른 것(${plabel(want)})과 다른 터미널입니다` : '';
+    const now = cur ? `${plabel(cur)} 터미널` : (shown && shown.window) || '알 수 없는 창';
+    const bad = err ? `터미널 창을 고르지 못했습니다 — ${err}` : want && cur !== want ? `고른 것(${plabel(want)})과 다른 터미널입니다 — 지금 보이는 것은 ${now}입니다` : '';
     w.textContent = bad; w.hidden = !bad;
   }
+  // 열려 있는 동안 실제 보이는 창을 3초마다 확인한다(11-10) — tmux의 보이는 창은 세션에 하나라 다른 탭 · CC 부탁 · tmux 키가 바꿀 수 있고,
+  // 열 때 받은 값만 쥐고 있으면 이름표가 거짓이 된다("런슈즈 터미널"인데 petmint 셸). 못 읽으면 이름표를 못 믿는다고 경고한다
+  let winErr = false;
+  async function checkWindow() {
+    if (!open) return;
+    try {
+      const j = await store.terminalWindow();
+      const was = winErr; winErr = false;
+      if (was || !shown || shown.window !== j.window || shown.cwd !== j.cwd) { shown = j; drawProj(); }
+    } catch (e) {
+      if (!winErr) { winErr = true; drawProj(`지금 보이는 창을 확인하지 못했습니다 — ${e.message || e}`); }
+    }
+  }
+  setInterval(checkWindow, 3000);
   async function pickProject(p) {
     want = p || null;
     try { shown = await store.terminalOpen(want); drawProj(); } catch (e) { drawProj(e.message || String(e)); }

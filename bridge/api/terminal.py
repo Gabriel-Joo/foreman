@@ -57,6 +57,16 @@ async def state(request: Request) -> dict[str, Any]:
     return _mgr(request).snapshot()
 
 
+@api.get("/window")
+async def window(request: Request) -> dict[str, Any]:
+    """지금 tmux가 보이는 창(이름 · 폴더) — 창을 바꾸지 않는다. 화면 이름표가 거짓이 되지 않게 열려 있는 동안 묻는다(11-10).
+    tmux의 "보이는 창"은 세션 하나에 하나라 다른 탭 · CC 부탁 · tmux 키가 바꿀 수 있다."""
+    try:
+        return await _mgr(request).current()
+    except Refused as e:
+        raise HTTPException(503, f"터미널 창을 읽지 못했습니다 — {e}") from e
+
+
 class OpenIn(BaseModel):
     project: str | None = None     # None이면 지금 보이는 창 그대로(라운지 · 감독실)
 

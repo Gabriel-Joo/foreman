@@ -505,6 +505,12 @@ export class Store {
     if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
     return j;
   }
+  // 지금 실제로 보이는 창(바꾸지 않는다, 11-10) — 다른 탭 · CC 부탁이 창을 바꿔도 이름표가 따라가게 열려 있는 동안 묻는다
+  async terminalWindow() {
+    const r = await fetch('/api/terminal/window', { headers: this.headers() });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }
   async terminalDismiss(id) {
     await fetch(`/api/terminal/requests/${id}`, { method: 'DELETE', headers: this.headers() });
     this.state.terminal.requests.delete(id);

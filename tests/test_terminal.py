@@ -286,3 +286,12 @@ def test_proxy_cookie_origin_ws(shell, tmp_path):
             assert b"via-ttyd-42" in seen
         st = c.get("/api/terminal", headers={"Authorization": f"Bearer {tok}"}).json()
         assert st["enabled"] and st["running"]
+        # 11-10 보이는 창 읽기 — 창을 바꾸지 않고, 밖에서(다른 탭 · tmux 키) 바뀐 것을 따라간다
+        h = {"Authorization": f"Bearer {tok}"}
+        assert c.get("/api/terminal/window").status_code == 401
+        w0 = c.post("/api/terminal/open", headers=h, json={"project": "runshoes"}).json()
+        assert w0["project"] == "runshoes"
+        assert c.get("/api/terminal/window", headers=h).json()["project"] == "runshoes"
+        c.post("/api/terminal/open", headers=h, json={"project": "foreman"})
+        w1 = c.get("/api/terminal/window", headers=h).json()
+        assert w1["project"] == "foreman" and w1["window"] == "foreman"
