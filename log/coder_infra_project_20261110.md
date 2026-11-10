@@ -89,3 +89,9 @@
 - 시험 `test_infra_docs_git_add_commit` — 실제 `git init` 저장소로 add 허용 4 · 거부 11, commit 허용 · 거부, 다른 변경이 스테이지에 있을 때 거부 → 경로 적으면 허용, push · reset · checkout 거부. 실제 경로로도 확인. pytest **563 통과**
 - 남는 틈: Bash의 다른 쓰기(`sed -i` · 리디렉션으로 docs 밖 파일 쓰기)는 원래부터 보지 않는다(모듈 머리 주석)
 - 합친 뒤 브리지를 다시 띄워야 걸린다(approval.toml · reposcope.py). 지금 도는 인프라 세션 265는 그 전까지 막힘 없음(인프라가 아직 프로젝트가 아니다), 다시 띄운 뒤 265를 인프라로 옮기면 그때부터 걸린다
+
+## 덤 — worktree 안내(`wt_block`) 문구에서 FOREMAN만의 규칙 빼기 (런슈즈 세션 runshoes-3-6e 요청, 사용자 승인 11-10)
+- 발견: 런슈즈 worktree 세션이 "루트 README는 원본에서만"이라 하며 README 한 줄을 미뤘다. 런슈즈 CLAUDE.md에는 그런 규칙이 없고, 출처는 브리지가 worktree 세션에 넣는 `bridge/handoff.py` `wt_block`의 "원본 폴더에서만 할 일(… README 로드맵 표 고치기 등)" — FOREMAN 사정이 모든 저장소에 들어갔다
+- 고침(요청 문구 그대로): 커밋은 이 브랜치 · push · 합치기는 기본으로 안 함(사용자가 시키면 따름, 합치기는 사람 [합치기] 또는 관리 세션) · 브리지 다시 띄우지 않음 · 그 밖은 그 저장소 CLAUDE.md(없으면 커밋과 최종 보고로 충분). 뺀 것: README 로드맵 표 · `log/` 파일 · "FOREMAN은 「따로 작업」" · "사람이 패널로만 합친다"(관리 세션 API 합치기와 어긋남)
+- 시험 `test_wt_block_only_for_worktree` — "push" 포함, "README 로드맵" · "log/" 없음. pytest 563 통과
+- 반영은 브리지 다시 띄운 뒤(인계 글을 만들 때 붙는다 — 이미 뜬 세션은 그대로)
