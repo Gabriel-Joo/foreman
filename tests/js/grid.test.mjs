@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { applyGrid, INFRA_STAGES } from '../../bridge/static/js/grid.js';
+import { applyGrid, INFRA_STAGES, gridProblems } from '../../bridge/static/js/grid.js';
 
 const read = (p) => JSON.parse(readFileSync(new URL(`../../bridge/static/themes/${p}`, import.meta.url), 'utf8'));
 const GRID = read('_shared/grid.json');
@@ -46,4 +46,23 @@ test('방 안 좌표 → 방 좌표 — 자리 · 가구 · 출하 담당 자리
   assert.equal(iz.jenkins.x, px + GRID.ship.jenkins);
   assert.deepEqual(iz.stands.home, [read0.layout.zones.infra.stands.home[0] + px, read0.layout.zones.infra.stands.home[1] + py]);
   assert.deepEqual(iz.stands.jenkins, [read0.layout.zones.infra.stands.jenkins[0] + iz.jenkins.x, read0.layout.zones.infra.stands.jenkins[1] + py]);
+});
+
+test('모눈 점검 — 지금 grid.json은 통과(겹침 · 빈 칸 · 끊긴 복도 · 복도에 안 닿는 방 없음)', () => {
+  assert.deepEqual(gridProblems(GRID), []);
+});
+
+test('모눈 점검 — 걸려야 할 것은 걸린다', () => {
+  const g = () => JSON.parse(JSON.stringify(GRID));
+  const a = g(); a.rooms.read = [7, 2, 5, 4];                                     // 소장실과 한 칸 겹침 → 겹침 + 빈 칸
+  assert.ok(gridProblems(a).some((t) => t.includes('같은 칸')), gridProblems(a).join('\n'));
+  const b = g(); b.corridors = b.corridors.filter((r) => !(r[0] === 7 && r[1] === 7));   // 세로 복도를 빼면 위 · 아래 복도가 끊긴다
+  b.rooms.idle = [1, 7, 7, 5];
+  assert.ok(gridProblems(b).some((t) => t.includes('끊겨')), gridProblems(b).join('\n'));
+  const c = g(); c.corridors = [[1, 6, 26, 1]]; c.rooms.git = [1, 12, 4, 5]; c.rooms.ship = [5, 12, 22, 5];   // 아래 복도가 없으면 맨 아래 방은 복도에 안 닿는다
+  assert.ok(gridProblems(c).some((t) => t.includes('git 방이 복도에 닿지')), gridProblems(c).join('\n'));
+  const d = g(); d.rooms.web = [22, 2, 6, 4];                                      // 오른쪽 벽 밖
+  assert.ok(gridProblems(d).some((t) => t.includes('밖으로')), gridProblems(d).join('\n'));
+  const e = g(); e.rooms.test = [18, 2, 3, 4];                                      // 한 칸이 빈다
+  assert.ok(gridProblems(e).some((t) => t.includes('복도도 아닌 칸')), gridProblems(e).join('\n'));
 });

@@ -189,8 +189,8 @@
       { "s": "owl", "in": "foreman_office", "x": 6.0, "y": 0.2 },
 
       { "_": "A 서고 — 2층 책장(위층은 벽에 겹친다) · 사다리" },
-      { "s": "shelf", "in": "library", "x": 1.5, "y": -2.6, "z": "wall" }, { "s": "shelf_n", "in": "library", "x": 3.6, "y": -2.6, "z": "wall" },
-      { "s": "it_greybooks", "in": "library", "x": 1.7, "y": -2.5, "z": "wall" }, { "s": "it_greenbook", "in": "library", "x": 2.6, "y": -2.0, "z": "wall" },
+      { "s": "shelf", "in": "library", "x": 1.5, "y": -2.0, "z": "wall" }, { "s": "shelf_n", "in": "library", "x": 3.6, "y": -2.0, "z": "wall" },
+      { "s": "it_greybooks", "in": "library", "x": 1.7, "y": -1.9, "z": "wall" }, { "s": "it_greenbook", "in": "library", "x": 2.6, "y": -1.4, "z": "wall" },
       { "s": "shelf", "in": "library", "x": 1.5, "y": -0.3 },
       { "s": "it_books", "in": "library", "x": 1.7, "y": -0.2, "z": "top" }, { "s": "it_tanbook", "in": "library", "x": 2.6, "y": 0.3, "z": "top" },
       { "s": "it_greenbook", "in": "library", "x": 1.7, "y": 0.8, "z": "top" },

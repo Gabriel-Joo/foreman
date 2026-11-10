@@ -293,6 +293,7 @@ async def run(a: argparse.Namespace) -> int:
                 bad += await record(p, a, out, report)
             # 패널 너비는 좁게 · 넓게 두 값뿐이다(11-10 모눈) — 둘 다 본다. 크기 이름에 붙인다(1366x768w = 넓게)
             panels = [x.strip() for x in a.panel.split(",") if x.strip()]
+            grid_rooms: dict = {}                          # 테마 → 역할별 방 칸(gridAudit) — 셋이 같아야 한다
             for th in ([] if a.record else a.themes.split(",")):
                 for size0, panel in [(s, q) for s in a.sizes.split(",") for q in panels]:
                     size = size0 + ("w" if panel == "wide" else "")
@@ -311,9 +312,13 @@ async def run(a: argparse.Namespace) -> int:
                     la = await p.ev("window.office.layoutAudit({labels: false})")
                     pa = await p.ev("window.office.propAudit()")
                     au = await p.ev("window.office.audit().filter(x=>!x.fixed)")
+                    # 모눈 점검(11-10) — 방 겹침 · 끊긴 복도 · 못 가는 자리 · 방 밖 가구 · 이름표가 방 왼쪽 위 칸인가. 방 자리는 테마끼리 견준다(아래)
+                    ga = await p.ev("window.office.gridAudit ? window.office.gridAudit() : {problems: [], rooms: null}") or {}
+                    if ga.get("rooms") is not None:
+                        grid_rooms.setdefault(th, ga["rooms"])
                     base = {"theme": th, "size": size, "layoutAudit": la, "propAudit_issues": (pa or {}).get("issues", []),
-                            "audit_unfixed": au}
-                    n_bad = len(la or []) + len(base["propAudit_issues"])
+                            "audit_unfixed": au, "gridAudit": ga.get("problems") or []}
+                    n_bad = len(la or []) + len(base["propAudit_issues"]) + len(base["gridAudit"])
                     bad += n_bad
                     shots = []
                     for view in a.views.split(","):
@@ -378,16 +383,24 @@ async def run(a: argparse.Namespace) -> int:
                     bad += len(p.errors)
                     p.errors.clear()
                     report["runs"].append(base)
+                    for x in base["gridAudit"][:5]:
+                        print(f"  gridAudit {x.get('kind')}: {x.get('text')}")
                     n_names = sum(len(v) for v in base.get("nameAudit", {}).values())
                     n_labels = sum(len(v) for v in base.get("labelAudit", {}).values())
                     n_cards = sum(len(v) for v in base.get("cardAudit", {}).values())
                     n_tips = sum(len(v.get("problems") or []) for v in base.get("tipAudit", {}).values())
                     n_tipn = sum(v.get("n") or 0 for v in base.get("tipAudit", {}).values())
                     n_term = len(ta["closed"]) + len(ta["open"] or [])
-                    print(f"{th} {size}: layoutAudit {len(la or [])} · labelAudit {n_labels} · nameAudit {n_names} · cardAudit {n_cards} · "
+                    print(f"{th} {size}: gridAudit {len(base['gridAudit'])} · layoutAudit {len(la or [])} · labelAudit {n_labels} · nameAudit {n_names} · cardAudit {n_cards} · "
                           f"tipAudit {n_tips}/{n_tipn} · propAudit {len(base['propAudit_issues'])} · "
                           f"termAudit {n_term}{'' if ta['open'] is not None else '(닫힘만)'} · "
                           f"audit(고정 안 됨) {len(au or [])} · 페이지 오류 {len(base['page_errors'])} · 사진 {len(shots)}")
+            # ⑤ 테마 셋의 방 자리가 같은가(11-10 모눈 — 테마는 이름 · 그림 · 색만 다르다)
+            if len(grid_rooms) > 1:
+                same = len({json.dumps(v, sort_keys=True) for v in grid_rooms.values()}) == 1
+                report["gridRooms"] = {"same": same, "rooms": grid_rooms}
+                print(f"테마 {' · '.join(grid_rooms)} 방 자리 — {'같음' if same else '다름(문제)'}")
+                bad += 0 if same else 1
     finally:
         proc.terminate()
         try:
