@@ -212,8 +212,24 @@ def wt_block(cwd: str | None) -> str:
             "(정한 것이 없으면 이 브랜치의 커밋과 최종 보고로 충분하다)\n\n")
 
 
-def inject_prompt(req: str, src: str, body: str) -> str:
-    tpl = INJECT_PROMPT_V2 if ptr.is_v2(body) else INJECT_PROMPT
+# 교장 계획으로 띄울 때(11-10) — 사람이 계획 카드에서 이미 봤으니 확인을 다시 기다리지 않는다. 인계 단독(새 세션으로 옮기기)은 위 글 그대로
+INJECT_PROMPT_V2_GO = """{head} 직전 세션 {src}의 인계다. 너는 이 일을 이어받는 새 세션이다.
+**먼저 아래 「읽을 곳」을 모두 Read로 읽어라**(줄 범위가 있으면 그 범위, 절 이름이 있으면 그 절). 다 읽은 뒤
+(1) 각 문서에서 이 일에 걸리는 규칙 · 결정을 2줄씩 (2) 「문서와 다른 지금」을 어떻게 다룰지를 말하고
+(3) 「다음 할 일」을 바로 시작하라(사람이 계획 카드에서 이미 봤다). 읽었는지는 브리지가 확인한다.
+
+{body}"""
+
+INJECT_PROMPT_GO = """{head} 직전 세션 {src}의 인계 요약이다. 너는 이 일을 이어받는 새 세션이다.
+읽고 나서 "다음 할 일"을 바로 시작하라(사람이 계획 카드에서 이미 봤다).
+
+{body}"""
+
+
+def inject_prompt(req: str, src: str, body: str, confirm: bool = True) -> str:
+    """confirm=False — 교장 계획으로 띄울 때. 「확인을 기다려라」 없이 바로 시작하게 한다."""
+    v2 = ptr.is_v2(body)
+    tpl = (INJECT_PROMPT_V2 if v2 else INJECT_PROMPT) if confirm else (INJECT_PROMPT_V2_GO if v2 else INJECT_PROMPT_GO)
     return tpl.format(head=IN_HEAD.format(r=req), src=src, body=body)
 
 
@@ -608,7 +624,8 @@ class HandoffManager:
         return {"summary_id": sid, "req": req, "status": "ok"}
 
     # ── 넣을 글 ──────────────────────────────────────────
-    async def injection(self, summary_id: int, target_cwd: str | None = None, replace: bool = False) -> dict[str, Any]:
+    async def injection(self, summary_id: int, target_cwd: str | None = None, replace: bool = False,
+                        confirm: bool = True) -> dict[str, Any]:
         """넣을 글. target_cwd — 받는 세션이 뜬 폴더(넣을 때). worktree면 그 사실을 맨 앞에 붙인다. 미리보기(띄우기 전)에는
         없으므로 worktree_next로 "따로 작업에서 뜰 것"만 알린다. replace — 새 세션으로 옮기기의 미리보기: 옛 세션(요약을 쓴
         세션)을 빼고 판단한다(spawn(replace=True)와 같은 판단)."""
@@ -629,7 +646,7 @@ class HandoffManager:
             dr = [f"인계 뒤 바뀐 것을 확인하지 못했습니다({type(e).__name__}) — 지금 상태를 직접 확인하라."]
         if state is None:
             dr = ["이 인계에는 만들 때의 상태 기록이 없습니다(11-06 이전 인계) — 「지금 상태」가 맞는지 git · 잠금으로 직접 확인하라."]
-        out = {"summary_id": summary_id, "text": inject_prompt(s["req"], src, wt_block(target_cwd) + hs.block(dr) + body), "cut": cut,
+        out = {"summary_id": summary_id, "text": inject_prompt(s["req"], src, wt_block(target_cwd) + hs.block(dr) + body, confirm), "cut": cut,
                "full_path": str(full) if cut else None, "chars": len(s["body"]), "v2": ptr.is_v2(s["body"]),
                "pointers": [], "blocked": None, "state": state, "drift": dr,
                "worktree_next": target_cwd is None and bool(row and row.cwd) and self.will_worktree(
@@ -650,8 +667,8 @@ class HandoffManager:
                 out["blocked"] = "읽을 곳이 틀렸습니다 — " + "; ".join(f"{p.path or p.raw}: {p.problem}" for p in bad)
         return out
 
-    async def ensure_injectable(self, summary_id: int, target_cwd: str | None = None) -> dict[str, Any]:
-        inj = await self.injection(summary_id, target_cwd)
+    async def ensure_injectable(self, summary_id: int, target_cwd: str | None = None, confirm: bool = True) -> dict[str, Any]:
+        inj = await self.injection(summary_id, target_cwd, confirm=confirm)
         if inj["blocked"]:
             raise Refused(inj["blocked"])
         return inj
@@ -843,7 +860,7 @@ class HandoffManager:
             # 포먼이 쓴 첫 글(+ 고른 인계 요약) — 사람이 계획 카드에서 확인 · 고친 글 그대로
             body = first_prompt
             if summary_id is not None:
-                inj = await self.ensure_injectable(summary_id, cwd)
+                inj = await self.ensure_injectable(summary_id, cwd, confirm=False)   # 계획 카드에서 이미 봤다(11-10)
                 s = await self.summary(summary_id)
                 if inj["cut"]:
                     self._write_full(s["req"], s["body"])
