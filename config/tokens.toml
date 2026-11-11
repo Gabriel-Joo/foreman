@@ -8,5 +8,5 @@
 # 끄기: enabled = false + 브리지 다시 띄우기 — 프로젝트 토큰은 401이 되고 관리 토큰은 그대로
 
 [project_tokens]
-enabled = false
+enabled = true     # 11-11 사용자 지시로 켬(첫 토큰: ronanlab-infra)
 file = ".env.project_tokens"    # 저장소 맨 위 기준. .gitignore의 .env* 에 걸린다(권한 600)

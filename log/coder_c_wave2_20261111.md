@@ -155,6 +155,21 @@
 3. [＋ 할 일] 창에서 체크 · [고치기] · [고른 것으로 계획 받기]를 한 번(세 테마는 창 안이라 자리 영향 없음)
 4. 켜 볼 때(사용자): `[move] one_flow = true`로 시험 세션 하나를 옮겨 ①~⑦과 새 세션 패널 「넘겨받은 글」 확인 · `[handover] enabled = true`로 시험 계획 하나를 관리자에게 넘겨 15분 알림까지 — 끝나면 시험 세션은 `hidden_reason='test'`
 
+## 켜는 차례 · 켠 뒤 볼 것 — 관리자 276이 코드를 보고 채움(11-11 저녁)
+
+위 149줄 「켤 때 차례」는 토큰 · 관리자만, 「합친 뒤 할 일」 4는 넘기기 · 옮기기의 볼 것만 있었다. 기능 사이 차례와 빈 자리를 코드로 채운다. 차례는 사용자 지시(11-11): **토큰 → 관리자 → 넘기기 → 옮기기**, 하나씩, 켤 때마다 승인 대기 0 뒤 브리지 다시 띄우기.
+
+| 차례 | 켜기 | 켠 뒤 볼 것(코드 근거) |
+|---|---|---|
+| 1 토큰 범위 | ① `.venv/bin/python -m bridge.scopetoken new <프로젝트>` — 토큰 파일이 없으면 켜도 확인할 것이 없다(`.env.project_tokens`는 11-11 저녁 없음). 값은 출력하지 않고 파일에만(`scopetoken.py` 175줄) ② `config/tokens.toml [project_tokens] enabled = true` ③ 브리지 다시 띄우기 | 관리 토큰 `GET /api/dashboard` 200(그대로, `auth.py` — 관리 토큰은 `token_scope = None`) · 프로젝트 토큰 `GET /api/dashboard` **403 + 사유**(관리 토큰이 필요합니다) · `GET /api/managers` 200 · 그 프로젝트 세션 `GET /api/sessions/{sid}/handoff` 200 · 다른 프로젝트 세션 403 · 브리지 로그 「프로젝트 토큰 거절 …」 warning에 값 없음(`auth.py` 114줄) · 토큰 파일 권한 600 · 끄면 프로젝트 토큰 401 |
+| 2 프로젝트별 관리자 | `config/managers.toml [managers] enabled = true` → 다시 띄우기 | 켜서 달라지는 것은 **「관리자끼리 부탁」 `POST /api/managers/<프로젝트>/ask`가 503에서 열리는 것뿐**(`api/managers.py` 40줄). 목록 `GET /api/managers`는 꺼져 있어도 읽힌다 · 저절로 세션에 넣는 감시는 없다(`main.py` 383 — 객체만 만든다). 볼 것: `GET /api/managers` `enabled: true`, 프로젝트마다 관리자 세션 또는 「관리자가 없습니다」. 관리자 자리 = `projects = []`면 DB `project`에서 `repo_path`가 있는 것 모두(`managers.py` 72줄) — 11-11: runshoes · petmint-rag-chatbot · foreman · ronanlab-infra 넷. **하나씩 켜고 끄기**: `projects = ["ronanlab-infra", …]`로 좁힌다(스위치는 하나, 범위는 목록) |
+| 3 계획 넘기기 | `config/managers.toml [handover] enabled = true` → 다시 띄우기. **2 뒤에** — 넘기기는 `Managers.board` · `Managers.ask`로 관리자를 찾고 입력 칸에 넣는다(`handover.py` 107줄) | 브리지 로그 「계획 넘기기 켬: 넘긴 뒤 15분 안에 시작하지 않으면 알림」(`main.py`) · `GET /api/foreman/handover` `enabled: true` · `health` · `managers`(프로젝트 → 관리자 세션 번호, 없으면 null) · 계획 카드에 [관리자에게 보내기](관리자가 없으면 꺼진 단추 + 툴팁). 실제로 넘기면 그 관리자 입력 칸에 계획이 들어가고 15분 감시가 돈다 — 켜기 확인에서는 넘기지 않는다 |
+| 4 옮기기 한 흐름 | `config/handoff.toml [move] one_flow = true`. 파일이 바뀌면 다시 읽어(`handoff.py` 121 `move_flow_on`) 브리지를 다시 띄우지 않아도 되지만, 사용자 지시대로 다시 띄운다 | `GET /api/sessions/{sid}/handoff`의 `move_flow: true`(`handoff.py` 432) · 패널 「세션」 탭 옮기기 칸이 한 흐름 단추로(`moveflow.js`). 실제로 옮기면 잊은 것 찾기 비용(말 20개당 약 0.4달러)과 새 세션이 생긴다 — 켜기 확인에서는 옮기지 않는다 |
+| (켜지 않음) 역할 권한 막기 | `roles.toml mode = "observe"` 그대로 — 사용자가 따로 정한다 | 기동 로그 「역할 권한 observe: …」 |
+
+- **토큰을 관리자보다 먼저 켜는 까닭**(기록에 있다): README 「프로젝트별 관리자」 줄 — 「순서: **토큰 범위 묶기**(지금 토큰 하나로 모든 API가 열려, 런슈즈 세션에 주면 FOREMAN 방도 띄우고 끝낼 수 있다) → 관리자 역할 → 그 저장소 CLAUDE.md 규칙」. `plan_structure_20261111.md` 「둘」도 같은 까닭. 다른 저장소 관리자는 관리 토큰이 아니라 자기 프로젝트 토큰으로 FOREMAN을 불러야 한다(위 CLAUDE.md 초안)
+- **켜도 다른 저장소 세션에 닿는 것**: 1은 프로젝트 토큰을 쓰는 세션에만(지금 없음 — 관리 토큰을 쓰는 세션은 그대로), 2 · 3은 그 프로젝트에 관리자 세션이 있을 때만 입력이 들어간다(지금 FOREMAN 276뿐), 4는 사람이 [새 세션으로 옮기기]를 누를 때만, 역할 권한은 `projects = ["foreman"]`만
+
 ## 지킨 것 · 어긴 것
 
 - 파일은 Edit · Write로만 고쳤다(스크래치의 재기 스크립트도 Write). push · 브리지 다시 띄우기 안 함. 스키마는 이 세션만(0031)
