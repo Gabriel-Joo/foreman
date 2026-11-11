@@ -31,8 +31,17 @@ export const startedLine = (r) => {
   if (ss.length < 2) return '';
   return ` 띄운 세션 ${ss.length}개: ${ss.map((s) => `${s.idx + 1}「${s.title || s.role}」${s.tmux ? `(tmux ${s.tmux}${s.model ? ' · ' + s.model : ''})` : ''}`).join(', ')}.`;
 };
-export const dropAction = (disp) => (disp && disp.dispatch_id != null && (disp.status || 'planned') === 'planned' ? 'server' : 'clear');
-const projLabel = (name) => ((window.foreman && window.foreman.state.projects.find((p) => p.name === name)) || {}).label || name;
+// [관리자에게 보내기] 단추 — 켜져 있고(handover) 새로 띄우는 계획일 때. 그 프로젝트 관리자가 없으면 누르지 못하게 하고 까닭을 툴팁에
+export function handButton(st, project, mode, done) {
+  if (!st || !st.enabled || mode === 'attach') return { show: false, disabled: true, tip: '' };
+  const sid = (st.managers || {})[project];
+  if (done) return { show: true, disabled: true, tip: '관리자에게 보내기 — 이미 끝난 계획입니다.' };
+  if (mode === 'ask') return { show: true, disabled: true, tip: '관리자에게 보내기 — 되묻는 계획은 보낼 수 없습니다.' };
+  if (!sid) return { show: true, disabled: true, tip: `관리자에게 보내기 — ${projLabel(project)}에 관리자 세션이 없습니다. [이대로 시작]으로 직접 띄웁니다.` };
+  return { show: true, disabled: false, tip: `관리자에게 보내기 — 고친 계획을 ${projLabel(project)} 관리자(세션 ${sid})에게 넘깁니다. 관리자가 띄우고, ${st.wait_min || 15}분 안에 띄우지 않으면 알립니다.` };
+}
+export const dropAction =(disp) => (disp && disp.dispatch_id != null && (disp.status || 'planned') === 'planned' ? 'server' : 'clear');
+const projLabel = (name) => ((typeof window !== 'undefined' && window.foreman &&window.foreman.state.projects.find((p) => p.name === name)) || {}).label || name;
 
 function headers(json) {
   let t = '';
@@ -73,7 +82,7 @@ function mount(dlg) {
   h2.after(fm, manual);
   const $ = (id) => box.querySelector('#' + id);
   let disp = null, opts = null, room = null;
-  let inboxId = null;      // 11-09 코더에게 받은 할 일에서 연 계획 — [이대로 시작]하면 그 세션이 가져간다(창을 다시 열면 풀린다)
+  let inboxIds = [];       // 받은 할 일에서 연 계획(11-09 하나 · 11-11 여럿) — [이대로 시작]하면 그 세션이 가져간다(창을 다시 열면 풀린다)
   let sent = false;        // 11-11 이 칸의 글을 계획으로 보냈는가 — 보낸 글은 창을 다시 열면 비운다(보내지 않은 초안은 남긴다)
   // 상태 글(11-09 사용자 — 버튼 옆 작은 회색 글은 읽기 힘들었다): 입력칸 아래 상자, 기다리는 중이면 움직이는 점
   const msg = (t, cls = 'muted') => {
@@ -127,7 +136,7 @@ function mount(dlg) {
   function reset(project) {
     who();
     fresh();
-    inboxId = null;
+    inboxIds = [];
     $('fmWake').hidden = true;
     $('fmAsk').disabled = false;
     msg('');
@@ -173,6 +182,9 @@ function mount(dlg) {
       draw(d.plan, d.status);
       msg(d.status === 'planned' ? '아래에서 확인하고, 고칠 것은 고친 뒤 [이대로 시작]을 누릅니다.' : `이미 ${d.status === 'started' ? '시작한' : '버린'} 계획입니다.`,
         d.status === 'planned' ? 'ok' : 'warn');
+      if (d.handed && d.status === 'planned') {
+        msg(`관리자(세션 ${d.handed.to_session})에게 넘긴 계획입니다 — 관리자가 아직 띄우지 않았습니다${d.handed.alerted ? '(오래 지나 알렸습니다)' : ''}. 직접 띄우려면 [이대로 시작]을 누릅니다.`, 'warn');
+      }
     } catch (e) { msg(`계획을 불러오지 못했습니다 — ${e.message}`, 'bad'); }
   }
 
@@ -253,6 +265,7 @@ function mount(dlg) {
       <div class="row fm-row"><span id="fmStartMsg" class="small"></span>
         <button type="button" id="fmDrop" class="ghost" title="버리기 — 이 계획을 쓰지 않습니다. 기록에는 '사람이 버림'으로 남습니다."${done ? ' disabled' : ''}>버리기</button>
         <button type="button" id="fmAgain" class="ghost">다시 물어보기</button>
+        <button type="button" id="fmHand" class="ghost" hidden>관리자에게 보내기</button>
         <button type="button" id="fmGo" class="primary"${p.mode === 'ask' || done ? ` disabled title="${done ? '이미 끝난 계획입니다.' : '되묻는 계획입니다 — 답을 요청에 덧붙여 다시 물어보거나 방식을 바꿔 주세요.'}"` : ''}>이대로 시작</button></div>`;
     $('fmPlan').hidden = false;
     bindRoleModel($('fmRole'), $('fmModel'), opts.models);
@@ -270,6 +283,33 @@ function mount(dlg) {
     $('fmAgain').onclick = () => { if (!$('fmText').value.trim() && disp) $('fmText').value = (box.querySelector('#fmWake div') || {}).textContent || ''; ask(); };
     $('fmGo').onclick = start;
     $('fmDrop').onclick = drop;
+    $('fmHand').onclick = handOver;
+    showHand(p, done);
+  }
+  // 11-11 [관리자에게 보내기] — config/managers.toml [handover]가 켜져 있을 때만 보인다(GET /api/foreman/handover)
+  let handState = null;
+  async function showHand(p, done) {
+    const b = $('fmHand');
+    if (!b) return;
+    try { handState = handState || await api('GET', '/api/foreman/handover'); } catch { handState = { enabled: false }; }
+    const v = handButton(handState, $('fmProj') ? $('fmProj').value : p.project, p.mode, done);
+    b.hidden = !v.show; b.disabled = v.disabled; b.title = v.tip;
+  }
+  async function handOver() {
+    const plan = collect();
+    $('fmHand').disabled = true; $('fmGo').disabled = true;
+    $('fmStartMsg').className = 'small muted';
+    $('fmStartMsg').textContent = '관리자에게 보내는 중입니다…';
+    try {
+      const r = await api('POST', '/api/foreman/handover', { dispatch_id: disp.dispatch_id, plan, ...(inboxIds.length ? { inbox_ids: inboxIds } : {}) });
+      $('fmStartMsg').className = `small ${r.handed ? 'ok' : 'warn'}`;
+      $('fmStartMsg').textContent = r.note || (r.handed ? '보냈습니다.' : `보내지 못했습니다 — ${r.reason}`);
+      if (!r.handed) { $('fmGo').disabled = false; $('fmHand').disabled = false; }
+    } catch (e) {
+      $('fmStartMsg').className = 'small bad';
+      $('fmStartMsg').textContent = `보내지 못했습니다 — ${e.message}. [이대로 시작]으로 직접 띄울 수 있습니다.`;
+      $('fmGo').disabled = false; $('fmHand').disabled = false;
+    }
   }
   // 11-11 세션 칸(둘째부터) — 칸마다 data-k로 읽는다
   function sessionsHtml(ss, opt) {
@@ -327,7 +367,7 @@ function mount(dlg) {
     $('fmStartMsg').className = 'small muted';
     $('fmStartMsg').textContent = plan.mode === 'attach' ? '세션에 보내는 중입니다…' : '새 세션을 띄우는 중입니다…';
     try {
-      const r = await api('POST', '/api/foreman/start', { dispatch_id: disp.dispatch_id, plan, ...(inboxId ? { inbox_id: inboxId } : {}) });
+      const r = await api('POST', '/api/foreman/start', { dispatch_id: disp.dispatch_id, plan, ...(inboxIds.length ? { inbox_ids: inboxIds } : {}) });
       const ok = r.mode === 'attach' ? (r.injected ? '보냈습니다.' : '보냈지만 제출을 확인하지 못했습니다.')
         : `새 세션을 띄웠습니다${r.tmux ? `(tmux ${r.tmux}${r.model ? ' · ' + r.model : ''})` : ''}.${r.worktree ? ` 따로 작업 ${r.worktree.branch}에서 합니다.` : ''}${r.injected ? ' 첫 글을 넣었습니다.' : ''}${startedLine(r)}`;
       $('fmStartMsg').className = `small ${r.note ? 'warn' : 'ok'}`;
@@ -353,11 +393,14 @@ function mount(dlg) {
   $('fmText').addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); ask(); } });
   who();
   // 11-09 코더의 맡길 일 → 받은 할 일 글을 말하기 칸에 채운다. 바로 계획을 받지 않는다(사람이 읽고 [계획 받기])
+  // id — 하나(코더 맡길 일) 또는 여럿(11-11 할 일 목록에서 골라 [골라서 계획 받기]). 여럿이면 바로 계획을 받는다(사람이 이미 골랐다)
   function prefill(text, id) {
     $('fmText').value = text || '';
     sent = false;
-    inboxId = id || null;
-    msg(id ? `받은 할 일 #${id}을 채웠습니다. 고칠 것은 고친 뒤 [계획 받기]를 누릅니다. 시작하면 그 세션이 이 할 일을 가져갑니다.` : '', 'muted');
+    inboxIds = (Array.isArray(id) ? id : id ? [id] : []).map(Number);
+    const tag = inboxIds.map((i) => `#${i}`).join(' · ');
+    msg(inboxIds.length ? `받은 할 일 ${tag}을 채웠습니다. 고칠 것은 고친 뒤 [계획 받기]를 누릅니다. 시작하면 그 세션이 ${inboxIds.length > 1 ? '이 할 일들을' : '이 할 일을'} 가져갑니다.` : '', 'muted');
+    if (inboxIds.length > 1) ask();
   }
   ui = { reset, load, prefill, focus: () => $('fmText').focus() };
   // 머리줄 [＋ 세션](office.js → newsession.js open)으로 열 때는 이 칸을 거치지 않는다 — 창이 열리는 것을 보고 같이 비운다.
