@@ -137,6 +137,7 @@ worktree 세션을 **끝내지 않고 잠깐 내려놓는** 길. 끝내면 합�
 - **충돌이면 `end: true`로 부르지 않는다.** `end: true`는 세션을 먼저 끝낸 뒤 합치므로(`HandoffManager.worktree_act`) 충돌이 나면 풀 세션이 이미 없다. 화면 확인 창도 "충돌이 나면 되돌리고 멈춥니다(세션은 이미 끝난 뒤입니다)"라고 적는다
 - **살아 있는 세션의 충돌은 그 세션이 푼다**(main을 가져와 rebase하고 커밋한 뒤 다시 합친다). 세션이 이미 끝났으면 관리자가 푼다 — 예: README 「나중에 할 일」 표처럼 줄만 합치면 되는 충돌을 `git rebase main` 뒤 두 쪽을 다 남기고 `--continue`(CLAUDE.md 「작업 규칙」 관리자 기준 2)
 - 합친 뒤 시험 · push · 브리지 다시 띄우기 · 화면 점검은 관리자 몫이다. 커밋 안 된 변경이 있으면 합칠 수 없다 — 세션이 끝내기 전에 커밋을 마친다
+- **세션을 살려 둔 채 합칠 때**(API가 「세션이 아직 살아 있습니다」로 거절, 11-11): `merge-tree` 확인을 먼저 따로 한 뒤 원본 폴더에서 손으로 합친다. 브랜치가 main 끝 위에 있으면 `git merge --ff-only cc/<이름>`, main이 그 사이 앞섰으면 `git merge --no-ff cc/<이름>`(11-11 `52ba341` — 디자이너 273). 세션 · worktree는 그대로 남는다
 
 **11-10 실수** (237 합치기): `merge-tree`와 합치기 API를 한 명령에 묶어, 충돌로 "충돌 없음"이 안 찍혔는데도 합치기를 불렀고, `end: true`로 불러 세션 237이 먼저 끝났다(tmux도 닫힘). 다음 242는 살아 있는 채 충돌을 그 세션이 풀게 했다. 이 일로 위 두 줄을 정했다.
 
@@ -155,6 +156,7 @@ FOREMAN 세션은 다른 저장소(runshoes · petmint-rag-chatbot · ronanlab-i
 - 저장소 경로는 DB `project.repo_path`. 프로젝트가 아닌 `ronanlab-infra` · `k8s-cluster`도 git 저장소라 막힌다
 - 거부 사유(화면 글): "다른 저장소 쓰기 막힘 — 이 세션은 다른 저장소(runshoes)를 읽기만 합니다(git push). 고칠 것은 그 저장소의 세션에 맡기거나(세션 간 메시지) 사용자에게 요청하세요. 상태만 볼 때는 git ls-remote, 손볼 시험은 /tmp · 스크래치 복제본에서 합니다."
 - 상태 보기는 `git ls-remote` · 스크래치 복제본으로
+- **관리자도 다른 저장소에 쓸 수 없다**(11-11): 런슈즈 저장소에는 `git cherry`도 막힌다(관리자에게 열린 것은 원본 폴더에서 docs/만 앞선 커밋의 push — `[repo_scope.manager_push]`). 다른 저장소에 남은 worktree는 FOREMAN 버리기 API(`POST /api/sessions/{sid}/worktree` `{"action":"discard","confirm":"<worktree 이름>"}`)로 지운다(11-11 런슈즈 `.worktrees/runshoes-2`)
 
 **시도했던 것** — 지난 7일 FOREMAN 세션 호출(Bash 4,505 · Edit 3,093 · Write 290)에 다시 돌렸다. 첫 판 24건 중 헛거부 4(`git reflog show` · `git remote get-url origin`(`$(…)` 안) · `git apply --check` · `git fetch --dry-run`) → 명령마다 "읽기로 치는 인자"로 고친 뒤 20건, 모두 막으려던 것(다른 저장소 Edit · Write 13, commit · add · pull · fetch 7).
 
