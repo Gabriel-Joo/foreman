@@ -163,7 +163,11 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       ${p.blocked ? `<div class="small bad">${esc(p.blocked)}</div>` : ''}</div>`;
   }
   // 11-09 — 이 프로젝트에 살아 있는 세션이 있으면 새 세션은 따로 작업(worktree)에서 뜬다. 넣을 때 브리지가 그 사실을 글 앞에 붙인다
-  const wtNext = (p) => (p && p.worktree_next ? `<div class="small warn" title="따로 작업에서 뜹니다 — 이 프로젝트에 살아 있는 세션이 있어(옮기기는 이 세션을 빼고 셉니다) 새 세션은 .worktrees/ 아래 자기 브랜치에서 뜹니다. 받은 세션은 push · 브리지 재시작을 하지 않고, 끝낸 뒤 [합치기]로 합칩니다.">⑂ 새 세션은 따로 작업(worktree)에서 뜹니다 — 넣을 때 그 사실을 글 맨 앞에 덧붙입니다.</div>` : '');
+  // 11-11 아홉 — 관리자는 늘 원본 폴더에서 뜬다. 원본에 관리자가 이미 살아 있으면 띄우기가 거절된다(manager_block)
+  const wtNext = (p) => (p && p.role === 'manager' ? (p.manager_block
+    ? `<div class="small bad" title="띄울 수 없습니다 — 관리자는 원본 폴더에 하나입니다.">✗ ${esc(p.manager_block)}</div>`
+    : '<div class="small ok" title="원본 폴더 — 관리자는 따로 작업(worktree)이 아니라 저장소 맨 위 폴더에서 뜹니다.">관리자라 원본 폴더에서 뜹니다.</div>')
+    : p && p.worktree_next ? `<div class="small warn" title="따로 작업에서 뜹니다 — 이 프로젝트에 살아 있는 세션이 있어(옮기기는 이 세션을 빼고 셉니다) 새 세션은 .worktrees/ 아래 자기 브랜치에서 뜹니다. 받은 세션은 push · 브리지 재시작을 하지 않고, 끝낸 뒤 [합치기]로 합칩니다.">⑂ 새 세션은 따로 작업(worktree)에서 뜹니다 — 넣을 때 그 사실을 글 맨 앞에 덧붙입니다.</div>` : '');
   // 인계 검증(11-06) — 만들 때 상태와 지금이 다르면 넣는 글 앞에 붙는 "인계 뒤 바뀐 것"
   function driftList(d, head) {
     if (!d || !d.length) return `<div class="small ok">✓ ${esc(head)} — 요약을 쓴 뒤 바뀐 것이 없습니다(git · 스키마 잠금).</div>`;
@@ -207,7 +211,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         ${wtNext(preview)}${driftList(preview.drift, '요약 뒤 바뀐 것')}
         ${preview.v2 ? pointerList(preview) : ''}
         <pre class="hand-body">${esc(preview.text)}</pre>
-        <div class="row">${b('spawn-go', '이 글을 넣고 시작', !preview.blocked, 'primary', preview.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다(요약 카드의 [고치기]).' : '이 글을 넣고 시작 — 같은 폴더에 새 세션을 띄우고 위 글을 첫 입력으로 넣습니다.')}${b('spawn-bare', '요약 없이 시작', true, 'ghost', '요약 없이 시작 — 같은 폴더에 빈 새 세션만 띄웁니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 띄우지 않고 돌아갑니다.')}</div>`
+        <div class="row">${b('spawn-go', '이 글을 넣고 시작', !preview.blocked && !preview.manager_block, 'primary', preview.manager_block ? '띄울 수 없습니다 — 원본 폴더에 관리자가 이미 살아 있습니다.' : preview.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다(요약 카드의 [고치기]).' : '이 글을 넣고 시작 — 같은 폴더에 새 세션을 띄우고 위 글을 첫 입력으로 넣습니다.')}${b('spawn-bare', '요약 없이 시작', !preview.manager_block, 'ghost', '요약 없이 시작 — 같은 폴더에 빈 새 세션만 띄웁니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 띄우지 않고 돌아갑니다.')}</div>`
         : `<div class="small">넣을 요약이 없습니다.</div><div class="row">${b('spawn-bare', '요약 없이 새로 띄우기', true, 'primary', '요약 없이 새로 띄우기 — 같은 폴더에 빈 새 세션만 띄웁니다.')}${b('cancel', '취소', true, 'ghost', '취소 — 띄우지 않고 돌아갑니다.')}</div>`;
     } else {
       main = sumCard(s0 && s0.status !== 'ok' && ok && s0.id !== ok.id ? s0 : ok || s0) +
@@ -232,8 +236,9 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
         // 11-09 사용자 — 보내기 전에 한 줄 덧붙일 수 있게. 요약은 그대로 두고 넣는 글 끝에만 붙는다(bridge/handoff.py note_block)
         if (p && noteOpen) body += `<div class="hand-note"><label class="small" for="hNote">덧붙일 말 — 위 글 맨 끝에 「사람이 덧붙인 말」로 붙습니다. 요약은 바뀌지 않습니다.</label>
             <textarea id="hNote" rows="2" maxlength="2000" class="hand-edit" placeholder="예: 다음 할 일 중 3번부터 해 주세요.">${esc(noteDraft)}</textarea></div>`;
-        const go = !!p && !p.blocked && can.spawn;
-        const goTip = p && p.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다([더보기] → [요약 고치기]).' : '';
+        const go = !!p && !p.blocked && !p.manager_block && can.spawn;
+        const goTip = p && p.manager_block ? '띄울 수 없습니다 — 원본 폴더에 관리자가 이미 살아 있습니다.'
+          : p && p.blocked ? '넣을 수 없습니다 — 읽을 곳을 고친 뒤 넣습니다([더보기] → [요약 고치기]).' : '';
         body += `<div class="row flow-act">${noteOpen
           ? `${b('flow-go-note', '덧붙여서 보내기', go, 'primary', goTip || '덧붙여서 보내기 — 위 글 끝에 덧붙일 말을 붙여 새 세션에 넣고, 이 세션을 /exit로 끝냅니다.')}${b('flow-note-off', '덧붙이지 않기', true, 'ghost', '덧붙이지 않기 — 덧붙일 말 칸을 닫습니다. 적은 말은 버립니다.')}`
           : `${b('flow-go', '이대로 보내기', go, 'primary', goTip || '이대로 보내기 — 같은 폴더에 새 세션을 띄워 위 글을 넣고, 이 세션을 /exit로 끝냅니다.')}${b('flow-note', '덧붙여서 보내기', go, 'ghost', goTip || '덧붙여서 보내기 — 보내기 전에 한 줄 덧붙일 칸을 엽니다.')}`}${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 띄우지 않습니다. 요약은 남습니다.')}</div>`;

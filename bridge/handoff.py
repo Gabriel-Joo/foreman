@@ -653,11 +653,17 @@ class HandoffManager:
             dr = [f"인계 뒤 바뀐 것을 확인하지 못했습니다({type(e).__name__}) — 지금 상태를 직접 확인하라."]
         if state is None:
             dr = ["이 인계에는 만들 때의 상태 기록이 없습니다(11-06 이전 인계) — 「지금 상태」가 맞는지 git · 잠금으로 직접 확인하라."]
+        # 11-11 아홉 — 새로 띄우기 · 옮기기는 요약을 쓴 세션의 역할로 뜬다(spawn). 관리자면 원본 폴더 · 이미 있으면 거절을 미리 알린다
+        role = await self._role(row.id) if (target_cwd is None and row and self.engine is not None) else None
+        ex = row.cc if (replace and row) else None
         out = {"summary_id": summary_id, "text": inject_prompt(s["req"], src, wt_block(target_cwd) + hs.block(dr) + body, confirm), "cut": cut,
                "full_path": str(full) if cut else None, "chars": len(s["body"]), "v2": ptr.is_v2(s["body"]),
-               "pointers": [], "blocked": None, "state": state, "drift": dr,
+               "pointers": [], "blocked": None, "state": state, "drift": dr, "role": role,
                "worktree_next": target_cwd is None and bool(row and row.cwd) and self.will_worktree(
-                   wt.split(row.cwd)[0], row.cc if replace else None)}
+                   wt.split(row.cwd)[0], ex, role),
+               # 띄울 때 거절될 까닭(넣기 자체는 막지 않는다 — 넣을 때는 새 관리자가 이미 살아 있다)
+               "manager_block": (await self.manager_conflict(wt.split(row.cwd)[0], ex)
+                                 if role == "manager" and row and row.cwd else None)}
         if out["v2"]:
             # 2판 — 읽을 곳을 기계로 확인한다. 틀린 곳(없는 파일 · 줄 · 절)이 있으면 넣지 않는다(요약을 고치면 된다)
             # 11-09 기준은 새 세션이 시작할 원본 폴더(새 worktree도 base 브랜치에서 갈라진다). 전에는 요약을 쓴 세션의 폴더였다 —
@@ -766,6 +772,14 @@ class HandoffManager:
         if model and not self.models.valid(model):
             raise Refused(f"고를 수 없는 모델입니다: {model}")
         model = self.models.pick(model, role)
+        if role == "manager":
+            # 11-11 아홉 — 관리자는 늘 원본 폴더. 전에는 살아 있는 세션만 보고 worktree로 보냈다(관리자가 .worktrees/에 떴다).
+            # 아무것도 만들기 전(tmux · worktree)에 거절한다
+            if worktree or wt.split(cwd)[1] is not None:
+                raise Refused("관리자는 원본 폴더에서만 띄웁니다 — 따로 작업(worktree)을 끄고 저장소 맨 위 폴더에서 띄워 주세요")
+            if why := await self.manager_conflict(cwd, exclude_cc):
+                raise Refused(why)
+            worktree = False
         if summary_id is not None:
             await self.ensure_injectable(summary_id)      # 넣을 수 있는 요약인지 먼저(안 되면 띄우지도 않는다 — 2판은 읽을 곳 확인까지)
         project = self.project_of(cwd)[0] if self.project_of else None
@@ -776,7 +790,7 @@ class HandoffManager:
             name, n = f"{base}-{n}", n + 1
         wt_info = None
         if worktree is None:
-            worktree = self.will_worktree(cwd, exclude_cc)
+            worktree = self.will_worktree(cwd, exclude_cc, role)
         if worktree:
             if wt.split(cwd)[1] is not None or not await wt.is_repo(cwd):
                 raise Refused("따로 작업(worktree)은 저장소 맨 위 폴더에서만 띄울 수 있습니다")
@@ -805,15 +819,48 @@ class HandoffManager:
             return out
         return out | await self._finish_spawn(name, pane, cwd, summary_id, title, src_session, cc=cc, pid=pid, **extra)
 
-    def will_worktree(self, cwd: str, exclude_cc: str | None = None) -> bool:
+    def will_worktree(self, cwd: str, exclude_cc: str | None = None, role: str | None = None) -> bool:
         """spawn_new(worktree=None)이 따로 작업 자리로 보낼까 — 그 프로젝트에 살아 있는 세션이 있으면.
-        exclude_cc — 세지 않을 세션(새 세션으로 옮기기의 옛 세션: 곧 끝나니 하나 더 생기는 게 아니다, 11-09)."""
-        if not self.project_of or not cwd:
+        exclude_cc — 세지 않을 세션(새 세션으로 옮기기의 옛 세션: 곧 끝나니 하나 더 생기는 게 아니다, 11-09).
+        role — 관리자(manager)는 늘 원본 폴더라 False(11-11 아홉). 코더 · 서기 · 디자이너 등은 위 규칙."""
+        if role == "manager" or not self.project_of or not cwd:
             return False
         project = self.project_of(cwd)[0]
         return bool(project) and wt.split(cwd)[1] is None and any(
             self.project_of(ls.cwd)[0] == project
             for cc, ls in live_sessions(self.sessions_dir).items() if not (exclude_cc and cc == exclude_cc))
+
+    def _live_in_base(self, cwd: str, exclude_cc: str | None = None) -> list[str]:
+        """이 저장소의 원본 폴더(.worktrees/ 밖)에서 살아 있는 CC 세션 id들. exclude_cc는 뺀다(옮기기의 옛 세션)."""
+        repo = os.path.realpath(wt.split(cwd)[0]) if cwd else ""
+        if not repo:
+            return []
+        out = []
+        for cc, ls in live_sessions(self.sessions_dir).items():
+            if (exclude_cc and cc == exclude_cc) or not ls.cwd:
+                continue
+            p = os.path.realpath(ls.cwd)
+            if wt.split(p)[1] is None and (p == repo or p.startswith(repo + os.sep)):
+                out.append(cc)
+        return out
+
+    async def manager_conflict(self, cwd: str, exclude_cc: str | None = None) -> str | None:
+        """관리자를 띄우면 안 되는 까닭(11-11 아홉) — 원본 폴더에 역할 관리자인 세션이 이미 살아 있으면 그 사유, 없으면 None.
+        관리자는 원본 폴더에 하나다(코드를 합치고 push하는 자리). 옮기기의 옛 세션(exclude_cc)은 곧 끝나니 세지 않는다."""
+        ccs = self._live_in_base(cwd, exclude_cc)
+        if not ccs or self.engine is None:
+            return None
+        from sqlalchemy import bindparam
+        async with self.engine.connect() as c:
+            rows = (await c.execute(text(
+                "SELECT cc_session_id, id, role FROM character_session WHERE cc_session_id IN :c ORDER BY id")
+                .bindparams(bindparam("c", expanding=True)), {"c": ccs})).all()
+        latest = {cc: (sid, role) for cc, sid, role in rows}          # 같은 cc의 마지막 행(ORDER BY id)
+        for cc, (sid, role) in latest.items():
+            if role == "manager":
+                return (f"원본 폴더에 관리자(세션 {sid})가 이미 살아 있습니다 — 관리자는 원본 폴더에 하나입니다. "
+                        "그 세션을 끝내거나, 그 세션 패널에서 [새 세션으로 옮기기]로 바꿔 주세요")
+        return None
 
     async def _wait_ready(self, pane: str, secs: float) -> tuple[str | None, int | None, bool]:
         """(cc 세션 id, pid, 신뢰 창이 떴나). 입력 칸(❯)이 뜨고 일하지 않을 때까지."""
