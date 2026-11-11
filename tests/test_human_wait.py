@@ -86,3 +86,51 @@ async def test_denied_alert_after_30min_once_and_not_while_busy(env):
         assert await w.check(now + timedelta(hours=3)) == []
     finally:
         await engine.dispose()
+
+
+@pytest.mark.db
+async def test_denied_clears_when_session_moves_on(env):
+    """11-11 펫퍼민트 227 — 거부 뒤 다른 방법으로 지나가면(도구 결과가 더 옴) · 다음 턴이 시작되면 사람 입력 없이도 꺼진다.
+    거부 뒤 글만 쓰고 멈추면 그대로 남는다."""
+    from bridge.api.dashboard import human_needs
+    s, conn = env
+    now = datetime.now(UTC).replace(tzinfo=None, microsecond=0)
+    with conn.cursor() as c:
+        c.execute("SELECT c.id FROM `character` c JOIN project p ON p.id = c.project_id WHERE p.name = 'runshoes' LIMIT 1")
+        (char,) = c.fetchone()
+        sids = []
+        for i in range(3):
+            c.execute("INSERT INTO character_session (character_id, type, role, cc_session_id, title, wake_reason) "
+                      "VALUES (%s, 'agent', 'coder', %s, 't', 'user')", (char, CC[:-1] + str(i)))
+            sid = c.lastrowid
+            sids.append(sid)
+            c.execute("INSERT INTO turn (session_id, seq, origin, started_at) VALUES (%s, 1, 'human', %s)", (sid, now - timedelta(hours=1)))
+            c.execute("INSERT INTO event (session_id, character_id, source, ts, type, tool, status, payload) VALUES "
+                      "(%s, %s, 'transcript', %s, 'tool_result', 'Bash', 'error', %s)",
+                      (sid, char, now - timedelta(minutes=40), json.dumps({"error_preview": DENY})))
+            c.execute("INSERT INTO event (session_id, character_id, source, ts, type, status, payload) VALUES "
+                      "(%s, %s, 'transcript', %s, 'assistant_msg', 'working', %s)",
+                      (sid, char, now - timedelta(minutes=39), json.dumps({"block": "text", "text": "막혔습니다."})))
+        a, b, d = sids
+        # a: 거부 뒤 다른 명령이 지나감(같은 시각이어도 id가 뒤면 뒤)
+        c.execute("INSERT INTO event (session_id, character_id, source, ts, type, tool, status, payload) VALUES "
+                  "(%s, %s, 'transcript', %s, 'tool_result', 'Bash', 'done', '{}')", (a, char, now - timedelta(minutes=40)))
+        # b: 다음 턴(사람 아닌 주입)이 시작됨
+        c.execute("INSERT INTO turn (session_id, seq, origin, started_at) VALUES (%s, 2, 'inject', %s)", (b, now - timedelta(minutes=5)))
+    engine = make_engine(s)
+    try:
+        async with engine.connect() as cn:
+            needs = await human_needs(cn, "(" + ",".join(map(str, sids)) + ")")
+        assert "denied" not in (needs.get(a) or {})
+        assert "denied" not in (needs.get(b) or {})
+        assert needs[d]["denied"]["tool"] == "Bash"           # 글만 쓰고 멈춤 — 남는다
+        # 남은 세션도 다시 거부되면 다시 뜬다(마지막 거부 기준)
+        with conn.cursor() as c:
+            c.execute("INSERT INTO event (session_id, character_id, source, ts, type, tool, status, payload) VALUES "
+                      "(%s, %s, 'transcript', %s, 'tool_result', 'Bash', 'error', %s)",
+                      (a, char, now - timedelta(minutes=1), json.dumps({"error_preview": DENY})))
+        async with engine.connect() as cn:
+            needs = await human_needs(cn, f"({a})")
+        assert needs[a]["denied"]["at"]
+    finally:
+        await engine.dispose()
