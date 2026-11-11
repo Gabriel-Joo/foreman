@@ -8,7 +8,7 @@ import { createSidePanel } from './opanel.js';
 import { mountNewSession } from './newsession.js';
 import { mountTodoInbox } from './todoinbox.js';
 import { coderJobs, coderBubble, isCoder, REST_DAYS } from './coder.js';
-import { roleTag, sessionName, needMark } from './render.js';
+import { roleTag, sessionName, needMark, mergeWaits } from './render.js';
 import { PROBE } from './store.js';
 import { showTip, hideTip, themeTips, attachDomTips, textTip, softEsc, tipAudit as tipAuditOf } from './tip.js';
 import { buildGrid, findPath, footprint, nearestFree, RES } from './walk.js';
@@ -3059,6 +3059,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     $('oConn').textContent = { up: '연결됨', down: '끊김', connecting: '연결 중', auth: '토큰 필요', idle: '연결 전' }[c.status] || c.status;
     const pl = [...st.approvals.values()].filter((a) => a.status === 'pending');
     const ques = pl.filter((a) => a.tool === 'AskUserQuestion').length, pend = pl.length - ques;
+    const mwait = mergeWaits(st.sessions.values());          // 가장 오래된 카드부터
     const ig = st.ingest;
     // 전체 요약(클래식 머리말과 같은 숫자) + 적재가 막히면 무엇이 막혔는지(마우스를 올리면)
     let active = 0, live = 0, outToday = 0, subs = 0;
@@ -3072,6 +3073,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       : '기록 못 읽는 세션 — 브리지가 이 세션들의 대화 기록을 읽지 못해 화면이 늦습니다.\n' + (ig.stuck || []).map((x) => `${x.session} ${x.minutes}분 · ${x.failures}번 — ${x.error}`).join('\n');
     $('oAlerts').innerHTML = (pend ? `<button id="oPend" class="ghost warn" title="승인 대기 — 누르면 그 세션 패널을 엽니다. 거기서 승인하거나 거부합니다.">❗ 승인 대기 ${pend}</button>` : '') +
       (ques ? `<button id="oAsk" class="ghost warn" title="질문 — 세션이 고를 것을 묻고 있습니다. 누르면 그 세션 패널을 엽니다. 선택지를 누르면 답이 들어갑니다.">❓ 질문 ${ques}</button>` : '') +
+      // 합치기 기다림(11-11) — 합치기 카드는 그 세션 패널 안에만 있어 사람이 몰랐다. 0건이면 아무것도 그리지 않는다
+      (mwait.length ? `<button id="oMerge" class="ghost warn" title="합치기 대기 — 일을 마친 따로 작업 ${mwait.length}건이 합치기 승인을 기다립니다. 누르면 가장 오래된 세션 패널을 엽니다.">🔀 합치기 대기 ${mwait.length}</button>` : '') +
       (ig && !ig.ok ? `<span class="bad" title="${esc(igWhy)}">⚠ ${ig.stalled ? '화면 갱신 멈춤' : `기록 못 읽는 세션 ${(ig.stuck || []).length}`}</span>` : '');
     const stat = `작업 중 <b>${active}</b>/${live}${subs ? ` · 서브에이전트 ${subs}` : ''} · 출력 토큰 ${fmt(outToday)}`;
     if ($('oStat').innerHTML !== stat) $('oStat').innerHTML = stat;
@@ -3327,8 +3330,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   });
   // 11-10 답은 그 세션 패널에서만 — 누르면 기다리는 것 중 가장 오래된 것의 세션 패널을 연다(세션을 모르면 패널만)
   $('oAlerts').addEventListener('click', (ev) => {
-    const b = ev.target.closest('#oPend, #oAsk');
+    const b = ev.target.closest('#oPend, #oAsk, #oMerge');
     if (!b) return;
+    if (b.id === 'oMerge') {                                  // 합치기 카드는 세션 패널 「세션」 탭 — 가장 오래된 대기부터
+      const m = mergeWaits(store.state.sessions.values())[0];
+      if (m) openSession(m.id);
+      panel.setOpen(true);
+      return;
+    }
     const ask = b.id === 'oAsk';
     const a = [...store.state.approvals.values()].filter((x) => x.status === 'pending' && (x.tool === 'AskUserQuestion') === ask)
       .sort((x, y) => x.id - y.id).find((x) => x.session_id != null);

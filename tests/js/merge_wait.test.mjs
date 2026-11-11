@@ -39,3 +39,12 @@ test('mergeWaits — 가장 오래된 카드부터, 없으면 빈 목록(막대�
   assert.deepEqual(mergeWaits([{ id: 1 }, { id: 2, merge_wait: null }]), []);
   assert.deepEqual(mergeWaits([]), []);
 });
+
+test('시연 장면 merge_wait — 막대 3건 · 가장 오래된 981 · 머리 위 셋의 기준', async () => {
+  const { readFileSync } = await import('node:fs');
+  const d = JSON.parse(readFileSync(new URL('../../bridge/static/demo/merge_wait.json', import.meta.url), 'utf8'));
+  const ss = d.snapshot.projects.flatMap((p) => p.sessions).map((s) => ({ ...s, merge_wait: s.merge_wait && { ...s.merge_wait, since: 2e12 + Number(String(s.merge_wait.since).slice(1)) } }));
+  assert.equal(mergeWaits(ss).length, 3);
+  assert.equal(mergeWaits(ss)[0].id, 981);
+  assert.deepEqual(ss.map((s) => needMark(s).text), ['합치기 기다림', '답 기다림', '합치기 기다림']);
+});
