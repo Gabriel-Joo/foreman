@@ -26,6 +26,9 @@ fi
 T new-session -d -t "=$base" -s "$view" || exit 1
 # set-option -t는 칸 대상이라 끝에 콜론이 있어야 한다("=이름"만 쓰면 "no such session"으로 조용히 실패해 옵션이 안 걸렸다)
 T set-option -t "=$view:" status-left "[$base] "         # 상태줄 왼쪽에 긴 그룹 세션 이름 대신 기준 이름
+# 휠로 위 출력 보기(11-11) — 세션 옵션이라 서버 전체(다른 CC 세션)에는 걸리지 않는다. 휠 올리면 복사 모드로 들어가고 맨 아래에서 저절로 나온다.
+# 이 탭의 마우스 끌기는 tmux가 받는다(브라우저 글 선택은 Shift+끌기)
+T set-option -t "=$view:" mouse on 2>/dev/null || true
 if [[ $proj =~ ^[A-Za-z0-9_.-]{1,40}$ ]]; then
   T select-window -t "=$view:=$proj" 2>/dev/null           # 처음 보일 창(그 프로젝트 창이 있으면)
 fi

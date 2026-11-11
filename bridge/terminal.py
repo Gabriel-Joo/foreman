@@ -428,6 +428,25 @@ class TerminalManager:
             await tmux(self.socket, "select-window", "-t", f"{vt}{idx}" if vt else t)
         return {**await self.current(vt), "view": bool(vt)}
 
+    # ── 스크롤(11-11 사용자 — 긴 출력의 앞부분을 볼 수 없다) ──
+    # xterm 화면의 스크롤백은 tmux가 화면을 그려 주므로 비어 있다 → tmux 복사 모드로 올려 본다. 휠은 그룹 세션의 mouse on(foreman-term-view),
+    # 단추는 이 길. -e: 맨 아래까지 내려오면 저절로 복사 모드가 끝난다(그대로 두고 쳐도 셸 입력이 먹히지 않는 일이 줄어든다)
+    SCROLL_ACTIONS = ("up", "down", "exit")
+
+    async def scroll(self, tab: str | None, action: str) -> dict[str, Any]:
+        """그 탭의 보이는 창을 한 쪽 위로 · 아래로 · 복사 모드 끝내기. 탭 세션이 없으면 거절(기준 세션을 함께 끌어 가지 않는다)."""
+        if action not in self.SCROLL_ACTIONS:
+            raise Refused("모르는 스크롤 동작입니다")
+        vt = await self._view(tab)
+        if not vt:
+            raise Refused("이 탭의 터미널 연결을 찾지 못했습니다")
+        inmode = (await tmux(self.socket, "display-message", "-p", "-t", vt, "#{pane_in_mode}")).strip() == "1"
+        if action == "up":
+            await tmux(self.socket, "copy-mode", "-eu", "-t", vt)
+        elif inmode:
+            await tmux(self.socket, "send-keys", "-X", "-t", vt, "page-down" if action == "down" else "cancel")
+        return {**await self.current(vt), "view": True}
+
     async def current_view(self, tab: str | None) -> dict[str, Any]:
         """그 탭이 지금 보는 창(바꾸지 않는다). 탭 세션이 없으면 기준 세션의 보이는 창(view=False)."""
         vt = await self._view(tab)
@@ -436,10 +455,12 @@ class TerminalManager:
     async def current(self, target: str | None = None) -> dict[str, Any]:
         """보이는 창(또는 target 창)의 이름 · 폴더 · 셸이 옛 설정인지(shell_old — 셸이 뜬 뒤 셸 설정 파일이 바뀌었다, 11-10)."""
         out = (await tmux(self.socket, "display-message", "-p", "-t", target or self.target,
-                          "#{window_name}\t#{pane_current_path}\t#{pane_pid}")).strip().split("\t")
+                          "#{window_name}\t#{pane_current_path}\t#{pane_pid}\t#{pane_in_mode}")).strip().split("\t")
         name = out[0] if out else ""
+        # scrolling = tmux 복사 모드(휠 · [위로])에 들어가 있다 — 이때 친 글은 셸이 아니라 복사 모드로 가므로 화면이 알린다(11-11)
         res: dict[str, Any] = {"project": name if name in TERM_PROJECTS else None, "window": name,
-                               "cwd": out[1] if len(out) > 1 else None, "shell_old": None}
+                               "cwd": out[1] if len(out) > 1 else None, "shell_old": None,
+                               "scrolling": len(out) > 3 and out[3] == "1"}
         try:
             res["shell_old"] = self.shell_old(int(out[2]))
         except (IndexError, ValueError):

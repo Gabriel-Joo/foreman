@@ -87,6 +87,23 @@ async def open_project(body: OpenIn, request: Request) -> dict[str, Any]:
         raise HTTPException(503, f"터미널 창을 고르지 못했습니다 — {e}") from e
 
 
+class ScrollIn(BaseModel):
+    tab: str
+    action: str                    # up(한 쪽 위로 — 복사 모드로 들어감) · down · exit(복사 모드 끝내고 입력으로)
+
+
+@api.post("/scroll")
+async def scroll(body: ScrollIn, request: Request) -> dict[str, Any]:
+    """[위로] · [아래로] · [입력으로](11-11) — 그 탭의 터미널을 tmux 복사 모드로 올려 본다. 바뀐 보이는 창 상태를 돌려준다."""
+    m = _mgr(request)
+    if not TAB_RE.match(body.tab) or body.action not in m.SCROLL_ACTIONS:
+        raise HTTPException(422, "탭이나 동작이 올바르지 않습니다")
+    try:
+        return await m.scroll(body.tab, body.action)
+    except Refused as e:
+        raise HTTPException(503, f"스크롤하지 못했습니다 — {e}") from e
+
+
 class RespawnIn(BaseModel):
     project: str
     force: bool = False            # 돌고 있는 명령 · 친 글이 있어도(사람이 확인 창에서 [확인]을 눌렀다)

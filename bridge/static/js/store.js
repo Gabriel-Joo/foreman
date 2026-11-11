@@ -548,6 +548,13 @@ export class Store {
     return j;
   }
   // 지금 실제로 보이는 창(바꾸지 않는다, 11-10) — 다른 탭 · CC 부탁이 창을 바꿔도 이름표가 따라가게 열려 있는 동안 묻는다
+  // [위로] · [아래로] · [입력으로](11-11) — tmux 복사 모드로 올려 보기. action: up | down | exit
+  async terminalScroll(tab, action) {
+    const r = await fetch('/api/terminal/scroll', { method: 'POST', headers: this.headers(true), body: JSON.stringify({ tab, action }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+    return j;
+  }
   async terminalWindow(tab) {
     const r = await fetch('/api/terminal/window' + (tab ? `?tab=${encodeURIComponent(tab)}` : ''), { headers: this.headers() });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
