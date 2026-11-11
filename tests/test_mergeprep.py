@@ -93,6 +93,10 @@ def _mk(repo, monkeypatch, live=False, done="보고 옴"):
 
     async def done_live(sid, cc, pid):
         return done
+
+    async def no_asks(sid):
+        return None
+    monkeypatch.setattr(m, "_asks", no_asks)
     monkeypatch.setattr(m, "_deliver", deliver)
     monkeypatch.setattr(m, "manager_of", mgr)
     monkeypatch.setattr(m, "_skipped", skipped)
@@ -231,6 +235,119 @@ async def test_not_done_no_card_and_check_cleans(repo, monkeypatch):
     (p / "d.txt").write_text("d\n")                                              # 다시 일함(커밋 안 한 변경)
     assert await m.check() == 0 and 7 not in m.cards
     assert m.health["ok"]
+
+
+class _Res:
+    def __init__(self, row):
+        self.row = row
+
+    def first(self):
+        return self.row
+
+
+class _Conn:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def execute(self, q, p=None):
+        return _Res(None if "FROM turn" in str(q) else (1,))     # 열린 턴 없음 · 응답 있음
+
+
+async def test_done_live_asks_is_still_done_but_denied_is_not(repo, monkeypatch):
+    """11-11 D2 281 — 보고 끝 확인 부탁(답 기다림)이어도 일을 마친 것이다. 권한 거부로 멈춘 것은 아니다."""
+    from bridge.api import dashboard
+    h = FakeH(repo, str(repo / ".worktrees" / "w"))
+    h.engine = SimpleNamespace(connect=lambda: _Conn())
+    m = mp.MergePrep(h, mp.MergePrepCfg(enabled=True, notify_ready=False))       # 진짜 _done_live · _asks를 본다
+    monkeypatch.setattr(mp, "_status", lambda d, pid: "idle")
+
+    async def no_work(row, pid):
+        return False
+    h._running_work = no_work
+    needs = {7: {"asks": {"at": "x", "tail": "한 번씩 확인해 주세요.", "event_id": 1}}}
+
+    async def hn(c, ids):
+        return needs
+    monkeypatch.setattr(dashboard, "human_needs", hn)
+    assert await m._done_live(7, CC, 1) == "보고 옴 — 일하지 않고 응답을 마쳤습니다"
+    assert (await m._asks(7))["tail"] == "한 번씩 확인해 주세요."
+    needs[7] = {"denied": {"tool": "Bash"}}
+    assert await m._done_live(7, CC, 1) is None
+
+
+async def test_asks_card_shows_question_and_updates_in_place(repo, monkeypatch):
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    (p / "b.txt").write_text("b\n"); sh(p, "add", "b.txt"); sh(p, "commit", "-qm", "b")
+    m, h, sent, row, lv = _mk(repo, monkeypatch, live=True)
+    asks = {"v": {"at": "x", "tail": "한 번씩 확인해 주세요.", "event_id": 1}}
+
+    async def a(sid):
+        return asks["v"]
+    monkeypatch.setattr(m, "_asks", a)
+    m.cfg.notify_ready = True
+    notes = []
+    monkeypatch.setattr(m, "_notify", lambda c, k, msg: notes.append(msg))
+
+    async def cands():
+        return [row]
+    monkeypatch.setattr(m, "_candidates", cands)
+    assert await m.check() == 1
+    c = m.cards[7]
+    assert c.status == "ready" and c.asks["tail"] == "한 번씩 확인해 주세요." and c.via == "sweep"
+    assert "세션이 묻는 말이 있습니다 — 패널에서 답하십시오" in notes[0] and "묻는 말 있음" in h.acts[-1][2]
+    changed = []
+    m.on_change = lambda: changed.append(1)
+    asks["v"] = None                                                            # 사람이 답 안 해도 됨 — 같은 카드, 표시만
+    assert await m.check() == 1 and m.cards[7] is c and c.asks is None and changed and len(notes) == 1
+
+
+async def test_turn_end_makes_card_without_sweep(repo, monkeypatch):
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    (p / "b.txt").write_text("b\n"); sh(p, "add", "b.txt"); sh(p, "commit", "-qm", "b")
+    m, h, sent, row, lv = _mk(repo, monkeypatch, live=True)
+    monkeypatch.setattr(mp, "TURN_END_DELAYS", (0.0, 0.0))
+
+    async def cands():
+        return [row, (8, "x", "/nope/.worktrees/z", "다른", "proj", "coder")]
+    monkeypatch.setattr(m, "_candidates", cands)
+
+    async def no_sweep():
+        raise AssertionError("훑기를 부르면 안 된다")
+    monkeypatch.setattr(m, "check", no_sweep)
+    m.on_turn_closed(99, 1, "stop", "hook")                                     # worktree 세션이 아니면 아무것도 안 한다
+    m.on_turn_closed(7, 1, "stop", "hook")
+    import asyncio
+    await asyncio.gather(*list(m._tasks))
+    assert list(m.cards) == [7] and m.cards[7].via == "turn_end" and "턴 끝" in h.acts[-1][2]
+    assert m.turn_end["ok"] == 4 and m.turn_end["fail"] == 0
+    # 꺼져 있으면 예약하지 않는다
+    m.cfg.enabled = False
+    m.on_turn_closed(7, 2, "stop", "hook")
+    assert not m._tasks
+
+
+async def test_turn_end_failure_is_picked_up_by_sweep(repo, monkeypatch):
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    (p / "b.txt").write_text("b\n"); sh(p, "add", "b.txt"); sh(p, "commit", "-qm", "b")
+    m, h, sent, row, lv = _mk(repo, monkeypatch)
+    monkeypatch.setattr(mp, "TURN_END_DELAYS", (0.0,))
+    calls = {"n": 0}
+
+    async def cands():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("DB 막힘")
+        return [row]
+    monkeypatch.setattr(m, "_candidates", cands)
+    m.on_turn_closed(7, 1, "stop", "hook")
+    import asyncio
+    await asyncio.gather(*list(m._tasks))
+    assert not m.cards and m.turn_end["fail"] == 1 and "DB 막힘" in m.turn_end["error"]
+    assert await m.check() == 1 and m.cards[7].via == "sweep"                   # 그물이 줍는다
+    assert m.health["ok"] and m.health["turn_end"]["fail"] == 1                 # 실패 수는 health에 남는다
 
 
 async def test_prep_failure_becomes_failed_card(repo, monkeypatch):

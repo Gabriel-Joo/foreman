@@ -1,8 +1,10 @@
 """합치기 준비(11-11 1물결 A 「하나」 · 「넷」, log/plan_structure_20261111.md) — 판에 박힌 단계는 브리지가 기계로.
 
 worktree 세션이 「일을 마침」이 되면 merge-tree를 돌려 **합치기 승인 카드**를 만든다. 사람 화면에는 승인만 뜬다.
-- 일을 마침: 살아 있고 · 일하지 않고(busy 아님, 열린 턴 없음, 뒤에서 도는 일 없음) · 마지막 응답이 묻는 말이 아니고 · 권한 거부로
-  멈추지 않음 — 또는 세션이 끝남. 그리고 worktree에 합칠 커밋이 있고(ahead > 0) 커밋 안 한 변경이 0
+- 언제 보나(11-11 사용자): 세션이 응답을 마치는 순간(턴 끝 — on_turn_closed) 바로. 1분 훑기는 놓친 것을 줍는 그물
+- 일을 마침: 살아 있고 · 일하지 않고(busy 아님, 열린 턴 없음, 뒤에서 도는 일 없음) · 권한 거부로 멈추지 않음 — 또는 세션이 끝남.
+  그리고 worktree에 합칠 커밋이 있고(ahead > 0) 커밋 안 한 변경이 0. 마지막 응답이 묻는 말이어도 일을 마친 것으로 보고, 카드에
+  「세션이 묻는 말이 있습니다」를 함께 싣는다(답 기다림과 일을 마침은 따로 — D2 281은 보고 끝 확인 부탁 때문에 카드가 안 떴다)
   (「보고 옴」(대시보드 human_needs의 report)은 사람이 패널을 열면 읽음으로 사라진다 — 읽었든 아니든 일을 마친 것은 같아 묻지 않는다)
 - 카드: 브랜치 · 커밋 · 바뀐 파일 · 충돌 여부(`git merge-tree --write-tree`) · ff 가능 / main이 앞섬 · 정리 후보(넷)
 - [합치기]: 다시 잰다(카드 뒤 커밋이 바뀌었으면 거절하고 카드를 새로). 충돌 없고 깨끗하면 HandoffManager.worktree_act(merge,
@@ -40,6 +42,7 @@ log = logging.getLogger("foreman.mergeprep")
 
 ACT_CARD, ACT_SKIP, ACT_MERGE, ACT_CONFLICT = "mprep-card", "mprep-skip", "mprep-merge", "mprep-conf"   # session_action(12자까지)
 NOTIFY_KIND = "merge"                                                                                # notification.kind(8자까지)
+TURN_END_DELAYS = (3.0, 10.0)        # 턴 끝 뒤 두 번 본다(초) — 시험이 바꾼다
 
 
 # ── 설정 ────────────────────────────────────────────────
@@ -205,6 +208,8 @@ class Card:
     files: list[str]
     conflict: list[str] | None    # None = 충돌 없음
     docs: dict[str, Any] | None
+    asks: dict[str, Any] | None = None   # 마지막 응답이 묻는 말이면(human_needs의 asks) — 일을 마친 것과 따로 본다. 카드는 뜬다
+    via: str = "sweep"            # turn_end(턴 끝에서 바로) · sweep(1분 훑기가 주움)
     status: str = "ready"         # ready · merging · merged · conflict_sent · conflict_manager · failed
     note: str | None = None
     error: str | None = None
@@ -234,8 +239,12 @@ class MergePrep:
         self.engine, self.sessions_dir = handoff.engine, handoff.sessions_dir
         self.cards: dict[int, Card] = {}
         self.health: dict[str, Any] = {"ok": True, "last": None, "error": None}
-        self._lock = asyncio.Lock()          # 훑기 · 합치기가 겹치지 않게
+        self._lock = asyncio.Lock()          # 훑기 · 턴 끝 · 합치기가 겹치지 않게
         self._task: asyncio.Task[Any] | None = None
+        self._tasks: set[asyncio.Task[Any]] = set()       # 턴 끝 확인
+        self._touched = False                # 있던 카드의 표시(묻는 말)만 바뀜 — 화면을 다시 그린다
+        self.turn_end: dict[str, Any] = {"ok": 0, "fail": 0, "error": None, "at": None}   # 턴 끝 넘기기 — health로 보인다
+        self.health["turn_end"] = self.turn_end
 
     # ── 보기 ──
     def view(self) -> dict[str, Any]:
@@ -269,7 +278,9 @@ class MergePrep:
         return out
 
     async def _done_live(self, sid: int, cc: str, pid: int) -> str | None:
-        """살아 있는 세션이 일을 마쳤나 — 마쳤으면 근거 글, 아니면 None."""
+        """살아 있는 세션이 일을 마쳤나 — 마쳤으면 근거 글, 아니면 None.
+        11-11(사용자): 답을 기다리는 것과 일을 마친 것은 따로 본다 — 보고 끝 확인 부탁(「…한 번씩 확인해 주세요」)이 답 기다림으로
+        잡혀 카드가 아예 안 떴다(D2 281). 묻는 말은 _asks로 카드에 함께 싣는다. 권한 거부로 멈춘 것은 일을 마친 것이 아니다."""
         if _status(self.sessions_dir, pid) == "busy":
             return None
         from bridge.api.dashboard import human_needs
@@ -280,12 +291,19 @@ class MergePrep:
                                     {"s": sid})).first():
                 return None
             needs = (await human_needs(c, f"({int(sid)})")).get(sid) or {}
-        if needs.get("asks") or needs.get("denied"):
+        if needs.get("denied"):
             return None
         row = await self.h.session(sid)
         if row is None or await self.h._running_work(row, pid):
             return None
-        return "보고 옴 — 일하지 않고, 묻는 말 없이 응답을 마쳤습니다"
+        return "보고 옴 — 일하지 않고 응답을 마쳤습니다"
+
+    async def _asks(self, sid: int) -> dict[str, Any] | None:
+        """마지막 응답이 사람에게 묻는 말이면 {at, tail, event_id}(대시보드 「답 기다림」과 같은 판정). 사람이 [답 안 해도 됨]으로
+        끈 것은 없다."""
+        from bridge.api.dashboard import human_needs
+        async with self.engine.connect() as c:
+            return ((await human_needs(c, f"({int(sid)})")).get(sid) or {}).get("asks")
 
     async def _skipped(self, sid: int, head: str) -> bool:
         async with self.engine.connect() as c:
@@ -321,7 +339,7 @@ class MergePrep:
                     docs[n] = body
         return doc_candidates(readme if rc == 0 else "", d.readme_section, docs, files.splitlines(), subj.splitlines(), d.max)
 
-    async def prep(self, r: tuple[Any, ...], live: dict[str, Any]) -> Card | None:
+    async def prep(self, r: tuple[Any, ...], live: dict[str, Any], via: str = "sweep") -> Card | None:
         """한 세션 — 일을 마쳤고 합칠 것이 있으면 카드(같은 커밋이면 있던 카드 그대로). 아니면 None(있던 ready 카드는 치운다)."""
         sid, cc, cwd, title, project, role = r
         repo, name = wt.split(cwd)
@@ -334,8 +352,12 @@ class MergePrep:
         st = await self._git_facts(repo, name)
         if not st.get("exists") or st["ahead"] == 0 or st["dirty"]:
             return None
+        asks = await self._asks(sid) if ls else None       # 끝난 세션은 답할 곳이 없다
         old = self.cards.get(sid)
         if old and (old.status == "merging" or (old.head == st["head"] and old.base_head == st["base_head"] and old.live == bool(ls))):
+            if old.status == "ready" and old.asks != asks:  # 같은 커밋에서 묻는 말만 생기거나 풀림 — 카드는 그대로, 표시만
+                old.asks, old.updated_at = asks, _iso(_now())
+                self._touched = True
             return old
         if await self._skipped(sid, st["head"]):
             return None
@@ -348,19 +370,25 @@ class MergePrep:
         now = _iso(_now())
         card = Card(sid=sid, title=title, project=project, role=role, repo=repo, name=name, branch=st["branch"], base=st["base"],
                     head=st["head"], base_head=st["base_head"], live=bool(ls), why=why, ahead=st["ahead"], behind=st["behind"],
-                    commits=st["commits"], files=files.splitlines()[:60], conflict=conflict, docs=docs, made_at=now, updated_at=now)
+                    commits=st["commits"], files=files.splitlines()[:60], conflict=conflict, docs=docs, asks=asks, via=via,
+                    made_at=now, updated_at=now)
         if old is None or old.head != card.head:
-            await self.h._act(sid, ACT_CARD, None, True, f"{name} {card.head[:8]} " + ("충돌 " + ",".join(conflict)[:300] if conflict else "충돌 없음"))
+            await self.h._act(sid, ACT_CARD, None, True, f"{name} {card.head[:8]} " + ("충돌 " + ",".join(conflict)[:300] if conflict else "충돌 없음")
+                              + (" · 묻는 말 있음" if asks else "") + (" · 턴 끝" if via == "turn_end" else " · 훑기"))
             if self.cfg.notify_ready:
                 self._notify(card, f"mergeprep:ready:{sid}:{card.head[:12]}",
                              f"⑂ 합치기 준비됨 — 「{title or sid}」(세션 {sid}) {card.branch} 커밋 {card.ahead}개, "
                              + (f"충돌 {len(conflict)}개" if conflict else ("충돌 없음 · ff 가능" if card.ff else f"충돌 없음 · {card.base}에 새 커밋 {card.behind}개(rebase)"))
+                             + (f"\n❓ 세션이 묻는 말이 있습니다 — 패널에서 답하십시오: {asks.get('tail') or ''}" if asks else "")
                              + "\n▶ 그 세션 패널의 「합치기 승인」에서 승인합니다")
         return card
 
     async def check(self) -> int:
-        """한 번 훑는다 — 카드 수를 돌려준다. 세션마다 실패는 그 카드에 사유로 남기고 다음 세션으로 간다."""
+        """한 번 훑는다 — 카드 수를 돌려준다. 세션마다 실패는 그 카드에 사유로 남기고 다음 세션으로 간다.
+        11-11부터 카드는 턴 끝(on_turn_closed)에서 바로 만든다. 훑기는 놓친 것을 줍는 그물이다(브리지를 다시 띄운 사이 끝난 세션,
+        턴 끝 확인이 실패한 세션, 끝난 세션 · 다시 일하는 세션의 카드 치우기)."""
         async with self._lock:
+            self._touched = False
             rows = await self._candidates()
             live = await asyncio.to_thread(live_sessions, self.sessions_dir)
             keep: set[int] = set()
@@ -377,6 +405,7 @@ class MergePrep:
                 if self.cards.get(sid) is not card:
                     self.cards[sid] = card
                     changed = True
+            changed = changed or self._touched
             for sid in [s for s, c in self.cards.items() if s not in keep and c.status == "ready"]:
                 del self.cards[sid]                       # 더는 일을 마친 상태가 아니다(다시 일함 · 합침 · 버림)
                 changed = True
@@ -384,10 +413,60 @@ class MergePrep:
             cut = _iso(_now() - timedelta(hours=6))
             for sid in [s for s, c in self.cards.items() if s not in keep and c.status != "ready" and c.updated_at < cut]:
                 del self.cards[sid]
-            self.health = {"ok": True, "last": _iso(_now()), "error": None}
+            self.health = {"ok": True, "last": _iso(_now()), "error": None, "turn_end": self.turn_end}
         if changed and self.on_change:
             self.on_change()
         return len(self.cards)
+
+    async def check_one(self, sid: int, via: str = "turn_end") -> Card | None:
+        """한 세션만 본다(턴 끝). worktree 세션이 아니거나 그 폴더의 마지막 세션이 아니면 아무것도 하지 않는다."""
+        async with self._lock:
+            self._touched = False
+            rows = [r for r in await self._candidates() if r[0] == sid]
+            if not rows:
+                return None
+            live = await asyncio.to_thread(live_sessions, self.sessions_dir)
+            try:
+                card = await self.prep(rows[0], live, via=via)
+            except Exception as e:  # noqa: BLE001
+                card = self._failed_card(rows[0], f"합치기 준비 실패: {type(e).__name__}: {str(e)[:200]}")
+            changed = self._touched
+            old = self.cards.get(sid)
+            if card is None:
+                if old is not None and old.status == "ready":
+                    del self.cards[sid]                   # 다시 일함 · 커밋 안 한 변경 — 훑기와 같다
+                    changed = True
+            elif old is not card:
+                self.cards[sid] = card
+                changed = True
+        if changed and self.on_change:
+            self.on_change()
+        return card
+
+    def on_turn_closed(self, session_id: int, *_: Any, **__: Any) -> None:
+        """조립기가 턴을 닫은 직후(트랜잭션 안일 수 있다 — 여기서는 예약만). 11-11(사용자): 세션이 응답을 마치는 순간 관리자 몫
+        (합치기 준비)으로 바로 넘긴다 — 1분 훑기에 기대지 않는다. Stop hook이 마지막 응답 줄 · CC 상태 파일보다 먼저 올 수 있어
+        TURN_END_DELAYS 뒤 두 번 본다(두 번째는 묻는 말 표시를 바로잡는다). 실패는 health에 남기고 다음 훑기가 줍는다 —
+        훑기마저 실패하면 _health_bad가 텔레그램으로 알린다."""
+        if not self.cfg.enabled:
+            return
+
+        async def go() -> None:
+            for d in TURN_END_DELAYS:
+                await asyncio.sleep(d)
+                try:
+                    async with asyncio.timeout(60):
+                        await self.check_one(session_id)
+                    self.turn_end["ok"] += 1
+                except Exception as e:  # noqa: BLE001 — 실패가 적재를 막지 않는다. 그물(훑기)이 줍는다
+                    self.turn_end["fail"] += 1
+                    self.turn_end["error"] = f"세션 {session_id}: {type(e).__name__}: {str(e)[:160]}"
+                    self.turn_end["at"] = _iso(_now())
+                    log.warning("턴 끝 합치기 준비 실패 — 다음 훑기가 줍는다: %s", self.turn_end["error"])
+                    return
+        t = asyncio.get_running_loop().create_task(go())
+        self._tasks.add(t)
+        t.add_done_callback(self._tasks.discard)
 
     def _failed_card(self, r: tuple[Any, ...], err: str) -> Card:
         sid, cc, cwd, title, project, role = r
@@ -607,7 +686,7 @@ class MergePrep:
 
     def _health_bad(self, why: str, key: str) -> None:
         log.warning(why)
-        self.health = {"ok": False, "last": self.health.get("last"), "error": why, "at": _iso(_now())}
+        self.health = {"ok": False, "last": self.health.get("last"), "error": why, "at": _iso(_now()), "turn_end": self.turn_end}
         self._notify(None, key, f"⚠ {why}")
         if self.on_change:
             self.on_change()

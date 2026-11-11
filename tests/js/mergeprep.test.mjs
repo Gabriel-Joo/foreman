@@ -37,3 +37,10 @@ test('main이 앞섬 · 충돌 · 합친 뒤', () => {
   assert.match(m, /시험 · push · 브리지 다시 띄우기는 관리자가/);
   assert.doesNotMatch(m, /mp-merge/);                         // 합친 카드에는 단추가 없다
 });
+
+test('묻는 말이 있어도 카드는 뜬다 — 묻는 말을 함께 보인다(11-11 D2 281)', () => {
+  const h = mpSection({ card: card({ asks: { tail: '한 번씩 확인해 주세요.' } }), health: { ok: true } }, b, 7);
+  assert.match(h, /세션이 묻는 말이 있습니다 — 패널에서 답하십시오: 한 번씩 확인해 주세요/);
+  assert.match(h, /data-act="mp-merge"/);
+  assert.doesNotMatch(mpSection({ card: card() }, b, 7), /묻는 말/);
+});
