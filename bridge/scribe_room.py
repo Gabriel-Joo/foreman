@@ -389,6 +389,34 @@ async def inbox_take_coder(engine: Any, iid: int, session_id: int) -> bool:
         return r.rowcount > 0
 
 
+async def inbox_take_pick(engine: Any, iid: int, session_id: int) -> bool:
+    """목록에서 사람이 골라 「이거 해라」 한 할 일(11-11 받은 할 일 #8) — 받는 사람이 서기 정리였어도 코더 몫으로 바꿔 가져간다.
+    새로인 것만. 아니면 False(시작은 막지 않는다)."""
+    async with engine.begin() as c:
+        r = await c.execute(text(
+            f"UPDATE todo_inbox i SET i.assignee = 'coder', i.taken_by = :s, i.taken_at = UTC_TIMESTAMP(3) "
+            f"WHERE i.id = :i AND {_INBOX_STATE} = 'new'"), {"s": session_id, "i": iid})
+        return r.rowcount > 0
+
+
+async def inbox_edit(engine: Any, iid: int, body: str) -> bool:
+    """목록에서 바로 고치기(11-11 받은 할 일 #8) — 새로인 것만(가져간 것은 그 세션이 이미 읽었다). 고친 시각은 edited_at(0031)."""
+    from bridge.inject import Refused
+    body = (body or "").strip()
+    if not body:
+        raise Refused("고친 글이 비어 있습니다 — 지우려면 [버리기]를 누릅니다")
+    if len(body) > INBOX_MAX:
+        raise Refused(f"글이 너무 깁니다({len(body)}자) — {INBOX_MAX}자까지 받습니다")
+    async with engine.begin() as c:
+        try:
+            r = await c.execute(text(f"UPDATE todo_inbox i SET i.body = :b, i.edited_at = UTC_TIMESTAMP(3) "
+                                     f"WHERE i.id = :i AND {_INBOX_STATE} = 'new'"), {"b": body, "i": iid})
+        except Exception:  # noqa: BLE001 — 0031 전 DB(edited_at 없음). 글만 고친다
+            r = await c.execute(text(f"UPDATE todo_inbox i SET i.body = :b WHERE i.id = :i AND {_INBOX_STATE} = 'new'"),
+                                {"b": body, "i": iid})
+        return r.rowcount > 0
+
+
 async def inbox_drop(engine: Any, iid: int) -> bool:
     async with engine.begin() as c:
         r = await c.execute(text("UPDATE todo_inbox SET dropped_at = UTC_TIMESTAMP(3) WHERE id = :i AND dropped_at IS NULL"), {"i": iid})

@@ -694,7 +694,7 @@ class ForemanDispatcher:
             taken, whys = [], []
             for iid in dict.fromkeys(inbox_list):
                 try:
-                    if await sr.inbox_take_coder(self.engine, iid, int(out["session_id"])):
+                    if await sr.inbox_take_pick(self.engine, iid, int(out["session_id"])):
                         taken.append(iid)
                     else:
                         whys.append(f"받은 할 일 #{iid}은 이미 다른 세션이 가져갔거나 버린 것이라 이 세션 몫으로 적지 않았습니다.")
