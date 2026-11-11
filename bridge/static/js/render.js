@@ -409,13 +409,22 @@ function queuedHtml(x) {
     return `<div class="msg in o-${o} o-queued"><div class="who small muted">${esc(who)} · ${clock(q.ts)}</div>${longText(`${x.id}q${i}`, raw)}</div>`;
   }).join('');
 }
+// 턴 끝 이유 — API 오류면 종류(분류기 거부 · 한도 · 과부하 …)를 글자로, 할 일 · request id는 호버(11-11, bridge/api_error.py)
+export function endLabel(x) {
+  const base = END_LABEL[x.end_reason] || x.end_reason;
+  const e = x.end_reason === 'stop_failure' ? x.api_error : null;
+  if (!e) return esc(base);
+  const name = e.kind === 'unknown' ? base : `${base} — ${e.label}${e.detail ? ` [${e.detail}]` : ''}`;
+  const tip = `${e.label} — ${e.action}.${e.reset ? ` ${e.reset}에 풀립니다.` : ''}${e.request_id ? ` 요청 번호는 ${e.request_id}입니다.` : ''}`;
+  return `<span class="warn" title="${esc(tip)}">${esc(name)}</span>`;
+}
 export function convoHtml(c) {
   if (!c) return '';
   return (c.error ? `<p class="bad small">${esc(c.error)}</p>` : '') + (c.turns || []).map((x) => `
       <div class="msg in o-${esc(x.origin)}"><div class="who small muted">${esc(ORIGIN_LABEL[x.origin] || x.origin)} · ${clock(x.started_at)}</div>${longText(`${x.id}i`, promptText(x.prompt))}</div>${queuedHtml(x)}
-      ${x.reply ? `<div class="msg out"><div class="who small muted">CC${x.end_reason ? ' · ' + esc(END_LABEL[x.end_reason] || x.end_reason) : ' · 진행 중'}${x.tools ? ` · 도구 ${x.tools}` : ''}${x.subagents ? ` · 서브 ${x.subagents}` : ''}</div>${
+      ${x.reply ? `<div class="msg out"><div class="who small muted">CC${x.end_reason ? ' · ' + endLabel(x) : ' · 진행 중'}${x.tools ? ` · 도구 ${x.tools}` : ''}${x.subagents ? ` · 서브 ${x.subagents}` : ''}</div>${
         x.mid && x.mid.length ? `<details class="mid"${OPEN_MSG.has(`${x.id}m`) ? ' open' : ''} data-mid="${x.id}m"><summary class="small muted">중간 글 ${x.mid.length}</summary>${x.mid.map((m, i) => `<div class="mid-one">${longText(`${x.id}m${i}`, m)}</div>`).join('')}</details>` : ''}${longText(`${x.id}o`, x.reply)}</div>`
-        : (x.end_reason ? `<div class="msg out small muted">${esc(END_LABEL[x.end_reason] || x.end_reason)}${x.tools ? ` · 도구 ${x.tools}` : ''}</div>` : '')}`).join('') + (c.loading ? '<p class="small muted">불러오는 중…</p>' : '');
+        : (x.end_reason ? `<div class="msg out small muted">${endLabel(x)}${x.tools ? ` · 도구 ${x.tools}` : ''}</div>` : '')}`).join('') + (c.loading ? '<p class="small muted">불러오는 중…</p>' : '');
 }
 
 // 승인 이력(11-03) — 무엇이 몇 번 걸렸고 다 승인했는지. 늘 Yes만 누르는 규칙은 손볼 후보로 표시. <details>를 열 때만 읽는다

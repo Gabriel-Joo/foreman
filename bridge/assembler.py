@@ -33,6 +33,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from bridge.api_error import classify as classify_api_error
 from bridge.config import Settings
 from bridge.inject import _status
 from bridge.liveness import live_sessions
@@ -577,8 +578,13 @@ class Assembler:
                 st.open_turn.active = True
             self._message(b, d, tid, None, ts)
             if d.get("isApiErrorMessage"):
+                # 11-11 — 종류(분류기 거부 · 한도 · 과부하 …)와 request id를 뽑아 남기고 브리지 로그에 한 줄(bridge/api_error.py)
+                full = self.mask.text(_text_of(d["message"].get("content")))
+                ce = classify_api_error(full, d.get("error"))
+                log.warning("API 오류: 세션 %s · %s%s · %s", st.id, ce["kind"], f" [{ce['detail']}]" if ce["detail"] else "",
+                            ce["request_id"] or "request id 없음")
                 self._event(b, st, uuid=uid, ts=ts, type="error", turn_id=tid, parent_uuid=par, status="error",
-                            payload={"error": d.get("error"), "text": self.mask.text(_text_of(d["message"].get("content")))[:PREVIEW]})
+                            payload={"error": d.get("error"), "text": full[:PREVIEW], "api_error": ce})
                 await self._close_turn(c, st, b, "stop_failure", ts, "transcript")
             else:
                 self._assistant_blocks(b, st, d, uid, ts, par, tid, None)

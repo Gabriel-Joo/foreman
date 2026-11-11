@@ -339,10 +339,16 @@ class Notifier:
                 "SELECT JSON_UNQUOTE(JSON_EXTRACT(payload, '$.text')) FROM event WHERE turn_id = :t AND type = 'assistant_msg' "
                 "AND subagent_id IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.block')) = 'text' ORDER BY id DESC LIMIT 1"),
                 {"t": turn_id})).scalar()
-            error = (await c.execute(text(
-                "SELECT COALESCE(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.text')), CAST(JSON_EXTRACT(payload, '$.error') AS CHAR)) "
-                "FROM event WHERE turn_id = :t AND type = 'error' ORDER BY id DESC LIMIT 1"), {"t": turn_id})).scalar() \
-                if reason == "stop_failure" else None
+            error = None
+            if reason == "stop_failure":
+                # 11-11 — 종류 · request id · 할 일 한 줄(bridge/api_error.py). 글이 있는 트랜스크립트 쪽을 먼저
+                er = (await c.execute(text(
+                    "SELECT JSON_UNQUOTE(JSON_EXTRACT(payload, '$.text')), JSON_UNQUOTE(JSON_EXTRACT(payload, '$.error')) "
+                    "FROM event WHERE turn_id = :t AND type = 'error' "
+                    "ORDER BY JSON_EXTRACT(payload, '$.text') IS NULL, id DESC LIMIT 1"), {"t": turn_id})).first()
+                if er:
+                    from bridge.api_error import classify, one_line
+                    error = one_line(classify(er[0] if er[0] != "null" else None, er[1] if er[1] != "null" else None))
             msg = compose_turn(rule.prefix or "", reason, origin, secs, prompt, reply, error, [(s, d) for s, d in subs])
             nid = await self._record(c, session_id, turn_id, "turn", reason, "pending", None, msg)
             if nid:
