@@ -20,6 +20,8 @@ export function josa(w, a = '이', b = '가') {
 }
 // [버리기]가 할 일(11-10) — 계획(dispatch)이 있고 아직 'planned'일 때만 서버에 버림을 적는다. 계획을 못 받았으면(실패한 계획은
 // 서버에 'failed'로 이미 남는다) 서버를 부르지 않고 카드만 치운다
+// 창을 새로 열 때 입력 칸(11-11) — 계획으로 보낸 글이면 비우고, 보내지 않은 초안은 그대로(조용히 날리지 않는다)
+export const freshText = (sent, value) => (sent ? '' : value || '');
 export const dropAction = (disp) => (disp && disp.dispatch_id != null && (disp.status || 'planned') === 'planned' ? 'server' : 'clear');
 const projLabel = (name) => ((window.foreman && window.foreman.state.projects.find((p) => p.name === name)) || {}).label || name;
 
@@ -63,6 +65,7 @@ function mount(dlg) {
   const $ = (id) => box.querySelector('#' + id);
   let disp = null, opts = null, room = null;
   let inboxId = null;      // 11-09 코더에게 받은 할 일에서 연 계획 — [이대로 시작]하면 그 세션이 가져간다(창을 다시 열면 풀린다)
+  let sent = false;        // 11-11 이 칸의 글을 계획으로 보냈는가 — 보낸 글은 창을 다시 열면 비운다(보내지 않은 초안은 남긴다)
   // 상태 글(11-09 사용자 — 버튼 옆 작은 회색 글은 읽기 힘들었다): 입력칸 아래 상자, 기다리는 중이면 움직이는 점
   const msg = (t, cls = 'muted') => {
     const busy = cls === 'muted' && /…/.test(t);
@@ -105,9 +108,16 @@ function mount(dlg) {
     $('fmPlan').hidden = true;
     $('fmPlan').innerHTML = '';
   }
+  // 창을 새로 열 때(11-11 사용자 — 계획을 받고 세션을 띄운 뒤에도 다시 열면 지난 글이 그대로 있었다)
+  function fresh() {
+    $('fmText').value = freshText(sent, $('fmText').value);
+    sent = false;
+    clearPlan();
+    msg('');
+  }
   function reset(project) {
     who();
-    clearPlan();
+    fresh();
     inboxId = null;
     $('fmWake').hidden = true;
     $('fmAsk').disabled = false;
@@ -119,6 +129,7 @@ function mount(dlg) {
     const text = $('fmText').value.trim();
     if (!text) { msg('뭘 하려는지 적어 주세요.', 'bad'); return; }
     if ($('fmAsk').disabled) return;        // Ctrl+Enter · [다시 물어보기]도 여기로 — 이미 묻는 중이면 겹치지 않는다
+    sent = true;
     $('fmAsk').disabled = true; clearPlan(); $('fmWake').hidden = true;
     const t0 = Date.now();
     const wait = () => msg(`${josa(fmName())} 계획을 세우고 있습니다… ${Math.round((Date.now() - t0) / 1000)}초\n프로젝트 상황 · 노트 · 문서를 읽느라 보통 20초쯤 걸립니다.`);
@@ -142,6 +153,7 @@ function mount(dlg) {
       opts = o;
       setRoom(d.project);
       $('fmText').value = d.origin === 'wake' ? '' : d.request;
+      sent = true;                         // 이미 보낸 요청 — 다음에 열면 비운다
       if (d.origin === 'wake') {
         $('fmWake').hidden = false;
         $('fmWake').innerHTML = `<b>실패 이벤트가 부른 제안입니다</b><div>• ${esc(d.wake_text || '')}</div>
@@ -280,10 +292,19 @@ function mount(dlg) {
   // 11-09 코더의 맡길 일 → 받은 할 일 글을 말하기 칸에 채운다. 바로 계획을 받지 않는다(사람이 읽고 [계획 받기])
   function prefill(text, id) {
     $('fmText').value = text || '';
+    sent = false;
     inboxId = id || null;
     msg(id ? `받은 할 일 #${id}을 채웠습니다. 고칠 것은 고친 뒤 [계획 받기]를 누릅니다. 시작하면 그 세션이 이 할 일을 가져갑니다.` : '', 'muted');
   }
   ui = { reset, load, prefill, focus: () => $('fmText').focus() };
+  // 머리줄 [＋ 세션](office.js → newsession.js open)으로 열 때는 이 칸을 거치지 않는다 — 창이 열리는 것을 보고 같이 비운다.
+  // 감독실 캐릭터로 열 때(open)는 이 뒤에 reset · prefill · load가 이어서 온다(관찰 콜백이 먼저 돈다)
+  let wasOn = dlg.classList.contains('on');
+  new MutationObserver(() => {
+    const on = dlg.classList.contains('on');
+    if (on && !wasOn) fresh();
+    wasOn = on;
+  }).observe(dlg, { attributes: true, attributeFilter: ['class'] });
 }
 
 // 감독실 캐릭터 · 말풍선 · 텔레그램 링크가 부른다 — [+ 세션] 창을 열고 위의 말하기 칸으로
