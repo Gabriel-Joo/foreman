@@ -18,10 +18,13 @@ import { createForemanPanel } from './fmpanel.js';
 
 const KEY_OPEN = 'foremanPanelOpen', KEY_TAB = 'foremanPanelTab', KEY_MODE = 'foremanPanelMode';
 const KEY_W = { narrow: 'foremanPanelW', wide: 'foremanPanelWideW' };      // 11-10 전 끌어서 기억한 너비 — 읽지 않고 지운다
+// 11-11 사용자 — 화면 : 패널을 좁게 6 : 4, 넓게 4 : 6(전엔 좁게 패널 420px 남짓이라 너무 작아 쓰지 않게 됐다).
+// 넓게도 픽셀 화면이 STAGE_MIN 밑으로는 줄지 않는다 — 방 모눈 28칸이 한 칸 16px(방 배율 1, 원본 그림 1배)로 들어가는 폭(office.js roomViewScale).
+// 1024 창은 넓게가 4 : 6이 아니라 화면 464 : 패널 560이 된다(log/designer_polish_seven_20261111.md)
+const STAGE_MIN = 464;
 const WIDTH = {                                   // 기본 너비 · 창에 대한 최대 비율
-  // 11-08 1920 기준 360 → 420(글씨를 키워 — uiscale 120% — 안쪽 폭이 좁아졌다). 작은 창은 예전 360 그대로
-  narrow: { def: () => Math.round(Math.min(420, Math.max(360, window.innerWidth * 0.3))), max: 0.4 },
-  wide: { def: () => Math.max(560, Math.round(window.innerWidth * 0.5)), max: 0.72 },
+  narrow: { def: () => Math.round(window.innerWidth * 0.4), max: 0.4 },
+  wide: { def: () => Math.round(Math.min(window.innerWidth * 0.6, window.innerWidth - STAGE_MIN)), max: 0.6 },
 };
 const MIN_W = 280;
 const TABS = [['convo', '대화'], ['act', '활동'], ['sess', '세션']];
