@@ -518,7 +518,7 @@ class ForemanDispatcher:
         for i, s in enumerate(ss):
             if s["worktree"] is None:
                 s["worktree"] = bool(others) or i > 0
-        # 세션별 칸이 없는 카드(11-11 지금 foremanchat.js)는 첫 세션만 보인다 — [시작]이 무엇을 띄우는지 경고 줄에 다 적는다
+        # [시작]이 무엇을 띄우는지 경고 줄 맨 위에 한 줄로 — 세션 칸이 접혀 있어도 · 옛 카드(첫 세션만 보임)여도 보이게
         if many and plan["mode"] != "attach":
             on_ = [f"{i + 1}「{s['title'] or s['role']}」({ROLE_KO.get(s['role'], s['role'])} · {s['model'] or '기본'}"
                    f"{' · 따로 작업' if s['worktree'] else ''})" for i, s in enumerate(ss) if s["on"]]
