@@ -11,6 +11,7 @@ import { approvalCard, handleApprovalClick, handleApprovalInput, restoreNotes, a
          sessionName, sessionSub, sessionIds, projectLabel, roleBadge, panelRole, ROLE_LABEL, SESSION_ROLES, ROLE_UNKNOWN_TIP, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed, stallChip } from './render.js';
 import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
+import { hideTip } from './tip.js';
 import { mountHandoff, FLOW_TIP } from './handoff.js';
 import { createScribe } from './scribe.js';
 import { createCoder } from './coder.js';
@@ -225,15 +226,29 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   // 대화 칸 높이가 바뀌면(입력 칸 끌기 · ↑↓ · 더블클릭 · 모서리 · 창 크기) 아래쪽 기준으로 붙인다(11-11 사용자 — 입력 칸을 끌어 올리면
   // 대화 칸이 아래부터 줄어 맨 아래 글이 가려졌다). 맨 아래를 보고 있었으면 끄는 동안에도 맨 아래, 위를 읽던 중이면 보던 글이 제자리.
   // ResizeObserver는 그리기 전에 불려 끄는 동안 흔들리지 않는다. 숨은 칸(다른 탭 · 높이 0)은 건드리지 않는다
-  let convoFromBottom = 0, convoH = -1;
-  function noteConvo() { const c = $('pConvo'); if (c.clientHeight) convoFromBottom = Math.max(0, c.scrollHeight - c.scrollTop - c.clientHeight); }
+  // 맨 아래를 보고 있었는지(convoStick)는 따로 기억한다 — 글씨 배율(zoom) 아래에서 scrollTop이 소수라 아래쪽 거리가 1~2px 남던 것을 없앤다(11-11 사용자)
+  let convoFromBottom = 0, convoH = -1, convoStick = true;
+  const STICK_PX = 4;
+  function noteConvo() {
+    const c = $('pConvo');
+    if (!c.clientHeight) return;
+    convoFromBottom = Math.max(0, c.scrollHeight - c.scrollTop - c.clientHeight);
+    convoStick = convoFromBottom < STICK_PX;
+  }
+  function pinConvo() {
+    const c = $('pConvo');
+    if (!c.clientHeight) return;
+    c.scrollTop = convoStick ? c.scrollHeight : c.scrollHeight - c.clientHeight - convoFromBottom;
+  }
+  // 끌기를 마친 뒤 한 번 더 — 마지막 높이 변화 뒤 레이아웃이 가라앉은 다음에도 맨 아래에 붙게(opanel 아래 띠 끝내기에서 부른다)
+  const repinConvo = () => requestAnimationFrame(() => { pinConvo(); requestAnimationFrame(pinConvo); });
   if (typeof ResizeObserver === 'function') {
     new ResizeObserver(() => {
       const c = $('pConvo');
       if (!c.clientHeight || c.clientHeight === convoH) return;
       const first = convoH < 0;
       convoH = c.clientHeight;
-      if (!first) c.scrollTop = c.scrollHeight - c.clientHeight - convoFromBottom;
+      if (!first) pinConvo();
     }).observe($('pConvo'));
   }
   $('pNew').onclick = () => { const c = $('pConvo'); c.scrollTo({ top: c.scrollHeight, behavior: 'smooth' }); $('pNew').hidden = true; };
@@ -552,18 +567,20 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   }
   (() => {
     const g = $('pGrip');
-    let y0 = 0, h0 = 0, max0 = 0, z0 = 1;
+    let y0 = 0, h0 = 0, max0 = 0, z0 = 1, tipText = '';
     g.addEventListener('pointerdown', (ev) => {
       if (ev.button) return;
       ev.preventDefault();
       y0 = ev.clientY; h0 = textH(); max0 = maxInputH(); z0 = zoomF(); g.setPointerCapture(ev.pointerId); g.classList.add('drag');
+      // 끄는 동안 쪽지는 끈다 — preventDefault로 mousedown이 오지 않아 tip.js가 못 숨겼다. 놓으면 되돌려 다시 올리면 뜬다
+      hideTip(); tipText = g.dataset.tip || tipText; g.removeAttribute('data-tip');
     });
     g.addEventListener('pointermove', (ev) => {
       if (!g.classList.contains('drag')) return;
       $('pText').style.height = `${Math.round(Math.max(MIN_INPUT_H, Math.min(h0 + (y0 - ev.clientY) / z0, Math.max(max0, h0))))}px`;   // 위로 끌면 커진다
     });
     // 안 바뀐 클릭은 기억하지 않는다(원래 낮은 창에서 클릭만으로 높이가 저장 · 줄어들지 않게)
-    const end = () => { if (!g.classList.contains('drag')) return; g.classList.remove('drag'); if (textH() === h0) { if (!savedH()) $('pText').style.height = ''; } else setInputH(textH(), true); };
+    const end = () => { if (!g.classList.contains('drag')) return; g.classList.remove('drag'); g.dataset.tip = tipText; repinConvo(); if (textH() === h0) { if (!savedH()) $('pText').style.height = ''; } else setInputH(textH(), true); };
     g.addEventListener('pointerup', end); g.addEventListener('pointercancel', end);
     g.addEventListener('dblclick', resetInputH);
     g.addEventListener('keydown', (ev) => {
