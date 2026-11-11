@@ -149,10 +149,16 @@ export function createTerminal(store, { getProject } = {}) {
   // 방을 따라간다(11-10 사용자 — "방을 옮기면 터미널이 열려 있는 채여도 그 방 프로젝트로") — 방 · 고른 세션이 바뀐 때만 고른다.
   // 그래서 CC 부탁이 다른 프로젝트 창을 띄운 것은 사람이 방을 옮기기 전까지 그대로 둔다. 방이 바뀌는 곳이 office.js 여러 곳이라 짧게 물어본다
   let followed = null;
+  // 접힌 채여도(11-11 사용자) 막대 이름표는 방을 따라간다 — 창은 건드리지 않고(접힌 터미널이 tmux 창을 만들지 않게) 이름만 바꾼다.
+  // 펼치면 setOpen이 그 프로젝트 창을 실제로 고른다
   setInterval(() => {
-    if (!open || !getProject) return;
+    if (!getProject) return;
     const p = followProject(getProject);
-    if (p !== followed) { followed = p; pickProject(p); }
+    if (p === followed) return;
+    followed = p;
+    if (open) { pickProject(p); return; }
+    want = p;
+    if (shown) { shown = { ...shown, project: p, window: p, cwd: null, shell_old: null }; drawProj(); }
   }, 300);
 
   function setOpen(v, project) {           // project를 안 주면 지금 보는 방의 것(followProject)
