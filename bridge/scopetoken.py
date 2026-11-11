@@ -103,7 +103,7 @@ class TokenBook:
 
 # ── 범위 판정 ────────────────────────────────────────────────
 _SESS = re.compile(r"^/api/sessions/(\d+)(/|$)")
-_FOREMAN_BODY = {"/api/foreman/plan", "/api/foreman/start"}
+_FOREMAN_BODY = {"/api/foreman/plan", "/api/foreman/start", "/api/foreman/handover"}
 _FOREMAN_QUERY = {"/api/foreman/state", "/api/foreman/notes", "/api/foreman/context", "/api/foreman/merge-order"}
 ADMIN_ONLY_HINT = "관리 토큰(FOREMAN_API_TOKEN)이 필요합니다"
 
@@ -117,7 +117,7 @@ def in_repo(cwd: str, repo: str) -> bool:
 
 
 async def why_out_of_scope(scope: str, method: str, path: str, query: dict[str, str], body: Any,
-                           session_project: Any, repo_of: Any) -> str | None:
+                           session_project: Any, repo_of: Any, dispatch_project: Any = None) -> str | None:
     """프로젝트 토큰 요청이 범위 밖이면 사유, 안이면 None.
     session_project(sid) → 프로젝트 이름 | None, repo_of(project) → 저장소 경로 | None (둘 다 async)."""
     m = _SESS.match(path)
@@ -140,6 +140,8 @@ async def why_out_of_scope(scope: str, method: str, path: str, query: dict[str, 
     if path in _FOREMAN_BODY and method == "POST":
         b = body if isinstance(body, dict) else {}
         p = b.get("project") if path.endswith("/plan") else (b.get("plan") or {}).get("project")
+        if p is None and path.endswith("/start") and b.get("use_saved") and dispatch_project and b.get("dispatch_id"):
+            p = await dispatch_project(int(b["dispatch_id"]))     # 관리자에게 넘긴 계획(저장된 것) — 그 계획의 프로젝트
         if p == scope:
             return None
         return f"프로젝트 토큰({scope})으로는 이 프로젝트 계획만 세우고 시작할 수 있습니다 — 받은 project: {p or '없음'}"

@@ -20,8 +20,16 @@ class AskIn(BaseModel):
 
 class StartIn(BaseModel):
     dispatch_id: int
-    plan: dict[str, Any]
+    plan: dict[str, Any] | None = None   # 비우고 use_saved면 저장된 계획(관리자에게 넘긴 것 — bridge/handover.py)
+    use_saved: bool = False
     inbox_id: int | None = None       # 11-09 코더에게 받은 할 일에서 연 계획 — 시작하면 그 세션이 가져간다(taken_by)
+    inbox_ids: list[int] | None = Field(default=None, max_length=20)   # 11-11 할 일 여럿을 묶은 계획
+
+
+class HandoverIn(BaseModel):
+    dispatch_id: int
+    plan: dict[str, Any]
+    inbox_ids: list[int] | None = Field(default=None, max_length=20)
 
 
 def _d(request: Request) -> Any:
@@ -60,12 +68,43 @@ def alert(request: Request, project: str | None, msg: str) -> None:
 @router.post("/start")
 async def start(body: StartIn, request: Request) -> JSONResponse:
     async def go() -> dict[str, Any]:
-        out = await _d(request).start(body.dispatch_id, body.plan, inbox_id=body.inbox_id)
+        d = _d(request)
+        plan = body.plan
+        if plan is None:
+            if not body.use_saved:
+                raise Refused("계획(plan)이 없습니다 — 저장된 계획으로 시작하려면 use_saved: true")
+            plan = await d.saved_plan(body.dispatch_id)
+        inbox = list(body.inbox_ids or plan.get("inbox_ids") or []) + ([body.inbox_id] if body.inbox_id else [])
+        out = await d.start(body.dispatch_id, plan, inbox_id=inbox or None)
         if out.get("failed"):        # 여러 세션 중 일부만 떴다 — 화면(note)과 함께 텔레그램 한 번
-            alert(request, body.plan.get("project"), f"계획 #{body.dispatch_id}에서 세션 {len(out['failed'])}개를 띄우지 못했습니다 — "
+            alert(request, plan.get("project"), f"계획 #{body.dispatch_id}에서 세션 {len(out['failed'])}개를 띄우지 못했습니다 — "
                   + "; ".join(f"「{f['title'] or f['idx'] + 1}」 {f['error'][:100]}" for f in out["failed"]))
         return out
     return await _run(go())
+
+
+def _handover(request: Request) -> Any:
+    h = getattr(request.app.state, "handover", None)
+    if h is None or not h.cfg.enabled:
+        raise HTTPException(503, "관리자에게 넘기기가 꺼져 있습니다 — config/managers.toml [handover] enabled")
+    return h
+
+
+@router.post("/handover")
+async def handover(body: HandoverIn, request: Request) -> JSONResponse:
+    """계획 카드 [관리자에게 보내기](11-11) — 고친 계획을 저장하고 그 프로젝트 관리자 입력 칸에 넣는다. 띄우기는 관리자가 /start로."""
+    h = _handover(request)
+    return await _run(h.send(body.dispatch_id, body.plan, body.inbox_ids))
+
+
+@router.get("/handover")
+async def handover_state(request: Request) -> dict[str, Any]:
+    """카드가 [관리자에게 보내기]를 보일지 · 프로젝트마다 관리자가 있는지."""
+    h = getattr(request.app.state, "handover", None)
+    if h is None or not h.cfg.enabled:
+        return {"enabled": False}
+    return {"enabled": True, "wait_min": h.cfg.wait_min, "health": h.health,
+            "managers": {b["project"]: (b["manager"] or {}).get("session_id") for b in await h.m.board()}}
 
 
 async def record_direct(request: Request, origin: str, cwd: str | None, session: dict[str, Any], result: dict[str, Any] | None,

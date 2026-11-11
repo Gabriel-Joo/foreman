@@ -73,6 +73,11 @@ async def _check_scope(request: Request, scope: str) -> str | None:
             r = (await c.execute(text("SELECT repo_path FROM project WHERE name = :n"), {"n": project})).first()
         return r[0] if r else None
 
+    async def dispatch_project(did: int) -> str | None:
+        async with engine.connect() as c:
+            r = (await c.execute(text("SELECT project FROM dispatch WHERE id = :i"), {"i": did})).first()
+        return r[0] if r else None
+
     body = None
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         try:
@@ -81,7 +86,7 @@ async def _check_scope(request: Request, scope: str) -> str | None:
         except ValueError:
             body = None
     return await why_out_of_scope(scope, request.method, request.url.path, dict(request.query_params), body,
-                                  session_project, repo_of)
+                                  session_project, repo_of, dispatch_project)
 
 
 async def require_api_token(

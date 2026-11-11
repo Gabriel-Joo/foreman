@@ -618,7 +618,7 @@ class ForemanDispatcher:
         return out, failed
 
     # ── 시작 ─────────────────────────────────────────────
-    async def start(self, dispatch_id: int, plan: dict[str, Any], inbox_id: int | None = None) -> dict[str, Any]:
+    async def start(self, dispatch_id: int, plan: dict[str, Any], inbox_id: int | list[int] | None = None) -> dict[str, Any]:
         async with self.engine.connect() as c:
             st = (await c.execute(text("SELECT status FROM dispatch WHERE id = :i"), {"i": dispatch_id})).scalar()
         if st != "planned":
@@ -686,19 +686,24 @@ class ForemanDispatcher:
             touched = await notes.apply(c, plan["project"], plan.get("note_updates") or [], dispatch_id,
                                         out.get("session_id") or plan.get("attach_session"), head or None)
         out["notes"] = len(touched)
-        if inbox_id and out.get("session_id"):
-            # 코더에게 받은 할 일(11-09) — 이 세션이 가져간다. 합쳐지면 "끝남". 못 가져가도(이미 가져감 · 버림) 시작은 그대로
+        # 받은 할 일 — 하나(11-09 코더 「맡길 일」) 또는 여럿(11-11 목록에서 골라 묶은 계획)
+        inbox_list = [int(i) for i in (inbox_id if isinstance(inbox_id, list) else [inbox_id] if inbox_id else [])]
+        if inbox_list and out.get("session_id"):
+            # 이 세션이 가져간다. 합쳐지면 "끝남". 못 가져가도(이미 가져감 · 버림) 시작은 그대로
             from bridge import scribe_room as sr
-            why = None
-            try:
-                out["inbox_taken"] = await sr.inbox_take_coder(self.engine, int(inbox_id), int(out["session_id"]))
-                if not out["inbox_taken"]:
-                    why = f"받은 할 일 #{inbox_id}은 이미 다른 세션이 가져갔거나 버린 것이라 이 세션 몫으로 적지 않았습니다."
-            except Exception as e:  # noqa: BLE001 — 0028 전 DB 등. 시작을 되돌리지 않고 화면에 알린다
-                out["inbox_taken"] = False
-                why = f"받은 할 일 #{inbox_id}을 이 세션 몫으로 적지 못했습니다({type(e).__name__})."
-            if why:
-                out["note"] = f"{out.get('note') or ''} {why}".strip()
+            taken, whys = [], []
+            for iid in dict.fromkeys(inbox_list):
+                try:
+                    if await sr.inbox_take_coder(self.engine, iid, int(out["session_id"])):
+                        taken.append(iid)
+                    else:
+                        whys.append(f"받은 할 일 #{iid}은 이미 다른 세션이 가져갔거나 버린 것이라 이 세션 몫으로 적지 않았습니다.")
+                except Exception as e:  # noqa: BLE001 — 0028 전 DB 등. 시작을 되돌리지 않고 화면에 알린다
+                    whys.append(f"받은 할 일 #{iid}을 이 세션 몫으로 적지 못했습니다({type(e).__name__}).")
+            out["inbox_taken"] = bool(taken) and len(taken) == len(set(inbox_list))
+            out["inbox_taken_ids"] = taken
+            if whys:
+                out["note"] = f"{out.get('note') or ''} {' '.join(whys)}".strip()
             try:
                 from bridge.api import coder
                 coder.invalidate()
@@ -706,6 +711,26 @@ class ForemanDispatcher:
                 pass
         self._changed()
         return out
+
+    async def saved_plan(self, dispatch_id: int) -> dict[str, Any]:
+        """저장된 계획(사람이 고친 것이 있으면 그것) — 관리자에게 넘긴 계획을 관리자가 그대로 시작할 때(11-11 bridge/handover.py)."""
+        async with self.engine.connect() as c:
+            r = (await c.execute(text("SELECT COALESCE(edited, plan) FROM dispatch WHERE id = :i"), {"i": dispatch_id})).first()
+        if not r or not r[0]:
+            raise Refused("저장된 계획이 없습니다")
+        return json.loads(r[0]) if isinstance(r[0], str) else dict(r[0])
+
+    async def handed(self, dispatch_id: int) -> dict[str, Any] | None:
+        """관리자에게 넘긴 기록(0031). 칸이 없는 DB(0031 전)면 None — 카드는 넘김 표시만 빠진다."""
+        try:
+            async with self.engine.connect() as c:
+                r = (await c.execute(text("SELECT handed_to, handed_at, handed_alert_at FROM dispatch WHERE id = :i"),
+                                     {"i": dispatch_id})).first()
+        except Exception:  # noqa: BLE001
+            return None
+        if not r or not r[1]:
+            return None
+        return {"to_session": r[0], "at": r[1].isoformat() + "Z", "alerted": bool(r[2])}
 
     async def get(self, dispatch_id: int) -> dict[str, Any]:
         """화면이 계획 하나를 다시 연다(텔레그램 링크 · 말풍선 [제안]) — 계획은 그때 사실과 다시 맞춘다."""
@@ -720,7 +745,8 @@ class ForemanDispatcher:
         elif plan:
             plan["sessions"] = sessions_of(plan)      # 옛 계획(세션 하나 모양)도 같은 모양으로 읽힌다
         return {"dispatch_id": r[0], "origin": r[1], "project": r[2], "request": r[3], "status": r[4], "plan": plan,
-                "wake_text": r[6], "created_at": r[7].isoformat() + "Z" if r[7] else None, "error": r[8]}
+                "wake_text": r[6], "created_at": r[7].isoformat() + "Z" if r[7] else None, "error": r[8],
+                "handed": await self.handed(dispatch_id)}
 
     async def merge_order(self, project: str, only: list[str] | None = None) -> dict[str, Any]:
         """합칠 브랜치(그 저장소의 worktree cc/*)가 둘 이상일 때 같은 파일을 건드리는 쌍 · 권하는 순서(11-11 일곱).
