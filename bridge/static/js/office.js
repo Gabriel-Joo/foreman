@@ -275,7 +275,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // sessionStorage(이 탭만)에 보던 화면 · 고른 세션을 남기고(아래 .otheme), 새 페이지가 처음 한 번 받는다. 세션은 첫 데이터가 온 뒤 연다(rebuild)
   let KEEP = null;
   try { KEEP = JSON.parse(sessionStorage.getItem(KEEP_KEY) || 'null'); sessionStorage.removeItem(KEEP_KEY); } catch { KEEP = null; }
-  let view = 'hq';                     // 'hq'(감독실, 1단) | 'map'(전체) | 방 이름(현장, 2단) | '_lounge'
+  // 11-11 두 번째(사용자 — 「감독실을 한 번 거쳤다가 돌아온다, 깜빡인다」) — 전엔 첫 그리기가 늘 감독실이고 KEEP은 첫 데이터 뒤에 적용됐다.
+  // 이제 처음부터 보던 화면으로 두고, KEEP을 적용할 때까지(첫 데이터 · 길어야 3초) 캔버스는 바탕색만 칠한다(HOLD)
+  let view = KEEP && typeof KEEP.view === 'string' ? KEEP.view : 'hq';   // 'hq'(감독실, 1단) | 'map'(전체) | 방 이름(현장, 2단) | '_lounge'
+  let HOLD = !!KEEP;
+  if (HOLD) setTimeout(() => { if (HOLD) { HOLD = false; KEEP = null; rebuild(store.state); Object.assign(cam, camT); } }, 3000);
   let selected = null;                 // actor key
   const cam = { x: 0, y: 0, s: 1 }, camT = { x: 0, y: 0, s: 1 };
   // 방 안 글씨(캐릭터 이름 · 말풍선, 11-10 모눈) — 방 배율을 따른다(사용자: "화면 안의 글씨도 그 배율을 따른다, 글씨 크기에 흔들리지 않게").
@@ -640,15 +644,17 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       room.rateSpan = h.length > 1 ? h[h.length - 1].t - h[0].t : 0;     // 화면을 연 지 얼마 안 되면 아직 잴 수 없다
     }
     const hasView = (v) => v === 'map' || v === 'hq' || world.rooms.concat(world.lounge).some((r) => (r.name || '_lounge') === v);
-    if (!hasView(view)) view = 'hq';
+    if (!hasView(view) && !KEEP) view = 'hq';
     // 테마를 바꾸기 전 화면(KEEP)은 첫 데이터(프로젝트 목록)가 온 뒤에 — 그 전엔 방 목록이 비어 있다. 카메라는 다가가지 않고 바로(cam.init)
+    let snap = false;
     if (KEEP && st.projects.length) {
-      if (typeof KEEP.view === 'string' && hasView(KEEP.view)) { view = KEEP.view; cam.init = false; }
+      if (!hasView(view)) view = 'hq';                                    // 그 현장이 없어졌다 — 그때만 감독실
       const sid = Number(KEEP.sid), a = actors.get('s:' + sid);
       if (sid && st.sessions.has(sid) && a) { selected = a.key; store.select(sid); panel.show({ kind: 'session' }); }
-      KEEP = null;
+      KEEP = null; HOLD = false; snap = true;
     }
     aim();
+    if (snap) Object.assign(cam, camT);                                   // 다가가는 움직임 없이 바로 그 자리
     header(st);
     const sa = selected && actors.get(selected);
     if (sa && (sa.kind === 'infra' || sa.kind === 'courier')) info();          // 인프라 상태가 바뀌었으면 패널 제목 줄도 바꾼다(세션은 패널이 store를 직접 본다)
@@ -767,7 +773,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
 
   // ── 카메라 ──────────────────────────────────────────
-  function roomByView() { return [...world.rooms, world.lounge].find((r) => (r.name || '_lounge') === view); }
+  function roomByView() { return sites().find((r) => (r.name || '_lounge') === view); }   // 첫 데이터 전엔 라운지가 없다(테마 전환 KEEP, 11-11)
   // 한 방(감독실 포함)을 볼 때 카메라가 맞추는 사각형(월드 타일). 전체(map)면 null — 그리기도 이 사각형 밖은 자른다(frame)
   function focusRect() {
     const q = view === 'hq' ? world.hq : view === 'map' ? null : roomByView();
@@ -910,6 +916,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#15171c';
     ctx.fillRect(0, 0, W, H);
+    if (HOLD) { requestAnimationFrame(frame); return; }   // 테마를 바꾼 직후 — 보던 화면이 자리 잡을 때까지 아무 방도 그리지 않는다(감독실 깜빡임)
     ctx.setTransform(cam.s * dpr, 0, 0, cam.s * dpr, (W / 2 - cam.x * cam.s) * dpr, (H / 2 - cam.y * cam.s) * dpr);
     ctx.imageSmoothingEnabled = false;
     // 11-09 한 방을 볼 때는 그 방 사각형 밖을 그리지 않는다 — 감독실 아래로 다른 방 선반이 잘린 채 비어져 나왔다(사용자). 밖은 배경색
