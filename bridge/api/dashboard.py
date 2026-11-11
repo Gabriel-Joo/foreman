@@ -113,6 +113,9 @@ _DENY_REASON = re.compile(r"Reason:\s*\[([^\]]+)\]")
 ASK_PARAS = 3
 _ASKS = re.compile(r"\?\s*$|까요[.?]?\s*$|[가-힣]\?(\s|$)|(골라|말씀해|알려|정해|확인해|눌러|결정해|답해) ?(주세요|주십시오|주시겠어요|주시겠습니까)|(정해|골라) ?주(시면|셔야)"
                    r"|중 하나를"
+                   # 11-11(사용자): 사람이 움직여야 이어지는 글 — 「1번을 마쳤다고 알려 주시면 그때 하겠습니다」(인프라 265, 567293 —
+                   # 끝 「참고할 것」 목록 안의 한 줄). 「~하라고 하시면 · 원하시면」 같은 제안은 _OFFER_IF로 따로 뺀다
+                   r"|(알려|말씀해|허락해|승인해|맡겨|보내|넘겨) ?주시면[^.?!\n]{0,60}(겠습니다|겠어요|드릴게요|할게요)"
                    r"|^\W*((사용자|사람|당신)[가이께서 ]*)?(정할|정하실|정해 ?주실|고를|고르실|골라 ?주실|결정할|결정하실|답할|답하실|여쭐|승인받을|아직 답을 기다리는) ?(것|일|점|부분)\W*[:：]"
                    r"|^\W*(결정 필요|질문)\W*[:：]", re.M)
 # 「(가)」는 고르라는 말과 같이 있을 때만 — 할 일 이름 「UI 불만 (가)」처럼 가리키기만 한 것은 묻는 말이 아니다
@@ -126,7 +129,7 @@ _THIRD = re.compile(r"(관리자|원본 (폴더 )?세션|교장|서기|코더|�
 _QUOTED = re.compile(r'"[^"\n]*"|“[^”\n]*”|「[^」\n]*」|『[^』\n]*』|`[^`\n]*`')
 _FAQ = re.compile(r"^\W*(Q|A|질문|답)\W*[:：]")
 _OFFER = re.compile(r"[^.?!\n]*(원하시면|원하시길|싶으시면|보시면|있으면|있다면|셨다면|뜻이면|필요하시면|거라면|맞는다면)[^.?!\n]{0,40}"
-                    r"(말씀해|알려) ?(주세요|주십시오)\.?")
+                    r"(말씀해|알려) ?(주세요|주십시오|주시면[^.?!\n]{0,60}(겠습니다|겠어요|드릴게요|할게요))\.?")
 
 
 def last_paragraph(reply: str, n: int = 1) -> str:
@@ -225,6 +228,9 @@ async def report_read(engine: Any, sid: int, event_id: int | None = None) -> dic
 
 @router.post("/sessions/{sid}/report-read")
 async def report_read_api(sid: int, request: Request, event_id: int | None = None) -> dict[str, Any]:
+    # 점검 도구(tools/screen.py, ?probe=1)가 연 패널은 사람이 읽은 것이 아니다(11-11 227의 보고가 이렇게 사라졌다)
+    if request.headers.get("x-foreman-probe"):
+        return {"ok": False, "note": "점검 화면은 읽음으로 세지 않습니다"}
     return await report_read(request.app.state.store.engine, sid, event_id)
 
 
