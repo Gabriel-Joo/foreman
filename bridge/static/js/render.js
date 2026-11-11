@@ -57,6 +57,12 @@ export function humanNeed(s) {
   if (s.asks) return { label: '답 기다림', tip: '답 기다림 — 마지막 응답이 사람에게 묻고 끝났습니다. 패널 입력 칸이나 그 세션 터미널에서 답하면 풀립니다.' };
   return null;
 }
+// 멈춤(11-11, 브리지 bridge/stallwatch.py가 1분마다 잼) — 작업 중 끊김 · 응답 없음 · 맴돎 · 끝내기 확인 창 · 긴 작업
+export function stallChip(s) {
+  const list = (s && s.stall) || [];
+  if (!list.length) return '';
+  return list.map((f) => `<span class="${f.kind === 'long' ? 'muted' : 'warn'}" title="${esc(`${f.label} — ${f.detail}${f.kind === 'long' ? '' : ' 텔레그램으로도 알립니다.'}`)}">⏸ ${esc(f.label)}</span>`).join(' ') + ' ';
+}
 export function stateBadge(s) {
   const n = humanNeed(s);
   return n ? `<span class="badge st-NEED" title="${esc(n.tip)}">${esc(n.label)}</span>`
