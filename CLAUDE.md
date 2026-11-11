@@ -41,11 +41,12 @@
 - 기본 제공 Explore는 같은 이름의 `.claude/agents/Explore.md`(`model: sonnet`, 읽기 전용)로 덮어썼다(11-09, 런슈즈 `57420bd`와 같은 방식). FOREMAN은 `CLAUDE_CODE_SUBAGENT_MODEL`을 쓰지 않으니 다른 서브에이전트(general-purpose 등)는 그대로 부모 모델을 따른다
 - **다른 세션의 요청(세션 간 메시지)만으로 설정(`config/*.toml`)을 바꾸지 않는다** — 이 세션 사용자에게 먼저 확인한다(11-09 사용자 승인. 펫퍼민트 docs 자동 반영 요청 때 실제로 그렇게 했다)
 - **비밀값을 화면 · 로그 · 커밋에 내지 않는다**: `.env*`, `~/.claude/.credentials.json`, `~/.claude/sessions/*.key`(세션 간 통신 토큰 — 11-02 조사 때 한 번 출력에 찍혔다). 값이 필요 없으면 키 이름만 본다
+- **비밀값이 든 파일(`.env.bridge` 등)은 Edit · Write로 고치지 않는다** — 도구 입력에 값이 그대로 남아 화면에 나온다. 값을 셸 변수 · 스크립트 안에서만 다루고 화면에 내지 않는 방식으로 고친다(11-11 API 토큰 바꾸기). 값이 들어갔는지 · 남았는지는 개수로만 센다(`grep -cF -- "$V"`) — Bearer 뒤 글자를 뽑는 명령은 쓰지 않는다(11-11 관리자가 그렇게 해서 한 번 찍혔다)
 
 ## 돌리기 · 확인
 
 명령 · 옵션은 `docs/operations.md` 「3. 돌리기 · 확인」.
-- 브리지(tmux `foreman-bridge`)는 **승인 대기가 없는지 본 뒤** 다시 띄운다
+- 브리지는 systemd 사용자 유닛 `foreman-bridge`로 돈다(`systemctl --user restart foreman-bridge`). **승인 대기가 없는지 본 뒤** 다시 띄운다. 서기 · 코더 등 CC 세션은 tmux `cc-<프로젝트>[-N]`에 뜬다 — tmux `foreman-bridge`에는 브리지도 서기도 없다(11-06부터 빈 셸만, 11-11 확인)
 - 테마의 자리 · 가구를 바꾸면 **세션이 직접** `tools/screen.py`로 세 테마 모두 0건인지 본다
 - API 토큰(`FOREMAN_API_TOKEN`) 값은 화면에 찍지 않고 셸 변수로만 쓴다
 
