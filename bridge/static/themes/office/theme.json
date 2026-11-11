@@ -182,18 +182,29 @@
       { "s": "shelf", "in": "library", "x": 2.7, "y": -0.2 },
       { "s": "copier", "in": "library", "x": 0.3, "y": 2.4 },
       { "s": "box_r", "in": "library", "x": 4.3, "y": 2.3 }, { "s": "box_b", "in": "library", "x": 4.3, "y": 2.8 }, { "s": "box_g", "in": "library", "x": 4.3, "y": 3.3 },
+      { "_": "11-11 채움 — 벽 시계 · 화분 · 파쇄함" },
+      { "s": "clock", "in": "library", "x": 0.6, "y": -1.2, "z": "wall" }, { "s": "plant", "in": "library", "x": 4.1, "y": 0.1 }, { "s": "bin_g", "in": "library", "x": 1.6, "y": 1.3 },
 
       { "_": "C 서버룸 — 유리벽 안 랙 둘(이름표 오른쪽)" },
       { "fx": "glasswall", "in": "server", "x": 0, "y": 0, "w": 5, "h": 4 },
       { "s": "server_rack", "in": "server", "x": 2.2, "y": -0.6 }, { "s": "server_rack", "in": "server", "x": 3.2, "y": -0.6 },
+      { "_": "11-11 채움 — 콘솔 책상(모니터) · 냉방기 · 예비 부품 상자" },
+      { "s": "table_s", "in": "server", "x": 0.2, "y": 1.5 }, { "s": "paper2", "in": "server", "x": 1.2, "y": 1.55, "z": "top" }, { "s": "mug", "in": "server", "x": 0.5, "y": 1.6, "z": "top" },
+      { "s": "cooler", "in": "server", "x": 4.3, "y": 0.2 }, { "s": "box_b", "in": "server", "x": 4.2, "y": 3.0 }, { "s": "box_g", "in": "server", "x": 4.2, "y": 3.45 },
 
       { "_": "D QA 부스" },
       { "s": "table_s", "in": "test", "x": 2.0, "y": 1.4 }, { "s": "pc", "in": "test", "x": 2.6, "y": 0.6, "z": "top" }, { "s": "paper1", "in": "test", "x": 2.1, "y": 1.5, "z": "top" },
+      { "_": "11-11 채움 — 결과 게시판 · 시험 기기 상자 · 휴지통" },
+      { "s": "picture", "in": "test", "x": 0.6, "y": -1.2, "z": "wall" }, { "s": "monitor_side", "in": "test", "x": 2.1, "y": 0.75, "z": "top" },
+      { "s": "box_r", "in": "test", "x": 0.2, "y": 1.4 }, { "s": "box_b", "in": "test", "x": 0.2, "y": 1.85 }, { "s": "bin_b", "in": "test", "x": 3.3, "y": 2.9 },
 
       { "_": "G 창가 바 — 위 벽 창 둘(바깥)" },
       { "s": "window1", "in": "window", "x": 0.6, "y": -1.7, "z": "wall" }, { "s": "window2", "in": "window", "x": 2.6, "y": -1.7, "z": "wall" },
       { "s": "table_s", "in": "window", "x": 2.0, "y": 1.4 }, { "s": "chair_y", "in": "window", "x": 1.3, "y": 1.6 }, { "s": "chair_g", "in": "window", "x": 3.7, "y": 1.6 },
       { "s": "plant", "in": "window", "x": 4.1, "y": 0.1 },
+      { "_": "11-11 채움 — 바 위 잔 · 커피 머신 · 휴지통" },
+      { "s": "mug", "in": "window", "x": 2.3, "y": 1.45, "z": "top" }, { "s": "mug", "in": "window", "x": 3.0, "y": 1.5, "z": "top" },
+      { "s": "coffee_machine", "in": "window", "x": 0.2, "y": 1.2 }, { "s": "bin_g", "in": "window", "x": 0.2, "y": 3.0 },
 
       { "_": "F 라운지" },
       { "s": "sofa_blue", "in": "lounge", "x": 2.2, "y": 1.0 }, { "s": "sofa_orange", "in": "lounge", "x": 0.4, "y": 3.0 },
@@ -208,27 +219,40 @@
       { "s": "table_s", "in": "desks", "x": 3.6, "y": 3.0 }, { "s": "monitor_side", "in": "desks", "x": 3.8, "y": 2.25, "z": "top" },
       { "s": "table_s", "in": "desks", "x": 0.3, "y": 1.95 }, { "s": "monitor_side", "in": "desks", "x": 0.5, "y": 1.2, "z": "top" },
       { "s": "table_s", "in": "desks", "x": 1.95, "y": 1.95 }, { "s": "monitor_side", "in": "desks", "x": 2.15, "y": 1.2, "z": "top" },
+      { "_": "11-11 채움 — 아래 오른쪽 빈 바닥에 프린터 책상 · 화분 · 공용 서랍" },
+      { "s": "table_s", "in": "desks", "x": 6.3, "y": 3.3 }, { "s": "copier", "in": "desks", "x": 6.5, "y": 2.4, "z": "top" },
+      { "s": "plant", "in": "desks", "x": 8.1, "y": 3.5 }, { "s": "shelf", "in": "desks", "x": 0.2, "y": 2.95 },
 
       { "_": "S 문서팀 — PC 책상(쓰기) · 책장(서가) · 서류 더미(대조)" },
       { "s": "table_s", "in": "scribe", "x": 2.0, "y": 1.2 }, { "s": "pc", "in": "scribe", "x": 2.2, "y": 0.45, "z": "top" },
       { "s": "shelf", "in": "scribe", "x": 3.4, "y": 2.6 },
       { "s": "table_s", "in": "scribe", "x": 0.3, "y": 3.2 }, { "s": "paper1", "in": "scribe", "x": 0.5, "y": 3.25, "z": "top" },
       { "s": "paper3", "in": "scribe", "x": 1.1, "y": 3.3, "z": "top" },
+      { "_": "11-11 채움 — 책상 위 서류 · 보관 상자 · 화분" },
+      { "s": "paper2", "in": "scribe", "x": 3.0, "y": 1.3, "z": "top" }, { "s": "box_r", "in": "scribe", "x": 3.5, "y": 1.5 },
+      { "s": "plant", "in": "scribe", "x": 4.1, "y": 0.1 },
 
       { "_": "E 회의실" },
       { "s": "whiteboard", "in": "meeting", "x": 2.6, "y": 0.1 },
       { "s": "table_l", "in": "meeting", "x": 1.0, "y": 2.8 },
       { "s": "paper3", "in": "meeting", "x": 1.6, "y": 2.85, "z": "top" }, { "s": "mug", "in": "meeting", "x": 2.9, "y": 2.9, "z": "top" },
+      { "_": "11-11 채움 — 의자 · 화분 · 정수기(회의 테이블을 비운 가장자리)" },
+      { "s": "chair_b", "in": "meeting", "x": 0.3, "y": 2.6 }, { "s": "plant", "in": "meeting", "x": 0.2, "y": 3.7 },
+      { "s": "cooler", "in": "meeting", "x": 4.3, "y": 3.9 }, { "s": "paper1", "in": "meeting", "x": 2.4, "y": 2.95, "z": "top" },
 
       { "_": "H 커밋 데스크" },
       { "s": "table_s", "in": "commit", "x": 1.0, "y": 2.15 }, { "s": "paper3", "in": "commit", "x": 1.4, "y": 2.2, "z": "top" },
-      { "s": "copier", "in": "commit", "x": 2.75, "y": 1.2 }
+      { "s": "copier", "in": "commit", "x": 2.75, "y": 1.2 },
+      { "_": "11-11 채움 — 보낼 상자 · 휴지통" },
+      { "s": "box_r", "in": "commit", "x": 0.2, "y": 3.0 }, { "s": "box_g", "in": "commit", "x": 0.2, "y": 3.45 }, { "s": "box_b", "in": "commit", "x": 0.9, "y": 3.45 },
+      { "s": "bin_b", "in": "commit", "x": 3.2, "y": 2.9 }
     ],
     "infra_decor": {
       "_": "출하 라인 — 빌드 모니터 → 저장소 → 배포 보드. 단계 왼쪽 위 기준, 위 0.9칸은 이름표 줄",
-      "jenkins": [{ "s": "build_monitor", "x": 0.4, "y": 1.15 }, { "s": "chair_b", "x": 2.4, "y": 1.4 }],
-      "harbor": [{ "s": "server_rack", "x": 0.4, "y": 1.1 }, { "s": "box_r", "x": 1.6, "y": 2.4 }, { "s": "box_b", "x": 1.6, "y": 2.9 }, { "s": "box_g", "x": 2.5, "y": 2.9 }],
-      "argocd": [{ "s": "whiteboard", "x": 0.6, "y": 1.15 }]
+      "jenkins": [{ "s": "build_monitor", "x": 0.4, "y": 1.15 }, { "s": "chair_b", "x": 2.4, "y": 1.4 }, { "s": "plant", "x": 3.5, "y": 1.0 }],
+      "harbor": [{ "s": "server_rack", "x": 0.4, "y": 1.1 }, { "s": "box_r", "x": 1.6, "y": 2.4 }, { "s": "box_b", "x": 1.6, "y": 2.9 }, { "s": "box_g", "x": 2.5, "y": 2.9 },
+                 { "s": "box_r", "x": 3.3, "y": 1.4 }, { "s": "box_g", "x": 3.3, "y": 1.85 }],
+      "argocd": [{ "s": "whiteboard", "x": 0.6, "y": 1.15 }, { "s": "table_s", "x": 2.8, "y": 2.6 }, { "s": "pc", "x": 3.0, "y": 1.85, "z": "top" }]
     },
     "chars": {
       "_comment": "2dPig 사람 5명 — 정면 한 장뿐(걷기는 엔진 흉내: 출렁 + 좌우 뒤집기)",
