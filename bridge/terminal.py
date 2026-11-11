@@ -431,7 +431,9 @@ class TerminalManager:
     # ── 스크롤(11-11 사용자 — 긴 출력의 앞부분을 볼 수 없다) ──
     # xterm 화면의 스크롤백은 tmux가 화면을 그려 주므로 비어 있다 → tmux 복사 모드로 올려 본다. 휠은 그룹 세션의 mouse on(foreman-term-view),
     # 단추는 이 길. -e: 맨 아래까지 내려오면 저절로 복사 모드가 끝난다(그대로 두고 쳐도 셸 입력이 먹히지 않는 일이 줄어든다)
-    SCROLL_ACTIONS = ("up", "down", "exit")
+    # wheel_up · wheel_down(11-11) — 휠 한 칸(3줄). mouse on을 껐으므로(끌어 고르기) 화면이 휠을 잡아 이 길로 보낸다
+    SCROLL_ACTIONS = ("up", "down", "exit", "wheel_up", "wheel_down")
+    WHEEL_LINES = "3"
 
     async def scroll(self, tab: str | None, action: str) -> dict[str, Any]:
         """그 탭의 보이는 창을 한 쪽 위로 · 아래로 · 복사 모드 끝내기. 탭 세션이 없으면 거절(기준 세션을 함께 끌어 가지 않는다)."""
@@ -443,6 +445,13 @@ class TerminalManager:
         inmode = (await tmux(self.socket, "display-message", "-p", "-t", vt, "#{pane_in_mode}")).strip() == "1"
         if action == "up":
             await tmux(self.socket, "copy-mode", "-eu", "-t", vt)
+        elif action == "wheel_up":
+            if not inmode:
+                await tmux(self.socket, "copy-mode", "-e", "-t", vt)
+            await tmux(self.socket, "send-keys", "-X", "-N", self.WHEEL_LINES, "-t", vt, "scroll-up")
+        elif action == "wheel_down":
+            if inmode:                                           # -e: 맨 아래에 닿으면 저절로 끝난다
+                await tmux(self.socket, "send-keys", "-X", "-N", self.WHEEL_LINES, "-t", vt, "scroll-down")
         elif inmode:
             await tmux(self.socket, "send-keys", "-X", "-t", vt, "page-down" if action == "down" else "cancel")
         return {**await self.current(vt), "view": True}
