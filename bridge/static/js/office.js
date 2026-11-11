@@ -27,7 +27,7 @@ const sizeFont = (f) => String(f).replace(/(\d+(?:\.\d+)?)px/, (m, n) => `${fpx(
 
 const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'], ['foreman', 'FOREMAN'], ['ronanlab-infra', '인프라']];
 // 출하장(Jenkins → Harbor → ArgoCD)이 없는 현장(11-10) — 빌드하는 앱이 아니다(config/pipeline.toml에 없음). 모눈 칸은 같게 두고
-// 단계 칸 · 가구 · 화살표 · 배송 담당을 그리지 않는다. 이름표는 "출하장 없음"
+// 단계 칸 · 가구 · 화살표 · 배송 담당을 그리지 않는다. 이름표는 "<테마의 출하 이름> 없음"(출하장 · 봉인실 · 배포 파이프)
 const NO_SHIP = new Set(['ronanlab-infra']);
 const RATE_WIN = 10 * 60 * 1000;          // 토큰 속도 창 — 최근 10분
 const SPEED = 3.2;                         // 걷는 속도(타일/초)
@@ -1204,7 +1204,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
     const iz = L.zones.infra, it = (theme.tags && theme.tags.infra) || {};
     if (iz && iz.jenkins && room && room.noShip) {
-      out.push({ zone: 'infra', text: '출하장 없음', x: GRIDDEF ? iz.x : 1, y: GRIDDEF ? iz.y : iz.y - 0.9, role: 'ship', noShip: true });
+      // 이름은 테마의 것(출하장 · 봉인실 · 배포 파이프 — tags.infra.title, 11-11). 전엔 "출하장 없음"이 세 테마 모두에 박혀 있었다
+      out.push({ zone: 'infra', text: `${it.title || '파이프라인'} 없음`, x: GRIDDEF ? iz.x : 1, y: GRIDDEF ? iz.y : iz.y - 0.9, role: 'ship', noShip: true });
     } else if (iz && iz.jenkins) {
       // 모눈이 없는 테마(도형 plain)는 출하 라인 위 한 줄에
       if (it.title) out.push({ zone: 'infra', text: it.title, x: GRIDDEF ? iz.x : 1, y: GRIDDEF ? iz.y : iz.y - 0.9, role: 'ship' });
@@ -2181,8 +2182,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       return `<div class="tip-h">${'①②③'[l.i]} ${esc(stageName(l.stage).name)}</div><div class="tip-b">${esc(l.what || INFRA_ROLE[l.stage].what)}</div><div>${INFRA_ROLE[l.stage].desc}</div>` +
         (st !== 'none' ? `<div class="tip-s">${esc(STATUS_KO[st] || st)}${st === 'waiting' ? ' — ' + WAIT_TIP : ''}</div>` : '');
     }
-    if (l.noShip) return `<div class="tip-h">${esc(l.text)}</div><div class="tip-b">출하 라인 없음</div><div>빌드해 내보내는 앱이 아니라 빌드 → 이미지 → 배포 줄이 없습니다. 클러스터 · 서버 작업은 이 현장 세션에서 봅니다.</div>`;
-    if (l.zone === 'infra') return `<div class="tip-h">${esc(l.text)}</div><div class="tip-b">출하 라인</div><div>커밋이 빌드 → 이미지 → 배포 순서로 나가는 곳입니다. 바닥 화살표 ① ② ③이 그 순서입니다.</div>`;
+    if (l.noShip) return `<div class="tip-h">${esc(l.text)}</div><div class="tip-b">파이프라인 없음</div><div>빌드해 내보내는 앱이 아니라 빌드 → 이미지 → 배포 줄이 없습니다. 클러스터 · 서버 작업은 이 현장 세션에서 봅니다.</div>`;
+    if (l.zone === 'infra') return `<div class="tip-h">${esc(l.text)}</div><div class="tip-b">파이프라인</div><div>커밋이 빌드 → 이미지 → 배포 순서로 나가는 곳입니다. 바닥 화살표 ① ② ③이 그 순서입니다.</div>`;
     const role = ZONE_ROLE[l.role];
     return `<div class="tip-h">${esc(l.text)}</div>${role ? tipOf(role) : ''}`;
   }
@@ -2210,7 +2211,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const b = ca && BUBBLES.get(ca.key);
     if (b) {
       const [x, y, w, h] = toScr(b.rect);
-      HITS.push({ x, y, w, h, tip: `<div class="tip-h">출하 대기</div><div class="tip-b">대기 ${q.length}개</div><div>먼저 온 빌드가 끝나기를 기다리고 있습니다.</div>${q.map((ch) => {
+      HITS.push({ x, y, w, h, tip: `<div class="tip-h">빌드 대기</div><div class="tip-b">대기 ${q.length}개</div><div>먼저 온 빌드가 끝나기를 기다리고 있습니다.</div>${q.map((ch) => {
         const c = ch.commits && ch.commits[0];
         return `<div class="tip-t">${esc(ch.short)} ${esc(short((c && c.subject) || '', 60))}</div>`;
       }).join('')}` });
@@ -3109,7 +3110,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
     if (a.kind === 'courier') {
       const ch = a.plan && a.plan.ch, c = ch && ch.commits && ch.commits[0];
-      return `<div class="tip-h">${esc(a.name)}</div><div class="tip-b">출하 라인 담당</div><div>커밋을 받아 단계마다 옮기는 사람입니다.</div>
+      return `<div class="tip-h">${esc(a.name)}</div><div class="tip-b">파이프라인 담당</div><div>커밋을 받아 단계마다 옮기는 사람입니다.</div>
         <div class="tip-s">${esc(courierNow(a.plan))}${a.plan && a.plan.st === 'waiting' ? ' — ' + WAIT_TIP : ''}</div>${c ? `<div class="tip-t">${esc(c.short)} ${esc(short(c.subject || '', 70))}</div>` : ''}${
         a.plan && a.plan.queue.length ? `<div class="tip-t">대기 ${a.plan.queue.length}개</div>` : ''}<div class="tip-t">누르면 파이프라인이 열립니다.</div>`;
     }
