@@ -339,6 +339,8 @@ async def run(a: argparse.Namespace) -> int:
                         ca = await p.ev("window.office.cardAudit ? window.office.cardAudit().problems : []") or []
                         base.setdefault("cardAudit", {})[view] = ca
                         bad += len(ca)
+                        # 방 바깥(11-11) — 띠 · 풍경 높이(px) · 소품 · 행인 수. 점검(띠가 방 그림 · 이름표를 덮나 등)은 cardAudit 안에
+                        base.setdefault("outside", {})[view] = await p.ev("window.office.outside ? window.office.outside() : null")
                         # 호버 잘림(11-09) — 지금 화면의 모든 호버 글을 실제 툴팁 상자에 넣어 넘침 · 낱말 끊김 · 화면보다 큼
                         ta = await p.ev("window.office.tipAudit ? window.office.tipAudit() : {n: 0, problems: []}") or {}
                         base.setdefault("tipAudit", {})[view] = ta
