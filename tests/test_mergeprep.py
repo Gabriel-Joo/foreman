@@ -127,7 +127,7 @@ def test_doc_candidates_matches_files_and_words():
 def test_load_config(tmp_path):
     assert mp.load(tmp_path / "none.toml").enabled is False
     real = mp.load(Path(__file__).resolve().parent.parent / "config" / "handoff.toml")
-    assert real.enabled is False and real.stage == 1                              # 커밋은 꺼진 채(관리자가 시험 뒤 켠다)
+    assert real.enabled is True and real.stage == 1 and real.projects == ["foreman"]   # 11-11 시험 세션 뒤 켬(fdc78f3) — FOREMAN만, 1단계
     (tmp_path / "bad.toml").write_text("[merge_prep]\nenabled = true\nevery_s = 1\n")
     with pytest.raises(ValueError):
         mp.load(tmp_path / "bad.toml")
