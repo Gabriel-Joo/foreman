@@ -8,6 +8,8 @@ CC는 스스로 심장박동을 보내지 않는다 — sessions/<pid>.json의 u
 - silent      작업 중(busy)인데 SILENT 동안 대화 기록에 한 줄도 없다 — 한 도구가 끝나지 않는다
               (11-09 `until ! pgrep -f …` 셸이 영원히 돌았던 꼴. 화면의 스피너는 계속 돌아 화면으로는 못 가린다)
 - loop        같은 작업(열린 턴)에서 LOOP_WINDOW 안에 같은 도구 · 같은 대상을 LOOP_SAME번 넘게, 또는 실패가 LOOP_ERRORS번 넘게(삽질)
+              「같은」은 most_repeated · same_key가 가른다(11-11 디자이너 273 오판 뒤): Bash는 앞머리(S=… · cd … && · export ·
+              timeout · env)를 뺀 명령 전체로, 서브에이전트마다 따로, 그 사이에 고친 것(Edit · Write · MCP 쓰기)이 있으면 다시 0부터
 - exit_confirm CC 끝내기 확인 창("Background work is running … Exit and stop tasks")이 떠 있다 — 사람 답을 기다리며 멈춤
               (README 「세션이 끝나지 않고 CC 끝내기 확인 창에 걸린 것」)
 - long        한 작업이 LONG 넘게 — 화면에만(알리지 않는다, 긴 일은 정상일 수 있다)
@@ -27,6 +29,7 @@ from typing import Any
 
 from sqlalchemy import bindparam, text
 
+from bridge.approval import _seg_spans      # 승인 판정과 같은 쪼개기(따옴표 · $( ) 안의 구분자는 무시)
 from bridge.inject import Refused, _status, _tmux_env, tmux
 from bridge.liveness import live_sessions
 
@@ -38,6 +41,10 @@ LOOP_SAME = 6
 LOOP_ERRORS = 8
 # 같은 파일을 여러 번 고치고 읽는 것은 보통 코딩이다(11-11 실제로 재 보니 코더 272가 dashboard.py Edit 6번으로 걸렸다)
 LOOP_QUIET = {"Edit", "MultiEdit", "Write", "NotebookEdit", "Read", "TodoWrite", "Grep", "Glob"}
+# 파일을 고치는 도구 — 그 사이에 고친 것이 있으면 같은 명령을 다시 돌려도 맴돎이 아니다(고치고 다시 시험하기는 정상 진행)
+LOOP_PROGRESS = {"Edit", "MultiEdit", "Write", "NotebookEdit"}
+# MCP의 쓰기 도구도 고치기다(11-10 인프라 265가 Notion 페이지를 고치며 notion-update-page 같은 쪽을 6번 — 문서 고치기였다)
+LOOP_PROGRESS_MCP = re.compile(r"^mcp__.*(update|create|edit|write|append|insert|replace|move|delete)", re.I)
 LONG = timedelta(hours=2)
 EXIT_RE = re.compile(r"Background work is running|will stop when you exit|Exit and stop tasks")
 ALERT_AFTER = {"died": timedelta(0), "silent": timedelta(0), "loop": timedelta(0), "exit_confirm": timedelta(minutes=2)}
@@ -94,6 +101,66 @@ def judge(s: Sample, now: datetime, exit_since: datetime | None = None) -> list[
     return out
 
 
+# 명령 앞머리 — 무엇을 하는지는 바꾸지 않고 자리만 잡는 것(11-11 디자이너 273: `S=<스크래치 경로>; …`가 앞 160자를 채워
+# 뒤가 다른 명령 여덟 개가 하나로 묶였다). 맨 바깥 수준의 ; · && · 줄바꿈으로 이어진 앞 조각만 뺀다(파이프 앞은 빼지 않는다).
+_SETUP_SEG = re.compile(
+    r"""(?:[A-Za-z_]\w*=\S*(?:\s+[A-Za-z_]\w*=\S*)*      # S=… · T=$(…) · A=1 B=2(값에 공백 없는 꼴 — 공백은 아래 _ASSIGN_ONLY)
+        |export\s.*|unset\s.*|cd(?:\s.*)?|pushd\s.*|set\s+[-+]\S*.*|umask\s.*
+        |(?:source|\.)\s+\S*activate\S*|\#.*)""", re.X | re.S)
+_ASSIGN_ONLY = re.compile(r"""(?:[A-Za-z_]\w*=(?:'[^']*'|"(?:[^"\\]|\\.)*"|\$\((?:[^()]|\([^()]*\))*\)|`[^`]*`|[^\s;&|'"`$]|\$(?!\())*\s*)+""", re.S)
+# 한 명령 안의 앞머리 — A=B cmd · env A=B cmd · timeout 60 cmd · nice · time · command
+_PREFIX_WORD = re.compile(
+    r"""^(?:[A-Za-z_]\w*=(?:'[^']*'|"(?:[^"\\]|\\.)*"|\S)*\s+
+        |env(?:\s+-\S+)*\s+(?=\S)|timeout(?:\s+-\S+)*\s+\d+(?:\.\d+)?[smhd]?\s+
+        |nice(?:\s+-n)?(?:\s+-?\d+)?\s+|time\s+|command\s+|stdbuf(?:\s+-\S+)+\s+)""", re.X)
+
+
+def same_key(tool: str | None, target: str | None) -> str:
+    """같은 일인지 가를 열쇠 — Bash는 앞머리를 빼고 남은 명령 전체(공백은 하나로). 다른 도구는 대상 그대로."""
+    t = (target or "").strip()
+    if tool != "Bash" or not t:
+        return t
+    spans = _seg_spans(t)
+    k = 0
+    while k < len(spans) - 1:
+        a, b, _ = spans[k]
+        seg = t[a:b].strip()
+        if spans[k + 1][2] not in (";", "&&", "\n"):       # 다음이 파이프(|)나 ||면 앞 조각도 명령의 일부
+            break
+        if not (_SETUP_SEG.fullmatch(seg) or _ASSIGN_ONLY.fullmatch(seg)):
+            break
+        k += 1
+    rest = t[spans[k][0]:].strip() if spans else t
+    while (m := _PREFIX_WORD.match(rest)) and m.end() < len(rest):
+        rest = rest[m.end():]
+    return " ".join(rest.split()) or " ".join(t.split())
+
+
+def most_repeated(events: list[tuple[Any, ...]]) -> tuple[str | None, str | None, int] | None:
+    """시간 순 (도구, 대상[, 누가])에서 가장 많이 되풀이한 것 — (도구, 열쇠, 횟수). 누가 = 서브에이전트(없으면 본 세션).
+
+    - 조용한 도구(LOOP_QUIET)는 세지 않는다
+    - 누가마다 따로 센다 — 병렬 서브에이전트 아홉이 저마다 ToolSearch 한 번씩은 맴돎이 아니다(10-21 런슈즈 156 실제)
+    - 고치면(LOOP_PROGRESS · MCP 쓰기) 그 누가의 센 것을 모두 0으로 — 고치고 다시 돌리기는 맴돎이 아니다
+    """
+    counts: dict[tuple[Any, str | None, str], int] = {}
+    best: tuple[str | None, str | None, int] | None = None
+    for ev in events:
+        tool, target = ev[0], ev[1]
+        who = ev[2] if len(ev) > 2 else None
+        if tool in LOOP_PROGRESS or (tool and LOOP_PROGRESS_MCP.match(tool)):
+            for k in [k for k in counts if k[0] == who]:
+                del counts[k]
+            continue
+        if tool in LOOP_QUIET:
+            continue
+        key = (who, tool, same_key(tool, target))
+        counts[key] = n = counts.get(key, 0) + 1
+        if best is None or n > best[2]:
+            best = (tool, key[2], n)
+    return best
+
+
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat(timespec="seconds") + "Z" if dt else None
 
@@ -139,16 +206,18 @@ class StallWatch:
             same: dict[int, tuple[Any, Any, int]] = {}
             errs: dict[int, int] = {}
             for sid, (tid, _) in turns.items():
-                r = (await c.execute(text(
-                    "SELECT tool, LEFT(target, 160), COUNT(*) n FROM event WHERE session_id = :s AND turn_id = :t "
-                    "AND type = 'tool_use' AND ts > :w AND tool NOT IN :quiet GROUP BY tool, LEFT(target, 160) "
-                    "ORDER BY n DESC LIMIT 1").bindparams(bindparam("quiet", expanding=True)),
-                    {"s": sid, "t": tid, "w": now - LOOP_WINDOW, "quiet": sorted(LOOP_QUIET)})).first()
-                if r:
-                    same[sid] = (r[0], r[1], int(r[2]))
+                # 앞 몇 글자로 묶지 않는다 — 명령 전체(1,024자 넘으면 payload의 원문)를 가져와 same_key로 가른다
+                evs = (await c.execute(text(
+                    "SELECT tool, IF(target_truncated, COALESCE(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.target_full')), target), target), "
+                    "subagent_id FROM event WHERE session_id = :s AND turn_id = :t AND type = 'tool_use' AND ts > :w ORDER BY ts, id"),
+                    {"s": sid, "t": tid, "w": now - LOOP_WINDOW})).all()
+                if (r := most_repeated([tuple(e) for e in evs])):
+                    same[sid] = r
+                # 실패도 누가(서브에이전트)마다 — 병렬 다섯이 한두 번씩 실패한 것을 합쳐 8번으로 세지 않는다(11-09 런슈즈 221 실제)
                 errs[sid] = int((await c.execute(text(
-                    "SELECT COUNT(*) FROM event WHERE session_id = :s AND turn_id = :t AND type = 'tool_result' "
-                    "AND status = 'error' AND ts > :w"), {"s": sid, "t": tid, "w": now - LOOP_WINDOW})).scalar() or 0)
+                    "SELECT COUNT(*) n FROM event WHERE session_id = :s AND turn_id = :t AND type = 'tool_result' "
+                    "AND status = 'error' AND ts > :w GROUP BY subagent_id ORDER BY n DESC LIMIT 1"),
+                    {"s": sid, "t": tid, "w": now - LOOP_WINDOW})).scalar() or 0)
         out: list[Sample] = []
         meta: dict[int, tuple[Any, ...]] = {}
         for sid, cc, title, project, last_ts in rows:
