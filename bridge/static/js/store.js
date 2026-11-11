@@ -430,6 +430,16 @@ export class Store {
     this.touch('grid', 'panel');
     return j;
   }
+  // 답 기다림 끄기(11-11, 받은 할 일 #13) — 지금 잡힌 응답 하나만. 다음 응답이 오면 서버가 다시 판정한다
+  async asksOff(id) {
+    const r = await fetch(`/api/sessions/${id}/asks-off`, { method: 'POST', headers: this.headers() });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(j.note || j.detail || `HTTP ${r.status}`);
+    const s = this.state.sessions.get(id);
+    if (s) s.asks = null;
+    this.touch('grid', 'panel');
+    return j;
+  }
   async eventDetail(eid) {
     const r = await fetch(`/api/events/${eid}/detail`, { headers: this.headers() });
     const j = await r.json().catch(() => ({}));
