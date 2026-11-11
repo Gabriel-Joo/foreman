@@ -147,8 +147,9 @@ async def status(repo: str, name: str) -> dict[str, Any]:
 async def in_base(repo: str, name: str) -> bool | None:
     """브랜치가 이미 원본 브랜치에 들어 있는가(11-11, 받은 할 일 #17 — 밖에서 `git merge --ff-only`로 합치면 FOREMAN이 몰랐다).
     갈라진 뒤 커밋이 없거나(`--is-ancestor`), 있어도 같은 변경이 원본에 이미 있으면(`git cherry`가 모두 `-` — rebase 뒤 합침) True.
-    브랜치가 없으면 None(지워짐 — 합치거나 버린 뒤)."""
+    브랜치가 없으면 None(지워짐 — 합치거나 버린 뒤). 저장소를 못 읽으면 Refused — 「끝났다」고 말하지 않는다."""
     branch = BRANCH_PREFIX + name
+    await git(repo, "rev-parse", "--git-dir")
     rc, _ = await git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False)
     if rc:
         return None

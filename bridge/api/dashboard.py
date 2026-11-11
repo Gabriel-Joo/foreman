@@ -21,6 +21,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import bindparam, text
 
 from bridge.api.auth import require_api_token
+from bridge.api_error import classify as classify_api_error
+from bridge.api_error import one_line as api_error_line
 from bridge.inject import _status, _tmux_env
 from bridge.liveness import live_sessions
 from bridge.compactwatch import context_status, status as compact_status
@@ -427,6 +429,7 @@ async def conversation(session_id: int, request: Request, limit: int = 15) -> di
         # 마지막 응답 앞의 중간 글(터미널에는 도구 호출 사이사이 보인다 — 11-05 패널 개선). 턴마다 최근 12개, 각 3000자
         mid: dict[int, list[str]] = {}
         queued: dict[int, list[dict[str, Any]]] = {}
+        api_err: dict[int, dict[str, Any]] = {}
         ids = [r[0] for r in turns]
         if ids:
             rows = (await c.execute(text(
@@ -445,11 +448,20 @@ async def conversation(session_id: int, request: Request, limit: int = 15) -> di
             for tid, ts_, p in qrows:
                 if p and p != "null":
                     queued.setdefault(tid, []).append({"ts": _iso(ts_), "text": p})
+            # API 오류의 까닭(11-11, bridge/api_error.py) — 「API 오류」만이 아니라 종류 · 할 일 · request id. 읽을 때 가르므로 옛 오류도
+            for tid, t_, err in (await c.execute(text(
+                    "SELECT turn_id, JSON_UNQUOTE(JSON_EXTRACT(payload, '$.text')), JSON_UNQUOTE(JSON_EXTRACT(payload, '$.error')) "
+                    "FROM event WHERE turn_id IN :ids AND type = 'error' ORDER BY id").bindparams(bindparam("ids", expanding=True)),
+                    {"ids": ids})).all():
+                if (t_ and t_ != "null") or tid not in api_err:     # 글이 있는 것(트랜스크립트)이 hook 것(error 값만)보다 낫다
+                    ce = classify_api_error(t_ if t_ != "null" else None, err if err != "null" else None)
+                    api_err[tid] = {**ce, "line": api_error_line(ce)}
     return {"session_id": session_id, "turns": [
         {"id": r[0], "seq": r[1], "origin": r[2], "started_at": _iso(r[3]), "ended_at": _iso(r[4]),
          "end_reason": r[5], "duration_ms": r[6], "prompt": r[7], "reply": (r[8] or "")[:20000],
          "mid": [x[:3000] for x in mid.get(r[0], [])[:-1][-12:]],
          "queued": queued.get(r[0], [])[-20:],
+         "api_error": api_err.get(r[0]) if r[5] == "stop_failure" else None,
          "tools": r[9], "subagents": r[10]} for r in reversed(turns)]}
 
 
