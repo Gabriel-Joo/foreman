@@ -1,0 +1,60 @@
+{
+ "title": "답 기다림 · 보고 옴 — 캐릭터 머리 위 말풍선",
+ "source": "script",
+ "note": "11-11 점검용(log/coder_report_mark_20261111.md). FOREMAN: 상주 코더 971 보고 옴(맡길 일 말풍선보다 먼저), 972 답 기다림(노랑), 973 보고 옴(초록), 서기 974는 작업 중 그대로",
+ "snapshot": {
+  "generated_at": "@+0",
+  "projects": [
+   {"name": "runshoes", "label": "런슈즈", "sessions": []},
+   {"name": "petmint-rag-chatbot", "label": "펫퍼민트", "sessions": []},
+   {"name": "foreman", "label": "FOREMAN", "sessions": [
+    {"id": 971, "cc_session_id": "demo-0971", "short": "demo0971", "character": "코더", "project": "foreman", "title": "코더 — 화면 고침",
+     "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10971, "proc": "S", "cc_status": "idle",
+     "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null, "open_turn": null, "activity": null,
+     "subagents_running": 0, "subagent_descs": [], "background": [],
+     "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
+     "last_ts": "@-120000", "attached_at": "@-600000", "detached_at": null,
+     "report": {"at": "@-120000", "tail": "자세한 내용은 log에 적었습니다.", "event_id": 1}},
+    {"id": 972, "cc_session_id": "demo-0972", "short": "demo0972", "character": "코더", "project": "foreman", "title": "코더 — 시험",
+     "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10972, "proc": "S", "cc_status": "idle",
+     "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null, "open_turn": null, "activity": null,
+     "subagents_running": 0, "subagent_descs": [], "background": [],
+     "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
+     "last_ts": "@-120000", "attached_at": "@-600000", "detached_at": null,
+     "asks": {"at": "@-300000", "tail": "**사용자가 정할 것:** 실패 판정을 좁힐지", "event_id": 2}},
+    {"id": 973, "cc_session_id": "demo-0973", "short": "demo0973", "character": "코더", "project": "foreman", "title": "코더 — 조사",
+     "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10973, "proc": "S", "cc_status": "idle",
+     "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null, "open_turn": null, "activity": null,
+     "subagents_running": 0, "subagent_descs": [], "background": [],
+     "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
+     "last_ts": "@-120000", "attached_at": "@-600000", "detached_at": null,
+     "report": {"at": "@-60000", "tail": "커밋했습니다.", "event_id": 3}},
+    {"id": 974, "cc_session_id": "demo-0974", "short": "demo0974", "character": "코더", "project": "foreman", "title": "서기 — 정리",
+     "custom_title": null, "cc_name": null, "role": "scribe", "cwd": "/demo/foreman", "pid": 10974, "proc": "S", "cc_status": "busy",
+     "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": {"id": 9740, "origin": "human", "started_at": "@-30000", "prompt": "시연"},
+     "activity": {"tool": "Edit", "target": "", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [],
+     "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
+     "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null}
+   ]}
+  ],
+  "approvals": [],
+  "hidden_dormant": 0,
+  "terminal": {"enabled": false},
+  "ingest": null
+ },
+ "steps": [{"at": 60000, "end": true}],
+ "api": {
+  "/api/coder/todo": {"projects": {
+   "runshoes": {"inbox": [], "rested": []},
+   "petmint-rag-chatbot": {"inbox": [], "rested": []},
+   "foreman": {"inbox": [{"id": 41, "body": "패널 머리줄 버튼 줄바꿈", "created_at": "@-3600000"}], "rested": []}
+  }},
+  "/api/scribe/todo": {"tasks": {}, "projects": {}}
+ }
+}

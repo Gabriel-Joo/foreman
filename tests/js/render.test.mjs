@@ -56,3 +56,15 @@ test('처리된 승인 카드는 한국어로(11-06 — allowed · browser가 �
   assert.match(card('terminal', 'terminal'), /터미널에서 답했습니다</);
   assert.doesNotMatch(card('timeout', 'timeout'), /timeout/);
 });
+
+// 캐릭터 머리 위(11-11) — 답 기다림(노랑)과 보고 옴(초록)을 가른다. 끝난 세션은 없음
+test('needMark — 권한 거부 · 답 기다림 · 보고 옴 순서와 색', async () => {
+  const { needMark } = await import('../../bridge/static/js/render.js');
+  assert.equal(needMark(null), null);
+  assert.equal(needMark({ state: 'IDLE' }), null);
+  assert.deepEqual([needMark({ state: 'IDLE', report: { event_id: 1 } }).text, needMark({ state: 'IDLE', report: { event_id: 1 } }).tone], ['보고 옴', 'ok']);
+  assert.equal(needMark({ state: 'IDLE', asks: {}, report: { event_id: 1 } }).text, '답 기다림');
+  assert.equal(needMark({ state: 'IDLE', asks: {} }).tone, 'warn');
+  assert.equal(needMark({ state: 'IDLE', denied: { tool: 'Bash' }, asks: {} }).text, '권한 거부');
+  assert.equal(needMark({ state: 'DORMANT', report: { event_id: 1 } }), null);
+});

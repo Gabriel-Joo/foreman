@@ -108,32 +108,57 @@ _DENY_REASON = re.compile(r"Reason:\s*\[([^\]]+)\]")
 # 글로 묻고 끝난 응답 — 마지막 문단에 묻는 말이 있으면(추정). 질문 카드(AskUserQuestion)는 따로 잡힌다
 # 11-11(받은 할 일 #13): 끝 600자 전체를 보던 것을 **마지막 문단**만으로 좁혔다. 11-10 관리자 244의 합치기 보고 등 7건이
 # 보고 가운데의 "확인해 주세요" · "UI 불만 (가)" 같은 말에 걸려 묻지 않는 글이 답 기다림이 됐다(log/coder_screen_state_20261111.md)
-_ASKS = re.compile(r"\?\s*$|까요[.?]?\s*$|(골라|말씀해|알려|정해|확인해|눌러) ?주세요|중 하나를", re.M)
+# 11-11(사용자): 마지막 문단만 보니 너무 좁았다 — 코더 274 보고가 「**사용자가 정할 것:** …」 문단 뒤에 「자세한 내용은 log에
+# 적었습니다」를 붙여 못 잡았다. 끝 ASK_PARAS 문단을 보고, 「~주십시오」 · 「정할 것:」 머리말도 잡는다
+ASK_PARAS = 3
+_ASKS = re.compile(r"\?\s*$|까요[.?]?\s*$|[가-힣]\?(\s|$)|(골라|말씀해|알려|정해|확인해|눌러|결정해|답해) ?(주세요|주십시오|주시겠어요|주시겠습니까)|(정해|골라) ?주(시면|셔야)"
+                   r"|중 하나를"
+                   r"|^\W*((사용자|사람|당신)[가이께서 ]*)?(정할|정하실|정해 ?주실|고를|고르실|골라 ?주실|결정할|결정하실|답할|답하실|여쭐|승인받을|아직 답을 기다리는) ?(것|일|점|부분)\W*[:：]"
+                   r"|^\W*(결정 필요|질문)\W*[:：]", re.M)
 # 「(가)」는 고르라는 말과 같이 있을 때만 — 할 일 이름 「UI 불만 (가)」처럼 가리키기만 한 것은 묻는 말이 아니다
 _CHOICE = re.compile(r"\((가|나|다)\)[^\n]*(까요|골라|정해|중 하나)")
 # 다른 세션 · 사람에게 넘기는 부탁 — 지금 이 사람의 답을 막고 기다리는 것이 아니다("합친 뒤 관리자가 확인해 주세요")
 _THIRD = re.compile(r"(관리자|원본 (폴더 )?세션|교장|서기|코더|디자이너|다음 세션)[이가은는께]?(서)? [^\n]{0,60}주세요")
 
 
-def last_paragraph(reply: str) -> str:
-    """빈 줄로 나눈 마지막 문단(빈 문단은 건너뜀). 빈 줄이 없으면 끝 600자."""
+# 끝 문단을 넓히며 실제 DB에서 본 거짓 꼴(11-11): 인용 안의 말(챗봇 문장 "…알려 주세요" · "한 켤레 더 골라 주세요"를 띄웁니다),
+# FAQ 「**Q:** …요?」, 「?」로 끝나는 제목 줄(## Is … ?), 「바꾸고 싶으시면 말씀해 주세요」 같은 조건부 제안(이미 끝난 보고)
+_QUOTED = re.compile(r'"[^"\n]*"|“[^”\n]*”|「[^」\n]*」|『[^』\n]*』|`[^`\n]*`')
+_FAQ = re.compile(r"^\W*(Q|A|질문|답)\W*[:：]")
+_OFFER = re.compile(r"[^.?!\n]*(원하시면|원하시길|싶으시면|보시면|있으면|있다면|셨다면|뜻이면|필요하시면|거라면|맞는다면)[^.?!\n]{0,40}"
+                    r"(말씀해|알려) ?(주세요|주십시오)\.?")
+
+
+def last_paragraph(reply: str, n: int = 1) -> str:
+    """빈 줄로 나눈 끝 n문단(빈 문단은 건너뜀) — 문단마다 끝 600자. 긴 문단의 머리 줄이 제목 · 굵은 글(「### 정해 주셔야 할 것」
+    · 「**정할 것:**」 뒤에 긴 목록)이면 그 줄도 남긴다."""
     paras = [p for p in re.split(r"\n\s*\n", reply.strip()) if p.strip()]
-    tail = paras[-1] if paras else ""
-    return tail[-600:]
+
+    def cut(p: str) -> str:
+        head = p.strip().splitlines()[0]
+        return p if len(p) <= 600 else (head + "\n" if re.match(r"\s*(#|\*\*)", head) else "") + p[-600:]
+    return "\n\n".join(cut(p) for p in paras[-n:])
+
+
+def ask_line(reply: str | None) -> str | None:
+    """응답의 끝 ASK_PARAS 문단에서 사람에게 묻는 줄(없으면 None). 다음에 할 일을 말한 것(「~기다리겠습니다」)은
+    묻는 말 꼴이 아니라 걸리지 않는다. 관리자 · 코더 등 다른 세션에게 넘기는 부탁도 뺀다."""
+    if not reply:
+        return None
+    for line in reversed(last_paragraph(reply, ASK_PARAS).splitlines()):
+        bare = _OFFER.sub("", _QUOTED.sub("…", line))
+        if _FAQ.match(bare) or (bare.lstrip().startswith("#") and bare.rstrip().endswith("?")):
+            continue
+        if _CHOICE.search(bare):
+            return line
+        m = _ASKS.search(bare)
+        if m and not _THIRD.search(bare):
+            return line
+    return None
 
 
 def asks_text(reply: str | None) -> bool:
-    """응답의 마지막 문단이 사람에게 묻는가. 다음에 할 일을 말한 것(「~기다리겠습니다」)은 묻는 말 꼴이 아니라 걸리지 않는다."""
-    if not reply:
-        return False
-    tail = last_paragraph(reply)
-    for line in tail.splitlines():
-        if _CHOICE.search(line):
-            return True
-        m = _ASKS.search(line)
-        if m and not _THIRD.search(line):
-            return True
-    return False
+    return ask_line(reply) is not None
 
 
 async def human_needs(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
@@ -154,9 +179,13 @@ async def human_needs(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
         out.setdefault(sid, {})["denied"] = {"tool": tool, "reason": m.group(1) if m else None, "at": _iso(ts),
                                             "subagent": sub is not None}
     # 사람이 [답 안 해도 됩니다]로 끈 응답(session_action 'asks-off', detail = 그 응답 이벤트 id) — 다음 응답이 오면 다시 판정
-    off = {r[0]: r[1] for r in (await c.execute(text(
-        f"SELECT a.session_id, a.detail FROM session_action a JOIN (SELECT session_id, MAX(id) mid FROM session_action "
-        f"WHERE session_id IN {in_ids} AND action = :a AND ok GROUP BY session_id) x ON x.mid = a.id"), {"a": ASKS_OFF_ACT})).all()}
+    async def last_detail(act: str) -> dict[int, str]:
+        return {r[0]: r[1] for r in (await c.execute(text(
+            f"SELECT a.session_id, a.detail FROM session_action a JOIN (SELECT session_id, MAX(id) mid FROM session_action "
+            f"WHERE session_id IN {in_ids} AND action = :a AND ok GROUP BY session_id) x ON x.mid = a.id"), {"a": act})).all()}
+    off = await last_detail(ASKS_OFF_ACT)
+    read = await last_detail(REPORT_READ_ACT)      # 「보고 옴」을 사람이 읽음(그 세션 패널을 엶)
+    fresh = datetime.now(UTC).replace(tzinfo=None) - REPORT_FRESH
     for sid, reply, ts, eid in (await c.execute(text(
             f"SELECT e.session_id, JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.text')), e.ts, e.id FROM event e JOIN ("
             f"  SELECT session_id, MAX(id) mid FROM event WHERE session_id IN {in_ids} AND type = 'assistant_msg' "
@@ -164,14 +193,39 @@ async def human_needs(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
             f") x ON x.mid = e.id"))).all():
         if last_human.get(sid) and ts < last_human[sid]:
             continue
-        if off.get(sid) == str(eid):
+        if off.get(sid) == str(eid):       # [답 안 해도 됨]을 누른 것은 읽은 것이기도 하다
             continue
-        if asks_text(reply):
-            out.setdefault(sid, {})["asks"] = {"at": _iso(ts), "tail": last_paragraph(reply or "")[-160:], "event_id": eid}
+        if (line := ask_line(reply)):
+            out.setdefault(sid, {})["asks"] = {"at": _iso(ts), "tail": line.strip()[-160:], "event_id": eid}
+        elif read.get(sid) != str(eid) and ts >= fresh:
+            out.setdefault(sid, {})["report"] = {"at": _iso(ts), "tail": last_paragraph(reply or "").strip()[-160:], "event_id": eid}
     return out
 
 
 ASKS_OFF_ACT = "asks-off"        # session_action — 사람이 「이 응답은 답 안 해도 됩니다」(11-11, 받은 할 일 #13)
+# 「보고 옴」(11-11 사용자 — 보고를 마친 캐릭터에 아무 표시가 없어 눌러 보고서야 끝난 것을 안다). 묻지 않고 끝난 마지막 응답을
+# 사람이 그 세션 패널을 열어 읽기 전까지. 읽음은 session_action 'report-read'(detail = 그 응답 이벤트 id) — 다음 응답이 오면 다시 뜬다.
+# REPORT_FRESH보다 오래된 응답은 띄우지 않는다(처음 켤 때 쉬는 세션이 모두 「보고 옴」이 되지 않게)
+REPORT_READ_ACT = "report-read"
+REPORT_FRESH = timedelta(hours=24)
+
+
+async def report_read(engine: Any, sid: int, event_id: int | None = None) -> dict[str, Any]:
+    """「보고 옴」을 읽음으로. event_id를 주면 그 응답이 지금 보고일 때만(패널을 연 사이 새 응답이 오면 그것은 남긴다)."""
+    async with engine.begin() as c:
+        needs = await human_needs(c, f"({int(sid)})")
+        r = (needs.get(sid) or {}).get("report")
+        if not r or (event_id is not None and int(event_id) != int(r["event_id"])):
+            return {"ok": False, "note": "읽을 보고가 없습니다"}
+        await c.execute(text("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, :a, 1, :d)"),
+                        {"s": sid, "a": REPORT_READ_ACT, "d": str(r["event_id"])})
+    _cache["data"] = None
+    return {"ok": True, "event_id": r["event_id"]}
+
+
+@router.post("/sessions/{sid}/report-read")
+async def report_read_api(sid: int, request: Request, event_id: int | None = None) -> dict[str, Any]:
+    return await report_read(request.app.state.store.engine, sid, event_id)
 
 
 async def asks_off(engine: Any, sid: int) -> dict[str, Any]:
@@ -362,6 +416,8 @@ async def dashboard(request: Request) -> dict[str, Any]:
             # 11-09 사람이 해야 풀리는 것 — CC 자체 권한 거부(auto mode) · 글로 묻고 기다림(일하지 않을 때만)
             "denied": (needs.get(sid) or {}).get("denied"),
             "asks": (needs.get(sid) or {}).get("asks") if cc_status != "busy" and ot is None else None,
+            # 보고 옴(11-11) — 묻지 않고 끝난 응답을 사람이 아직 안 읽음. 일하는 중이면 내지 않는다
+            "report": (needs.get(sid) or {}).get("report") if cc_status != "busy" and ot is None else None,
             "subagents_running": len(subs.get(sid, [])),
             "subagent_descs": [d for d in subs.get(sid, []) if d][:10],
             # 턴이 끝나도 도는 일 — 백그라운드 Bash · Monitor. 상태 값은 늘리지 않고(README 3.11) 화면이 "기다림"으로 그린다

@@ -440,6 +440,16 @@ export class Store {
     this.touch('grid', 'panel');
     return j;
   }
+  // 보고 옴 읽음(11-11) — 그 세션 패널을 열면 opanel이 부른다. 다음 응답이 오면 서버가 다시 띄운다
+  async reportRead(id, eventId) {
+    const r = await fetch(`/api/sessions/${id}/report-read?event_id=${encodeURIComponent(eventId)}`, { method: 'POST', headers: this.headers() });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.note || j.detail || `HTTP ${r.status}`);
+    const s = this.state.sessions.get(id);
+    if (s && s.report && s.report.event_id === eventId) s.report = null;
+    this.touch('grid', 'panel');
+    return j;
+  }
   async eventDetail(eid) {
     const r = await fetch(`/api/events/${eid}/detail`, { headers: this.headers() });
     const j = await r.json().catch(() => ({}));
