@@ -1556,6 +1556,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const cs = RS.corridor;
     if (!cs || !CORRIDORS.length) return;
     const px = (v) => v * T, e = 1.5;
+    // 11-11 사용자 — 가로 복도 두 줄이 화면을 셋으로 가르는 띠로 보였다(마법 붉은 융단 · 현장 초록). 테마 색은 그대로 두고
+    // 바닥 위에 옅게(CORRIDOR_A) 깔아 바닥 결이 비치게, 테두리만 조금 더 남겨(CORRIDOR_EDGE_A) 길은 읽히게 — 세 테마 같은 값.
+    // 바닥과 색 차이가 큰 테마(마법 — 어두운 돌 위 붉은 융단)는 같은 값에서 더 튀어 corridor.fade(바닥 쪽만 곱함)로 맞춘다
+    const fade = cs.fade || 1;
+    ctx.save(); ctx.globalAlpha = CORRIDOR_A * fade;
     ctx.fillStyle = cs.a;
     for (const [x, y, w, h] of CORRIDORS) ctx.fillRect(px(r.x + x), px(r.y + y), px(w), px(h));
     if (cs.b) {                                            // 결 — 융단 · 카펫은 가로 줄무늬, 보행로는 빗금
@@ -1567,13 +1572,16 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         ctx.restore();
       }
     }
+    ctx.globalAlpha = CORRIDOR_EDGE_A;
     ctx.fillStyle = cs.edge;
     for (const [x, y, w, h, side] of CORRIDOR_EDGES) {   // 바깥 테두리만(사각형이 맞닿은 곳은 이어진다)
       const X = px(r.x + x), Y = px(r.y + y);
       if (side === 't') ctx.fillRect(X, Y, px(w), e); else if (side === 'b') ctx.fillRect(X, Y - e, px(w), e);
       else if (side === 'l') ctx.fillRect(X, Y, e, px(h)); else ctx.fillRect(X - e, Y, e, px(h));
     }
+    ctx.restore();
   }
+  const CORRIDOR_A = 0.3, CORRIDOR_EDGE_A = 0.45;
   // 복도 바깥 테두리 — 사각형 변을 잘게 나눠 바깥쪽이 다른 복도가 아닌 구간만 남긴다(한 번만 계산)
   const CORRIDOR_EDGES = (() => {
     const inAny = (x, y) => CORRIDORS.some(([a, b, w, h]) => x > a && x < a + w && y > b && y < b + h);
