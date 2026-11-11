@@ -23,6 +23,13 @@
 - 시험 세션 280 `hidden_reason='test'`로 숨김. 띄우기 기록 `dispatch` 맨 끝 = `spawn · started`(C1 ④)
 - `log/mergeprep_trial_20261111.md`는 시험 흔적으로 남김(두 쪽 줄)
 
+## D2 띄움 — 첫 번째는 실패
+
+- 교장 경로(dispatch 310)로 띄웠는데 「45초 안에 새 세션을 찾지 못했습니다」. tmux `cc-foreman-2` 화면에 `claude: command not found` — `~/.npm-global/bin/claude` 링크가 15:26에 새로 생겼다(CC 자동 업데이트로 보임). 띄운 시각 15:26:57과 겹쳐 잠깐 실행 파일이 없었다
+- 커밋 0 · 변경 0 · 세션 행 없음을 본 뒤 tmux 닫고 `git worktree remove` · `git branch -d cc/foreman-2`
+- **조용한 고장**: 세션이 안 떴는데 dispatch 310 · dispatch_session이 `started`(session_id 없음)로 남았다 → 관리자가 `failed` + 사유로 고침. 띄우기가 세션을 못 찾으면 기록도 `failed`가 되고 알림이 가야 한다(C1 ④ 「실패한 띄우기도 failed로」는 예외로 실패한 경우만 잡는다 — 「45초 안에 못 찾음」은 note로만 돌아온다)
+- 다시 띄움: dispatch 311 → **세션 281**(디자이너 · sonnet, `.worktrees/foreman-2`), ACTIVE. 지시문 `log/plan_structure_20261111.md` 「D2」 + 공통 규칙 + 시험 DB 겹침 주의 + 합치기 준비가 켜져 있음(끝내지 말고 기다림)
+
 ## 다음
 
-- 그대로 켜 둔다(사용자). D2(서기 화면)가 이 카드를 쓰는 첫 실제 세션
+- 합치기 준비는 그대로 켜 둔다(사용자). D2가 이 카드를 쓰는 첫 실제 세션
