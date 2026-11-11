@@ -171,12 +171,18 @@ async def human_needs(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
     last_human = {r[0]: r[1] for r in (await c.execute(text(
         f"SELECT session_id, MAX(started_at) FROM turn WHERE session_id IN {in_ids} AND origin = 'human' "
         f"GROUP BY session_id"))).all()}
-    for sid, tool, ts, sub, prev in (await c.execute(text(
-            f"SELECT e.session_id, e.tool, e.ts, e.subagent_id, JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.error_preview')) "
+    # 11-11(사용자, 펫퍼민트 227): 거부 뒤 세션이 다른 방법으로 지나가도 사람이 다시 입력할 때까지 「권한 거부」가 남았다.
+    # 거부 뒤에 도구 결과가 하나라도 더 있거나(막힌 명령이 지나감 · 다른 방법으로 넘어감 — 마지막 거부 뒤라 거부가 아니다)
+    # 어떤 origin이든 새 턴이 시작됐으면(다음 일로 넘어감) 풀린 것으로 본다. 거부 뒤 글만 쓰고 멈춘 세션은 그대로 남는다
+    for sid, tool, ts, sub, prev, moved in (await c.execute(text(
+            f"SELECT e.session_id, e.tool, e.ts, e.subagent_id, JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.error_preview')), "
+            f"  EXISTS(SELECT 1 FROM event e2 WHERE e2.session_id = e.session_id AND e2.ts >= e.ts AND e2.id > e.id "
+            f"         AND e2.type = 'tool_result') "
+            f"  OR EXISTS(SELECT 1 FROM turn t WHERE t.session_id = e.session_id AND t.started_at > e.ts) "
             f"FROM event e JOIN (SELECT session_id, MAX(id) mid FROM event WHERE session_id IN {in_ids} AND type = 'tool_result' "
             f"  AND status = 'error' AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.error_preview')) LIKE :p GROUP BY session_id"
             f") x ON x.mid = e.id"), {"p": DENIED_PREFIX + "%"})).all():
-        if last_human.get(sid) and ts < last_human[sid]:
+        if (last_human.get(sid) and ts < last_human[sid]) or moved:
             continue
         m = _DENY_REASON.search(prev or "")
         out.setdefault(sid, {})["denied"] = {"tool": tool, "reason": m.group(1) if m else None, "at": _iso(ts),
