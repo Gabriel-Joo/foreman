@@ -1,0 +1,20 @@
+# 역할 권한(11-11, bridge/roleguard.py) — CLAUDE.md 글로만 있던 역할 규칙을 PreToolUse에서 본다.
+# 바꾸면 브리지를 다시 띄운다.
+#
+# mode
+#   observe  막지 않고 기록만(그 호출의 approval_req 이벤트 payload에 role_rule · role_reason) — 처음엔 이것
+#   enforce  거부 + 무엇이 왜 막혔는지 · 어떻게 하면 되는지를 세션에 돌려준다 — 켜는 것은 사용자가
+#   off      보지 않음
+# 끄기 = mode = "off" + 브리지 다시 띄우기
+
+[roles]
+mode = "observe"
+projects = ["foreman"]     # 이 프로젝트 세션만 본다. 다른 저장소는 그 저장소 CLAUDE.md 규칙과 함께 넓힌다
+manager_allow = ["config/*.toml", "log/*", "README.md"]       # 관리자(원본 폴더)가 Edit · Write로 고쳐도 되는 곳
+scribe_deny = ["bridge/*", "tests/*", "migrations/*", "tools/*"]   # 서기가 고치지 않는 곳
+
+[roles.rules]              # 하나씩 끌 수 있다
+worktree-push = true       # worktree 세션의 git push
+bash-file-edit = true      # Bash(sed -i · 리디렉션 · tee · 해석기 open)로 저장소 파일 고치기 — /tmp · 스크래치는 빼고
+manager-code = true        # 관리자가 manager_allow 밖을 Edit · Write
+scribe-code = true         # 서기가 scribe_deny 안을 Edit · Write
