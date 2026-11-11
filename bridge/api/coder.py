@@ -25,5 +25,10 @@ async def coder_todo(request: Request) -> dict[str, Any]:
     if _cache["data"] is not None and time.monotonic() - _cache["at"] < 15:
         return _cache["data"]
     data = {"projects": await cr.todo(request.app.state.store.engine, request.app.state.settings.sessions_dir)}
+    # 끝난 뒤 어긋난 것(11-11, bridge/reconcile.py) — 마지막으로 훑은 결과. 방마다 drift
+    rc = getattr(request.app.state, "reconciler", None)
+    for name, v in data["projects"].items():
+        v["drift"] = rc.for_project(name) if rc else []
+    data["drift_at"] = rc.at.isoformat() + "Z" if rc and rc.at else None
     _cache.update(at=time.monotonic(), data=data)
     return data

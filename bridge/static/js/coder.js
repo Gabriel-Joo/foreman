@@ -16,6 +16,8 @@ export function coderJobs(room, data, st) {
   const out = [];
   for (const x of (data && data.inbox) || []) out.push({ kind: 'inbox', id: x.id, title: firstLine(x.body, 50), body: x.body, at: x.created_at });
   for (const r of (data && data.rested) || []) out.push({ kind: 'rested', sid: r.session_id, title: r.title, branch: r.branch, days: r.days || 0, at: r.rested_at });
+  // 끝난 뒤 어긋난 것(11-11, bridge/reconcile.py) — 고아 worktree · 커밋 안 된 변경 · 실제와 다른 합치기 기다림 · 남은 브랜치
+  for (const d of (data && data.drift) || []) out.push({ kind: 'drift', sid: d.session_id, title: d.detail });
   const pp = st && st.pipeline && st.pipeline.get ? st.pipeline.get(room) : null;
   const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
   if (broke) out.push({ kind: 'pipe', title: `파이프라인 실패 · ${broke}` });
@@ -52,6 +54,7 @@ const WHY = {
   build: '빌드 알림 없음 — Jenkins를 확인합니다. FOREMAN 밖에서 풉니다.',
   appr: '멈춤 — 승인 대기. 세션을 열어 승인 카드에서 답합니다.',
   denied: '멈춤 — 권한 거부(CC 자체 검사). 세션을 열어 허용하거나 다른 방법을 지시합니다.',
+  drift: '어긋남 — 세션이 끝난 뒤 브리지가 훑어 찾은, 실제와 다른 것입니다. 세션을 열어 [합치기] · [버리기]로 정리합니다. 저절로 지우지 않습니다.',
 };
 
 export function createCoder(store) {
@@ -81,7 +84,8 @@ export function createCoder(store) {
            <button type="button" class="small ghost" data-cd-drop="${j.id}" title="버리기 — 이 할 일을 맡기지 않습니다. 받은 할 일 목록에 「버림」으로 남습니다.">버리기</button>`
         : j.sid ? `<button type="button" class="small" data-cd-open="${j.sid}" title="세션 열기 — 이 세션의 [세션] 탭을 엽니다.">세션 열기</button>` : '';
       const head = j.kind === 'rested' ? `합치기 기다림 — ${esc(j.title)}${j.days >= REST_DAYS ? ` <span class="warn">${j.days}일째</span>` : ''} <span class="muted">· <code>${esc(j.branch)}</code></span>`
-        : j.kind === 'inbox' ? `${esc(j.title)} <span class="muted">· ${ago(j.at)}</span>` : esc(j.title);
+        : j.kind === 'inbox' ? `${esc(j.title)} <span class="muted">· ${ago(j.at)}</span>`
+        : j.kind === 'drift' ? `<span class="warn">어긋남</span> — ${esc(j.title)}` : esc(j.title);
       return `<div class="sc-row" data-tip="${esc(WHY[j.kind] || '')}"><div class="small"><b>${head}</b></div><div class="hand-btns">${btn}</div></div>`;
     };
     const jobsHtml = jobs.length ? jobs.map(row).join('') : '<p class="small muted">맡길 일이 없습니다.</p>';
