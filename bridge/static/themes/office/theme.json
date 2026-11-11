@@ -124,6 +124,28 @@
     "none":    { "anim": "idle", "alpha": 0.6 }
   },
 
+  "outside": {
+    "_": "방 바깥(11-11 사용자) — 좌표 약속은 현장 theme.json outside와 같다. 오피스: 건물 밖 보도(보도블록 색 타일) · 벽에 붙은 화분 · 분리수거함 · 자판기 · 정수기 · 쌓인 상자, 길가 화분 · 개 · 고양이(모두 2dPig 시트 — 개 · 쓰레기통 · 정수기는 처음 쓴다)",
+    "band": 0.75,
+    "ground": { "a": "#b4b9c0", "b": "#bdc2c8", "grout": "#9da3ab", "tile": 1, "tileH": 0.5, "stagger": true },
+    "top": 0.2, "period": [14, 6],
+    "items": [
+      { "s": "plant", "x": 0.4, "y": 0.0 }, { "s": "bin_g", "x": 1.7, "y": 0.4 }, { "s": "bin_b", "x": 2.4, "y": 0.4 },
+      { "s": "vending", "x": 4.0, "y": -0.1 }, { "s": "cooler", "x": 5.8, "y": 0.4 }, { "s": "plant", "x": 7.0, "y": 0.0 },
+      { "s": "box_g", "x": 8.95, "y": 0.45 }, { "s": "box_r", "x": 8.6, "y": 0.95 }, { "s": "box_b", "x": 9.3, "y": 0.95 },
+      { "s": "plant", "x": 11.6, "y": 0.0 },
+      { "s": "plant", "x": 1.0, "y": 3.8 }, { "s": "dog", "x": 4.5, "y": 4.4 }, { "s": "plant", "x": 8.0, "y": 3.8 }, { "s": "cat", "x": 11.0, "y": 4.2 }
+    ],
+    "_layers": "보도 아래 연석 · 차도(가운데 노란 줄) · 건너편 보도. y는 띠 아래 끝 기준",
+    "layers": [
+      { "y": 6.6, "h": 0.25, "ground": { "a": "#8d939b", "grout": "#7d838b", "tile": 1 } },
+      { "y": 6.85, "h": 5.4, "ground": { "a": "#4a4e55", "b": "#4f535a", "grout": "#4a4e55", "spot": "#5c6068", "tile": 2 } },
+      { "y": 9.45, "h": 0.15, "ground": { "a": "#d8c25a", "grout": "#d8c25a", "tile": 1 } },
+      { "y": 12.25, "h": 0.25, "ground": { "a": "#8d939b", "grout": "#7d838b", "tile": 1 } }
+    ],
+    "fill": { "from": 12.6, "cell": [3, 3], "chance": 0.4, "jitter": 0.5, "items": ["plant", "bin_g", "plant", "bin_b", "box_r", "plant"] },
+    "walkers": [{ "y": 3.0, "speed": 0.6, "x": 3 }, { "y": 3.0, "speed": -0.5, "x": 16, "char": 2 }, { "y": 6.0, "speed": -0.75, "x": 10, "char": 1 }, { "y": 14.6, "speed": 0.45, "x": 6, "char": 3 }]
+  },
   "sprites": {
     "kind": "sheets",
     "mini_scale": 0.6,
