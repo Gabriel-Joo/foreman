@@ -2031,7 +2031,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const spots = [[x, top - 3], [x, top - 3 - h - 2], [x + half + 3 + w / 2, top + 8], [x - half - 3 - w / 2, top + 8], [x, feet + size + 5]];
     const toW = (r) => [(r[0] - W / 2) / cam.s + cam.x, (r[1] - H / 2) / cam.s + cam.y, r[2] / cam.s, r[3] / cam.s];
     const boxes = [...tagBoxesW(), ...[...BODIES.values()].map(({ box: b }) => [b[0] + b[2] * 0.15, b[1] + b[3] * 0.04, b[2] * 0.7, b[3] * 0.94]),
-                   ...NAMES.filter((m) => m.key !== a.key).map((m) => toW(m.rect))];
+                   ...NAMES.filter((m) => m.key !== a.key).map((m) => toW(m.rect)),
+                   // 11-11 먼저 놓인 다른 말풍선도 — 패널 넓게(화면 4 : 6)의 작은 [전체]에서 이웃 방 서기 둘의 「문서 할 일」이 겹쳤다
+                   ...[...BUBBLES.entries()].filter(([k]) => k !== a.key).map(([, b]) => b.rect)];
     let best = null;
     for (const [bx, by] of spots) {
       const r = [bx - w / 2, by - size - pad, w, h], cover = boxes.reduce((s, b) => s + areaOf(r, b), 0);
