@@ -47,7 +47,13 @@ async def pre_tool_use(request: Request) -> Response:
     mgr = getattr(request.app.state, "approvals", None)
     if mgr is None:
         return Response(status_code=204)
-    out = mgr.pre_tool_use(body, role=await mgr.session_role(body))   # 역할은 git push가 보일 때만 읽는다(11-10)
+    srole = None                           # 역할 권한(11-11 bridge/roleguard.py) — 켜져 있을 때만 읽는다(60초 기억). 못 읽으면 역할 없음으로
+    if getattr(mgr, "roles", None) is not None and mgr.roles.active:
+        try:
+            srole = await mgr.roles.role_of(mgr.engine, body.get("session_id"))
+        except Exception as e:  # noqa: BLE001
+            log.warning("역할 권한: 세션 역할을 읽지 못함: %s", type(e).__name__)
+    out = mgr.pre_tool_use(body, role=await mgr.session_role(body), session_role=srole)   # 역할은 git push가 보일 때만 읽는다(11-10)
     return JSONResponse(out) if out else Response(status_code=204)
 
 

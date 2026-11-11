@@ -93,6 +93,7 @@ class ApprovalManager:
         self._rule_notice: dict[str, float] = {}   # 안전 규칙 파일 도구 편집 알림 — 파일 → 마지막 알린 시각
         self.schema: Any = None                    # 스키마 잠금(bridge/schemalock.py) — main.py가 넣는다
         self.scope: Any = None                     # 다른 저장소는 읽기만(bridge/reposcope.py, 11-09) — main.py가 넣는다
+        self.roles: Any = None                     # 역할 권한(bridge/roleguard.py, 11-11) — main.py가 넣는다
 
     def _bg(self, coro: Any) -> None:
         t = asyncio.create_task(coro)
@@ -131,9 +132,15 @@ class ApprovalManager:
         return r[0] if r and not r[1] else None
 
     # ── PreToolUse ─────────────────────────────────────────
-    def pre_tool_use(self, p: dict[str, Any], role: str | None = None) -> dict[str, Any] | None:
+    def pre_tool_use(self, p: dict[str, Any], role: str | None = None, session_role: str | None = None) -> dict[str, Any] | None:
         tool, inp = p.get("tool_name") or "?", p.get("tool_input") or {}
         project = self._project(p)
+        role_hit = None                            # 역할 권한(11-11) — observe면 기록만, enforce면 아래 잠금과 같이 거부
+        if self.roles is not None:
+            try:
+                role_hit = self.roles.check(project, session_role, p.get("cwd"), tool, inp, p.get("scratchpad_dir") or _scratchpad(p))
+            except Exception as e:  # noqa: BLE001 — 판정 실패가 PreToolUse를 막지 않게(roleguard가 알림)
+                log.error("역할 권한 판정 실패: %s: %s", type(e).__name__, str(e)[:200])
         pp = self.policy.for_project(project)
         # 스키마 잠금 — 다른 세션이 이 프로젝트의 스키마를 바꾸는 중이면 거부. 승인 모드(observe)와 상관없이(11-05 사용자 지시)
         why_lock = self.schema.check(project, p.get("session_id"), p.get("cwd"), tool, inp) if self.schema else None
@@ -146,6 +153,8 @@ class ApprovalManager:
             # pgrep -f · pkill -f가 자기 셸에 걸림(11-11, bridge/pgrep_guard.py) — 역시 승인 모드와 상관없이
             why_lock = pgrep_guard.check(tool, inp)
             rule = "pgrep-자기걸림"
+        if not why_lock and role_hit and self.roles.cfg.mode == "enforce":
+            why_lock, rule = role_hit.reason, role_hit.rule
         if why_lock:
             dec = Decision("deny", rule, why_lock)
             log.warning("deny %s %s — %s", project, tool, why_lock)
@@ -166,7 +175,10 @@ class ApprovalManager:
             # 거절 · 보류는 언제나 이유를 남긴다(1단계 교훈)
             log.warning("ask %s[%s] %s %s — %s: %s", project or "미분류", pp.mode, tool,
                         _short(self.mask.text(_target(tool, inp)) or "", 80), dec.rule, dec.reason)
-        self._bg(self._record_pre(p, tool, inp, dec, pp.mode, enforced, summary))
+        extra = {"role_rule": role_hit.rule, "role_reason": role_hit.reason} if role_hit else None
+        if role_hit:
+            log.info("역할 관찰 %s %s — %s", project, tool, role_hit.rule)
+        self._bg(self._record_pre(p, tool, inp, dec, pp.mode, enforced, summary, extra))
         if dec.rule == "규칙파일-편집":
             self._rule_file_notice(project, tool, inp, dec.reason)
         if not enforced:
@@ -226,7 +238,7 @@ class ApprovalManager:
             return None
 
     async def _record_pre(self, p: dict[str, Any], tool: str, inp: dict[str, Any], dec: Decision, mode: str,
-                          enforced: bool, summary: str | None = None) -> None:
+                          enforced: bool, summary: str | None = None, extra: dict[str, Any] | None = None) -> None:
         try:
             sess_id, char_id, turn_id = await self.asm.ids_for(p)
             self.pipeline.submit(EventIn(
@@ -235,7 +247,7 @@ class ApprovalManager:
                 target=self.mask.text(_target(tool, inp)),
                 status=EventStatus.WAITING if dec.verdict == "ask" and enforced else EventStatus.WORKING,
                 payload={"decision": dec.verdict, "rule": dec.rule, "reason": dec.reason, "mode": mode,
-                         "enforced": enforced, "permission_mode": p.get("permission_mode"), "summary": summary}))
+                         "enforced": enforced, "permission_mode": p.get("permission_mode"), "summary": summary, **(extra or {})}))
         except Exception as e:  # noqa: BLE001 — 기록 실패가 판정을 바꾸지 않는다
             log.warning("판정 기록 실패: %s: %s", type(e).__name__, str(e)[:200])
 
