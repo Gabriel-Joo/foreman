@@ -7,6 +7,7 @@
 비밀값은 SecretStr이라 repr·로그에 값이 나오지 않는다.
 """
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -16,6 +17,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 REPO = Path(__file__).resolve().parent.parent
 
 MIN_TOKEN_LEN = 32
+
+TEST_DB = "foreman_test"
+TEST_DB_ENV = "FOREMAN_TEST_DB"
+TEST_DB_PREFIX = "foreman_test_"
+
+
+def resolve_test_db(name: str) -> str:
+    """"foreman_test"만 FOREMAN_TEST_DB(접두사 foreman_test_ 검사)로 바꾼다. 환경변수가 없으면 그대로."""
+    if name != TEST_DB:
+        return name
+    alt = os.environ.get(TEST_DB_ENV)
+    if not alt:
+        return name
+    if not alt.startswith(TEST_DB_PREFIX) or len(alt) > 64:
+        raise ValueError(f"{TEST_DB_ENV}는 {TEST_DB_PREFIX}로 시작해야 한다")
+    return alt
 
 
 class Settings(BaseSettings):
@@ -58,7 +75,7 @@ class Settings(BaseSettings):
     projects_root: Path = Path.home() / ".claude" / "projects"
     sessions_dir: Path = Path.home() / ".claude" / "sessions"   # <pid>.json만 읽는다(.key는 열지 않는다)
     watch_enabled: bool = True          # 테스트 · 일회성 적재(python -m bridge.ingest)에서는 끈다
-    # 뜰 때 "돌던 잃은 것 점검"을 failed로 — 운영 DB에 앱을 띄우는 시험(test_app_db)은 끈다. 11-09 시험이 운영 브리지에서
+    # 뜰 때 "돌던 잃은 것 점검"을 failed로 — 앱을 띄우는 시험(test_app_db, 11-11부터 세션 시험 DB)은 끈다. 11-09 시험이 운영 브리지에서
     # 돌던 점검 #2를 "브리지가 다시 떠서 멈췄습니다"로 바꿨다(브리지는 그대로 돌고 있었다)
     losscheck_recover: bool = True
     ingest_chunk_bytes: int = 8 << 20   # 한 번에 읽는 양(= DB 트랜잭션 하나)
@@ -109,6 +126,13 @@ class Settings(BaseSettings):
     # 11-08 사용량(docs/15_usage.md) — /usage 주기 읽기 · 환산 · 한도. 끄면 읽기만 멈추고 /api/usage 집계는 남는다
     usage_enabled: bool = True
     usage_config: Path = REPO / "config" / "usage.toml"
+
+    @field_validator("mysql_database")
+    @classmethod
+    def _per_session_test_db(cls, v: str) -> str:
+        """시험 DB를 세션마다 가른다(11-11, tests/testdb.py). 값이 정확히 "foreman_test"이고 pytest(conftest)가
+        FOREMAN_TEST_DB를 넣었을 때만 그 DB로 바꾼다. 다른 값(운영 foreman 등)은 손대지 않는다."""
+        return resolve_test_db(v)
 
     @field_validator("foreman_webhook_token")
     @classmethod

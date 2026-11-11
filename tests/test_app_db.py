@@ -1,20 +1,37 @@
-"""실행 중인 foreman-mysql(127.0.0.1:3308)과 .env.db · .env.bridge가 필요하다.  pytest -m db"""
+"""실행 중인 foreman-mysql(127.0.0.1:3308)과 .env.db · .env.bridge가 필요하다.  pytest -m db
+
+11-11부터 운영 DB(foreman)가 아니라 이 세션의 시험 DB(tests/testdb.py)에 앱을 띄운다 — 동시에 돈 두 pytest가
+운영 DB의 디버그 이벤트를 서로 지워 깨졌다. 토큰이 든 헤더는 _bearer()로 만든다(실패해도 출력에 값이 풀리지 않게)."""
 
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from bridge.config import get_settings
+from bridge.config import get_settings, resolve_test_db
+from bridge.db.migrate import main as migrate_main
 from bridge.main import create_app
 
 pytestmark = pytest.mark.db
 
 
+class _Masked(dict):
+    """repr에 토큰을 내지 않는 헤더 — pytest가 실패한 assert의 호출 인자를 풀어 쓸 때 값이 찍혔다(11-11)."""
+
+    def __repr__(self) -> str:
+        return "{'Authorization': 'Bearer ***'}"
+
+
+def _bearer(token: str) -> dict:
+    return _Masked(Authorization=f"Bearer {token}")
+
+
 @pytest.fixture
 def client():
-    # 테스트에서는 와처를 끈다 — 켜면 실제 ~/.claude/projects를 운영 DB에 적재한다.
+    # 테스트에서는 와처를 끈다 — 켜면 실제 ~/.claude/projects를 DB에 적재한다.
     # 터미널 패널도 끈다 — 켜면 운영 tmux 셸 · ttyd 소켓을 건드린다(터미널은 tests/test_terminal.py가 따로 띄운다)
-    with TestClient(create_app(get_settings().model_copy(update={"watch_enabled": False, "notify_enabled": False,
+    s = get_settings().model_copy(update={"mysql_database": resolve_test_db("foreman_test")})
+    assert migrate_main([], settings=s) == 0
+    with TestClient(create_app(s.model_copy(update={"watch_enabled": False, "notify_enabled": False,
                                                                  "terminal_enabled": False,
                                                                  "pipeline_enabled": False,
                                                                  "losscheck_recover": False,   # 켜면 운영 브리지에서 도는 점검을 failed로 바꾼다(11-09)
@@ -57,7 +74,7 @@ def test_ws_auth_hello(client):
 
 
 def _auth():
-    return {"Authorization": f"Bearer {get_settings().foreman_api_token.get_secret_value()}"}
+    return _bearer(get_settings().foreman_api_token.get_secret_value())
 
 
 def test_emit_requires_token(client):
@@ -104,7 +121,8 @@ def test_ws_wrong_token_reason_has_length_only(client):
             ws.receive_json()
     assert e.value.code == 1008
     assert "61" in e.value.reason
-    assert get_settings().foreman_api_token.get_secret_value() not in e.value.reason
+    leaked = get_settings().foreman_api_token.get_secret_value() in e.value.reason
+    assert not leaked, "거부 사유에 토큰이 들어 있다"
 
 
 def test_hooks_reject_paths(client):
@@ -112,14 +130,14 @@ def test_hooks_reject_paths(client):
     api = get_settings().foreman_api_token.get_secret_value()
     body = {"hook_event_name": "Stop", "session_id": "x"}
     assert client.post("/hooks", json=body).status_code == 401
-    assert client.post("/hooks", json=body, headers={"Authorization": f"Bearer {api}"}).status_code == 401  # API 토큰으론 안 된다
-    assert client.post("/hooks", content=b"nope", headers={"Authorization": f"Bearer {hook}"}).status_code == 400
-    assert client.post("/hooks", json={"x": 1}, headers={"Authorization": f"Bearer {hook}"}).status_code == 400
-    assert client.post("/hooks", json=body, headers={"Authorization": f"Bearer {hook}"}).status_code == 503  # 와처 꺼짐
+    assert client.post("/hooks", json=body, headers=_bearer(api)).status_code == 401  # API 토큰으론 안 된다
+    assert client.post("/hooks", content=b"nope", headers=_bearer(hook)).status_code == 400
+    assert client.post("/hooks", json={"x": 1}, headers=_bearer(hook)).status_code == 400
+    assert client.post("/hooks", json=body, headers=_bearer(hook)).status_code == 503  # 와처 꺼짐
 
 
 def test_dashboard_snapshot_and_pages(client):
-    """6단계 — 운영 DB를 읽기만 한다."""
+    """6단계 — 시험 DB를 읽기만 한다(다른 시험이 남긴 행이 있을 수 있다)."""
     assert client.get("/api/dashboard").status_code == 401
     r = client.get("/api/dashboard", headers=_auth())
     assert r.status_code == 200

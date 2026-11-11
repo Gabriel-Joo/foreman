@@ -52,6 +52,11 @@ def connect(s: Settings | None = None) -> pymysql.connections.Connection:
     )
 
 
+def lock_name(database: str) -> str:
+    """운영 DB는 옛 이름 그대로(돌던 브리지와 같은 잠금), 그 밖의 DB는 이름을 붙인다(64자 한도)."""
+    return LOCK if database == "foreman" else f"{LOCK}:{database}"[:64]
+
+
 def discover() -> list[tuple[str, Path, str]]:
     out = []
     for p in sorted(MIGRATIONS.glob("*.sql")):
@@ -76,10 +81,13 @@ def main(argv: list[str] | None = None, settings: Settings | None = None) -> int
     args = ap.parse_args(argv)
 
     files = discover()
-    conn = connect(settings)
+    s = settings or get_settings()
+    # GET_LOCK은 서버 전체 이름이라 DB마다 따로 잡는다 — 세션별 시험 DB가 동시에 올려도 서로 기다리지 않게(11-11)
+    lock = lock_name(s.mysql_database)
+    conn = connect(s)
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT GET_LOCK(%s, 10)", (LOCK,))
+            cur.execute("SELECT GET_LOCK(%s, 10)", (lock,))
             if cur.fetchone()[0] != 1:
                 print("다른 마이그레이션이 실행 중이다", file=sys.stderr)
                 return 1
@@ -113,7 +121,7 @@ def main(argv: list[str] | None = None, settings: Settings | None = None) -> int
     finally:
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT RELEASE_LOCK(%s)", (LOCK,))
+                cur.execute("SELECT RELEASE_LOCK(%s)", (lock,))
         finally:
             conn.close()
 

@@ -13,7 +13,7 @@ from pathlib import Path
 import pymysql
 import pytest
 
-from bridge.config import Settings, get_settings
+from bridge.config import Settings, get_settings, resolve_test_db
 from bridge.inject import Refused, tmux
 from bridge.mask import Masker
 from bridge.terminal import (TerminalManager, cmd_matches, default_tmux_socket, extract_output, find_requests,
@@ -520,7 +520,7 @@ def test_proxy_cookie_origin_ws(shell, tmp_path):
     ttyd = REPO / ".tools" / "ttyd"
     if not os.access(ttyd, os.X_OK):
         pytest.skip("ttyd 없음")
-    s = shell.model_copy(update={"ttyd_bin": ttyd, "mysql_database": "foreman_test", "watch_enabled": False,
+    s = shell.model_copy(update={"ttyd_bin": ttyd, "mysql_database": resolve_test_db("foreman_test"), "watch_enabled": False,
                                  "notify_enabled": False, "pipeline_enabled": False, "usage_enabled": False})
     conn = pymysql.connect(host=s.mysql_host, port=s.mysql_port, user=s.mysql_user,
                            password=s.mysql_password.get_secret_value(), database=s.mysql_database, autocommit=True)
