@@ -122,11 +122,30 @@
     "none":    { "anim": "idle", "alpha": 0.6 }
   },
 
+  "outside": {
+    "_": "방 바깥(11-11 사용자) — 방 아래 남는 높이에 검은 띠(band칸) + 그 아래 풍경. 좌표는 타일, 소품 y는 top 기준이고 period[0] × period[1]칸마다 되풀이, 행인 y는 띠 아래 끝 기준 발밑. 현장: 나무 울타리(닌자 팩 TilesetHouse 176,80) · 흙 마당 · 쌓인 자재(목재 · 팔레트 · 기름통 · 고깔) · 트럭 · 크레인 · 지게차",
+    "band": 0.75,
+    "ground": { "a": "#8b7a62", "b": "#927f66", "grout": "#7b6b55", "spot": "#6e604c", "tile": 2 },
+    "edge": [{ "s": "fence", "y": 0, "step": 1 }],
+    "top": 1.3, "period": [14, 7],
+    "items": [
+      { "s": "log_stack", "x": 0.4, "y": 0.0 }, { "s": "log_stack", "x": 1.1, "y": 0.5 },
+      { "s": "timber", "x": 3.0, "y": 0.5 }, { "s": "timber", "x": 3.3, "y": 0.95 },
+      { "s": "pallet", "x": 6.4, "y": 0.1 }, { "s": "pallet", "x": 6.4, "y": 0.55 },
+      { "s": "drum_blue", "x": 8.6, "y": 0.3 }, { "s": "drum_red", "x": 9.4, "y": 0.4 }, { "s": "drum_blue", "x": 9.0, "y": 0.85 },
+      { "s": "cone", "x": 11.2, "y": 1.0 }, { "s": "cone", "x": 12.6, "y": 1.0 },
+      { "s": "truck", "x": 0.8, "y": 3.4 }, { "s": "crane", "x": 5.0, "y": 3.0 }, { "s": "forklift", "x": 8.2, "y": 3.6 },
+      { "s": "pallet", "x": 11.2, "y": 3.8 }, { "s": "log_stack", "x": 11.6, "y": 4.5 }
+    ],
+    "fill": { "cell": [4, 3], "chance": 0.45, "jitter": 0.5, "items": ["log_stack", "pallet", "drum_blue", "timber", "cone", "drum_red", "pallet", "truck", "forklift"] },
+    "walkers": [{ "y": 4.2, "speed": 0.8, "x": 2 }, { "y": 4.2, "speed": -0.55, "x": 14, "char": 3 }, { "y": 7.9, "speed": -0.6, "x": 9, "char": 5 }]
+  },
   "sprites": {
     "kind": "sheets",
     "mini_scale": 0.625,
     "outline": "#1a1620",
     "sheets": {
+      "house": "sprites/ninja/TilesetHouse.png",
       "camp": "sprites/ninja/camp.png", "crane": "sprites/ninja/crane.png", "conv": "sprites/ninja/conveyor.png",
       "smoke": "sprites/ninja/smoke.png", "e_alert": "sprites/ninja/emote_alert.png", "e_dots": "sprites/ninja/emote_dots.png",
       "forklift": "sprites/foreman/forklift.png", "shutter": "sprites/foreman/shutter.png", "compressor": "sprites/foreman/compressor.png",
@@ -138,6 +157,7 @@
       "mug": "sprites/foreman/mug.png", "news": "sprites/foreman/newspaper.png"
     },
     "defs": {
+      "fence": ["house", 176, 80, 16, 16],
       "log_stack": ["camp", 17, 29, 30, 19, 1], "timber": ["camp", 2, 113, 44, 14, 1], "stump": ["camp", 18, 82, 28, 28, 1],
       "lantern": ["camp", 96, 82, 16, 29, 1], "rope": ["camp", 161, 115, 30, 28, 1], "log_up": ["camp", 49, 17, 14, 29, 1],
       "barrel_s": ["camp", 51, 85, 11, 11, 1],
