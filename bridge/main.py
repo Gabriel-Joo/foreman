@@ -315,7 +315,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if mcfg.enabled:
                 app.state.handoff.mergeprep = MergePrep(app.state.handoff, mcfg, app.state.notifier, on_change=dashboard_api.invalidate)
                 mprep_task = app.state.handoff.mergeprep.start()
-                log.info("합치기 준비 켬: %d초마다, %d단계", mcfg.every_s, mcfg.stage)
+                # 11-11(사용자) — 턴이 끝나면 바로 합치기 준비로 넘긴다. 1분 훑기는 놓친 것을 줍는 그물
+                asm_mp = app.state.assembler
+                if asm_mp is not None:
+                    prev_mp = asm_mp.on_turn_closed
+                    mp_ = app.state.handoff.mergeprep
+
+                    def on_turn_closed_mp(*a: object) -> None:
+                        if prev_mp:
+                            prev_mp(*a)
+                        try:
+                            mp_.on_turn_closed(*a)
+                        except Exception as e:  # noqa: BLE001 — 예약 실패가 적재를 막지 않는다(훑기가 줍는다)
+                            log.warning("턴 끝 합치기 준비 예약 실패: %s", type(e).__name__)
+                    asm_mp.on_turn_closed = on_turn_closed_mp
+                log.info("합치기 준비 켬: 턴 끝마다 + %d초마다 훑기, %d단계", mcfg.every_s, mcfg.stage)
         except Exception as e:  # noqa: BLE001 — 안 떠도 브리지는 뜬다. 다만 조용히 넘어가지 않는다
             why = f"합치기 준비를 켜지 못했다(config/handoff.toml): {type(e).__name__}: {str(e)[:200]}"
             log.error(why)

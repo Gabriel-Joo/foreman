@@ -62,6 +62,7 @@ export function mpSection(mp, b, sid) {
   return `<section class="hand mp-card"><div class="hand-h"><b>합치기 승인</b> <span class="small ${c.status === 'merged' ? 'ok' : c.status === 'ready' ? '' : 'warn'}">· ${esc(MP_STATUS[c.status] || c.status)}</span></div>${h}
     <div class="small"><code>${esc(c.branch)}</code> · 커밋 <b>${c.ahead}</b>개 · ${how}</div>
     <div class="small muted">${esc(c.why)}${c.live ? ' — 승인하면 세션을 끝냅니다(충돌이면 끝내지 않습니다).' : ''}</div>
+    ${c.asks && c.status === 'ready' ? `<div class="small warn mp-asks" title="묻는 말 — 일을 마친 보고 끝에 사람에게 묻는 말이 있습니다. 합치기 전에 답할지 정합니다.">❓ 세션이 묻는 말이 있습니다 — 패널에서 답하십시오: ${esc(c.asks.tail || '')}</div>` : ''}
     ${conf ? `<div class="small bad">충돌 파일: ${c.conflict.map(esc).join(', ')}</div>` : ''}
     <details${keep(`hand:${sid}:mp-commits`)}><summary class="small muted">커밋 ${c.commits.length} · 바뀐 파일 ${c.files.length}</summary><pre class="hand-body">${esc(c.commits.join('\n'))}\n\n${esc(c.files.join('\n'))}</pre></details>
     ${docs}
