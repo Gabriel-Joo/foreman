@@ -20,10 +20,10 @@
 
 | 무엇 | 위치 |
 |---|---|
-| 브리지(FastAPI, 수집 · API · WS · 알림 · 승인 · 입력 주입 · 인계) | `bridge/` — 시작 `bridge/main.py`, 트랜스크립트 적재 `assembler.py` · `transcript/`, 입력 `inject.py`, 인계 · 세션 조작 `handoff.py`, 파이프라인 `pipeline.py`, 승인 `approval*.py`, 알림 `notify.py` |
+| 브리지(FastAPI, 수집 · API · WS · 알림 · 승인 · 입력 주입 · 인계) | `bridge/` — 시작 `bridge/main.py`, 트랜스크립트 적재 `assembler.py` · `transcript/`, 입력 `inject.py`, 인계 · 세션 조작 `handoff.py`, 파이프라인 `pipeline.py`, 승인 `approval*.py`, 알림 `notify.py`, 합치기 카드 `mergeprep.py`, 프로젝트별 관리자 · 계획 넘기기 `managers.py` · `handover.py`, 프로젝트 토큰 `scopetoken.py`, 역할 권한 `roleguard.py`, 터미널 `terminal.py` |
 | 화면 | `bridge/static/` — `/` 픽셀 화면(`office.html` · `js/office.js` · `js/opanel.js`), `/classic` 카드 목록(`dashboard.html` · `js/render.js`), 공통 CSS `css/panel.css`, 테마 `themes/<이름>/theme.json`(magic · office · site · plain) |
 | DB(MySQL, 호스트 도커 `127.0.0.1:3308`) | 마이그레이션 `migrations/NNNN_*.sql` — `.venv/bin/python -m bridge.db.migrate` |
-| 설정 | `config/approval.toml` · `notify.toml` · `pipeline.toml` · `worktree.toml` · `models.toml`(세션 모델 · 역할 기본값) · `scribe.toml`(서기 "정리할까요?" 기준, `docs/12_scribe.md` 「11-4.」), 비밀은 `.env.bridge` · `.env.telegram`(커밋 안 함) |
+| 설정 | `config/approval.toml` · `notify.toml` · `pipeline.toml` · `worktree.toml` · `models.toml`(세션 모델 · 역할 기본값) · `scribe.toml`(서기 "정리할까요?" 기준, `docs/12_scribe.md` 「11-4.」) · `handoff.toml`(`[merge_prep]` 합치기 카드 — **켜짐**, `[move] one_flow` — 꺼짐) · `managers.toml`(`[managers]` · `[handover]` — 꺼짐) · `tokens.toml`(`[project_tokens]` — 꺼짐) · `roles.toml`(`mode = "observe"` — 관찰). 이 넷의 뜻 · 켜는 법은 `docs/11_foreman_dispatch.md` 「11.」 · `docs/11_worktree.md` 「6-1.」. 그 밖에 `wake.toml` · `usage.toml` · `portfolio.toml` · `notion.toml`. 비밀은 `.env.bridge` · `.env.telegram` · `.env.project_tokens`(프로젝트 토큰 — 커밋 안 함) |
 | 설계 · 브리프 / 결과 | `README.md`, `docs/NN_*.md` / `log/*.md` |
 | 시험 | `.venv/bin/python -m pytest -q`(DB `foreman_test`), `node --test tests/js/` — 두 세션이 동시에 돌리지 않는다(같은 `foreman_test` 표를 서로 지워 11-09 31건 실패 → 혼자 돌려 통과 [log:repo_scope_readonly_20261109.md]). `tests/test_app_db.py`는 운영 DB에 대고 앱을 띄우므로 설정 `losscheck_recover`를 끈다 — 켜 두면 앱이 뜰 때 도는 압축 손실 점검을 모두 failed로 바꾼다(11-09 시험만 돌렸는데 운영 점검 #2가 실패로 적혔다) [log:cross_paste_20261109.md] |
 
@@ -49,7 +49,12 @@
   - 옵션: `--views hq,map,<현장>` · `--session <id>` · `--base`(미리보기 82xx) · `--eval` · `--ui-scale <배율>`(사용자가 보는 글씨 배율로 찍는다 — 범위 0.8~1.1 · 5씩, 처음 값 0.9(11-10). 양 끝 예 0.8 · 1.1) [log:pixel_bigger_question_card_20261109.md]
   - 통과는 "고른 화면에서 문제 0"일 뿐이다 — 사용자가 말한 화면을 [⌂] · [전체] 같은 탭 글자로 확인하고 그 화면을 고른다 [log:screen_mismatch_waits_20261109.md]
   - 자동 재배치 계획은 `--eval "window.office.layoutPlan()"`
-- API 토큰은 `.env.bridge`의 `FOREMAN_API_TOKEN` — 셸 변수로만 쓴다
+- API 토큰은 `.env.bridge`의 `FOREMAN_API_TOKEN` — 셸 변수로만 쓴다. 프로젝트 토큰(`tokens.toml`이 켜졌을 때)은 `.env.project_tokens`의 `FOREMAN_TOKEN_<프로젝트>` — 만들기 `python -m bridge.scopetoken new <프로젝트>`(값은 화면에 안 찍힘), `list`는 키 이름만
+- 터미널(`bridge/static/js/terminal.js` · `bridge/terminal.py` · `deploy/shell/foreman-term-view`)의 스크롤과 글자 끌어 고르기(11-11) [log:d1_terminal_scroll_inputh_20261111.md] [log:d2_terminal_select_20261111.md]
+  - xterm 스크롤백은 tmux가 화면을 그려 비어 있어 **tmux 복사 모드**로 올려 본다. `POST /api/terminal/scroll {tab, action}` — `up` · `down` · `exit`(막대 「▲ 위로」 · 「▼ 아래로」 · 「입력으로」)와 `wheel_up` · `wheel_down`(휠 한 칸 = 3줄)
+  - **그룹 세션은 `mouse off`다**(처음엔 `mouse on`으로 휠을 받았지만 tmux가 끌기를 가져가 글을 끌어 고를 수 없어 바꿨다). 휠은 `terminal.js`가 iframe 안 `wheel`을 잡아 위 API로 보내고, 끌어 고르기는 브라우저(xterm.js) 선택이 받는다(복사 Ctrl+Shift+C). 선택은 지금 보이는 화면 안에서만 된다
+  - **복사 모드에 들어간 채 입력하면** 친 글은 셸이 아니라 복사 모드 키로 간다 — 막대 「입력으로」를 먼저 누른다. `wheel_*`는 새 브리지 코드라 옛 브리지에서는 막대 경고(422)가 뜨고, `mouse off`는 그룹 세션을 만들 때 한 번 걸리므로 이미 열린 탭은 닫았다 열어야 바뀐다
+  - 접힌 채에도 따라가기 타이머가 돌아 막대 이름이 방을 따라간다(tmux 창은 펼칠 때 고른다)
 
 ## 4. 작업 규칙의 상세
 
@@ -64,6 +69,7 @@
   - 대괄호 트릭(`pgrep -af '[p]ython -m pytest'`)은 패턴 글자가 자기와 다르게 해 준다. **그러나 같은 명령 안에서 그 프로그램을 돌리면** 뒤쪽 글자(`.venv/bin/python -m pytest …`)에 또 걸린다(11-10 관리자)
   - 그래서: **확인과 실행을 따로 친다.** 기다릴 때는 `pgrep -f`로 자기를 찾지 말고 그 작업의 PID나 결과 파일을 본다
   - 11-11부터 브리지가 PreToolUse에서 거부한다(`bridge/pgrep_guard.py`, 규칙 `pgrep-자기걸림`, 승인 모드와 상관없이) — 판정은 "`-f` 패턴 정규식이 이 명령 글 자체에 걸리는가"(명령 자리의 호출만, heredoc 본문 · echo 글은 빼고). 브리지 코드라 합친 뒤 브리지를 다시 띄워야 켜진다 [log:coder_screen_state_20261111.md]
+- **역할 권한 — 관찰 중**(11-11, `bridge/roleguard.py`, `config/roles.toml`): CLAUDE.md 글로만 있던 규칙(worktree 세션은 push 안 함 · 파일은 Edit · Write로만 · 관리자는 코드를 안 고침 · 서기는 `bridge/` 등을 안 고침)을 PreToolUse에서 본다. 지금 `mode = "observe"`라 **막지 않고** 그 호출의 `approval_req` 이벤트 payload에 `role_rule` · `role_reason`만 남긴다. 규칙: `worktree-push` · `bash-file-edit` · `manager-code` · `scribe-code`(하나씩 끌 수 있다). `enforce`로 올리는 것은 사용자가 하고, 판정이 실패해도 막지 않고 로그 error + 텔레그램 시간마다 한 번. 해석기 안 쓰기(`python -c "open(…,'w')"`)는 못 막는다. 기동 로그에 「역할 권한 observe: …」가 떠야 한다 [log:coder_c_wave2_20261111.md]
 
 ## 5. 알림(텔레그램) 상세
 
@@ -90,6 +96,8 @@
 | ArgoCD Sync 대기 | `bridge/pipeline.py` `check_sync_wait` · `syncwait` | README 3.6 — 처음 1시간 뒤 한 번, 풀릴 때까지 24시간마다 | `sync_wait:<프로젝트>:<기준 시각>:<회차>` |
 | 배포가 끝나지 않음 | `check_argo_running` · `argorun` | README 3.6 — Sync 작업 시작 뒤 30분 | `argo_stuck:<프로젝트>:<행>` |
 | 쌓인 대화 · 창 초과 · 작업 전환 | `bridge/compactwatch.py` · `context` · `switch` | `docs/11_handoff_v2.md` 「쌓인 대화 비율 · 작업 전환 권유 (11-09)」 | `ctx:` · `pct:` · `over:` · `switch:<턴>` |
+| 합치기 카드 · 실패 · 멈춤 | `bridge/mergeprep.py` · `merge` | `docs/11_worktree.md` 「6-1.」 — 카드가 새로 생길 때 · 준비 실패 · 훑기가 10분 넘게 안 끝남 · 합치기 실패 · 충돌 풀기를 못 보냄 · 관리자에게 못 알림 | `mergeprep:ready:<세션>:<끝 커밋>` · `fail` · `mfail` · `cfail` · `mgr` |
+| 계획 넘긴 뒤 안 띄움 · 관리자 부탁 못 넣음 (꺼져 있음) | `bridge/handover.py` · `bridge/managers.py` · `manager` | `docs/11_foreman_dispatch.md` 「11.」 — 넘긴 지 15분(`wait_min`) 안에 시작하지 않음 / 관리자가 없거나 입력 칸에 못 넣음. `managers.toml`이 꺼져 있으면 나가지 않는다 | 안 띄움: `dispatch.handed_alert_at`(넘김마다 한 번). 부탁 못 넣음은 규칙 키 없이 부를 때마다 |
 | 사용 한도 80 · (막혔으면 90) · 95% | `bridge/usage.py` | `docs/15_usage.md` 「6. 화면」 · 「6-2.」 | `usage:<한도>:<문턱>:<리셋>` |
 
 [log:alerts_denied_xmsg_bang_20261109.md] [log:screen_mismatch_waits_20261109.md] [log:screen_argocd_read_20261109.md]
