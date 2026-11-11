@@ -69,7 +69,7 @@
 
 - 새 시험: `tests/test_manager_seat.py`(3), `tests/test_mergeprep.py`(12 — 임시 git 저장소: 끝난 세션 깨끗 → 합침 → 관리자 알림, 살아 있는 충돌 → 세션에 보냄 · 끝내지 않음, 끝난 충돌 → 관리자, rebase 사전 확인, 카드 뒤 새 커밋 거절, 다시 일하면 카드 치움, 준비 실패 카드, API 꺼짐 · 켜짐), `tests/js/mergeprep.test.mjs`(3)
 - `pytest -m "not db"` 567 통과 · 1 오류(`test_pipeline` DB 교착 — 그때 다른 세션이 `test_stage2_db.py`를 돌림, 아래 「DB 시험」), `node --test tests/js/` 94 통과
-- DB 시험: 아래 덧붙임
+- DB 시험: 다른 세션들(전체 pytest · `test_terminal.py`)이 끝난 것을 PID로 본 뒤 혼자 전체를 돌림 — **pytest 630 통과 · 1 건너뜀**(`test_stage2_db`의 `injection` 역할 조회 포함). 앞의 `test_pipeline` 교착은 동시 실행 탓이었다
 
 ## 되돌리는 법
 
