@@ -30,6 +30,9 @@ const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'
 // 단계 칸 · 가구 · 화살표 · 배송 담당을 그리지 않는다. 이름표는 "<테마의 출하 이름> 없음"(출하장 · 봉인실 · 배포 파이프)
 const NO_SHIP = new Set(['ronanlab-infra']);
 const KEEP_KEY = 'foremanKeepView';      // 테마를 바꿀 때 보던 화면 · 고른 세션(sessionStorage, 11-11)
+// 글자 색(11-11 사용자) — 테마마다 다르게 하지 않는다(글씨체만 테마 것). 캐릭터 이름은 움직이고 먼저 찾는 것이라 노랑,
+// 방 이름(감독실 이름표 포함)은 자리가 고정이라 흰색으로 가라앉힌다. 바탕은 둘 다 검정. 전엔 방 이름 = 테마 팀장 색(11-10)
+const NAME_INK = '#ffd84a', ROOM_LABEL_INK = '#ffffff', INK_BG = '#000000d9';
 const RATE_WIN = 10 * 60 * 1000;          // 토큰 속도 창 — 최근 10분
 const SPEED = 3.2;                         // 걷는 속도(타일/초)
 // 역할 고정 자리(11-09 관리자 · 11-10 디자이너) — 테마 layout.zones.<역할>.seats에 서고, 일할 때도 그 자리. 작업 책상 수 · "+N"에 들지 않는다
@@ -2116,7 +2119,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // ── 구역 이름표(화면 좌표 — 줌과 상관없이 작고 선명하게) ─────
   const TAG0 = (theme.tags && theme.tags.style) || { bg: '#000000cc', fg: '#ffffff', border: '#ffffff55', font: '600 14px system-ui, sans-serif', kind: 'sign' };
   // font는 읽을 때마다 글씨 배율을 곱한다(11-09) — 이름표 그리기 · 폭 재기 · 자리 점검이 모두 같은 크기를 본다
-  const TAG = { ...TAG0, get font() { return sizeFont(TAG0.font); } };
+  // 감독실 이름표(drawTagBox)도 방 이름 — 색은 세 테마 같게(흰 글씨 · 검정 판, 11-11), 꾸밈(빗금 · 띠 · 말림)과 글씨체는 테마 것
+  const TAG = { ...TAG0, bg: INK_BG, fg: ROOM_LABEL_INK, border: '#ffffff66', get font() { return sizeFont(TAG0.font); } };
   themeTips(theme.tags && theme.tags.style);     // 툴팁 색 · 글꼴도 이름표를 따른다(양피지 · 사인판 · 안전 표지판). 구조 · 크기 · 지연은 같다
   attachDomTips();
   // (wx, wy) 월드 타일 → 그 자리에 이름표 하나. big: 감독실 이름처럼 조금 크게. dot: 앞에 붙는 상태 색
@@ -2150,7 +2154,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     } else {                                                         // 양피지 — 테두리 + 모서리 말림
       ctx.strokeStyle = TAG.border; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
       ctx.fillStyle = TAG.border; ctx.beginPath(); ctx.moveTo(x + w - 5, y + h); ctx.lineTo(x + w, y + h - 5); ctx.lineTo(x + w, y + h); ctx.fill();
-      ctx.fillStyle = '#c9b282'; ctx.fillRect(x + 1, y + h - 2, w - 7, 1);
+      ctx.fillStyle = TAG.border; ctx.fillRect(x + 1, y + h - 2, w - 7, 1);
     }
     let cx = x + padL;
     if (dot) { ctx.fillStyle = dot; ctx.beginPath(); ctx.arc(cx + 3, y + h / 2, 3, 0, Math.PI * 2); ctx.fill(); cx += 9; }
@@ -2188,7 +2192,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   const tipOf = (r) => r && `<div class="tip-b">${r.what}</div><div>${r.desc}</div>`;
   let HITS = [];                     // 이번 프레임에 그린 이름표 자리(화면 좌표) — 마우스를 올리면 설명
   // 방 이름표 그리기(11-10 모눈) — 방 왼쪽 위 칸 고정(roomLabels · labelBox), 글씨 · 칸은 방 배율(cam.s)을 따른다.
-  // 글자색은 테마의 팀장(교장 · 소장) 색(ROOM_INK — 하드코딩하지 않는다), 바탕은 어두운 판 — 어느 바닥에서도 읽힌다. 하는 일은 호버
+  // 글자색은 세 테마 같은 흰색(ROOM_LABEL_INK, 11-11 사용자 — 전엔 테마 팀장 색), 바탕은 검정 판 — 어느 바닥에서도 읽힌다. 하는 일은 호버
   function labelTip(l) {
     if (l.stage) {
       const st = l.st;
@@ -2207,12 +2211,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const [bx, by, bw, bh] = labelBox(l, s);
       const [x0, y0] = toScreen((r.x + bx) * T, (r.y + by) * T);
       const x = Math.round(x0), y = Math.round(y0), w = Math.round(bw * T * s), h = Math.round(bh * T * s);
-      ctx.fillStyle = '#000000b8'; ctx.fillRect(x, y, w, h);
-      ctx.strokeStyle = ROOM_INK; ctx.globalAlpha = 0.5; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); ctx.globalAlpha = 1;
+      ctx.fillStyle = INK_BG; ctx.fillRect(x, y, w, h);
       let cx = x + pad;
       if (l.dot) { ctx.fillStyle = l.dot; ctx.beginPath(); ctx.arc(cx + fs * 0.4, y + h / 2, fs * 0.3, 0, Math.PI * 2); ctx.fill(); cx += fs; }
       ctx.font = labelFont(s); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = l.st === 'failed' ? P.bad : ROOM_INK;
+      ctx.fillStyle = l.st === 'failed' ? P.bad : ROOM_LABEL_INK;
       ctx.fillText(l.text, cx, y + h / 2 + 0.5);
       HITS.push({ x, y, w, h, zone: l.zone, tip: labelTip(l) });                       // overTags · 호버
       LABELS.push({ text: l.text, rect: [x, y, w, h], zone: l.zone });
@@ -2237,7 +2240,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 세션 캐릭터 · 쉬는 상주 코더 · 서기의 이름표는 역할만(11-09 사용자 — 제목이 들어가 "임시 · 세션 역할 관리자(man…"처럼 잘렸다).
   // 제목 · 세션 번호는 호버와 패널 머리줄에. 임시 일꾼이면 "임시"만 덧붙인다
   const roleNamed = (a) => a.kind === 'session' || a.kind === 'coder' || a.kind === 'scribe';
-  const roleName = (a) => roleTag(a.role) + (a.temp ? ' 임시' : '');
+  // 11-11 사용자: 대괄호 [ ]는 뺀다 — 이름은 노란 글씨(NAME_INK)라 이미 눈에 띈다. 패널 · 호버의 「[코더] 세션 N」은 그대로(roleTag)
+  const roleName = (a) => roleTag(a.role).replace(/^\[|\]$/g, '') + (a.temp ? ' 임시' : '');
   function markCrowd(as) {
     ctx.font = `${tpx(15)}px system-ui, sans-serif`;
     const bx = as.filter((a) => !(a.kind === 'mini' && a.key !== selected)).map((a) => {
@@ -2259,7 +2263,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const NH = tpx(15) + 3;                                  // 11-10 방 안은 방 배율(배율 3에서 15px · 18), 감독실은 글씨 배율
     ctx.font = `${tpx(15)}px system-ui, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    const lines = [[text, a.kind === 'foreman' ? P.warn : P.label]];
+    const lines = [[text, NAME_INK]];
     const n = a.kind === 'session' && a.s ? a.s.subagents_running || 0 : 0;
     // 11-10 사용자(받은 할 일 #9) — 캐릭터 아래는 수만("뒤에서 도는 일 2"). 무슨 일인지는 호버(세션 호버에 하나씩 적는다).
     // 전에는 "· 세 테마 × 세 폭 × 다섯 화면 다시…"처럼 설명이 붙어 이름표가 길게 깔렸다
@@ -2315,7 +2319,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     best.cx = Math.max(mw / 2 + 2, Math.min(W - mw / 2 - 2, best.cx));   // 화면 밖으로 잘리지 않게(11-09 — 1024에서 방 밖 「출하 반장」)
     best.ls.forEach(([t, col], i) => {
       const y = best.top + i * (NH + 1);
-      ctx.fillStyle = '#000a'; ctx.fillRect(best.cx - ws[i] / 2, y, ws[i], NH);
+      ctx.fillStyle = INK_BG; ctx.fillRect(best.cx - ws[i] / 2, y, ws[i], NH);
       if (a.temp && i === 0) {                                   // 임시 일꾼 — 점선 테두리(11-09)
         ctx.save(); ctx.setLineDash([3, 2]); ctx.strokeStyle = P.label; ctx.lineWidth = 1;
         ctx.strokeRect(Math.round(best.cx - ws[i] / 2) + 0.5, y + 0.5, Math.round(ws[i]) - 1, NH - 1); ctx.restore();
