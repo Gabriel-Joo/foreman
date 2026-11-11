@@ -34,6 +34,13 @@ def key_of(s: str | None) -> str:
     return re.sub(r"\s+", " ", (s or "").strip())[:60]
 
 
+def label_of(project: str | None, title: Any, role: str | None, worktree_path: str | None) -> str:
+    """받는 쪽 이름 — 원본 폴더의 관리자면 「<프로젝트> 관리자」(11-11 프로젝트별 관리자 주소, bridge/managers.py)."""
+    if role == "manager" and not worktree_path:
+        return f"{project or '?'} 관리자 · {title}"
+    return f"{project or '?'} · {title}"
+
+
 def pick(send_ts: datetime, msg: str, enqueues: list[tuple], consumes: dict[int, list[tuple]]) -> dict[str, Any]:
     """보낸 것 하나의 상태. enqueues = [(event_id, session_id, ts, content)], consumes = 세션 → [(ts, op, content)] 시각순."""
     k = key_of(msg)
@@ -78,11 +85,11 @@ async def statuses(c: Any, sends: list[tuple[int, datetime, str]]) -> dict[int, 
             consumes.setdefault(sid, []).append((ts, op, content))
     labels: dict[int, str] = {}
     if sids:
-        for sid, title, proj in (await c.execute(text(
-                f"SELECT cs.id, COALESCE(cs.custom_title, cs.title), p.name FROM character_session cs "
+        for sid, title, proj, role, wt in (await c.execute(text(
+                f"SELECT cs.id, COALESCE(cs.custom_title, cs.title), p.name, cs.role, cs.worktree_path FROM character_session cs "
                 f"JOIN `character` ch ON ch.id = cs.character_id LEFT JOIN project p ON p.id = ch.project_id "
                 f"WHERE cs.id IN {in_ids}"))).all():
-            labels[sid] = f"{proj or '?'} · {title or sid}"
+            labels[sid] = label_of(proj, title or sid, role, wt)
     out = {}
     for eid, ts, msg in sends:
         st = pick(ts, msg, enq, consumes)
