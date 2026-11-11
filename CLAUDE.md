@@ -31,7 +31,7 @@
   2. 사용자가 시킨 설정 값(`config/*.toml`) · 기록(`log/`) · README 「나중에 할 일」 줄
   3. 주석 · 오타처럼 동작이 바뀌지 않는 한두 줄
   - 새 기능 · 화면 · 브리지 동작 · 마이그레이션 · 여러 파일 · 시험을 새로 써야 하는 일은 작아도 worktree로(작으면 sonnet). 11-09 다른 저장소 막음 · 할 일 받는 칸은 메인이 짰지만 이 기준으로는 worktree 몫이었다
-- git 원격은 GitHub(`Gabriel-Joo/foreman`)만이다. **FOREMAN의 CI/CD는 GitLab · Jenkins에 태우지 않는다**(11-03 결정, README 3.12)
+- git 원격은 GitHub(`Gabriel-Joo/foreman`) 하나이고, **저장소(push)로만 쓴다 — CI는 없다**(`.github/workflows` 없음, 11-11 확인. GitHub Actions 시험은 정해 두고 아직 안 만듦 — README 「나중에 할 일」). 시험은 관리자가 합친 뒤 손으로(pytest · node), 배포는 systemd 유닛 재시작(사람이, 승인 대기 0 뒤). **GitLab · Jenkins에 태우지 않는다** — 그쪽은 이미지를 만들어 Harbor로 보내는 용도인데 FOREMAN에는 이미지가 없다(작업 폴더에서 바로 돈다)(11-03 결정, README 3.12)
 - **작업 트리에 내가 만들지 않은 변경이 있으면 건드리지 않고 사용자에게 알린다**(다른 세션이 같은 저장소에서 일할 수 있다). 커밋할 때는 내가 고친 파일만 `git add`
 - **시험으로 띄운 세션은 끝낸 뒤 지우지 않고 `hidden_reason='test'`로 숨긴다**(0018 `hidden_at`)
 - **화면에 뜨는 글(툴팁 · 안내 · 확인 창 · 결과 · 서버 거부 사유)은 "~습니다"로**, 툴팁은 "무엇 — 한 줄 설명"으로 짧게(11-05 사용자 지시). 화면 말("디스패처" 안 씀 등) · 툴팁 글 약속은 `docs/style_guide.md` 「4-1. 화면 글」
