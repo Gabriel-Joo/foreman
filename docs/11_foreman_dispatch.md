@@ -104,7 +104,7 @@
 ### 9-1. 띄우는 길 — 하나로
 
 - 관리자가 세션을 띄울 때도 **`POST /api/foreman/plan`(짧은 요청) → 계획을 받아 `first_prompt`를 지시문으로 바꿔 `POST /api/foreman/start`**로 한다. 바꾼 칸은 `dispatch.edited`에 남는다 — 계획 카드에서 사람이 칸을 고치는 것과 같은 경로
-- **관리자도 `POST /api/spawn`을 직접 쓰지 않는다.** `/api/spawn`은 `dispatch` 기록을 남기지 않는다 — 11-09 18:25 서기 세션을 관리자가 `/api/spawn`으로 띄워 기록이 없었다. 이것은 약속이다(코드가 막지는 않는다). [＋ 세션] 「직접 고르기」는 사람이 쓰는 길로 그대로 남는다
+- **관리자도 `POST /api/spawn`을 직접 쓰지 않는다.** `/api/spawn`은 `dispatch` 기록을 남기지 않았다 — 11-09 18:25 서기 세션을 관리자가 `/api/spawn`으로 띄워 기록이 없었다. 이것은 약속이다(코드가 막지는 않는다). 11-11부터는 `/api/spawn` · 새 세션으로 옮기기도 `record_direct`로 `dispatch`(origin `spawn` · `move`)와 `dispatch_session`에 한 줄을 남긴다(`bridge/api/handoff.py` → `bridge/api/foreman.py`) — 약속을 어겨도 기록은 남지만, 계획을 거치지 않은 띄우기라는 것은 그대로다. [＋ 세션] 「직접 고르기」는 사람이 쓰는 길로 그대로 남는다
 - 첫 적용: 코더 상주 일 — dispatch #152(경고 · 질문 없음, 확신도 0.75) → 첫 글을 지시문으로 바꿔 시작 → 세션 233(worktree `foreman-2`). 관리자 역할 화면 · API — dispatch #158 → 세션 242(`foreman-3`, opus)
 - 받은 할 일에서 띄우면 `start`에 `inbox_id`를 같이 보내 뜬 세션이 그 할 일을 가져간다 → `docs/12_scribe.md` 「11. 받는 함 [＋ 할 일]」
 
@@ -120,6 +120,7 @@
 - 11-09 17:10 교장은 알림 셋이 이미 있다는 것을 이유 칸에 적었지만 `warnings` · `questions`가 비어 카드에서 눈에 띄지 않았다. 교장은 문서로 읽었고, 관리자는 코드 · 기록 · 브리지 기동 시각으로 실제로 도는지 확인했다
 - 교장 도구(Read · Grep · Glob)로는 못 보는 것: 프로세스 · tmux 화면(끝내기 확인 창 등), worktree 브랜치 · 커밋 안 한 변경, 브리지를 언제 다시 띄웠는지, 시험 결과, 노트 · log에 적히기 전의 대화 결정
 - 그래서 할 일 넷(README 「나중에 할 일」): ① 교장이 한 번에 여러 세션 계획(먼저) ② 읽기 전용 확인 도구 ③ 교장의 발견을 경고 · 질문 칸에 ④ 모든 띄우기가 dispatch를 남김
+  - **11-11: ① · ④는 됐다**(아래 「11.」). ② · ③은 README에 남아 있다
 
 ## 10. 역할 관리자(manager) (11-09, 세션 242) [log:manager_role_20261109.md]
 
@@ -128,6 +129,7 @@
 - 교장 계획 프롬프트(`bridge/foreman.py`): "상주 세션이 아니다. 사람이 그런 일을 콕 집어 맡길 때만 고른다(코드를 고치는 일이면 coder)". 모델 기본 `opus`(`config/models.toml`)
 - 역할 목록 다섯 곳을 맞춘다 — 바꾸면 모두: `bridge/handoff.py` `ROLE_KO` · `bridge/foreman.py` `ROLES` · `bridge/api/handoff.py` `SessionRole` · `bridge/wake.py` `ROLE_KO` · `config/models.toml [defaults]`. 시험 `tests/test_session_role.py`가 일치를 본다. 화면 목록 `bridge/static/js/modelpick.js` `ROLE_PICK`에도 관리자 · 서기(서기가 빠져 있어 교장의 서기 계획이 코더로 떴을 빈틈을 같이 막음)
 - 인계(새 세션으로 옮기기)는 역할을 물려준다 — 관리자 → 관리자
+- **관리자는 늘 원본 폴더, 하나**(11-11 아홉): `spawn_new`가 관리자를 worktree로 띄우는 것을 거절하고 `will_worktree(role="manager")`는 False, 계획 check도 관리자 세션의 따로 작업 기본값을 끈다(`bridge/handoff.py` · `bridge/foreman.py`). 원본 폴더에 관리자가 이미 살아 있으면 둘째를 거절한다(`manager_conflict`) [log:merge_misplaced_admin_20261111.md]
 - **역할 바꾸기 `PUT /api/sessions/{sid}/role {role}`**: 허용 값만(`foreman` · 모르는 값 · null은 422), 없는 세션 404, 거부 409 `{refused}`. `character_session.role`과 **그 역할 캐릭터도 같이 옮긴다**(원본 폴더 "관리자", worktree "관리자 <이름>") — 역할만 바꾸면 아래 줄이 "코더 foreman-3 · 관리자"처럼 엇갈린다. `session_action` `role` "옛 → 새 캐릭터 N". 같은 역할이면 아무것도 쓰지 않는다
   - 11-10 관리자 세션 230을 이 API로 manager로 바꿨다(캐릭터 22) [log:merge_237_242_20261110.md]
 - 화면에서 바꾸기(패널 머리줄 배지) · 자리 · 이름표는 `docs/10_office_design.md` 「관리자 자리 · 이름표 · 머리줄」
@@ -139,3 +141,24 @@
 - 관리자와 같은 다섯 곳 + `ROLE_PICK` · `render.js` `ROLE_LABEL` · `SESSION_ROLES`에 넣었다. 역할 바꾸기 API · 배지 고르기 칸 · 인계 물려주기도 같은 규칙(원본 폴더 "디자이너", worktree "디자이너 <이름>"). 모델 기본 `opus`(코더와 같은 까닭 — 사진을 보고 자리 · 겹침을 판단, `office.js`가 크다)
 - 교장 계획 프롬프트: 화면 일은 designer, 파이썬 · 브리지 · DB는 coder. **둘이 걸치면**(새 API + 그 화면) 화면이 API에 기대니 coder를 먼저 내고 first_prompt에 "화면은 다음 디자이너 세션 몫 — API 응답 모양을 log에 적고 끝낸다", reasons에 나눈 까닭. 화면 쪽이 몇 줄뿐이면 coder 하나로. 계획은 한 번에 하나라 둘을 같이 내지는 못한다
 - 자리 · 이름표는 `docs/10_office_design.md` 「관리자 자리 · 이름표 · 머리줄」의 디자이너 줄
+
+## 11. 11-11에 더한 것 — 여러 세션 · 관리자에게 넘기기 · 프로젝트별 관리자 · 토큰 범위 · 역할 권한
+
+**켜져 있는 것** [log:coder_foreman_multi_20261111.md]
+- **한 계획에 여러 세션**(할 일 ①, 0030): 계획 JSON에 `sessions[]`(최대 `MAX_SESSIONS = 6`, `bridge/foreman.py`) — 세션마다 `role · model · title · first_prompt · read_only · worktree · files(맡을 파일) · merge_order · on`. `sessions`가 없는 옛 계획은 위쪽 칸으로 하나를 만든다(`sessions_of`). [시작]은 켠 세션을 차례로 `spawn_new` — 둘째부터 worktree 기본 켬(관리자는 예외), 첫 세션이 못 뜨면 거절, 둘째부터 못 뜨면 띄운 것은 두고 화면 note + 텔레그램 한 번. 세션마다 한 줄이 `dispatch_session`(0030)에 `started · failed · off`로 남는다. 계획 카드(`foremanchat.js`)는 세션 칸이 여럿이고 [자세히]에 「맡을 파일」 · 「합칠 순서」. `GET /api/foreman/merge-order`가 합칠 순서를 알려 준다
+- **맡을 파일 겹침 경고**: 새로 띄울 세션의 맡을 파일이 이미 도는 세션이 고치는 파일과 겹치면 계획 경고에 뜬다(11-11 282 때 286 계획이 `tests/test_terminal.py`로 처음 잡았다)
+- **받은 할 일에서 바로**(받은 할 일 #8): [＋ 할 일] 창에서 새로인 줄을 골라 [고른 것으로 계획 받기] → 교장 계획 창이 열려 바로 계획을 받는다. 번호는 `inbox_ids`로 [이대로 시작]에 실려 뜬 세션이 가져간다(`PUT /api/todo/{id}`로 그 자리에서 고치기, `bridge/api/todo.py`) [log:coder_c_wave2_20261111.md]
+
+**설정 스위치 뒤에 꺼져 있는 것(11-11 286, 합친 뒤에도 하나도 켜지 않음)** [log:coder_c_wave2_20261111.md] [log:merge_c_wave2_20261111.md]
+
+| 기능 | 스위치(커밋된 값) | 하는 일 |
+|---|---|---|
+| 프로젝트 토큰 범위 | `config/tokens.toml [project_tokens] enabled = false` | 관리 토큰(`FOREMAN_API_TOKEN`)은 그대로 모든 API. 프로젝트 토큰(`.env.project_tokens`의 `FOREMAN_TOKEN_<프로젝트>`)은 그 프로젝트 세션 · 방 API만 열고 나머지는 403 + 사유. 같은 유닉스 사용자 세션은 `.env.bridge`도 읽을 수 있어 **벽이 아니라 잘못 부르는 것을 막는 칸막이**다(`bridge/scopetoken.py` · `bridge/api/auth.py`) |
+| 프로젝트별 관리자 | `config/managers.toml [managers] enabled = false` | `GET /api/managers`(프로젝트마다 관리자 또는 「관리자가 없습니다」 — 꺼져 있어도 읽힘), `POST /api/managers/{project}/ask`(그 관리자 입력 칸에 부탁 — 꺼져 있으면 503). 관리자가 없거나 못 넣으면 텔레그램 한 번 + `delivered:false, reason`(`bridge/managers.py`) |
+| 계획을 관리자에게 | `config/managers.toml [handover] enabled = false` (`wait_min = 15`) | 계획 카드 [관리자에게 보내기] — 고친 계획을 저장(`dispatch.handed_to · handed_at`, 0031)하고 그 프로젝트 관리자 입력 칸에 계획 요약 + 시작 명령(`POST /api/foreman/start {"dispatch_id": N, "use_saved": true}`)을 넣는다. 못 넣으면 되돌리고 카드에 사유 + 텔레그램. 넘기고 15분 안에 안 띄우면 텔레그램 한 번(`bridge/handover.py`). 꺼져 있으면 단추가 없고 [이대로 시작]은 그대로 |
+| 역할 권한 | `config/roles.toml [roles] mode = "observe"` | **관찰이 켜져 있다 — 막지 않고 기록만.** PreToolUse에서 `worktree-push` · `bash-file-edit` · `manager-code` · `scribe-code`를 판정해 `approval_req` 이벤트 payload에 `role_rule` · `role_reason`을 남긴다. `enforce`면 거부 + 사유, `off`면 보지 않음. 기본 `projects = ["foreman"]`(`bridge/roleguard.py`). 해석기 안 쓰기(`python -c "open(…,'w')"`)는 못 막는다 |
+| 새 세션으로 옮기기 한 흐름 | `config/handoff.toml [move] one_flow = false` | 잊은 것 찾기 → 문서 후보 → (사람이 문서에 넣을 것 고르기) → 문서에 쓰기 → 요약 → 새 세션 → 옛 세션 끝내기를 단추 하나로(`bridge/static/js/moveflow.js`). 요약 확인 창 없음, 넘어간 글은 새 세션 패널 「넘겨받은 글」에 보인다. 끄면 옛 흐름(요약 → 확인 → 새 세션 → 옛 세션 끝내기). 화면이 다음에 그릴 때 읽어 브리지 재시작이 필요 없다 |
+
+- **켜는 법**(기록 `log/coder_c_wave2_20261111.md`에 있는 것만): 토큰 · 관리자 — ① `python -m bridge.scopetoken new <프로젝트>`(값은 화면에 안 찍히고 파일에만) ② `tokens.toml enabled = true` · `managers.toml [managers] enabled = true` ③ 그 저장소 CLAUDE.md에 관리자 규칙 줄(초안은 같은 log, 그 저장소 세션에 부탁) ④ 관리자 세션을 원본 폴더에 띄움(역할 manager) ⑤ 필요하면 `roles.toml projects` · `handoff.toml [merge_prep] projects`에 그 프로젝트를 더함. 계획 넘기기 · 옮기기 한 흐름은 `[handover] enabled = true` · `[move] one_flow = true`로 켜 보고 시험 계획 · 시험 세션 하나로 15분 알림 · ①~⑦을 확인한다(끝나면 시험 세션은 `hidden_reason='test'`). 역할 권한은 하루 관찰 뒤 규칙별 걸린 수를 보고 사용자가 `enforce`로 올린다(그 쿼리는 같은 log 「합친 뒤 관리자가 할 일」 2). 바꾼 뒤에는 모두 브리지를 다시 띄운다(`[move]`만 제외)
+- **기능 사이에 무엇을 먼저 켤지, enforce로 켠 뒤 무엇을 볼지는 정해지지 않았다**(기록에도 없다 — [log:merge_c_wave2_20261111.md] 「켜는 순서가 기록에 있는가」)
+- 다른 저장소에 관리자를 실제로 띄우지 않았다 — `[merge_prep] projects`도 `["foreman"]` 그대로. 넓히는 것은 그 저장소 CLAUDE.md 줄과 함께 사용자가 시킬 때
