@@ -8,7 +8,7 @@
 // 달라져 이름표 자리 고르기가 복잡해졌다. 끌기를 막고 두 값만). 손잡이는 두 번 누르면 오간다.
 
 import { approvalCard, handleApprovalClick, handleApprovalInput, restoreNotes, apprPlace, apprFoldLine, apprPeekLine, keep, sessionKv, modelChip, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
-         sessionName, sessionSub, sessionIds, projectLabel, roleBadge, panelRole, ROLE_LABEL, SESSION_ROLES, ROLE_UNKNOWN_TIP, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed } from './render.js';
+         sessionName, sessionSub, sessionIds, projectLabel, roleBadge, panelRole, ROLE_LABEL, SESSION_ROLES, ROLE_UNKNOWN_TIP, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed, stallChip } from './render.js';
 import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
 import { mountHandoff, FLOW_TIP } from './handoff.js';
@@ -582,7 +582,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     // 끝난 세션(11-11, UI 불만 (나)) — 옛 보고가 새 일처럼 읽히지 않게 어떻게 · 언제 끝났는지를 맨 앞에
     const ended = s.state === 'DORMANT' && s.ended
       ? `<span class="muted" title="끝난 세션 — 이 세션은 ${esc(s.ended.at ? ago(s.ended.at) : '')} ${esc(s.ended.label)}. 아래 대화는 지난 일입니다.">끝난 세션 · ${esc(s.ended.label)}${s.ended.at ? ` · ${esc(ago(s.ended.at))}` : ''}</span> · ` : '';
-    put('pMeta', 'meta', `${ended}${stateBadge(s)} ${asksOff}${ctxChip(s)}<span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
+    put('pMeta', 'meta', `${ended}${stateBadge(s)} ${asksOff}${stallChip(s)}${ctxChip(s)}<span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
       · <span class="muted" title="오늘 출력 토큰 — 이 세션이 오늘 쓴 글의 양입니다.">오늘 출력 토큰 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn" title="끝났는지 모름 — 작업이 끝났다는 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.">⚠ 끝났는지 모름</span>' : ''}`);
     $('pMeta').title = [sessionSub(s), sessionIds(s), projectLabel(st, s.project), s.cwd || ''].filter(Boolean).join(' · ');
     drawSwitch(s);                   // 먼저 — 떠 있으면 쌓인 대화 띠는 숨긴다(같은 버튼, 까닭은 이쪽이 분명)

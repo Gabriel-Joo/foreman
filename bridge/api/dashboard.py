@@ -378,6 +378,8 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "last_ts": _iso(last_ts), "attached_at": _iso(attached), "detached_at": _iso(detached),
             # 끝난 세션(11-11, UI 불만 (나)) — 어떻게 끝났는지. 화면이 「끝남 — 합쳤습니다」로 갈라 옛 보고를 지난 일로 보인다
             "ended": ended_info(done.get(sid), detached) if not ls else None,
+            # 멈춤(11-11, bridge/stallwatch.py) — 작업 중 끊김 · 응답 없음 · 맴돎 · 끝내기 확인 창 · 긴 작업. 1분마다 잰 마지막 값
+            "stall": (stall.snapshot.get(sid) if (stall := getattr(request.app.state, "stallwatch", None)) else None) or None,
         })
     for name, ss_ in projects.items():
         mark_crew(ss_, name)

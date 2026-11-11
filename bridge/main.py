@@ -82,7 +82,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.compact_rules = load_compact_rules(s.notify_config)   # 대시보드 압축 표시 기준(적재가 꺼져 있어도)
         app.state.terminal = None
         app.state.ingest_monitor = None
-        watch_task = state_task = health_task = denied_task = schema_task = None
+        watch_task = state_task = health_task = denied_task = schema_task = stall_task = None
+        app.state.stallwatch = None
         if s.terminal_enabled:
             # 7단계 터미널 패널 — ttyd(UNIX 소켓) + tmux foreman-shell. 실패해도 브리지는 뜬다
             term = TerminalManager(engine, s, pipeline, Masker(), publish=pipeline.publish,
@@ -184,6 +185,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 from bridge.human_wait import DeniedWatch
                 denied_task = asyncio.create_task(DeniedWatch(engine, app.state.notifier, s.sessions_dir).run(),
                                                   name="foreman-denied-watch")
+            # 11-11 — 세션이 살아 있는지 · 멈췄는지(작업 중 끊김 · 응답 없음 · 맴돎 · 끝내기 확인 창, bridge/stallwatch.py).
+            # 판정은 화면(/api/dashboard stall)에도 — 알림기가 없어도 잰다
+            from bridge.stallwatch import StallWatch
+            app.state.stallwatch = StallWatch(engine, app.state.notifier, s.sessions_dir)
+            stall_task = asyncio.create_task(app.state.stallwatch.run(), name="foreman-stall-watch")
         # 8단계 — CI/CD 인과 체인: 로컬 git 폴링 · 웹훅 · 인프라 캐릭터 생존. 웹훅 전용 포트(VM 망 쪽)도 여기서 띄운다
         app.state.pipeline_mgr = None
         hook_server = hook_task = None
@@ -368,7 +374,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await app.state.notifier.stop()
             if app.state.terminal:
                 await app.state.terminal.stop()   # ttyd만 내린다 — tmux 셸은 남는다
-            for t in (watch_task, state_task, health_task, usage_task, docsync_task, denied_task, schema_task):
+            for t in (watch_task, state_task, health_task, usage_task, docsync_task, denied_task, schema_task, stall_task):
                 if t:
                     t.cancel()
                     try:
