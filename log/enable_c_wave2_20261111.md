@@ -70,3 +70,11 @@
 | 265 멀쩡한가 | 띄우기 전후 · 부탁 뒤 화면 해시 같음(`c8ea16b2408e`), 265 대화 파일 시각 · 크기 같음(20:12:59 · 10059606), claude 프로세스 그대로 |
 
 - 대화 기록 · 확인 출력에 토큰 값 0(개수). 299 · 265에게 일은 시키지 않음
+
+## 인프라에도 합치기 카드(사용자 지시 — 인프라 CLAUDE.md 「파일 일은 worktree에서 커밋하고 관리자가 합친다」를 돌릴 길)
+
+- `config/handoff.toml [merge_prep] projects = ["foreman", "ronanlab-infra"]`. 코드로 다시 읽음(`mergeprep.load`): enabled True · projects 둘 · stage 1
+- 승인 대기 0 → 브리지 20:19:42(PID 1587728). 「합치기 준비 켬: 턴 끝마다 + 60초마다 훑기, 1단계」, 새 프로세스 오류 0(로그의 `terminal.py` 예외는 끄는 중인 옛 프로세스 1331051 — 열린 터미널 연결 닫기, 전과 같은 꼴)
+- `GET /api/merge-prep`: enabled · health ok · 카드 0(지금 인프라 · FOREMAN 모두 합칠 worktree 세션 없음)
+- **누구에게 가나**: 카드 받는 사람은 카드가 나온 저장소의 원본 폴더에 살아 있는 역할 manager(`mergeprep.py` 728 `manager_of(c.repo)`) — 저장소마다 갈린다. 지금 `GET /api/managers`: foreman → 276, ronanlab-infra → 299. 그래서 인프라 카드는 299, FOREMAN 카드는 276으로 섞이지 않는다(코드 · API 수준)
+- **실제 확인은 다음에**: 인프라에 worktree 세션이 생겨 커밋했을 때 ① 카드가 생기는지 ② 299 패널 · 299 입력 칸에 가는지 ③ FOREMAN 276 쪽에 섞이지 않는지를 본다. 265는 worktree 없이 main에서 일해 카드 대상이 아니다(카드는 worktree 브랜치에 합칠 커밋이 있을 때). 인프라 세션은 새로 띄우지 않음, 265 · 299에게 일 시키지 않음
