@@ -128,6 +128,11 @@
   .oside .input { padding:8px 12px; flex:none; }
   /* 11-10 rows=6가 정한 높이(약 9em)가 낮은 창 · 큰 글씨에서 입력 칸을 패널 밖으로 밀었다 — 높이를 CSS로 정한다(끌어서 키울 수 있다) */
   .oside .input textarea { resize:vertical; height:6.5em; min-height:2.6em; max-height:45dvh; }
+  /* 입력 칸 높이 끌기(11-11) — 입력 칸 위쪽 모서리에 가는 띠. 위로 끌면 커진다. 질문 카드가 칸을 대신하는 동안은 숨긴다 */
+  .oside .input .pgrip { height:10px; margin:-8px -12px 4px; cursor:ns-resize; touch-action:none; position:relative; }
+  .oside .input .pgrip::after { content:''; position:absolute; left:50%; top:3px; width:34px; height:4px; margin-left:-17px; border-radius:2px; background:var(--line, #3a4356); }
+  .oside .input .pgrip:hover::after, .oside .input .pgrip:focus-visible::after, .oside .input .pgrip.drag::after { background:var(--muted, #8a93a6); }
+  .oside.asking .input .pgrip { display:none; }
   /* 글씨 크기(11-08, js/uiscale.js) — 패널 안쪽 전체를 한 배율로. 폭은 그대로(안쪽 글이 그만큼 접힌다) */
   .oside-main { zoom:var(--ui-zoom); }
   @media (max-height: 860px) { .oside .input textarea { height:3.6em; } }
