@@ -190,6 +190,38 @@ async def asks_off_api(sid: int, request: Request) -> dict[str, Any]:
     return await asks_off(request.app.state.store.engine, sid)
 
 
+def visible_rows(rows: list[Any], live: Any, cut: datetime, done: dict[int, tuple[str, datetime]],
+                 isdir: Any = os.path.isdir) -> list[Any]:
+    """카드 · 목록에 보일 세션 — 살아 있거나, DORMANT_SHOW_H 안에 활동이 있었거나, 합치지 않은 worktree가 남은 것.
+    행: (id, cc, cwd, attached, detached, char, project, last_ts, …).
+
+    합치지 않은 worktree가 남은 세션은 오래돼도 남긴다(11-06) — 빠지면 그 세션 패널의 [합치기] · [버리기]에 닿을 길이 없다.
+    11-11(UI 불만 (나)): 그 폴더를 쓴 마지막 세션이고 합치기 · 버리기를 하지 않은 것만. 전엔 폴더만 봐서, 이름이 다시 쓰인
+    foreman · foreman-3의 끝난 세션 40여 개(11-05부터, 이미 합친 것)가 목록에 남아 옛 보고가 새 것처럼 보였다."""
+    wt_last: dict[str, int] = {}
+    for r in rows:
+        if r[2] and "/.worktrees/" in r[2]:
+            wt_last[r[2]] = max(wt_last.get(r[2], 0), r[0])
+
+    def keeps_wt(r: Any) -> bool:
+        return bool(r[2] and wt_last.get(r[2]) == r[0] and isdir(r[2])
+                    and (done.get(r[0]) or ("",))[0] not in ("wt-merge", "wt-discard"))
+
+    return [r for r in rows if (r[1] in live) or (r[7] and r[7] >= cut) or keeps_wt(r)]
+
+
+ENDED_LABEL = {"wt-merge": ("merged", "합쳤습니다"), "wt-discard": ("discarded", "버렸습니다"),
+               "rest": ("rested", "쉬게 했습니다 — 합치기 기다림"), "exit": ("exited", "끝냈습니다")}
+
+
+def ended_info(done: tuple[str, datetime] | None, detached: datetime | None) -> dict[str, Any]:
+    """끝난 세션의 끝난 꼴 — {kind, label, at}. FOREMAN이 끝낸 기록이 없으면 kind 'gone'(터미널에서 /exit · 프로세스 사라짐)."""
+    if done:
+        kind, label = ENDED_LABEL.get(done[0], ("exited", "끝냈습니다"))
+        return {"kind": kind, "label": label, "at": _iso(done[1])}
+    return {"kind": "gone", "label": "끝났습니다", "at": _iso(detached)}
+
+
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat(timespec="seconds") + "Z" if dt else None
 
@@ -217,9 +249,12 @@ async def dashboard(request: Request) -> dict[str, Any]:
             # 숨긴 세션(0018, 시험 등)은 카드 · 토큰 집계에서 뺀다 — 지우지는 않았다
             "LEFT JOIN project p ON p.id = ch.project_id WHERE cs.cc_session_id IS NOT NULL AND cs.type = 'agent' "
             "AND cs.hidden_at IS NULL"))).all()
-        # 합치지 않은 worktree가 남은 세션은 오래돼도 남긴다(11-06) — 빠지면 그 세션 패널의 [합치기] · [버리기]에 닿을 길이 없다
-        visible = [r for r in rows if (r[1] in live) or (r[7] and r[7] >= cut)
-                   or (r[2] and "/.worktrees/" in r[2] and os.path.isdir(r[2]))]
+        # 끝난 까닭(11-11, UI 불만 (나)) — 세션마다 마지막으로 성공한 합치기 · 버리기 · 쉬게 하기 · 끝내기
+        done = {r[0]: (r[1], r[2]) for r in (await c.execute(text(
+            "SELECT a.session_id, a.action, a.created_at FROM session_action a JOIN (SELECT session_id, MAX(id) mid "
+            "FROM session_action WHERE action IN ('wt-merge', 'wt-discard', 'rest', 'exit') AND ok GROUP BY session_id"
+            ") x ON x.mid = a.id"))).all()}
+        visible = visible_rows(rows, live, cut, done)
         ids = [r[0] for r in visible] or [0]
         in_ids = "(" + ",".join(str(int(i)) for i in ids) + ")"
         open_turns = {r[0]: r[1:] for r in (await c.execute(text(
@@ -328,6 +363,8 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "switch": switch.get(sid),
             "overlap": ovl.for_session(sid) if ovl else None,
             "last_ts": _iso(last_ts), "attached_at": _iso(attached), "detached_at": _iso(detached),
+            # 끝난 세션(11-11, UI 불만 (나)) — 어떻게 끝났는지. 화면이 「끝남 — 합쳤습니다」로 갈라 옛 보고를 지난 일로 보인다
+            "ended": ended_info(done.get(sid), detached) if not ls else None,
         })
     order = {"ACTIVE": 0, "SUSPENDED": 1, "IDLE": 2, "DORMANT": 3}
     out_projects = []
