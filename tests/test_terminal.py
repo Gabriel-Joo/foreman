@@ -19,6 +19,8 @@ from bridge.mask import Masker
 from bridge.terminal import (TerminalManager, cmd_matches, default_tmux_socket, extract_output, find_requests,
                              mask_shell, prefill_form, typed_text)
 
+from test_app_db import _bearer   # repr에 토큰을 내지 않는 헤더(11-11) — 실패한 assert가 값을 풀어 쓰지 않게
+
 MK = Masker(env_paths=[])
 
 
@@ -534,7 +536,7 @@ def test_proxy_cookie_origin_ws(shell, tmp_path):
         assert (s.terminal_socket.parent.stat().st_mode & 0o777) == 0o700
         assert c.get("/terminal/").status_code == 401
         assert c.post("/api/terminal/session").status_code == 401
-        r = c.post("/api/terminal/session", headers={"Authorization": f"Bearer {tok}"})
+        r = c.post("/api/terminal/session", headers=_bearer(tok))
         assert r.status_code == 200
         sc = r.headers["set-cookie"].lower()
         assert "httponly" in sc and "samesite=strict" in sc and "path=/terminal" in sc
@@ -558,10 +560,10 @@ def test_proxy_cookie_origin_ws(shell, tmp_path):
                 if b"via-ttyd-42" in seen:
                     break
             assert b"via-ttyd-42" in seen
-        st = c.get("/api/terminal", headers={"Authorization": f"Bearer {tok}"}).json()
+        st = c.get("/api/terminal", headers=_bearer(tok)).json()
         assert st["enabled"] and st["running"]
         # 11-10 보이는 창 읽기 — 창을 바꾸지 않고, 밖에서(다른 탭 · tmux 키) 바뀐 것을 따라간다
-        h = {"Authorization": f"Bearer {tok}"}
+        h = _bearer(tok)
         assert c.get("/api/terminal/window").status_code == 401
         w0 = c.post("/api/terminal/open", headers=h, json={"project": "runshoes"}).json()
         assert w0["project"] == "runshoes"
