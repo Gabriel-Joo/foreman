@@ -21,6 +21,8 @@ export function mountNewSession(store, { onCreated }) {
     </div>
     <label class="small muted" for="nsTitle">이름(비우면 CC가 붙이는 제목)</label>
     <input id="nsTitle" maxlength="255" placeholder="예: 펫퍼민트 검색 품질 점검">
+    <label class="small muted" for="nsFiles" title="맡을 파일 — 이 세션이 고칠 파일입니다. 살아 있는 세션 · 다른 계획과 겹치면 띄운 뒤 알려 드립니다.">맡을 파일(쉼표로 나눔 · 비워도 됩니다)</label>
+    <input id="nsFiles" maxlength="2000" placeholder="예: bridge/foreman.py, migrations/">
     <div class="ns-two">
       <label class="small muted">역할<select id="nsRole"></select></label>
       <label class="small muted" title="모델 — 띄울 때 쓸 모델입니다. 역할마다 기본값이 있고 바꿀 수 있습니다(config/models.toml).">모델<select id="nsModel"></select></label>
@@ -124,8 +126,10 @@ export function mountNewSession(store, { onCreated }) {
     busy = true; $('nsGo').disabled = true;
     msg(`새 세션을 띄우는 중입니다… (${home(cwd, opts.home)})`);
     try {
+      // 11-11 맡을 파일 — 띄우기 기록(dispatch)에 남고, 겹치면 r.note로 온다
+      const files = $('nsFiles').value.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
       const r = await api('POST', '/api/spawn', { cwd, summary_id, title: $('nsTitle').value.trim() || null,
-        role: $('nsRole').value, model: $('nsModel').value || null });
+        role: $('nsRole').value, model: $('nsModel').value || null, files: files.length ? files : null });
       if (r.session_id) {
         $('nsMsg').title = r.tmux ? `새 세션 — tmux 창 ${r.tmux}` : '';
         msg(`새 세션을 띄웠습니다${r.model ? `(${r.model})` : ''}.${summary_id ? (r.injected ? ' 요약을 넣었습니다.' : ' 요약은 넣지 못했습니다.') : ''}${r.note ? ' ' + r.note : ''}`, r.note ? 'warn' : 'ok');
@@ -143,6 +147,7 @@ export function mountNewSession(store, { onCreated }) {
   async function open(project) {
     msg('');
     $('nsTitle').value = '';
+    $('nsFiles').value = '';
     dlg.querySelector('input[value=fresh]').checked = true;
     $('nsSum').value = '';
     dlg.classList.add('on');
