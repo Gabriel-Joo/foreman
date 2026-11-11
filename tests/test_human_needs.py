@@ -92,3 +92,23 @@ async def test_asks_off_until_next_reply(env):
             assert "asks" in (await human_needs(c, f"({sid})"))[sid]  # 새 응답 — 다시 판정
     finally:
         await engine.dispose()
+
+
+def test_visible_rows_reused_worktree_name():
+    """11-11(UI 불만 (나)) — 이름이 다시 쓰인 worktree의 옛 끝난 세션은 목록에 남기지 않는다."""
+    from bridge.api.dashboard import ended_info, visible_rows
+    now = datetime(2026, 11, 11, 3, 0)
+    old = now - timedelta(days=3)
+    wt = "/r/.worktrees/foreman-3"
+    row = lambda i, cc, cwd, ts: (i, cc, cwd, None, None, "c", "foreman", ts)
+    rows = [row(188, "a", wt, old), row(258, "b", wt, old), row(270, "c", wt, old),     # 옛 세션 셋 — 합침 · 그냥 끝남
+            row(272, "d", wt, now),                                                    # 지금 세션
+            row(300, "e", "/r/.worktrees/x", old),                                     # 쉬게 한 뒤 남은 worktree(마지막 세션)
+            row(301, "f", "/r/.worktrees/y", old)]                                     # 마지막 세션인데 합침
+    done = {258: ("wt-merge", old), 270: ("wt-merge", old), 300: ("rest", old), 301: ("wt-merge", old)}
+    got = [r[0] for r in visible_rows(rows, {"d": 1}, now - timedelta(hours=48), done, isdir=lambda p: True)]
+    assert got == [272, 300]
+    # 지금 세션이 끝나도 그 폴더의 마지막이면 남는다
+    got = [r[0] for r in visible_rows(rows, {}, now + timedelta(days=5), done, isdir=lambda p: True)]
+    assert got == [272, 300]
+    assert ended_info(done[258], None)["kind"] == "merged" and ended_info(None, old)["kind"] == "gone"

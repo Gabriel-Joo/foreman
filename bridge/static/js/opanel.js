@@ -579,7 +579,10 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     // 답 기다림 끄기(11-11, 받은 할 일 #13) — 판정이 묻지 않는 끝맺음을 잡았을 때 사람이 끈다. 다음 응답이 오면 다시 판정
     const asksOff = s.asks && humanNeed(s)?.label === '답 기다림'
       ? `<button type="button" class="small" data-asksoff="${s.id}" title="답 안 해도 됨 — 이 응답은 답을 기다리는 것이 아니라고 표시합니다. 다음 응답이 오면 다시 판정합니다.">답 안 해도 됨</button> ` : '';
-    put('pMeta', 'meta', `${stateBadge(s)} ${asksOff}${ctxChip(s)}<span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
+    // 끝난 세션(11-11, UI 불만 (나)) — 옛 보고가 새 일처럼 읽히지 않게 어떻게 · 언제 끝났는지를 맨 앞에
+    const ended = s.state === 'DORMANT' && s.ended
+      ? `<span class="muted" title="끝난 세션 — 이 세션은 ${esc(s.ended.at ? ago(s.ended.at) : '')} ${esc(s.ended.label)}. 아래 대화는 지난 일입니다.">끝난 세션 · ${esc(s.ended.label)}${s.ended.at ? ` · ${esc(ago(s.ended.at))}` : ''}</span> · ` : '';
+    put('pMeta', 'meta', `${ended}${stateBadge(s)} ${asksOff}${ctxChip(s)}<span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
       · <span class="muted" title="오늘 출력 토큰 — 이 세션이 오늘 쓴 글의 양입니다.">오늘 출력 토큰 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn" title="끝났는지 모름 — 작업이 끝났다는 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.">⚠ 끝났는지 모름</span>' : ''}`);
     $('pMeta').title = [sessionSub(s), sessionIds(s), projectLabel(st, s.project), s.cwd || ''].filter(Boolean).join(' · ');
     drawSwitch(s);                   // 먼저 — 떠 있으면 쌓인 대화 띠는 숨긴다(같은 버튼, 까닭은 이쪽이 분명)
@@ -625,7 +628,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const btn = (s) => `
         <button class="plist" data-sid="${s.id}">${stateBadge(s)}
           ${roleBadge(s)}<span class="muted small" title="세션 ${s.id} — FOREMAN 세션 번호입니다.">${s.id}</span>
-          <b>${esc(oneLine(sessionName(s), 40))}</b>${s.activity && s.state === 'ACTIVE' ? ` <span class="muted">${esc(s.activity.tool)}</span>` : ''}${s.state === 'DORMANT' ? ` <span class="muted small">${ago(s.last_ts)}</span>` : ''}</button>`;
+          <b>${esc(oneLine(sessionName(s), 40))}</b>${s.activity && s.state === 'ACTIVE' ? ` <span class="muted">${esc(s.activity.tool)}</span>` : ''}${s.state === 'DORMANT' ? ` <span class="muted small">${s.ended && s.ended.kind !== 'gone' ? `${esc(s.ended.label.split(' — ')[0])} · ` : ''}${ago((s.ended && s.ended.at) || s.last_ts)}</span>` : ''}</button>`;
     for (const p of st.projects) {
       if (names && !names.includes(p.name)) continue;
       const all = p.sessionIds.map((id) => st.sessions.get(id)).filter(Boolean);
