@@ -70,6 +70,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         </div>
       </div>
       <form id="pForm" class="input" hidden>
+        <div id="pGrip" class="pgrip" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="입력 칸 높이" data-tip="높이 조절 — 위아래로 끌어 입력 칸 높이를 바꿉니다(키보드는 ↑ ↓). 더블클릭하면 기본 높이로 돌아갑니다."></div>
         <button type="button" id="pAskHint" class="ghost small pask" data-tip="입력 칸 — 세션이 질문의 답을 기다리는 동안은 질문 카드의 글 칸으로 보냅니다. 누르면 이 입력 칸을 펼칩니다.">질문에 답하는 중 — 글은 질문 카드의 글 칸으로 · 입력 칸 펼치기</button>
         <textarea id="pText" rows="6"placeholder="이 세션에 보낼 입력 (Ctrl+Enter로 보냅니다)"></textarea>
         <div class="row prow">
@@ -509,6 +510,55 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     $('pSend').disabled = false;
     if (r.ok) { $('pText').value = ''; const c = $('pConvo'); c.scrollTop = c.scrollHeight; }   // 보냈으면 내 글이 보이는 곳으로
   };
+  // 입력 칸 높이(11-11 사용자) — 위쪽 띠를 끌어 바꾼다. 기억은 localStorage(막혀도 기본 높이로 뜬다).
+  // 낮은 창에서 대화 칸이 사라지지 않게 대화 칸이 MIN_CONVO 아래로 줄지 않는 높이까지만(README 「대화 칸 30px」)
+  const INPUT_H_KEY = 'foremanInputH', MIN_INPUT_H = 40, MIN_CONVO = 80;
+  let inputHRestored = false;
+  const savedH = () => { try { return localStorage.getItem(INPUT_H_KEY) || ''; } catch { return ''; } };
+  // 패널 안쪽은 글씨 배율(zoom, uiscale.js)이 걸려 있다 — 높이는 배율 앞(CSS px)으로 다루고, 마우스 움직임(화면 px)은 배율로 나눈다
+  const textH = () => $('pText').offsetHeight;
+  const zoomF = () => { const e = $('pText'), r = e.getBoundingClientRect().height; return e.offsetHeight && r ? r / e.offsetHeight : 1; };
+  function maxInputH() {
+    const cv = $('pConvo'), vp = Math.round(window.innerHeight * 0.45 / zoomF());
+    if (!cv || $('pForm').hidden) return vp;
+    // 지금 대화 칸이 MIN_CONVO보다 작으면(원래 낮은 창) 지금 높이가 상한 — 더 키우지 못하고 줄이는 것만 된다
+    return Math.max(MIN_INPUT_H, Math.min(vp, Math.floor(textH() + cv.clientHeight - MIN_CONVO)));
+  }
+  function setInputH(px, save) {
+    const h = Math.round(Math.max(MIN_INPUT_H, Math.min(px, maxInputH())));
+    $('pText').style.height = `${h}px`;
+    if (save) { try { localStorage.setItem(INPUT_H_KEY, String(h)); } catch { /* 기억 못 해도 된다 */ } }
+    return h;
+  }
+  function resetInputH() { $('pText').style.height = ''; try { localStorage.removeItem(INPUT_H_KEY); } catch { /* 위와 같다 */ } }
+  function restoreInputH() {
+    let v = null;
+    try { v = Number(localStorage.getItem(INPUT_H_KEY)); } catch { /* 기본 높이 */ }
+    if (v > 0 && !$('pForm').hidden) setInputH(v, false);
+  }
+  (() => {
+    const g = $('pGrip');
+    let y0 = 0, h0 = 0, max0 = 0, z0 = 1;
+    g.addEventListener('pointerdown', (ev) => {
+      if (ev.button) return;
+      ev.preventDefault();
+      y0 = ev.clientY; h0 = textH(); max0 = maxInputH(); z0 = zoomF(); g.setPointerCapture(ev.pointerId); g.classList.add('drag');
+    });
+    g.addEventListener('pointermove', (ev) => {
+      if (!g.classList.contains('drag')) return;
+      $('pText').style.height = `${Math.round(Math.max(MIN_INPUT_H, Math.min(h0 + (y0 - ev.clientY) / z0, Math.max(max0, h0))))}px`;   // 위로 끌면 커진다
+    });
+    // 안 바뀐 클릭은 기억하지 않는다(원래 낮은 창에서 클릭만으로 높이가 저장 · 줄어들지 않게)
+    const end = () => { if (!g.classList.contains('drag')) return; g.classList.remove('drag'); if (textH() === h0) { if (!savedH()) $('pText').style.height = ''; } else setInputH(textH(), true); };
+    g.addEventListener('pointerup', end); g.addEventListener('pointercancel', end);
+    g.addEventListener('dblclick', resetInputH);
+    g.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
+      ev.preventDefault(); setInputH(textH() + (ev.key === 'ArrowUp' ? 24 : -24), true);
+    });
+    $('pText').addEventListener('mouseup', () => { if ($('pText').style.height && String(textH()) !== savedH()) setInputH(textH(), true); });   // 오른쪽 아래 모서리로 바꿔도 기억
+    window.addEventListener('resize', () => { if ($('pText').style.height && !$('pForm').hidden) setInputH(textH(), false); });
+  })();
   $('pText').addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); $('pForm').requestSubmit(); }
     if (ev.key === 'Escape') { ev.stopPropagation(); $('pText').blur(); }   // 입력 중 Esc는 감독실로 가지 않고 칸만 빠져나온다
@@ -550,6 +600,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   function sessionMode(on) {
     $('pSel').hidden = on; $('pTabs').hidden = !on; $('pMeta').hidden = !on; $('pForm').hidden = !on;
+    if (on && !inputHRestored) { inputHRestored = true; requestAnimationFrame(restoreInputH); }   // 처음 보일 때 한 번 — 기억한 높이로
     if (!on) $('pCmp').hidden = $('pOvl').hidden = $('pSw').hidden = true;
     if (on) setTab(tab);
     else { $('pTabConvo').hidden = $('pTabAct').hidden = $('pTabSess').hidden = true; el.classList.remove('tab-convo'); }
