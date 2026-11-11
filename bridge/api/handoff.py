@@ -254,9 +254,14 @@ async def spawn(sid: int, body: SpawnIn, request: Request) -> JSONResponse:
     m = _mgr(request)
     row = await _row(m, sid)
     try:
-        return JSONResponse(await m.spawn(row, body.summary_id, replace=body.replace, note=body.note))
+        r = await m.spawn(row, body.summary_id, replace=body.replace, note=body.note)
     except Refused as e:
         return _refused(e)
+    from bridge.api.foreman import record_direct     # 11-11 교장 ④ — 옮기기도 dispatch 기록(실패는 옮기기 기록 session_action에 이미 남는다)
+    if note := await record_direct(request, "move", row.cwd, {"role": None, "title": row.title},
+                                   r, None, f"(옮기기) 세션 {sid}에서", body.summary_id):
+        r["note"] = f"{r.get('note') or ''} {note}".strip()
+    return JSONResponse(r)
 
 
 class NewIn(BaseModel):
@@ -267,6 +272,8 @@ class NewIn(BaseModel):
     model: str | None = Field(default=None, max_length=40)   # config/models.toml id. None이면 역할(coder) 기본값
     role: SessionRole | None = None
     first_prompt: str | None = Field(default=None, max_length=20000)   # 첫 입력(12a 서기 일감 등). 인계 요약과 같이 줄 수 없다
+    files: list[str] | None = Field(default=None, max_length=40)       # 11-11 맡을 파일 — dispatch 기록 · 겹침 알림(교장 ④ · 일곱)
+    request: str | None = Field(default=None, max_length=4000)         # 11-11 무엇을 하려는지(기록용). 없으면 이름으로
 
 
 class WorktreeIn(BaseModel):
@@ -328,14 +335,20 @@ async def list_dirs(path: str = "~", hidden: bool = False) -> dict[str, Any]:
 
 @router.post("/spawn")
 async def spawn_new(body: NewIn, request: Request) -> JSONResponse:
+    from bridge.api.foreman import record_direct     # 11-11 교장 ④ — 계획 없이 띄워도 dispatch 기록
+    sess = {"role": body.role, "model": body.model, "title": body.title, "first_prompt": body.first_prompt,
+            "worktree": body.worktree, "files": body.files}
     try:
         if body.first_prompt and body.summary_id is not None:
             raise Refused("첫 입력과 옮기기용 요약은 같이 줄 수 없습니다 — 하나만 골라 주세요")
-        return JSONResponse(await _mgr(request).spawn_new(body.cwd, body.summary_id, body.title, worktree=body.worktree,
-                                                          role=body.role, model=body.model or None,
-                                                          first_prompt=body.first_prompt or None))
+        r = await _mgr(request).spawn_new(body.cwd, body.summary_id, body.title, worktree=body.worktree,
+                                          role=body.role, model=body.model or None, first_prompt=body.first_prompt or None)
     except Refused as e:
+        await record_direct(request, "spawn", body.cwd, sess, None, str(e), body.request, body.summary_id)
         return _refused(e)
+    if note := await record_direct(request, "spawn", body.cwd, sess, r, None, body.request, body.summary_id):
+        r["note"] = f"{r.get('note') or ''} {note}".strip()
+    return JSONResponse(r)
 
 
 @router.post("/sessions/{sid}/worktree")
