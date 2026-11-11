@@ -295,6 +295,15 @@ ENDED_LABEL = {"wt-merge": ("merged", "합쳤습니다"), "wt-discard": ("discar
                "rest": ("rested", "쉬게 했습니다 — 합치기 기다림"), "exit": ("exited", "끝냈습니다")}
 
 
+def merge_waits(mp: Any) -> dict[int, dict[str, Any]]:
+    """사람 승인을 기다리는 합치기 카드(status=ready)를 세션 id별로. 합치는 중 · 합침 · 충돌을 보낸 카드는 뺀다.
+    mergeprep.py는 고치지 않고 이미 있는 view()를 읽는다(GET /api/merge-prep과 같은 값)."""
+    if mp is None or not getattr(mp.cfg, "enabled", False):
+        return {}
+    return {c["sid"]: {"since": c["made_at"], "head8": c["head8"], "files": len(c["files"]), "asks": bool(c.get("asks"))}
+            for c in mp.view()["cards"] if c["status"] == "ready"}
+
+
 def ended_info(done: tuple[str, datetime] | None, detached: datetime | None) -> dict[str, Any]:
     """끝난 세션의 끝난 꼴 — {kind, label, at}. FOREMAN이 끝낸 기록이 없으면 kind 'gone'(터미널에서 /exit · 프로세스 사라짐)."""
     if done:
@@ -404,6 +413,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
         appr_rows = appr
     projects: dict[str | None, list[dict[str, Any]]] = {}
     ovl = getattr(request.app.state, "overlap", None)     # 겹침 알림(11-06, bridge/overlap.py) — 패널 띠
+    mwait = merge_waits(getattr(getattr(request.app.state, "handoff", None), "mergeprep", None))   # 합치기 카드 대기(11-11)
     for sid, cc, cwd, attached, detached, char, project, last_ts, title, role, custom, model_req in visible:
         ls = live.get(cc)
         cc_status = _status(s.sessions_dir, ls.pid) if ls else None
@@ -430,6 +440,8 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "asks": (needs.get(sid) or {}).get("asks") if cc_status != "busy" and ot is None else None,
             # 보고 옴(11-11) — 묻지 않고 끝난 응답을 사람이 아직 안 읽음. 일하는 중이면 내지 않는다
             "report": (needs.get(sid) or {}).get("report") if cc_status != "busy" and ot is None else None,
+            # 합치기 기다림(11-11) — 카드는 세션 탭 안에만 보여 사람이 몰랐다. 캐릭터 머리 위 · 승인 막대가 이걸 읽는다
+            "merge_wait": mwait.get(sid),
             "subagents_running": len(subs.get(sid, [])),
             "subagent_descs": [d for d in subs.get(sid, []) if d][:10],
             # 턴이 끝나도 도는 일 — 백그라운드 Bash · Monitor. 상태 값은 늘리지 않고(README 3.11) 화면이 "기다림"으로 그린다

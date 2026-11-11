@@ -63,8 +63,15 @@ export function needMark(s) {
   if (!s || s.state === 'DORMANT') return null;
   if (s.denied) return { text: '권한 거부', tone: 'warn', tip: humanNeed(s).tip };
   if (s.asks) return { text: '답 기다림', tone: 'warn', tip: humanNeed(s).tip };
+  // 겹치면(11-11): 권한 거부 > 답 기다림 > 합치기 기다림 > 보고 옴. 앞의 둘은 세션이 막혀 있어 지금 사람 손이 먼저 필요하고,
+  // 합치기는 사람이 눌러야 끝나는 일이라 읽기만 하면 되는 보고보다 위다(합치기 카드가 떠 있으면 그 응답은 보고이기도 하다)
+  if (s.merge_wait) return { text: '합치기 기다림', tone: 'merge', tip: '합치기 기다림 — 일을 마친 따로 작업의 합치기 카드가 승인을 기다립니다. 누르면 그 세션 패널의 「세션」 탭에서 합치거나 나중으로 미룹니다.' };
   if (s.report) return { text: '보고 옴', tone: 'ok', tip: '보고 옴 — 묻지 않고 일을 마친 응답이 왔습니다. 누르면 대화가 열리고, 읽으면 사라집니다.' };
   return null;
+}
+// 합치기 기다림 세션을 가장 오래된 카드부터(승인 막대 건수 · 누르면 열 세션)
+export function mergeWaits(sessions) {
+  return [...sessions].filter((s) => s && s.merge_wait).sort((a, b) => Date.parse(a.merge_wait.since) - Date.parse(b.merge_wait.since) || a.id - b.id);
 }
 // 멈춤(11-11, 브리지 bridge/stallwatch.py가 1분마다 잼) — 작업 중 끊김 · 응답 없음 · 맴돎 · 끝내기 확인 창 · 긴 작업
 export function stallChip(s) {
