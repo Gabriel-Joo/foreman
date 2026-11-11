@@ -1,0 +1,12 @@
+# 프로젝트 토큰(11-11, bridge/scopetoken.py) — 그 프로젝트 세션 · 방 API만 여는 토큰.
+# 관리 토큰(.env.bridge FOREMAN_API_TOKEN)은 그대로 모든 API를 연다.
+#
+# 켜기 순서(사용자가):
+#   1. .venv/bin/python -m bridge.scopetoken new runshoes   — 값은 화면에 안 찍히고 아래 file에만 쓴다
+#   2. enabled = true 로 바꾸고 브리지를 다시 띄운다(바꾼 값은 다시 띄워야 읽는다)
+#   3. 그 프로젝트 세션은 셸 변수로만 쓴다: T=$(sed -n 's/^FOREMAN_TOKEN_RUNSHOES=//p' ~/AI_programming/foreman/.env.project_tokens)
+# 끄기: enabled = false + 브리지 다시 띄우기 — 프로젝트 토큰은 401이 되고 관리 토큰은 그대로
+
+[project_tokens]
+enabled = false
+file = ".env.project_tokens"    # 저장소 맨 위 기준. .gitignore의 .env* 에 걸린다(권한 600)
