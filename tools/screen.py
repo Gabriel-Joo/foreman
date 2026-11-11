@@ -187,6 +187,14 @@ VIEW_JS = """(()=>{const v=%s; if(v==='hq'||v==='map'){window.office.go(v); retu
 FFMPEG = sorted(glob.glob(os.path.expanduser("~/.cache/ms-playwright/ffmpeg-*/ffmpeg-linux")))
 
 
+async def probe_ok(p: Page, where: str) -> bool:
+    """화면이 점검 화면(?probe=1)으로 떴는가(11-11). 아니면 저절로 열린 패널이 라이브의 「보고 옴」을 읽음으로 남긴다 — 조용히 넘기지 않고 문제로 센다."""
+    if await p.ev("!!(window.office.probeMode && window.office.probeMode())"):
+        return True
+    print(f"{where}: 점검 표시(probe)가 없습니다 — 이 화면이 연 패널이 「보고 옴」을 읽음으로 남길 수 있습니다")
+    return False
+
+
 async def record(p: Page, a: argparse.Namespace, out: Path, report: dict) -> int:
     """녹화(13, docs/13_demo_capture.md) — 시연 대본(`/office?demo=<이름>`)을 틀고 초당 fps장 JPEG(clip)를 찍어 GIF(+ WebM)로.
     --record - 이면 대본 없이 실제 화면(시연용이 아니다 — 캡션은 〔실제 화면〕). 테마를 여럿 주면 차례로 이어 찍는다(V4 테마 전환).
@@ -205,11 +213,13 @@ async def record(p: Page, a: argparse.Namespace, out: Path, report: dict) -> int
         kw["clip"] = {"x": x, "y": y, "width": cw, "height": ch, "scale": a.scale}
     n, bad, info = 0, 0, []
     for th in a.themes.split(","):
-        url = f"{a.base.rstrip('/')}/office?theme={th}" + (f"&demo={a.record}&hold=1" if demo else "")
+        url = f"{a.base.rstrip('/')}/office?probe=1&theme={th}" + (f"&demo={a.record}&hold=1" if demo else "")
         await p.call("Page.navigate", url=url)
         if not await p.wait("!!(window.office && window.office.layoutAudit)"):
             print(f"{th}: 화면이 뜨지 않았습니다")
             return 1
+        if not await probe_ok(p, th):
+            bad += 1
         if demo and not await p.wait("!!(window.demoState && (window.demoState.ready || window.demoState.error))"):
             print(f"{th}: 대본을 읽지 못했습니다")
             return 1
@@ -284,7 +294,8 @@ async def run(a: argparse.Namespace) -> int:
             p = Page(ws)
             await p.call("Page.enable")
             await p.call("Runtime.enable")
-            await p.call("Page.navigate", url=a.base)
+            # ?probe=1 — 점검 도구가 연 화면이라는 표시(11-11). 저절로 열린 패널이 「보고 옴」을 읽음으로 남기지 않게(store.js PROBE)
+            await p.call("Page.navigate", url=a.base + ("&" if "?" in a.base else "?") + "probe=1")
             await p.wait("document.readyState==='complete'")
             await p.ev(f"localStorage.setItem('foremanToken', {json.dumps(api_token())}); 1")
             if a.ui_scale:                                 # 글씨 크기(가+ · 가−) — 사용자가 보는 배율로 찍는다(11-09)
@@ -302,11 +313,13 @@ async def run(a: argparse.Namespace) -> int:
                     await p.call("Emulation.setDeviceMetricsOverride", width=w, height=h, deviceScaleFactor=1, mobile=False)
                     if a.demo:                             # 시연 장면으로 정지 사진(13e) — 실제 /api에 닿지 않게
                         await p.ev("localStorage.removeItem('foremanToken'); 1")
-                    await p.call("Page.navigate", url=f"{a.base.rstrip('/')}/office?theme={th}" + (f"&demo={a.demo}" if a.demo else ""))
+                    await p.call("Page.navigate", url=f"{a.base.rstrip('/')}/office?probe=1&theme={th}" + (f"&demo={a.demo}" if a.demo else ""))
                     if not await p.wait("!!(window.office && window.office.layoutAudit)"):
                         report["runs"].append({"theme": th, "size": size, "error": "화면이 뜨지 않았습니다"})
                         bad += 1
                         continue
+                    if not await probe_ok(p, f"{th} {size}"):
+                        bad += 1
                     await asyncio.sleep(a.wait)
                     # 좌석 점검만 — 이름표 점검(labelAudit, 지금 화면 그대로)은 아래 화면마다 센다(11-10)
                     la = await p.ev("window.office.layoutAudit({labels: false})")

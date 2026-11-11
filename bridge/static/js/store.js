@@ -3,6 +3,18 @@
 // 그리는 쪽은 subscribe(fn)으로 상태를 받는다 — 알림은 최대 초당 4번(이벤트가 초당 수십 개 와도 화면은 따라간다).
 // 테마 렌더러로 바꿀 때는 render.js만 갈아 끼운다. 상태 모양은 아래 state 주석이 계약이다.
 
+// 점검 페이지(11-11 사용자 — tools/screen.py를 라이브에 돌리니 저절로 열린 패널이 「보고 옴」을 읽음으로 남겨 227의 보고가 사라졌다).
+// screen.py는 모든 주소에 ?probe=1을 붙인다. 같은 탭 안에서 테마를 바꿔도 유지(sessionStorage). 자동화 브라우저(navigator.webdriver)도 같게.
+// 점검 페이지는 사람이 본 것이 아니므로 읽음 같은 「사람 흔적」을 남기지 않는다 — 헤더 X-Foreman-Probe로 서버도 거절한다
+export const PROBE = (() => {
+  let on = false;
+  try {
+    if (new URLSearchParams(location.search).has('probe')) sessionStorage.setItem('foremanProbe', '1');
+    on = sessionStorage.getItem('foremanProbe') === '1';
+  } catch { /* 저장소를 못 쓰면 주소만 */ }
+  try { on = on || new URLSearchParams(location.search).has('probe') || !!navigator.webdriver; } catch { /* node 시험 */ }
+  return on;
+})();
 const EMIT_MS = 250;          // 그리기 알림 최소 간격
 const RESNAP_MS = 15000;      // 스냅샷으로 맞추는 주기
 const FEED_MAX = 40;          // 세션별 최근 활동 줄 수
@@ -83,6 +95,7 @@ export class Store {
   headers(json) {
     const h = { Authorization: `Bearer ${this.token}` };
     if (json) h['Content-Type'] = 'application/json';
+    if (PROBE) h['X-Foreman-Probe'] = '1';
     return h;
   }
 
@@ -442,6 +455,7 @@ export class Store {
   }
   // 보고 옴 읽음(11-11) — 그 세션 패널을 열면 opanel이 부른다. 다음 응답이 오면 서버가 다시 띄운다
   async reportRead(id, eventId) {
+    if (PROBE || this.demo) return { ok: false, note: '점검 · 시연 화면은 읽음으로 세지 않습니다' };
     const r = await fetch(`/api/sessions/${id}/report-read?event_id=${encodeURIComponent(eventId)}`, { method: 'POST', headers: this.headers() });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.note || j.detail || `HTTP ${r.status}`);

@@ -79,6 +79,30 @@ def test_asks_text_last_few_paragraphs():
     assert not asks_text("어떻게 할까요?\n\n하나.\n\n둘.\n\n셋.")
 
 
+def test_asks_text_human_must_act():
+    """11-11(사용자) — 끝 「참고할 것」 목록 안이어도 사람이 움직여야 이어지는 글은 답 기다림(인프라 265, 567293)."""
+    t = ("**Cloudflare 대시보드에서 하실 일 — 이 순서로 해 주세요**\n\n1. Access에 두 줄을 더합니다.\n\n"
+         "**참고할 것**\n- **사설망 경로:** VIP에는 Access가 없습니다.\n"
+         "- **2번을 제가 할 경우:** 제가 만들 수도 있습니다. 1번을 마쳤다고 알려 주시면 그때 하겠습니다.\n"
+         "- **고친 파일:** 주석 한 줄을 고쳤습니다.")
+    assert "알려 주시면 그때 하겠습니다" in ask_line(t)
+    assert asks_text("커밋 초안입니다. 승인해 주시면 커밋하고 push하겠습니다.")
+    assert asks_text("Sync하셨다고 알려 주시면 바로 확인하겠습니다.")
+    # 일을 마친 뒤의 제안 — 사람이 안 해도 일은 끝났다(227, 563188 · 「있으면 … 알려 주시면」)
+    assert not asks_text("수동 실행만 확인했습니다. 내일 정기 실행이 끝난 뒤 확인하라고 하시면 그때 체크하겠습니다.")
+    assert not asks_text("세션을 눌러 상세를 봐 주세요. 이상한 점이 있으면 알려 주시면 바로 고치겠습니다.")
+
+
+def test_report_read_refuses_probe():
+    """11-11(사용자) — 점검 도구(screen.py ?probe=1 → 헤더 X-Foreman-Probe)가 연 패널은 읽음으로 세지 않는다."""
+    import asyncio
+    from types import SimpleNamespace
+    from bridge.api.dashboard import report_read_api
+    req = SimpleNamespace(headers={"x-foreman-probe": "1"}, app=None)        # app에 닿으면 터진다 — 닿기 전에 거절
+    r = asyncio.run(report_read_api(1, req, 5))
+    assert r["ok"] is False and "점검" in r["note"]
+
+
 def test_asks_text_not_asking():
     """끝 문단을 넓히며 실제 DB에서 본 거짓 꼴(11-11)."""
     # 인용 안의 말 — 챗봇 문장 · 화면 문구
