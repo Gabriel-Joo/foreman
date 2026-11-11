@@ -61,3 +61,12 @@ test('아래 줄은 캐릭터 이름에서 역할을 뗀 나머지', () => {
   assert.equal(sessionSub({ character: '떠돌이', role: 'coder' }), '떠돌이');
   assert.equal(sessionSub({ role: 'coder' }), '');
 });
+
+// 11-11 UI 불만 (가) — 상주 · 임시가 글자로 바로 보인다(서버 crew)
+test('역할 배지에 상주 · 임시', () => {
+  assert.match(roleBadge({ role: 'coder', crew: 'resident' }), />코더 · 상주</);
+  assert.match(roleBadge({ role: 'coder', crew: 'temp' }), />코더 · 임시</);
+  assert.match(roleBadge({ role: 'manager', crew: 'manager' }), />관리자</);
+  assert.equal(panelRole({ kind: 'session' }, { role: 'coder', crew: 'temp' }).label, '코더 · 임시');
+  assert.match(panelRole({ kind: 'session' }, { role: 'coder', crew: 'temp' }).tip, /임시 일꾼 —/);
+});
