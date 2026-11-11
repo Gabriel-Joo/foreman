@@ -38,6 +38,17 @@ test('main이 앞섬 · 충돌 · 합친 뒤', () => {
   assert.doesNotMatch(m, /mp-merge/);                         // 합친 카드에는 단추가 없다
 });
 
+test('정리 후보 — 근거 있는 것은 까닭과 함께 앞에, 낱말만 겹친 것은 접고, 안 고친 문서 표시(11-11 2물결 넷)', () => {
+  const docs = { readme: [
+    { line: 4, text: '권한 거부 줄', why: ['세션 기록 「README에서 뺄 줄」(x.md)'], score: 105, weak: false },
+    { line: 9, text: '낱말 줄', words: ['카드', '승인', '화면'], why: ['커밋 글 낱말만 겹침'], score: 3, weak: true }],
+  docs: [{ where: 'docs/11.md', lines: [3], count: 1, files: ['bridge/a.py'], stale: true }] };
+  const h = mpSection({ card: card({ docs }) }, b, 7);
+  assert.match(h, /README:4 — 권한 거부 줄 <span class="muted">\(세션 기록 「README에서 뺄 줄」/);
+  assert.match(h, /낱말만 겹친 후보 1개<\/summary><div class="small muted">README:9/);
+  assert.match(h, /이번에 안 고침/);
+});
+
 test('묻는 말이 있어도 카드는 뜬다 — 묻는 말을 함께 보인다(11-11 D2 281)', () => {
   const h = mpSection({ card: card({ asks: { tail: '한 번씩 확인해 주세요.' } }), health: { ok: true } }, b, 7);
   assert.match(h, /세션이 묻는 말이 있습니다 — 패널에서 답하십시오: 한 번씩 확인해 주세요/);
