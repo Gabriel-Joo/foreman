@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from bridge.api import approvals as approvals_api, dashboard as dashboard_api, debug, health, hooks, sessions, ws
 from bridge.api import foreman as foreman_api, handoff as handoff_api, terminal as terminal_api, webhooks
-from bridge.api import managers as managers_api
+from bridge.api import managers as managers_api, todo as todo_api
 from bridge.api import publish as publish_api
 from bridge.api import scribe as scribe_api
 from bridge.api import coder as coder_api
@@ -469,6 +469,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(coder_api.router)
     app.include_router(foreman_api.router)
     app.include_router(managers_api.router)        # 11-11 프로젝트별 관리자(bridge/api/managers.py)
+    app.include_router(todo_api.router)            # 11-11 할 일 목록에서 바로 고치기(bridge/api/todo.py)
     app.include_router(approvals_api.router)
     app.include_router(dashboard_api.router)
     app.include_router(usage_api.router)
