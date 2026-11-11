@@ -1029,8 +1029,27 @@ class HandoffManager:
                 "SELECT created_at FROM session_action WHERE session_id = :s AND action = :a AND ok ORDER BY id DESC LIMIT 1"),
                 {"s": row.id, "a": REST_ACT})).first()
         out["rested_at"] = r[0].isoformat() + "Z" if r and not out["live"] else None
-        out["resume_ok"] = bool(out.get("exists") and not out["live"] and row.cc)
+        # 11-11(받은 할 일 #17) — 실제와 다른 「합치기 기다림」: 이름이 뒤 세션에 다시 쓰였거나 밖에서 이미 합침
+        from bridge.coder_room import rest_stale, reused_by
+        async with self.engine.connect() as c:
+            out["reused_by"] = await reused_by(c, row.id, out["path"])
+        out["stale"] = await rest_stale(self.engine, row.id, row.cwd) if not out["live"] else None
+        out["in_base"] = bool(out.get("exists") and out.get("ahead") == 0 and not out.get("dirty"))
+        if out["stale"]:
+            out["rested_at"] = None
+        out["resume_ok"] = bool(out.get("exists") and not out["live"] and row.cc and not out["reused_by"])
         return out
+
+    async def _guard_reused(self, row: SessionRow, repo: str, name: str) -> None:
+        """이 세션의 worktree 이름을 뒤 세션이 다시 쓰고 있으면 거부 — 지금 폴더는 뒤 세션 것이다(합치면 그 세션 일을 합친다)."""
+        from bridge.coder_room import reused_by
+        if self.engine is None:
+            return
+        async with self.engine.connect() as c:
+            later = await reused_by(c, row.id, os.path.join(repo, wt.WT_DIR, name))
+        if later:
+            raise Refused(f"이 worktree 이름({name})은 지금 세션 {later}이 쓰고 있습니다 — 이 세션의 worktree는 이미 지워졌습니다. "
+                          f"세션 {later}의 패널에서 합치거나 버립니다")
 
     async def _role(self, sid: int) -> str | None:
         async with self.engine.connect() as c:
@@ -1100,6 +1119,7 @@ class HandoffManager:
         end=True면 살아 있는 세션을 먼저 끝내고 이어서 한다(11-06 — 끝내기 누르고 합치기를 또 찾아 눌러야 했다).
         합치기는 끝내기 **전에** 커밋 안 된 변경을 본다 — 끝낸 뒤에 알면 그 세션에게 커밋을 시킬 수 없다."""
         repo, name = self._wt_of(row)
+        await self._guard_reused(row, repo, name)
         ended = None
         if row.cc and row.cc in live_sessions(self.sessions_dir):
             if not end:
@@ -1225,6 +1245,7 @@ class HandoffManager:
     async def rest_resume(self, row: SessionRow) -> dict[str, Any]:
         """[이어서] — 같은 worktree에서 그 CC 세션을 `claude --resume`으로 다시 붙인다. 새 tmux 창에서."""
         repo, name = self._wt_of(row)
+        await self._guard_reused(row, repo, name)
         path = os.path.join(repo, wt.WT_DIR, name)
         if not Path(path).is_dir():
             raise Refused("worktree가 없습니다 — 이미 합쳤거나 버렸습니다")
