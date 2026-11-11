@@ -246,6 +246,135 @@ def files_message(prefix: str, a: int, a_title: str, b: int, b_title: str, files
             f"일부러 나눈 것이면 그대로 두면 됩니다.")
 
 
+# ── 바탕(merge-base) 뒤에 실제로 바뀐 파일(11-11) ─────────────────
+# 11-09 첫 「같은 파일」 알림(세션 230 ~ 233, 8개)이 헛경보였다 — 230이 고친 것은 커밋돼 233의 바탕(merge-base)에 이미 들어
+# 있었다(log/overlap_false_same_file_20261109.md). 그래서 두 세션이 둘 다 Edit한 파일 중, 두 쪽 모두 「둘의 바탕 뒤에」
+# 바뀐 것(커밋했든 안 했든 · 새 파일 포함)만 남긴다. git을 못 읽으면 걸러내지 않는다(놓치는 것보다 헛경보가 낫다).
+GIT_TIMEOUT_S = 8.0
+
+
+async def git_lines(cwd: str, *args: str) -> list[str] | None:
+    """git 출력 줄. 실패 · 시간 초과면 None(빈 결과와 가른다)."""
+    try:
+        p = await asyncio.create_subprocess_exec("git", "-C", cwd, *args, stdout=asyncio.subprocess.PIPE,
+                                                 stderr=asyncio.subprocess.DEVNULL)
+    except OSError:
+        return None
+    try:
+        out, _ = await asyncio.wait_for(p.communicate(), GIT_TIMEOUT_S)
+    except TimeoutError:
+        p.kill()
+        return None
+    if p.returncode:
+        return None
+    return [x for x in out.decode(errors="replace").splitlines() if x.strip()]
+
+
+async def changed_since(cwd: str, base: str) -> set[str] | None:
+    """cwd 작업 트리가 base 뒤에 바꾼 파일(커밋 · 커밋 안 함 · 새 파일). 저장소 기준 경로."""
+    tracked = await git_lines(cwd, "diff", "--name-only", base)
+    untracked = await git_lines(cwd, "ls-files", "--others", "--exclude-standard")
+    if tracked is None or untracked is None:
+        return None
+    return set(tracked) | set(untracked)
+
+
+async def real_changes(cwd_a: str, cwd_b: str) -> tuple[set[str], set[str]] | None:
+    """두 작업 트리의 바탕(merge-base) 뒤 변경. 같은 폴더면 바탕 = HEAD(커밋 안 한 변경끼리). 못 읽으면 None."""
+    ha = await git_lines(cwd_a, "rev-parse", "HEAD")
+    hb = await git_lines(cwd_b, "rev-parse", "HEAD")
+    if not ha or not hb:
+        return None
+    base = await git_lines(cwd_a, "merge-base", ha[0], hb[0])
+    if not base:
+        return None
+    a = await changed_since(cwd_a, base[0])
+    b = await changed_since(cwd_b, base[0])
+    return None if a is None or b is None else (a, b)
+
+
+# ── 합칠 순서(11-11 일곱) ──────────────────────────────────
+# 합칠 브랜치가 둘 이상이면 같은 파일을 건드리는 쌍과 권하는 순서를 알린다. 합치기 카드 자체는 생명주기 쪽(A — bridge/mergeprep.py)
+# 몫이고, 여기는 판정만 낸다(GET /api/foreman/merge-order). 순서 기준(앞이 먼저):
+#   1. 같은 계획(dispatch)에서 사람이 정한 합칠 순서(merge_order)가 있으면 그것
+#   2. 다른 브랜치와 겹치는 파일이 적은 것 — 겹치는 쪽은 뒤에서 rebase로 한 번만 푼다
+#   3. 커밋 안 한 변경이 없는 것(바로 합칠 수 있다)
+#   4. 바뀐 파일이 적은 것, 그다음 이름
+async def merge_order(repo: str, branches: list[dict[str, Any]], main: str = "main") -> dict[str, Any]:
+    """branches: [{"branch": "cc/x", "cwd": worktree 경로 | None, "session_id": …, "merge_order": int | None, "dispatch_id": …}].
+    돌려주는 것: branches(각자 바뀐 파일 · 커밋 안 한 파일 수) · pairs(같은 파일 · 충돌 여부) · order · reasons · errors."""
+    info: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for b in branches:
+        br = b["branch"]
+        committed = await git_lines(repo, "diff", "--name-only", f"{main}...{br}")
+        if committed is None:
+            errors.append(f"{br}: 바뀐 파일을 읽지 못했습니다")
+            continue
+        files, dirty = set(committed), 0
+        if b.get("cwd"):
+            work = await git_lines(b["cwd"], "status", "--porcelain")
+            if work is None:
+                errors.append(f"{br}: 커밋 안 한 변경을 읽지 못했습니다")
+            else:
+                dirty = len(work)
+                files |= {ln[3:].split(" -> ")[-1].strip('"') for ln in work if len(ln) > 3}
+        info.append({**b, "files": sorted(files), "uncommitted": dirty})
+    pairs: list[dict[str, Any]] = []
+    for i, a in enumerate(info):
+        for b in info[i + 1:]:
+            both = sorted(set(a["files"]) & set(b["files"]))
+            if not both:
+                continue
+            # 실제로 부딪치는가 — 둘의 커밋끼리 merge-tree(커밋 안 한 변경은 못 본다). 출력 첫 줄은 트리, 충돌이면 종료 코드 1
+            conflict = await _merge_tree_conflict(repo, a["branch"], b["branch"])
+            pairs.append({"a": a["branch"], "b": b["branch"], "files": both, "conflict": conflict})
+    touch = {x["branch"]: 0 for x in info}
+    for p in pairs:
+        touch[p["a"]] += len(p["files"])
+        touch[p["b"]] += len(p["files"])
+    # 사람이 정한 순서는 같은 계획에서 둘 이상이 함께 합칠 때만 뜻이 있다(혼자면 견줄 것이 없다)
+    planned: dict[Any, int] = {}
+    for x in info:
+        if x.get("merge_order") and x.get("dispatch_id"):
+            planned[x["dispatch_id"]] = planned.get(x["dispatch_id"], 0) + 1
+
+    def key(x: dict[str, Any]) -> tuple[Any, ...]:
+        mine = planned.get(x.get("dispatch_id"), 0) > 1 and x.get("merge_order")
+        return ((0, x["dispatch_id"], x["merge_order"]) if mine else (1, 0, 0),
+                touch[x["branch"]], 1 if x["uncommitted"] else 0, len(x["files"]), x["branch"])
+    ordered = sorted(info, key=key)
+    reasons = []
+    for n, x in enumerate(ordered, 1):
+        why = []
+        if x.get("merge_order"):
+            why.append(f"계획의 합칠 순서 {x['merge_order']}")
+        why.append(f"다른 브랜치와 겹치는 파일 {touch[x['branch']]}개" if touch[x["branch"]] else "다른 브랜치와 겹치는 파일 없음")
+        if x["uncommitted"]:
+            why.append(f"커밋 안 한 변경 {x['uncommitted']}개 — 커밋해야 합칠 수 있습니다")
+        reasons.append(f"{n}. {x['branch']} — " + " · ".join(why))
+    for p in pairs:
+        if p["conflict"]:
+            later = next(x["branch"] for x in reversed(ordered) if x["branch"] in (p["a"], p["b"]))
+            reasons.append(f"⚠ {p['a']} · {p['b']}가 부딪칩니다({', '.join(p['files'][:5])}) — {later}는 앞 것을 합친 뒤 main을 가져와 풀어야 합니다")
+    return {"branches": info, "pairs": pairs, "order": [x["branch"] for x in ordered], "reasons": reasons, "errors": errors}
+
+
+async def _merge_tree_conflict(repo: str, a: str, b: str) -> bool | None:
+    """git merge-tree --write-tree a b — 충돌이면 True, 아니면 False, 못 돌리면 None. 작업 트리 · ref는 바꾸지 않는다(트리 객체만 남는다)."""
+    try:
+        p = await asyncio.create_subprocess_exec("git", "-C", repo, "merge-tree", "--write-tree", "--name-only", a, b,
+                                                 stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+    except OSError:
+        return None
+    try:
+        rc = await asyncio.wait_for(p.wait(), GIT_TIMEOUT_S)
+    except TimeoutError:
+        p.kill()
+        return None
+    return {0: False, 1: True}.get(rc)
+
+
 # ── 감시 ─────────────────────────────────────────────────
 class OverlapWatch:
     """조립기가 사람 입력(UserPromptSubmit)을 적재한 뒤 부른다. 실패해도 적재를 막지 않는다."""
@@ -264,6 +393,7 @@ class OverlapWatch:
         self._files_sent: dict[tuple[int, int], set[str]] = {}  # 두 세션 → 이미 알린 파일
         self._scan: asyncio.Task[None] | None = None
         self._tasks: set[asyncio.Task[None]] = set()
+        self.git_changes = real_changes                         # 시험에서 바꿔 끼운다
 
     def on_prompt(self, session_id: int, cc_session_id: str, prompt: str, ts: datetime) -> None:
         if not self.rules.enabled:
@@ -303,7 +433,7 @@ class OverlapWatch:
         if len(live) < 2:
             return []
         async with self.engine.connect() as c:
-            q = text("SELECT cs.id, ch.project_id, p.name, COALESCE(cs.custom_title, cs.title, LEFT(cs.cc_session_id, 8)), cs.cc_session_id "
+            q = text("SELECT cs.id, ch.project_id, p.name, COALESCE(cs.custom_title, cs.title, LEFT(cs.cc_session_id, 8)), cs.cc_session_id, cs.cwd "
                      "FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id LEFT JOIN project p ON p.id = ch.project_id "
                      "WHERE cs.cc_session_id IN :cc AND cs.hidden_at IS NULL AND cs.detached_at IS NULL"
                      ).bindparams(bindparam("cc", expanding=True))
@@ -317,6 +447,9 @@ class OverlapWatch:
                     linked.add(frozenset((sid, o)))
         sent: list[tuple[int, int, list[str]]] = []
         for (a, b), files in same_files(edits, {k: v[1] for k, v in rows.items()}, linked).items():
+            files = await self._since_base(a, b, rows, files)
+            if not files:
+                continue
             new = [f for f in files if f not in self._files_sent.get((a, b), set())]
             if not new:
                 continue
@@ -337,6 +470,22 @@ class OverlapWatch:
         if sent and self.on_change:
             self.on_change()
         return sent
+
+    async def _since_base(self, a: int, b: int, rows: dict[int, Any], files: list[str]) -> list[str]:
+        """11-11 헛경보 고침 — 둘이 다 고친 파일 중 두 쪽 모두 바탕(merge-base) 뒤에 바뀐 것만. 한쪽이 커밋해 상대 바탕에 이미 든 것은 뺀다.
+        폴더를 모르거나 git을 못 읽으면 그대로 둔다(로그 한 줄 — 걸러내지 못한 채 알린다)."""
+        ca = rows[a][5] if len(rows[a]) > 5 else None
+        cb = rows[b][5] if len(rows[b]) > 5 else None
+        if not ca or not cb:
+            return files
+        r = await self.git_changes(ca, cb)
+        if r is None:
+            log.warning("같은 파일 — 세션 %d · %d의 바탕 뒤 변경을 git으로 읽지 못해 걸러내지 않고 알린다", a, b)
+            return files
+        kept = [f for f in files if f in r[0] and f in r[1]]
+        if len(kept) < len(files):
+            log.info("같은 파일 — 세션 %d · %d: 바탕에 이미 든 것 뺌 %s", a, b, ",".join(f for f in files if f not in kept)[:300])
+        return kept
 
     async def _get_corpus(self, c: Any) -> Corpus:
         if self._corpus is None or time.monotonic() - self._corpus_at > 1800:
