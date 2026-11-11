@@ -7,6 +7,7 @@
 import { esc, ago, keep } from './render.js';
 import { promoteGroup, edits as promoteEdits } from './promote.js';
 import { lossGroup } from './losscheck.js';
+import { moveStep, MOVE_STEPS, MOVE_TIP, chooseCount, writeLabel } from './moveflow.js';
 
 const SOURCE = { self: '세션이 씀', self_headless: '끝난 세션을 잠깐 불러 씀', compact: '자동 압축 요약에서', edited: '사람이 고침' };
 const STATUS = { requested: '기다리는 중…', ok: '저장됨', failed: '실패', timeout: '시간 초과' };
@@ -26,7 +27,7 @@ const flowPut = (id, v) => { try { if (v) localStorage.setItem(FLOW_KEY + id, JS
 
 // 흐름의 지금 단계 — 저장한 것(flow)과 서버 데이터(요약 상태 · 넣음 · 세션이 살아 있나)로 정한다. 순수 함수(시험)
 export function flowStep(flow, summary, live) {
-  if (!flow) return null;
+  if (!flow || flow.v === 2) return null;      // 한 흐름(11-11)은 moveflow.js moveStep이 정한다
   if (flow.phase === 'done') return { i: 4, done: true };
   if (flow.phase === 'spawning') return { i: 2, busy: true };
   if (flow.phase === 'ending') return { i: 3, busy: true };
@@ -93,6 +94,8 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     return true;
   };
   el.addEventListener('change', (ev) => {
+    const mv = ev.target.dataset && ev.target.dataset.mvItem;      // 한 흐름 ③ 고르기(11-11)
+    if (mv) { promDraft[Number(mv)] = { ...(promDraft[Number(mv)] || {}), state: ev.target.checked ? 'approved' : 'dropped' }; draw(); return; }
     if (ev.target.id === 'promIn') promIn = ev.target.value;
     // 상태를 고르면 개수 · 버튼을 다시 센다. 글칸은 그리지 않는다(blur 때 다시 그리면 바로 누른 버튼의 click이 사라진다)
     else if (promField(ev.target) && ev.target.tagName === 'SELECT') draw();
@@ -124,12 +127,14 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (a && el.contains(a) && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT') && a.type !== 'checkbox') { schedule(); return; }
     draw();
     schedule();
+    if (flow && flow.v === 2) moveTick();        // 한 흐름 — 서버 상태가 다음 단계를 가리키면 저절로(11-11)
   }
   function schedule() {
     clearTimeout(timer);
     if (sid == null) return;
     const p0 = data && data.promotions && data.promotions[0];
-    const pending = data && (data.controls.pending_req || (data.summaries[0] && data.summaries[0].status === 'requested') || (flow && !flow.phase)
+    const mv = flow && flow.v === 2 ? moveStep(flow, data) : null;      // 한 흐름은 사람 차례(고르기) · 끝 · 오류가 아니면 빨리 본다
+    const pending = data && ((mv && !mv.wait && !mv.done && !mv.bad) || data.controls.pending_req || (data.summaries[0] && data.summaries[0].status === 'requested') || (flow && !flow.v && !flow.phase)
       || (p0 && (p0.status === 'requested' || p0.status === 'writing')));
     timer = setTimeout(load, pending ? 3000 : 15000);
   }
@@ -231,6 +236,43 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     </div></div>${drift}`;
   }
 
+  // 11-11 한 흐름 — 옮기기 전 요약 확인 창을 없앤 대신, 받은 세션 패널에서 무엇이 넘어왔는지 본다(한 시간 안이면 펼침)
+  function receivedLine(r) {
+    if (!r) return '';
+    if (r.error) return `<div class="small warn">${esc(r.error)}</div>`;
+    const fresh = !!r.at && Date.now() - Date.parse(r.at) < 3600e3;
+    return `<details class="hand-recv"${keep(`hand:${sid}:recv`, fresh)}><summary class="small" title="넘겨받은 글 — 이 세션이 옮기기로 받은 요약입니다. 무엇이 넘어왔는지 여기서 봅니다.">넘겨받은 글 — 세션 ${esc(String(r.from_session))}${r.from_title ? ` 「${esc(r.from_title)}」` : ''}에서 · ${ago(r.at)}</summary><pre class="hand-body">${esc(r.body)}</pre></details>`;
+  }
+  function moveBody(m, b, c) {
+    const steps = `<ol class="flow-steps">${MOVE_STEPS.map((n, k) => `<li class="${k < m.i ? 'done' : k === m.i ? (m.bad ? 'bad' : 'now') : ''}">${k < m.i ? '✓' : k + 1} ${n}</li>`).join('')}</ol>`;
+    const stop = b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 옮기기를 그만둡니다. 이미 쓴 문서와 받은 요약은 남습니다.');
+    const skip = (label) => b('mv-skip-find', label, true, 'ghost', `${label} — 잊은 것 찾기를 기다리지 않고 세션에게 바로 문서 후보를 묻습니다.`);
+    let body;
+    if (m.done) body = `<div class="small ok">새 세션으로 옮겼습니다 — 넘어간 글은 새 세션 패널 「넘겨받은 글」에서 봅니다.</div><div class="row">${b('flow-close', '닫기', true, 'ghost', '닫기 — 이 안내를 치웁니다.')}</div>`;
+    else if (m.bad) body = `<div class="small bad">${esc(m.msg)}</div><div class="row flow-act">${b('mv-retry', '다시 시도', true, 'primary', '다시 시도 — 이 단계부터 다시 합니다.')}${m.i <= 1 ? skip('문서 후보 없이 묻기') : ''}${m.i === 6 ? b('flow-end', '옛 세션 다시 끝내기', c.can.exit, 'danger', '옛 세션 다시 끝내기 — 새 세션은 이미 이어받았습니다. 옛 세션만 /exit로 끝냅니다.') : ''}${stop}</div>`;
+    else if (m.wait) body = chooseHtml(m, b) + stop + '</div>';
+    else if (m.i === 0) body = `<div class="small muted">${esc(m.msg)}… 끝나면 문서에 넣을 후보를 보여 드립니다.</div><div class="row">${skip('잊은 것 찾기 건너뛰기')}${stop}</div>`;
+    else if (m.i === 6 && !m.busy) body = `<div class="small">새 세션이 이어받았습니다. 옛 세션 끝내기만 남았습니다.</div><div class="row flow-act">${b('flow-end', '옛 세션 끝내기', c.can.exit, 'primary danger', '옛 세션 끝내기 — 이 세션을 /exit로 끝냅니다.')}${stop}</div>`;
+    else body = `<div class="small muted">${esc(m.msg || (m.i === 6 ? '옛 세션을 끝내는 중입니다… 맥락이 큰 세션은 수십 초 걸립니다' : m.i === 5 ? '새 세션을 띄우고 요약을 넣는 중입니다' : m.note || '다음 단계로 넘어가는 중입니다'))}…</div><div class="row">${stop}</div>`;
+    return `<div class="flow">${steps}${flow && flow.note ? `<div class="small warn">${esc(flow.note)}</div>` : ''}${body}</div>`;
+  }
+  // ③ 고르기 — 사람이 하는 유일한 판단. 항목마다 「넣기」 하나, 단추 하나로 쓰기 → 옮기기까지
+  function chooseHtml(m, b) {
+    const items = m.p.items || [];
+    const n = chooseCount(items, promDraft);
+    const rows = items.map((it) => {
+      const ck = it.check || {}, on = ((promDraft[it.id] || {}).state ?? it.state) === 'approved';
+      const bad = ck.ok === false;
+      return `<label class="mv-item small"${bad ? ' title="고를 수 없음 — 목적지가 틀렸습니다. 아래 「옮기기 전 정리」에서 목적지를 고치면 고를 수 있습니다."' : ''}><input type="checkbox" data-mv-item="${it.id}"${on && !bad ? ' checked' : ''}${bad ? ' disabled' : ''}>
+        <span>${esc(it.what)}</span> <span class="muted">→ ${esc(it.dest)}${it.section ? ` 「${esc(it.section)}」` : ''}</span>${bad ? ` <span class="bad">✗ ${esc(ck.problem || '')}</span>` : ''}</label>`;
+    }).join('');
+    const tip = n ? `${writeLabel(n)} — 고른 것을 세션이 문서에 쓰고 커밋합니다. 브리지가 커밋을 확인하면 요약 · 새 세션 · 옛 세션 끝내기까지 이어서 합니다.`
+      : '문서에 넣지 않고 옮기기 — 아무것도 쓰지 않고 요약 · 새 세션 · 옛 세션 끝내기로 갑니다.';
+    return `${m.msg ? `<div class="small bad">${esc(m.msg)}</div>` : ''}
+      <div class="small"><b>문서에 넣을 것을 고르십시오</b> — 사람이 고르는 곳은 여기 하나입니다. 고른 것만 세션이 문서에 쓰고 커밋한 뒤 이어서 옮깁니다.</div>
+      <div class="mv-items">${rows}</div><div class="row flow-act">${b('mv-write', writeLabel(n), true, 'primary', tip)}`;
+  }
+
   function draw() {
     if (sid == null || !data) { el.innerHTML = ''; lastHtml = ''; return; }
     const c = data.controls, can = c.can, s0 = data.summaries[0], ok = latest();
@@ -289,6 +331,9 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
         : `<div class="small">새 세션이 이어받았습니다. 옛 세션 끝내기만 남았습니다.</div><div class="row flow-act">${b('flow-end', '옛 세션 끝내기', can.exit, 'primary danger', '옛 세션 끝내기 — 이 세션을 /exit로 끝냅니다.')}${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 이 세션을 살려 둡니다.')}</div>`;
       main = `<div class="flow">${steps}${body}</div>`;
     }
+    // 11-11 한 흐름 — 고르기에서만 멈추고 나머지는 저절로(moveflow.js). 옛 흐름 칸 자리에 그린다
+    const mst = moveStep(flow, data);
+    if (mst && mode == null) main = moveBody(mst, b, c);
     const hist = data.summaries.length > 1 ? `<details class="hand-hist"${keep(`hand:${sid}:hist`)}><summary class="small muted" title="지난 요약 — 이 세션에서 받은 요약 목록입니다. 맨 위가 지금 쓰는 것입니다.">지난 요약 ${data.summaries.length}</summary>${
       data.summaries.map((x) => `<div class="small">#${x.id} ${esc(KIND[x.kind] || x.kind)} · ${esc(SOURCE[x.source] || x.source)} · ${esc(STATUS[x.status] || x.status)} · ${ago(x.created_at)}${x.chars ? ` · ${x.chars}자` : ''}</div>`).join('')}</details>` : '';
     // 문서 정리 — 평소엔 접고, 사람이 할 일(목록 승인 · 쓰기 확인)이나 도는 점검이 있으면 연다(사람이 닫으면 그대로)
@@ -304,7 +349,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       <section class="hand">
         <div class="hand-h"><b>새 세션으로 옮기기</b>${s0 ? ` <span class="small muted" title="마지막 요약 — ${esc(KIND[s0.kind] || s0.kind)}, ${esc(STATUS[s0.status] || s0.status)}">· 요약 ${esc(STATUS[s0.status] || s0.status)} ${ago(s0.created_at)}</span>` : ''}</div>
         <div class="hand-btns">
-          ${st ? '' : b('flow-start', '새 세션으로 옮기기', can.summary || (!c.live && can.headless), 'primary', FLOW_TIP)}
+          ${st || mst ? '' : b('flow-start', '새 세션으로 옮기기', can.summary || (!c.live && can.headless), 'primary', c.move_flow && c.live ? MOVE_TIP : FLOW_TIP)}
           ${b('hand-more', handMore ? '접기 ▴' : '더보기 ▾', true, 'ghost', handMore ? '접기 — 드문 버튼을 다시 숨깁니다.' : '더보기 — 지금 요약 · 요약만 넣어 띄우기 · 요약 고치기 · 끝난 세션 요약. 드물게 씁니다.')}
           ${handMore ? `${b('summary', '지금 요약(계속 돎)', can.summary, 'ghost', '지금 요약 — 세션이 지금까지 한 일을 정리합니다. 세션은 끝내지 않고 계속 돕니다.')}
           ${b('spawn', '새 세션만 띄우기', can.spawn, 'ghost', '새 세션만 띄우기 — 이 세션은 두고, 같은 폴더에 새 세션을 띄워 마지막 요약(또는 빈 채로)을 넣습니다.')}
@@ -314,6 +359,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
         ${note ? `<div class="small ${note.bad ? 'bad' : note.ok ? 'ok' : 'muted'}">${esc(note.msg)}</div>` : ''}
         ${editLink ? `<div class="hand-edit-link">${editLink}</div>` : ''}
         ${main}${hist}
+        ${receivedLine(c.received)}
         ${readsLine(c.reads, can.exit)}
       </section>
       <section class="hand">
@@ -360,7 +406,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       const pick = el.querySelector('#promIn'), v = pick ? pick.value : 'none';
       if (v === '') { note = { bad: true, msg: '같이 넣을 것을 골라 주세요 — 넣지 않으려면 「넣지 않음」을 고릅니다.' }; draw(); return; }
       const body = v === 'none' ? { no_input: true } : v.startsWith('lc:') ? { loss_check_id: Number(v.slice(3)) } : { summary_id: Number(v) };
-      return run('대화 결정 목록 뽑기', () => post(`/api/sessions/${id}/promote`, body).then((r) => ({ msg: `요청을 보냈습니다. 세션이 목록을 만드는 중입니다${
+      return run('문서 후보 묻기', () => post(`/api/sessions/${id}/promote`, body).then((r) => ({ msg: `요청을 보냈습니다. 세션이 목록을 만드는 중입니다${
         r.summary_id ? `(요약 #${r.summary_id}의 「문서와 다른 지금」도 같이 넣었습니다)` : r.loss_check_id ? `(잃은 것 점검 #${r.loss_check_id}의 사라짐 · 약해짐도 같이 넣었습니다)` : ''}.` })));
     }
     if (act === 'loss-run') {
@@ -369,7 +415,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     }
     if (act === 'loss-use') {
       promIn = 'lc:' + btn.dataset.lc;
-      note = { msg: '「대화 결정 문서에 적기」에 같이 넣도록 골랐습니다 — 아래 [목록 뽑기]를 눌러 주세요.' };
+      note = { msg: '잊은 것을 같이 넣도록 골랐습니다 — 아래 「대화에서 정한 것 문서에 적기」의 [문서 후보 묻기]를 누릅니다.' };
       draw();
       return;
     }
@@ -381,9 +427,12 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       const p = prom(), n = p.items.filter((x) => x.state === 'approved').length;
       if (promoteEdits(p.items, promDraft).length) { note = { bad: true, msg: '고친 것이 저장되지 않았습니다 — 먼저 [고친 것 저장]을 눌러 주세요.' }; draw(); return; }
       if (!confirm(`승인한 ${n}개를 세션이 문서에 쓰고 커밋합니다. 브리지가 커밋을 확인합니다. 진행할까요?`)) return;
-      return run('승인한 것 쓰기', () => post(`/api/promotions/${p.id}/write`).then(() => ({ msg: '보냈습니다. 세션이 쓰고 커밋하는 중입니다.' })));
+      return run('고른 것을 문서에 쓰기', () => post(`/api/promotions/${p.id}/write`).then(() => ({ msg: '보냈습니다. 세션이 쓰고 커밋하는 중입니다.' })));
     }
     if (act === 'hand-more') { handMore = !handMore; draw(); return; }
+    if (act === 'mv-write') return moveWrite();
+    if (act === 'mv-retry') return moveRetry();
+    if (act === 'mv-skip-find') { setFlow({ ...flow, stage: 'list', lcId: null, promId: null, err: null, errAt: null, at: Date.now() }); await load(); return; }
     if (act === 'flow-start') return startFlow();
     if (act === 'flow-stop' || act === 'flow-close') { setFlow(null); noteOpen = false; noteDraft = ''; note = act === 'flow-stop' ? { msg: '옮기기를 멈췄습니다. 받은 요약은 남아 있습니다.' } : null; draw(); return; }
     if (act === 'flow-go') return flowGo(null);
@@ -506,11 +555,80 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
 
   // ── 넘기고 새로 시작 ─────────────────────────────────
   function setFlow(v) { flow = v; if (sid != null) flowPut(sid, v); }
+
+  // ── 한 흐름(11-11, moveflow.js) — 잊은 것 찾기 → 문서 후보 → 고르기 → 쓰기 → 요약 → 새 세션 → 옛 세션 끝내기 ──
+  let moveBusy = false;
+  async function startMove() {
+    if (!confirm('새 세션으로 옮기기 — 압축으로 잊은 것 찾기(내가 보낸 말 20개당 약 0.4달러 · 1.5분)부터 시작해, 문서에 넣을 후보를 보여 드립니다. '
+      + '고르시면 문서에 쓰고 요약 · 새 세션 · 옛 세션 끝내기까지 이어서 합니다. 진행할까요?')) return;
+    note = null; promDraft = {};
+    try {
+      const r = await api('POST', `/api/sessions/${sid}/losscheck`);
+      setFlow({ v: 2, stage: 'find', lcId: r.loss_check_id, at: Date.now() });
+    } catch (e) {          // 이미 도는 점검 등 — 그 단계 없이 문서 후보부터(까닭은 흐름 위에 남긴다)
+      setFlow({ v: 2, stage: 'list', at: Date.now(), note: `잊은 것 찾기는 건너뜁니다 — ${e.message}` });
+    }
+    await load();
+  }
+  // 서버 상태를 보고 저절로 다음 단계로 — load 뒤마다 부른다. 세션이 바쁘면(작업 중) 다음 load에 다시
+  async function moveTick() {
+    if (!flow || flow.v !== 2 || moveBusy || !data || sid == null) return;
+    const m = moveStep(flow, data);
+    if (!m || !m.auto) return;
+    const id = sid, can = data.controls.can;
+    if (m.auto === 'spawn') { await flowGo(null); return; }
+    if ((m.auto === 'promote' && !can.promote) || (m.auto === 'summary' && !can.summary)) return;
+    moveBusy = true;
+    try {
+      if (m.auto === 'promote') {
+        const r = await api('POST', `/api/sessions/${id}/promote`, m.lost ? { loss_check_id: flow.lcId } : { no_input: true });
+        if (id === sid) setFlow({ ...flow, stage: 'list', promId: r.promotion_id, at: Date.now(),
+          note: m.lcFailed && flow.lcId ? '잊은 것 찾기가 실패해 그 결과 없이 문서 후보를 물었습니다.' : flow.note });
+      } else if (m.auto === 'summary') {
+        const r = await api('POST', `/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'live', fmt: 'v2' });
+        if (id === sid) setFlow({ ...flow, stage: 'summary', sumId: r.summary_id, at: Date.now() });
+      }
+    } catch (e) {
+      if (id === sid) setFlow({ ...flow, err: `${m.auto === 'promote' ? '문서 후보를 묻지' : '요약을 요청하지'} 못했습니다 — ${e.message}`, errAt: m.i });
+    } finally { moveBusy = false; }
+    if (id === sid) await load();
+  }
+  async function moveWrite() {
+    const m = moveStep(flow, data);
+    if (!m || !m.wait) return;
+    const p = m.p, n = chooseCount(p.items, promDraft);
+    moveBusy = true;
+    try {
+      const ed = promoteEdits(p.items, promDraft);
+      if (ed.length) await api('PUT', `/api/promotions/${p.id}`, { items: ed });
+      promDraft = {};
+      if (n) {
+        await api('POST', `/api/promotions/${p.id}/write`);
+        setFlow({ ...flow, stage: 'write', at: Date.now(), err: null });
+      } else {
+        setFlow({ ...flow, stage: 'summary', sumId: null, at: Date.now(), err: null });
+      }
+    } catch (e) { note = { bad: true, msg: `문서에 쓰지 못했습니다 — ${e.message}` }; }
+    finally { moveBusy = false; }
+    await load();
+  }
+  async function moveRetry() {
+    const m = moveStep(flow, data) || {};
+    const f = { ...flow, err: null, errAt: null, at: Date.now() };
+    if (m.i === 5 || flow.errAt === 5) { setFlow(f); return flowGo(null); }
+    if (m.i === 6 || flow.errAt === 6) { setFlow(f); return flowEnd(); }
+    if (f.stage === 'list' && (m.i === 1)) f.promId = null;             // 목록을 다시 묻는다
+    if (f.stage === 'summary' && m.i === 4) f.sumId = null;             // 요약을 다시 받는다
+    setFlow(f);
+    await load();
+  }
+
   async function startFlow() {
     if (sid == null) return;
     if (!data) await load();
     const c = data && data.controls;
     if (!c) return;
+    if (c.move_flow && c.live && c.can.summary) return startMove();     // 11-11 한 흐름(끝난 세션은 옛 흐름 — 문서에 쓸 세션이 없다)
     const live = c.live && c.can.summary;
     if (!live && !(c.can.headless && confirm('끝난 세션입니다. 잠깐 불러 요약을 받습니다 — 그 세션의 맥락을 다시 읽느라 토큰을 씁니다(식은 맥락은 비쌉니다). 진행할까요?'))) {
       if (!live && !c.can.headless) { note = { bad: true, msg: `옮기기를 시작할 수 없습니다 —${c.why || '지금은 요약을 받을 수 없습니다'}` }; draw(); }
@@ -537,7 +655,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     try {
       const r = await api('POST', `/api/sessions/${id}/spawn`, { summary_id: f.sumId, replace: true, ...(add ? { note: add } : {}) });   // 옮기기 — 옛 세션은 빼고 worktree 판단
       if (!r.cc_session_id || !r.injected) throw new Error(r.note || '새 세션에 요약을 넣었는지 확인하지 못했습니다');
-    } catch (e) { if (id === sid) { setFlow({ ...f, phase: null, err: `새 세션을 띄우지 못했습니다 — ${e.message}`, errAt: 2 }); await load(); } return; }
+    } catch (e) { if (id === sid) { setFlow({ ...f, phase: null, err: `새 세션을 띄우지 못했습니다 — ${e.message}`, errAt: f.v === 2 ? 5 : 2 }); await load(); } return; }
     await flowEnd(id);
   }
   async function flowEnd(id = sid) {
@@ -546,8 +664,8 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     let res;
     try {
       const r = data && data.controls.live === false ? { ok: true } : await api('POST', `/api/sessions/${id}/action`, { action: 'exit' });
-      res = r.ok ? { ...f, phase: 'done', err: null } : { ...f, phase: null, err: `옛 세션을 끝내지 못했습니다 — ${r.note || '확인하지 못했습니다'}`, errAt: 3 };
-    } catch (e) { res = { ...f, phase: null, err: `옛 세션을 끝내지 못했습니다 — ${e.message}`, errAt: 3 }; }
+      res = r.ok ? { ...f, phase: 'done', err: null } : { ...f, phase: null, err: `옛 세션을 끝내지 못했습니다 — ${r.note || '확인하지 못했습니다'}`, errAt: f.v === 2 ? 6 : 3 };
+    } catch (e) { res = { ...f, phase: null, err: `옛 세션을 끝내지 못했습니다 — ${e.message}`, errAt: f.v === 2 ? 6 : 3 }; }
     flowPut(id, res);
     if (id === sid) { flow = res; await load(); }
   }
