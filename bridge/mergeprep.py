@@ -559,6 +559,17 @@ class MergePrep:
         self._notify(c, f"mergeprep:fail:{sid}:{now[:13]}", f"⚠ {err} — 「{title or sid}」(세션 {sid}). 패널 「합치기 승인」에 사유가 있습니다")
         return c
 
+    def worktree_gone(self, sid: int) -> bool:
+        """worktree가 합쳐지거나 버려졌다(HandoffManager.worktree_act가 부른다) — 그 세션의 대기 카드를 바로 치운다.
+        11-11: 승인은 approve가 카드 상태를 바꿔 막대에서 바로 빠졌지만, 버리기 · 카드 밖 합치기는 카드를 몰라 ready로 남았다가
+        1분 훑기에서야 사라졌다(그 사이 막대를 누르면 없는 세션으로 갔다). 합치는 중(merging) 카드는 approve가 마저 쓰니 둔다.
+        잠금을 잡지 않는다(approve가 잠근 채 worktree_act를 부른다) — 딕셔너리 한 줄이라 이벤트 루프 안에서 안전하다."""
+        c = self.cards.get(sid)
+        if c is None or c.status == "merging":
+            return False
+        del self.cards[sid]
+        return True
+
     # ── 승인 ──
     async def skip(self, sid: int) -> dict[str, Any]:
         """[나중에] — 이 브랜치 끝 커밋이 바뀌기 전까지 카드를 다시 띄우지 않는다."""
