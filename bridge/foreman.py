@@ -516,8 +516,8 @@ class ForemanDispatcher:
                   if repo and (ls.cwd == repo or ls.cwd.startswith(repo.rstrip("/") + "/"))]
         plan["live_here"] = len(others)
         for i, s in enumerate(ss):
-            if s["worktree"] is None:
-                s["worktree"] = bool(others) or i > 0
+            if s["worktree"] is None:      # 관리자는 늘 원본 폴더(11-11 아홉 — spawn_new가 worktree면 거절한다)
+                s["worktree"] = s["role"] != "manager" and (bool(others) or i > 0)
         # [시작]이 무엇을 띄우는지 경고 줄 맨 위에 한 줄로 — 세션 칸이 접혀 있어도 · 옛 카드(첫 세션만 보임)여도 보이게
         if many and plan["mode"] != "attach":
             on_ = [f"{i + 1}「{s['title'] or s['role']}」({ROLE_KO.get(s['role'], s['role'])} · {s['model'] or '기본'}"

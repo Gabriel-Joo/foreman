@@ -101,6 +101,10 @@ def test_check_per_session_role_model_worktree(tmp_path, monkeypatch):
     assert p["title"] == "봄" and p["role"] == "inspector"              # 위쪽 칸 = 첫 세션(옛 카드가 보인다)
     # 옛 카드는 첫 세션만 보인다 — [시작]이 띄울 것을 경고 줄에 모두
     assert "이 계획은 세션 2개를 띄웁니다: 1「봄」(점검 · opus), 2「화면」(디자이너 · sonnet)" in p["warnings"]
+    # 관리자는 둘째여도 따로 작업을 기본으로 켜지 않는다(11-11 아홉 — 켜면 spawn_new가 거절)
+    pm = asyncio.run(_again(d, {"project": "zz", "mode": "new", "sessions_edit": True,
+                                "sessions": [{"title": "코더", "first_prompt": "a"}, {"role": "manager", "title": "관리", "first_prompt": "b"}]}))
+    assert [s["worktree"] for s in pm["sessions"]] == [False, False]
     # 다시 맞춰도 경고가 쌓이지 않는다
     p2 = asyncio.run(_again(d, p))
     assert p2["warnings"].count("세션 1: 역할이 점검이라 읽기 전용으로 시작합니다") <= 1

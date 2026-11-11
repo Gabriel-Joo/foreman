@@ -10,6 +10,23 @@
 | `dbde093` | `migrations/0030_dispatch_session.sql` · `bridge/foreman.py` · `bridge/api/foreman.py` · `bridge/api/handoff.py`(기록 몇 줄) — ① · ④ · 일곱 |
 | `c569632` | `bridge/static/js/newsession.js` — + 새 세션 창에 「맡을 파일」 칸 |
 | `9e5f064` | 세션이 둘 이상이면 경고 줄에 [시작]이 띄울 세션을 모두 적음(지금 카드는 첫 세션만 보인다) |
+| `f17f2dc` | **계획 카드 세션 여럿**(`bridge/static/js/foremanchat.js`) — **맡은 파일 밖 — 관리자 허락 11-11**(관리자 276, 사용자 승인). 아래 「계획 카드」 |
+| (뒤 커밋) | 관리자 역할은 둘째 세션이어도 따로 작업을 기본으로 켜지 않음 — A 아홉과 맞춤(아래 「rebase」) |
+
+※ 위 커밋 번호는 rebase 전 것이다. A(277)가 main에 합친 뒤 `git rebase main`으로 다시 얹었다 — 지금 번호는 `git log main..cc/foreman-3`.
+
+### 계획 카드(맡은 파일 밖 — 관리자 허락 11-11)
+- 첫 세션은 지금 칸 그대로(칸 id 유지), [자세히]에 「맡을 파일」 · (세션이 여럿이면) 「합칠 순서」를 더함
+- 세션이 둘 이상이면(보내기 방식 빼고) [자세히] 아래 세션 칸: 「세션 1 띄우기」 켜기 + 둘째부터 세션마다 「세션 N 띄우기」 켜기(옆에 이름 · 역할 · 모델 · 맡을 파일 수 한 줄) + 접은 「세션 N 고치기」(이름 · 역할 · 모델 · 맡을 파일 · 합칠 순서 · 첫 글 · 읽기 전용 · 따로 작업)
+- [시작]은 `sessions`(세션마다 칸) + `sessions_edit: true`로 보낸다 — 서버는 세션 칸을 믿는다. 결과 글에 「띄운 세션 N개: 1「…」(tmux · 모델), …」, 못 띄운 것은 서버 note(노랑)
+- 도우미 `parseFiles` · `filesText` · `startedLine` + node 시험 `tests/js/foremanchat_multi.test.mjs`
+- 세션을 카드에서 **더하는** 단추는 없다(교장이 낸 수만큼 — 고치기 · 끄기만). 「둘 띄워줘」는 교장 지시문 10번이 받는다
+- 되돌리기: 그 커밋 revert(정적 파일 — 브리지 필요 없음, 새로고침). 서버는 옛 카드(위쪽 칸만)도 그대로 받는다
+
+### rebase · `bridge/api/handoff.py`(A 맡은 파일)를 고친 것
+- A(277)가 main에 합친 뒤 `git merge-tree --write-tree main HEAD`(충돌 없음, rc 0)를 따로 본 뒤 `git rebase main` — 충돌 없이 얹힘
+- `bridge/api/handoff.py`에 고친 것(지시서가 허락한 「`/api/spawn`이 있는 파일에서 기록 몇 줄」): `NewIn`에 `files` · `request` 두 칸, `POST /api/spawn` · `POST /api/sessions/{sid}/spawn`(옮기기)이 띄운 뒤 `record_direct`를 부르는 줄. 까닭: 교장 ④ — 관리자가 `/api/spawn`으로 바로 띄운 세션(11-09 232 · 11-10 265)에 기록이 없었다. 띄우는 몸(`bridge/handoff.py`)은 안 고침
+- A의 「아홉」(`spawn_new`이 관리자 + worktree면 거절)과 맞춤: 계획 check가 관리자 세션의 worktree 기본값을 끔(전에는 둘째 세션 · 살아 있는 세션이 있으면 켜 거절당할 수 있었다)
 
 ### ① 한 계획에 여러 세션
 - 계획 JSON에 `sessions[]` — 세션마다 `role · model · title · first_prompt · read_only · worktree · files(맡을 파일) · merge_order · on`. 최대 6
@@ -89,6 +106,7 @@
 | [시작] · 계획 받기가 이상(여러 세션 · 경고) | `9e5f064` → `dbde093` 차례로(이 둘이면 계획 · 시작 · /api/spawn이 이 일 전과 같다) | 다시 띄움 |
 | /api/spawn 응답이 느리거나 기록이 이상 | `dbde093`의 `bridge/api/handoff.py` 두 곳(`record_direct` 부르는 줄)만 빼도 된다 | 다시 띄움 |
 | + 새 세션 창 | `c569632` | 필요 없음(정적 파일 — 새로고침) |
+| 계획 카드 세션 칸(맡은 파일 밖) | 「계획 카드: 세션 여럿」 커밋 | 필요 없음(새로고침) — 서버는 옛 카드 모양도 받는다 |
 | DB까지 지우려면 | 코드를 되돌린 뒤 `DROP TABLE dispatch_session;`(0030 줄의 주석). `dispatch.origin`이 `spawn` · `move`인 행은 둬도 된다 | — |
 
 - 띄우기 길: [시작]은 여전히 `HandoffManager.spawn_new`만 부른다(`bridge/handoff.py`는 안 고침). 세션이 묶일 수 있는 자리는 「여러 세션 중 중간에 실패」뿐이고, 그때도 띄운 것은 살아 있고 결과 · 텔레그램에 무엇이 안 떴는지 나온다
@@ -101,6 +119,7 @@
 
 ## 남은 것
 
-- **세션별 계획 카드**(`foremanchat.js`) — 세션마다 역할 · 모델 · 이름 · 첫 글 · 맡을 파일 · 합칠 순서를 고치고 끄기, [시작]은 켠 것 모두(`sessions_edit: true`로 보냄), 결과 `out.sessions[]` · `out.failed` 보이기. 맡은 파일 밖이라 관리자 276에게 물음
+- 계획 카드 · + 새 세션 창은 미리보기로 보지 못했다 — 합친 뒤 관리자가 세 테마로 한 번(카드 안 칸이라 방 자리 영향은 없을 것)
+- 합치기 승인 카드(A)에 merge-order 결과 붙이기 — A 쪽 몫
 - 서기 띄우기 기록(`scribe_room.py`) — D2
 - 지난 디스패치 목록에서 직접 띄운 것 가르기(`foreman_note.py`) — C2
