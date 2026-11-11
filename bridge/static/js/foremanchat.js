@@ -22,6 +22,15 @@ export function josa(w, a = '이', b = '가') {
 // 서버에 'failed'로 이미 남는다) 서버를 부르지 않고 카드만 치운다
 // 창을 새로 열 때 입력 칸(11-11) — 계획으로 보낸 글이면 비우고, 보내지 않은 초안은 그대로(조용히 날리지 않는다)
 export const freshText = (sent, value) => (sent ? '' : value || '');
+// 11-11 맡을 파일 — 칸에는 쉼표로, 서버에는 배열로
+export const parseFiles = (s) => [...new Set(String(s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean))];
+export const filesText = (a) => (Array.isArray(a) ? a.join(', ') : String(a || ''));
+// 시작 결과 — 세션이 둘 이상이면 세션마다 한 마디(못 띄운 것은 note에 서버가 적는다)
+export const startedLine = (r) => {
+  const ss = (r.sessions || []).filter((s) => s.session_id);
+  if (ss.length < 2) return '';
+  return ` 띄운 세션 ${ss.length}개: ${ss.map((s) => `${s.idx + 1}「${s.title || s.role}」${s.tmux ? `(tmux ${s.tmux}${s.model ? ' · ' + s.model : ''})` : ''}`).join(', ')}.`;
+};
 export const dropAction = (disp) => (disp && disp.dispatch_id != null && (disp.status || 'planned') === 'planned' ? 'server' : 'clear');
 const projLabel = (name) => ((window.foreman && window.foreman.state.projects.find((p) => p.name === name)) || {}).label || name;
 
@@ -201,6 +210,10 @@ function mount(dlg) {
     // 11-09 사용자("칸 8개에 체크박스에 긴 글까지 한 화면에") — 먼저 보이는 것은 프로젝트 · 방식 · 이름 · 넣을 첫 글.
     // 역할 · 모델 · 보낼 세션 · 읽기 전용 · worktree는 [자세히], 노트 제안은 개수만. 칸 id는 그대로(collect가 읽는다)
     const warns = (p.warnings || []).filter((w) => !/^노트 /.test(w));   // 11-09 전 계획에 남은 노트 다듬기 글(지금은 로그로만)
+    // 11-11 한 계획에 여러 세션 — 첫 세션은 위 칸(칸 id 그대로), 둘째부터는 아래 세션 칸. 옛 계획은 sessions가 없어 하나
+    const ss = (p.sessions && p.sessions.length) ? p.sessions : [p];
+    const s0 = ss[0];
+    const many = ss.length > 1 && p.mode !== 'attach';
     $('fmPlan').innerHTML = `
       ${warns.length ? `<div class="fm-warn">${warns.map(esc).join('<br>')}</div>` : ''}
       ${(p.questions || []).length ? `<div class="fm-q"><b>${esc(josa(fmName()))} 묻습니다</b>${p.questions.map((q) => `<div>• ${esc(q)}</div>`).join('')}</div>` : ''}
@@ -224,11 +237,16 @@ function mount(dlg) {
           <select id="fmModel">${modelOptions(opts.models, p.model, p.role)}</select>
           <label class="muted" for="fmAttach">보낼 세션</label>
           <input id="fmAttach" value="${esc(p.attach_session ?? '')}" placeholder="방식이 '살아 있는 세션에 보내기'일 때 세션 번호">
+          <label class="muted" for="fmFiles" title="맡을 파일 — 이 세션이 고칠 파일입니다. 살아 있는 세션 · 다른 계획과 겹치면 위 경고에 뜹니다.">맡을 파일</label>
+          <input id="fmFiles" value="${esc(filesText(s0.files))}" placeholder="쉼표로 나눔 — 예: bridge/foreman.py, migrations/">
+          ${many ? `<label class="muted" for="fmOrder" title="합칠 순서 — 작은 것부터 합칩니다. 맡을 파일이 겹칠 때 먼저 합칠 세션을 정합니다.">합칠 순서</label>
+          <input id="fmOrder" type="number" min="1" max="99" value="${esc(s0.merge_order ?? 1)}">` : ''}
         </div>
         <label class="fm-check"><input id="fmRO" type="checkbox"${p.read_only ? ' checked' : ''}> 읽기 전용으로 시작 <span class="muted">— 살펴보기만, 고치기 전에 승인</span></label>
         <label class="fm-check" title="따로 작업 — 저장소 안 .worktrees/에 이 세션만의 폴더 · 브랜치(cc/…)를 만들어 띄웁니다. 끝낸 뒤 [합치기]로 main에 합칩니다."><input id="fmWT" type="checkbox"${p.worktree ? ' checked' : ''}> 따로 작업(worktree)
           <span class="muted">${p.live_here ? `— 이 프로젝트에 살아 있는 세션 ${p.live_here}개와 파일이 겹치지 않습니다` : '— 지금 이 프로젝트에 다른 세션이 없습니다'}</span></label>
       </details>
+      ${many ? sessionsHtml(ss, opt) : ''}
       ${notesHtml(p)}
       <details class="fm-why"${(p.confidence ?? 1) < 0.7 ? ' open' : ''}><summary class="small">왜 이렇게 판단했나 · 확신도 ${Math.round((p.confidence ?? 0) * 100)}%</summary>
         ${(p.reasons || []).map((r) => `<div class="small">• ${esc(r)}</div>`).join('')}</details>
@@ -238,6 +256,11 @@ function mount(dlg) {
         <button type="button" id="fmGo" class="primary"${p.mode === 'ask' || done ? ` disabled title="${done ? '이미 끝난 계획입니다.' : '되묻는 계획입니다 — 답을 요청에 덧붙여 다시 물어보거나 방식을 바꿔 주세요.'}"` : ''}>이대로 시작</button></div>`;
     $('fmPlan').hidden = false;
     bindRoleModel($('fmRole'), $('fmModel'), opts.models);
+    for (const el of box.querySelectorAll('.fm-sess')) {
+      bindRoleModel(el.querySelector('[data-k=role]'), el.querySelector('[data-k=model]'), opts.models);
+      const sum = () => { el.querySelector('[data-sum]').textContent = sessLine(el); };
+      el.addEventListener('change', sum); el.addEventListener('input', sum); sum();
+    }
     $('fmProj').onchange = () => { draw({ ...collect(), summary_id: null }); };
     $('fmMode').onchange = modeChanged;
     for (const id of ['fmRole', 'fmModel', 'fmAttach', 'fmRO', 'fmWT']) $(id).addEventListener('change', moreLine);
@@ -248,15 +271,55 @@ function mount(dlg) {
     $('fmGo').onclick = start;
     $('fmDrop').onclick = drop;
   }
+  // 11-11 세션 칸(둘째부터) — 칸마다 data-k로 읽는다
+  function sessionsHtml(ss, opt) {
+    const on0 = ss[0].on !== false;
+    return `<div class="fm-sessions">
+      <div class="small muted">세션 ${ss.length}개 — 세션 1은 위 칸입니다. 끈 세션은 띄우지 않습니다.</div>
+      <label class="fm-check" title="세션 1 띄우기 — 끄면 위 칸의 세션은 띄우지 않습니다."><input id="fmOn0" type="checkbox"${on0 ? ' checked' : ''}> 세션 1 띄우기 <span class="muted">— ${esc(ss[0].title || '')}</span></label>
+      ${ss.slice(1).map((s, j) => { const i = j + 1; return `<div class="fm-sess" data-si="${i}">
+        <label class="fm-check" title="세션 ${i + 1} 띄우기 — 끄면 이 세션은 띄우지 않습니다."><input type="checkbox" data-k="on"${s.on !== false ? ' checked' : ''}> 세션 ${i + 1} 띄우기 <span class="muted" data-sum></span></label>
+        <details class="fm-fold"><summary title="세션 ${i + 1} — 펼쳐서 이름 · 역할 · 모델 · 맡을 파일 · 첫 글을 고칩니다.">세션 ${i + 1} 고치기</summary>
+          <div class="fm-grid">
+            <label class="muted">이름</label><input data-k="title" value="${esc(s.title || '')}">
+            <label class="muted">역할</label><select data-k="role">${Object.entries(ROLE).map(([k, v]) => opt(k, s.role, v)).join('')}</select>
+            <label class="muted" title="모델 — 역할마다 기본값이 있고 바꿀 수 있습니다(config/models.toml).">모델</label><select data-k="model">${modelOptions(opts.models, s.model, s.role)}</select>
+            <label class="muted" title="맡을 파일 — 이 세션이 고칠 파일입니다. 다른 세션과 겹치면 위 경고에 뜹니다.">맡을 파일</label><input data-k="files" value="${esc(filesText(s.files))}" placeholder="쉼표로 나눔">
+            <label class="muted" title="합칠 순서 — 작은 것부터 합칩니다.">합칠 순서</label><input data-k="merge_order" type="number" min="1" max="99" value="${esc(s.merge_order ?? i + 1)}">
+          </div>
+          <label class="muted">넣을 첫 글</label>
+          <textarea data-k="first_prompt" rows="8" class="fm-first">${esc(s.first_prompt || '')}</textarea>
+          <label class="fm-check"><input type="checkbox" data-k="read_only"${s.read_only ? ' checked' : ''}> 읽기 전용으로 시작 <span class="muted">— 살펴보기만, 고치기 전에 승인</span></label>
+          <label class="fm-check" title="따로 작업 — 이 세션만의 폴더 · 브랜치(cc/…)에서 띄웁니다. 둘째 세션부터는 기본으로 켭니다."><input type="checkbox" data-k="worktree"${s.worktree !== false ? ' checked' : ''}> 따로 작업(worktree)</label>
+        </details></div>`; }).join('')}
+    </div>`;
+  }
+  function sessLine(el) {
+    const q = (k) => el.querySelector(`[data-k=${k}]`);
+    const t = (sel) => (sel && sel.selectedOptions && sel.selectedOptions[0] ? sel.selectedOptions[0].textContent.split(' — ')[0] : '');
+    const n = parseFiles(q('files').value).length;
+    return `— ${q('title').value || '(이름 없음)'} · ${t(q('role'))} · ${t(q('model')) || '기본 모델'}${n ? ` · 맡을 파일 ${n}개` : ''}`;
+  }
   function collect() {
     const v = (id) => $(id).value;
     const ups = (disp.plan.note_updates || []).map((o, i) => {
       const cb = box.querySelector(`input[data-ni="${i}"]`);
       return { ...o, on: cb ? cb.checked : o.on !== false };
     });
+    const first = { ...((disp.plan.sessions || [])[0] || {}), role: v('fmRole'), model: v('fmModel') || null, title: v('fmTitle'),
+                    read_only: $('fmRO').checked, read_only_set: true, worktree: $('fmWT').checked, first_prompt: v('fmFirst'),
+                    files: parseFiles(v('fmFiles')), merge_order: $('fmOrder') ? Number(v('fmOrder')) || 1 : 1,
+                    on: $('fmOn0') ? $('fmOn0').checked : true };
+    const rest = [...box.querySelectorAll('.fm-sess')].map((el) => {
+      const q = (k) => el.querySelector(`[data-k=${k}]`);
+      return { ...((disp.plan.sessions || [])[Number(el.dataset.si)] || {}), on: q('on').checked, title: q('title').value, role: q('role').value,
+               model: q('model').value || null, files: parseFiles(q('files').value), merge_order: Number(q('merge_order').value) || null,
+               first_prompt: q('first_prompt').value, read_only: q('read_only').checked, read_only_set: true, worktree: q('worktree').checked };
+    });
     return { ...disp.plan, project: v('fmProj'), mode: v('fmMode'), summary_id: v('fmSum') ? Number(v('fmSum')) : null,
              attach_session: v('fmAttach') ? Number(v('fmAttach')) : null, role: v('fmRole'), model: v('fmModel') || null, title: v('fmTitle'),
-             read_only: $('fmRO').checked, read_only_set: true, worktree: $('fmWT').checked, first_prompt: v('fmFirst'), note_updates: ups };
+             read_only: $('fmRO').checked, read_only_set: true, worktree: $('fmWT').checked, first_prompt: v('fmFirst'), note_updates: ups,
+             sessions: [first, ...rest], sessions_edit: true };
   }
   async function start() {
     const plan = collect();
@@ -266,7 +329,7 @@ function mount(dlg) {
     try {
       const r = await api('POST', '/api/foreman/start', { dispatch_id: disp.dispatch_id, plan, ...(inboxId ? { inbox_id: inboxId } : {}) });
       const ok = r.mode === 'attach' ? (r.injected ? '보냈습니다.' : '보냈지만 제출을 확인하지 못했습니다.')
-        : `새 세션을 띄웠습니다${r.tmux ? `(tmux ${r.tmux}${r.model ? ' · ' + r.model : ''})` : ''}.${r.worktree ? ` 따로 작업 ${r.worktree.branch}에서 합니다.` : ''}${r.injected ? ' 첫 글을 넣었습니다.' : ''}`;
+        : `새 세션을 띄웠습니다${r.tmux ? `(tmux ${r.tmux}${r.model ? ' · ' + r.model : ''})` : ''}.${r.worktree ? ` 따로 작업 ${r.worktree.branch}에서 합니다.` : ''}${r.injected ? ' 첫 글을 넣었습니다.' : ''}${startedLine(r)}`;
       $('fmStartMsg').className = `small ${r.note ? 'warn' : 'ok'}`;
       $('fmStartMsg').textContent = ok + (r.notes ? ` 노트 ${r.notes}줄을 고쳤습니다.` : '') + (r.note ? ' ' + r.note : '');
       $('fmDrop').disabled = true;
