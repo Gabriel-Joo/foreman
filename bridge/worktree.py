@@ -144,6 +144,23 @@ async def status(repo: str, name: str) -> dict[str, Any]:
     return out
 
 
+async def in_base(repo: str, name: str) -> bool | None:
+    """브랜치가 이미 원본 브랜치에 들어 있는가(11-11, 받은 할 일 #17 — 밖에서 `git merge --ff-only`로 합치면 FOREMAN이 몰랐다).
+    갈라진 뒤 커밋이 없거나(`--is-ancestor`), 있어도 같은 변경이 원본에 이미 있으면(`git cherry`가 모두 `-` — rebase 뒤 합침) True.
+    브랜치가 없으면 None(지워짐 — 합치거나 버린 뒤)."""
+    branch = BRANCH_PREFIX + name
+    rc, _ = await git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False)
+    if rc:
+        return None
+    base = await base_branch(repo)
+    rc, _ = await git(repo, "merge-base", "--is-ancestor", branch, base, check=False)
+    if rc == 0:
+        return True
+    rc, out = await git(repo, "cherry", base, branch, check=False)
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    return rc == 0 and bool(lines) and all(ln.startswith("-") for ln in lines)
+
+
 def _forbidden(wt_path: str, rel: str) -> bool:
     """쉬게 하기 커밋에 넣으면 안 되는 것 — 원본을 가리키는 링크(.venv · .env* · node_modules)와 worktree 밖을 가리키는 링크.
     .gitignore가 없는 저장소에서도 막는다(`.venv/` 패턴은 링크(파일)에 안 걸린다 — EXCLUDE 주석). 견본(.env*.example)은 넣는다."""

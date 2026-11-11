@@ -130,12 +130,15 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     if (!w) return '';
     if (w.error) return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div class="small bad">${esc(w.error)}</div></div>`;
     if (!w.exists) return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div class="small muted">${esc(w.branch)} — 합쳤거나 버려서 지금은 없습니다.</div></div>`;
+    // 11-11(받은 할 일 #17) — 같은 이름을 뒤 세션이 다시 씀: 지금 폴더는 그 세션 것이라 여기서는 합치기 · 버리기를 보이지 않는다
+    if (w.reused_by) return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div class="small muted" title="이름 다시 씀 — worktree 이름은 다시 쓰입니다. 이 세션의 worktree는 이미 합쳤거나 버렸습니다.">${esc(w.branch)} — 이 세션의 일은 끝났습니다. 지금 이 이름은 세션 ${w.reused_by}이 씁니다.</div></div>`;
     const why = w.live ? '세션을 끝내면서 합치거나 버립니다 — 위 「세션」의 [끝내고 합치기] · [끝내고 버리기].'
       : w.dirty.length ? `커밋 안 된 변경 ${w.dirty.length}개 — 그 세션에서 커밋하거나 버려야 합칠 수 있습니다.` : '';
     return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div>
       <div class="small"><code>${esc(w.branch)}</code> · ${esc(w.base)}보다 커밋 <b>${w.ahead}</b>개 앞${w.behind ? ` · <span title="${esc(w.base)}가 ${w.behind}개 앞서감(합칠 때 rebase) — 이 브랜치를 만든 뒤 ${esc(w.base)}에 들어온 커밋입니다. 합칠 때 그 위로 다시 얹습니다.">${esc(w.base)}에 새 변경 ${w.behind}개</span>` : ''}${w.dirty.length ? ` · <span class="warn">커밋 안 됨 ${w.dirty.length}</span>` : ''}${w.schema_lock ? ' · <span class="warn" title="스키마 잠금 보유 — 이 세션이 DB 구조(migrations)를 바꾸는 중이라 다른 세션은 바꿀 수 없습니다.">DB 구조 바꾸는 중</span>' : ''}</div>
       ${w.commits.length ? `<details${keep(`hand:${sid}:wt-commits`)}><summary class="small muted">커밋 · 바뀐 파일</summary><pre class="hand-body">${esc(w.commits.join('\n'))}\n\n${esc(w.diffstat.join('\n'))}</pre></details>` : ''}
       ${why ? `<div class="small muted">${esc(why)}</div>` : ''}
+      ${w.stale ? `<div class="small ok" title="이미 원본에 들어 있음 — 밖에서 git merge로 합쳤거나 합칠 커밋이 없습니다. [합치기]는 worktree와 브랜치만 지웁니다.">${esc(w.stale)}</div>` : ''}
       ${w.rested_at ? `<div class="small warn wt-rest" title="쉬는 중 — [쉬게 하기]로 지금까지를 커밋하고 세션만 끝냈습니다. 같은 일을 이어 하려면 [이어서], 끝났으면 [합치기]입니다.">쉬는 중 — 합치기 기다림 · ${esc(ago(w.rested_at))}부터${restDays(w.rested_at) >= 1 ? ` · ${restDays(w.rested_at)}일째` : ''}</div>` : ''}
       ${reviewBlock(w.review)}
       ${w.preview ? `<div class="small ok">미리보기가 :${w.preview.port}에서 돌고 있습니다.</div>` : ''}

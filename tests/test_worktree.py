@@ -201,3 +201,21 @@ def test_schema_lock(tmp_path):
     assert sl.state["foreman"]["cc"] == "B" and sl.state["foreman"]["wt"] is None
     alive.discard("B")                                       # 원본 폴더 세션은 끝나면 풀린다
     assert sl.check("foreman", "C", str(repo), "Write", edit(repo / "migrations" / "0018.sql")) is None
+
+
+async def test_in_base_outside_merge(repo):
+    """11-11(받은 할 일 #17) — 밖에서 git merge --ff-only로 합친 브랜치 · rebase로 같은 변경이 들어간 브랜치를 알아챈다."""
+    info = await wt.create(str(repo), "y")
+    p = Path(info["path"])
+    assert await wt.in_base(str(repo), "y") is True             # 갈라진 뒤 커밋 없음
+    (p / "b.txt").write_text("b\n"); sh(p, "add", "b.txt"); sh(p, "commit", "-qm", "b")
+    assert await wt.in_base(str(repo), "y") is False
+    sh(repo, "merge", "-q", "--ff-only", "cc/y")                  # 밖에서 합침
+    assert await wt.in_base(str(repo), "y") is True
+    # rebase로 합쳐 커밋 id가 다름 — git cherry가 같은 변경으로 본다
+    (p / "e.txt").write_text("e\n"); sh(p, "add", "e.txt"); sh(p, "commit", "-qm", "e")
+    (repo / "f.txt").write_text("f\n"); sh(repo, "add", "f.txt"); sh(repo, "commit", "-qm", "f")
+    sh(repo, "cherry-pick", "cc/y")
+    assert await wt.in_base(str(repo), "y") is True
+    await wt.remove(str(repo), "y", force=True)
+    assert await wt.in_base(str(repo), "y") is None              # 브랜치 없음
