@@ -405,3 +405,5 @@ button.danger:not(:disabled):hover { background:color-mix(in srgb, var(--bad) 14
 .sc-line { margin:5px 0; line-height:1.4; }
 .hand > .sc-row, .hand > details.hand { margin-top:4px; }
 .hand > details.hand { border-top:0; padding-top:0; }
+.sc-row > button.small { flex:none; }      /* `.sc-row > .small {flex:1}`에 걸려 버튼이 글 칸만큼 늘어나 글이 좁아지던 것 */
+.sc-row code { word-break:break-all; }
