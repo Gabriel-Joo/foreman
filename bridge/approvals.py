@@ -25,6 +25,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from bridge.approval import Decision, Policy, _short
+from bridge import pgrep_guard
 from bridge.approval_summary import summarize
 from bridge.models import EventIn, EventSource, EventStatus, EventType
 
@@ -141,6 +142,10 @@ class ApprovalManager:
             # 다른 저장소는 읽기만 — 역시 승인 모드와 상관없이(11-09 사용자)
             why_lock = self.scope.check(project, p.get("cwd"), tool, inp, p.get("scratchpad_dir") or _scratchpad(p), role)
             rule = "다른저장소-쓰기"
+        if not why_lock:
+            # pgrep -f · pkill -f가 자기 셸에 걸림(11-11, bridge/pgrep_guard.py) — 역시 승인 모드와 상관없이
+            why_lock = pgrep_guard.check(tool, inp)
+            rule = "pgrep-자기걸림"
         if why_lock:
             dec = Decision("deny", rule, why_lock)
             log.warning("deny %s %s — %s", project, tool, why_lock)

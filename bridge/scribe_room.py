@@ -361,7 +361,8 @@ COMMON = """
 지켜야 할 것
 - 먼저 이 저장소의 CLAUDE.md와 `docs/style_guide.md`(있으면)를 읽는다
 - 너는 따로 작업(worktree) 세션이다: 이 브랜치에 커밋하고 push하지 않는다. 브리지를 다시 띄우지 않는다
-- 끝나면 바꾼 파일만 `git add`해 커밋하고, 마지막 응답에 바꾼 파일 · 무엇을 · 확인 못 한 것을 짧게 알린다. 사람이 [합치기] 전에 diff를 본다"""
+- 끝나면 바꾼 파일만 `git add`해 커밋하고, 마지막 응답에 바꾼 파일 · 무엇을 · 확인 못 한 것을 짧게 알린다. 사람이 [합치기] 전에 diff를 본다
+- `pgrep -f` · `pkill -f`를 쓰지 않는다 — CC는 Bash 명령 전체를 `bash -c`로 돌려 패턴이 자기 셸에 걸린다(브리지가 거부한다). 기다릴 때는 그 작업의 PID나 결과 파일을 본다"""
 
 
 def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None = None) -> str:

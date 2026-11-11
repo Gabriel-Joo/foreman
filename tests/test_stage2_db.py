@@ -585,6 +585,18 @@ async def test_pre_tool_use_enforce_and_observe(env):
     assert got == [("allow", True), ("ask", True), ("pass", False), ("ask", False)]   # 자동 통과 · 관찰도 기록
 
 
+async def test_pre_tool_use_pgrep_self_match_denied_even_in_observe(env):
+    """11-11 — pgrep -f가 자기 셸에 걸리면 승인 모드(관찰)와 상관없이 거부(bridge/pgrep_guard.py)."""
+    s, _ = env
+    mgr, _, _ = await _mgr(s)
+    for cwd in (CWD, "/home/kopo17/AI_programming/runshoes"):
+        out = mgr.pre_tool_use(_p('until ! pgrep -f "tools/screen.py"; do sleep 3; done', cwd=cwd))
+        assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert "pgrep-자기걸림" in out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert mgr.pre_tool_use(_p("pgrep -af '[p]ytest' || echo 없음")) is None or \
+        mgr.pre_tool_use(_p("pgrep -af '[p]ytest' || echo 없음"))["hookSpecificOutput"]["permissionDecision"] != "deny"
+
+
 async def test_permission_browser_allow_and_deny(env):
     s, _ = env
     mgr, pipe, notif = await _mgr(s)
