@@ -43,9 +43,70 @@ async def plan(body: AskIn, request: Request) -> JSONResponse:
     return await _run(_d(request).plan(body.text, body.project))
 
 
+def alert(request: Request, project: str | None, msg: str) -> None:
+    """텔레그램 한 번(11-11 — 여러 세션 중 일부만 뜸 · 띄우기 기록 실패가 조용히 지나가지 않게). 알림이 꺼져 있으면 로그만."""
+    import logging
+    n = getattr(request.app.state, "notifier", None)
+    logging.getLogger("foreman.dispatch").warning("%s", msg)
+    if n is None:
+        return
+    rule = n.rules.for_project(project or "foreman") if getattr(n, "rules", None) else None
+    try:
+        n.send_direct(project or "foreman", "direct", None, f"{(rule and rule.prefix) or '[FOREMAN]'} ⚠ {msg}")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @router.post("/start")
 async def start(body: StartIn, request: Request) -> JSONResponse:
-    return await _run(_d(request).start(body.dispatch_id, body.plan, inbox_id=body.inbox_id))
+    async def go() -> dict[str, Any]:
+        out = await _d(request).start(body.dispatch_id, body.plan, inbox_id=body.inbox_id)
+        if out.get("failed"):        # 여러 세션 중 일부만 떴다 — 화면(note)과 함께 텔레그램 한 번
+            alert(request, body.plan.get("project"), f"계획 #{body.dispatch_id}에서 세션 {len(out['failed'])}개를 띄우지 못했습니다 — "
+                  + "; ".join(f"「{f['title'] or f['idx'] + 1}」 {f['error'][:100]}" for f in out["failed"]))
+        return out
+    return await _run(go())
+
+
+async def record_direct(request: Request, origin: str, cwd: str | None, session: dict[str, Any], result: dict[str, Any] | None,
+                        error: str | None = None, req_text: str | None = None, summary_id: int | None = None) -> str | None:
+    """교장 계획 없이 띄운 것(/api/spawn · 옮기기)도 dispatch 기록을 남긴다(교장 ④). 화면에 붙일 글(겹침 · 기록 실패)을 돌려준다.
+    기록이 실패해도 띄우기는 되돌리지 않는다 — 대신 글 + 텔레그램 한 번."""
+    from bridge.foreman import record_spawn, sessions_of
+    store = getattr(request.app.state, "store", None)
+    if store is None:
+        return None
+    project = (result or {}).get("project")
+    if project is None and cwd:
+        hm = getattr(request.app.state, "handoff", None)
+        try:
+            project = hm.project_of(cwd)[0] if hm and hm.project_of else None
+        except Exception:  # noqa: BLE001
+            project = None
+    try:
+        did = await record_spawn(store.engine, origin, project, session, result, error, req_text, summary_id)
+    except Exception as e:  # noqa: BLE001 — 0030 전 DB 등
+        alert(request, project, f"띄우기 기록(dispatch)을 남기지 못했습니다({type(e).__name__}) — 세션 {(result or {}).get('session_id')}")
+        return f"띄우기 기록을 남기지 못했습니다({type(e).__name__})."
+    note = None
+    d = getattr(request.app.state, "foreman", None)
+    if d is not None and project and result and session.get("files"):
+        ss = sessions_of({"sessions": [session], "sessions_edit": True})
+        try:
+            ov, fw = await d.file_conflicts(project, ss, did, exclude_session=result.get("session_id"))
+        except Exception as e:  # noqa: BLE001
+            ov, fw = [], [f"맡을 파일 겹침을 보지 못했습니다({type(e).__name__})"]
+        if ov or fw:
+            note = " ".join([o["text"] + "." for o in ov] + [w + "." for w in fw])
+    return note
+
+
+@router.get("/merge-order")
+async def merge_order(project: str, request: Request, branches: str = "") -> JSONResponse:
+    """합칠 브랜치가 둘 이상일 때 — 같은 파일을 건드리는 쌍 · 실제 충돌(merge-tree) · 권하는 순서 · 까닭(11-11 일곱).
+    합치기 카드(생명주기 쪽)가 부른다. branches=cc/a,cc/b로 좁힐 수 있다. 저장소는 바꾸지 않는다."""
+    only = [b.strip() for b in branches.split(",") if b.strip()] or None
+    return await _run(_d(request).merge_order(project, only))
 
 
 @router.get("/dispatch/{dispatch_id}")

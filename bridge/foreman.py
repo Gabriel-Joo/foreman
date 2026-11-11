@@ -11,6 +11,7 @@
 """
 
 import asyncio
+import fnmatch
 import json
 import logging
 import os
@@ -20,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from bridge import foreman_note as notes
@@ -151,13 +152,121 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
    - ⚠ 표시(확인 뒤 바뀜)가 붙은 줄은 그대로 믿지 말고, 필요하면 Read로 확인한 뒤 update · retire · touch를 제안하라
    - 사람의 요청 글 자체가 근거면 source를 비워 둔다(브리지가 이번 dispatch 번호를 넣는다)
    - 노트 상한은 프로젝트마다 약 2000토큰이다. 짧게 쓰고, 넘치면 오래된 것을 retire하라
+10. sessions — 띄울 세션 목록. 위 3 ~ 6(role · read_only · title · first_prompt)은 세션마다 이 안에 쓴다. 기본은 하나
+   - 여럿은 사람이 개수를 말했거나("둘 띄워"), 큰 일을 맡을 파일이 겹치지 않게 나눠 동시에 하는 것이 분명히 나을 때만
+   - files — 그 세션이 맡을 파일(저장소 기준 경로, 폴더는 끝에 /, 글롭 * 가능). 고칠 파일을 알면 하나여도 적는다 —
+     띄울 때 브리지가 살아 있는 세션 · 다른 계획과 겹치는지 본다. 모르면 []
+   - 여럿이면 세션끼리 files가 겹치지 않게 나눈다. 겹칠 수밖에 없으면 merge_order(1부터, 먼저 합칠 것이 작다)로 순서를 정하고 reasons에 까닭을
+   - 여럿이면 각 first_prompt에 맡을 파일과 "맡은 파일 밖은 고치기 전에 멈추고 묻는다"를 적는다
+   - mode "attach"는 세션 하나만(보낼 곳이 하나다)
 
 답은 아래 JSON 하나만, ```json 블록으로. 다른 말은 쓰지 마라.
 ```json
 {"project": "...", "mode": "new|handoff|attach|ask", "base_session": null, "summary_id": null, "attach_session": null,
- "role": "coder", "read_only": false, "title": "...", "first_prompt": "...", "reasons": ["..."], "confidence": 0.8,
- "questions": [], "note_updates": []}
+ "sessions": [{"role": "coder", "read_only": false, "title": "...", "first_prompt": "...", "files": ["bridge/x.py"], "merge_order": 1}],
+ "reasons": ["..."], "confidence": 0.8, "questions": [], "note_updates": []}
 ```"""
+
+# ── 한 계획에 여러 세션(11-11 교장 ①) ─────────────────────────
+# 계획 JSON의 sessions[]가 세션마다 역할 · 모델 · 이름 · 첫 글 · 읽기 전용 · worktree · 맡을 파일 · 합칠 순서 · 켬을 갖는다.
+# 위쪽 칸(role · title · first_prompt …)은 sessions[0]과 같게 둔다(check가 맞춘다) — 옛 계획(세션 하나 모양) · 옛 계획 카드가 그대로 돈다:
+# 옛 카드는 위쪽 칸만 고쳐 보내므로, sessions_edit가 없으면 위쪽 칸이 sessions[0]을 이긴다. 세션별로 고치는 카드는 sessions_edit: true를 보낸다
+MAX_SESSIONS = 6
+S_FIELDS = ("role", "model", "title", "first_prompt", "read_only", "worktree", "files", "merge_order")
+
+
+def norm_files(v: Any) -> list[str]:
+    """맡을 파일 — 저장소 기준 상대 경로만(절대 경로 · .. 은 뺀다), 겹친 것 하나로, 40개까지."""
+    if isinstance(v, str):
+        v = re.split(r"[,\n]", v)
+    if not isinstance(v, list):
+        return []
+    out: list[str] = []
+    for x in v:
+        s = str(x or "").strip().strip("`").strip()
+        s = s[2:] if s.startswith("./") else s
+        if not s or s.startswith("/") or s.startswith("~") or ".." in s.split("/"):
+            continue
+        s = s[:200]
+        if s not in out:
+            out.append(s)
+    return out[:40]
+
+
+def _int(v: Any) -> int | None:
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return None
+    return n if 0 < n < 1000 else None
+
+
+def sessions_of(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    """계획의 세션 목록(정리한 것). sessions가 없으면 위쪽 칸으로 하나를 만든다(옛 계획)."""
+    raw = plan.get("sessions")
+    raw = [dict(s) for s in raw if isinstance(s, dict)] if isinstance(raw, list) else []
+    if not raw:
+        raw = [{}]
+    if not plan.get("sessions_edit"):      # 옛 카드 · 옛 계획 — 위쪽 칸이 첫 세션을 이긴다
+        for k in (*S_FIELDS, "read_only_set"):
+            if plan.get(k) is not None:
+                raw[0][k] = plan[k]
+    out = []
+    for i, s in enumerate(raw[:MAX_SESSIONS]):
+        out.append({"role": s.get("role") if s.get("role") in ROLES else "coder",
+                    "model": s.get("model") or None,
+                    "title": str(s.get("title") or "")[:120],
+                    "first_prompt": str(s.get("first_prompt") or "")[:12000],
+                    "read_only": bool(s.get("read_only")),
+                    "read_only_set": bool(s.get("read_only_set")),
+                    "worktree": s["worktree"] if isinstance(s.get("worktree"), bool) else None,
+                    "files": norm_files(s.get("files")),
+                    "merge_order": _int(s.get("merge_order")) or i + 1,
+                    "on": s.get("on") is not False})
+    return out
+
+
+def adopt_sessions(plan: dict[str, Any]) -> dict[str, Any]:
+    """교장의 답 — sessions가 있으면 그것이 맞다. 위쪽 칸을 sessions[0]으로 덮어 옛 카드가 첫 세션을 보이게."""
+    ss = plan.get("sessions")
+    if isinstance(ss, list) and ss and isinstance(ss[0], dict):
+        for k in S_FIELDS:
+            plan.pop(k, None)
+        plan["sessions_edit"] = True
+    return plan
+
+
+def _mirror(plan: dict[str, Any]) -> dict[str, Any]:
+    first = plan["sessions"][0]
+    for k in S_FIELDS:
+        plan[k] = first[k]
+    plan.pop("sessions_edit", None)
+    return plan
+
+
+def _hit(p: str, q: str) -> bool:
+    if p == q:
+        return True
+    for x, y in ((p, q), (q, p)):
+        d = x.rstrip("/")
+        if (x.endswith("/") or "." not in d.rsplit("/", 1)[-1]) and y.startswith(d + "/"):
+            return True
+        if any(ch in x for ch in "*?[") and fnmatch.fnmatchcase(y.rstrip("/"), x):
+            return True
+    return False
+
+
+def files_overlap(a: list[str], b: list[str]) -> list[str]:
+    """맡을 파일 두 벌이 겹치는 것 — 같은 경로 · 폴더 안 · 글롭. 보일 글은 더 구체적인 쪽."""
+    out: list[str] = []
+    for p in a:
+        for q in b:
+            if _hit(p, q):
+                glob_p, glob_q = (any(ch in x for ch in "*?[") for x in (p, q))
+                w = q if glob_p and not glob_q else p if glob_q and not glob_p else max(p, q, key=len)
+                if w not in out:
+                    out.append(w)
+    return sorted(out)
 
 WAKE_HINT = """
 # 이번 요청은 사람이 아니라 실패 이벤트가 불렀다(자동 기상 2단계)
@@ -344,26 +453,31 @@ class ForemanDispatcher:
             log.warning("계획 받기 실패 dispatch=%s [%s] %s", did, kind, (m.text(detail) or "")[:300])
             await self._finish(did, None, "failed", rec, t0)
             raise Refused(f"{why}. 다시 물어보거나 직접 골라 주세요")
-        plan = await self.check(plan)
+        plan = await self.check(adopt_sessions(plan), did)
         await self._finish(did, plan, "planned", None, t0)
         return {"dispatch_id": did, "plan": plan, "ms": round((time.monotonic() - t0) * 1000), "context_chars": ctx_chars}
 
-    async def check(self, plan: dict[str, Any]) -> dict[str, Any]:
-        """디스패처의 계획을 사실과 맞춘다 — 없는 프로젝트 · 남의 요약 · 죽은 세션을 고르면 경고를 붙이고 비운다."""
+    async def check(self, plan: dict[str, Any], dispatch_id: int | None = None) -> dict[str, Any]:
+        """디스패처의 계획을 사실과 맞춘다 — 없는 프로젝트 · 남의 요약 · 죽은 세션을 고르면 경고를 붙이고 비운다.
+        세션마다(11-11) 역할 · 모델 · 읽기 전용 · worktree를 맞추고, 맡을 파일이 다른 세션 · 계획과 겹치면 경고를 붙인다."""
         warn = []
         names = {p[2]: p[0] for p in (self.projects() or [])}
         # warn은 화면 계획 창 맨 위에 뜬다 — 사람이 알아야 할 것(계획이 바뀌었다 · 골라 달라)만. 다듬기는 로그로(11-09 사용자:
         # "노트 제안의 출처 ''를 … '이번 요청'으로 바꿨습니다"가 두 번 떴는데 무슨 소린지 모르겠다, 내부 처리면 빼라)
         if plan.get("mode") not in MODES:
             log.info("계획 다듬기: 모르는 방식 %r → new", plan.get("mode")); plan["mode"] = "new"
-        if plan.get("role") not in ROLES:
-            plan["role"] = "coder"
-        if plan["role"] == "inspector" and not plan.get("read_only") and "read_only_set" not in plan:
-            plan["read_only"] = True      # 점검은 살펴보기 — 고치기 전에 승인(카드에서 끌 수 있다, 끄면 read_only_set)
-            warn.append("역할이 점검이라 읽기 전용으로 시작합니다")
+        ss = sessions_of(plan)
+        many = len(ss) > 1
+        for i, s in enumerate(ss):
+            who = f"세션 {i + 1}: " if many else ""
+            if s["role"] == "inspector" and not s["read_only"] and not s["read_only_set"]:
+                s["read_only"] = True      # 점검은 살펴보기 — 고치기 전에 승인(카드에서 끌 수 있다, 끄면 read_only_set)
+                warn.append(f"{who}역할이 점검이라 읽기 전용으로 시작합니다")
+            s.pop("read_only_set", None)
+            # 모델(11-05) — 포먼(LLM)은 고르지 않는다. 사람이 카드에서 고른 값이 목록에 있으면 그것, 아니면 역할 기본값
+            s["model"] = self.handoff.models.pick(s.get("model"), s["role"])
         plan.pop("read_only_set", None)
-        # 모델(11-05) — 포먼(LLM)은 고르지 않는다. 사람이 카드에서 고른 값이 목록에 있으면 그것, 아니면 역할 기본값
-        plan["model"] = self.handoff.models.pick(plan.get("model"), plan["role"])
+        plan["sessions"] = ss
         if plan.get("project") not in names and plan["mode"] != "ask":
             warn.append(f"모르는 프로젝트 {plan.get('project')!r} — 사람이 골라 주세요"); plan["mode"] = "ask"
         plan["repo"] = names.get(plan.get("project"))
@@ -390,17 +504,112 @@ class ForemanDispatcher:
             plan["mode"] = "new"
         if plan["mode"] == "handoff" and not plan.get("summary_id"):
             plan["mode"] = "new"
-        # 따로 작업(worktree, 11-05) — 그 프로젝트에 살아 있는 세션이 있으면 기본으로 켠다. 사람이 카드에서 끌 수 있다
+        if plan["mode"] == "attach" and sum(s["on"] for s in ss) > 1:
+            for s in ss[1:]:
+                s["on"] = False
+            warn.append("보내기(attach)는 세션 하나에만 합니다 — 둘째 세션부터는 껐습니다")
+        # 따로 작업(worktree, 11-05) — 그 프로젝트에 살아 있는 세션이 있으면 기본으로 켠다. 사람이 카드에서 끌 수 있다.
+        # 둘째 세션부터는 첫 세션이 살아 있게 되니 기본으로 켠다(11-11)
         repo = plan.get("repo")
         others = [ls for ls in live_sessions(self.sessions_dir).values()
                   if repo and (ls.cwd == repo or ls.cwd.startswith(repo.rstrip("/") + "/"))]
         plan["live_here"] = len(others)
-        if plan.get("worktree") is None:
-            plan["worktree"] = bool(others)
-        plan["warnings"] = warn + list(plan.get("warnings") or [])
-        plan["first_prompt"] = str(plan.get("first_prompt") or "")[:12000]
-        plan["title"] = str(plan.get("title") or "")[:120]
-        return plan
+        for i, s in enumerate(ss):
+            if s["worktree"] is None:
+                s["worktree"] = bool(others) or i > 0
+        # 맡을 파일 겹침(11-11 일곱) — 계획 안 · 살아 있는 세션 · 아직 시작 안 한 다른 계획
+        plan["file_overlaps"] = []
+        if plan["mode"] != "ask" and plan.get("project") in names:
+            plan["file_overlaps"], fw = await self.file_conflicts(plan["project"], ss, dispatch_id)
+            warn.extend(fw)
+            warn.extend(o["text"] for o in plan["file_overlaps"])
+        # 다시 맞출 때(시작 · 다시 열기) 지난번에 붙인 경고는 빼고 새로 — 겹침이 풀렸으면 사라지고, 같은 경고가 쌓이지 않는다
+        auto = set(plan.get("auto_warnings") or [])
+        plan["warnings"] = warn + [w for w in (plan.get("warnings") or []) if w not in warn and w not in auto]
+        plan["auto_warnings"] = warn
+        return _mirror(plan)
+
+    # ── 맡을 파일 겹침(11-11 일곱) ───────────────────────────
+    async def file_conflicts(self, project: str, sessions: list[dict[str, Any]], dispatch_id: int | None = None,
+                             exclude_session: int | None = None) -> tuple[list[dict[str, Any]], list[str]]:
+        """세션들의 맡을 파일이 (1) 이 계획의 다른 세션 (2) 살아 있는 세션이 맡은 파일 · 이미 고치고 있는 파일 (3) 아직 시작 안 한
+        다른 계획(하루 안)과 겹치는지. 돌려주는 것: (겹침 [{idx, kind, with, files, text}], 못 본 것 경고).
+        막지 않는다 — 일부러 나눠 시킬 수 있다. 못 본 것은 경고로 남긴다(겹침 없음과 가른다)."""
+        repo = next((p[0] for p in (self.projects() or []) if p[2] == project), None)
+        mine = [(i, s) for i, s in enumerate(sessions) if s.get("on", True) and s.get("files")]
+        if not mine or not repo:
+            return [], []
+        many = len(sessions) > 1
+
+        def who(i: int) -> str:
+            return f"세션 {i + 1}「{sessions[i].get('title') or sessions[i].get('role')}」의 맡을 파일이" if many else "맡을 파일이"
+        out: list[dict[str, Any]] = []
+        failed: list[str] = []
+
+        def add(i: int, kind: str, with_: Any, files: list[str], what: str) -> None:
+            more = f" 외 {len(files) - 6}개" if len(files) > 6 else ""
+            out.append({"idx": i, "kind": kind, "with": with_, "files": files,
+                        "text": f"{who(i)} {what}과 겹칩니다: {', '.join(files[:6])}{more}"})
+        for n, (i, a) in enumerate(mine):
+            for j, b in mine[n + 1:]:
+                if hit := files_overlap(a["files"], b["files"]):
+                    add(i, "plan", j, hit, f"이 계획의 세션 {j + 1}「{b.get('title') or b.get('role')}」")
+        live = {k: v for k, v in live_sessions(self.sessions_dir).items() if v.state != "T"}
+        try:
+            async with self.engine.connect() as c:
+                rows = (await c.execute(text(
+                    "SELECT ds.session_id, ds.files, cs.cc_session_id, COALESCE(cs.custom_title, cs.title) FROM dispatch_session ds "
+                    "JOIN dispatch d ON d.id = ds.dispatch_id JOIN character_session cs ON cs.id = ds.session_id "
+                    "WHERE d.project = :p AND ds.status = 'started' AND ds.dispatch_id <> :d AND ds.created_at > NOW(3) - INTERVAL 14 DAY"),
+                    {"p": project, "d": dispatch_id or 0})).all()
+                plans = (await c.execute(text(
+                    "SELECT id, COALESCE(edited, plan) FROM dispatch WHERE project = :p AND status = 'planned' AND id <> :d "
+                    "AND plan IS NOT NULL AND created_at > NOW(3) - INTERVAL 1 DAY ORDER BY id DESC LIMIT 20"),
+                    {"p": project, "d": dispatch_id or 0})).all()
+                here = [ls for ls in live.values() if ls.cwd == repo or ls.cwd.startswith(repo.rstrip("/") + "/")]
+                ids = {}
+                if here:
+                    q = text("SELECT cc_session_id, id, COALESCE(custom_title, title) FROM character_session WHERE cc_session_id IN :cc"
+                             ).bindparams(bindparam("cc", expanding=True))
+                    ids = {r[0]: (int(r[1]), r[2]) for r in (await c.execute(q, {"cc": [ls.session_id for ls in here]})).all()}
+        except Exception as e:  # noqa: BLE001 — 0030 전 DB 등. 겹침 없음으로 보이지 않게 경고로
+            log.warning("맡을 파일 겹침 확인 실패: %s", type(e).__name__)
+            return out, [f"맡을 파일이 살아 있는 세션 · 다른 계획과 겹치는지 보지 못했습니다({type(e).__name__})"]
+        claimed: set[int] = set()
+        for sid, files, cc, title in rows:
+            if cc not in live or sid == exclude_session:
+                continue
+            fs = norm_files(json.loads(files) if isinstance(files, str) else files)
+            claimed.add(int(sid))
+            for i, a in mine:
+                if hit := files_overlap(a["files"], fs):
+                    add(i, "claimed", int(sid), hit, f"살아 있는 세션 {sid}「{title or ''}」이 맡은 파일")
+        for did, pj in plans:
+            try:
+                other = sessions_of(json.loads(pj) if isinstance(pj, str) else pj)
+            except (ValueError, TypeError):
+                continue
+            theirs = [f for s in other if s["on"] for f in s["files"]]
+            for i, a in mine:
+                if hit := files_overlap(a["files"], theirs):
+                    add(i, "planned", int(did), hit, f"아직 시작하지 않은 계획 #{did}의 맡을 파일")
+        # 살아 있는 세션이 실제로 고치고 있는 것(바탕 뒤 변경 — 커밋 안 한 것 포함). 맡을 파일을 적지 않은 세션도 잡는다
+        from bridge.overlap import changed_since, git_lines
+        top = await git_lines(repo, "rev-parse", "HEAD") if here else None
+        for ls in here[:8]:
+            sid, title = ids.get(ls.session_id, (None, None))
+            if sid is None or sid == exclude_session:
+                continue
+            base = await git_lines(ls.cwd, "merge-base", "HEAD", top[0]) if top else None
+            ch = await changed_since(ls.cwd, base[0]) if base else None
+            if ch is None:
+                failed.append(f"살아 있는 세션 {sid}이 고치고 있는 파일을 git으로 읽지 못했습니다")
+                continue
+            for i, a in mine:
+                hit = files_overlap(a["files"], sorted(ch))
+                if hit and not any(o["kind"] == "claimed" and o["with"] == sid and o["idx"] == i for o in out):
+                    add(i, "editing", sid, hit, f"살아 있는 세션 {sid}「{title or ''}」이 이미 고치고 있는 파일")
+        return out, failed
 
     # ── 시작 ─────────────────────────────────────────────
     async def start(self, dispatch_id: int, plan: dict[str, Any], inbox_id: int | None = None) -> dict[str, Any]:
@@ -409,27 +618,64 @@ class ForemanDispatcher:
         if st != "planned":
             raise Refused({"started": "이미 시작한 계획입니다", "discarded": "버린 계획입니다", "failed": "실패한 계획입니다"}.get(
                 st or "", "없는 계획입니다"))
-        plan = await self.check(dict(plan))
+        plan = await self.check(dict(plan), dispatch_id)
         if plan["mode"] == "ask":
             raise Refused("되묻는 계획입니다 — 질문에 답해 다시 물어보거나 직접 골라 주세요")
-        if not plan["first_prompt"].strip():
-            raise Refused("넣을 첫 글이 비었습니다")
+        ss = plan["sessions"]
+        on = [i for i, s in enumerate(ss) if s["on"]]
+        if not on:
+            raise Refused("켠 세션이 없습니다 — 하나 이상 켜 주세요")
+        for i in on:
+            if not ss[i]["first_prompt"].strip():
+                raise Refused("넣을 첫 글이 비었습니다" + (f"(세션 {i + 1})" if len(ss) > 1 else ""))
+        # 세션마다 결과 — dispatch_session 한 줄씩(off · started · failed)
+        done: dict[int, dict[str, Any]] = {}
+        errs: dict[int, str] = {}
         if plan["mode"] == "attach":
             async with self.engine.connect() as c:
                 r = (await c.execute(text("SELECT cc_session_id, cwd FROM character_session WHERE id = :i"), {"i": plan["attach_session"]})).first()
             from bridge.handoff import transcript_path
-            res = await deliver(r[0], plan["first_prompt"], sessions_dir=self.sessions_dir, transcript=transcript_path(r[1] or "", r[0]))
+            res = await deliver(r[0], ss[on[0]]["first_prompt"], sessions_dir=self.sessions_dir, transcript=transcript_path(r[1] or "", r[0]))
             out = {"mode": "attach", "session_id": plan["attach_session"], "injected": bool(res.get("delivered")), "queued": res.get("queued")}
+            done[on[0]] = {"session_id": plan["attach_session"], "cwd": r[1]}
         else:
-            out = await self.handoff.spawn_new(plan["repo"], plan.get("summary_id") if plan["mode"] == "handoff" else None,
-                                               plan.get("title") or None, first_prompt=plan["first_prompt"],
-                                               read_only=bool(plan.get("read_only")), role=plan.get("role"),
-                                               worktree=bool(plan.get("worktree")), model=plan.get("model"))
+            # 차례대로 띄운다. 첫 세션이 못 뜨면 아무것도 안 띄운 것이라 그대로 거절(계획은 planned로 남아 다시 누를 수 있다).
+            # 둘째부터 못 뜨면 띄운 것은 그대로 두고 결과에 적는다 — 화면 · 텔레그램은 API가 알린다(조용히 하나만 뜨지 않게)
+            out = {}
+            for i in on:
+                s = ss[i]
+                try:
+                    r = await self.handoff.spawn_new(plan["repo"], plan.get("summary_id") if plan["mode"] == "handoff" and not done else None,
+                                                     s["title"] or None, first_prompt=s["first_prompt"], read_only=s["read_only"],
+                                                     role=s["role"], worktree=bool(s["worktree"]), model=s["model"])
+                except Exception as e:  # noqa: BLE001
+                    if not done:
+                        raise
+                    errs[i] = str(e) if isinstance(e, Refused) else f"{type(e).__name__}: {e}"
+                    log.warning("계획 #%s 세션 %d 띄우기 실패: %s", dispatch_id, i + 1, errs[i][:300])
+                    continue
+                done[i] = r
+                if not out:
+                    out = dict(r)
             out["mode"] = plan["mode"]
+        out["sessions"] = [{"idx": i, "title": ss[i]["title"], "role": ss[i]["role"], "on": ss[i]["on"],
+                            "session_id": (done.get(i) or {}).get("session_id"), "tmux": (done.get(i) or {}).get("tmux"),
+                            "worktree": (done.get(i) or {}).get("worktree"), "model": (done.get(i) or {}).get("model"),
+                            "error": errs.get(i)} for i in range(len(ss))]
+        if errs:
+            out["failed"] = [{"idx": i, "title": ss[i]["title"], "error": e} for i, e in errs.items()]
+            out["note"] = (f"{out.get('note') or ''} " + " ".join(
+                f"세션 {i + 1}「{ss[i]['title'] or ss[i]['role']}」은 띄우지 못했습니다({e[:120]})." for i, e in errs.items())
+                + " 띄운 세션은 그대로 둡니다 — 못 띄운 것은 새 계획으로 다시 띄워 주세요.").strip()
         head = await _git(plan["repo"], "rev-parse", "HEAD") if plan.get("repo") else ""
         async with self.engine.begin() as c:
             await c.execute(text("UPDATE dispatch SET edited = :e, status = 'started', started_at = NOW(3), session_id = :s, project = :p WHERE id = :i"),
                             {"e": json.dumps(plan, ensure_ascii=False), "s": out.get("session_id"), "p": plan.get("project"), "i": dispatch_id})
+            try:
+                await save_sessions(c, dispatch_id, ss, done, errs)
+            except Exception as e:  # noqa: BLE001 — 0030 전 DB. 시작은 되돌리지 않고 알린다
+                log.warning("계획 #%s 세션 기록(dispatch_session) 실패: %s", dispatch_id, type(e).__name__)
+                out["note"] = f"{out.get('note') or ''} 세션별 기록(맡을 파일)을 남기지 못했습니다({type(e).__name__}).".strip()
             # 노트 — 사람이 켠 제안만, 이 [시작]과 같은 트랜잭션으로
             touched = await notes.apply(c, plan["project"], plan.get("note_updates") or [], dispatch_id,
                                         out.get("session_id") or plan.get("attach_session"), head or None)
@@ -464,9 +710,47 @@ class ForemanDispatcher:
             raise Refused("없는 계획입니다")
         plan = json.loads(r[5]) if r[5] else None
         if plan and r[4] == "planned":
-            plan = await self.check(plan)
+            plan = await self.check(plan, dispatch_id)
+        elif plan:
+            plan["sessions"] = sessions_of(plan)      # 옛 계획(세션 하나 모양)도 같은 모양으로 읽힌다
         return {"dispatch_id": r[0], "origin": r[1], "project": r[2], "request": r[3], "status": r[4], "plan": plan,
                 "wake_text": r[6], "created_at": r[7].isoformat() + "Z" if r[7] else None, "error": r[8]}
+
+    async def merge_order(self, project: str, only: list[str] | None = None) -> dict[str, Any]:
+        """합칠 브랜치(그 저장소의 worktree cc/*)가 둘 이상일 때 같은 파일을 건드리는 쌍 · 권하는 순서(11-11 일곱).
+        합치기 카드(생명주기 쪽)가 부른다 — GET /api/foreman/merge-order. 판정은 bridge/overlap.py merge_order."""
+        from bridge.overlap import git_lines, merge_order
+        repo = next((p[0] for p in (self.projects() or []) if p[2] == project), None)
+        if not repo:
+            raise Refused("모르는 프로젝트입니다")
+        lines = await git_lines(repo, "worktree", "list", "--porcelain")
+        if lines is None:
+            raise Refused("worktree 목록을 git으로 읽지 못했습니다")
+        wts, path = [], None
+        for ln in lines:
+            if ln.startswith("worktree "):
+                path = ln[9:]
+            elif ln.startswith("branch refs/heads/cc/") and path and path != repo:
+                wts.append({"branch": ln[len("branch refs/heads/"):], "cwd": path})
+        if only:
+            wts = [w for w in wts if w["branch"] in only]
+        async with self.engine.connect() as c:
+            for w in wts:
+                r = (await c.execute(text("SELECT id FROM character_session WHERE cwd = :c ORDER BY id DESC LIMIT 1"), {"c": w["cwd"]})).first()
+                w["session_id"] = int(r[0]) if r else None
+                w["dispatch_id"] = w["merge_order"] = None
+                if r:
+                    try:
+                        d = (await c.execute(text("SELECT dispatch_id, merge_order FROM dispatch_session WHERE session_id = :s "
+                                                  "ORDER BY id DESC LIMIT 1"), {"s": r[0]})).first()
+                    except Exception:  # noqa: BLE001 — 0030 전 DB: 계획의 순서 없이 겹침으로만
+                        d = None
+                    if d:
+                        w["dispatch_id"], w["merge_order"] = int(d[0]), d[1]
+        main = (await git_lines(repo, "rev-parse", "--abbrev-ref", "HEAD") or ["main"])[0]
+        out = await merge_order(repo, wts, main)
+        out["project"], out["main"] = project, main
+        return out
 
     async def discard(self, dispatch_id: int) -> None:
         async with self.engine.begin() as c:
@@ -520,6 +804,45 @@ class ForemanDispatcher:
                             {"p": json.dumps(plan, ensure_ascii=False) if plan else None, "s": status, "e": (error or "")[:1000] or None,
                              "ms": round((time.monotonic() - t0) * 1000), "pj": (plan or {}).get("project") if (plan or {}).get("repo") else None,
                              "i": did})
+
+
+async def save_sessions(c: Any, dispatch_id: int, ss: list[dict[str, Any]], done: dict[int, dict[str, Any]],
+                        errs: dict[int, str]) -> None:
+    """계획의 세션마다 dispatch_session 한 줄(0030) — off(끔) · started(띄움) · failed(못 띄움)."""
+    for i, s in enumerate(ss):
+        st = "started" if i in done else ("failed" if i in errs else "off")
+        d = done.get(i) or {}
+        await c.execute(text(
+            "INSERT INTO dispatch_session (dispatch_id, idx, role, model, title, files, merge_order, status, session_id, cwd, error) "
+            "VALUES (:d, :i, :r, :m, :t, :f, :o, :s, :sid, :cwd, :e)"),
+            {"d": dispatch_id, "i": i, "r": s.get("role"), "m": d.get("model") or s.get("model"), "t": (s.get("title") or "")[:255] or None,
+             "f": json.dumps(s.get("files") or [], ensure_ascii=False), "o": s.get("merge_order"), "s": st,
+             "sid": d.get("session_id"), "cwd": (d.get("cwd") or "")[:1024] or None, "e": (errs.get(i) or "")[:500] or None})
+
+
+async def record_spawn(engine: AsyncEngine, origin: str, project: str | None, session: dict[str, Any], result: dict[str, Any] | None,
+                       error: str | None = None, request: str | None = None, summary_id: int | None = None) -> int:
+    """교장 계획을 거치지 않은 띄우기도 dispatch 기록을 남긴다(11-11 교장 ④ — 11-09 232 · 11-10 265가 기록 없음).
+    origin: spawn(/api/spawn — + 새 세션 창 · 관리자) · move(새 세션으로 옮기기). 계획 카드와 같은 모양(sessions 한 칸)으로 적어
+    지난 디스패치 · 맡을 파일 겹침 · 합칠 순서가 같은 길로 읽는다. 돌려주는 것: dispatch id."""
+    if not session.get("role") and (result or {}).get("session_id"):
+        async with engine.connect() as c:      # 옮기기는 역할을 옛 세션에서 물려받는다 — 새 세션 행에서 읽는다
+            session = {**session, "role": (await c.execute(text("SELECT role FROM character_session WHERE id = :i"),
+                                                          {"i": result["session_id"]})).scalar()}
+    ss = sessions_of({"sessions": [session], "sessions_edit": True})
+    plan = _mirror({"project": project, "mode": "handoff" if summary_id else "new", "summary_id": summary_id,
+                    "sessions": ss, "reasons": [f"교장 계획 없이 바로 띄움({origin})"], "note_updates": []})
+    req = (request or "").strip() or f"(바로 띄움) {ss[0]['title'] or ss[0]['role']}"
+    ok = result is not None and error is None
+    async with engine.begin() as c:
+        r = await c.execute(text(
+            "INSERT INTO dispatch (origin, project, request, plan, status, error, session_id, started_at) "
+            "VALUES (:o, :p, :r, :pl, :s, :e, :sid, IF(:ok, NOW(3), NULL))"),
+            {"o": origin, "p": project, "r": req[:4000], "pl": json.dumps(plan, ensure_ascii=False), "s": "started" if ok else "failed",
+             "e": (error or "")[:1000] or None, "sid": (result or {}).get("session_id"), "ok": ok})
+        did = r.lastrowid
+        await save_sessions(c, did, ss, {0: result} if ok else {}, {} if ok else {0: error or "실패"})
+    return did
 
 
 # 계획 받기 실패 원인(11-10) — 「답에서 계획을 찾지 못했습니다」 하나로는 한도 · 빈 답 · 깨진 JSON · 호출 실패를 가를 수 없었다
