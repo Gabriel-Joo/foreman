@@ -170,7 +170,7 @@
     "_defs": "[시트, x, y, w, h, 외곽선(1), 프레임 수, 초당 프레임] — 프레임은 오른쪽으로 w씩",
 
     "room": {
-      "corridor": { "a": "#6e2328", "b": "#7a2a2f", "edge": "#c9a14a", "kind": "carpet" },
+      "corridor": { "a": "#6e2328", "b": "#7a2a2f", "edge": "#c9a14a", "kind": "carpet", "fade": 0.75 },
       "floor": ["floor_1", "floor_1", "floor_1", "floor_2", "floor_3", "floor_4", "floor_1", "floor_5", "floor_6", "floor_7", "floor_8", "floor_1"],
       "wall_top": "wall_top", "wall": "wall", "border": "wall_top",
       "banners": { "s": ["banner_b", "banner_r", "banner_g", "banner_y"], "every": 6, "from": 3 }
