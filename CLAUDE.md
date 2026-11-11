@@ -35,6 +35,7 @@
 - **작업 트리에 내가 만들지 않은 변경이 있으면 건드리지 않고 사용자에게 알린다**(다른 세션이 같은 저장소에서 일할 수 있다). 커밋할 때는 내가 고친 파일만 `git add`
 - **시험으로 띄운 세션은 끝낸 뒤 지우지 않고 `hidden_reason='test'`로 숨긴다**(0018 `hidden_at`)
 - **화면에 뜨는 글(툴팁 · 안내 · 확인 창 · 결과 · 서버 거부 사유)은 "~습니다"로**, 툴팁은 "무엇 — 한 줄 설명"으로 짧게(11-05 사용자 지시). 화면 말("디스패처" 안 씀 등) · 툴팁 글 약속은 `docs/style_guide.md` 「4-1. 화면 글」
+- **`pgrep -f` · `pkill -f`를 쓰지 않는다** — CC는 Bash 명령 전체를 `bash -c`로 돌려 패턴이 자기 셸에 걸린다(11-09 · 11-10 실제, 11-11부터 브리지가 PreToolUse에서 거부 — `bridge/pgrep_guard.py`). 기다릴 때는 그 작업의 PID나 결과 파일을 보고, 꼭 찾아야 하면 `[p]ython`처럼 대괄호로 감싸 확인과 실행을 따로 친다
 - 파일 고치기는 Edit · Write로(Bash의 sed · python으로 고치지 않는다). `approval.toml` · `notify.toml` · 브리지 코드를 바꾸면 브리지를 다시 띄운다
 - **다른 저장소(runshoes · petmint-rag-chatbot · ronanlab-infra)는 사용자가 시킬 때만 고치고, 그 저장소의 CLAUDE.md를 따른다**
 - 기본 제공 Explore는 같은 이름의 `.claude/agents/Explore.md`(`model: sonnet`, 읽기 전용)로 덮어썼다(11-09, 런슈즈 `57420bd`와 같은 방식). FOREMAN은 `CLAUDE_CODE_SUBAGENT_MODEL`을 쓰지 않으니 다른 서브에이전트(general-purpose 등)는 그대로 부모 모델을 따른다

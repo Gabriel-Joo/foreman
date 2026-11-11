@@ -192,6 +192,12 @@ def fit_body(body: str, limit: int = MAX_INJECT, full_path: str | None = None) -
     return s[: limit + 400], True
 
 
+# 11-11 — pgrep -f 함정(bridge/pgrep_guard.py가 PreToolUse에서 거부하지만, 거부당하기 전에 알게). 서기 COMMON도 같은 줄
+PGREP_LINE = ("`pgrep -f` · `pkill -f`를 쓰지 않는다 — CC는 Bash 명령 전체를 `bash -c`로 돌려 패턴이 자기 셸에 걸린다"
+              "(브리지가 거부한다). 기다릴 때는 그 작업의 PID나 결과 파일을 보고, 꼭 찾아야 하면 `[p]ython`처럼 대괄호로 감싸 "
+              "확인과 실행을 따로 친다")
+
+
 def wt_block(cwd: str | None) -> str:
     """받는 세션이 따로 작업(worktree)에서 떴으면 넣는 글 맨 앞에 붙일 절(11-09). 인계를 쓴 세션은 받을 세션이 어디서 뜰지
     모른다 — 「지금 상태」에 "브랜치 main"이라고 적어도 실제는 worktree였다(11-05 · 11-09 두 번). 띄운 브리지가 안다.
@@ -208,6 +214,7 @@ def wt_block(cwd: str | None) -> str:
             "- 커밋은 이 브랜치에 한다. push · 합치기는 기본으로 하지 않는다(사용자가 시키면 따른다) — "
             "합치기는 사람(패널 [합치기]) 또는 관리 세션이 한다. 끝내기 전에 커밋을 마친다\n"
             "- 브리지를 다시 띄우지 않는다 — 도는 브리지는 FOREMAN 원본 폴더의 코드다\n"
+            f"- {PGREP_LINE}\n"
             "- 그 밖에 원본 폴더에서만 할 일 · 결과를 남길 자리는 그 저장소의 CLAUDE.md가 정한 것을 따른다"
             "(정한 것이 없으면 이 브랜치의 커밋과 최종 보고로 충분하다)\n\n")
 

@@ -62,7 +62,7 @@
   - 11-09 관리자는 "다른 pytest 있음"을 세 번 헛보았고, 코더 233은 `until ! pgrep -f "tools/screen.py"; do sleep 3; done` 셸이 영원히 안 끝나 합치기 직전에 걸렸다(그대로 끝냈으면 CC 끝내기 확인 창)
   - 대괄호 트릭(`pgrep -af '[p]ython -m pytest'`)은 패턴 글자가 자기와 다르게 해 준다. **그러나 같은 명령 안에서 그 프로그램을 돌리면** 뒤쪽 글자(`.venv/bin/python -m pytest …`)에 또 걸린다(11-10 관리자)
   - 그래서: **확인과 실행을 따로 친다.** 기다릴 때는 `pgrep -f`로 자기를 찾지 말고 그 작업의 PID나 결과 파일을 본다
-  - 막는 장치(PreToolUse 거부)는 아직 없다 — README 「나중에 할 일」
+  - 11-11부터 브리지가 PreToolUse에서 거부한다(`bridge/pgrep_guard.py`, 규칙 `pgrep-자기걸림`, 승인 모드와 상관없이) — 판정은 "`-f` 패턴 정규식이 이 명령 글 자체에 걸리는가"(명령 자리의 호출만, heredoc 본문 · echo 글은 빼고). 브리지 코드라 합친 뒤 브리지를 다시 띄워야 켜진다 [log:coder_screen_state_20261111.md]
 
 ## 5. 알림(텔레그램) 상세
 
