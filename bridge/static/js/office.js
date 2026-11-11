@@ -2072,14 +2072,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     ctx.fillText(text, x, y - size / 2);
   }
   function drawSign(tx, ty, ch) { drawBubble(tx * T, ty * T, ch, P.warn, 10); }
-  // 사용량 열기(11-08, docs/15 6절) — 지난 30분 환산액 상위 셋. 세기는 달러/시간에 비례($20/시간이면 가득).
+  // 작업 중 표시(11-08 사용량 열기 → 11-11 작업 중인 세션 모두) — 쉬는 세션은 끈다.
   // 오피스: 노트북에서 김 · 마법학교: 마력 오라 · 현장: 엔진 아지랑이 · 도형: 주황 고리. 실패 연기(회색)와 섞이지 않게 색을 따로 쓴다
   function drawHeat(a, now) {
     if (a.kind !== 'session' || !a.s) return;
-    const r = hotOf.get(a.s.id);
-    if (!r) return;
-    // 세기 0.6~1 — 0.3에서는 바닥색에 묻혀 보이지 않았다(11-08 확대 사진). 효과는 몸통 둘레 · 머리 위(발밑은 이름표가 가린다)
-    const k = Math.max(0.6, Math.min(1, r / 20)), x = a.x * T, mid = a.y * T - 9, head = a.y * T - 18, t = now / 1000;
+    // 11-11 사용자 — 작업 중(ACTIVE)인 세션은 모두 켜고 쉬는 세션은 끈다(전에는 비용 상위 3개만이라 「왜 얘만?」이었다. 비용은 맨 윗줄에 있다)
+    if (a.s.state !== 'ACTIVE') return;
+    // 세기는 고정 — 0.3에서는 바닥색에 묻혀 보이지 않았다(11-08 확대 사진). 효과는 몸통 둘레 · 머리 위(발밑은 이름표가 가린다)
+    const k = 0.8, x = a.x * T, mid = a.y * T - 9, head = a.y * T - 18, t = now / 1000;
     const kind = theme.name;
     if (kind === 'magic') {
       glow(x, mid, 16 + 4 * Math.sin(t * 3), '#a87bff', 0.35 * k);
