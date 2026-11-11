@@ -2035,7 +2035,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   const coderBubbleOf = (a) => ((a.kind === 'coder' || (a.kind === 'session' && a.resident)) ? coderBubble(a.jobs) : null);
   // 답 기다림 · 권한 거부(노랑) · 보고 옴(초록) — 세션 캐릭터 머리 위(11-11). 승인 대기 같은 테마 말풍선이 있으면 그것이 먼저
   const markOf = (a) => (a.kind === 'session' && a.s && !(a.act && a.act.bubble) ? needMark(a.s) : null);
-  const markColor = (m) => (m.tone === 'ok' ? (P.ok || P.act) : P.warn);
+  // 합치기 기다림은 보라 — 초록(보고)·노랑(답/거부/승인 대기)·빨강(실패)·파랑(대기 점 · +N)이 모두 쓰여 어느 테마 팔레트에도 없는 색을 고름
+  const markColor = (m) => (m.tone === 'ok' ? (P.ok || P.act) : m.tone === 'merge' ? (P.merge || '#c9a7ff') : P.warn);
   function tagBoxesW() {
     const toW = (sx, sy) => [((sx - W / 2) / cam.s + cam.x), ((sy - H / 2) / cam.s + cam.y)];
     return HITS.filter((h) => h.zone).map((h) => { const [x0, y0] = toW(h.x, h.y), [x1, y1] = toW(h.x + h.w, h.y + h.h); return [x0, y0, x1 - x0, y1 - y0]; });
