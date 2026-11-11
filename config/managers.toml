@@ -1,0 +1,10 @@
+# 프로젝트별 관리자(11-11, bridge/managers.py) — 주소(GET /api/managers) · 관리자끼리 부탁(POST /api/managers/<프로젝트>/ask).
+# 관리자 = 그 프로젝트 원본 폴더에서 살아 있는 역할 manager 세션. 없거나 못 넣으면 텔레그램 한 번 + 응답에 사유.
+# 바꾸면 브리지를 다시 띄운다. 끄기 = enabled = false(목록은 그대로 읽히고 부탁만 503)
+#
+# 다른 저장소에 관리자를 실제로 띄우는 것은 그 저장소 CLAUDE.md 규칙 줄과 함께 사용자가 시킬 때 —
+# 초안은 log/coder_c_wave2_20261111.md 「다른 저장소 관리자 — CLAUDE.md 초안」
+
+[managers]
+enabled = false
+projects = []     # 비면 DB의 모든 프로젝트(project.repo_path가 있는 것)
