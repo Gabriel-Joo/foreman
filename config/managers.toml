@@ -6,7 +6,7 @@
 # 초안은 log/coder_c_wave2_20261111.md 「다른 저장소 관리자 — CLAUDE.md 초안」
 
 [managers]
-enabled = false
+enabled = true     # 11-11 사용자 지시로 켬(관리자 띄우기는 따로 — 첫째는 ronanlab-infra)
 projects = []     # 비면 DB의 모든 프로젝트(project.repo_path가 있는 것)
 
 # 교장 계획 카드 [관리자에게 보내기](bridge/handover.py) — 고친 계획을 저장하고 그 프로젝트 관리자 입력 칸에 넣는다.
@@ -14,6 +14,6 @@ projects = []     # 비면 DB의 모든 프로젝트(project.repo_path가 있는
 # 관리자가 없거나 못 넣으면 카드에 사유 + 텔레그램. 넘긴 뒤 wait_min분 안에 시작하지 않으면 텔레그램 한 번.
 # 끄기 = enabled = false + 브리지 다시 띄우기(카드 단추가 사라지고 [이대로 시작]은 그대로)
 [handover]
-enabled = false
+enabled = true     # 11-11 사용자 지시로 켬
 wait_min = 15
 every_s = 60
