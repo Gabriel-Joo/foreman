@@ -33,3 +33,12 @@
 - 저장: `.env.bridge` 한 파일(권한 600). worktree의 `.env.bridge`는 이 파일을 가리키는 링크. systemd 유닛 · cron · CC 설정 · 다른 저장소에는 없음
 - 읽는 곳: 브리지(`bridge/config.py` — 띄울 때 한 번 읽음), 브라우저(localStorage `foremanToken` — 사람이 접속 키 창에 넣음, `usage.html` · `debug.html`도), 미리보기 브리지(worktree 링크로 띄울 때 읽음), 세션 · 관리자 명령(그때마다 `.env.bridge`에서 `sed`로 읽음), `tools/screen.py`(돌릴 때마다 읽음). 훅은 다른 토큰(`FOREMAN_HOOK_TOKEN`)
 - 찍힌 값이 남은 곳: 290의 CC 대화 파일(`~/.claude/projects/…foreman--worktrees-foreman-2/<세션>.jsonl`) 1개. 브리지 로그 · 저널 · `log/` · FOREMAN DB(글자 칸 23개)에는 0 — DB 사본은 `mask.py`가 정확한 값으로 가림
+
+## 290 합침 · 실패 출력 확인에서 멈춤 · test_terminal 4줄(사용자 지시 「넷을 순서대로」)
+
+- 290: merge-tree exit 0 → 카드 승인 → `8b05914`(push 전). 혼자 pytest 701 · node 123 통과. 머리글 「시험 DB: foreman_test_main_897324」, 공용 DB 경고 없음, 끝난 뒤 `foreman\_test\_%` 0개. 운영 DB 시험 전 표 27 · 마지막 0031(시험 뒤 대조는 아직)
+- 일부러 실패시킨 확인(스크래치 시험): 290의 가린 헤더는 첫째 꼴(assert 줄 안 호출 인자)은 막지만, 둘째 꼴(헤더 사전을 `==`로 견줌)은 pytest 사전 차이가 값을 풀어 냄 → **멈춤**. 이때 **관리자가 Bearer 뒤 글자를 묶어 보는 명령을 써 토큰 값을 이 관리자 세션 도구 출력에 한 번 냈다**(사용자에게 바로 알림 — 토큰 바꾸기로 함께 쓸모없어짐)
+- 사용자: 둘째 꼴이 실제로 있는지 먼저 → 저장소 시험에 **0곳**. 그 확인 중 첫째 꼴이 `tests/test_terminal.py`(진짜 토큰 날 사전 `h`) 4줄 568 · 585 · 587 · 592에 남은 것을 찾음(실패시키지 않고 꼴만 봄)
+- 고침 세션 296(sonnet, dispatch 366)이 4줄 고침을 해 놓고 18:24 첫 턴 끝에 **API 오류(안전 분류기 거부, `req_011Cgvu6VKKieKTCH3eXg9ud`)**로 끊김 — 일부러 실패시키는 임시 시험을 만들던 참. 커밋 · 확인 · 시험 · 기록 없음, worktree에 `tests/test_terminal.py` +5 −3. 296 스크래치의 `test_mask_probe.py`는 관리자가 지움. 대화 · 화면 · 차이에 토큰 값 0
+- 사용자: 296을 끝내고 이어받을 새 세션 → 296 `exit`(worktree 그대로) → **세션 297**(코더 · opus, 같은 worktree `foreman-2`). 교장 `/start`는 늘 원본 폴더에서 새 worktree를 만들어 기존 worktree에 붙일 수 없어 `/api/spawn`(cwd = 그 worktree, `worktree:false`)으로 — dispatch 367(origin `spawn`) · `dispatch_session` 기록 남음. 지시문: 이미 된 것은 손대지 않고 확인만, 가린 헤더 repr · 실패 출력의 설정 값 개수(값을 화면에 내지 않는 세기 명령을 적어 줌), 어긋나게 한 줄 되돌리기, 전체 시험, 커밋 하나
+- 18:46 CC 자동 업데이트 순간 이 셸의 `grep`(CC 실행 파일에 기대는 함수)이 「claude native binary not installed」로 한 번 실패 — 이후 값 세기는 `/usr/bin/grep`으로
