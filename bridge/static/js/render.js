@@ -57,6 +57,15 @@ export function humanNeed(s) {
   if (s.asks) return { label: '답 기다림', tip: '답 기다림 — 마지막 응답이 사람에게 묻고 끝났습니다. 패널 입력 칸이나 그 세션 터미널에서 답하면 풀립니다.' };
   return null;
 }
+// 캐릭터 머리 위 말풍선(11-11 사용자 — 답 기다림 · 보고가 캐릭터에 안 보였다). 답 기다림은 노랑(warn), 보고 옴은 초록(ok)으로 갈라
+// 「답해야 하는 것」과 「읽기만 하면 되는 것」을 한눈에. 보고 옴은 그 세션 패널을 열면 사라진다(opanel → store.reportRead)
+export function needMark(s) {
+  if (!s || s.state === 'DORMANT') return null;
+  if (s.denied) return { text: '권한 거부', tone: 'warn', tip: humanNeed(s).tip };
+  if (s.asks) return { text: '답 기다림', tone: 'warn', tip: humanNeed(s).tip };
+  if (s.report) return { text: '보고 옴', tone: 'ok', tip: '보고 옴 — 묻지 않고 일을 마친 응답이 왔습니다. 누르면 대화가 열리고, 읽으면 사라집니다.' };
+  return null;
+}
 // 멈춤(11-11, 브리지 bridge/stallwatch.py가 1분마다 잼) — 작업 중 끊김 · 응답 없음 · 맴돎 · 끝내기 확인 창 · 긴 작업
 export function stallChip(s) {
   const list = (s && s.stall) || [];

@@ -99,6 +99,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   mountApprovalHistory($('pHist'), $('pHistHead'), $('pHistBody'), store);
 
   let target = null, targetKey = '', lastSel = undefined;
+  let reportSent = null;           // 「보고 옴」 읽음을 보낸 응답 이벤트 id(같은 것을 두 번 보내지 않게)
   let open = ls.get(KEY_OPEN) !== '0';
   let tab = TABS.some(([k]) => k === ls.get(KEY_TAB)) ? ls.get(KEY_TAB) : 'convo';
   let mode = ls.get(KEY_MODE) === 'wide' ? 'wide' : 'narrow';
@@ -585,6 +586,11 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     put('pMeta', 'meta', `${ended}${stateBadge(s)} ${asksOff}${stallChip(s)}${ctxChip(s)}<span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
       · <span class="muted" title="오늘 출력 토큰 — 이 세션이 오늘 쓴 글의 양입니다.">오늘 출력 토큰 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn" title="끝났는지 모름 — 작업이 끝났다는 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.">⚠ 끝났는지 모름</span>' : ''}`);
     $('pMeta').title = [sessionSub(s), sessionIds(s), projectLabel(st, s.project), s.cwd || ''].filter(Boolean).join(' · ');
+    // 보고 옴(11-11) — 이 세션 패널에 대화가 떠 있으면 읽은 것으로 본다(창이 가려져 있으면 아직). 캐릭터 위 「보고 옴」이 사라진다
+    if (s.report && !document.hidden && reportSent !== s.report.event_id) {
+      reportSent = s.report.event_id;
+      store.reportRead(s.id, s.report.event_id).catch(() => { reportSent = null; });
+    }
     drawSwitch(s);                   // 먼저 — 떠 있으면 쌓인 대화 띠는 숨긴다(같은 버튼, 까닭은 이쪽이 분명)
     drawCompact(s);
     drawOverlap(s);

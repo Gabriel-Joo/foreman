@@ -8,7 +8,7 @@ import { createSidePanel } from './opanel.js';
 import { mountNewSession } from './newsession.js';
 import { mountTodoInbox } from './todoinbox.js';
 import { coderJobs, coderBubble, isCoder, REST_DAYS } from './coder.js';
-import { roleTag, sessionName } from './render.js';
+import { roleTag, sessionName, needMark } from './render.js';
 import { showTip, hideTip, themeTips, attachDomTips, textTip, softEsc, tipAudit as tipAuditOf } from './tip.js';
 import { buildGrid, findPath, footprint, nearestFree, RES } from './walk.js';
 import { uiScale } from './uiscale.js';
@@ -1077,6 +1077,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     drawHeat(a, now);
     if (act.fx === 'smoke') drawSmoke(a.x, a.y - 1.4, now);
     if (act.bubble) drawBubble(x, y - 6, act.bubble, act.flag === 'approval_pending' ? P.warn : '#e8e8f0');
+    else if (markOf(a)) drawBubble(x, y - 6, markOf(a).text, markColor(markOf(a)), todoPx() / cam.s);   // 답 기다림 · 보고 옴(11-11)
     else if (anim === 'wait' && !act.flag) drawBubble(x, y - 6, '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), P.act, 7);   // 기다림
     else if (a.kind === 'scribe' && scribeBubble(a)) drawBubble(x, y - 6, scribeBubble(a), P.warn, todoPx() / cam.s);
     else if (coderBubbleOf(a)) drawBubble(x, y - 6, coderBubbleOf(a), P.warn, todoPx() / cam.s);
@@ -2004,7 +2005,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (a.kind === 'scribe' && scribeBubble(a)) {                                // 서기 — 할 일 N(누르면 목록), 쌓이면 "정리할까요?"
       placeBubble(a, x, top, scribeBubble(a), P.warn, todoPx() / cam.s);
     }
-    if (coderBubbleOf(a) && !(act.anim === 'wait' && !act.flag) && !act.bubble) {   // 코더 — 맡길 일 N · 합치기 기다림(누르면 목록)
+    const mk = markOf(a);
+    // 답 기다림 · 보고 옴(11-11) — 맡길 일보다 먼저. 방이 작은 [전체] 지도에서는 글 대신 머리 위 색 점(글은 이웃 몸 · 이름표를 덮었다)
+    if (mk && view === 'map') { ctx.fillStyle = markColor(mk); ctx.beginPath(); ctx.arc(x, top - 3, 2.5, 0, Math.PI * 2); ctx.fill(); }
+    else if (mk) placeBubble(a, x, top, mk.text, markColor(mk), todoPx() / cam.s);
+    else if (coderBubbleOf(a) && !(act.anim === 'wait' && !act.flag) && !act.bubble) {   // 코더 — 맡길 일 N · 합치기 기다림(누르면 목록)
       placeBubble(a, x, top, coderBubbleOf(a), P.warn, todoPx() / cam.s);
     }
     if (a.kind === 'foreman' && a.fm && a.fm.pending.length) {                   // 디스패처 — [시작]을 기다리는 자동 제안(누르면 그 계획)
@@ -2027,6 +2032,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   const scribeBubble = (a) => (a.todo && a.todo.nudge ? '정리할까요?' : a.todo && a.todo.items && a.todo.items.length ? `문서 할 일 ${a.todo.items.length}` : null);
   // 코더 말풍선(11-09) — 쉬는 상주 코더, 또는 상주 코더의 몸을 쓰는 세션. 임시 일꾼에는 띄우지 않는다
   const coderBubbleOf = (a) => ((a.kind === 'coder' || (a.kind === 'session' && a.resident)) ? coderBubble(a.jobs) : null);
+  // 답 기다림 · 권한 거부(노랑) · 보고 옴(초록) — 세션 캐릭터 머리 위(11-11). 승인 대기 같은 테마 말풍선이 있으면 그것이 먼저
+  const markOf = (a) => (a.kind === 'session' && a.s && !(a.act && a.act.bubble) ? needMark(a.s) : null);
+  const markColor = (m) => (m.tone === 'ok' ? (P.ok || P.act) : P.warn);
   function tagBoxesW() {
     const toW = (sx, sy) => [((sx - W / 2) / cam.s + cam.x), ((sy - H / 2) / cam.s + cam.y)];
     return HITS.filter((h) => h.zone).map((h) => { const [x0, y0] = toW(h.x, h.y), [x1, y1] = toW(h.x + h.w, h.y + h.h); return [x0, y0, x1 - x0, y1 - y0]; });
@@ -3241,6 +3249,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎${(s.subagent_descs || []).map((d) => `<div class="tip-s">· ${esc(short(d, 50))}</div>`).join('')}</div>` : ''}${
         bg.length ? `<div>뒤에서 도는 일 ${bg.length}개(백그라운드 명령)${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}</div>`).join('')}</div>` : ''}${
         a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝났는지 모름 — 끝 신호가 오지 않았습니다' }[a.act.flag] || a.act.flag)}</div>` : ''}${
+        needMark(s) ? `<div class="tip-s">${esc(needMark(s).tip)}</div>` : ''}${
         a.subHidden ? `<div class="tip-s">+${a.subHidden} — 서브에이전트가 많아 화면에 다 그리지 않고 접은 수입니다.</div>` : ''}${
         s.compact && s.compact.level ? `<div class="tip-s">📦 대화 자동 요약 ${s.compact.count}번(대화가 길어 앞부분을 요약해 줄였습니다. 줄일수록 처음에 정한 것을 잊습니다) —${s.compact.level === 'late' ? '늦었습니다' : '새 세션으로 넘어갈 때입니다'}</div>` : ''}
         <div class="tip-t">누르면 대화가 열립니다.</div>`;
