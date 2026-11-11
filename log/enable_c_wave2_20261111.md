@@ -53,3 +53,20 @@
 | `roles.toml [roles] mode` | observe |
 
 - 되돌리기: 그 칸을 false로(역할은 그대로) + 승인 대기 0 뒤 브리지 다시 띄우기 — `coder_c_wave2_20261111.md` 「되돌리는 법」. 토큰을 끄면 프로젝트 토큰은 401, 관리 토큰은 그대로
+
+## ronanlab-infra 관리자 띄움(사용자 지시 — 인프라부터, 띄우기만)
+
+- 앞서: 265(인프라 코더)가 Cloudflare 남은 일 확인 — 남은 일 없음(DNS 프록시 · Access 302 · 터널 7호스트 오류 0, 그때 502/503은 Grafana OOM → 1Gi `88b120e`, TODO 줄 지움 `f2fbe84`). 인프라 CLAUDE.md는 265가 **그 세션 사용자의 직접 지시로** 만들고(관리자 부탁만으로는 고치지 않는다는 그 세션 규칙 — 맞는 판단) 사용자가 push → 원격 `e096875`에 CLAUDE.md(100줄)
+- 띄움: 교장 경로(dispatch **373**, 요청 글 「ronanlab-infra 프로젝트, 원본 폴더 세션 하나, 역할 manager」) → **세션 299**(opus, `/home/kopo17/ronanlab-infra` — worktree 없음). `dispatch_session`: role manager · 299 · started · 원본 폴더. 지시문: 띄우기만 — CLAUDE.md 읽고 요약, 읽기 · 쓰기 권한 확인(파일 안 고침), 토큰 줄 개수만, 265 건드리지 않음, FOREMAN API 부르지 않음
+
+| 본 것 | 결과 |
+|---|---|
+| 관리자 자리 | `GET /api/managers` ronanlab-infra → 세션 299(「관리자가 없습니다」가 아님) |
+| CLAUDE.md를 읽었나 | 299가 끝까지 읽고 관리자 규칙 다섯 줄로 요약(사람 승인 목록 · 세션은 커밋까지 · push는 관리자 · 클러스터는 main에서 한 번에 한 세션 · 비밀값은 개수로만 · 토큰 셸 변수 + `Authorization: Bearer $T` · 부탁 API) |
+| 인프라 저장소 읽기 · 쓰기 | 299: `git status` 깨끗 · `git log` `e096875` · `test -w .` · `test -w CLAUDE.md` 됨. FOREMAN 훅(reposcope) 판정(실제 쓰기 없이 `RepoScope.check`): 인프라 Edit · commit · push · 읽기 됨, FOREMAN 저장소 Edit **막힘**(읽기는 됨) |
+| 인프라 토큰 | 299: `.env.project_tokens`에 그 줄 1개(값 출력 없음) |
+| FOREMAN 세션에는 못 붙나 | 인프라 토큰 → 276 **403**, 대시보드 403, 299 · 265 200 |
+| 관리자끼리 부탁 | ① 276 → 인프라(관리 토큰) `delivered: true` → 299가 「받았습니다」만(도구 0) ② 인프라 토큰 → foreman `delivered: true`(276이 일하는 중이라 대기열 → 도착, 답하는 길 `/api/managers/ronanlab-infra/ask` 붙음) ③ 인프라 토큰으로 남의 프로젝트(runshoes) 이름 쓰기 **403** |
+| 265 멀쩡한가 | 띄우기 전후 · 부탁 뒤 화면 해시 같음(`c8ea16b2408e`), 265 대화 파일 시각 · 크기 같음(20:12:59 · 10059606), claude 프로세스 그대로 |
+
+- 대화 기록 · 확인 출력에 토큰 값 0(개수). 299 · 265에게 일은 시키지 않음
