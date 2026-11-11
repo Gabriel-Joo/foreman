@@ -193,7 +193,35 @@ export function createTerminal(store, { getProject } = {}) {
   $('termToggle').onclick = () => setOpen(!open);
   // 글씨 크기(11-08, uiscale.js) — ttyd가 xterm을 띄운 뒤(window.term)에 맞춘다. 버튼을 누르면 바로
   function fitFont(tries = 20) { if (!applyTermFont(frame) && tries > 0) setTimeout(() => fitFont(tries - 1), 250); }
-  frame.addEventListener('load', () => { fitFont(); if (open) setTimeout(focusShell, 200); });
+  // 휠(11-11) — tmux mouse를 껐으므로(끌어 글을 고르려고) 화면이 iframe 안 휠을 잡아 tmux 복사 모드로 올린다. 한 번에 한 요청, 쌓인 칸은 합쳐 보낸다
+  let wheelAcc = 0, wheelBusy = false;
+  async function pumpWheel() {
+    if (wheelBusy) return;
+    wheelBusy = true;
+    try {
+      while (wheelAcc !== 0) {
+        const act = wheelAcc < 0 ? 'wheel_up' : 'wheel_down';
+        wheelAcc += wheelAcc < 0 ? 1 : -1;                  // 한 번에 한 칸씩(서버가 3줄)
+        const my = ++seq;
+        try { const j = await store.terminalScroll(TAB, act); if (my === seq) { shown = { ...shown, ...j }; drawProj(); } }
+        catch (e) { wheelAcc = 0; if (my === seq) drawProj(`스크롤하지 못했습니다 — ${e.message || e}`); }
+      }
+    } finally { wheelBusy = false; }
+  }
+  function hookWheel() {
+    let doc; try { doc = frame.contentDocument; } catch { return; }
+    if (!doc || doc.__foremanWheel) return;
+    doc.__foremanWheel = true;
+    doc.addEventListener('wheel', (ev) => {
+      if (!open || ev.ctrlKey || ev.shiftKey) return;       // Ctrl+휠(확대) · Shift+휠은 그대로
+      ev.preventDefault(); ev.stopPropagation();
+      const down = ev.deltaY > 0;
+      if (down && !(shown && shown.scrolling) && wheelAcc >= 0) return;   // 스크롤 중이 아닐 때 아래로는 할 일이 없다
+      wheelAcc = Math.max(-10, Math.min(10, wheelAcc + (down ? 1 : -1)));
+      pumpWheel();
+    }, { capture: true, passive: false });
+  }
+  frame.addEventListener('load', () => { hookWheel(); fitFont(); if (open) setTimeout(focusShell, 200); });
   window.addEventListener('foreman-uiscale', () => fitFont(0));
   onDprChange(() => fitFont(0));           // 브라우저 확대가 바뀌면 칸 폭 보정(letterSpacing)을 다시(11-10)
   window.addEventListener('resize', setHeight);

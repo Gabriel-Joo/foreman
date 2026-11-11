@@ -367,7 +367,13 @@ async def test_scroll_enters_and_leaves_copy_mode_per_tab(shell, own_sock):
     await m.scroll("tabAAAA01", "up")
     r = await m.scroll("tabAAAA01", "exit")
     assert r["scrolling"] is False
-    r = await m.scroll("tabAAAA01", "exit")                  # 복사 모드가 아닐 때 [입력으로]는 아무 일도 하지 않는다
+    r = await m.scroll("tabAAAA01", "wheel_down")            # 스크롤 중이 아니면 아래로는 아무 일도 없다
+    assert r["scrolling"] is False
+    r = await m.scroll("tabAAAA01", "wheel_up")              # 휠 위로 = 복사 모드로 들어가 3줄 올림
+    assert r["scrolling"] is True
+    r = await m.scroll("tabAAAA01", "exit")
+    assert r["scrolling"] is False
+    r = await m.scroll("tabAAAA01", "exit")                # 복사 모드가 아닐 때 [입력으로]는 아무 일도 하지 않는다
     assert r["scrolling"] is False
     with pytest.raises(Refused):
         await m.scroll("tabZZZZ99", "up")
@@ -457,8 +463,8 @@ async def test_view_script_attaches_then_cleans_up(shell, own_sock):
         assert cur["view"] and cur["project"] == "runshoes"
         opt = await tmux(m.socket, "show-options", "-t", f"{view}", "destroy-unattached")
         assert opt.strip() == "destroy-unattached on"
-        # 11-11 — 휠 스크롤용 mouse on은 이 그룹 세션에만(기준 세션 · 서버 전체에는 걸리지 않는다)
-        assert (await tmux(m.socket, "show-options", "-t", f"{view}", "mouse")).strip() == "mouse on"
+        # 11-11 — 마우스는 tmux가 받지 않는다(mouse on이면 끌기를 가져가 글을 끌어 고를 수 없었다). 휠은 화면이 scroll API로 보낸다
+        assert (await tmux(m.socket, "show-options", "-t", f"{view}", "mouse")).strip() == "mouse off"
         assert (await tmux(m.socket, "show-options", "-t", f"={base}:", "mouse")).strip() in ("", "mouse off")
     finally:
         proc.terminate()
