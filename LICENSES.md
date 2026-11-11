@@ -8,7 +8,7 @@ FOREMAN 코드와 별개로, 픽셀 오피스(10단계)가 쓰는 그림 파일�
 |---|---|---|---|---|
 | Medieval Tileset (interior) | **Calciumtrice** | **CC-BY 3.0** — 출처 표시 의무 | https://opengameart.org/content/medieval-tileset | `calciumtrice/medieval_interior.png` |
 | 16x16 DungeonTileset II v1.7 | 0x72 | CC0 1.0 | https://0x72.itch.io/dungeontileset-ii | `0x72/atlas.png`, `0x72/tile_list_v1.7.txt` |
-| Ninja Adventure Asset Pack | Pixel-boy, AAA | CC0 1.0 | https://pixel-boy.itch.io/ninja-adventure-asset-pack | `ninja/items/*`, `ninja/fx/*`, `ninja/LICENSE.txt` · `README.md`(원본). 캐릭터는 마법학교 · 현장이 함께 쓴다 — `themes/_shared/ninja/chars/*/Walk.png · Idle.png`(22명) + `_shared/ninja/LICENSE.txt` |
+| Ninja Adventure Asset Pack | Pixel-boy, AAA | CC0 1.0 | https://pixel-boy.itch.io/ninja-adventure-asset-pack | `ninja/items/*`, `ninja/fx/*`, `ninja/LICENSE.txt` · `README.md`(원본), `ninja/tiles/TilesetNature.png` · `TilesetFloor.png`(11-11 방 바깥 풍경 — 숲 · 풀, 원본 `Backgrounds/Tilesets/`). 캐릭터는 마법학교 · 현장이 함께 쓴다 — `themes/_shared/ninja/chars/*/Walk.png · Idle.png`(22명) + `_shared/ninja/LICENSE.txt` |
 | FOREMAN이 직접 그린 것 | FOREMAN | CC0 1.0 | `scripts/draw_props.py`로 만든다 | `foreman/` — 돌 원탁 · 초상화 · 밀랍 도장 · 부엉이 횃대 |
 
 ### 출처 표시 (CC-BY 3.0)
@@ -34,7 +34,7 @@ FOREMAN 코드와 별개로, 픽셀 오피스(10단계)가 쓰는 그림 파일�
 
 | 팩 | 저작자 | 라이선스 | 출처 | 이 저장소의 파일 |
 |---|---|---|---|---|
-| Ninja Adventure Asset Pack | Pixel-boy, AAA | CC0 1.0 | https://pixel-boy.itch.io/ninja-adventure-asset-pack | `ninja/` — 크레인 · 컨베이어 · camp 타일셋(목재 · 밧줄 · 등불) · 연기 · 이모트, `ninja/LICENSE.txt`. 캐릭터는 `_shared/ninja/chars/` |
+| Ninja Adventure Asset Pack | Pixel-boy, AAA | CC0 1.0 | https://pixel-boy.itch.io/ninja-adventure-asset-pack | `ninja/` — 크레인 · 컨베이어 · camp 타일셋(목재 · 밧줄 · 등불) · 연기 · 이모트, `ninja/TilesetHouse.png`(11-11 방 바깥 울타리, 원본 `Backgrounds/Tilesets/`), `ninja/LICENSE.txt`. 캐릭터는 `_shared/ninja/chars/` |
 | FOREMAN이 직접 그린 것 | FOREMAN | CC0 1.0 | `scripts/draw_props.py` | `foreman/` — 지게차 · 롤셔터 · 컴프레서 · 기름통 · 공구벽 · 작업대 · 간이침대 · 검사대 · 도면 탁자 · 철제 선반 · 선풍기 · 고깔 · 팔레트 · 트럭 · 게이지 · 안전모 걸이 · 무전기 · 머그 · 신문 |
 
 ## 도형 테마 — `themes/plain/`

@@ -120,12 +120,28 @@
     "none":    { "anim": "idle", "alpha": 0.6 }
   },
 
+  "outside": {
+    "_": "방 바깥(11-11 사용자) — 좌표 약속은 현장 theme.json outside와 같다. 마법학교: 학교 돌담(0x72 wall_top · wall) · 담 앞 오솔길(행인) · 숲(닌자 팩 TilesetNature 나무 · 덤불, TilesetFloor 풀)",
+    "band": 0.75,
+    "ground": ["grass_1", "grass_1", "grass_1", "grass_2", "grass_3", "grass_4"],
+    "edge": [{ "s": "wall_top", "y": 0, "step": 1 }, { "s": "wall", "y": 1, "step": 1 }],
+    "top": 3.2, "period": [14, 5],
+    "items": [
+      { "s": "tree_grove", "x": 0.0, "y": 0.0 }, { "s": "tree_pine", "x": 4.2, "y": 0.6 }, { "s": "tree_round", "x": 6.4, "y": -0.2 },
+      { "s": "tree_pines", "x": 9.5, "y": 0.1 }, { "s": "bush_s", "x": 3.6, "y": 2.2 }, { "s": "bush_s2", "x": 8.8, "y": 2.4 },
+      { "s": "tree_bush", "x": 12.6, "y": 1.6 }, { "s": "tree_pine", "x": 2.5, "y": 3.0 }, { "s": "tree_bush", "x": 7.8, "y": 3.2 },
+      { "s": "tree_pine", "x": 11.4, "y": 2.8 }
+    ],
+    "fill": { "cell": [3, 2.5], "chance": 0.75, "jitter": 0.6, "items": ["tree_pine", "tree_bush", "tree_pines", "tree_pine", "tree_grove", "tree_round", "bush_s", "tree_pine"] },
+    "walkers": [{ "y": 2.85, "speed": 0.7, "x": 1 }, { "y": 2.85, "speed": -0.5, "x": 9, "char": 2 }]
+  },
   "sprites": {
     "kind": "sheets",
     "mini_scale": 0.625,
     "_comment": "원본 파일 그대로(sprites/) — 자르기 · 외곽선 · 색조는 렌더러가 불러올 때. outline: Calciumtrice 가구에 1px 진한 외곽선(Ninja · 0x72 화풍에 맞춤)",
     "outline": "#1a1620",
     "sheets": {
+      "nat": "sprites/ninja/tiles/TilesetNature.png", "nfl": "sprites/ninja/tiles/TilesetFloor.png",
       "cm": "sprites/calciumtrice/medieval_interior.png",
       "x": "sprites/0x72/atlas.png",
       "book": "sprites/ninja/items/book.png", "scroll": "sprites/ninja/items/scroll.png", "wand": "sprites/ninja/items/wand.png",
@@ -136,6 +152,9 @@
       "e_alert": "sprites/ninja/fx/emote_alert.png", "e_dots": "sprites/ninja/fx/emote_dots.png", "e_q": "sprites/ninja/fx/emote_question.png"
     },
     "defs": {
+      "grass_1": ["nfl", 176, 192, 16, 16], "grass_2": ["nfl", 192, 192, 16, 16], "grass_3": ["nfl", 208, 192, 16, 16], "grass_4": ["nfl", 224, 192, 16, 16],
+      "tree_pine": ["nat", 32, 0, 32, 32], "tree_bush": ["nat", 0, 0, 32, 32], "tree_pines": ["nat", 0, 32, 64, 48], "tree_grove": ["nat", 64, 32, 64, 48],
+      "tree_round": ["nat", 48, 288, 48, 48], "bush_s": ["nat", 0, 160, 16, 16], "bush_s2": ["nat", 16, 160, 16, 16],
       "wood": ["cm", 16, 192, 16, 16],
       "table_l": ["cm", 96, 176, 16, 48, 1], "table_m": ["cm", 112, 176, 16, 48, 1], "table_r": ["cm", 128, 176, 16, 48, 1],
       "chair_f": ["cm", 160, 176, 16, 32, 1], "chair_b": ["cm", 208, 176, 16, 32, 1], "stool": ["cm", 160, 208, 16, 16, 1],
