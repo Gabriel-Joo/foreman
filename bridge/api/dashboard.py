@@ -210,6 +210,19 @@ def visible_rows(rows: list[Any], live: Any, cut: datetime, done: dict[int, tupl
     return [r for r in rows if (r[1] in live) or (r[7] and r[7] >= cut) or keeps_wt(r)]
 
 
+def mark_crew(sessions: list[dict[str, Any]], project: str | None) -> None:
+    """상주 · 임시(11-11, UI 불만 (가)) — 픽셀 화면(office.js residentSid)과 같은 규칙을 서버가 정해 모든 화면이 같은 값을 쓴다.
+    방마다 살아 있는(DORMANT 아님) 코더 세션(역할 coder 또는 없음 — coder.js isCoder) 중 번호가 가장 작은 것이 상주,
+    나머지는 임시 일꾼. 관리자는 'manager'(상주 아님 — 세션이 있을 때만 보인다). 프로젝트 밖 세션은 정하지 않는다."""
+    for x in sessions:
+        x["crew"] = "manager" if x.get("role") == "manager" else None
+    if not project:
+        return
+    coders = sorted((x for x in sessions if x["state"] != "DORMANT" and x.get("role") in (None, "coder")), key=lambda x: x["id"])
+    for i, x in enumerate(coders):
+        x["crew"] = "resident" if i == 0 else "temp"
+
+
 ENDED_LABEL = {"wt-merge": ("merged", "합쳤습니다"), "wt-discard": ("discarded", "버렸습니다"),
                "rest": ("rested", "쉬게 했습니다 — 합치기 기다림"), "exit": ("exited", "끝냈습니다")}
 
@@ -366,6 +379,8 @@ async def dashboard(request: Request) -> dict[str, Any]:
             # 끝난 세션(11-11, UI 불만 (나)) — 어떻게 끝났는지. 화면이 「끝남 — 합쳤습니다」로 갈라 옛 보고를 지난 일로 보인다
             "ended": ended_info(done.get(sid), detached) if not ls else None,
         })
+    for name, ss_ in projects.items():
+        mark_crew(ss_, name)
     order = {"ACTIVE": 0, "SUSPENDED": 1, "IDLE": 2, "DORMANT": 3}
     out_projects = []
     for name in [*PROJECT_ORDER, *sorted(k for k in projects if k and k not in PROJECT_ORDER), None]:

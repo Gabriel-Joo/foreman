@@ -26,16 +26,24 @@ const TARGET_ROLE = { scribe: 'scribe', coder: 'coder', foreman: 'foreman' };
 export function panelRole(target, s) {
   if (!target) return null;
   if (target.kind === 'session') {
-    const l = s ? roleLabel(s.role) : null;
-    return { role: l ? s.role : 'none', label: l || '역할?', editable: !!s,
-             tip: l ? `${l} — 이 세션이 맡은 역할입니다. 눌러서 바꿉니다. 제목을 고쳐도 역할은 그대로입니다.` : ROLE_UNKNOWN_TIP };
+    const l = s ? roleLabel(s.role) : null, crew = s ? CREW_TAG[s.crew] : null;   // 상주 · 임시(11-11)
+    const tip = l ? `${l} — 이 세션이 맡은 역할입니다. 눌러서 바꿉니다. 제목을 고쳐도 역할은 그대로입니다.` : ROLE_UNKNOWN_TIP;
+    return { role: l ? s.role : 'none', label: (l || '역할?') + (crew ? ` · ${crew}` : ''), editable: !!s,
+             tip: crew ? `${tip}\n${CREW_TIP[s.crew]}` : tip };
   }
   const r = TARGET_ROLE[target.kind];
   return r ? { role: r, label: roleLabel(r), editable: false, tip: `${roleLabel(r)} — 이 캐릭터의 역할입니다.` } : null;
 }
+// 상주 · 임시(11-11, UI 불만 (가)) — 서버(/api/dashboard crew)가 방마다 정한다: 살아 있는 코더 중 먼저 뜬 것이 상주, 나머지는 임시 일꾼
+export const CREW_TAG = { resident: '상주', temp: '임시' };
+export const CREW_TIP = {
+  resident: '상주 — 이 방에 늘 있는 코더의 몸을 쓰는 세션입니다. 세션이 끝나도 코더는 자리에 남습니다.',
+  temp: '임시 일꾼 — 이 방에 코더 세션이 둘 이상이라 따로 뜬 세션입니다. 세션이 끝나면 사라집니다.',
+};
 export function roleBadge(s) {
-  const l = roleLabel(s.role);
-  return `<span class="rolebadge role-${esc(s.role || 'none')}" title="${esc(l ? `${l} — 이 세션이 맡은 역할입니다. 제목을 고쳐도 그대로입니다.` : ROLE_UNKNOWN_TIP)}">${esc(l || '역할?')}</span>`;
+  const l = roleLabel(s.role), crew = CREW_TAG[s.crew] || '';
+  const tip = l ? `${l} — 이 세션이 맡은 역할입니다. 제목을 고쳐도 그대로입니다.` : ROLE_UNKNOWN_TIP;
+  return `<span class="rolebadge role-${esc(s.role || 'none')}" title="${esc(crew ? `${tip}\n${CREW_TIP[s.crew]}` : tip)}">${esc(l || '역할?')}${crew ? ` · ${crew}` : ''}</span>`;
 }
 
 // 세션을 알아보는 이름 — CC가 붙인 제목 → CC 세션 이름 → 짧은 id. 캐릭터 이름은 아래 줄에(한 캐릭터에 세션 여럿)

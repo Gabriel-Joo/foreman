@@ -112,3 +112,15 @@ def test_visible_rows_reused_worktree_name():
     got = [r[0] for r in visible_rows(rows, {}, now + timedelta(days=5), done, isdir=lambda p: True)]
     assert got == [272, 300]
     assert ended_info(done[258], None)["kind"] == "merged" and ended_info(None, old)["kind"] == "gone"
+
+
+def test_mark_crew():
+    """11-11(UI 불만 (가)) — 살아 있는 코더 중 번호가 가장 작은 것이 상주, 나머지 임시. 관리자는 manager, 끝난 세션은 없음."""
+    from bridge.api.dashboard import mark_crew
+    ss = [{"id": 244, "role": "manager", "state": "IDLE"}, {"id": 257, "role": "coder", "state": "DORMANT"},
+          {"id": 266, "role": "coder", "state": "ACTIVE"}, {"id": 267, "role": None, "state": "IDLE"},
+          {"id": 269, "role": "designer", "state": "ACTIVE"}]
+    mark_crew(ss, "foreman")
+    assert [x["crew"] for x in ss] == ["manager", None, "resident", "temp", None]
+    mark_crew(ss, None)
+    assert [x["crew"] for x in ss] == ["manager", None, None, None, None]
