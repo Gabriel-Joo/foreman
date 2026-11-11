@@ -51,8 +51,11 @@ export function mpSection(mp, b, sid) {
     : c.ff ? '<span class="ok" title="ff 가능 — main이 그대로라 그대로 앞으로 옮깁니다(fast-forward).">충돌 없음 · ff 가능</span>'
       : `<span class="ok" title="main이 앞섬 — 이 브랜치를 만든 뒤 ${esc(c.base)}에 커밋 ${c.behind}개가 들어왔습니다. 합칠 때 그 위로 다시 얹습니다(rebase).">충돌 없음 · ${esc(c.base)}에 새 커밋 ${c.behind}개(rebase)</span>`;
   const d = c.docs || {};
-  const rRows = (d.readme || []).map((x) => `<div class="small">README:${x.line} — ${esc(x.text)} <span class="muted">(${esc([...(x.files || []), ...(x.words || [])].slice(0, 5).join(', '))})</span></div>`).join('');
-  const dRows = (d.docs || []).map((x) => `<div class="small"><code>${esc(x.where)}</code> — ${x.count}줄(${x.lines.join(', ')}${x.count > x.lines.length ? ' …' : ''}) <span class="muted">${esc(x.files.join(', '))}</span></div>`).join('');
+  // 11-11 2물결 「넷」 — 근거(세션 기록 「README에서 뺄 줄」 · 근거 칸 기록 · 받은 할 일 번호)가 있는 것을 앞에, 낱말만 겹친 것(weak)은 접어 둔다
+  const rLine = (x) => `<div class="small${x.weak ? ' muted' : ''}">README:${x.line} — ${esc(x.text)} <span class="muted">(${esc((x.why && x.why.length ? x.why : [...(x.files || []), ...(x.words || [])]).slice(0, 5).join(' · '))})</span></div>`;
+  const strong = (d.readme || []).filter((x) => !x.weak), weak = (d.readme || []).filter((x) => x.weak);
+  const rRows = strong.map(rLine).join('') + (weak.length ? `<details><summary class="small muted" title="낱말만 겹친 후보 — 커밋 글 낱말이 표 줄과 겹치기만 한 것입니다. 헛걸림이 많아 접어 둡니다.">낱말만 겹친 후보 ${weak.length}개</summary>${weak.map(rLine).join('')}</details>` : '');
+  const dRows = (d.docs || []).map((x) => `<div class="small"><code>${esc(x.where)}</code> — ${x.count}줄(${x.lines.join(', ')}${x.count > x.lines.length ? ' …' : ''}) <span class="muted">${esc(x.files.join(', '))}</span>${x.stale ? ' <span class="warn" title="맞출 문서 — 이번에 바뀐 파일을 적고 있는데 이 문서는 고치지 않았습니다. 설계가 바뀌었으면 함께 맞춥니다.">이번에 안 고침</span>' : ''}</div>`).join('');
   const docs = d.error ? `<div class="small warn">${esc(d.error)}</div>`
     : rRows || dRows ? `<details${keep(`hand:${sid}:mp-docs`)}><summary class="small" title="정리 후보 — 바뀐 파일 · 커밋 글과 README 「나중에 할 일」 줄 · docs 줄을 기계로 맞댄 것입니다. 고르고 지우는 것은 사람 승인 뒤 관리자가 합니다.">정리 후보 — README ${(d.readme || []).length} · docs ${(d.docs || []).length}</summary>${rRows}${dRows}</details>` : '';
   const open = c.status === 'ready' || c.status === 'failed' || c.status.startsWith('conflict');

@@ -125,7 +125,36 @@ def test_doc_candidates_matches_files_and_words():
     assert 11 in by and {"이름표", "겹침"} <= set(by[11]["words"])               # 커밋 글 낱말이 둘 넘게 겹친다
     assert 10 not in by                                                          # 상관없는 줄은 후보가 아니다
     assert d["readme"][0]["line"] == 9                                           # 파일이 걸린 줄이 앞
-    assert d["docs"] == [{"where": "docs/11_x.md", "lines": [2], "count": 1, "files": ["bridge/mergeprep.py"]}]
+    assert d["docs"] == [{"where": "docs/11_x.md", "lines": [2], "count": 1, "files": ["bridge/mergeprep.py"], "stale": True}]
+
+
+README2 = """### 나중에 할 일
+| 무엇 | 언제 | 근거 |
+|---|---|---|
+| **「권한 거부」 표시가 꺼지지 않는다**: 거부 뒤 | 따로 | [기록](log/a.md) |
+| **할 일 목록에서 바로 일을 시작**: 고르기 | 교장 뒤 | 받은 할 일 #8 |
+| **근거 칸 기록**: 무엇 | 따로 | [기록](log/coder_x_20261111.md) |
+| **낱말 둘만**: 카드 승인 | 따로 | x |
+| **낱말 셋**: 카드 승인 화면 | 따로 | x |
+"""
+
+
+def test_doc_candidates_ranks_by_evidence():
+    """11-11 2물결 「넷」 — 세션 기록 「README에서 뺄 줄」 > 근거 칸 기록 > 받은 할 일 번호 > 파일 > 낱말(셋 넘게만)."""
+    logs = {"log/coder_x_20261111.md": "# 결과\n## README에서 뺄 줄(합칠 때)\n- 「「권한 거부」 표시가 꺼지지 않는다」 줄\n"
+                                       "- 「없는 줄」이 있으면 그 줄\n## 다음\n- 「할 일 목록에서 바로 일을 시작」은 아님\n"}
+    d = mp.doc_candidates(README2, "나중에 할 일", {"docs/x.md": "`bridge/a.py`\n"}, ["log/coder_x_20261111.md", "bridge/a.py"],
+                          ["카드 승인 화면 — 받은 할 일 #8"], logs=logs)
+    by = {x["line"]: x for x in d["readme"]}
+    order = [x["line"] for x in d["readme"]]
+    assert order[0] == 4 and by[4]["score"] >= 100 and "README에서 뺄 줄" in by[4]["why"][0]   # 다른 절의 「…」는 세지 않는다
+    assert by[6]["score"] >= 50 and "근거 칸" in by[6]["why"][0]
+    assert by[5]["score"] >= 40 and by[5]["why"] == ["받은 할 일 #8"]
+    assert 7 not in by                                   # 낱말 둘로는 후보가 아니다
+    assert by[8]["weak"] is True and not by[4]["weak"]  # 낱말 셋은 후보지만 약하다
+    assert d["docs"][0]["stale"] is True
+    assert mp.log_drop_lines(logs) == [("log/coder_x_20261111.md", "「권한 거부」 표시가 꺼지지 않는다"),
+                                       ("log/coder_x_20261111.md", "없는 줄")]
 
 
 def test_load_config(tmp_path):
