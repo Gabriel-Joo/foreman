@@ -3336,6 +3336,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const m = mergeWaits(store.state.sessions.values())[0];
       if (m) openSession(m.id);
       panel.setOpen(true);
+      if (m) panel.showTab('sess');                           // 카드는 「세션」 탭에만 있다 — 막대로 열 때만(캐릭터는 마지막 탭 그대로)
       return;
     }
     const ask = b.id === 'oAsk';

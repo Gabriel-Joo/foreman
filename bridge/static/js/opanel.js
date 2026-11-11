@@ -208,8 +208,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   setOpen(open, false);
 
   // ── 탭 ──────────────────────────────────────────────
-  function setTab(k) {
-    tab = k; ls.set(KEY_TAB, k);
+  function setTab(k, remember = true) {
+    tab = k; if (remember) ls.set(KEY_TAB, k);
     for (const b of $('pTabs').querySelectorAll('[data-tab]')) b.classList.toggle('on', b.dataset.tab === k);
     $('pTabConvo').hidden = k !== 'convo'; $('pTabAct').hidden = k !== 'act'; $('pTabSess').hidden = k !== 'sess';
     el.classList.toggle('tab-convo', k === 'convo');
@@ -807,5 +807,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     }
   });
 
-  return { show, setOpen, get open() { return open; }, el };
+  // 11-11 합치기 막대 — 합치기 카드는 「세션」 탭 안에만 있다. 이번만 그 탭으로 열고 다음에 열 탭(기억)은 바꾸지 않는다
+  function showTab(k) { setTab(k, false); store.touch('panel'); }
+
+  return { show, showTab, setOpen, get open() { return open; }, el };
 }
