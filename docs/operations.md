@@ -12,6 +12,7 @@
 | k8s VM(m-k8s · w1~w3, libvirt) | `~/k8s-cluster` — kubectl은 `cd ~/k8s-cluster && vagrant ssh m-k8s -c '…'` |
 | Python | 브리지는 저장소의 전용 `.venv`(시스템 python 3.14, 1단계 결정). `~/llm_env`는 LLM · 펫퍼민트 작업용 |
 | 접속 구조 | 집 PC → 교육 PC → 서버 PC(VNC `DISPLAY=:2`). 서버 PC가 GPU 호스트이고 클러스터 VM도 여기서 돈다 |
+| CC 전역 설정 | `~/.claude/settings.json`에 **model 기본값을 두지 않는다**(원래 상태, 사용자 — "손으로 여는 claude만 opus로 뜨는데, 그건 기본값 없이 두는 게 낫다"). 세션 모델은 FOREMAN이 띄울 때 정한다. `/model`이 전역 기본값을 다시 써 넣으면 지운다 |
 
 서버의 현재 포트 · 컨테이너 · 유닛 상태와 작업 시 주의는 `log/infra_20261102_host-changes.md`.
 
