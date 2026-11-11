@@ -172,6 +172,7 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
 # 위쪽 칸(role · title · first_prompt …)은 sessions[0]과 같게 둔다(check가 맞춘다) — 옛 계획(세션 하나 모양) · 옛 계획 카드가 그대로 돈다:
 # 옛 카드는 위쪽 칸만 고쳐 보내므로, sessions_edit가 없으면 위쪽 칸이 sessions[0]을 이긴다. 세션별로 고치는 카드는 sessions_edit: true를 보낸다
 MAX_SESSIONS = 6
+ROLE_KO = {"coder": "코더", "inspector": "점검", "cicd": "CI/CD", "scribe": "서기", "manager": "관리자", "designer": "디자이너"}
 S_FIELDS = ("role", "model", "title", "first_prompt", "read_only", "worktree", "files", "merge_order")
 
 
@@ -517,6 +518,11 @@ class ForemanDispatcher:
         for i, s in enumerate(ss):
             if s["worktree"] is None:
                 s["worktree"] = bool(others) or i > 0
+        # 세션별 칸이 없는 카드(11-11 지금 foremanchat.js)는 첫 세션만 보인다 — [시작]이 무엇을 띄우는지 경고 줄에 다 적는다
+        if many and plan["mode"] != "attach":
+            on_ = [f"{i + 1}「{s['title'] or s['role']}」({ROLE_KO.get(s['role'], s['role'])} · {s['model'] or '기본'}"
+                   f"{' · 따로 작업' if s['worktree'] else ''})" for i, s in enumerate(ss) if s["on"]]
+            warn.append(f"이 계획은 세션 {len(on_)}개를 띄웁니다: {', '.join(on_)}")
         # 맡을 파일 겹침(11-11 일곱) — 계획 안 · 살아 있는 세션 · 아직 시작 안 한 다른 계획
         plan["file_overlaps"] = []
         if plan["mode"] != "ask" and plan.get("project") in names:
