@@ -428,3 +428,35 @@ async def test_api_off_and_on(repo, monkeypatch):
         assert (await c.post("/api/sessions/8/merge-prep", json={"action": "merge"})).status_code == 409   # 카드 없음 — 거부
         r = (await c.post("/api/sessions/7/merge-prep", json={"action": "merge"})).json()
         assert r["ok"] and r["status"] == "merged"
+
+
+# ── 11-11 버리기 · 카드 밖 합치기 — 막대가 1분 훑기를 기다리지 않는다 ──
+def test_worktree_gone_drops_waiting_card_but_not_merging(repo, monkeypatch):
+    m, h, sent, row, _ = _mk(repo, monkeypatch)
+    for sid, st in ((1, "ready"), (2, "failed"), (3, "conflict_sent"), (4, "merging")):
+        m.cards[sid] = SimpleNamespace(status=st)
+    assert [m.worktree_gone(s) for s in (1, 2, 3, 4, 9)] == [True, True, True, False, False]
+    assert list(m.cards) == [4]                       # 합치는 중 카드는 approve가 마저 쓴다
+
+
+async def test_handoff_discard_and_outside_merge_clear_card_at_once(repo, monkeypatch):
+    from bridge.handoff import HandoffManager
+    for act in ("discard", "merge"):
+        p = Path((await wt.create(str(repo), f"w{act}"))["path"])
+        (p / f"{act}.txt").write_text("x\n"); sh(p, "add", "."); sh(p, "commit", "-qm", act)
+        m, h, sent, row, _ = _mk(repo, monkeypatch)
+        m.cards[7] = SimpleNamespace(status="ready")
+        changes = []
+
+        async def noop(*a, **k):
+            return None
+
+        async def not_scribe(sid):
+            return None
+        fake = SimpleNamespace(
+            _wt_of=lambda r: wt.split(r.cwd), _guard_reused=noop, sessions_dir="/nonexistent", _role=not_scribe,
+            schema=None, _stop_preview=noop, _retire_wt_characters=noop, _act=noop, on_change=lambda: changes.append(1),
+            mergeprep=m)
+        r = SimpleNamespace(id=7, cc=None, cwd=str(p), project="proj")
+        res = await HandoffManager.worktree_act(fake, r, act)
+        assert res["ok"] and 7 not in m.cards and changes == [1], act

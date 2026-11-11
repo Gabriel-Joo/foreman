@@ -1255,6 +1255,8 @@ class HandoffManager:
             res["preview_stopped"] = await self._stop_preview(row)
             if row.project:
                 await self._retire_wt_characters(row, name)
+            if self.mergeprep is not None:                # 합치기 막대 · 말풍선이 1분 훑기를 기다리지 않게(11-11)
+                self.mergeprep.worktree_gone(row.id)
         await self._act(row.id, f"wt-{act}", None, bool(res.get("ok")),
                         f"{name} {res.get('note') or ''} {','.join(res.get('conflict') or [])}"[:500])
         if self.on_change:
