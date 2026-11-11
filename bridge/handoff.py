@@ -114,6 +114,26 @@ INJECT_PROMPT = """{head} 직전 세션 {src}의 인계 요약이다. 너는 이
 {body}"""
 
 
+_MOVE_CFG: dict[str, Any] = {"mtime": None, "on": False}
+
+
+def move_flow_on(path: Path | None = None) -> bool:
+    """config/handoff.toml [move] one_flow — 옮기기 한 흐름(11-11). 파일이 바뀌면 다시 읽는다. 못 읽으면 꺼짐(옛 흐름)."""
+    import tomllib
+    p = path or Path(__file__).resolve().parent.parent / "config" / "handoff.toml"
+    try:
+        m = p.stat().st_mtime
+        if path is None and m == _MOVE_CFG["mtime"]:
+            return _MOVE_CFG["on"]
+        on = bool((tomllib.loads(p.read_text()).get("move") or {}).get("one_flow", False))
+    except (OSError, ValueError) as e:
+        log.warning("옮기기 한 흐름 설정을 못 읽어 끔: %s", e)
+        return False
+    if path is None:
+        _MOVE_CFG.update(mtime=m, on=on)
+    return on
+
+
 def new_req() -> str:
     return secrets.token_hex(3)
 
@@ -408,7 +428,27 @@ class HandoffManager:
             out["worktree"] = {"error": str(e)}
         # 2판 인계를 받고 시작한 세션 — 「읽을 곳」을 실제로 읽었나(11-05)
         out["reads"] = await self.handoff_reads(row)
+        # 11-11 C 2물결 「일곱」 — 옮기기 한 흐름(config/handoff.toml [move] one_flow) · 이 세션이 넘겨받은 글(새 세션 패널에 보인다)
+        out["move_flow"] = move_flow_on()
+        try:
+            out["received"] = await self.received(row)
+        except Exception as e:  # noqa: BLE001 — 못 읽어도 패널은 뜬다
+            out["received"] = {"error": f"넘겨받은 글을 읽지 못했습니다({type(e).__name__})"}
         return out
+
+    async def received(self, row: SessionRow) -> dict[str, Any] | None:
+        """이 세션이 옮기기로 넘겨받은 요약 — 옮기기 전 확인 창을 없앤 대신 받은 쪽 패널에서 무엇이 넘어왔는지 본다."""
+        if not row.cc:
+            return None
+        async with self.engine.connect() as c:
+            s = (await c.execute(text(
+                "SELECT s.id, s.session_id, s.body, s.injected_at, COALESCE(cs.custom_title, cs.title) FROM summary s "
+                "LEFT JOIN character_session cs ON cs.id = s.session_id WHERE s.injected_cc_session = :c "
+                "ORDER BY s.injected_at DESC LIMIT 1"), {"c": row.cc})).first()
+        if not s:
+            return None
+        return {"summary_id": s[0], "from_session": s[1], "from_title": s[4], "body": s[2] or "",
+                "at": s[3].isoformat() + "Z" if s[3] else None}
 
     async def _pending(self, sid: int) -> str | None:
         async with self.engine.connect() as c:
