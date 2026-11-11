@@ -157,3 +157,15 @@ def test_reorder_skips_when_order_already_right():
     pub = nt.Publisher(None, f, "root", "/repo")
     r = asyncio.run(pub.reorder([("docs/a.md", "d1"), ("docs/b.md", "d2")], "root"))
     assert r["action"] == "unchanged" and not [c for c in f.calls if c[0] == "move"]
+
+
+def test_summary_counts_and_last_result(monkeypatch):
+    """서기 화면 읽기(D2) — 게시됨 · 새 · 바뀜 · 지워짐 · 못 읽음 수와 push 대기 커밋, 마지막 맞추기 결과. 처음이면 behind_commits는 None."""
+    _status(monkeypatch, files=["docs/a.md", "docs/b.md", "docs/c.md", "docs/d.md"], new=["docs/c.md"], changed=["docs/a.md"],
+            deleted=["docs/x.md"], broken=[{"path": "docs/d.md", "error": "x"}], behind_commits=3, synced="abc")
+    last = {"at": 123.0, "done": [{"path": "docs/a.md"}], "held": [], "failed": [{"path": "docs/b.md", "error": "거부됨"}]}
+    r = asyncio.run(ds.summary(_Pub(), last))
+    assert (r["total"], r["published"], r["new"], r["changed"], r["deleted"], r["broken"]) == (4, 2, 1, 1, 1, 1)
+    assert r["behind_commits"] == 3 and r["last"]["failed"] == 1 and r["last"]["failed_first"] == "docs/b.md: 거부됨"
+    _status(monkeypatch)
+    assert asyncio.run(ds.summary(_Pub(), None))["last"] is None

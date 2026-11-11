@@ -253,6 +253,24 @@ class DocSync:
                     *[f"▶ {f['path']} — {f['error'][:120]}" for f in res["failed"][:4]]]))
 
 
+async def summary(pub: Any, last: dict[str, Any] | None) -> dict[str, Any]:
+    """기술문서 게시 상태 읽기(D2, 11-11) — 서기 화면용. 읽기만 한다. 게시됨 · 새 · 바뀜 · 지워짐 · 못 읽음 수, push 대기 커밋 수, 마지막 맞추기 결과."""
+    st = await status(pub)
+    files = len(st["files"])
+    out: dict[str, Any] = {
+        "project": pub.project, "mode": st["mode"], "total": files,
+        "published": files - len(st["new"]) - len(st["broken"]),     # Notion에 올라 있는 것(바뀜 포함)
+        "new": len(st["new"]), "changed": len(st["changed"]), "deleted": len(st["deleted"]), "broken": len(st["broken"]),
+        "behind_commits": st["behind_commits"], "synced": st["synced"],
+        "last": None,
+    }
+    if last:
+        out["last"] = {"at": last.get("at"), "done": len(last.get("done", [])), "held": len(last.get("held", [])),
+                       "failed": len(last.get("failed", [])),
+                       "failed_first": (f"{last['failed'][0]['path']}: {str(last['failed'][0]['error'])[:80]}" if last.get("failed") else None)}
+    return out
+
+
 async def todo_items(pub: Any, last: dict[str, Any] | None) -> list[dict[str, Any]]:
     """서기 할 일 — 프로젝트 · 묶음마다 한 줄(11-09 요청 3-1: 파일마다 한 줄을 묶는다) + 사람 수정으로 멈춘 파일마다 한 줄."""
     if pub.docs_mode == "off":

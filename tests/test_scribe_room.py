@@ -88,3 +88,34 @@ def test_portfolio_topics_and_blocked_per_topic(tmp_path):
 
 def test_later_pattern():
     assert sr.LATER.search("이건 나중에 하자") and sr.LATER.search("일단 미루고") and not sr.LATER.search("지금 바로 해")
+
+
+def test_last_change_commits_since_and_unreadable(tmp_path):
+    """포트폴리오 마지막 쓴 시각 + 그 뒤 커밋 수(D2). 바꾼 적 없으면 0이고, git을 못 읽으면 0이 아니라 None(「읽지 못했습니다」)."""
+    r = _repo(tmp_path)
+    when, n = sr.last_change(str(r), "README.md")
+    assert when and n == 3
+    assert sr.last_change(str(r), "portfolio/없음.md") == (None, 0)
+    assert sr.last_change(str(tmp_path / "git아님"), "README.md") == (None, None)
+
+
+def test_doccheck_report_latest_and_docfix_prompt(tmp_path):
+    r = _repo(tmp_path)
+    assert sr.doccheck_report(str(r)) is None
+    (r / "log" / "doccheck_20261110.md").write_text("a", encoding="utf-8")
+    (r / "log" / "doccheck_20261111.md").write_text("b", encoding="utf-8")
+    assert sr.doccheck_report(str(r)) == "doccheck_20261111.md"
+    p = sr.task_prompt("docfix", "foreman", "/repo", {"report": "log/doccheck_20261111.md"})
+    assert "log/doccheck_20261111.md" in p and "고치는 일이다" in p and "push하지 않는다" in p
+    q = sr.task_prompt("docfix", "foreman", "/repo", {"note": "docs에 안 들어간 것 둘"})
+    assert "docs에 안 들어간 것 둘" in q and "그대로 믿지 말고" in q
+
+
+def test_docfix_blocked_with_readme_and_start_refuses_without_source():
+    import asyncio
+    from bridge.inject import Refused
+    later = {"session_id": 5, "task": "later", "title": "서기"}
+    assert "README.md" in sr.blocked("docfix", [later])                        # README를 고치는 일과 같이 못 연다
+    for topic, note in ((None, None), ("../etc/passwd", None), ("doccheck_x/../y.md", "a")):
+        with pytest.raises(Refused):
+            asyncio.run(sr.start(None, None, "foreman", "docfix", topic, note))
