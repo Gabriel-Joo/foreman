@@ -19,6 +19,7 @@ class SessionStateWatcher:
         self.interval = interval_s
         self.prev: dict[str, tuple[int, str, str | None]] = {}
         self.on_change: Any = None     # 바뀌면 부른다(대시보드 스냅샷 캐시 비우기)
+        self.on_gone: Any = None       # 세션 프로세스가 사라지면 부른다(11-11 끝난 뒤 훑기, bridge/reconcile.py)
 
     def tick(self) -> list[dict[str, Any]]:
         now: dict[str, tuple[int, str, str | None]] = {}
@@ -46,3 +47,8 @@ class SessionStateWatcher:
                 self.publish(m)
             if msgs and self.on_change:
                 self.on_change()
+            if self.on_gone and any(m["pid"] is None for m in msgs):
+                try:
+                    self.on_gone()
+                except Exception as e:  # noqa: BLE001
+                    log.warning("끝난 세션 훑기 예약 실패: %s", type(e).__name__)

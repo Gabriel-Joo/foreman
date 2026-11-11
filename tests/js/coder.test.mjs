@@ -29,6 +29,12 @@ test('맡길 일 — 받은 할 일 · 쉬게 한 일 · 파이프라인 실패 
   assert.deepEqual(coderJobs('petmint', null, st()), []);
 });
 
+test('맡길 일 — 끝난 뒤 어긋난 것(11-11 drift)은 쉬게 한 일 뒤에', () => {
+  const j = coderJobs('foreman', { rested: [], drift: [{ kind: 'dirty', session_id: 4, detail: '세션 4이 끝났는데 커밋 안 된 변경이 2개 있습니다' }] }, st());
+  assert.deepEqual(j.map((x) => [x.kind, x.sid]), [['drift', 4]]);
+  assert.match(j[0].title, /커밋 안 된 변경/);
+});
+
 test('말풍선 — 쉬게 한 일만이면 "맡은 일 N — 합치기 기다림", 하루 넘으면 N일째, 섞이면 맡길 일', () => {
   assert.equal(coderBubble([]), null);
   assert.equal(coderBubble([{ kind: 'rested', days: 0 }]), '맡은 일 1 — 합치기 기다림');

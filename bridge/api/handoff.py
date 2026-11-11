@@ -308,6 +308,8 @@ async def worktree_act(sid: int, body: WorktreeIn, request: Request) -> JSONResp
         return _refused(e)
     from bridge.api import coder
     coder.invalidate()            # 쉬게 한 일 · 코더가 가져간 할 일의 상태가 바뀐다
+    if (rc := getattr(request.app.state, "reconciler", None)) is not None:
+        rc.poke("합치기 · 버리기")    # 11-11 끝난 뒤 어긋난 것 훑기
     return JSONResponse(r)
 
 
