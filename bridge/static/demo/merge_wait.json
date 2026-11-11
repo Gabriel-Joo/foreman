@@ -1,0 +1,53 @@
+{
+ "title": "합치기 기다림 — 캐릭터 머리 위 말풍선 · 승인 막대 건수",
+ "source": "script",
+ "note": "11-11 점검용(log/coder_merge_wait_20261111.md). FOREMAN: 981 합치기 기다림(가장 오래됨, 보라), 982 합치기+답 기다림(답 기다림이 보임), 983 합치기+보고 옴(합치기 기다림이 보임). 막대는 「합치기 대기 3」, 누르면 981 패널",
+ "snapshot": {
+  "generated_at": "@+0",
+  "projects": [
+   {"name": "runshoes", "label": "런슈즈", "sessions": []},
+   {"name": "petmint-rag-chatbot", "label": "펫퍼민트", "sessions": []},
+   {"name": "foreman", "label": "FOREMAN", "sessions": [
+    {"id": 981, "cc_session_id": "demo-0981", "short": "demo0981", "character": "코더 foreman-5", "project": "foreman", "title": "코더 — 화면 고침",
+     "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman/.worktrees/foreman-5", "pid": 10981, "proc": "S", "cc_status": "idle",
+     "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null, "open_turn": null, "activity": null,
+     "subagents_running": 0, "subagent_descs": [], "background": [],
+     "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
+     "last_ts": "@-120000", "attached_at": "@-600000", "detached_at": null,
+     "merge_wait": {"since": "@-1800000", "head8": "a1b2c3d4", "files": 3, "asks": false}},
+    {"id": 982, "cc_session_id": "demo-0982", "short": "demo0982", "character": "코더 foreman-6", "project": "foreman", "title": "코더 — 시험",
+     "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman/.worktrees/foreman-6", "pid": 10982, "proc": "S", "cc_status": "idle",
+     "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null, "open_turn": null, "activity": null,
+     "subagents_running": 0, "subagent_descs": [], "background": [],
+     "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
+     "last_ts": "@-120000", "attached_at": "@-600000", "detached_at": null,
+     "asks": {"at": "@-300000", "tail": "**사용자가 정할 것:** 실패 판정을 좁힐지", "event_id": 2},
+     "merge_wait": {"since": "@-900000", "head8": "e5f6a7b8", "files": 2, "asks": true}},
+    {"id": 983, "cc_session_id": "demo-0983", "short": "demo0983", "character": "코더 foreman-7", "project": "foreman", "title": "코더 — 조사",
+     "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman/.worktrees/foreman-7", "pid": 10983, "proc": "S", "cc_status": "idle",
+     "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null, "open_turn": null, "activity": null,
+     "subagents_running": 0, "subagent_descs": [], "background": [],
+     "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
+     "last_ts": "@-120000", "attached_at": "@-600000", "detached_at": null,
+     "report": {"at": "@-60000", "tail": "커밋했습니다.", "event_id": 3},
+     "merge_wait": {"since": "@-300000", "head8": "c9d0e1f2", "files": 1, "asks": false}}
+   ]}
+  ],
+  "approvals": [],
+  "hidden_dormant": 0,
+  "terminal": {"enabled": false},
+  "ingest": null
+ },
+ "steps": [{"at": 60000, "end": true}],
+ "api": {
+  "/api/coder/todo": {"projects": {
+   "runshoes": {"inbox": [], "rested": []},
+   "petmint-rag-chatbot": {"inbox": [], "rested": []},
+   "foreman": {"inbox": [], "rested": []}
+  }},
+  "/api/scribe/todo": {"tasks": {}, "projects": {}}
+ }
+}
