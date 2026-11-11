@@ -33,6 +33,9 @@ export function createTerminal(store, { getProject } = {}) {
       <button id="termToggle" class="ghost" aria-expanded="false">▲ 터미널</button>
       <select id="termPick" class="term-pick" hidden data-tip="터미널 프로젝트 — 지금 보이는 셸 창입니다. 바꾸면 그 프로젝트 폴더의 셸 창으로 갑니다(프로젝트마다 셸이 따로 있습니다)." aria-label="터미널 프로젝트"></select>
       <button id="termRespawn" class="ghost" hidden data-tip="새 셸 — 이 창의 셸을 새로 띄워 바뀐 설정을 읽습니다. 돌고 있는 명령이나 친 글이 있으면 먼저 묻습니다.">새 셸</button>
+      <button id="termUp" class="ghost" hidden data-tip="위로 — 지난 출력을 한 쪽 위로 올려 봅니다(마우스 휠도 됩니다).">▲ 위로</button>
+      <button id="termDown" class="ghost" hidden data-tip="아래로 — 한 쪽 아래로 내립니다. 맨 아래에 닿으면 스크롤이 저절로 끝납니다.">▼ 아래로</button>
+      <button id="termExit" class="primary" hidden data-tip="입력으로 — 스크롤을 끝내고 셸 입력으로 돌아갑니다. 스크롤 중에 친 글은 셸에 들어가지 않습니다.">입력으로</button>
       <span id="termProjWarn" class="small warn" hidden></span>
       <span id="termBadge"></span>
       <span id="termLast" class="small muted term-last"></span>
@@ -95,7 +98,19 @@ export function createTerminal(store, { getProject } = {}) {
     const rb = $('termRespawn');
     rb.hidden = !cur;
     rb.className = old ? 'primary' : 'ghost';
+    // 스크롤(11-11) — 열려 있고 이 탭 세션에 붙었을 때만. 복사 모드 중이면 [입력으로]를 앞에 세운다(친 글은 셸이 아니라 복사 모드로 간다)
+    const sc = !!(open && shown && shown.view), inScroll = sc && !!shown.scrolling;
+    $('termUp').hidden = !sc; $('termDown').hidden = !inScroll; $('termExit').hidden = !inScroll;
   }
+  async function scrollTo(action) {
+    const my = ++seq;
+    try { const j = await store.terminalScroll(TAB, action); if (my === seq) { shown = { ...shown, ...j }; drawProj(); } }
+    catch (e) { if (my === seq) drawProj(`스크롤하지 못했습니다 — ${e.message || e}`); }
+    if (action === 'exit') setTimeout(focusShell, 100);
+  }
+  $('termUp').addEventListener('click', () => scrollTo('up'));
+  $('termDown').addEventListener('click', () => scrollTo('down'));
+  $('termExit').addEventListener('click', () => scrollTo('exit'));
   const hm = (iso) => { const d = new Date(iso); return isNaN(d) ? '?' : `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   // [새 셸](11-10) — 명령이 돌고 있거나 친 글이 남아 있으면 확인 창 먼저(사람의 sudo · ssh가 돌 수 있는 셸이다)
   async function respawnShell() {
@@ -132,7 +147,8 @@ export function createTerminal(store, { getProject } = {}) {
       const was = winErr; winErr = false;
       if (noView >= 2) { drawProj('이 탭의 터미널 연결을 찾지 못했습니다 — 다른 탭과 보이는 창을 함께 씁니다. 터미널을 닫았다 열면 다시 붙습니다'); return; }
       if (was || noView === 0 && shown && shown.view === false && j.view
-        || !shown || shown.window !== j.window || shown.cwd !== j.cwd || !shown.shell_old !== !j.shell_old) { shown = j; drawProj(); }
+        || !shown || shown.window !== j.window || shown.cwd !== j.cwd || !shown.shell_old !== !j.shell_old
+        || !shown.scrolling !== !j.scrolling) { shown = j; drawProj(); }
     } catch (e) {
       if (!winErr) { winErr = true; drawProj(`지금 보이는 창을 확인하지 못했습니다 — ${e.message || e}`); }
     }

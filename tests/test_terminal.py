@@ -14,7 +14,7 @@ import pymysql
 import pytest
 
 from bridge.config import Settings, get_settings
-from bridge.inject import tmux
+from bridge.inject import Refused, tmux
 from bridge.mask import Masker
 from bridge.terminal import (TerminalManager, cmd_matches, default_tmux_socket, extract_output, find_requests,
                              mask_shell, prefill_form, typed_text)
@@ -347,6 +347,35 @@ async def test_tab_views_do_not_drag_each_other(shell, own_sock):
     await m.stop()
 
 
+async def test_scroll_enters_and_leaves_copy_mode_per_tab(shell, own_sock):
+    """11-11 — [위로]는 그 탭의 보이는 창을 복사 모드로 올리고(scrolling=True), [입력으로]가 끝낸다. 다른 탭은 그대로, 없는 탭은 거절."""
+    p = FakePipeline()
+    m = TerminalManager(None, shell, p, MK, publish=p.publish)
+    m.socket = own_sock
+    await m.start()
+    base = shell.terminal_tmux_session
+    await m.window_for("foreman")
+    for tab in ("tabAAAA01", "tabBBBB02"):
+        await tmux(m.socket, "new-session", "-d", "-t", f"={base}", "-s", f"{base}-v-{tab}")
+    assert (await m.current_view("tabAAAA01"))["scrolling"] is False
+    r = await m.scroll("tabAAAA01", "up")
+    assert r["scrolling"] is True and r["view"] is True
+    assert (await m.current_view("tabAAAA01"))["scrolling"] is True
+    # 같은 창을 보고 있어도 복사 모드는 탭(그룹 세션)마다 따로가 아니라 창의 칸(pane) 것이다 — 그래도 없는 탭은 거절한다
+    r = await m.scroll("tabAAAA01", "down")                  # 맨 아래에 닿으면 -e로 저절로 끝나거나 그대로 — 어느 쪽이든 오류는 없다
+    assert "scrolling" in r
+    await m.scroll("tabAAAA01", "up")
+    r = await m.scroll("tabAAAA01", "exit")
+    assert r["scrolling"] is False
+    r = await m.scroll("tabAAAA01", "exit")                  # 복사 모드가 아닐 때 [입력으로]는 아무 일도 하지 않는다
+    assert r["scrolling"] is False
+    with pytest.raises(Refused):
+        await m.scroll("tabZZZZ99", "up")
+    with pytest.raises(Refused):
+        await m.scroll("tabAAAA01", "rm -rf")
+    await m.stop()
+
+
 class _RepoEngine:
     """_repo_dir만 읽는 가짜 엔진 — SELECT repo_path FROM project WHERE name = :n."""
 
@@ -428,6 +457,9 @@ async def test_view_script_attaches_then_cleans_up(shell, own_sock):
         assert cur["view"] and cur["project"] == "runshoes"
         opt = await tmux(m.socket, "show-options", "-t", f"{view}", "destroy-unattached")
         assert opt.strip() == "destroy-unattached on"
+        # 11-11 — 휠 스크롤용 mouse on은 이 그룹 세션에만(기준 세션 · 서버 전체에는 걸리지 않는다)
+        assert (await tmux(m.socket, "show-options", "-t", f"{view}", "mouse")).strip() == "mouse on"
+        assert (await tmux(m.socket, "show-options", "-t", f"={base}:", "mouse")).strip() in ("", "mouse off")
     finally:
         proc.terminate()
         try:
