@@ -401,3 +401,7 @@ button.danger:not(:disabled):hover { background:color-mix(in srgb, var(--bad) 14
 .flow-steps li.bad { color:var(--bad); font-weight:700; }
 .fm-hand { border-top:1px solid var(--line); margin-top:8px; padding-top:6px; }
 .fm-hand-row { display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:4px; }
+/* D2(11-11) 서기 화면 한 목록 — 목록 밖 한 줄(받은 할 일 · 게시 상태), 게시 칸 사이 간격 */
+.sc-line { margin:5px 0; line-height:1.4; }
+.hand > .sc-row, .hand > details.hand { margin-top:4px; }
+.hand > details.hand { border-top:0; padding-top:0; }
