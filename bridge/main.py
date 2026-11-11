@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from bridge.api import approvals as approvals_api, dashboard as dashboard_api, debug, health, hooks, sessions, ws
 from bridge.api import foreman as foreman_api, handoff as handoff_api, terminal as terminal_api, webhooks
+from bridge.api import managers as managers_api
 from bridge.api import publish as publish_api
 from bridge.api import scribe as scribe_api
 from bridge.api import coder as coder_api
@@ -359,6 +360,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 app.state.notifier.send_direct("foreman", "direct", None, f"{(rule and rule.prefix) or '[FOREMAN]'} ⚠ {why}")
         # 감독실 캐릭터(디스패처의 얼굴)가 계획을 세우는 중 · 제안 대기를 보이게 — 화면이 /api/foreman/state를 다시 읽는다
         app.state.foreman.on_change = lambda: pipeline.publish({"type": "foreman"})
+        # 11-11 C 2물결 — 역할 권한 · 프로젝트별 관리자 · 계획 넘기기(본문은 bridge/roleguard.py · managers.py · handover.py).
+        # 하나가 안 떠도 브리지는 뜬다. 다만 조용히 넘어가지 않는다(로그 error + 텔레그램)
+        def _c2_alert(why: str) -> None:
+            log.error(why)
+            if app.state.notifier:
+                rule_ = app.state.notifier.rules.for_project("foreman")
+                app.state.notifier.send_direct("foreman", "direct", None, f"{(rule_ and rule_.prefix) or '[FOREMAN]'} ⚠ {why}")
+        handover_task = None
+        try:
+            from bridge.roleguard import RoleGuard, RolesConfig
+            rcfg = RolesConfig.load()
+            if rcfg.error:
+                _c2_alert(f"역할 권한을 켜지 못했다(config/roles.toml): {rcfg.error}")
+            if app.state.approvals and rcfg.mode != "off":
+                app.state.approvals.roles = RoleGuard(rcfg, on_error=_c2_alert)
+                log.info("역할 권한 %s: %s", rcfg.mode, ", ".join(k for k, v in rcfg.rules.items() if v))
+        except Exception as e:  # noqa: BLE001
+            _c2_alert(f"역할 권한을 켜지 못했다: {type(e).__name__}: {str(e)[:200]}")
+        try:
+            from bridge.handover import Handover, HandoverConfig
+            from bridge.managers import Managers, ManagersConfig
+            mgcfg = ManagersConfig.load()
+            if mgcfg.error:
+                _c2_alert(f"프로젝트별 관리자 설정을 못 읽었다(config/managers.toml): {mgcfg.error}")
+            app.state.managers = Managers(app.state.handoff, mgcfg, app.state.notifier)
+            hcfg = HandoverConfig.load()
+            if hcfg.enabled:
+                app.state.handover = Handover(app.state.foreman, app.state.managers, hcfg, app.state.notifier,
+                                              base_url=f"http://127.0.0.1:{s.bind_port}")
+                handover_task = app.state.handover.start()
+                log.info("계획 넘기기 켬: 넘긴 뒤 %d분 안에 시작하지 않으면 알림", hcfg.wait_min)
+        except Exception as e:  # noqa: BLE001
+            _c2_alert(f"프로젝트별 관리자 · 계획 넘기기를 켜지 못했다: {type(e).__name__}: {str(e)[:200]}")
         # 11-08 자동 기상 2단계 — 실패 이벤트 → 디스패처가 계획만 → 텔레그램 · 화면에서 사람이 [시작]
         app.state.waker = None
         try:
@@ -412,7 +446,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await app.state.terminal.stop()   # ttyd만 내린다 — tmux 셸은 남는다
             recon_task = app.state.reconciler._task if app.state.reconciler else None
             for t in (watch_task, state_task, health_task, usage_task, docsync_task, denied_task, schema_task, stall_task, recon_task,
-                      mprep_task):
+                      mprep_task, handover_task):
                 if t:
                     t.cancel()
                     try:
@@ -434,6 +468,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(scribe_api.router)
     app.include_router(coder_api.router)
     app.include_router(foreman_api.router)
+    app.include_router(managers_api.router)        # 11-11 프로젝트별 관리자(bridge/api/managers.py)
     app.include_router(approvals_api.router)
     app.include_router(dashboard_api.router)
     app.include_router(usage_api.router)
