@@ -261,6 +261,14 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   document.body.appendChild(mdlMenu);
   const closeMenu = () => { mdlMenu.hidden = true; };
   $('pMeta').addEventListener('click', async (ev) => {
+    const off = ev.target.closest('[data-asksoff]');
+    if (off) {
+      ev.stopPropagation();
+      off.disabled = true;
+      try { await store.asksOff(Number(off.dataset.asksoff)); }
+      catch (e) { off.disabled = false; off.title = `끄지 못했습니다 — ${e.message}`; }
+      return;
+    }
     const b = ev.target.closest('[data-mdl]');
     if (!b) return;
     ev.stopPropagation();
@@ -568,7 +576,10 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const t = s.tokens || {}, stuck = stuckTurn(s);
     const now = s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target || '', 60))}` : (s.state === 'ACTIVE' ? '생각 중' : '');
     // "쌓인 대화 N%"는 상태 바로 뒤 — 머리줄은 한 줄이라 좁은 패널에서 뒤쪽이 말줄임으로 잘린다(11-09 1366 사진)
-    put('pMeta', 'meta', `${stateBadge(s)} ${ctxChip(s)}<span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
+    // 답 기다림 끄기(11-11, 받은 할 일 #13) — 판정이 묻지 않는 끝맺음을 잡았을 때 사람이 끈다. 다음 응답이 오면 다시 판정
+    const asksOff = s.asks && humanNeed(s)?.label === '답 기다림'
+      ? `<button type="button" class="small" data-asksoff="${s.id}" title="답 안 해도 됨 — 이 응답은 답을 기다리는 것이 아니라고 표시합니다. 다음 응답이 오면 다시 판정합니다.">답 안 해도 됨</button> ` : '';
+    put('pMeta', 'meta', `${stateBadge(s)} ${asksOff}${ctxChip(s)}<span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
       · <span class="muted" title="오늘 출력 토큰 — 이 세션이 오늘 쓴 글의 양입니다.">오늘 출력 토큰 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn" title="끝났는지 모름 — 작업이 끝났다는 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.">⚠ 끝났는지 모름</span>' : ''}`);
     $('pMeta').title = [sessionSub(s), sessionIds(s), projectLabel(st, s.project), s.cwd || ''].filter(Boolean).join(' · ');
     drawSwitch(s);                   // 먼저 — 떠 있으면 쌓인 대화 띠는 숨긴다(같은 버튼, 까닭은 이쪽이 분명)

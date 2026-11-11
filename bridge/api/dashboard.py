@@ -103,13 +103,35 @@ async def _switch_status(c: Any, ctx: dict[int, dict[str, Any]], min_pct: int) -
 # 11-09 사람이 해야 풀리는 것(사용자: "사람 답을 기다리는 상태는 쉼이 아니다", "CC 자체 권한 거부는 화면에 아예 없다")
 DENIED_PREFIX = "Permission for this action was denied"          # CC auto mode 분류기 거부 — FOREMAN 승인 큐를 거치지 않는다
 _DENY_REASON = re.compile(r"Reason:\s*\[([^\]]+)\]")
-# 글로 묻고 끝난 응답 — 마지막 몇 줄에 묻는 말이 있으면(추정). 질문 카드(AskUserQuestion)는 따로 잡힌다
-_ASKS = re.compile(r"\?\s*$|까요[.?]?\s*$|(골라|말씀해|알려|정해|확인해|눌러) ?주세요|\(가\)|중 하나를", re.M)
+# 글로 묻고 끝난 응답 — 마지막 문단에 묻는 말이 있으면(추정). 질문 카드(AskUserQuestion)는 따로 잡힌다
+# 11-11(받은 할 일 #13): 끝 600자 전체를 보던 것을 **마지막 문단**만으로 좁혔다. 11-10 관리자 244의 합치기 보고 등 7건이
+# 보고 가운데의 "확인해 주세요" · "UI 불만 (가)" 같은 말에 걸려 묻지 않는 글이 답 기다림이 됐다(log/coder_screen_state_20261111.md)
+_ASKS = re.compile(r"\?\s*$|까요[.?]?\s*$|(골라|말씀해|알려|정해|확인해|눌러) ?주세요|중 하나를", re.M)
+# 「(가)」는 고르라는 말과 같이 있을 때만 — 할 일 이름 「UI 불만 (가)」처럼 가리키기만 한 것은 묻는 말이 아니다
+_CHOICE = re.compile(r"\((가|나|다)\)[^\n]*(까요|골라|정해|중 하나)")
+# 다른 세션 · 사람에게 넘기는 부탁 — 지금 이 사람의 답을 막고 기다리는 것이 아니다("합친 뒤 관리자가 확인해 주세요")
+_THIRD = re.compile(r"(관리자|원본 (폴더 )?세션|교장|서기|코더|디자이너|다음 세션)[이가은는께]?(서)? [^\n]{0,60}주세요")
+
+
+def last_paragraph(reply: str) -> str:
+    """빈 줄로 나눈 마지막 문단(빈 문단은 건너뜀). 빈 줄이 없으면 끝 600자."""
+    paras = [p for p in re.split(r"\n\s*\n", reply.strip()) if p.strip()]
+    tail = paras[-1] if paras else ""
+    return tail[-600:]
 
 
 def asks_text(reply: str | None) -> bool:
-    """응답 끝부분(마지막 600자)이 사람에게 묻는가."""
-    return bool(reply and _ASKS.search(reply[-600:]))
+    """응답의 마지막 문단이 사람에게 묻는가. 다음에 할 일을 말한 것(「~기다리겠습니다」)은 묻는 말 꼴이 아니라 걸리지 않는다."""
+    if not reply:
+        return False
+    tail = last_paragraph(reply)
+    for line in tail.splitlines():
+        if _CHOICE.search(line):
+            return True
+        m = _ASKS.search(line)
+        if m and not _THIRD.search(line):
+            return True
+    return False
 
 
 async def human_needs(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
@@ -129,16 +151,43 @@ async def human_needs(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
         m = _DENY_REASON.search(prev or "")
         out.setdefault(sid, {})["denied"] = {"tool": tool, "reason": m.group(1) if m else None, "at": _iso(ts),
                                             "subagent": sub is not None}
-    for sid, reply, ts in (await c.execute(text(
-            f"SELECT e.session_id, JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.text')), e.ts FROM event e JOIN ("
+    # 사람이 [답 안 해도 됩니다]로 끈 응답(session_action 'asks-off', detail = 그 응답 이벤트 id) — 다음 응답이 오면 다시 판정
+    off = {r[0]: r[1] for r in (await c.execute(text(
+        f"SELECT a.session_id, a.detail FROM session_action a JOIN (SELECT session_id, MAX(id) mid FROM session_action "
+        f"WHERE session_id IN {in_ids} AND action = :a AND ok GROUP BY session_id) x ON x.mid = a.id"), {"a": ASKS_OFF_ACT})).all()}
+    for sid, reply, ts, eid in (await c.execute(text(
+            f"SELECT e.session_id, JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.text')), e.ts, e.id FROM event e JOIN ("
             f"  SELECT session_id, MAX(id) mid FROM event WHERE session_id IN {in_ids} AND type = 'assistant_msg' "
             f"  AND subagent_id IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.block')) = 'text' GROUP BY session_id"
             f") x ON x.mid = e.id"))).all():
         if last_human.get(sid) and ts < last_human[sid]:
             continue
+        if off.get(sid) == str(eid):
+            continue
         if asks_text(reply):
-            out.setdefault(sid, {})["asks"] = {"at": _iso(ts), "tail": (reply or "")[-160:]}
+            out.setdefault(sid, {})["asks"] = {"at": _iso(ts), "tail": last_paragraph(reply or "")[-160:], "event_id": eid}
     return out
+
+
+ASKS_OFF_ACT = "asks-off"        # session_action — 사람이 「이 응답은 답 안 해도 됩니다」(11-11, 받은 할 일 #13)
+
+
+async def asks_off(engine: Any, sid: int) -> dict[str, Any]:
+    """지금 답 기다림으로 잡힌 응답 하나를 끈다. 다음 응답이 오면 다시 판정한다(이벤트 id로 묶음)."""
+    async with engine.begin() as c:
+        needs = await human_needs(c, f"({int(sid)})")
+        a = (needs.get(sid) or {}).get("asks")
+        if not a:
+            return {"ok": False, "note": "지금 답 기다림이 아닙니다"}
+        await c.execute(text("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, :a, 1, :d)"),
+                        {"s": sid, "a": ASKS_OFF_ACT, "d": str(a["event_id"])})
+    _cache["data"] = None
+    return {"ok": True, "event_id": a["event_id"], "note": "이 응답의 답 기다림을 껐습니다. 다음 응답이 오면 다시 판정합니다"}
+
+
+@router.post("/sessions/{sid}/asks-off")
+async def asks_off_api(sid: int, request: Request) -> dict[str, Any]:
+    return await asks_off(request.app.state.store.engine, sid)
 
 
 def _iso(dt: datetime | None) -> str | None:
