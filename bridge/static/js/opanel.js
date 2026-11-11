@@ -221,7 +221,21 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   // ── 대화 스크롤 — 아래를 보고 있으면 따라가고, 위를 보고 있으면 그대로 + [새 답 ↓] ──
   const nearBottom = (c) => c.scrollHeight - c.scrollTop - c.clientHeight < 60;
-  $('pConvo').addEventListener('scroll', () => { if (nearBottom($('pConvo'))) $('pNew').hidden = true; });
+  $('pConvo').addEventListener('scroll', () => { noteConvo(); if (nearBottom($('pConvo'))) $('pNew').hidden = true; });
+  // 대화 칸 높이가 바뀌면(입력 칸 끌기 · ↑↓ · 더블클릭 · 모서리 · 창 크기) 아래쪽 기준으로 붙인다(11-11 사용자 — 입력 칸을 끌어 올리면
+  // 대화 칸이 아래부터 줄어 맨 아래 글이 가려졌다). 맨 아래를 보고 있었으면 끄는 동안에도 맨 아래, 위를 읽던 중이면 보던 글이 제자리.
+  // ResizeObserver는 그리기 전에 불려 끄는 동안 흔들리지 않는다. 숨은 칸(다른 탭 · 높이 0)은 건드리지 않는다
+  let convoFromBottom = 0, convoH = -1;
+  function noteConvo() { const c = $('pConvo'); if (c.clientHeight) convoFromBottom = Math.max(0, c.scrollHeight - c.scrollTop - c.clientHeight); }
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(() => {
+      const c = $('pConvo');
+      if (!c.clientHeight || c.clientHeight === convoH) return;
+      const first = convoH < 0;
+      convoH = c.clientHeight;
+      if (!first) c.scrollTop = c.scrollHeight - c.clientHeight - convoFromBottom;
+    }).observe($('pConvo'));
+  }
   $('pNew').onclick = () => { const c = $('pConvo'); c.scrollTo({ top: c.scrollHeight, behavior: 'smooth' }); $('pNew').hidden = true; };
   // 긴 글을 접을 때 — 그 글 머리가 화면 위로 사라졌으면 머리로 데려온다(흐름이 끊기지 않게). 펼칠 때는 자리를 그대로
   $('pConvo').addEventListener('click', (ev) => {
@@ -652,6 +666,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (put('pConvo', 'convo', html)) {
       if (follow) c.scrollTop = c.scrollHeight;
       else if (tab === 'convo') $('pNew').hidden = false;
+      noteConvo();                   // 새 글이 아래에 붙어 아래쪽 거리가 바뀌었다(스크롤 이벤트는 오지 않는다)
     }
     $('pTabs').querySelector('[data-n="act"]').textContent = s.feed.length ? ` ${s.feed.length}` : '';
     if (tab === 'act' || switched) put('pFeed', 'feed', feedHtml(s));
