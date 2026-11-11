@@ -515,6 +515,7 @@ CC 턴 끝 ── 부탁 감지 ──> 셸 입력 줄에 미리 채움(send-key
 
 - **밖에 열리지 않는다.** ttyd는 TCP 포트를 열지 않고 UNIX 소켓에만 묶는다(디렉토리 0700 — 다른 사용자도 못 붙는다). 127.0.0.1 포트보다 한 단계 좁다. 브라우저는 브리지를 거쳐서만 닿는다: API 토큰으로 쿠키(HttpOnly · SameSite=Strict · Path=/terminal, 브리지 메모리에만 — 브리지를 다시 띄우면 새로 받는다)를 받고, WS는 Origin이 Host와 같아야 한다(다른 사이트가 브라우저 쿠키로 셸을 여는 것을 막는다). 화면은 같은 출처의 틀 안에서만(`X-Frame-Options: SAMEORIGIN`)
 - **승인 정책은 걸리지 않는다, 기록은 남는다.** 명령마다 `shell_cmd` 이벤트(명령 · 종료 코드 · 위치). 마스킹은 기존 규칙(정확한 값 · 토큰 모양 · `KEY=값`)에 명령줄 자리를 더했다: `--password 값`, `docker/podman/helm registry login -p 값`, `mysql -p값`, `sshpass -p`, `echo 값 | sudo -S`, `| … --password-stdin`, URL의 `user:암호@`, `curl -u user:암호`. 셸 기록 파일은 디스크에 남기지 않고(`HISTFILE=`), 공백으로 시작하는 명령도 기록한다(`HISTCONTROL=`)
+- **방을 따라간다**(11-10 사용자 — "방을 옮기면 터미널도 그 방 프로젝트로 바뀐다"). 방(현장)을 옮기면 터미널도 그 방 프로젝트의 창으로 바뀐다. 연 채 옮겨도 바뀌고, 막대의 창 이름도 같이 바뀐다. tmux는 보이는 창이 하나라서 브라우저 탭마다 그룹 세션 `foreman-shell-v-<탭>`으로 자기 창을 본다
 - **셸은 캐릭터가 아니다.** `character_session.type='shell'`(포먼 프로젝트의 포먼에 붙인 행 하나). 대시보드 · 세션 목록은 `type='agent'`만 본다
 - **부탁 찾기** — 턴이 `stop`으로 끝나면 그 턴의 assistant 글에서: ① 셸 코드 블록 · 인라인 코드 · `! 명령` 안에 ② 사람이 쳐야 하는 명령(`sudo` · `su` · `ssh-add` · `ssh-keygen` · `ssh-copy-id` · `passwd` · `kinit` · `docker/podman/… login` · `gh/glab/gcloud auth login` …)이 있고 ③ 부탁하는 말("실행해 주세요" · "쳐 주세요" · "직접 실행" · "please run" …)이 있을 때. 설명 · 기록에 나온 `sudo`는 ③이 없어 걸리지 않는다. `! 명령` 꼴은 그 자체가 부탁이다. 여럿이면 첫 번째를 채우고 나머지는 배너에 보인다
 - **미리 채우기** — 셸 입력 줄을 비우고(C-e C-u) 글자로 넣는다(`send-keys -l`, Enter 없음). 비밀번호 자리(`<password>` · `«masked…»` · `YOUR_…` · `-p 값` 등)는 비우고 커서를 거기로 옮긴다. 셸이 다른 일을 하는 중이면(암호 입력 중 · 다른 명령 실행 중) 건드리지 않고 배너에 "다시 채우기"를 둔다
@@ -876,7 +877,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 
 | 무엇 | 언제 · 조건 | 근거 |
 |---|---|---|
-| 런슈즈 · 펫퍼민트 승인을 관찰(observe) → 차단(enforce)으로 바꿀지 정하기 | 판정 수치가 볼 만큼 쌓이면(11-05 사용자: 아직 아님). 인프라도 묶음 1 동안 observe — 끝나면 enforce로(사용자 확인) | README 3.3, `config/approval.toml`, `log/infra_bundle1_launch_20261110.md` |
+| 런슈즈 · 펫퍼민트 승인을 관찰(observe) → 차단(enforce)으로 바꿀지 정하기 | 판정 수치가 볼 만큼 쌓이면(11-05 사용자: 아직 아님). 인프라도 묶음 작업 동안 임시 observe(`[projects.ronanlab-infra]`, 사용자 "승인 카드는 이 작업 동안 풀어라. 끝나면 다시 걸어라") — 묶음 작업이 끝나면 사용자에게 확인한 뒤 enforce로 되돌리고 브리지를 다시 띄운다 | README 3.3, `config/approval.toml`, `log/infra_bundle1_launch_20261110.md` |
 | 시험 GitHub Actions(브리지 systemd 유닛은 11-06에 만듦 — 부팅으로 뜨는지는 재부팅 검증 때 확인) | 정해 두고 아직 안 만듦(11-03 결정) | README 3.12, `log/infra_20261106_systemd-bridge.md` |
 | 디스패처 자동 기상 3단계(묻지 않고 띄우기) | 2단계를 써 본 뒤(사용자) | `docs/14_dispatcher_note_wake.md` |
 | 런슈즈 실제 인계 | 발볼 검증이 끝난 뒤. 맥락이 큰 런슈즈 세션도 지금 작업이 끝나면 사용자가 인계한다(11-08 사용자: "런슈즈는 지금 작업 중이라 나중에. 끝나면 인계할게") | `log/stage11_handoff_result.md`, `log/stage15_usage_result.md` 「6.」 |
