@@ -25,7 +25,9 @@
 | DB(MySQL, 호스트 도커 `127.0.0.1:3308`) | 마이그레이션 `migrations/NNNN_*.sql` — `.venv/bin/python -m bridge.db.migrate` |
 | 설정 | `config/approval.toml` · `notify.toml` · `pipeline.toml` · `worktree.toml` · `models.toml`(세션 모델 · 역할 기본값) · `scribe.toml`(서기 "정리할까요?" 기준, `docs/12_scribe.md` 「11-4.」) · `handoff.toml`(`[merge_prep]` 합치기 카드 — **켜짐**, `[move] one_flow` — 꺼짐) · `managers.toml`(`[managers]` · `[handover]` — 꺼짐) · `tokens.toml`(`[project_tokens]` — 꺼짐) · `roles.toml`(`mode = "observe"` — 관찰). 이 넷의 뜻 · 켜는 법은 `docs/11_foreman_dispatch.md` 「11.」 · `docs/11_worktree.md` 「6-1.」. 그 밖에 `wake.toml` · `usage.toml` · `portfolio.toml` · `notion.toml`. 비밀은 `.env.bridge` · `.env.telegram` · `.env.project_tokens`(프로젝트 토큰 — 커밋 안 함) |
 | 설계 · 브리프 / 결과 | `README.md`, `docs/NN_*.md` / `log/*.md` |
-| 시험 | `.venv/bin/python -m pytest -q`(DB `foreman_test`), `node --test tests/js/` — 두 세션이 동시에 돌리지 않는다(같은 `foreman_test` 표를 서로 지워 11-09 31건 실패 → 혼자 돌려 통과 [log:repo_scope_readonly_20261109.md]). `tests/test_app_db.py`는 운영 DB에 대고 앱을 띄우므로 설정 `losscheck_recover`를 끈다 — 켜 두면 앱이 뜰 때 도는 압축 손실 점검을 모두 failed로 바꾼다(11-09 시험만 돌렸는데 운영 점검 #2가 실패로 적혔다) [log:cross_paste_20261109.md] |
+| 시험 | `.venv/bin/python -m pytest -q`, `node --test tests/js/`. **pytest는 세션마다 시험 DB를 따로 만들어 쓰고 끝나면 지운다**(11-11, `tests/conftest.py` · `tests/testdb.py` [log:test_db_per_session_20261111.md]) — 예전엔 공용 `foreman_test`라 두 세션이 동시에 돌리면 서로의 표를 지워 11-09 31건이 실패했다 [log:repo_scope_readonly_20261109.md]. 이 변경을 합친 뒤부터 맞고, 아직 합치지 않은 worktree는 예전처럼 공용 `foreman_test`다. 상세는 아래 「3. 돌리기 · 확인」 시험 DB 항목 |
+
+(`tests/test_app_db.py`는 11-11부터 운영 DB가 아니라 세션 시험 DB에 앱을 띄운다. 설정 `losscheck_recover`를 끈 채 띄우는 것은 그대로다 — 켜 두면 앱이 뜰 때 도는 압축 손실 점검을 모두 failed로 바꾼다(11-09 시험만 돌렸는데 운영 점검 #2가 실패로 적혔다) [log:cross_paste_20261109.md].)
 
 ## 3. 돌리기 · 확인
 
@@ -36,7 +38,16 @@
     ```
   - **브리지를 다시 띄워야 하는 것은 파이썬(브리지) 변경뿐**이다. js · css · html은 재시작 없이 바로 나간다(`cache-control: no-cache`). 열린 탭은 화면 코드 지문(`bridge/uiver.py` — static 아래 파일 이름 · 크기 · 수정 시각, WS `hello` · `/api/dashboard`의 `ui`)이 바뀌면 맨 위 노란 띠 "화면 코드가 바뀌었습니다 — [새로 고침]"이 뜬다(저절로 고치지 않는다 — 입력 칸 글이 날아간다) [log:pixel_bigger_question_card_20261109.md] [log:screen_mismatch_waits_20261109.md]
 - 브리지 주소는 `127.0.0.1:8000`이다(API 시험 때)
-- CC 세션 tmux: 서기 세션은 아직 tmux 세션 `foreman-bridge` 안에 있다(11-06 이름 변경 보류 — `cc-foreman`이 이미 있어서. 정하면 바꾼다). 런슈즈 `cc-runshoes`(11-05 이전, 11-06 정전 뒤 사라짐). 펫퍼민트는 아직 tmux 밖(pts/7) — 입력 주입 불가
+- **시험 DB는 세션마다 따로다**(11-11, 합친 뒤부터 [log:test_db_per_session_20261111.md]). 그래서 "다른 pytest가 도는지 보고 기다린다 / 혼자 돌린다"는 이제 필요 없다(pgrep 확인도 하지 않는다)
+  - 이름: `foreman_test_<자리>_<pid>` — `<자리>`는 `.worktrees/<이름>`이면 그 이름(소문자 · 24자까지), 원본 폴더면 `main`. pid는 pytest 프로세스 것이라 같은 worktree에서 둘을 같이 돌려도 겹치지 않는다. 마이그레이션도 그 DB에 이 폴더의 `migrations/`를 올려서 세션마다 갈린다
+  - 시작 머리글에 `시험 DB: <이름>`이 찍힌다. 끝나면 지우고(Ctrl+C도 같다), 죽어서(`kill -9` · 세션 종료) 남은 것은 **다음 pytest가 뜰 때** 이름 끝 pid가 죽은 것만 치운다(자리 이름은 보지 않는다 — 다른 세션의 살아 있는 시험은 안 지운다)
+  - **경고 `공용 foreman_test로 돈다`**가 머리글 · 끝 요약에 나오면 세션 DB를 만들지 못한 것이다(MySQL이 꺼짐 · `foreman\_test\_%` 권한 없음). 그대로 돌면 다시 다른 세션과 같은 표를 쓰니 원인부터 본다(조용히 넘어가지 않게 낸 경고다)
+  - 손으로: `.venv/bin/python tests/testdb.py`(목록 — 살아 있음/남음), `.venv/bin/python tests/testdb.py --clean`(남은 것만 지움)
+  - 새 시험이 DB를 쓰면 `Settings(mysql_database="foreman_test")`라고 쓰면 자동으로 세션 DB가 된다(`bridge/config.py` `resolve_test_db`). `model_copy(update=…)`로 바꿀 때는 `resolve_test_db("foreman_test")`. 운영 `Settings()` · `get_settings()`로 DB에 쓰지 않는다. 운영 DB `foreman`과 공용 `foreman_test`는 이 도구가 만들지도 지우지도 않는다
+  - 토큰이 든 헤더를 assert 줄 안에서 만들지 않는다 — 실패하면 pytest가 호출 인자를 풀어 값을 그대로 출력한다. `tests/test_app_db.py`의 `_bearer()`(repr이 `Bearer ***`)처럼 쓴다
+  - 아직 운영 DB에 쓰는 시험 둘: `test_foreman_note.py` · `test_usage.py::test_record_cli_writes_rows`(무작위 이름으로 쓰고 자기 행만 지운다 — 동시 실행은 겹치지 않지만 시험이 죽으면 `zz…` 행이 남을 수 있다)
+  - DB 권한은 사용자가 준 것이다(`foreman_app`에 `foreman\_test\_%`.*). 되돌리는 명령은 위 기록의 「되돌리는 법」
+- CC 세션 tmux(11-11 직접 확인): 세션은 프로젝트마다 tmux 세션 `cc-<프로젝트>[-N]`에 뜬다(예: `cc-foreman` · `cc-foreman-2` · `cc-runshoes-3`; `-N`은 같은 프로젝트의 둘째 이후 세션). tmux `foreman-bridge`에는 11-06부터 빈 bash 하나만 있고 세션이 없다(브리지는 위의 systemd 유닛이 돌린다 — tmux와 무관). 웹 터미널용 `foreman-shell`(창 4개)은 따로 있다. `cc-petmint`와 `cc-runshoes`는 창의 현재 명령이 `bash`로 보인다(`claude`가 아니다 — 11-11 확인 시점. 그 안에서 CC가 따로 돌고 있는지는 확인하지 못했다). 확인: `tmux ls`, `tmux list-panes -a -F '#{session_name} #{pane_pid} #{pane_current_command}'`
 - 화면 자리 점검 도구 `.venv/bin/python tools/screen.py`
   - 헤드리스 크로미움으로 세 테마 × 세 크기의 `layoutAudit()` · `propAudit()` + PNG. 문제가 있으면 종료 코드 1
   - **화면마다 `nameAudit()` · `cardAudit()` · `tipAudit()`도 기본으로 센다**(11-09 — 전엔 `--eval`로 따로 불러야 봐서 빠뜨리면 안 보였다). 줄 끝에 `layoutAudit N · nameAudit N · cardAudit N · tipAudit 문제/호버 수 · propAudit N`, 모두 문제 수에 든다 [log:screen_argocd_read_20261109.md] [log:tips_and_credit_signal_20261109.md]
