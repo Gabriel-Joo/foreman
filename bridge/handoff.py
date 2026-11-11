@@ -329,6 +329,7 @@ class HandoffManager:
         self.previews: Any = None           # 미리보기(bridge/previews.py) — 끝내기 · 합치기 · 버리기에서 끈다
         self.models = Models()              # 고를 수 있는 모델 · 역할 기본값(config/models.toml, 11-05)
         self.promote: Any = None            # 문서로 옮기기(bridge/promote.py) — main.py가 넣는다
+        self.mergeprep: Any = None          # 합치기 준비(bridge/mergeprep.py, 11-11) — config/handoff.toml이 켜면 main.py가 넣는다
 
     # ── 조회 ────────────────────────────────────────────
     async def session(self, sid: int) -> SessionRow | None:

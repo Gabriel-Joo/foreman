@@ -307,6 +307,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.info("주인 없는 미리보기 %d개를 껐다", n)
         except Exception as e:  # noqa: BLE001 — 정리 실패가 기동을 막지 않는다
             log.warning("미리보기 정리 실패: %s", e)
+        # 11-11 1물결 A — 합치기 준비(bridge/mergeprep.py). config/handoff.toml [merge_prep] enabled일 때만. 설정이 깨지면 텔레그램
+        mprep_task = None
+        try:
+            from bridge.mergeprep import MergePrep, load as load_mprep
+            mcfg = load_mprep(Path(__file__).resolve().parent.parent / "config" / "handoff.toml")
+            if mcfg.enabled:
+                app.state.handoff.mergeprep = MergePrep(app.state.handoff, mcfg, app.state.notifier, on_change=dashboard_api.invalidate)
+                mprep_task = app.state.handoff.mergeprep.start()
+                log.info("합치기 준비 켬: %d초마다, %d단계", mcfg.every_s, mcfg.stage)
+        except Exception as e:  # noqa: BLE001 — 안 떠도 브리지는 뜬다. 다만 조용히 넘어가지 않는다
+            why = f"합치기 준비를 켜지 못했다(config/handoff.toml): {type(e).__name__}: {str(e)[:200]}"
+            log.error(why)
+            if app.state.notifier:
+                rule = app.state.notifier.rules.for_project("foreman")
+                app.state.notifier.send_direct("foreman", "direct", None, f"{(rule and rule.prefix) or '[FOREMAN]'} ⚠ {why}")
         if app.state.approvals:
             app.state.approvals.schema = app.state.schema_lock
             # 11-09 — 다른 저장소는 읽기만(config/approval.toml [repo_scope])
@@ -382,7 +397,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if app.state.terminal:
                 await app.state.terminal.stop()   # ttyd만 내린다 — tmux 셸은 남는다
             recon_task = app.state.reconciler._task if app.state.reconciler else None
-            for t in (watch_task, state_task, health_task, usage_task, docsync_task, denied_task, schema_task, stall_task, recon_task):
+            for t in (watch_task, state_task, health_task, usage_task, docsync_task, denied_task, schema_task, stall_task, recon_task,
+                      mprep_task):
                 if t:
                     t.cancel()
                     try:

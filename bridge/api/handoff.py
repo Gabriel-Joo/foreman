@@ -89,7 +89,52 @@ async def handoff_view(sid: int, request: Request) -> dict[str, Any]:
             out["controls"]["losscheck"] = not any(x["status"] == "running" for x in out["losschecks"])
         except Exception as e:  # noqa: BLE001 — 0021 전에도 인계 칸은 뜬다
             out["losschecks_error"] = f"잃은 것 점검을 읽지 못했습니다({type(e).__name__}) — 마이그레이션 0021을 적용했는지 확인해 주세요"
+    # 합치기 승인 카드(11-11 1물결 A, bridge/mergeprep.py) — 켜져 있을 때만. 꺼져 있으면 None
+    mp = getattr(m, "mergeprep", None)
+    out["merge_prep"] = ({"card": mp.card_for(sid), "health": mp.health, "stage": mp.cfg.stage} if mp is not None else None)
     return out
+
+
+# ── 합치기 준비(11-11 1물결 A 「하나」 · 「넷」, bridge/mergeprep.py) ─────────────
+class MergePrepIn(BaseModel):
+    action: Literal["merge", "skip", "refresh"]
+
+
+def _mp(m: HandoffManager) -> Any:
+    mp = getattr(m, "mergeprep", None)
+    if mp is None:
+        raise HTTPException(503, "합치기 준비가 꺼져 있습니다(config/handoff.toml [merge_prep] enabled)")
+    return mp
+
+
+@router.get("/merge-prep")
+async def merge_prep_list(request: Request) -> dict[str, Any]:
+    """합치기 승인 카드 전부 + 준비 상태(health). 꺼져 있으면 enabled false."""
+    mp = getattr(_mgr(request), "mergeprep", None)
+    return mp.view() if mp is not None else {"enabled": False, "cards": [], "health": None}
+
+
+@router.post("/sessions/{sid}/merge-prep")
+async def merge_prep_act(sid: int, body: MergePrepIn, request: Request) -> JSONResponse:
+    """merge — 사람 승인: 충돌 없고 깨끗하면 (살아 있으면 끝내고) 합침, 충돌이면 그 세션(끝났으면 관리자)에 풀라고 보냄.
+    skip — [나중에]: 이 브랜치 끝 커밋이 바뀌기 전까지 카드를 치움. refresh — 지금 다시 훑기."""
+    mp = _mp(_mgr(request))
+    try:
+        if body.action == "skip":
+            r = await mp.skip(sid)
+        elif body.action == "refresh":
+            await mp.check()
+            r = {"ok": True, "card": mp.card_for(sid)}
+        else:
+            r = await mp.approve(sid)
+    except Refused as e:
+        return _refused(e)
+    if body.action == "merge":
+        from bridge.api import coder
+        coder.invalidate()
+        if (rc := getattr(request.app.state, "reconciler", None)) is not None:
+            rc.poke("합치기 승인")
+    return JSONResponse(r)
 
 
 # ── 인계 2판 d [잃은 것 보기](11-06, bridge/losscheck.py) ─────────────
