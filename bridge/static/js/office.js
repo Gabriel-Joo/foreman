@@ -29,6 +29,7 @@ const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'
 // 출하장(Jenkins → Harbor → ArgoCD)이 없는 현장(11-10) — 빌드하는 앱이 아니다(config/pipeline.toml에 없음). 모눈 칸은 같게 두고
 // 단계 칸 · 가구 · 화살표 · 배송 담당을 그리지 않는다. 이름표는 "<테마의 출하 이름> 없음"(출하장 · 봉인실 · 배포 파이프)
 const NO_SHIP = new Set(['ronanlab-infra']);
+const KEEP_KEY = 'foremanKeepView';      // 테마를 바꿀 때 보던 화면 · 고른 세션(sessionStorage, 11-11)
 const RATE_WIN = 10 * 60 * 1000;          // 토큰 속도 창 — 최근 10분
 const SPEED = 3.2;                         // 걷는 속도(타일/초)
 // 역할 고정 자리(11-09 관리자 · 11-10 디자이너) — 테마 layout.zones.<역할>.seats에 서고, 일할 때도 그 자리. 작업 책상 수 · "+N"에 들지 않는다
@@ -267,6 +268,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   }
   const tokHist = new Map();           // 방 이름 → [{t, v, o}]
   let lastSnap = null;
+  // 테마를 바꿔도 보던 화면 그대로(11-11 사용자 — 전엔 테마 링크가 페이지를 새로 열어 늘 감독실로 갔다). 테마 링크를 누를 때
+  // sessionStorage(이 탭만)에 보던 화면 · 고른 세션을 남기고(아래 .otheme), 새 페이지가 처음 한 번 받는다. 세션은 첫 데이터가 온 뒤 연다(rebuild)
+  let KEEP = null;
+  try { KEEP = JSON.parse(sessionStorage.getItem(KEEP_KEY) || 'null'); sessionStorage.removeItem(KEEP_KEY); } catch { KEEP = null; }
   let view = 'hq';                     // 'hq'(감독실, 1단) | 'map'(전체) | 방 이름(현장, 2단) | '_lounge'
   let selected = null;                 // actor key
   const cam = { x: 0, y: 0, s: 1 }, camT = { x: 0, y: 0, s: 1 };
@@ -631,7 +636,15 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       room.rateOut = tokenRate(h.map((x) => ({ t: x.t, v: x.o })), Date.now(), RATE_WIN);
       room.rateSpan = h.length > 1 ? h[h.length - 1].t - h[0].t : 0;     // 화면을 연 지 얼마 안 되면 아직 잴 수 없다
     }
-    if (view !== 'map' && view !== 'hq' && !world.rooms.concat(world.lounge).some((r) => (r.name || '_lounge') === view)) view = 'hq';
+    const hasView = (v) => v === 'map' || v === 'hq' || world.rooms.concat(world.lounge).some((r) => (r.name || '_lounge') === v);
+    if (!hasView(view)) view = 'hq';
+    // 테마를 바꾸기 전 화면(KEEP)은 첫 데이터(프로젝트 목록)가 온 뒤에 — 그 전엔 방 목록이 비어 있다. 카메라는 다가가지 않고 바로(cam.init)
+    if (KEEP && st.projects.length) {
+      if (typeof KEEP.view === 'string' && hasView(KEEP.view)) { view = KEEP.view; cam.init = false; }
+      const sid = Number(KEEP.sid), a = actors.get('s:' + sid);
+      if (sid && st.sessions.has(sid) && a) { selected = a.key; store.select(sid); panel.show({ kind: 'session' }); }
+      KEEP = null;
+    }
     aim();
     header(st);
     const sa = selected && actors.get(selected);
@@ -3153,6 +3166,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function go(v) { view = v; aim(); header(store.state); }
   $('oMap').onclick = () => go('hq');
   $('oAll').onclick = () => go('map');
+  // 테마 링크(새 페이지) — 보던 화면 · 고른 세션을 남긴다(KEEP, 11-11). 기억을 못 하면 전처럼 감독실에서 연다
+  root.querySelector('.otheme').addEventListener('click', (ev) => {
+    if (!ev.target.closest('a')) return;
+    try { sessionStorage.setItem(KEEP_KEY, JSON.stringify({ view, sid: store.state.selected })); } catch { /* 감독실로 */ }
+  });
   $('oProj').addEventListener('click', (ev) => { const b = ev.target.closest('[data-room]'); if (b) goRoom(b.dataset.room); });
   // + 새 세션(11-05) — 지금 보고 있는 현장을 기본 프로젝트로. 띄우면 그 세션을 골라 패널에 연다
   const newSession = mountNewSession(store, { onCreated: (sid) => setTimeout(() => openSession(sid), 300) });
@@ -3198,7 +3216,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   resize();
   store.subscribe(rebuild);
   requestAnimationFrame(frame);
-  return { go, theme, openSession, panel, actors, newSession: (p) => newSession.open(p), openTodo: (p, to) => todoInbox.open(p, to), foremanName: FM_NAME,
+  return { go, view: () => view, theme, openSession, panel, actors, newSession: (p) => newSession.open(p), openTodo: (p, to) => todoInbox.open(p, to), foremanName: FM_NAME,
            audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: (o) => layoutAudit(o), labelAudit: () => labelAudit(), gridAudit: () => gridAudit(), camScale: () => ({ cam: cam.s, room: roomViewScale() }), roomLabels: (name) => roomLabels(world.rooms.find((r) => r.name === name) || null).map((l) => ({ ...l, box: labelBox(l) })),furnRects: (w) => furnRects(w), standSpots: () => standSpots(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), nameAudit: () => nameAudit(), names: () => NAMES.slice(),
            // 터미널을 열 때 고를 프로젝트(11-10) — 보고 있는 현장, 없으면(감독실 · 지도 · 라운지) 고른 세션의 프로젝트, 그것도 없으면 null
            currentProject: () => (world.rooms.some((r) => r.name === view) ? view
