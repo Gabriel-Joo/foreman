@@ -29,6 +29,22 @@ export function stateTip(x) {
 }
 export const TO = { scribe: '서기 정리', coder: '코더에게' };
 
+// 11-11 받은 할 일 #8 — 목록에서 여럿을 골라 「이거 해라」. 글을 묶어 교장 계획 창으로 넘긴다(교장이 묶어 계획 — 겹침 · 이미 된 것은 빼게)
+export function planText(items) {
+  const xs = (items || []).filter((x) => x && x.body);
+  if (!xs.length) return '';
+  const head = xs.length > 1
+    ? `받은 할 일 ${xs.length}개를 묶어 계획을 세워 주세요. 겹치거나 이미 된 것은 까닭과 함께 빼고, 맡을 파일이 겹치지 않게 세션을 나눠도 됩니다.`
+    : '받은 할 일 하나로 계획을 세워 주세요. 이미 된 것이면 까닭과 함께 알려 주세요.';
+  return [head, ...xs.map((x) => `\n#${x.id}${x.created_at ? ` (${kst(x.created_at)})` : ''}\n${String(x.body).trim()}`)].join('\n');
+}
+// [이거 해라] 단추 — 고른 수 · 열 수 있는지
+export function pickButton(n, canPlan) {
+  if (!canPlan) return { disabled: true, label: '고른 것으로 계획 받기', tip: '고른 것으로 계획 받기 — 교장 계획 창을 열 수 없습니다. 화면을 새로 고쳐 주세요.' };
+  if (!n) return { disabled: true, label: '고른 것으로 계획 받기', tip: '고른 것으로 계획 받기 — 새로인 할 일을 하나 이상 고릅니다.' };
+  return { disabled: false, label: `고른 것으로 계획 받기 (${n})`, tip: `고른 것으로 계획 받기 — 고른 할 일 ${n}개를 묶어 교장에게 계획을 받습니다. 시작하면 그 세션이 이 할 일들을 가져갑니다.` };
+}
+
 export function mountTodoInbox(store, { onSaved } = {}) {
   const dlg = document.createElement('div');
   dlg.id = 'tiDlg'; dlg.className = 'overlay';
@@ -68,12 +84,53 @@ export function mountTodoInbox(store, { onSaved } = {}) {
       const items = j.items || [];
       const nNew = items.filter((x) => x.state === 'new').length;
       $('tiListHead').textContent = `받은 할 일 — ${label($('tiProj').value)} ${items.length ? `최근 ${items.length}개 · 새로 ${nNew}` : '없음'}`;
-      $('tiList').innerHTML = items.map((x) => `<div class="ti-item st-${esc(x.state)}">
+      shown = items;
+      $('tiList').innerHTML = items.map((x) => `<div class="ti-item st-${esc(x.state)}" data-row="${x.id}">
+          ${x.state === 'new' ? `<input type="checkbox" class="ti-pick" data-pick="${x.id}" title="고르기 — 고른 할 일을 묶어 교장에게 계획을 받습니다." aria-label="할 일 #${x.id} 고르기">` : ''}
           <span class="ti-st small" data-tip="${esc(stateTip(x))}">${esc(x.label)}</span>
           <details class="ti-body"><summary class="small">${esc(kst(x.created_at))} · ${x.assignee === 'coder' ? '코더 · ' : ''}${esc(firstLine(x.body))}</summary><pre class="hand-body">${esc(x.body)}</pre></details>
-          ${x.state === 'new' ? `<button type="button" class="ghost small" data-drop="${x.id}" title="버리기 — 이 할 일을 아무에게도 넘기지 않습니다. 목록에는 「버림」으로 남습니다.">버리기</button>` : ''}
-        </div>`).join('');
+          ${x.state === 'new' ? `<button type="button" class="ghost small" data-edit="${x.id}" title="고치기 — 이 할 일 글을 그 자리에서 고칩니다.">고치기</button>
+          <button type="button" class="ghost small" data-drop="${x.id}" title="버리기 — 이 할 일을 아무에게도 넘기지 않습니다. 목록에는 「버림」으로 남습니다.">버리기</button>` : ''}
+        </div>`).join('') + (items.some((x) => x.state === 'new') ? `<div class="row ti-pickrow"><button type="button" id="tiPlan" class="small"></button></div>` : '');
+      drawPick();
     } catch (e) { $('tiListHead').textContent = `받은 할 일 — 불러오지 못했습니다(${e.message})`; }
+  }
+  let shown = [];
+  const picked = () => [...dlg.querySelectorAll('[data-pick]:checked')].map((el) => Number(el.dataset.pick));
+  function drawPick() {
+    const b = $('tiPlan');
+    if (!b) return;
+    const v = pickButton(picked().length, !!(window.foremanChat && window.foremanChat.openWith));
+    b.disabled = v.disabled; b.textContent = v.label; b.title = v.tip;
+  }
+  async function planPicked() {
+    const ids = picked();
+    const xs = shown.filter((x) => ids.includes(x.id));
+    if (!xs.length || !window.foremanChat) return;
+    const proj = $('tiProj').value;
+    close();
+    await window.foremanChat.openWith(proj, planText(xs), ids);
+  }
+  function startEdit(id) {
+    const row = dlg.querySelector(`[data-row="${id}"]`);
+    const x = shown.find((y) => y.id === id);
+    if (!row || !x || row.querySelector('.ti-edit')) return;
+    const box = document.createElement('div');
+    box.className = 'ti-edit';
+    box.innerHTML = `<textarea rows="5" maxlength="${MAX}">${esc(x.body)}</textarea>
+      <div class="row"><button type="button" class="ghost small" data-edit-cancel="${id}" title="그만 — 고치지 않고 닫습니다.">그만</button>
+      <button type="button" class="small primary" data-edit-save="${id}" title="저장 — 고친 글로 바꿉니다.">저장</button></div>`;
+    row.appendChild(box);
+    box.querySelector('textarea').focus();
+  }
+  async function saveEdit(id) {
+    const ta = dlg.querySelector(`[data-row="${id}"] .ti-edit textarea`);
+    if (!ta) return;
+    try {
+      await api('PUT', `/api/todo/${id}`, { body: ta.value });
+      msg(`할 일 #${id}을 고쳤습니다.`, 'ok');
+      await loadList();
+    } catch (e) { msg(`고치지 못했습니다 — ${e.message}. 글은 칸에 그대로 있습니다.`, 'bad'); }
   }
 
   async function save() {
@@ -98,6 +155,14 @@ export function mountTodoInbox(store, { onSaved } = {}) {
   $('tiBody').addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); save(); } });
   dlg.addEventListener('click', async (ev) => {
     if (ev.target === dlg && !busy) { close(); return; }
+    if (ev.target.closest('[data-pick]')) { drawPick(); return; }
+    if (ev.target.closest('#tiPlan')) { planPicked(); return; }
+    const ed = ev.target.closest('[data-edit]');
+    if (ed) { startEdit(Number(ed.dataset.edit)); return; }
+    const sv = ev.target.closest('[data-edit-save]');
+    if (sv) { saveEdit(Number(sv.dataset.editSave)); return; }
+    const cn = ev.target.closest('[data-edit-cancel]');
+    if (cn) { const r = dlg.querySelector(`[data-row="${cn.dataset.editCancel}"] .ti-edit`); if (r) r.remove(); return; }
     const b = ev.target.closest('[data-drop]');
     if (!b) return;
     b.disabled = true;

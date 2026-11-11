@@ -1445,3 +1445,39 @@ async def test_overlap_alert_on_human_prompt(env, tmp_path):
     await prompt(SID2, "jenkins-0 harbor-jobservice CrashLoopBackOff 넘긴 쪽에서 다시")    # 넘겨준 쪽에서도
     assert tg.sent == [] and ow2.recent == {}
     await n.stop()
+
+
+async def test_todo_edit_pick_and_handover_columns(env):
+    """11-11 C 2물결 — 할 일 목록에서 고치기(edited_at) · 골라 가져가기(서기 몫도 코더 몫으로) · 관리자에게 넘긴 계획(0031)."""
+    import json as _json
+    from sqlalchemy import text as T
+    from bridge import scribe_room as sr
+    from bridge.foreman import ForemanDispatcher
+    from bridge.inject import Refused
+    s, _main = env
+    await run(s)
+    engine = make_engine(s)
+    ENGINES.append(engine)
+    sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
+    proj = q(s, "SELECT p.name FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
+                "JOIN project p ON p.id = ch.project_id WHERE cs.id = %s", sid)[0][0]
+    a = await sr.inbox_add(engine, proj, "서기 몫")
+    b = await sr.inbox_add(engine, proj, "코더 몫", "coder")
+    assert await sr.inbox_edit(engine, a, "  고친 글 ") is True
+    assert q(s, "SELECT body, edited_at IS NOT NULL FROM todo_inbox WHERE id = %s", a)[0] == ("고친 글", 1)
+    with pytest.raises(Refused):
+        await sr.inbox_edit(engine, a, "  ")
+    assert await sr.inbox_take_pick(engine, a, sid) is True                # 서기 몫도 사람이 고르면 코더 몫으로 가져간다
+    assert q(s, "SELECT assignee, taken_by FROM todo_inbox WHERE id = %s", a)[0] == ("coder", sid)
+    assert await sr.inbox_edit(engine, a, "다시") is False                  # 가져간 것은 고치지 않는다
+    assert await sr.inbox_drop(engine, b) is True and await sr.inbox_take_pick(engine, b, sid) is False   # 버린 것은 못 가져간다
+    # 관리자에게 넘긴 계획 — 저장된 계획 · 넘긴 기록
+    async with engine.begin() as c:
+        r = await c.execute(T("INSERT INTO dispatch (origin, project, request, status, plan, edited, handed_to, handed_at) "
+                              "VALUES ('human', :p, 'x', 'planned', :pl, :ed, :h, UTC_TIMESTAMP(3))"),
+                            {"p": proj, "pl": _json.dumps({"mode": "new"}), "ed": _json.dumps({"mode": "new", "inbox_ids": [a]}), "h": sid})
+        did = r.lastrowid
+    d = ForemanDispatcher(engine, s.sessions_dir, None, lambda: [], None)
+    assert (await d.saved_plan(did))["inbox_ids"] == [a]                   # 고친 계획(edited)이 이긴다
+    h = await d.handed(did)
+    assert h["to_session"] == sid and h["alerted"] is False
