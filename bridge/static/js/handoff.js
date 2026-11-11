@@ -37,7 +37,42 @@ export function flowStep(flow, summary, live) {
   return { i: 1 };
 }
 
-export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) {
+// 합치기 승인 카드(11-11 1물결 A, bridge/mergeprep.py) — 세션이 일을 마치면 브리지가 merge-tree로 만든다. 사람은 승인만 한다.
+// mp = /api/sessions/{id}/handoff의 merge_prep({card, health, stage}), b = 단추 만들기(act, label, on, cls, tip), sid = 세션 번호
+const MP_STATUS = { ready: '승인 기다림', merging: '합치는 중…', merged: '합쳤습니다', conflict_sent: '충돌 — 세션에 풀라고 보냈습니다',
+  conflict_manager: '충돌 — 관리자에게 넘겼습니다', failed: '멈췄습니다' };
+export function mpSection(mp, b, sid) {
+  if (!mp) return '';
+  const h = mp.health && !mp.health.ok ? `<div class="small bad">⚠ ${esc(mp.health.error || '합치기 준비가 멈췄습니다')}</div>` : '';
+  const c = mp.card;
+  if (!c) return h ? `<section class="hand mp-card"><div class="hand-h"><b>합치기 승인</b></div>${h}</section>` : '';
+  const conf = c.conflict && c.conflict.length;
+  const how = conf ? `<span class="bad" title="충돌 — 합치면 ${esc(c.base)}와 같은 줄을 서로 고친 곳이 있습니다. 승인하면 합치지 않고 그 세션(끝났으면 관리자)에게 풀라고 보냅니다.">충돌 ${c.conflict.length}개</span>`
+    : c.ff ? '<span class="ok" title="ff 가능 — main이 그대로라 그대로 앞으로 옮깁니다(fast-forward).">충돌 없음 · ff 가능</span>'
+      : `<span class="ok" title="main이 앞섬 — 이 브랜치를 만든 뒤 ${esc(c.base)}에 커밋 ${c.behind}개가 들어왔습니다. 합칠 때 그 위로 다시 얹습니다(rebase).">충돌 없음 · ${esc(c.base)}에 새 커밋 ${c.behind}개(rebase)</span>`;
+  const d = c.docs || {};
+  const rRows = (d.readme || []).map((x) => `<div class="small">README:${x.line} — ${esc(x.text)} <span class="muted">(${esc([...(x.files || []), ...(x.words || [])].slice(0, 5).join(', '))})</span></div>`).join('');
+  const dRows = (d.docs || []).map((x) => `<div class="small"><code>${esc(x.where)}</code> — ${x.count}줄(${x.lines.join(', ')}${x.count > x.lines.length ? ' …' : ''}) <span class="muted">${esc(x.files.join(', '))}</span></div>`).join('');
+  const docs = d.error ? `<div class="small warn">${esc(d.error)}</div>`
+    : rRows || dRows ? `<details${keep(`hand:${sid}:mp-docs`)}><summary class="small" title="정리 후보 — 바뀐 파일 · 커밋 글과 README 「나중에 할 일」 줄 · docs 줄을 기계로 맞댄 것입니다. 고르고 지우는 것은 사람 승인 뒤 관리자가 합니다.">정리 후보 — README ${(d.readme || []).length} · docs ${(d.docs || []).length}</summary>${rRows}${dRows}</details>` : '';
+  const open = c.status === 'ready' || c.status === 'failed' || c.status.startsWith('conflict');
+  const tip = conf ? '합치기 — 충돌이 있어 합치지 않습니다. 세션이 살아 있으면 그 세션에 main을 가져와 풀라고 보내고, 끝났으면 관리자에게 넘깁니다.'
+    : c.live ? '합치기 — 세션을 끝내고 main에 합칩니다(main이 앞섰으면 rebase). push는 하지 않습니다. 시험 · push는 관리자가 합니다.'
+      : '합치기 — main에 합칩니다(main이 앞섰으면 rebase). push는 하지 않습니다. 시험 · push는 관리자가 합니다.';
+  return `<section class="hand mp-card"><div class="hand-h"><b>합치기 승인</b> <span class="small ${c.status === 'merged' ? 'ok' : c.status === 'ready' ? '' : 'warn'}">· ${esc(MP_STATUS[c.status] || c.status)}</span></div>${h}
+    <div class="small"><code>${esc(c.branch)}</code> · 커밋 <b>${c.ahead}</b>개 · ${how}</div>
+    <div class="small muted">${esc(c.why)}${c.live ? ' — 승인하면 세션을 끝냅니다(충돌이면 끝내지 않습니다).' : ''}</div>
+    ${conf ? `<div class="small bad">충돌 파일: ${c.conflict.map(esc).join(', ')}</div>` : ''}
+    <details${keep(`hand:${sid}:mp-commits`)}><summary class="small muted">커밋 ${c.commits.length} · 바뀐 파일 ${c.files.length}</summary><pre class="hand-body">${esc(c.commits.join('\n'))}\n\n${esc(c.files.join('\n'))}</pre></details>
+    ${docs}
+    ${c.note ? `<div class="small ${c.status === 'merged' ? 'ok' : 'muted'}">${esc(c.note)}${c.manager_told === false ? ' 관리자 세션에는 알리지 못했습니다(텔레그램으로 남김).' : c.manager_told ? ' 관리자 세션에 알렸습니다.' : ''}</div>` : ''}
+    ${c.error ? `<div class="small bad">${esc(c.error)}</div>` : ''}
+    ${c.status === 'merged' ? '<div class="small muted">합치기까지 했습니다 — 시험 · push · 브리지 다시 띄우기는 관리자가 합니다.</div>' : ''}
+    ${open ? `<div class="hand-btns">${b('mp-merge', '합치기', !!c.head && c.status !== 'merging', 'primary', tip)}${b('mp-skip', '나중에', true, 'ghost', '나중에 — 이 카드를 치웁니다. 이 세션이 새로 커밋하면 다시 뜹니다.')}</div>` : ''}
+  </section>`;
+}
+
+export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
   let sid = null, data = null, mode = null, preview = null, note = null, open = open0;
   let flow = null, flowPrev = null, flowPrevAsk = false, handMore = false;    // 흐름 · ② 확인에 보여 줄 넣을 글 · 드문 버튼 펼침
   let noteOpen = false, noteDraft = '';          // ② 확인의 [덧붙여서 보내기](11-09) — 인계 글 끝에 붙일 한 줄
@@ -151,6 +186,9 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
       </div></div></div>`;
   }
 
+  // 합치기 승인 카드 — 모듈 밖 mpSection(시험이 부른다)에 이 세션 번호를 넘긴다
+  const mpSectionOf = (mp, b) => mpSection(mp, b, sid);
+
   // 인계 2판(11-05) — 「읽을 곳」 기계 확인 결과. 틀린 곳이 있으면 넣지 않는다(서버도 막는다)
   function pointerList(p) {
     const rows = (p.pointers || []).map((x) => {
@@ -258,7 +296,7 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     const wtLive = !!(c.worktree && c.worktree.exists && c.worktree.live);   // 살아 있는 따로 작업 — 끝내기를 세 갈래로
     // 요약 카드 머리의 작은 [고치기] — 자주 안 쓰므로 버튼 줄에서 뺐다(11-06, 이력 1번)
     const editLink = ok && mode == null && !st ? b('edit', '고치기', true, 'ghost', '요약 고치기 — 저장된 요약을 직접 고칩니다. 원본은 두고 새 판으로 저장합니다.') : '';
-    const html = `
+    const html = `${mpSectionOf(data.merge_prep, b)}
       <section class="hand">
         <div class="hand-h"><b>새 세션으로 옮기기</b>${s0 ? ` <span class="small muted" title="마지막 요약 — ${esc(KIND[s0.kind] || s0.kind)}, ${esc(STATUS[s0.status] || s0.status)}">· 요약 ${esc(STATUS[s0.status] || s0.status)} ${ago(s0.created_at)}</span>` : ''}</div>
         <div class="hand-btns">
@@ -409,6 +447,18 @@ export function mountHandoff(el, store, { open: open0 = false, onToggle } = {}) 
     }
     if (act === 'rest-resume') {
       return run('이어서', () => post(`/api/sessions/${id}/rest-resume`).then((r) => ({ ok: !!r.ok, bad: !r.ok, msg: r.note || (r.ok ? '이어서 붙였습니다.' : '이어 붙이지 못했습니다.') })));
+    }
+    // 합치기 승인(11-11 1물결 A) — 브리지가 다시 재고(카드 뒤 커밋이 바뀌면 거절) 충돌이면 끝내지 않고 풀라고 보낸다
+    if (act === 'mp-merge' || act === 'mp-skip') {
+      const card = data.merge_prep && data.merge_prep.card;
+      if (!card) return;
+      if (act === 'mp-skip') return run('나중에', () => post(`/api/sessions/${id}/merge-prep`, { action: 'skip' }).then((r) => ({ ok: true, msg: r.note })));
+      const ask = card.conflict && card.conflict.length
+        ? `${card.branch}가 ${card.base}와 충돌합니다(${card.conflict.join(', ')}). 합치지 않고 ${card.live ? '그 세션에 main을 가져와 풀라고 보냅니다' : '관리자에게 풀라고 넘깁니다'}. 진행할까요?`
+        : `${card.live ? '세션을 끝내고 ' : ''}${card.branch}의 커밋 ${card.ahead}개를 ${card.base}에 합칩니다${card.ff ? '' : '(rebase 뒤)'}. push는 하지 않습니다 — 시험 · push는 관리자가 합니다. 합칠까요?`;
+      if (!confirm(ask)) return;
+      return run('합치기 승인', () => post(`/api/sessions/${id}/merge-prep`, { action: 'merge' })
+        .then((r) => ({ ok: !!r.ok, bad: !r.ok && r.status === 'failed', msg: r.note || (r.ok ? '합쳤습니다.' : '합치지 않았습니다.') })));
     }
     if (act === 'wt-merge' || act === 'wt-discard' || act === 'wt-end-merge' || act === 'wt-end-discard') {
       const w = data.controls.worktree;
