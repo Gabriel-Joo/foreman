@@ -28,6 +28,8 @@ TASKS = {
     "readme": {"title": "README 갱신", "desc": "마지막 README 변경 뒤의 커밋 · 결과 문서로 로드맵 표를 맞춥니다."},
     "trim": {"title": "CLAUDE.md 정리", "desc": "꼭 지킬 것만 짧게 남기고 상세는 docs로 옮겨 가리킵니다."},
     "later": {"title": "나중에 할 일 정리", "desc": "대화에서 \"나중에 하자\"고 한 것을 모아 README 「나중에 할 일」 표에 넣습니다."},
+    # 메뉴에는 없다(화면 ORDER 밖) — 물어보기 답 · 문서 점검 결과의 [바로 고치기]에서만 뜬다(D2, 11-11)
+    "docfix": {"title": "문서 고치기", "desc": "물어보기 답이나 문서 점검 결과에 적힌 어긋남을 고칩니다."},
     "portfolio": {"title": "포트폴리오 쓰기", "desc": "주제를 하나 골라 바깥 독자가 읽을 글을 portfolio/에 씁니다. 게시는 [게시] 버튼으로 합니다."},
     "publish": {"title": "Notion 게시", "desc": "회고 · 문서를 Notion에 올립니다. 세션 없이 [게시] 버튼으로 합니다."},
 }
@@ -114,8 +116,42 @@ def stages_without_result(repo: str) -> list[str]:
     return out
 
 
+UNREAD = "읽지 못했습니다"
+
+
+def last_change(repo: str, path: str) -> tuple[str | None, int | None]:
+    """그 경로를 마지막으로 바꾼 커밋의 시각(ISO)과 그 뒤 쌓인 커밋 수. 바꾼 적 없으면 (None, 0), git을 못 읽으면 (None, None)."""
+    out = _git(repo, "log", "-1", "--format=%h %cI", "HEAD", "--", path)
+    if not out:
+        return None, (0 if _git(repo, "rev-parse", "HEAD") else None)
+    sha, _, when = out.partition(" ")
+    n = _git(repo, "rev-list", "--count", f"{sha}..HEAD")
+    return when, (int(n) if n.isdigit() else None)
+
+
+def doccheck_report(repo: str) -> str | None:
+    """가장 최근 문서 점검 결과 파일(log/doccheck_*.md) 이름 — 합쳐진 것만 보인다."""
+    d = Path(repo, "log")
+    names = sorted(p.name for p in d.glob("doccheck_*.md")) if d.is_dir() else []
+    return names[-1] if names else None
+
+
+async def fixed_reports(engine: Any, project: str) -> set[str]:
+    """[바로 고치기]로 시켜 합쳐진 문서 점검 결과 이름 — 같은 결과를 또 고치라고 하지 않게."""
+    async with engine.connect() as c:
+        rows = (await c.execute(text(
+            "SELECT sa.detail FROM session_action sa JOIN character_session cs ON cs.id = sa.session_id "
+            "JOIN `character` ch ON ch.id = cs.character_id JOIN project p ON p.id = ch.project_id "
+            "WHERE p.name = :p AND sa.action = :a AND sa.ok AND sa.detail LIKE 'docfix %' AND EXISTS ("
+            "  SELECT 1 FROM session_action m WHERE m.session_id = sa.session_id AND m.action = 'wt-merge' AND m.ok)"),
+            {"p": project, "a": TASK_ACT})).all()
+    return {r[0].split()[1] for r in rows if r[0] and len(r[0].split()) > 1}
+
+
 async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: Any = None) -> dict[str, dict[str, Any]]:
-    """프로젝트마다 할 일 — [{kind(시킬 일), title, why}]. 기계로만 센다. publishers — 프로젝트 → Notion 게시기(11-09 프로젝트마다)."""
+    """프로젝트마다 할 일 — [{kind(시킬 일), title, why}]. 기계로만 센다. publishers — 프로젝트 → Notion 게시기(11-09 프로젝트마다).
+    D2(11-11): 한 목록으로 합치려고 일마다 밀린 수(behind) · 받은 할 일 수(inbox) · 포트폴리오 상태 · 게시 상태(port_pub · docs_pub)를 더한다.
+    못 읽은 것은 0이 아니라 unread / error로 내려 화면이 「읽지 못했습니다」로 보인다."""
     from bridge import docsync as ds
     publishers = publishers or {}
     async with engine.connect() as c:
@@ -125,18 +161,31 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
         if not repo or not Path(repo, ".git").exists():
             continue
         items: list[dict[str, str]] = []
+        git_ok = bool(_git(repo, "rev-parse", "HEAD"))
+        no_git = {"n": None, "unread": f"git 기록을 {UNREAD}"}
+        behind: dict[str, dict[str, Any]] = {}
         n, last = commits_since_path(repo, "README.md")
+        if not git_ok:
+            behind["readme"] = behind["retro"] = no_git
+        else:
+            behind["readme"] = {"n": n, "stale": n >= README_STALE, "unit": "커밋", "why": f"README가 {last} 뒤로 그대로입니다" if last else ""}
         if n >= README_STALE:
             items.append({"kind": "readme", "title": f"README 갱신 — 그 뒤 커밋 {n}개", "why": f"README가 {last} 뒤로 그대로입니다"})
-        for d in stages_without_result(repo)[:5]:
+        stages = stages_without_result(repo)
+        behind["doccheck"] = {"n": len(stages), "stale": bool(stages), "unit": "단계", "why": "결과 문서 없는 단계: " + ", ".join(stages[:5])}
+        for d in stages[:5]:
             items.append({"kind": "doccheck", "title": f"결과 문서 없는 단계 — {d}", "why": "설계 문서는 있는데 log/에 결과가 없습니다"})
         cm = Path(repo, "CLAUDE.md")
         if cm.is_file():
             lines = len(cm.read_text(encoding="utf-8", errors="replace").splitlines())
+            behind["trim"] = {"n": max(0, lines - CLAUDE_MD_MAX), "stale": lines > CLAUDE_MD_MAX, "unit": "줄",
+                              "why": f"CLAUDE.md {lines}줄(상한 {CLAUDE_MD_MAX}줄)"}
             if lines > CLAUDE_MD_MAX:
                 items.append({"kind": "trim", "title": f"CLAUDE.md 정리 — {lines}줄", "why": f"{CLAUDE_MD_MAX}줄을 넘었습니다"})
         retros = sorted(Path(repo, "log").glob("retro_*.md")) if Path(repo, "log").is_dir() else []
         rn, _ = commits_since_path(repo, *[str(p.relative_to(repo)) for p in retros]) if retros else (0, None)
+        if retros and git_ok:
+            behind["retro"] = {"n": rn, "stale": rn >= RETRO_STALE, "unit": "커밋", "why": f"마지막 회고 {retros[-1].name} 뒤"}
         if retros and rn >= RETRO_STALE:
             items.append({"kind": "retro", "title": f"회고 쓰기 — 마지막 회고 뒤 커밋 {rn}개", "why": retros[-1].name})
         later = await _later_count(engine, name, repo)
@@ -144,29 +193,55 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
             items.append({"kind": "later", "title": f"나중에 할 일 정리 — \"나중에\" {later}번", "why": "지난 정리가 합쳐진 뒤(없으면 처음부터) 사람이 미룬 말"})
         inbox = await inbox_new(engine, name)
         nudge = nudge_of(inbox)
+        inbox_age = (datetime.now(UTC).replace(tzinfo=None) - inbox[0]["created_at"]).days if inbox else 0
+        behind["later"] = {"n": later + len(inbox), "stale": bool(later or inbox), "unit": "건",
+                           "why": f"미룬 말 {later} · 받은 할 일 {len(inbox)}"}
         if inbox:
-            age = (datetime.now(UTC).replace(tzinfo=None) - inbox[0]["created_at"]).days
-            items.append({"kind": "later", "title": f"받은 할 일 {len(inbox)}개" + (f" — 가장 오래된 것 {age}일째" if age >= INBOX_STALE_DAYS else ""),
+            items.append({"kind": "later", "title": f"받은 할 일 {len(inbox)}개" + (f" — 가장 오래된 것 {inbox_age}일째" if inbox_age >= INBOX_STALE_DAYS else ""),
                           "why": "머리줄 [＋ 할 일]로 받은 글 — 「나중에 할 일 정리」가 README 표로 옮깁니다"})
+        port_pub: dict[str, Any] | None = None
+        docs_pub: dict[str, Any] | None = None
+        pub_error: str | None = None
         if (pub := publishers.get(name)) is not None:
             # 11-09 런슈즈 요청 3-1 — 파일마다 한 줄이던 것을 묶음마다 한 줄로. 포트폴리오는 사람이 [게시](바깥 독자에게 내는 글)
+            # D2: Notion이 꺼져 있어도 다른 할 일은 센다 — 다만 삼키지 않고 pub_error로 내려 화면이 「읽지 못했습니다」를 보인다
             try:
                 if name == "foreman":
-                    pend = [d for d in await pub.list() if d["status"] == "new" or d["changed"]]
+                    docs = await pub.list()
+                    port_pub = {"total": len(docs), "published": sum(d["status"] == "published" for d in docs),
+                                "new": sum(d["status"] == "new" for d in docs), "changed": sum(bool(d["changed"]) for d in docs)}
+                    pend = [d for d in docs if d["status"] == "new" or d["changed"]]
                     if pend:
                         nn = sum(d["status"] == "new" for d in pend)
                         items.append({"kind": "publish", "title": f"Notion 포트폴리오 — 파일 {len(pend)}개 뒤처짐"
                                       f"({' · '.join(x for x in (f'새 {nn}' if nn else '', f'바뀜 {len(pend) - nn}' if len(pend) - nn else '') if x)})",
                                       "why": ", ".join(Path(d["path"]).name for d in pend[:4]) + (" …" if len(pend) > 4 else "")
-                                      + " — 아래 「Notion 게시」에서 올립니다"})
-                items += await ds.todo_items(pub, (docsync.last.get(name) if docsync else None))
-            except Exception:  # noqa: BLE001 — Notion이 꺼져 있어도 다른 할 일은 센다
-                pass
+                                      + " — 아래 「포트폴리오 게시」에서 올립니다"})
+                last_res = docsync.last.get(name) if docsync else None
+                if pub.docs_mode != "off":
+                    docs_pub = await ds.summary(pub, last_res)
+                items += await ds.todo_items(pub, last_res)
+            except Exception as e:  # noqa: BLE001
+                pub_error = f"{type(e).__name__}: {str(e)[:120]}"
         opened = await open_tasks(engine, name)
-        tps = [{**{k: t[k] for k in ("slug", "title", "about", "written")}, "blocked": blocked("portfolio", opened, t["slug"])}
-               for t in topics(repo)]
+        tps = []
+        for t in topics(repo):
+            when, since = last_change(repo, f"portfolio/{t['slug']}.md") if t["written"] else (None, None)
+            tps.append({**{k: t[k] for k in ("slug", "title", "about", "written")}, "blocked": blocked("portfolio", opened, t["slug"]),
+                        "last_at": when, "since": since})
+        portfolio = None
+        if tps:
+            written = [t for t in tps if t["written"]]
+            newest = max((t for t in written if t["last_at"]), key=lambda t: t["last_at"], default=None)
+            portfolio = {"written": len(written), "total": len(tps),
+                         "last_at": newest["last_at"] if newest else None, "since": newest["since"] if newest else None,
+                         "unread": f"커밋 기록을 {UNREAD}" if written and (not git_ok or newest is None or newest["since"] is None) else None}
+        report = doccheck_report(repo)
         out[name] = {"items": items, "open": opened, "topics": tps, "nudge": nudge,
-                     "blocked": {k: b for k in TASKS if k not in ("publish", "portfolio") and (b := blocked(k, opened))}}
+                     "blocked": {k: b for k in TASKS if k not in ("publish", "portfolio") and (b := blocked(k, opened))},
+                     "behind": behind, "inbox": {"n": len(inbox), "oldest_days": inbox_age} if inbox else None,
+                     "portfolio": portfolio, "port_pub": port_pub, "docs_pub": docs_pub, "pub_error": pub_error,
+                     "report": {"name": report, "fixed": report in await fixed_reports(engine, name)} if report else None}
     return out
 
 
@@ -177,7 +252,7 @@ TASK_ACT = "scribe-task"       # session_action — 서기 일을 띄울 때 무
 # worktree는 서로를 못 봐서 충돌은 합칠 때 난다 — 같은 파일을 고치는 두 일이 열려 있으면 뒤의 합치기가 rebase 충돌.
 # 둘까지인 이유: 문서 초안은 사람이 diff를 하나씩 보고 합친다(검토 빚, docs/12_scribe.md 「2.」), 각각 Opus 세션이다
 TOUCHES = {"retro": {"log/retro_"}, "doccheck": {"log/doccheck_"}, "readme": {"README.md"}, "later": {"README.md"},
-           "trim": {"CLAUDE.md", "docs/"}}
+           "trim": {"CLAUDE.md", "docs/"}, "docfix": {"README.md", "CLAUDE.md", "docs/"}}
 MAX_OPEN = 2
 
 
@@ -375,6 +450,14 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
 - 결과 문서가 없는 단계: {e.get('stages') or '(없음)'}
 - 항목마다: 문서 위치(`경로 「절」`) · 문서에 적힌 것 · 실제 · 근거(파일:줄 · 커밋)
 - 쓸 곳: `log/doccheck_{today}.md` — 어긋남만, 맞는 것은 쓰지 않는다"""
+    elif task == "docfix":
+        src = (f"- 고칠 목록: `{e['report']}`(문서 점검 결과 — 먼저 끝까지 읽는다). 항목마다 지금 저장소와 다시 맞는지 확인한 뒤 고친다"
+               if e.get("report") else f"- 고칠 것(사람이 서기에게 물어 얻은 답 — 그대로 믿지 말고 지금 저장소와 맞는지 확인한 뒤 고친다):\n{e.get('note') or '(없음)'}")
+        body = f"""할 일: 코드와 안 맞는 문서를 고친다. 찾기는 이미 끝났다 — 고치는 일이다.
+{src}
+- 고칠 곳: README.md · docs/ · CLAUDE.md 중 목록이 가리키는 문서만. 코드는 건드리지 않는다(코드가 틀렸다고 보이면 고치지 말고 마지막 응답에 알린다)
+- 문서에 적힌 것이 맞고 저장소가 틀린 것으로 보이는 항목, 확인할 수 없는 항목은 고치지 않고 마지막 응답에 따로 적는다
+- 항목마다 무엇을 어떻게 고쳤는지 근거(파일:줄 · 커밋)와 함께 마지막 응답에 알린다"""
     elif task == "readme":
         body = f"""할 일: README를 지금에 맞춘다.
 - 마지막 README 변경({e.get('since') or '?'}) 뒤의 커밋 · `log/` 결과 문서를 읽고 로드맵 표의 상태 · 링크를 고친다
@@ -417,12 +500,28 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
     return head + body + "\n" + COMMON
 
 
-async def start(m: Any, engine: Any, project: str, task: str, topic: str | None = None) -> dict[str, Any]:
-    """서기 일을 worktree 세션으로 띄운다(handoff.spawn_new). 회고는 재료 묶음을 먼저 만든다. 포트폴리오는 주제(topic)가 있어야 한다."""
+NOTE_MAX = 4000
+REPORT_RE = re.compile(r"doccheck_[0-9A-Za-z_]{1,40}\.md")
+
+
+async def start(m: Any, engine: Any, project: str, task: str, topic: str | None = None, note: str | None = None) -> dict[str, Any]:
+    """서기 일을 worktree 세션으로 띄운다(handoff.spawn_new). 회고는 재료 묶음을 먼저 만든다. 포트폴리오는 주제(topic)가 있어야 한다.
+    문서 고치기(docfix, D2)는 고칠 목록이 있어야 한다 — topic에 문서 점검 결과 이름(log/doccheck_*.md) 또는 note에 물어보기 답."""
     from bridge import scribe as sc
     from bridge.inject import Refused
     if task not in TASKS or task == "publish":
         raise Refused("세션으로 시키는 일이 아닙니다")
+    fix_src: str | None = None
+    if task == "docfix":
+        note = (note or "").strip()[:NOTE_MAX]
+        if topic:
+            if not REPORT_RE.fullmatch(topic):
+                raise Refused(f"문서 점검 결과 이름이 아닙니다: {topic}")
+            fix_src = topic
+        elif note:
+            fix_src = "ask"
+        else:
+            raise Refused("고칠 목록이 없습니다 — 문서 점검 결과나 물어보기 답이 있어야 합니다")
     async with engine.connect() as c:
         r = (await c.execute(text("SELECT repo_path FROM project WHERE name = :p"), {"p": project})).first()
     repo = r[0] if r else None
@@ -437,6 +536,8 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
     why = blocked(task, await open_tasks(engine, project), topic if task == "portfolio" else None)
     if why:
         raise Refused(why)
+    if task == "docfix" and topic and not Path(repo, "log", topic).is_file():
+        raise Refused(f"log/{topic}가 main에 없습니다 — 문서 점검 세션을 합친 뒤에 고칠 수 있습니다")
     now = datetime.now(UTC).replace(tzinfo=None)
     day = (now + KST).strftime("%Y%m%d")
     extra: dict[str, str] = {}
@@ -465,6 +566,8 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
             extra.update(slug=tp["slug"], title=tp["title"], about=tp["about"], screenshots="1" if tp["screenshots"] else "",
                          sources=", ".join(f"`{s}`" for s in tp["sources"]) or "(없음)",
                          siblings=", ".join(f"「{t['title']}」(`portfolio/{t['slug']}.md`)" for t in tps if t["written"] and t is not tp))
+        if task == "docfix":
+            extra.update(report=f"log/{topic}" if topic else "", note=note or "")
         if task == "readme":
             extra["since"] = commits_since_path(repo, "README.md")[1] or "?"
         if task == "doccheck":
@@ -473,7 +576,8 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
     name = f"서기 — {TASKS[task]['title']}" + (f": {tp['title'].split(' — ')[0]}" if tp else "")
     res = await m.spawn_new(repo, None, name, role="scribe", worktree=True, first_prompt=prompt)
     if res.get("session_id"):
-        await m._act(res["session_id"], TASK_ACT, res.get("pid"), True, f"{task} {tp['slug']}" if tp else task)
+        await m._act(res["session_id"], TASK_ACT, res.get("pid"), True,
+                     f"{task} {tp['slug']}" if tp else f"docfix {fix_src}" if fix_src else task)
     if task == "later" and res.get("session_id"):
         # 어디까지 봤나 — 이 세션이 합쳐지면 다음 정리의 기준점이 된다(later_since)
         await m._act(res["session_id"], LATER_ACT, res.get("pid"), True, f"{now.isoformat()} 미룬 말 {len(rows)}개 받은 할 일 {len(inbox)}개")
