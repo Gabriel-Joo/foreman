@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import os
 import re
 import subprocess
@@ -52,8 +53,10 @@ class OutOfScope(Exception):
 class Ctx:
     """링크를 풀 때 쓰는 것 — 원본 경로와 게시한 커밋. links=False(포트폴리오)면 커밋 · 파일 · 저장소 안 링크를 글자로만 둔다 —
     저장소가 비공개라 읽는 사람에게는 404다(11-06 사용자 결정)."""
-    def __init__(self, path: str = "", commit: str = "HEAD", gh: str = GH, links: bool = True, heading_md: bool = False) -> None:
+    def __init__(self, path: str = "", commit: str = "HEAD", gh: str = GH, links: bool = True, heading_md: bool = False,
+                 h1_title: bool = False) -> None:
         self.path, self.commit, self.gh, self.links = path, commit, gh, links
+        self.h1_title = h1_title        # title = "h1"(11-12) — 제목 줄을 first_h1()로 고르고 그 줄만 본문에서 뺀다
         # 제목 단계 — 기본은 ## → heading_1(첫 # 는 페이지 제목). heading_md면 마크다운 단계 그대로 ## → 2 · ### → 3 · #### 이상 → 4
         # (11-09 펫퍼민트 — 사람이 옮긴 페이지가 이 모양이라 새 페이지 · 끼우는 블록도 같게)
         self.heading_md = heading_md
@@ -148,10 +151,49 @@ def _cells(line: str) -> list[str]:
     return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", s)]
 
 
+def first_h1(md: str) -> tuple[int | None, str | None]:
+    """(줄 번호, 제목 글) — `title = "h1"`이 「첫 H1」로 보는 줄(11-12 사용자 지시). 없으면 (None, None).
+    - 첫 H1 앞에 무엇이 있든(빈 줄 · 일반 글 · 다른 제목 · 인용) 상관없이 문서에서 **처음 나오는 `# ` 줄**이다
+    - 단 H1로 세지 않는 곳: 코드 울타리(``` · ~~~) 안(셸 주석 `# …`), 맨 위 YAML 머리말(`---` … `---`), HTML 주석(`<!-- … -->`) 안
+    - `##` 이상은 H1이 아니다. 글은 앞뒤 공백 · 뒤쪽 `#`(닫는 표시) · `[t:…]` 표지 · 백틱 · `*`를 뗀 것(titles()와 같이)
+    - 빈 제목(`# `만)은 H1로 세지 않고 다음 후보를 찾는다"""
+    lines = md.replace("\r\n", "\n").split("\n")
+    i, n = 0, len(lines)
+    if n and lines[0].strip() == "---":                      # YAML 머리말
+        j = next((k for k in range(1, n) if lines[k].strip() in ("---", "...")), None)
+        if j is not None:
+            i = j + 1
+    fence = None
+    in_comment = False
+    while i < n:
+        s = lines[i].strip()
+        if fence:
+            if s.startswith(fence):
+                fence = None
+        elif in_comment:
+            if "-->" in s:
+                in_comment = False
+        elif (m := re.match(r"^(`{3,}|~{3,})", s)):
+            fence = m.group(1)
+        elif s.startswith("<!--"):
+            in_comment = "-->" not in s
+        elif (h := re.match(r"^#\s+(.*)$", s)):
+            text = re.sub(r"\s*\[t:[^\]\s]+\]", "", h.group(1))
+            text = re.sub(r"\s+#+$", "", text)
+            text = re.sub(r"[`*]", "", text).strip()
+            if text:
+                return i, text
+        i += 1
+    return None, None
+
+
 def md_to_blocks(md: str, ctx: Ctx | None = None) -> tuple[str | None, list[dict[str, Any]]]:
-    """(제목, 블록들). 첫 `# 제목`은 페이지 제목으로 빼고 블록에 넣지 않는다."""
+    """(제목, 블록들). 첫 `# 제목`은 페이지 제목으로 빼고 블록에 넣지 않는다.
+    ctx.h1_title(`title = "h1"`)면 first_h1()이 고른 줄이 제목이고 그 줄만 본문에서 빠진다(앞에 다른 블록이 있어도 —
+    본문 heading으로 한 번 더 들어가지 않는다, headings = "md"여도). 다른 `#` 줄은 평소처럼 본문 heading이다."""
     ctx = ctx or Ctx()
     lines = md.replace("\r\n", "\n").split("\n")
+    h1_at = first_h1(md)[0] if ctx.h1_title else None
     title = None
     blocks: list[dict[str, Any]] = []
     i = 0
@@ -185,7 +227,15 @@ def md_to_blocks(md: str, ctx: Ctx | None = None) -> tuple[str | None, list[dict
         if h:
             flush_para()
             level, text = len(h.group(1)), h.group(2).strip()
-            if level == 1 and title is None and not blocks:
+            if ctx.h1_title:
+                if i == h1_at:
+                    title = first_h1(md)[1]
+                    i += 1
+                    continue
+                kind = ("heading_" + str(min(level, 4)) if ctx.heading_md
+                        else "heading_" + str(min(max(level - 1, 1), 3)))
+                blocks.append(_block(kind, inline(text, ctx)))
+            elif level == 1 and title is None and not blocks:
                 title = re.sub(r"\s*\[t:[^\]\s]+\]", "", text)
             else:
                 kind = ("heading_" + str(min(level, 4)) if ctx.heading_md
@@ -919,7 +969,12 @@ class Publisher:
         # 11-09 펫퍼민트(사용자 결정) — 사람이 옮겨 둔 기존 페이지에 맞춘다. 기본값은 지금까지 동작 그대로
         o = opts or {}
         self.create = o.get("create", True) is not False          # False: 짝(doc_publish)이 없으면 만들지 않고 실패로 남긴다
-        self.keep_title = o.get("title") == "keep"                 # 제목을 건드리지 않는다("00. 모델 준비" — 사이드바 순서)
+        # title — 한 칸이라 "keep"과 "h1"은 함께 올 수 없다. 모르는 값은 거부하지 않고 기본 방식으로 돌리되 로그에 남긴다(11-12)
+        tv = o.get("title")
+        if tv not in (None, "keep", "h1"):
+            logging.getLogger("foreman.notion").warning("notion.toml title = %r을 모릅니다(keep · h1만) — 기본 제목 방식으로 돌립니다: %s", tv, project)
+        self.keep_title = tv == "keep"                             # 제목을 건드리지 않는다("00. 모델 준비" — 사이드바 순서)
+        self.h1_title = tv == "h1"                                 # 제목 = 문서의 첫 H1(first_h1). 없으면 기본 방식(README 표 설명)으로 돌아간다
         self.keep_order = o.get("order") == "keep"                 # 페이지를 옮기거나 차례를 바꾸지 않는다
         self.footer = o.get("header") == "footer"                  # 맨 위 사본 상자 대신 맨 아래 회색 한 줄
         self.keep_notion = set(o.get("keep_notion") or [])         # inline_code · image — Notion 모양이 기준
@@ -931,7 +986,9 @@ class Publisher:
         self.new_title = o.get("new_title")                        # "numbered": 새 페이지 제목 "00. 모델 준비"(번호 + 상위 문서 목록의 이름)
 
     def _ctx(self, path: str, commit: str, links: bool = True) -> Ctx:
-        return Ctx(path, commit, self.gh, links=links, heading_md=self.heading_md)
+        # h1_title는 기술문서(docs/)만 — 포트폴리오는 portfolio_title 방식 그대로
+        return Ctx(path, commit, self.gh, links=links, heading_md=self.heading_md,
+                   h1_title=self.h1_title and path.startswith("docs/"))
 
     async def new_page_plan(self, path: str) -> tuple[str, str | None]:
         """새 페이지의 (부모 페이지, 정한 제목 또는 None). 정할 수 없으면 OutOfScope — 만들지 않는다(짐작으로 엉뚱한 자리 · 제목에 만들지 않게).
@@ -1060,7 +1117,10 @@ class Publisher:
         portfolio = path.startswith("portfolio/")      # 바깥 사람이 읽는 글 — 저장소 링크 없이, 맨 위 "사본" 안내 없이(11-06)
         ctx = self._ctx(path, commit or "HEAD", links=not portfolio)
         title, blocks = md_to_blocks(body, ctx)
-        title = given or title or PurePosixPath(path).stem
+        h1 = ctx.h1_title and bool(title)               # title = "h1": 첫 H1이 있으면 그것이 제목(docsync가 준 README 표 제목보다 앞선다)
+        if ctx.h1_title and not title:
+            logging.getLogger("foreman.notion").warning("첫 H1이 없어 README 표 제목 방식으로 돌아갑니다(title = h1): %s", path)
+        title = title if h1 else (given or title or PurePosixPath(path).stem)
         if portfolio:
             title = portfolio_title(path, title)
         elif self.footer:
@@ -1101,7 +1161,7 @@ class Publisher:
             # 11-09 펫퍼민트 — 사람이 옮겨 둔 페이지에만 맞춘다. 짝이 없거나 범위 밖이면 새로 만들지 않고 멈춘다(사용자: 새 페이지 0)
             raise OutOfScope(f"짝 페이지가 없거나 범위 밖입니다 — 새 페이지를 만들지 않습니다(create = false): {path}")
         parent, planned = await self.new_page_plan(path)                # 정할 수 없으면 여기서 멈춘다(아무것도 쓰기 전)
-        title = planned or title
+        title = title if h1 else (planned or title)      # h1이 있으면 new_title = numbered보다 앞선다
         blocks = await resolve_uploads(self.c, self.repo, blocks, await self._upload_limit(), self.ref)
         await self.scope.require(parent, not_root=parent != self.root)
         p = await self.c.create_page(parent, title, [])
