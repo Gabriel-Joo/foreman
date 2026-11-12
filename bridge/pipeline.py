@@ -114,6 +114,13 @@ def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def _as_dt(v: Any) -> datetime | None:
+    """DB가 돌려준 시각 — datetime이면 그대로, 문자열('2026-11-12 09:54:42.000')이면 UTC naive datetime으로. 없으면 None."""
+    if v is None or isinstance(v, datetime):
+        return v
+    return datetime.fromisoformat(str(v)).replace(tzinfo=None)
+
+
 def _ts(v: Any) -> datetime:
     """웹훅 시각 — epoch(초 · 밀리초) · ISO 문자열 → UTC naive. 없으면 지금."""
     try:
@@ -331,6 +338,7 @@ class PipelineManager:
         self._origin: dict[str, str] = {}                 # 프로젝트 → 마지막으로 본 origin/<브랜치>
         self._pending: dict[str, dict[str, Any]] = {}     # 프로젝트 → {head, short, subject, at, state, alerted}
         self._end_alerted: set[int] = set()               # 끝 알림 없음을 알린 build id
+        self._watch_failed: set[str] = set()              # 감시 실패를 알린 "칸:예외종류" — 다시 돌면 지우고 한 번 알린다
         self._hook_broken: dict[str, bool] = {}
         # 인프라 자체가 죽은 것(종류마다 — Jenkins 하나를 두 프로젝트가 쓴다). 메모리 상태 — 브리지를 다시 띄우면 다시 센다
         self._kind_fails: dict[str, int] = {}
@@ -581,57 +589,79 @@ class PipelineManager:
                 done.append(key)
         return done
 
-    async def check_watch(self) -> None:
-        await self.check_sync_wait()
+    async def _guard_watch(self, scope: str, p: PipeProject | None, fn: Any) -> None:
+        """감시 한 칸(scope)을 돌린다 — 실패해도 다른 칸은 이어 돌고, 새 사유는 한 번만 알리며, 다시 돌면 한 번 알린다.
+        같은 사유 = 같은 칸 + 같은 예외 종류(메시지는 매번 달라질 수 있어 뺀다)."""
+        def say(msg: str) -> None:
+            self._send(p, msg) if p is not None else self._send_infra(msg)
         try:
-            await self.check_argo_running()
-        except Exception as e:  # noqa: BLE001 — 아래 빌드 알림 감시를 막지 않는다
-            log.warning("ArgoCD 진행 중 확인 실패: %s: %s", type(e).__name__, str(e)[:200])
-        now = _now()
+            await fn()
+        except Exception as e:  # noqa: BLE001 — 한 칸의 실패가 나머지 감시를 막지 않는다
+            key = f"{scope}:{type(e).__name__}"
+            log.warning("감시 실패 %s: %s: %s", scope, type(e).__name__, str(e)[:200])
+            if key not in self._watch_failed:
+                self._watch_failed.add(key)
+                say(f"⚠ 감시 실패 — {scope}: {type(e).__name__}: {str(e)[:120]}. 이 동안 이 칸의 알림(빌드 끝 · 빌드 없음 등)이 "
+                    "나가지 않을 수 있다. 브리지 로그(foreman-bridge) 확인")
+            return
+        prev = {k for k in self._watch_failed if k.rsplit(":", 1)[0] == scope}
+        if prev:
+            self._watch_failed -= prev
+            say(f"✅ 감시 다시 돎 — {scope}")
+
+    async def check_watch(self) -> None:
+        await self._guard_watch("배포 대기 확인", None, self.check_sync_wait)
+        await self._guard_watch("ArgoCD 진행 중 확인", None, self.check_argo_running)
         for p in self.rules.projects.values():
-            if not p.jenkins_job:
-                continue
-            # 시작은 왔는데 끝 알림이 없는 빌드
-            async with self.engine.connect() as c:
-                rows = (await c.execute(text(
-                    "SELECT id, external_id, started_at, log_url FROM build WHERE project_id = :p AND stage = 'jenkins' "
-                    "AND status = 'running' AND started_at < :t"),
-                    {"p": p.project_id, "t": now - timedelta(seconds=self.rules.watch_end_s)})).all()
-                busy = (await c.execute(text(
-                    "SELECT MAX(COALESCE(ended_at, :n)) FROM build WHERE project_id = :p AND stage = 'jenkins' "
-                    "AND started_at >= :t"), {"p": p.project_id, "n": now, "t": now - timedelta(hours=1)})).scalar()
-            for bid, ext, started, url in rows:
-                if bid not in self._end_alerted:
-                    self._end_alerted.add(bid)
-                    mins = int((now - started).total_seconds() // 60)
-                    self._send(p, f"⚠ 빌드 끝 알림 없음 — {ext} 시작 뒤 {mins}분째 끝 알림이 없다. Jenkins 확인"
-                                  f"{chr(10) + str(url) if url else ''}")
-            pend = self._pending.get(p.name)
-            if not pend:
-                continue
-            if await self._covered(p, pend["head"], pend["at"]):
-                if pend["alerted"]:
-                    mins = int((now - pend["at"]).total_seconds() // 60)
-                    self._send(p, f"✅ 빌드 알림 늦게 도착 — push {pend['short']} 뒤 {mins}분")
-                del self._pending[p.name]
-                self._changed(p.name)
-                continue
-            # 앞 빌드가 아직 돌거나 방금 끝났으면 그때부터 잰다(disableConcurrentBuilds — 줄 서 있다)
-            base = max(pend["at"], busy) if busy else pend["at"]
-            state = watch_state((now - base).total_seconds(), self.rules.watch_warn_s, self.rules.watch_alert_s)
-            if state != pend["state"]:
-                pend["state"] = state
-                self._changed(p.name)
-            if state == "missing" and not pend["alerted"]:
-                pend["alerted"] = True
+            if p.jenkins_job:
+                await self._guard_watch(f"빌드 알림 감시 {p.name}", p, lambda p=p: self._watch_project(p))
+
+    async def _watch_project(self, p: PipeProject) -> None:
+        now = _now()
+        # 시작은 왔는데 끝 알림이 없는 빌드
+        async with self.engine.connect() as c:
+            rows = (await c.execute(text(
+                "SELECT id, external_id, started_at, log_url FROM build WHERE project_id = :p AND stage = 'jenkins' "
+                "AND status = 'running' AND started_at < :t"),
+                {"p": p.project_id, "t": now - timedelta(seconds=self.rules.watch_end_s)})).all()
+            # MAX(COALESCE(ended_at, :n))은 MySQL이 문자열로 돌려줘(11-12 실측) max()에서 TypeError였다 — 끝난 시각의
+            # 최댓값과 안 끝난 빌드 수를 따로 받아 파이썬에서 합친다
+            last_end, running = (await c.execute(text(
+                "SELECT MAX(ended_at), SUM(ended_at IS NULL) FROM build WHERE project_id = :p AND stage = 'jenkins' "
+                "AND started_at >= :t"), {"p": p.project_id, "t": now - timedelta(hours=1)})).one()
+        busy = now if running else _as_dt(last_end)
+        for bid, ext, started, url in rows:
+            if bid not in self._end_alerted:
+                self._end_alerted.add(bid)
+                mins = int((now - started).total_seconds() // 60)
+                self._send(p, f"⚠ 빌드 끝 알림 없음 — {ext} 시작 뒤 {mins}분째 끝 알림이 없다. Jenkins 확인"
+                              f"{chr(10) + str(url) if url else ''}")
+        pend = self._pending.get(p.name)
+        if not pend:
+            return
+        if await self._covered(p, pend["head"], pend["at"]):
+            if pend["alerted"]:
                 mins = int((now - pend["at"]).total_seconds() // 60)
-                down = self._down_since.get("jenkins")
-                why = (f"\nJenkins 자체가 {int((now - down).total_seconds() // 60)}분째 응답 없음"
-                       f"({self._down_why.get('jenkins', '?')})" if down else "")
-                msg = (f"⚠ 빌드 알림 없음 — push {pend['short']} \"{pend['subject'][:80]}\" 뒤 {mins}분째 "
-                       f"Jenkins 시작 알림이 없다. Jenkins 확인{why}\nhttps://jenkins.ronanlab.dev/job/{p.jenkins_job}/")
-                self._send(p, msg)
-                self._wake(p.name, "no_build", f"nobuild:{p.name}:{pend['short']}", msg)
+                self._send(p, f"✅ 빌드 알림 늦게 도착 — push {pend['short']} 뒤 {mins}분")
+            del self._pending[p.name]
+            self._changed(p.name)
+            return
+        # 앞 빌드가 아직 돌거나 방금 끝났으면 그때부터 잰다(disableConcurrentBuilds — 줄 서 있다)
+        base = max(pend["at"], busy) if busy else pend["at"]
+        state = watch_state((now - base).total_seconds(), self.rules.watch_warn_s, self.rules.watch_alert_s)
+        if state != pend["state"]:
+            pend["state"] = state
+            self._changed(p.name)
+        if state == "missing" and not pend["alerted"]:
+            pend["alerted"] = True
+            mins = int((now - pend["at"]).total_seconds() // 60)
+            down = self._down_since.get("jenkins")
+            why = (f"\nJenkins 자체가 {int((now - down).total_seconds() // 60)}분째 응답 없음"
+                   f"({self._down_why.get('jenkins', '?')})" if down else "")
+            msg = (f"⚠ 빌드 알림 없음 — push {pend['short']} \"{pend['subject'][:80]}\" 뒤 {mins}분째 "
+                   f"Jenkins 시작 알림이 없다. Jenkins 확인{why}\nhttps://jenkins.ronanlab.dev/job/{p.jenkins_job}/")
+            self._send(p, msg)
+            self._wake(p.name, "no_build", f"nobuild:{p.name}:{pend['short']}", msg)
 
     async def _check_hook(self, p: PipeProject) -> None:
         """새 빌드마다 — 최근 빌드 원인으로 웹훅 끊김 · 복구를 판단한다(바뀔 때 한 번 알린다)."""
