@@ -159,8 +159,13 @@ def test_doc_candidates_ranks_by_evidence():
 
 def test_load_config(tmp_path):
     assert mp.load(tmp_path / "none.toml").enabled is False
-    real = mp.load(Path(__file__).resolve().parent.parent / "config" / "handoff.toml")
-    assert real.enabled is True and real.stage == 1 and real.projects == ["foreman"]   # 11-11 시험 세션 뒤 켬(fdc78f3) — FOREMAN만, 1단계
+    # 실제 config/handoff.toml 대신 시험용 파일을 읽는다(11-12 사용자 — 설정을 켜고 끌 때마다 시험이 깨지지 않게)
+    (tmp_path / "on.toml").write_text('[merge_prep]\nenabled = true\nstage = 1\nprojects = ["foreman"]\n')
+    real = mp.load(tmp_path / "on.toml")
+    assert real.enabled is True and real.stage == 1 and real.projects == ["foreman"]
+    (tmp_path / "min.toml").write_text("[merge_prep]\nenabled = true\n")
+    dflt = mp.load(tmp_path / "min.toml")
+    assert dflt.stage == 1 and dflt.projects == [] and dflt.every_s == 60 and dflt.stuck_min == 10      # 칸이 없으면 기본값
     (tmp_path / "bad.toml").write_text("[merge_prep]\nenabled = true\nevery_s = 1\n")
     with pytest.raises(ValueError):
         mp.load(tmp_path / "bad.toml")
