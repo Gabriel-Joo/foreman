@@ -69,3 +69,25 @@
 - 314 `983f2a1`: 원인 = `MAX(COALESCE(ended_at, :n))`이 운영 DB에서 문자열(`'2026-11-12 09:54:42.000'`) → `max(pend["at"], busy)`. `SELECT MAX(ended_at), SUM(ended_at IS NULL)`로 나눠 안 끝난 빌드가 있으면 지금 · 없으면 마지막 끝(원래 뜻 그대로) + `_as_dt`. 프로젝트별 `_watch_project`를 `_guard_watch`로 감쌈(`check_sync_wait`도), 실패는 「칸 + 예외 종류」마다 한 번 ⚠ 알림(묶음 아닌 바로) · 회복 ✅ 한 번, ArgoCD 확인 실패도 이제 알림. 시험 3. 들여쓰기를 Bash 파이썬으로 고친 것을 스스로 밝힘(규칙 위반 — Edit로 바로잡음)
 - 관리자 판단: 고친 줄을 읽어 원래 뜻과 같음 확인 → merge-tree exit 0 → `--no-ff` **`01ff8bb`** → pytest **774** · node **123** → push → 승인 대기 0 → **브리지 19:23:00**(728766 → 871853), 오류 0 · 감시 실패 0
 - 314는 살려 둠(끝낼지 사용자에게)
+
+## 313 합침 · 켜다가 시험 하나 깨짐 · 315
+
+- 사용자: 313 합쳐라 · 합친 뒤 FOREMAN · 인프라 `approver = "manager"` · `squash = true` · 실제로 도는지 보라 · 314 끝내라 · 남긴 두 단추 그대로
+- 314: 쉼 · worktree 변경 0 · 앞 0 확인 → `exit` ok
+- 313: merge-tree exit 0(314 합친 뒤 다시) → `--no-ff` **`ea7fbee`** → pytest **791** · node **124** 통과
+- 설정 켬 → **pytest 1 실패**: `tests/test_mergeprep.py:499` `test_live_config_starts_as_today`가 실제 `config/handoff.toml`을 읽고 「사람 · squash 꺼짐」을 기대(README 「실제 설정 파일을 읽는 시험」과 같은 종류). 11-12 302 때 사용자 결정(기대값만 바꾸지 말고 임시 파일)대로 → **설정을 되돌리고**(작업 트리 깨끗) `ea7fbee`만 push → 승인 대기 0 → **브리지 19:31:16**(871853 → 939985), 오류 0
+- **315**(sonnet, `/api/spawn` 새 worktree `foreman-2`): 그 시험을 임시 설정 파일로, worktree에서 켠 설정으로도 통과하는지 확인만. 띄울 때 「313과 맡을 파일 겹침(tests/test_mergeprep.py)」 경고 — 313은 합쳐진 뒤 쉬는 중이라 실제 겹침 아님
+- 315를 합친 뒤 설정을 다시 켜고, 시험 세션 하나로 카드 → 관리자 알림 → 관리자 승인(`"by":"manager"`) → squash를 실제로 본다
+
+## 「맡길 일 2」
+
+- FOREMAN 「어긋남」 둘: 312(`.worktrees/foreman-3`) · 314(`.worktrees/foreman`)가 합치기 · 쉬게 하기 없이 끝남 — 관리자가 손으로 `--no-ff` 합친 뒤 `exit`해서 worktree · 브랜치가 남았다. 커밋은 모두 main에 있다. (펫퍼민트 `model-service`는 원래 있던 것, 11-12 인계 「지우지 않는다」)
+
+## 역할 권한 observe 기록(11-11 17:39 KST ~, 확인만)
+
+- `event` approval_req의 `role_rule` **15건**: 「Bash로 파일 고침」 8 · 「관리자 코드」 7. `[roles] projects = ["foreman"]`이라 런슈즈 · 인프라 세션은 보지 않는다
+- Bash로 파일 고침 8 — 모두 시험 파일에 `cat >> … <<'EOF'`(heredoc): 291 ×1(11-11) · **312 ×3**(test_managers ×2 · test_stage2_db — **312는 보고에서 밝히지 않았다**) · 313 ×3(test_scopetoken은 같은 명령에 `sed -i`도) · 314 ×1(test_pipeline)
+- **안 잡힌 것 1**: 314의 `.venv/bin/python - <<'EOF'`로 `bridge/pipeline.py` 들여쓰기 고침(10:17:11) — 해석기에 표준 입력으로 넘긴 코드 안의 `open(f)`라 검사에 안 걸림. 실제 위반 9 중 8 기록
+- enforce였다면: heredoc 8은 막힘, 파이썬 1은 통과
+- 관리자 코드 7 — 모두 관리자 276: `CLAUDE.md` Edit ×4(11-11 19:11 ~ 19:18) · `docs/12_scribe.md` ×2 · `docs/operations.md` ×1(11-12 15:21 `2395477` 인계 전 결정 기록). `manager_allow`(config · log · README) 밖이라 enforce면 막힘. 사용자 지시로 한 정당한 일로 보인다(CLAUDE.md는 사용자가 시킨 규칙 고침 — 다만 그 지시가 어디 있었는지는 이번에 확인하지 않음)
+- 「관리자가 합친 뒤 시험 파일 고치기」는 기록 0(11-12 302 때는 코더에게 맡겼다)
