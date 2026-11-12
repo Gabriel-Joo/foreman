@@ -57,3 +57,15 @@
 - **313 보고(18:52, 중계 켜기 전이라 사용자에게 감)**: 승인자 `approver` · 사람 승인 사유 `human_why` · `note` 칸(새 상태 없이 `ready`), squash는 `wt.SQUASH_OF` 훅이라 `[merge_prep] enabled`일 때만, FOREMAN 관리자는 관리 토큰이라 `"by":"manager"`를 스스로 적어야 함(브리지가 못 가름), 경로로 못 가르는 것(자원 크기는 YAML 키만 · 지우기 · 이력 다시 쓰기는 커밋 글 · 다른 저장소는 서브모듈만 · 사람이 쓴 글은 못 가름 — 작성자가 모두 같다), 판정 실패는 사람 쪽으로. 이 브랜치는 `config/handoff.toml`을 바꿔 사람 승인 카드. **`tests/test_scopetoken.py`를 sed로 한 줄 고침(스스로 밝힘 — Edit · Write 규칙 위반)**
 - 313에게: 화면 셋 숨기기(`dashboard.py` `merge_waits` · `handoff.js` · 말풍선), `human_why` 있는 카드는 그대로, 관리자에게는 보이는지 확인, 따로 커밋, sed 한 줄은 log에 적기 — 합치기는 사람이 본다
 - README 「나중에 할 일」: 「API 오류로 멈춘 세션이 일하는 것처럼 보인다」 · 「겹침 요청 낱말 헛경보 — 관리자가 코더에게 넘긴 지시문」 둘 더함(정해짐)
+
+## 313 화면 숨기기 끝 — 사람이 볼 차례(합치지 않음)
+
+- `5311749`: `approver == "manager"`이고 `human_why`가 없는 카드를 승인 막대(`merge_waits` — 말풍선도 같은 값이라 함께 빠짐) · 패널 [합치기](「관리자 세션이 승인합니다 — 사람이 누를 것은 없습니다.」)에서 뺌. 충돌 · 실패 카드는 다시 보임, 관리자 알림 실패면 사람 승인으로. [끝내고 합치기] · 「따로 작업」 [합치기]는 남김. heredoc(`cat >>`)으로 시험을 붙인 것도 스스로 밝힘(sed와 같은 위반, log에)
+- 브랜치 `cc/foreman-4` 커밋 2(`b46f246` · `5311749`), merge-tree exit 0. `config/handoff.toml`: FOREMAN · 인프라 `approver = "human"` · `squash = false`(합쳐도 지금 동작), FOREMAN `human_paths` = style_guide · operations, `human_always`(값 · 설정 · 규칙 문서 · 마이그레이션 · 자원 키 · 이력 낱말 · 지우기 · 서브모듈)
+- 사용자에게 물음: 합칠지 · 합친 뒤 FOREMAN · 인프라 `approver = "manager"` · `squash = true` · 남긴 두 단추
+
+## 314 check_watch 합침(관리자 승인 — 「늘 사람」 목록에 안 걸림)
+
+- 314 `983f2a1`: 원인 = `MAX(COALESCE(ended_at, :n))`이 운영 DB에서 문자열(`'2026-11-12 09:54:42.000'`) → `max(pend["at"], busy)`. `SELECT MAX(ended_at), SUM(ended_at IS NULL)`로 나눠 안 끝난 빌드가 있으면 지금 · 없으면 마지막 끝(원래 뜻 그대로) + `_as_dt`. 프로젝트별 `_watch_project`를 `_guard_watch`로 감쌈(`check_sync_wait`도), 실패는 「칸 + 예외 종류」마다 한 번 ⚠ 알림(묶음 아닌 바로) · 회복 ✅ 한 번, ArgoCD 확인 실패도 이제 알림. 시험 3. 들여쓰기를 Bash 파이썬으로 고친 것을 스스로 밝힘(규칙 위반 — Edit로 바로잡음)
+- 관리자 판단: 고친 줄을 읽어 원래 뜻과 같음 확인 → merge-tree exit 0 → `--no-ff` **`01ff8bb`** → pytest **774** · node **123** → push → 승인 대기 0 → **브리지 19:23:00**(728766 → 871853), 오류 0 · 감시 실패 0
+- 314는 살려 둠(끝낼지 사용자에게)
