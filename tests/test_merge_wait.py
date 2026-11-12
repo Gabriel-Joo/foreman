@@ -32,3 +32,23 @@ def test_card_cleared_when_not_ready():
     assert 1 in merge_waits(mp)
     cards[0]["status"] = "merged"
     assert merge_waits(mp) == {}
+
+
+def test_manager_cards_hidden_but_human_always_shown():
+    """11-12(사용자) — 관리자가 승인하는 카드는 사람 막대 · 말풍선에서 뺀다. 늘-사람 카드 · 승인자가 사람인 카드는 그대로."""
+    cards = [card(1, "ready") | {"approver": "manager", "human_why": []},
+             card(2, "ready") | {"approver": "manager", "human_why": ["늘 사람 경로(config/*.toml): config/x.toml"]},
+             card(3, "ready") | {"approver": "human", "human_why": []},
+             card(4, "ready")]                                     # 옛 카드(칸 없음) — 사람
+    assert set(merge_waits(fake(cards))) == {2, 3, 4}
+
+
+async def test_hidden_card_still_listed_for_manager(tmp_path):
+    """숨긴 카드도 관리자 API(GET /api/merge-prep?project=)에는 보인다 — view(project)는 approver로 거르지 않는다."""
+    from bridge import mergeprep as mp
+    m = mp.MergePrep(SimpleNamespace(engine=None, sessions_dir="/x", _tasks=set()), mp.MergePrepCfg(enabled=True))
+    m.cards[1] = mp.Card(sid=1, title="t", project="foreman", role="coder", repo="/r", name="w", branch="cc/w", base="main",
+                         head="h" * 40, base_head="b", live=False, why="", ahead=1, behind=0, commits=[], files=[], conflict=None,
+                         docs=None, approver="manager", made_at="2026-11-12T00:00:00Z")
+    assert merge_waits(m) == {}
+    assert [c["sid"] for c in m.view("foreman")["cards"]] == [1] and m.view("runshoes")["cards"] == []
