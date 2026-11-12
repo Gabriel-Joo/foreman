@@ -89,3 +89,12 @@
   - ③ 로컬 `origin/main` = 실제 원격 = `4b3eb41` 확인 뒤 `POST /api/publish` project ronanlab-infra · publish · `docs/09_monitoring.md` · force false → **멈춤(HumanEdited, 409)** 「Notion에서 사람이 고친 곳 22개가 있어 덮지 않았습니다」. 응답에 앞 10개(「Prometheus·Grafana·node-exporter… 설치 + Lok…」 · 「사전 정리 — 무엇을 어디서 얻나」 · 설계 결정 둘 · divider · 「진행 기록」 등). 판정: 마지막으로 고친 이가 게시기(통합)가 아니고 git에서 만든 블록과 글이 다른 블록(`notion.py` `human_edits`) — 사람이 옮겨 둔 페이지라 거의 다 걸림
   - Notion에 쓴 것 없음(사람 수정 검사가 쓰기 전), 짝 줄 그대로(`updated_at` 넣은 시각), force · [지금 맞추기] 안 씀. 수치: total 12 · 짝 있음 1 · 짝 없음 11 · 바뀜 1 · broken 0
   - 결과를 299에게 보냄(delivered). 다음(git에 옮기기 / 덮기 / `keep_notion`)은 사용자 · 299가 정함
+  - **09 덮기**(299 부탁 → FOREMAN 사용자 승인 「멈춘 까닭을 보았으니 이제 덮는다」): `origin/main` 4b3eb41 확인, 승인 대기 0 → `POST /api/publish` · `docs/09_monitoring.md` · `force=true`(12:12:51 → 12:13:25) → HTTP 200 **`updated`**, 그 파일 커밋 `64d1d56`, sync **kept 21 · updated 12 · replaced 43 · added 0 · deleted 15 · reset 0**, 페이지 id **그대로** `3f13218bb5248179b7f8fc6d19b20d85`, 오류 없음. 짝 줄에 `content_hash` · `commit_sha 64d1d56` 채워짐. 수치: total 12 · 짝 있음 1 · 짝 없음 11 · 맞추지 못한 것 0. 한 쪽뿐 · [지금 맞추기] 안 누름 · 다른 설정 · 짝 그대로. 299에게 결과 보냄(첫 시도는 셸 따옴표가 깨져 빈 글 422 — 아무것도 가지 않음, 파일로 다시 만들어 delivered). 덮기 전 백업은 299가 `~/k8s-cluster/backup/2026-11-12-notion-before-sync/11_09_모니터링.md`로 확인
+
+## 11-12 — 302가 본 pytest 실패 둘의 원인: 관리자의 설정 켜기
+
+- `tests/test_mergeprep.py:163` `test_load_config` — 실제 `config/handoff.toml`의 `projects == ["foreman"]`를 기대 → `667d2ff`(인프라 합치기 카드)로 `["foreman", "ronanlab-infra"]`
+- `tests/test_moveflow.py:11` `test_switch_off_by_default_and_reads_file` — 실제 설정의 `move_flow_on is False`를 기대 → `81fa9b0`(옮기기 한 흐름 켬)으로 True
+- main(`8b1dc08`)에서도 둘 다 실패 — 302 고침과 무관. `config/notion.toml`(인프라 칸)을 읽는 시험은 없음. **관리자가 설정만 바꾸고 전체 시험을 돌리지 않아 놓쳤다**
+- 사용자 결정: 기대값만 바꾸지 않고 두 줄 모두 시험용 임시 파일을 읽게 → 302에 함께 맡김(302 브랜치는 두 시험 파일과 겹치지 않음, `config/notion.toml`은 302가 머리 주석 · main이 인프라 칸을 고쳤으나 merge-tree 충돌 없음)
+- **실제 config/ 파일을 읽는 시험이 더 있다**(고치지 않음 — 사용자가 따로 정함. 줄 번호 일부는 주석 속 언급일 수 있다): `test_approval.py`(approval · notify) · `test_approval_now.py`(approval · notify) · `test_approval_summary.py`(approval) · `test_promote.py`(notify) · `test_roleguard.py`(notify) · `test_scribe_room.py`(portfolio) · `test_stage2_db.py`(approval · scribe) · `test_units.py`(notify) · `test_usage.py`(usage) · `test_worktree.py`(worktree) — 10 파일. 설정을 켤 때마다 시험이 깨지는 길이라 조용한 고장에 가깝다
