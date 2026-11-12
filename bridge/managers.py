@@ -11,10 +11,18 @@
 - 켜기: `config/managers.toml [managers] enabled`(처음엔 false — 꺼져 있으면 목록만 읽히고 부탁은 503)
 
 다른 저장소에 관리자를 실제로 띄우는 것은 이 모듈이 하지 않는다 — 그 저장소 CLAUDE.md 규칙 줄과 함께 사용자가 시킬 때.
+
+중계(11-12 「승인 지옥 줄이기」, log/notify_relay_20261112.md) — 알림(bridge/notify.py)이 부른다:
+- `relay(project, "report", …)` 작업 세션(역할 coder · scribe · designer) 턴 끝 보고를 그 프로젝트 관리자 입력 칸에 「[작업 보고 — …]」로
+  (화면 글에 「일꾼」을 새로 쓰지 않는다 — docs/style_guide.md 4-1)
+- `relay(project, "question", …)` 작업 세션이 사람에게 묻는 말을 「[사람에게 올릴 물음 — …]」로. **관리자는 답하지 않고** 모아 사람에게 올린다
+- 넣지 못하면 delivered=False만 돌려준다 — 텔레그램은 부른 쪽(notify)이 바로 보낸다
+- 같은 관리자에게 동시에 둘이 붙여 넣지 않게 관리자마다 잠근다
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import tomllib
 from dataclasses import dataclass, field
@@ -56,11 +64,31 @@ def ask_text(from_project: str | None, from_label: str | None, to_project: str, 
     return f"[관리자 부탁 — {who} → {to_project} 관리자]\n{body.strip()}{back}"
 
 
+# 중계 글의 머리 — bridge/assembler.py가 이것으로 턴 출처 relay를 가른다(사람 입력으로 세지 않는다)
+RELAY_REPORT = "[작업 보고 — "
+RELAY_QUESTION = "[사람에게 올릴 물음 — "
+
+
+def relay_text(kind: str, from_label: str, to_project: str, body: str) -> str:
+    if kind == "question":
+        return (f"{RELAY_QUESTION}{from_label} → {to_project} 관리자]\n{body.strip()}\n"
+                "(이 물음에 관리자가 답하지 않습니다 — 판단은 사람이 합니다. 다른 물음과 모아 사람에게 올리고, "
+                "사람의 답을 그 세션에 전합니다)")
+    return (f"{RELAY_REPORT}{from_label} → {to_project} 관리자]\n{body.strip()}\n"
+            "(답하지 않아도 됩니다 — 맡긴 일이 한 덩어리 끝났을 때 모아서 사람에게 한 번 보고합니다)")
+
+
 class Managers:
     def __init__(self, handoff: Any, cfg: ManagersConfig, notifier: Any = None) -> None:
         self.h = handoff                     # HandoffManager — _live_in_base · engine · sessions_dir
         self.cfg = cfg
         self.notifier = notifier
+        self._locks: dict[str, asyncio.Lock] = {}
+        if notifier is not None:
+            try:
+                notifier.managers = self     # 알림이 작업 세션 턴 끝을 관리자에게 넘길 때 쓴다(main.py를 고치지 않고 잇는다)
+            except AttributeError:
+                pass
 
     @property
     def engine(self) -> Any:
@@ -135,11 +163,40 @@ class Managers:
         return {"delivered": ok, "reason": reason, "to_session": m["session_id"] if m else None,
                 "queued": bool(r.get("queued")), "notified": not ok and self.notifier is not None}
 
-    async def _record(self, sid: int | None, ok: bool, detail: str) -> None:
+    async def relay(self, project: str, kind: str, from_session: int, from_label: str, body: str) -> dict[str, Any]:
+        """작업 세션 턴 끝 보고 · 사람에게 올릴 물음을 관리자 입력 칸에. 텔레그램은 보내지 않는다(부른 쪽이 정한다)."""
+        if not self.cfg.enabled:
+            return {"delivered": False, "reason": "관리자 기능이 꺼져 있습니다", "manager": False}
+        repo = dict(await self.projects()).get(project)
+        m = await self.manager_of(repo) if repo else None
+        if not m:
+            return {"delivered": False, "reason": f"{project}에 관리자 세션이 없습니다", "manager": False}
+        if m["session_id"] == from_session:
+            return {"delivered": False, "reason": "보낸 세션이 관리자입니다", "manager": False}
+        msg = relay_text(kind, from_label, project, body)
+        reason = None
+        from bridge.handoff import transcript_path
+        lock = self._locks.setdefault(m["cc_session_id"], asyncio.Lock())
+        try:
+            async with lock:
+                r = await deliver(m["cc_session_id"], msg, sessions_dir=self.h.sessions_dir,
+                                  transcript=transcript_path(m["cwd"] or "", m["cc_session_id"]), verify_s=15.0)
+            if not (r.get("delivered") or r.get("queued")):
+                reason = "입력 칸에 넣었는지 확인하지 못했습니다"
+        except Refused as e:
+            reason = f"넣지 못했습니다: {e}"
+        except Exception as e:  # noqa: BLE001
+            reason = f"넣지 못했습니다: {type(e).__name__}"
+        ok = reason is None
+        await self._record(m["session_id"], ok, f"{kind} 세션 {from_session}→{project}"
+                           + ("" if ok else f" 실패: {reason}") + f" · {body[:300]}", action="mgr-relay")
+        return {"delivered": ok, "reason": reason, "manager": True, "to_session": m["session_id"]}
+
+    async def _record(self, sid: int | None, ok: bool, detail: str, action: str = "mgr-ask") -> None:
         try:
             async with self.engine.begin() as c:
                 await c.execute(text("INSERT INTO session_action (session_id, action, pid, ok, detail) "
-                                     "VALUES (:s, 'mgr-ask', NULL, :o, :d)"), {"s": sid, "o": ok, "d": detail[:512]})
+                                     "VALUES (:s, :a, NULL, :o, :d)"), {"s": sid, "a": action, "o": ok, "d": detail[:512]})
         except Exception as e:  # noqa: BLE001 — 기록 실패가 부탁을 막지 않는다
             log.warning("관리자 부탁 기록 실패: %s", type(e).__name__)
 

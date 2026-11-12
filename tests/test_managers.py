@@ -160,3 +160,29 @@ def test_manager_ask_turn_origin_and_no_telegram():
     for p in ("foreman", "runshoes", "ronanlab-infra", "petmint-rag-chatbot"):
         rule = r.for_project(p)
         assert "manager_ask" not in rule.origins and "manager_ask" not in rule.batch_origins
+
+
+def test_relay_report_and_question_to_manager(monkeypatch):
+    """11-12 ② · ③ — 작업 세션 보고 · 물음을 관리자 입력 칸에. 텔레그램은 보내지 않는다(notify가 정한다)."""
+    m, actions, n = _mgrs()
+    got = []
+
+    async def fake_deliver(cc, msg, **kw):
+        got.append((cc, msg))
+        return {"delivered": {"as": "prompt"}}
+    monkeypatch.setattr(mg, "deliver", fake_deliver)
+    assert m.h is not None and getattr(n, "managers", None) is m          # 알림에 스스로 걸린다
+    out = asyncio.run(m.relay("foreman", "report", 280, "세션 280 「코더」(coder)", "끝남 · 3분"))
+    assert out["delivered"] and out["to_session"] == 276 and got[0][0] == "cc-mgr"
+    assert got[0][1].startswith("[작업 보고 — 세션 280 「코더」(coder) → foreman 관리자]")
+    out = asyncio.run(m.relay("foreman", "question", 280, "세션 280", "물음: 어느 쪽으로 할까요?"))
+    assert got[1][1].startswith("[사람에게 올릴 물음 — ") and "관리자가 답하지 않습니다" in got[1][1]
+    assert actions[-1]["a"] == "mgr-relay" and n.sent == []
+    # 관리자가 없으면(런슈즈) 넣지 않고 manager=False — 알림이 지금처럼 사람에게
+    out = asyncio.run(m.relay("runshoes", "report", 290, "세션 290", "끝"))
+    assert out == {"delivered": False, "reason": "runshoes에 관리자 세션이 없습니다", "manager": False}
+    # 관리자 자신은 넘기지 않는다 · 꺼져 있으면 넘기지 않는다
+    assert asyncio.run(m.relay("foreman", "report", 276, "세션 276", "끝"))["manager"] is False
+    m2, _, _ = _mgrs(enabled=False)
+    assert asyncio.run(m2.relay("foreman", "report", 280, "세션 280", "끝"))["delivered"] is False
+    assert len(got) == 2 and n.sent == []

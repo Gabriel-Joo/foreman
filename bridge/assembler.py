@@ -50,6 +50,8 @@ AGENT_MSG = "Another Claude session sent a message"
 # 보낸 쪽이 프로젝트 관리자인 것만 — 「사람 관리자」(계획 카드 [관리자에게 보내기], from 없음)는 사람이 누른 것이라 human으로 둔다
 MGR_ASK = "[관리자 부탁 — "
 MGR_ASK_HUMAN = "[관리자 부탁 — 사람 관리자"
+# 작업 세션 턴 끝 보고 · 사람에게 올릴 물음을 관리자에게 넣은 것(bridge/managers.py relay_text, 11-12) — 출처 relay
+RELAY_HEADS = ("[작업 보고 — ", "[사람에게 올릴 물음 — ")
 TEXT_CLIP = 2000      # tool_use 입력의 문자열 하나
 PREVIEW = 500         # 큐 · 알림 미리보기
 QUEUE_TEXT = 20_000   # 작업 중에 보낸 입력(대기열) — 턴이 되지 않고 열린 턴에 끼어든다. 대화 패널이 이것을 내 글로 보여 준다(11-05)
@@ -764,6 +766,8 @@ class Assembler:
             return "handoff_in"
         if MGR_ASK in head and MGR_ASK_HUMAN not in head:
             return "manager_ask"
+        if any(h in head for h in RELAY_HEADS):
+            return "relay"
         if d.get("isMeta"):
             return "agent_message" if AGENT_MSG in s[:120] else "meta"
         return "human"

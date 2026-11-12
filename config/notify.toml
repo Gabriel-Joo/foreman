@@ -25,6 +25,14 @@ only_failures = false          # true면 stop_failure · interrupted · process_
 min_turn_s = 0                 # 이보다 짧게 끝난 턴은 보내지 않는다(실패는 예외)
 
 # 프로젝트별 — 접두어가 있는 프로젝트만 보낸다('미분류' 세션은 안 보낸다). 위 defaults를 덮어쓸 수 있다
+#
+# 11-12 승인 지옥 줄이기(log/notify_relay_20261112.md) — 프로젝트마다 켜는 칸 셋, 처음엔 모두 꺼짐:
+#   relay_reports   작업 세션(역할 coder · scribe · designer) 턴 끝 보고를 그 프로젝트 관리자 입력 칸에 「[작업 보고 — …]」로.
+#                   넣었으면 그 턴의 텔레그램은 묶음으로(묶음이 꺼져 있으면 안 보냄 — 관리자가 받았다). 관리자가 없으면 지금처럼.
+#                   관리자가 있는데 못 넣으면 사유를 붙여 바로 보낸다. config/managers.toml [managers] enabled도 켜져 있어야 한다
+#   relay_questions 작업 세션의 마지막 응답이 사람에게 묻는 말이면(대시보드 「답 기다림」 판정) 관리자에게 「[사람에게 올릴 물음 — …]」로.
+#                   관리자는 답하지 않고 모아 사람에게 올린다 — 관리자 응답이 묻는 말로 끝나면 그 턴이 바로 나간다
+#   digest          일상 알림을 바로 보내지 않고 모아 [digest] at에 하루 한 번 프로젝트마다 묶어 보낸다. 급한 것은 바로
 [projects.runshoes]
 prefix = "[런슈즈]"
 
@@ -35,9 +43,27 @@ min_turn_s = 300
 
 [projects.foreman]
 prefix = "[FOREMAN]"
+relay_reports = false
+relay_questions = false
+digest = false
 
 [projects.ronanlab-infra]
 prefix = "[인프라]"
+relay_reports = false
+relay_questions = false
+digest = false
+
+# 하루 묶음(11-12, 위 digest = true인 프로젝트). 바로 보내는 급한 것: 턴 끝 중 API 오류 · 중단 · 세션 종료 · 프로세스 사라짐,
+# 사람에게 묻는 말로 끝난 턴, 아래 kinds에 없는 종류 전부(승인 대기 · 승인 시간 지남 · 권한 거부 · 응답 없음 · 파이프라인 ·
+# 사용량 · 적재 · 겹침 · 맥락 · 압축 등), kinds에 있어도 글에 urgent_marks가 있는 것(⚠ 실패 · ❌ · 🛑 · ⏰ · ❓)
+[digest]
+at = "21:00"          # 보낼 시각(아래 tz). 이 시각이 지나고 그날 아직 안 보냈으면 보낸다
+tz = "Asia/Seoul"
+# 묶음으로 미루는 종류(notification.kind): 턴 끝(끝남) · 서브에이전트 묶음 · 합치기 카드 · 옮기기 요약 · Notion 문서(✋ 덮지 않음) · 어긋남
+kinds = ["turn", "batch", "merge", "handoff", "docsync", "recon"]
+urgent_marks = ["⚠", "❌", "🛑", "⏰", "❓"]
+late_h = 26           # 모아 둔 것이 이 시간 넘게 안 나가면 바로 알린다(조용한 고장 금지)
+retry_min = 10        # 묶음 전송이 실패하면 이 간격으로 다시(실패 자체는 그날 한 번 바로 알린다)
 
 # 압축 알림(11-05, docs/11_handoff_v2.md 3장) — 압축 손실 점검 두 번에서 지시 · 결정의 약 63%가 빠졌고,
 # 가장 많이 빠진 때가 말한 뒤 두 번째 압축이었다. 압축 직후(맥락이 가벼울 때) 알린다. 접두어 있는 프로젝트만 보낸다
