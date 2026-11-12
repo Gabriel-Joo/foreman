@@ -1,0 +1,40 @@
+# 문서 차이 후보 목록 — 합침 알림 「고치지 않은 문서」 + 관리자가 뽑은 것 (2026-11-12 오후, 원본 폴더, 관리자 276 인계 세션)
+
+사용자 지시: 4번(문서 차이 맞추기)은 지금 하지 않는다. 304 · 305 · 307 후보를 채워 목록이 다 차면 한 번에 한다. **목록만 — 문서는 고치지 않았다.**
+
+## 어디서 찾았나
+
+- 합침 알림은 브리지가 관리자 입력 칸에 넣은 글이라 지난 관리자 세션(1a8675b5) 대화 파일에 남아 있다(`bridge/mergeprep.py` 703 「이번에 바뀐 파일을 적었는데 고치지 않은 문서: …」). 시각(UTC → KST)을 브리지 다시 띄운 시각과 맞춰 세션을 정했다
+- 알림의 판정은 「기록 · 커밋에 그 문서가 다룬 파일 이름이 나오는데 이번에 그 문서를 안 고침」이다 — 낱말이 걸린 것도 섞인다. 그래서 바뀐 파일을 직접 보고 관리자 판단을 붙였다
+
+## 세션별 알림
+
+| 세션 | 알림 시각(KST) | 알림의 후보 |
+|---|---|---|
+| 287 | 11-11 17:21 | `11_foreman_dispatch` · `10_office_design` · `11_worktree` · `operations` — **11-11 17:39 ~ 17:41 서기가 맞춤**(`docs_four_sync_20261111.md`) |
+| 291 | 11-11 17:58 | `11_foreman_dispatch` · `operations` · `10_office_design` · `11_handoff` · `style_guide` |
+| 290 | 11-11 18:13 | `11_worktree` · `operations` (operations는 19:11 `6037178`로 시험 DB 반영) |
+| 297 | 11-11 19:08 | `style_guide` · `12_scribe` · `14_dispatcher_note_wake` |
+| 286? | 11-11 19:22 | `11_worktree` · `11_foreman_dispatch` · `style_guide` · `12_scribe` |
+| 302 | 11-12 12:17 | `style_guide` · `11_foreman_dispatch` · `10_office_design` · `11_handoff_v2` · `operations` |
+| **304** | 11-12 14:00 | `style_guide` · `11_foreman_dispatch` · `operations` · `10_office_design` · `11_handoff_v2` |
+| **305** | 11-12 14:45 | `12_scribe` |
+| **307** | 11-12 15:09 | `12_scribe` · `operations` |
+
+- 같은 글의 알림은 한 번만 셌다. 19:22 알림은 시각으로 286 합침과 가깝지만 확실하지 않다(`?`)
+
+## 바뀐 파일로 본 판단(304 · 305 · 307 중심)
+
+| 문서 | 걸리는 것 | 판단 |
+|---|---|---|
+| `docs/12_scribe.md` 「5.」 | 305 덮기 줄 · ✋, 307 저장소 설정을 잃으면 멈춤 | **이미 맞춤** — 304는 스스로(`853ae1b`), 305 · 307은 관리자가 `2395477`에서 줄을 더함(123 ~ 126줄). 알림은 그 세션 브랜치 기준이라 떴다 |
+| `docs/operations.md` 26줄(설정) | `handoff.toml [move] one_flow` · `managers.toml` · `tokens.toml`을 **「꺼짐」으로 적음** — 11-11 저녁에 켰다(`enable_c_wave2_20261111.md`). `handoff.toml [merge_prep]` projects에 ronanlab-infra 없음. `.foreman/notion.toml`(저장소 게시 설정) · `.run/notion_repo_config.json`(307 기억) · `.env.notion` 언급 없음 | **맞출 것**(304 · 307 · 켜기) |
+| `docs/operations.md` 「5. 알림」 표 | Notion 쪽 알림 줄이 없다 — 사람 수정 멈춤 · 한 쪽 게시 ✋(305) · 게시 멈춤 🛑 / 다시 돎(307) · 저장소 설정 깨짐(304) | **맞출 것** |
+| `docs/11_foreman_dispatch.md` 152 ~ 162줄 | 「설정 스위치 뒤에 꺼져 있는 것 — 하나도 켜지 않음」, 표의 값이 모두 `false` — 지금은 토큰 · 관리자 · 넘기기 켜짐. 156줄 「프로젝트 토큰은 그 프로젝트 세션 · 방 API만」 — 304부터 자기 프로젝트 `POST /api/publish` · `GET /api/publish?project=` · `/api/publish/pair`도 연다(force · docsync는 관리 토큰만) | **맞출 것**(켜기 · 304) |
+| `docs/11_worktree.md` 6-1 | `projects = ["foreman"]` → 지금 `["foreman", "ronanlab-infra"]`. 카드 받는 사람이 저장소마다 갈린다(인프라 → 299) | **맞출 것**(사용자 지시로 4번에 같이) |
+| `docs/style_guide.md` · `docs/10_office_design.md` · `docs/11_handoff_v2.md` · `docs/11_handoff.md` · `docs/14_dispatcher_note_wake.md` | 304 · 305 · 307이 화면 · 인계 · 깨우기를 건드리지 않았다(바뀐 파일은 `bridge/notion.py` · `notioncfg.py` · `docsync.py` · `api/publish.py` · `scopetoken.py` · `main.py` · `config/notion.toml`). 291 · 297 · 302 알림의 것은 그 세션 일을 보고 따로 판단해야 한다 | **약함** — 304 · 305 · 307 쪽은 낱말 겹침으로 보인다. 291 · 297 · 302 몫은 그때 서기가 확인 |
+
+## 한 번에 할 때
+
+- 서기(sonnet, worktree)를 교장 경로로 띄워 실제 코드를 보고 맞추게 한다 — 11-11 `docs_four_sync`와 같은 방식, 문서마다 커밋 하나
+- 맡길 것: 위 「맞출 것」 넷 + 「약함」 다섯을 291 · 297 · 302 일과 대어 확인
