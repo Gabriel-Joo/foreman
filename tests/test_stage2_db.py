@@ -1481,3 +1481,164 @@ async def test_todo_edit_pick_and_handover_columns(env):
     assert (await d.saved_plan(did))["inbox_ids"] == [a]                   # 고친 계획(edited)이 이긴다
     h = await d.handed(did)
     assert h["to_session"] == sid and h["alerted"] is False
+
+
+# ── 11-12 승인 지옥 줄이기 ② · ③ · ④(log/notify_relay_20261112.md) ──────────────
+class FakeMgr:
+    def __init__(self, result):
+        self.result, self.calls = result, []
+
+    async def relay(self, project, kind, sid, label, body):
+        self.calls.append((project, kind, sid, label, body))
+        return dict(self.result)
+
+
+class FlakyTG(FakeTG):
+    """하루 묶음(📦)만 거부한다 — 짧은 실패 알림은 간다."""
+    async def send(self, msg):
+        if "📦" in msg:
+            raise RuntimeError("HTTP 400")
+        self.sent.append(msg)
+
+
+def ex(s: Settings, sql: str, *args):
+    conn = pymysql.connect(host=s.mysql_host, port=s.mysql_port, user=s.mysql_user,
+                           password=s.mysql_password.get_secret_value(), database=s.mysql_database, autocommit=True)
+    with conn.cursor() as c:
+        c.execute(sql, args)
+    conn.close()
+
+
+async def _live_relay(s, tmp_path, role="coder", mgr=None, tg=None, **sw):
+    from bridge.notify import Notifier, load_rules
+    p = tmp_path / "notify_relay.toml"
+    p.write_text('[telegram]\nsettle_s = 0\nmin_interval_s = 0\n[projects.foreman]\nprefix = "[포먼]"\n'
+                 + "".join(f"{k} = {str(v).lower()}\n" for k, v in sw.items()), encoding="utf-8")
+    main = s.projects_root / PROJ / f"{SID}.jsonl"
+    main.write_text("\n".join(MAIN) + "\n", encoding="utf-8")     # p4가 열린 채
+    asm = await run(s)
+    ex(s, "UPDATE character_session SET role = %s", role)
+    tg = tg or FakeTG()
+    n = Notifier(asm.engine, load_rules(p), tg, Masker())
+    n._worker = asyncio.create_task(n._sender())     # 하루 묶음 고리는 시험이 digest_tick으로 직접 부른다
+    n.managers = mgr
+    asm.on_turn_closed = n.on_turn_closed
+    asm.live = True
+    return asm, n, tg
+
+
+async def _stop(asm, n, reply):
+    await asm.apply_hook("Stop", {"session_id": SID, "cwd": CWD, "last_assistant_message": reply})
+    await n.drain()
+
+
+async def test_relay_report_goes_to_manager_not_telegram(env, tmp_path):
+    s, _ = env
+    mgr = FakeMgr({"delivered": True, "manager": True})
+    asm, n, tg = await _live_relay(s, tmp_path, mgr=mgr, relay_reports=True)
+    await _stop(asm, n, "다 고쳤습니다.\n\n커밋 abc123에 남겼습니다.")
+    assert tg.sent == []
+    (project, kind, _sid, label, body), = mgr.calls
+    assert (project, kind) == ("foreman", "report") and label.endswith("(coder)")
+    assert "맡은 일: 네 번째" in body and "커밋 abc123" in body
+    assert q(s, "SELECT decision, rule FROM notification WHERE kind = 'turn'") == (("skipped", "relayed:report"),)
+    await n.stop()
+
+
+async def test_relay_question_manager_relays_and_relay_origin(env, tmp_path):
+    from bridge.assembler import Assembler
+    from bridge.managers import relay_text
+    s, _ = env
+    mgr = FakeMgr({"delivered": True, "manager": True})
+    asm, n, tg = await _live_relay(s, tmp_path, mgr=mgr, relay_questions=True)
+    await _stop(asm, n, "두 가지 방법이 있습니다.\n\nA안과 B안 중 어느 쪽으로 할까요?")
+    assert tg.sent == [] and mgr.calls[0][1] == "question" and "물음: A안과 B안 중" in mgr.calls[0][4]
+    text_ = relay_text("question", "세션 1", "foreman", mgr.calls[0][4])
+    assert "관리자가 답하지 않습니다" in text_
+    # 관리자 입력 칸에 들어간 글로 열린 턴은 사람 입력이 아니다(relay) — 겹침 · 답 기다림 셈에서 빠진다
+    assert Assembler._origin({}, text_) == "relay"
+    assert Assembler._origin({}, relay_text("report", "세션 1", "foreman", "끝")) == "relay"
+    await n.stop()
+
+
+async def test_relay_off_or_no_manager_or_failed(env, tmp_path):
+    s, _ = env
+    # 관리자가 없으면 지금처럼 바로
+    mgr = FakeMgr({"delivered": False, "manager": False, "reason": "없음"})
+    asm, n, tg = await _live_relay(s, tmp_path, mgr=mgr, relay_reports=True)
+    await _stop(asm, n, "다 했다")
+    assert len(tg.sent) == 1 and "관리자에게 넘기지 못했습니다" not in tg.sent[0]
+    await n.stop()
+
+
+async def test_relay_failed_with_manager_is_sent_now(env, tmp_path):
+    s, _ = env
+    mgr = FakeMgr({"delivered": False, "manager": True, "reason": "입력 칸에 넣었는지 확인하지 못했습니다"})
+    asm, n, tg = await _live_relay(s, tmp_path, mgr=mgr, relay_reports=True, digest=True)
+    await _stop(asm, n, "다 했다")
+    assert len(tg.sent) == 1 and "⚠ 관리자에게 넘기지 못했습니다 — 입력 칸에" in tg.sent[0]
+    await n.stop()
+
+
+async def test_manager_role_not_relayed(env, tmp_path):
+    s, _ = env
+    mgr = FakeMgr({"delivered": True, "manager": True})
+    asm, n, tg = await _live_relay(s, tmp_path, role="manager", mgr=mgr, relay_reports=True, relay_questions=True)
+    await _stop(asm, n, "다 했다")
+    assert mgr.calls == [] and len(tg.sent) == 1
+    await n.stop()
+
+
+async def test_digest_holds_routine_sends_urgent_then_bundles(env, tmp_path):
+    from datetime import UTC, datetime, time
+    s, _ = env
+    asm, n, tg = await _live_relay(s, tmp_path, digest=True)
+    await _stop(asm, n, "다 했다")
+    assert tg.sent == [] and q(s, "SELECT decision FROM notification WHERE kind = 'turn'") == (("digest",),)
+    # 일상(합치기 카드)은 모으고, ⚠가 있는 것 · kinds에 없는 것(승인 대기)은 바로
+    n.send_direct("foreman", "merge", None, "[포먼] ⑂ 합치기 준비됨 — 「가」")
+    n.send_direct("foreman", "merge", None, "[포먼] ⚠ 합치기 실패")
+    n.send_direct("foreman", "approval", None, "[포먼] 승인 대기")
+    await n.drain()
+    assert sorted(tg.sent) == ["[포먼] ⚠ 합치기 실패", "[포먼] 승인 대기"]
+    day = datetime.now(UTC).replace(tzinfo=None).date()
+    assert await n.digest_tick(datetime.combine(day, time(11, 0))) == []          # 20:00 KST — 아직
+    assert await n.digest_tick(datetime.combine(day, time(12, 30))) == ["sent:foreman"]
+    d = tg.sent[-1]
+    assert d.startswith("[포먼] 📦 하루 묶음") and "일상 알림 2건" in d and "■ 턴 끝 1건" in d and "■ 합치기 1건" in d
+    assert "끝남 · " in d and "합치기 준비됨 — 「가」" in d
+    assert q(s, "SELECT COUNT(*) FROM notification WHERE decision = 'bundled'")[0][0] == 2
+    assert await n.digest_tick(datetime.combine(day, time(12, 31))) == []         # 오늘은 이미 보냄
+    await n.stop()
+
+
+async def test_digest_question_turn_is_urgent(env, tmp_path):
+    s, _ = env
+    asm, n, tg = await _live_relay(s, tmp_path, digest=True)
+    await _stop(asm, n, "A안과 B안 중 어느 쪽으로 할까요?")
+    assert len(tg.sent) == 1 and q(s, "SELECT decision FROM notification WHERE kind = 'turn'") == (("sent",),)
+    await n.stop()
+
+
+async def test_digest_send_failure_and_late_are_reported(env, tmp_path):
+    from datetime import UTC, datetime, time
+    s, _ = env
+    asm, n, tg = await _live_relay(s, tmp_path, tg=FlakyTG(), digest=True)
+    await _stop(asm, n, "다 했다")
+    day = datetime.now(UTC).replace(tzinfo=None).date()
+    assert await n.digest_tick(datetime.combine(day, time(12, 30))) == ["failed:foreman"]
+    await n.drain()
+    assert len(tg.sent) == 1 and tg.sent[0].startswith("[포먼] ⚠ 하루 묶음을 보내지 못했습니다(HTTP 400)")
+    # 시험은 가짜 시각으로 부른다 — 실패 기록 시각을 그 시각에 맞춘다
+    ex(s, "UPDATE notification SET created_at = %s WHERE kind = 'digest' AND decision = 'failed'",
+       datetime.combine(day, time(12, 30)))
+    assert await n.digest_tick(datetime.combine(day, time(12, 35))) == []          # 10분 안에는 다시 안 함
+    assert await n.digest_tick(datetime.combine(day, time(12, 41))) == ["failed:foreman"]
+    await n.drain()
+    assert len(tg.sent) == 1                                                       # 실패 알림은 그날 한 번
+    # 모아 둔 것이 26시간 넘게 남으면 알린다
+    ex(s, "UPDATE notification SET created_at = created_at - INTERVAL 30 HOUR WHERE decision = 'digest'")
+    assert "late:foreman" in await n.digest_tick(datetime.combine(day, time(11, 0)))
+    await n.drain()
+    assert "하루 묶음이 26시간 넘게 나가지 않았습니다" in tg.sent[-1]
+    await n.stop()
