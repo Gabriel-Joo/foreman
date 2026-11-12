@@ -99,7 +99,8 @@
 - 310 알림: 300이 「사용자 지시로」 main 머지 · push를 했다 — 309가 전한 「push하지 마라」와 어긋나니 확인 부탁
 - 309 확인(읽기만): 원격 main `13a9d38`, V17 `terms_outsole_id` · V18 `chatbot_misses` 들어감. 브리지 로그: `runshoes-app#123` 20:09:38 전체 빌드 성공 → ArgoCD runshoes Sync 20:09:44 ~ 20:11:10 성공
 - **300 대화 파일의 사람 입력**: 19:40:09 「# 작업 5-1 종료, push — main에 bff482c로 머지된 상태를 push한다 … V14 · V15 때와 같은 절차 … 자동 Sync 끄기부터, 내가 끄고 알리겠다」 · 19:45:36 「자동 Sync 껐다. 확인하고 push해라」, 그 뒤 사용자가 덤프(`~/k8s-cluster/backup/2026-11-12-runshoes-v17/`) · 「싱크 눌렀어」 · 「켰어」 — **사용자 지시가 맞다**(309가 받은 「push하지 마라」 몇 분 뒤 사용자가 정함). 310에게 알림
-- 운영 상태는 299에게 읽기 확인 부탁(ArgoCD · newTag · 파드 · Flyway V17 · V18 · 공개 200) — 결과 기다림
+- 운영 상태는 299에게 읽기 확인 부탁(ArgoCD · newTag · 파드 · Flyway V17 · V18 · 공개 200)
+- **299 확인(20:12 ~ 20:13, 읽기만) — 정상**: ArgoCD Synced/Healthy · 자동 Sync 켜짐 · revision `22ab7cc`. 오늘 두 번 배포 — history 103 `0755377`(이미지 `e6a8642a3ed9`, 19:57:47 — **이 판의 파드가 19:58에 V17 · V18 적용**: 16 → 17 terms outsole id(v17 guard ok) → 18 chatbot misses, 인프라 런북 `v17-v18-chatbot.md` 실행 기록 `531af83`) · 104 `22ab7cc`(이미지 `13a9d3851eaf`, 20:09:44 — 새 마이그레이션 없이). 지금 파드 둘 `13a9d3851eaf` 2/2 재시작 0, Flyway validated 18 · Current version 18 · up to date · 오류 없음. 공개 주소(VIP · Cloudflare) 200 · `/actuator/health` 200. 300이 말한 「이미지 e6a8642a3ed9」는 첫 판이고 지금은 두 번째 판
 - 300: 앞으로 worktree 커밋까지만, 합치기 · push는 관리자에게(310 전언)
 
 ## 남은 것
