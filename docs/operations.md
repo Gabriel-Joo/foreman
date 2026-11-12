@@ -80,6 +80,7 @@
   - 대괄호 트릭(`pgrep -af '[p]ython -m pytest'`)은 패턴 글자가 자기와 다르게 해 준다. **그러나 같은 명령 안에서 그 프로그램을 돌리면** 뒤쪽 글자(`.venv/bin/python -m pytest …`)에 또 걸린다(11-10 관리자)
   - 그래서: **확인과 실행을 따로 친다.** 기다릴 때는 `pgrep -f`로 자기를 찾지 말고 그 작업의 PID나 결과 파일을 본다
   - 11-11부터 브리지가 PreToolUse에서 거부한다(`bridge/pgrep_guard.py`, 규칙 `pgrep-자기걸림`, 승인 모드와 상관없이) — 판정은 "`-f` 패턴 정규식이 이 명령 글 자체에 걸리는가"(명령 자리의 호출만, heredoc 본문 · echo 글은 빼고). 브리지 코드라 합친 뒤 브리지를 다시 띄워야 켜진다 [log:coder_screen_state_20261111.md]
+- **값(토큰 등)을 셀 때는 `/usr/bin/grep -cF`**(11-11 18:46 실제): 셸의 `grep`은 CC 실행 파일에 기대는 함수라, CC가 스스로 업데이트하는 순간 「claude native binary not installed」로 실패해 개수가 0으로 보일 수 있다 — 못 센 것과 0을 가르지 못한다. 값 자체는 출력하지 않는다(CLAUDE.md 비밀값 줄)
 - **역할 권한 — 관찰 중**(11-11, `bridge/roleguard.py`, `config/roles.toml`): CLAUDE.md 글로만 있던 규칙(worktree 세션은 push 안 함 · 파일은 Edit · Write로만 · 관리자는 코드를 안 고침 · 서기는 `bridge/` 등을 안 고침)을 PreToolUse에서 본다. 지금 `mode = "observe"`라 **막지 않고** 그 호출의 `approval_req` 이벤트 payload에 `role_rule` · `role_reason`만 남긴다. 규칙: `worktree-push` · `bash-file-edit` · `manager-code` · `scribe-code`(하나씩 끌 수 있다). `enforce`로 올리는 것은 사용자가 하고, 판정이 실패해도 막지 않고 로그 error + 텔레그램 시간마다 한 번. 해석기 안 쓰기(`python -c "open(…,'w')"`)는 못 막는다. 기동 로그에 「역할 권한 observe: …」가 떠야 한다 [log:coder_c_wave2_20261111.md]
 
 ## 5. 알림(텔레그램) 상세
