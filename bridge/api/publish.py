@@ -33,15 +33,27 @@ def _pub(request: Request, project: str = "foreman") -> Any:
 
 
 @router.get("/publish")
-async def publish_list(request: Request) -> dict[str, Any]:
-    p = getattr(request.app.state, "publisher", None)
+async def publish_list(request: Request, project: str = "foreman") -> dict[str, Any]:
+    """게시 상태 읽기. ?project= 없으면 FOREMAN(서기 화면 [게시] — 지금까지와 같음). 프로젝트 토큰은 자기 프로젝트만(scopetoken)."""
+    if project == "foreman":
+        p = getattr(request.app.state, "publisher", None)
+    else:
+        p = (getattr(request.app.state, "publishers", None) or {}).get(project)
     if p is None:
-        return {"enabled": False, "why": getattr(request.app.state, "publisher_off", None), "docs": []}
+        why = getattr(request.app.state, "publisher_off", None) or f"{project}의 Notion 게시가 설정돼 있지 않습니다(config/notion.toml)"
+        return {"enabled": False, "why": why, "docs": []}
     return {"enabled": True, "root": p.root, "docs": await p.list()}
 
 
 @router.post("/publish")
 async def publish_do(body: PublishIn, request: Request) -> JSONResponse:
+    scope = getattr(request.state, "token_scope", None)
+    if scope is not None:
+        # 범위 판정(bridge/scopetoken.py)이 날 본문으로 이미 보았다 — 검증된 본문으로 한 번 더(칸막이가 새지 않게, 11-12)
+        if body.project != scope:
+            raise HTTPException(403, f"프로젝트 토큰({scope})으로는 이 프로젝트 문서만 게시할 수 있습니다 — 받은 project: {body.project}")
+        if body.force or body.action == "docsync":
+            raise HTTPException(403, f"프로젝트 토큰({scope})으로는 할 수 없습니다 — force · 한꺼번에 맞추기는 FOREMAN 관리자에게 부탁합니다")
     p = _pub(request, body.project)
     when = (datetime.now(UTC) + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M KST")
     try:

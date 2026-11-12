@@ -13,6 +13,8 @@
     /api/foreman/plan · start         본문 project(start는 plan.project)가 이 프로젝트일 때
     GET  /api/foreman/state · notes · context · merge-order   ?project= 가 이 프로젝트일 때
     /api/managers[/…]                 (관리자 주소 — 「둘」) 읽기는 모두, 부탁 보내기는 보낸 쪽이 이 프로젝트일 때 — 그 라우터가 본다
+    POST /api/publish                 (11-12) 본문 project가 이 프로젝트일 때. force · action=docsync는 관리 토큰만
+    GET  /api/publish                 ?project= 가 이 프로젝트일 때(없으면 foreman)
   WS(`/ws`)와 터미널은 관리 토큰만 — 화면은 관리용이다
 - 같은 유닉스 사용자로 도는 세션은 `.env.bridge`도 읽을 수 있다 — 이것은 막는 벽이 아니라 **잘못 부르는 것을 막는 칸막이**다
 """
@@ -116,6 +118,30 @@ def in_repo(cwd: str, repo: str) -> bool:
     return c == r or c.startswith(r.rstrip("/") + "/")
 
 
+PUBLISH_ADMIN_ONLY = "force · 한꺼번에 맞추기는 FOREMAN 관리자에게 부탁합니다"
+
+
+def _publish_why(scope: str, method: str, query: dict[str, str], body: Any) -> str | None:
+    """Notion 게시(11-12 사용자 결정 — 메모리 feedback-notion-publish-auth와 같은 선): 프로젝트 토큰은 자기 프로젝트 문서만
+    force 없이 올린다. force 덮기 · [지금 맞추기] 한꺼번에(action = docsync)는 관리 토큰만 — 사람에게 묻는 일이라서.
+    project가 없으면 foreman(PublishIn · GET 기본값과 같게)."""
+    if method == "GET":
+        p = query.get("project") or "foreman"
+        if p == scope:
+            return None
+        return f"프로젝트 토큰({scope})으로는 ?project={scope} 의 게시 상태만 읽을 수 있습니다 — 받은 project: {p}"
+    if method != "POST":
+        return f"프로젝트 토큰({scope})은 이 API({method} /api/publish)에 닿지 않습니다 — {ADMIN_ONLY_HINT}"
+    b = body if isinstance(body, dict) else {}
+    p = b.get("project") or "foreman"
+    if p != scope:
+        return f"프로젝트 토큰({scope})으로는 이 프로젝트 문서만 게시할 수 있습니다 — 받은 project: {p}"
+    # force는 거짓이 분명한 값만 통과(pydantic이 "true" · 1도 True로 받는다). 라우터(bridge/api/publish.py)도 한 번 더 본다
+    if b.get("force") not in (None, False, 0, "", "false", "False", "0") or b.get("action") == "docsync":
+        return f"프로젝트 토큰({scope})으로는 할 수 없습니다 — {PUBLISH_ADMIN_ONLY}"
+    return None
+
+
 async def why_out_of_scope(scope: str, method: str, path: str, query: dict[str, str], body: Any,
                            session_project: Any, repo_of: Any, dispatch_project: Any = None) -> str | None:
     """프로젝트 토큰 요청이 범위 밖이면 사유, 안이면 None.
@@ -151,6 +177,8 @@ async def why_out_of_scope(scope: str, method: str, path: str, query: dict[str, 
         return f"프로젝트 토큰({scope})으로는 ?project={scope} 로만 읽을 수 있습니다"
     if path == "/api/managers" or path.startswith("/api/managers/"):
         return None              # 관리자 주소 — 보낸 쪽 확인은 그 라우터(bridge/api/managers.py)가 한다
+    if path == "/api/publish":
+        return _publish_why(scope, method, query, body)
     return f"프로젝트 토큰({scope})은 이 API({method} {path})에 닿지 않습니다 — {ADMIN_ONLY_HINT}"
 
 
