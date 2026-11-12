@@ -43,15 +43,16 @@ min_turn_s = 300
 
 [projects.foreman]
 prefix = "[FOREMAN]"
-relay_reports = false
-relay_questions = false
-digest = false
+# 11-12 사용자: 먼저 켤 곳은 FOREMAN · 인프라(셋을 함께 — 보고만 넘기면 텔레그램이 관리자 몫으로 옮겨 갈 뿐이다)
+relay_reports = true
+relay_questions = true
+digest = true
 
 [projects.ronanlab-infra]
 prefix = "[인프라]"
-relay_reports = false
-relay_questions = false
-digest = false
+relay_reports = true
+relay_questions = true
+digest = true
 
 # 하루 묶음(11-12, 위 digest = true인 프로젝트). 바로 보내는 급한 것: 턴 끝 중 API 오류 · 중단 · 세션 종료 · 프로세스 사라짐,
 # 사람에게 묻는 말로 끝난 턴, 아래 kinds에 없는 종류 전부(승인 대기 · 승인 시간 지남 · 권한 거부 · 응답 없음 · 파이프라인 ·
