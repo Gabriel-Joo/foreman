@@ -64,9 +64,29 @@
 - 「인프라에서 한 것과 같다」의 인프라 이력 다시 쓰기 기록은 찾지 못했다(인프라 커밋 · reflog · FOREMAN log). 인프라에는 규칙 절 커밋(`9ca2fa9`)만 있다 — 310에게는 사용자가 말한 방식을 그대로 적어 보냄
 - 310에게 보낸 것(가 · 나 · 다 차례, `delivered`): 가 push(확인 따로 먼저), 나 06 1-7 대조(런북 · revert 이력 · app.yaml, 클러스터는 안 봄) 뒤 CLAUDE.md 되돌리기 줄 — 커밋만, 다 force push에 실림, 다 다시 쓰기 — 원래 main 로컬 참조 백업 · 작성자 · 날짜 그대로 · 머지는 머지로 · 트리 같은지 검증, 멈출 때 보고: 25개 표 · **cc/runshoes-3가 새 main과 갈라지는 것** · force push가 부르는 Jenkins 전체 빌드 → 태그 → 자동 Sync · 옛 해시를 가리키는 곳(docs · 인프라 태그 커밋 본문 · FOREMAN Notion 짝 `commit_sha`)
 
+## 커밋 메시지 다시 쓰기 · force push(사용자: 자동 Sync 켠 채로, 파드 재시작 받아들임, 확인하고 멈출 수 있게)
+
+- 사용자: **catalog는 사용자가 쓰는 타입 — 그대로**. 고칠 것 backend 4 · log 3 · debug 2 · 꼴 밖 5. data 1 · contract 1은 목록에 없어 그대로 둠(관리자 읽음, 사용자에게 알림) → **14개**
+- 일 나누기: git은 310, 클러스터 읽기는 인프라 관리자 299(런슈즈 CLAUDE.md — 클러스터 일은 인프라에), 맞대기는 309
+- **먼저 확인**(299, get · logs만): ArgoCD runshoes Synced/Healthy · 자동 · revision 5f58f77, 이미지 `4f57bc0e1537`(앱 · 챗봇) = newTag, 파드 2/2 재시작 0 나이 26h, **Flyway 16 validated · Current version 16 · up to date**. 310: 새 HEAD 최고 판 V16, 운영 이미지 커밋(새 이력 `b74102b`) → 새 HEAD 사이 V*.sql 0 → 적용 안 된 마이그레이션 없음
+- 310 다시 쓰기: 원래 이력(`refs/backup/main-before-reword-20261112` = a640896, 「나」 단계 커밋 — 되돌리기를 06 1-7에 맞춤)에서 `filter-branch --msg-filter` — 새 제목 / 빈 줄 / 「원래 제목(…): …」 / 옛 본문 전부. 검증: 커밋 294 = 294, 커밋마다 트리 · author · committer · 부모 수 같음, 머지 1 = 1, 메시지 다른 것 정확히 14. 해시 그대로 92 · 바뀜 202. 새 main `7073123`
+- 차례(한 명령씩): 옛 이력 태그 `archive/main-before-reword-20261112` = 5daee2c → 태그 push(원격 확인) → 원격 main 5daee2c 확인 → `push --force-with-lease=main:5daee2c… origin main`
+  - 310의 force push는 **CC 자동 모드 권한 분류기가 거절([Git Destructive])** — 310은 우회하지 않고 멈춤. FOREMAN 승인 규칙 'git-강제push'도 걸림(런슈즈 observe). **사용자가 승인해 18:20 force push**(`5daee2c...7073123`)
+- 뒤 확인:
+  - 원격 main `7073123` · 원격 태그 5daee2c · 백업 참조 그대로
+  - **Jenkins `runshoes-app#119` 18:21:00 success(건너뜀 — 문서만)** — 전체 빌드를 예상했으나, 옛 이력 태그를 먼저 올려 직전 성공 커밋 5daee2c가 원격에 남았고 그 판 → 새 HEAD 차이가 CLAUDE.md뿐이라 건너뛴 것으로 본다
+  - 299(18:21:39): ArgoCD revision 5f58f77 그대로 · 새 operation 없음, 인프라에 18:20 뒤 커밋 없음 · newTag 4f57bc0e1537 그대로, 파드 같은 파드 27h 재시작 0, Flyway 새 로그 없음(16 · up to date) — **파드 재시작 없음, 이상 없음**
+  - `cc/runshoes-3`(259 → 300) ec73193 그대로 · worktree 깨끗, 새 main 기준 앞 208 · 뒤 202. 합칠 때 `git rebase --onto bdce4a0 95a3e57 cc/runshoes-3`(bdce4a0 = 새 이력의 95a3e57). 250 브랜치는 이번 일 전부터 없음
+- 알아둘 것: Harbor · 인프라 newTag `4f57bc0e1537`은 옛 해시 — 원격 태그로 계속 열린다(새 이력 대응 `b74102b`, 트리 같음)
+
+## 같이 찾은 것 — `check_watch` TypeError(조용한 실패)
+
+- force push 4초 뒤 `foreman.pipeline check_watch 실패: TypeError: '>' not supported between instances of 'str' and 'datetime.datetime'`. 11-10부터 8번
+- `bridge/pipeline.py` 584 `check_watch` — 실패하면 경고 한 줄만 남기고 그 회차의 「빌드 끝 알림 없음」 · 「push했는데 빌드 없음」 감시를 건너뛴다. 원인 후보 600 ~ 602 `MAX(COALESCE(ended_at, :n))`가 글자로 돌아옴(확인 안 함). 코드 일 — 사용자에게 물음
+
 ## 남은 것
 
-- 310의 CLAUDE.md 보고 → 사용자 확인 → push
-- 합치기 카드(runshoes 더하기 · 브리지 · 전체 시험) — 300의 챗봇 일이 끝난 뒤
-- 커밋 메시지 정리(표준 밖 18 + 그 밖 4) — 310에게 따로
-- 옮기기가 worktree 세션의 줄기를 원본 폴더 새 세션으로 보내는 것(`handoff.py` 795) — 코드 일. 사용자에게 물을 것
+- ~~310의 CLAUDE.md 보고 → push~~(5daee2c, 그 뒤 새 이력 7073123) · ~~커밋 메시지 정리~~(14개) · ~~옮기기 빈자리~~(README 「나중에 할 일」)
+- 합치기 카드(runshoes 더하기 · 브리지 · 전체 시험) — 300의 챗봇 일이 끝난 뒤. 300 브랜치는 합치기 전에 `rebase --onto bdce4a0 95a3e57`이 필요하다(그냥 합치면 옛 이력 202개가 다시 들어온다) — 카드가 그 브랜치를 그대로 합치려 하면 안 된다
+- 백업 참조 `refs/backup/main-before-reword-20261112`(로컬) · 원격 태그 `archive/main-before-reword-20261112`를 지울지 — 사용자가 따로 정함
+- `check_watch` TypeError — 사용자에게 물음
