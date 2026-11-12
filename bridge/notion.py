@@ -427,6 +427,14 @@ def norm(pid: str) -> str:
     return pid.replace("-", "").lower()
 
 
+def page_title(page: dict[str, Any]) -> str | None:
+    """GET /pages/{id}의 제목(title 형식 속성 하나) — 없으면 None."""
+    for prop in (page.get("properties") or {}).values():
+        if isinstance(prop, dict) and prop.get("type") == "title":
+            return "".join(t.get("plain_text") or (t.get("text") or {}).get("content", "") for t in prop.get("title") or []) or None
+    return None
+
+
 class Scope:
     """FOREMAN 루트 아래인가 — 매번 Notion에서 부모를 따라 올라간다(캐시하지 않는다: 사람이 Notion에서 옮겼을 수 있다)."""
 
@@ -962,10 +970,17 @@ class Publisher:
         있는 것의 사본이다, 런슈즈 요청 3-1). docs_mode — off(docs/를 올리지 않는다) · manual · auto(push 뒤 quiet_min분 조용하면
         바뀐 파일만 자동으로, bridge/docsync.py)."""
         self.e, self.c, self.root, self.repo, self.project, self.gh = engine, client, norm(root), repo, project, gh
-        self.ref, self.docs_mode, self.quiet_min = ref, docs_mode, quiet_min
+        self.ref = ref
         self.docs_page = norm(docs_page) if docs_page else None
         self.portfolio_page = norm(portfolio_page) if portfolio_page else None
         self.scope = Scope(client, root)
+        self.configure(docs_mode, quiet_min, opts)
+
+    def configure(self, docs_mode: str = "off", quiet_min: float = 30, opts: dict[str, Any] | None = None) -> None:
+        """저장소가 정할 수 있는 칸(bridge/notioncfg.py REPO_KEYS) — 브리지를 다시 띄우지 않고 바꿀 수 있게 따로(11-12).
+        root · docs_page · portfolio_page(쓰기 범위)는 __init__에서만 — 여기서 바꾸지 않는다."""
+        self.docs_mode, self.quiet_min = docs_mode, quiet_min
+        project = self.project
         # 11-09 펫퍼민트(사용자 결정) — 사람이 옮겨 둔 기존 페이지에 맞춘다. 기본값은 지금까지 동작 그대로
         o = opts or {}
         self.create = o.get("create", True) is not False          # False: 짝(doc_publish)이 없으면 만들지 않고 실패로 남긴다
@@ -1248,6 +1263,37 @@ class Publisher:
             await append_tree(self.c, pid, [footer], after=last["id"] if last else None)
             st["added"] += 1
         return st
+
+    async def pair(self, path: str, page_id: str) -> dict[str, Any]:
+        """짝 등록(11-12, POST /api/publish/pair) — 사람이 옮겨 둔 페이지를 git 문서와 짝짓는다. Notion에는 쓰지 않는다(읽기만).
+        root 아래 페이지만(root · [기술문서] · [포트폴리오] 자체는 안 됨), 제목 · 부모 · url은 Notion에서 읽은 그대로,
+        content_hash · commit_sha는 비운다(처음 짝 — 사람 수정 판정은 보수적으로). 같은 경로 짝 · 같은 페이지의 다른 짝이 있으면 거부."""
+        from sqlalchemy import text
+        if not path.startswith(("docs/", "portfolio/")):
+            raise OutOfScope(f"docs/ · portfolio/ 아래 문서만 짝지을 수 있습니다: {path}")
+        git_show(self.repo, path, self.ref)                 # 경로 검사 + push한 판에 있는지(없으면 FileNotFoundError)
+        pid = norm(page_id.strip())
+        if not re.fullmatch(r"[0-9a-f]{32}", pid):
+            raise OutOfScope(f"페이지 id가 32자리 16진수가 아닙니다: {page_id[:40]}")
+        if pid in {self.root, self.docs_page, self.portfolio_page}:
+            raise OutOfScope("프로젝트 페이지 · [기술문서] · [포트폴리오] 자체는 문서와 짝지을 수 없습니다")
+        if not await self.scope.under_root(pid):
+            raise OutOfScope(f"{self.project} 프로젝트 페이지 아래가 아니거나 휴지통에 있습니다 — 짝짓지 않습니다: {pid}")
+        row = await self._row(path)
+        if row and row.get("notion_page_id"):
+            raise OutOfScope(f"{path}에는 이미 짝이 있습니다({row['notion_page_id']}, {row.get('status')}) — 바꾸려면 FOREMAN 관리자에게 부탁합니다")
+        async with self.e.connect() as c:
+            other = (await c.execute(text("SELECT path FROM doc_publish WHERE project = :p AND notion_page_id = :id AND path <> :f"),
+                                     {"p": self.project, "id": pid, "f": path})).first()
+        if other:
+            raise OutOfScope(f"그 페이지는 이미 {other[0]}와 짝입니다 — 짝짓지 않습니다")
+        page = await self.c.page(pid)
+        title = page_title(page)
+        par = page.get("parent") or {}
+        parent = norm(par["page_id"]) if par.get("type") == "page_id" else None
+        await self._save(path, kind="doc", title=title, notion_page_id=pid, parent_page_id=parent, commit_sha=None,
+                         content_hash=None, status="published", url=page.get("url"), error=None)
+        return {"path": path, "action": "paired", "page_id": pid, "title": title, "parent_page_id": parent, "url": page.get("url")}
 
     async def archive(self, path: str) -> dict[str, Any]:
         """내리기 = 휴지통. 우리가 만든 페이지이고 지금도 루트 아래일 때만."""

@@ -15,6 +15,7 @@
     /api/managers[/…]                 (관리자 주소 — 「둘」) 읽기는 모두, 부탁 보내기는 보낸 쪽이 이 프로젝트일 때 — 그 라우터가 본다
     POST /api/publish                 (11-12) 본문 project가 이 프로젝트일 때. force · action=docsync는 관리 토큰만
     GET  /api/publish                 ?project= 가 이 프로젝트일 때(없으면 foreman)
+    POST /api/publish/pair            (11-12) 본문 project가 이 프로젝트일 때 — 페이지가 그 root 아래인지는 게시기가 본다
   WS(`/ws`)와 터미널은 관리 토큰만 — 화면은 관리용이다
 - 같은 유닉스 사용자로 도는 세션은 `.env.bridge`도 읽을 수 있다 — 이것은 막는 벽이 아니라 **잘못 부르는 것을 막는 칸막이**다
 """
@@ -179,6 +180,11 @@ async def why_out_of_scope(scope: str, method: str, path: str, query: dict[str, 
         return None              # 관리자 주소 — 보낸 쪽 확인은 그 라우터(bridge/api/managers.py)가 한다
     if path == "/api/publish":
         return _publish_why(scope, method, query, body)
+    if path == "/api/publish/pair" and method == "POST":
+        p = (body or {}).get("project") if isinstance(body, dict) else None
+        if p == scope:
+            return None
+        return f"프로젝트 토큰({scope})으로는 이 프로젝트 짝만 등록할 수 있습니다 — 받은 project: {p or '없음'}"
     return f"프로젝트 토큰({scope})은 이 API({method} {path})에 닿지 않습니다 — {ADMIN_ONLY_HINT}"
 
 

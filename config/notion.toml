@@ -23,6 +23,10 @@
 #     - 첫 H1이 없는 문서는 옛 방식(파일 이름 — README 표 설명)으로 올리고, 로그 경고 + status의 h1_missing에 남긴다
 #     - "keep"과 "h1"은 같은 칸이라 함께 쓸 수 없다. 모르는 값(오타 포함)은 거부하지 않고 기본 방식으로 돌리며 로그 경고를 남긴다
 # 사람이 Notion에서 고친 블록이 있으면 덮지 않고 알린다(11-09 사용자 결정 — git이 원본, 조용히 갈라지지 않게).
+#
+# 저장소 파일(11-12, bridge/notioncfg.py): 프로젝트 저장소 origin/main에 .foreman/notion.toml이 있으면 docs · quiet_min · skip · create ·
+#   archive · title · order · header · headings · keep_notion · new_parent · new_title은 모두 그 파일 것(아래 칸의 같은 값은 안 씀 — 경고).
+#   root · docs_page · portfolio_page · github · ref는 여기서만. 맞추기 주기(5분)마다 다시 읽고, 깨지면 옛 설정 그대로 + 알림
 
 [foreman]
 root = "4133218bb52481309e43c865c460eda2"             # 「프로젝트」 > "FOREMAN - AI 에이전트 관제실"(11-09 만듦)
