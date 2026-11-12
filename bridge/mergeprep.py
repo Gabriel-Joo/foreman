@@ -13,6 +13,10 @@ worktree 세션이 「일을 마침」이 되면 merge-tree를 돌려 **합치�
   충돌이면 끝내지 않고 그 세션에 「main을 가져와 풀라」를 보낸다. 세션이 끝났으면 관리자 세션에
 - 결과는 관리자 세션(원본 폴더의 역할 관리자)에 deliver로 남긴다 — 「합쳤습니다 — 시험 · push는 관리자」. 관리자가 없으면 텔레그램
 - 1단계는 합치기까지. 2단계(시험 → push → 승인 대기 0 → 브리지 → 점검)는 after_merge 자리만
+- 승인자(11-12, log/merge_approver_20261112.md): 프로젝트마다 `[merge_prep.per_project.<이름>] approver = human | manager`.
+  manager면 카드가 생길 때 그 프로젝트 관리자 세션에 알리고, 관리자가 `POST …/merge-prep {"action":"merge","by":"manager"}`로
+  승인한다(프로젝트 토큰이면 by는 저절로 manager). 늘 사람에게 올릴 것(human_reasons)에 걸리거나 관리자가 없으면 그 카드는 사람 승인.
+  squash = true면 bridge/worktree.py merge가 커밋 하나로 묶는다(SQUASH_OF)
 
 조용한 고장 금지: 준비 실패 · 훑기가 stuck_min 넘게 안 끝남 · 합치기 실패 · 관리자에게 못 알림 → 텔레그램 한 번 + 카드(목록)에 사유.
 카드는 브리지 메모리에 둔다(마이그레이션 없음) — 다시 띄우면 다음 훑기에서 다시 만든다. [나중에]는 session_action 'mprep-skip'
@@ -22,6 +26,7 @@ worktree 세션이 「일을 마침」이 되면 merge-tree를 돌려 **합치�
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import logging
 import os
 import re
@@ -54,6 +59,26 @@ class DocsCfg:
     max: int = 12
 
 
+APPROVERS = ("human", "manager")
+
+
+@dataclass
+class HumanAlways:
+    """늘 사람에게 올릴 것(11-12 사용자 확정) — 승인자가 관리자여도 카드의 바뀐 파일 · 커밋이 걸리면 그 카드는 사람 승인."""
+    paths: list[str] = field(default_factory=list)          # fnmatch(`*`는 `/`도 넘는다) — 경로 전체와 파일 이름 둘 다에 맞대 본다
+    resource_keys: list[str] = field(default_factory=list)  # *.yaml · *.yml에서 이 키 줄이 바뀌면 자원 크기
+    history_words: list[str] = field(default_factory=list)  # 커밋 글에 이 말이 있으면 이력 다시 쓰기 · force push
+    deletions: bool = True                                  # 파일을 지운 커밋
+    submodules: bool = True                                 # 서브모듈(gitlink) 바뀜 = 다른 저장소
+
+
+@dataclass
+class ProjectRule:
+    approver: str = "human"            # human = 사람이 [합치기], manager = 그 프로젝트 관리자가 API로 승인
+    squash: bool = False               # True면 커밋 하나로 묶어 합친다(bridge/worktree.py merge)
+    human_paths: list[str] = field(default_factory=list)   # 이 프로젝트에만 더하는 늘-사람 경로
+
+
 @dataclass
 class MergePrepCfg:
     enabled: bool = False
@@ -63,6 +88,17 @@ class MergePrepCfg:
     stage: int = 1
     projects: list[str] = field(default_factory=list)     # 비면 모든 프로젝트
     docs: DocsCfg = field(default_factory=DocsCfg)
+    human_always: HumanAlways = field(default_factory=HumanAlways)
+    per_project: dict[str, ProjectRule] = field(default_factory=dict)
+
+    def rule(self, project: str | None) -> ProjectRule:
+        return self.per_project.get(project or "") or ProjectRule()
+
+    def approver_of(self, project: str | None) -> str:
+        return self.rule(project).approver
+
+    def human_paths(self, project: str | None) -> list[str]:
+        return [*self.human_always.paths, *self.rule(project).human_paths]
 
 
 def load(path: str | Path) -> MergePrepCfg:
@@ -72,14 +108,94 @@ def load(path: str | Path) -> MergePrepCfg:
         return MergePrepCfg()
     raw = tomllib.loads(p.read_text(encoding="utf-8")).get("merge_prep") or {}
     d = raw.get("docs") or {}
+    ha = raw.get("human_always") or {}
+    per = {}
+    for name, r in (raw.get("per_project") or {}).items():
+        a = str(r.get("approver", "human"))
+        if a not in APPROVERS:
+            raise ValueError(f"merge_prep.per_project.{name}.approver는 human · manager 중 하나입니다(받은 값: {a})")
+        per[str(name)] = ProjectRule(approver=a, squash=bool(r.get("squash", False)),
+                                     human_paths=[str(x) for x in r.get("human_paths") or []])
     cfg = MergePrepCfg(enabled=bool(raw.get("enabled", False)), every_s=int(raw.get("every_s", 60)),
                        stuck_min=int(raw.get("stuck_min", 10)), notify_ready=bool(raw.get("notify_ready", True)),
                        stage=int(raw.get("stage", 1)), projects=[str(x) for x in raw.get("projects") or []],
                        docs=DocsCfg(readme=str(d.get("readme", "README.md")), readme_section=str(d.get("readme_section", "나중에 할 일")),
-                                    docs_dir=str(d.get("docs_dir", "docs")), max=int(d.get("max", 12))))
+                                    docs_dir=str(d.get("docs_dir", "docs")), max=int(d.get("max", 12))),
+                       human_always=HumanAlways(paths=[str(x) for x in ha.get("paths") or []],
+                                                resource_keys=[str(x) for x in ha.get("resource_keys") or []],
+                                                history_words=[str(x) for x in ha.get("history_words") or []],
+                                                deletions=bool(ha.get("deletions", True)), submodules=bool(ha.get("submodules", True))),
+                       per_project=per)
     if cfg.every_s < 10 or cfg.stuck_min < 1 or cfg.stage not in (1, 2):
         raise ValueError("merge_prep 값이 맞지 않습니다(every_s ≥ 10, stuck_min ≥ 1, stage 1 · 2)")
     return cfg
+
+
+# ── 늘 사람에게 올릴 것(11-12) ─────────────────────────────────
+def parse_raw(out: str) -> list[dict[str, str]]:
+    """`git diff --raw --no-renames -z` → [{status, path, old_mode, new_mode}]."""
+    parts = out.split("\0")
+    res, i = [], 0
+    while i < len(parts) - 1:
+        head = parts[i]
+        if not head.startswith(":"):
+            i += 1
+            continue
+        f = head[1:].split()
+        res.append({"old_mode": f[0], "new_mode": f[1], "status": f[4][:1], "path": parts[i + 1]})
+        i += 2
+    return res
+
+
+def _yaml_key_hits(diff: str, keys: list[str]) -> dict[str, set[str]]:
+    """`git diff -U0` 글 → {파일: {바뀐 자원 키}} — 더하거나 뺀 줄이 `키:`로 시작하면(목록 `- 키:`도)."""
+    if not keys:
+        return {}
+    pat = re.compile(r"^[+-]\s*(?:-\s*)?(" + "|".join(re.escape(k) for k in keys) + r")\s*:")
+    out: dict[str, set[str]] = {}
+    cur = ""
+    for ln in diff.splitlines():
+        if ln.startswith("diff --git "):
+            cur = ln.split(" b/", 1)[-1]
+            continue
+        if ln.startswith(("+++", "---")):
+            continue
+        m = pat.match(ln)
+        if m and cur:
+            out.setdefault(cur, set()).add(m.group(1))
+    return out
+
+
+def human_reasons(changes: list[dict[str, str]], messages: str, yaml_diff: str, paths: list[str], rules: HumanAlways) -> list[str]:
+    """카드를 사람 승인으로 올릴 까닭들(없으면 []). 기계로 가를 수 있는 것만 — 「사람이 직접 쓴 글」은 git으로 가르지 못한다
+    (커밋이 모두 같은 사용자 · Co-Authored-By라 — log/merge_approver_20261112.md). 그런 것은 경로(human_paths)로 더하거나 관리자 규칙."""
+    why: list[str] = []
+    by_pat: dict[str, list[str]] = {}
+    for ch in changes:
+        p = ch["path"]
+        for pat in paths:
+            if fnmatch.fnmatchcase(p, pat) or fnmatch.fnmatchcase(os.path.basename(p), pat):
+                by_pat.setdefault(pat, []).append(p)
+                break
+    for pat, ps in by_pat.items():
+        why.append(f"늘 사람 경로({pat}): {', '.join(ps[:5])}" + (" …" if len(ps) > 5 else ""))
+    hits = _yaml_key_hits(yaml_diff, rules.resource_keys)
+    for f, ks in sorted(hits.items()):
+        if not any(f in ps for ps in by_pat.values()):
+            why.append(f"자원 크기({' · '.join(sorted(ks))}): {f}")
+    if rules.deletions:
+        gone = [ch["path"] for ch in changes if ch["status"] == "D"]
+        if gone:
+            why.append(f"지우기 — 파일 {len(gone)}개를 지움: {', '.join(gone[:5])}" + (" …" if len(gone) > 5 else ""))
+    if rules.submodules:
+        sub = [ch["path"] for ch in changes if "160000" in (ch["old_mode"], ch["new_mode"])]
+        if sub:
+            why.append(f"다른 저장소(서브모듈) 바뀜: {', '.join(sub[:5])}")
+    low = messages.lower()
+    words = [w for w in rules.history_words if w.lower() in low]
+    if words:
+        why.append(f"이력 다시 쓰기 · force push — 커밋 글에 「{'」 · 「'.join(words[:4])}」")
+    return why
 
 
 # ── 순수 판정(시험하기 쉽게 git · DB와 떼어 둠) ────────────────────
@@ -192,7 +308,8 @@ _LOG_LINK = re.compile(r"(?<![\w/.-])(?:log/)?([\w.-]+\.md)\b")
 
 def doc_candidates(readme: str, section: str, docs: dict[str, str], files: list[str], subjects: list[str],
                    limit: int = 12, logs: dict[str, str] | None = None) -> dict[str, Any]:
-    """넷 — 이번 작업으로 없어지거나 바뀔 수 있는 줄 **후보**(고르기 · 지우기는 사람 승인 뒤 관리자). 브리지는 맞대기만 한다.
+    """넷 — 이번 작업으로 없어지거나 바뀔 수 있는 줄 **후보**(고르기 · 지우기는 승인 뒤 관리자 — 승인자가 사람인 프로젝트는 사람
+    승인 뒤, 관리자인 프로젝트는 관리자가 혼자(11-12)). 브리지는 맞대기만 한다.
     README 표 줄 — 점수 높은 차례(11-11 2물결 「넷」: 282 카드 후보 15개 중 맞는 것은 2순위 하나뿐이었다):
       100  세션 log(이번에 바뀐 log/*.md)의 「README에서 뺄 줄」에 그 줄 이름을 적음 — 세션이 직접 끝났다고 한 것
        50  표 줄 「근거」 칸이 링크한 log를 이번에 고침
@@ -285,6 +402,9 @@ class Card:
     note: str | None = None
     error: str | None = None
     manager_told: bool | None = None
+    approver: str = "human"       # 이 카드를 누가 승인하나(11-12) — human · manager. 늘-사람에 걸리거나 관리자가 없으면 human
+    human_why: list[str] = field(default_factory=list)   # 늘 사람에게 올린 까닭(비면 걸린 것 없음)
+    approved_by: str | None = None    # human · manager — 누가 [합치기]를 눌렀나
     made_at: str = ""
     updated_at: str = ""
 
@@ -316,11 +436,32 @@ class MergePrep:
         self._touched = False                # 있던 카드의 표시(묻는 말)만 바뀜 — 화면을 다시 그린다
         self.turn_end: dict[str, Any] = {"ok": 0, "fail": 0, "error": None, "at": None}   # 턴 끝 넘기기 — health로 보인다
         self.health["turn_end"] = self.turn_end
+        wt.SQUASH_OF = self.squash_for_repo  # 패널 [합치기]도 같은 squash 설정을 따르게(handoff.worktree_act → wt.merge)
 
     # ── 보기 ──
-    def view(self) -> dict[str, Any]:
+    def view(self, project: str | None = None) -> dict[str, Any]:
+        """project를 주면 그 프로젝트 카드만(관리자가 자기 카드를 모아 본다 — GET /api/merge-prep?project=, 11-12)."""
+        cards = [c for c in self.cards.values() if project is None or c.project == project]
         return {"enabled": self.cfg.enabled, "stage": self.cfg.stage, "health": self.health,
-                "cards": [c.view() for c in sorted(self.cards.values(), key=lambda c: c.made_at, reverse=True)]}
+                **({"project": project, "approver": self.cfg.approver_of(project),
+                    "squash": self.cfg.rule(project).squash} if project is not None else {}),
+                "cards": [c.view() for c in sorted(cards, key=lambda c: c.made_at, reverse=True)]}
+
+    async def squash_for_repo(self, repo: str) -> bool:
+        """저장소 경로 → 그 프로젝트의 squash 설정(project.repo_path로 찾는다). 못 찾으면 False(지금 동작)."""
+        if not any(r.squash for r in self.cfg.per_project.values()):
+            return False
+        try:
+            async with self.engine.connect() as c:
+                rows = (await c.execute(text("SELECT name, repo_path FROM project"))).all()
+        except Exception as e:  # noqa: BLE001 — 못 읽으면 지금 동작(ff)으로. 조용히 넘어가지 않게 남긴다
+            log.warning("squash 설정을 위한 프로젝트 찾기 실패 — ff로 합친다: %s", type(e).__name__)
+            return False
+        real = os.path.realpath(repo)
+        for name, rp in rows:
+            if rp and os.path.realpath(rp) == real:
+                return self.cfg.rule(name).squash
+        return False
 
     def card_for(self, sid: int) -> dict[str, Any] | None:
         c = self.cards.get(sid)
@@ -449,16 +590,79 @@ class MergePrep:
                     head=st["head"], base_head=st["base_head"], live=bool(ls), why=why, ahead=st["ahead"], behind=st["behind"],
                     commits=st["commits"], files=files.splitlines()[:60], conflict=conflict, docs=docs, asks=asks, via=via,
                     made_at=now, updated_at=now)
+        mgr = None
+        if self.cfg.approver_of(project) == "manager":
+            try:
+                card.human_why = await self._human_why(repo, st["base"], st["branch"], project)
+            except Exception as e:  # noqa: BLE001 — 가르지 못하면 사람에게(안전한 쪽)
+                card.human_why = [f"늘-사람 판정 실패({type(e).__name__}) — 사람 승인으로 둡니다"]
+            mgr = await self.manager_of(repo)
+            if card.human_why:
+                card.note = "사람 승인 카드입니다 — 승인자는 관리자지만 늘 사람에게 올릴 것에 걸렸습니다: " + "; ".join(card.human_why)
+            elif mgr is None:
+                card.note = "승인자는 관리자지만 살아 있는 관리자 세션이 없어 사람이 승인합니다."
+            else:
+                card.approver = "manager"
+                card.note = "관리자가 승인합니다 — 관리자 세션에 카드를 알렸습니다. 사람이 [합치기]를 눌러도 됩니다."
         if old is None or old.head != card.head:
             await self.h._act(sid, ACT_CARD, None, True, f"{name} {card.head[:8]} " + ("충돌 " + ",".join(conflict)[:300] if conflict else "충돌 없음")
-                              + (" · 묻는 말 있음" if asks else "") + (" · 턴 끝" if via == "turn_end" else " · 훑기"))
+                              + (" · 묻는 말 있음" if asks else "") + (" · 턴 끝" if via == "turn_end" else " · 훑기")
+                              + (f" · 승인 {card.approver}" + (f"(사람 까닭 {len(card.human_why)})" if card.human_why else "")
+                                 if self.cfg.approver_of(project) == "manager" else ""))
             if self.cfg.notify_ready:
                 self._notify(card, f"mergeprep:ready:{sid}:{card.head[:12]}",
                              f"⑂ 합치기 준비됨 — 「{title or sid}」(세션 {sid}) {card.branch} 커밋 {card.ahead}개, "
                              + (f"충돌 {len(conflict)}개" if conflict else ("충돌 없음 · ff 가능" if card.ff else f"충돌 없음 · {card.base}에 새 커밋 {card.behind}개(rebase)"))
                              + (f"\n❓ 세션이 묻는 말이 있습니다 — 패널에서 답하십시오: {asks.get('tail') or ''}" if asks else "")
-                             + "\n▶ 그 세션 패널의 「합치기 승인」에서 승인합니다")
+                             + ("\n▶ 관리자 세션이 승인합니다(사람 승인 필요 없음)" if card.approver == "manager"
+                                else (f"\n⚠ 사람 승인 — {'; '.join(card.human_why)}" if card.human_why else "")
+                                + "\n▶ 그 세션 패널의 「합치기 승인」에서 승인합니다"))
+            if mgr is not None:
+                self._spawn(self._tell_manager_card(card, mgr))
+        elif old is not None and old.status == "ready":
+            card.manager_told = old.manager_told              # 같은 커밋 — 관리자에게 다시 알리지 않는다(live만 바뀐 경우)
         return card
+
+    async def _human_why(self, repo: str, base: str, branch: str, project: str | None) -> list[str]:
+        _, raw = await wt.git(repo, "diff", "--raw", "--no-renames", "-z", f"{base}...{branch}")
+        _, msgs = await wt.git(repo, "log", "--format=%B", f"{base}..{branch}")
+        _, ydiff = await wt.git(repo, "diff", "-U0", "--no-renames", f"{base}...{branch}", "--", "*.yaml", "*.yml")
+        return human_reasons(parse_raw(raw), msgs, ydiff, self.cfg.human_paths(project), self.cfg.human_always)
+
+    def _card_msg(self, c: Card) -> str:
+        """카드가 생겼을 때 관리자에게(승인자 = 관리자인 프로젝트만)."""
+        how = (f"충돌 {len(c.conflict)}개({', '.join(c.conflict[:5])})" if c.conflict
+               else ("충돌 없음 · ff 가능" if c.ff else f"충돌 없음 · {c.base}에 새 커밋 {c.behind}개(rebase)"))
+        dn = len((c.docs or {}).get("readme") or []) + len((c.docs or {}).get("docs") or [])
+        sq = " 이 프로젝트는 squash로 합친다(커밋 하나, 본문에 원래 제목 · 날짜)." if self.cfg.rule(c.project).squash else ""
+        head = (f"[FOREMAN 합치기 카드] 세션 {c.sid} 「{c.title or ''}」 {c.branch} 커밋 {c.ahead}개 · 바뀐 파일 {len(c.files)}개 · {how}."
+                f"{' 세션이 살아 있다 — 승인하면 끝낸다.' if c.live else ''}"
+                f"{' 세션이 묻는 말이 있다: ' + str((c.asks or {}).get('tail') or '') if c.asks else ''}")
+        see = f" 카드 전부: GET /api/merge-prep?project={c.project}(커밋 · 바뀐 파일 · 정리 후보 {dn}개)."
+        if c.human_why:
+            return (head + " 이 카드는 **사람 승인**이다 — 승인자는 관리자지만 늘 사람에게 올릴 것에 걸렸다: " + "; ".join(c.human_why)
+                    + ". 관리자는 승인하지 않는다(API가 거부한다). 사람이 볼 것을 짧게 정리해 두는 것은 좋다." + see)
+        return (head + " 이 프로젝트 합치기 승인자는 관리자다 — 커밋 · 바뀐 파일 · 시험을 보고 합칠지 정한다. 합치기: "
+                f"POST /api/sessions/{c.sid}/merge-prep {{\"action\":\"merge\",\"by\":\"manager\"}}(프로젝트 토큰이면 by는 저절로 관리자). "
+                "미루기: {\"action\":\"skip\",\"by\":\"manager\"}(새 커밋이 생기면 다시 뜬다). 판단이 안 서면 사람에게 묻는다."
+                + sq + see + " 합친 뒤 시험 · push · 정리 후보 고르기는 관리자 몫이다.")
+
+    async def _tell_manager_card(self, c: Card, mgr: tuple[str, str]) -> None:
+        ok = await self._deliver(mgr[0], mgr[1], self._card_msg(c))
+        c.manager_told = ok
+        if not ok:
+            self._notify(c, f"mergeprep:mcard:{c.sid}:{c.head[:12]}",
+                         f"관리자 세션에 합치기 카드를 알리지 못했습니다 — 「{c.title or c.sid}」(세션 {c.sid}) {c.branch}. 패널에서 승인합니다")
+            if c.approver == "manager":
+                c.approver = "human"
+                c.note = "관리자 세션에 알리지 못해 사람이 승인합니다."
+        if self.on_change:
+            self.on_change()
+
+    def _spawn(self, coro: Any) -> None:
+        t = asyncio.get_running_loop().create_task(coro)
+        self.h._tasks.add(t)
+        t.add_done_callback(self.h._tasks.discard)
 
     async def check(self) -> int:
         """한 번 훑는다 — 카드 수를 돌려준다. 세션마다 실패는 그 카드에 사유로 남기고 다음 세션으로 간다.
@@ -571,24 +775,38 @@ class MergePrep:
         return True
 
     # ── 승인 ──
-    async def skip(self, sid: int) -> dict[str, Any]:
+    def _manager_may(self, c: Card, what: str) -> None:
+        """관리자가 승인 · 미루기를 해도 되는가(11-12). 안 되면 Refused — 까닭을 적는다."""
+        if self.cfg.approver_of(c.project) != "manager":
+            raise Refused(f"이 프로젝트({c.project or '모름'})의 합치기 승인자는 사람입니다 — 관리자는 {what}할 수 없습니다"
+                          "(config/handoff.toml [merge_prep.per_project] approver)")
+        if c.human_why:
+            raise Refused(f"이 카드는 사람 승인입니다 — 관리자는 {what}할 수 없습니다. 까닭: " + "; ".join(c.human_why))
+
+    async def skip(self, sid: int, by: str = "human") -> dict[str, Any]:
         """[나중에] — 이 브랜치 끝 커밋이 바뀌기 전까지 카드를 다시 띄우지 않는다."""
         c = self.cards.get(sid)
         if not c or c.status not in ("ready", "failed", "conflict_sent", "conflict_manager"):
             raise Refused("치울 합치기 카드가 없습니다")
+        if by == "manager":
+            self._manager_may(c, "미루기")
         await self.h._act(sid, ACT_SKIP, None, True, c.head)
         del self.cards[sid]
         if self.on_change:
             self.on_change()
         return {"ok": True, "note": "카드를 치웠습니다 — 이 세션이 새로 커밋하면 다시 만듭니다."}
 
-    async def approve(self, sid: int) -> dict[str, Any]:
-        """사람이 [합치기]를 눌렀다. 다시 재고 → 충돌이면 그 세션(끝났으면 관리자)에 풀라고 보냄 · 깨끗하면 (끝내고) 합침."""
+    async def approve(self, sid: int, by: str = "human") -> dict[str, Any]:
+        """[합치기] — 사람(패널) 또는 관리자(by=manager, 11-12 — 그 프로젝트 승인자가 관리자이고 늘-사람에 안 걸린 카드만).
+        다시 재고 → 충돌이면 그 세션(끝났으면 관리자)에 풀라고 보냄 · 깨끗하면 (끝내고) 합침."""
         c = self.cards.get(sid)
         if not c or c.status not in ("ready", "conflict_sent", "conflict_manager", "failed"):
             raise Refused("승인할 합치기 카드가 없습니다 — 카드가 사라졌거나 이미 합치는 중입니다")
         if not c.head:
             raise Refused("준비가 실패한 카드입니다 — 사유를 보고 다음 훑기를 기다리거나 패널 [합치기]로 합칩니다")
+        if by == "manager":
+            self._manager_may(c, "승인")
+        c.approved_by = by
         async with self._lock:
             row = await self.h.session(sid)
             if row is None:
@@ -624,7 +842,9 @@ class MergePrep:
             c.updated_at = _iso(_now())
             if res.get("ok"):
                 c.status, c.note = "merged", res.get("note")
-                await self.h._act(sid, ACT_MERGE, None, True, f"{c.name} {c.head[:8]} 커밋 {res.get('merged')}개")
+                await self.h._act(sid, ACT_MERGE, None, True, f"{c.name} {c.head[:8]} 커밋 {res.get('merged')}개"
+                                  + (f" squash {res['squash'][:8]}" if res.get("squash") else "")
+                                  + (" · 관리자 승인" if by == "manager" else " · 사람 승인"))
                 c.manager_told = await self._tell_manager(c, self._merged_msg(c, res))
                 await self.after_merge(c, res)
             else:
@@ -664,8 +884,9 @@ class MergePrep:
 
     async def _send_conflict(self, c: Card, row: Any, live: bool) -> dict[str, Any]:
         files = ", ".join(c.conflict or [])
+        who = "관리자가" if c.approved_by == "manager" else "사람이"
         if live:
-            msg = (f"[FOREMAN 합치기] 사람이 합치기를 승인했는데 {c.branch}가 {c.base}와 충돌한다(파일: {files}). "
+            msg = (f"[FOREMAN 합치기] {who} 합치기를 승인했는데 {c.branch}가 {c.base}와 충돌한다(파일: {files}). "
                    f"`git rebase {c.base}`로 {c.base}를 가져와 충돌을 풀고 커밋한 뒤 보고해라. push · 브리지 다시 띄우기는 하지 마라. "
                    f"풀고 나면 브리지가 합치기 카드를 다시 만든다.")
             ok = await self._deliver(row.cc, row.cwd, msg)
@@ -678,7 +899,7 @@ class MergePrep:
         else:
             c.status = "conflict_manager"
             c.manager_told = await self._tell_manager(c, (
-                f"[FOREMAN 합치기] 사람이 세션 {c.sid} 「{c.title or ''}」의 {c.branch} 합치기를 승인했는데 {c.base}와 충돌한다(파일: {files}). "
+                f"[FOREMAN 합치기] {who} 세션 {c.sid} 「{c.title or ''}」의 {c.branch} 합치기를 승인했는데 {c.base}와 충돌한다(파일: {files}). "
                 f"그 세션은 끝났다 — 관리자가 원본 폴더에서 풀어 합친다(docs/11_worktree.md 「6.」). 시험 · push도 관리자 몫이다."))
             c.note = "세션이 끝나 관리자에게 충돌 풀기를 넘겼습니다." if c.manager_told else "세션이 끝났고 관리자 세션도 없어 넘기지 못했습니다 — 텔레그램으로 알렸습니다."
         await self.h._act(c.sid, ACT_CONFLICT, None, c.status == "conflict_sent" and not c.error or bool(c.manager_told),
@@ -689,6 +910,10 @@ class MergePrep:
 
     def _merged_msg(self, c: Card, res: dict[str, Any]) -> str:
         how = "fast-forward" if c.ff else f"{c.base} 위로 rebase 뒤 fast-forward"
+        if res.get("squash"):
+            how = f"커밋 {res.get('merged', c.ahead)}개를 커밋 하나({res['squash'][:8]})로 묶어 squash — 본문에 원래 제목 · 날짜, " + how
+        who = "관리자가" if c.approved_by == "manager" else "사람이"
+        mgr_picks = self.cfg.approver_of(c.project) == "manager" and not c.human_why
         ended = " 세션은 끝냈다." if res.get("ended") is not None else ""
         docs = (c.docs or {})
         dn = len(docs.get("readme") or []) + len(docs.get("docs") or [])
@@ -701,10 +926,17 @@ class MergePrep:
                 f"README:{x['line']} {x['text'][:80]}({' · '.join(x.get('why') or [])})" for x in sure) + "."
         if stale:
             extra += f" 이번에 바뀐 파일을 적었는데 고치지 않은 문서: {', '.join(stale)} — 설계가 바뀌었으면 맞출 후보."
-        return (f"[FOREMAN 합치기] 사람이 승인해 세션 {c.sid} 「{c.title or ''}」의 {c.branch}(커밋 {res.get('merged', c.ahead)}개)를 "
+        if not dn:
+            pick = ""
+        elif mgr_picks:     # 11-12 — 승인자가 관리자인 프로젝트는 정리 후보 고르기 · 지우기도 관리자
+            pick = (f" README · docs 정리 후보 {dn}개는 카드에 있다(GET /api/merge-prep?project={c.project} 의 card.docs, 6시간 남는다) — "
+                    "관리자가 골라 지운다. 판단이 안 서는 줄만 사람에게 묻는다.")
+        else:
+            pick = (f" README · docs 정리 후보 {dn}개는 그 세션 패널 카드에 있다 — 고르고 지우는 것은 사람 승인 뒤"
+                    "(판단이 필요하면 사람에게 묻고, 혼자 지우지 않는다).")
+        return (f"[FOREMAN 합치기] {who} 승인해 세션 {c.sid} 「{c.title or ''}」의 {c.branch}(커밋 {res.get('merged', c.ahead)}개)를 "
                 f"{c.base}에 합쳤다({how}).{ended} 1단계라 브리지는 합치기까지만 했다 — 시험 · push · 브리지 다시 띄우기 · 화면 점검은 "
-                f"관리자가 한다." + (f" README · docs 정리 후보 {dn}개는 그 세션 패널 카드에 있다 — 고르고 지우는 것은 사람 승인 뒤"
-                                     "(판단이 필요하면 사람에게 묻고, 혼자 지우지 않는다)." if dn else "") + extra)
+                f"관리자가 한다." + pick + extra)
 
     async def after_merge(self, c: Card, res: dict[str, Any]) -> None:
         """2단계 자리 — 승인 뒤 시험 → push → 승인 대기 0 확인 → 브리지 다시 띄우기 → 화면 점검. 사용자가 1단계를 써 본 뒤 정한다.

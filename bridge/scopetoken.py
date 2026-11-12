@@ -12,6 +12,8 @@
     GET  /api/spawn/options           (읽기 — 띄우기 창 재료)
     /api/foreman/plan · start         본문 project(start는 plan.project)가 이 프로젝트일 때
     GET  /api/foreman/state · notes · context · merge-order   ?project= 가 이 프로젝트일 때
+    GET  /api/merge-prep              (11-12) ?project= 가 이 프로젝트일 때 — 그 프로젝트 합치기 카드만.
+                                      승인은 /api/sessions/{sid}/merge-prep(위 세션 줄) — 프로젝트 토큰이면 by=manager로 본다
     /api/managers[/…]                 (관리자 주소 — 「둘」) 읽기는 모두, 부탁 보내기는 보낸 쪽이 이 프로젝트일 때 — 그 라우터가 본다
     POST /api/publish                 (11-12) 본문 project가 이 프로젝트일 때. force · action=docsync는 관리 토큰만
     GET  /api/publish                 ?project= 가 이 프로젝트일 때(없으면 foreman)
@@ -107,7 +109,8 @@ class TokenBook:
 # ── 범위 판정 ────────────────────────────────────────────────
 _SESS = re.compile(r"^/api/sessions/(\d+)(/|$)")
 _FOREMAN_BODY = {"/api/foreman/plan", "/api/foreman/start", "/api/foreman/handover"}
-_FOREMAN_QUERY = {"/api/foreman/state", "/api/foreman/notes", "/api/foreman/context", "/api/foreman/merge-order"}
+_FOREMAN_QUERY = {"/api/foreman/state", "/api/foreman/notes", "/api/foreman/context", "/api/foreman/merge-order",
+                  "/api/merge-prep"}       # 11-12 — 관리자가 자기 프로젝트 합치기 카드를 모아 본다
 ADMIN_ONLY_HINT = "관리 토큰(FOREMAN_API_TOKEN)이 필요합니다"
 
 
