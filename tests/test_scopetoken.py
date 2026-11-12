@@ -149,8 +149,16 @@ def test_in_repo():
     assert asyncio.run(st.why_out_of_scope("runshoes", "GET", "/api/managers", {}, None, None, None)) is None
 
 
-@pytest.mark.parametrize("path", ["/api/foreman/state", "/api/foreman/merge-order"])
+@pytest.mark.parametrize("path", ["/api/foreman/state", "/api/foreman/merge-order", "/api/merge-prep"])
 def test_foreman_query(path):
     ok = asyncio.run(st.why_out_of_scope("runshoes", "GET", path, {"project": "runshoes"}, None, None, None))
     bad = asyncio.run(st.why_out_of_scope("runshoes", "GET", path, {"project": "foreman"}, None, None, None))
     assert ok is None and bad
+
+
+def test_merge_prep_list_own_project_only():
+    """11-12 — 관리자(프로젝트 토큰)가 자기 프로젝트 합치기 카드만 모아 본다. ?project= 없거나 남의 것은 403."""
+    run = lambda q: asyncio.run(st.why_out_of_scope("runshoes", "GET", "/api/merge-prep", q, None, None, None))  # noqa: E731
+    assert run({"project": "runshoes"}) is None
+    assert run({}) and run({"project": "foreman"})
+    assert asyncio.run(st.why_out_of_scope("runshoes", "POST", "/api/merge-prep", {"project": "runshoes"}, None, None, None))
