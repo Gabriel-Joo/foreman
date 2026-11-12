@@ -297,11 +297,18 @@ ENDED_LABEL = {"wt-merge": ("merged", "합쳤습니다"), "wt-discard": ("discar
 
 def merge_waits(mp: Any) -> dict[int, dict[str, Any]]:
     """사람 승인을 기다리는 합치기 카드(status=ready)를 세션 id별로. 합치는 중 · 합침 · 충돌을 보낸 카드는 뺀다.
-    mergeprep.py는 고치지 않고 이미 있는 view()를 읽는다(GET /api/merge-prep과 같은 값)."""
+    mergeprep.py는 고치지 않고 이미 있는 view()를 읽는다(GET /api/merge-prep과 같은 값).
+    11-12(사용자): 관리자가 승인하는 카드(approver = manager, 늘-사람 까닭 없음)는 뺀다 — 승인 막대 · 머리 위 말풍선이 모두 이 값을
+    읽으므로 함께 빠진다. 늘-사람 카드(human_why)는 관리자가 승인할 수 없으니 그대로 보인다(안 보이면 아무도 누르지 않고 멈춘다)."""
     if mp is None or not getattr(mp.cfg, "enabled", False):
         return {}
     return {c["sid"]: {"since": c["made_at"], "head8": c["head8"], "files": len(c["files"]), "asks": bool(c.get("asks"))}
-            for c in mp.view()["cards"] if c["status"] == "ready"}
+            for c in mp.view()["cards"] if c["status"] == "ready" and not manager_card(c)}
+
+
+def manager_card(c: dict[str, Any]) -> bool:
+    """관리자가 승인하는 카드인가 — 사람 화면에서 숨긴다(handoff.js managerCard와 같은 기준)."""
+    return c.get("approver") == "manager" and not c.get("human_why")
 
 
 def ended_info(done: tuple[str, datetime] | None, detached: datetime | None) -> dict[str, Any]:

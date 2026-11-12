@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mpSection } from '../../bridge/static/js/handoff.js';
+import { mpSection, managerCard } from '../../bridge/static/js/handoff.js';
 
 // 합치기 승인 카드(11-11 1물결 A) — 브리지가 만든 카드를 패널이 그린다. 사람은 [합치기] · [나중에]만
 const b = (act, label, on, cls = '', tip = '') => `<button data-act="${act}"${on ? '' : ' disabled'} title="${tip}">${label}</button>`;
@@ -23,6 +23,19 @@ test('깨끗한 카드: ff · 정리 후보 · 승인 단추, 살아 있으면 �
   assert.match(h, /README:9 — 할 일 줄/);
   assert.match(h, /data-act="mp-merge" title="합치기 — 세션을 끝내고/);
   assert.match(h, /data-act="mp-skip"/);
+});
+
+test('관리자가 승인하는 카드는 [합치기]를 숨긴다 — 늘-사람 카드 · 사람 승인자 카드는 그대로(11-12)', () => {
+  assert.ok(managerCard(card({ approver: 'manager', human_why: [] })));
+  assert.ok(!managerCard(card({ approver: 'manager', human_why: ['늘 사람 경로(config/*.toml): config/x.toml'] })));
+  assert.ok(!managerCard(card({ approver: 'human' })) && !managerCard(card()) && !managerCard(null));
+  const m = mpSection({ card: card({ approver: 'manager', human_why: [] }) }, b, 7);
+  assert.doesNotMatch(m, /data-act="mp-merge"/);
+  assert.match(m, /관리자 세션이 승인합니다 — 사람이 누를 것은 없습니다\./);
+  const h = mpSection({ card: card({ approver: 'manager', human_why: ['x'] }) }, b, 7);
+  assert.match(h, /data-act="mp-merge"/);
+  // 충돌을 보낸 뒤 · 멈춘 카드는 다시 단추가 보인다(누군가 손봐야 한다)
+  assert.match(mpSection({ card: card({ approver: 'manager', human_why: [], status: 'failed' }) }, b, 7), /data-act="mp-merge"/);
 });
 
 test('main이 앞섬 · 충돌 · 합친 뒤', () => {

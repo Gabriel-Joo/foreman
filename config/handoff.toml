@@ -23,6 +23,39 @@ readme_section = "나중에 할 일"       # 이 낱말이 든 제목 아래 표
 docs_dir = "docs"                    # 바뀐 파일 경로를 적은 줄을 찾을 폴더(.md만)
 max = 12                             # 후보 수 상한
 
+# 승인자 · squash — 프로젝트마다(11-12 사용자 결정, log/merge_approver_20261112.md). 칸이 없는 프로젝트는 사람 승인 · ff.
+#   approver = "human"   사람이 패널 · 승인 막대의 [합치기](지금 동작)
+#   approver = "manager" 카드가 생기면 그 프로젝트 관리자 세션에 알리고, 관리자가 자기 토큰으로
+#                        POST /api/sessions/{sid}/merge-prep {"action":"merge","by":"manager"}로 승인한다. 정리 후보 고르기도 관리자.
+#                        아래 [merge_prep.human_always]에 걸리거나 살아 있는 관리자 세션이 없으면 그 카드는 사람 승인
+#   squash = true        커밋 하나로 묶어 합친다(본문에 원래 커밋 제목 · 날짜). 지금부터 합치는 것만 — 과거 이력은 그대로
+#   human_paths          이 프로젝트에만 더하는 「늘 사람」 경로
+# 바꾸면 브리지를 다시 띄운다. 되돌리기 = approver = "human" · squash = false
+[merge_prep.per_project.foreman]
+approver = "human"
+squash = false
+human_paths = ["docs/style_guide.md", "docs/operations.md"]   # 규칙 문서(CLAUDE.md가 가리키는 상세)
+
+[merge_prep.per_project.ronanlab-infra]
+approver = "human"
+squash = false
+human_paths = []
+
+# 늘 사람에게 올릴 것(11-12 사용자 확정) — 승인자가 관리자여도 카드의 바뀐 파일 · 커밋이 걸리면 그 카드는 사람 승인.
+#   paths는 fnmatch(`*`가 `/`도 넘는다) — 경로 전체 또는 파일 이름에 맞대 본다.
+#   경로로 못 가르는 것: 「사람이 직접 쓴 글」은 git으로 가르지 못한다 — 프로젝트 human_paths에 더하거나 관리자 규칙으로
+[merge_prep.human_always]
+paths = [
+  "*values*.yaml", "*values*.yml",                       # 설정 · 값 파일
+  "config/*.toml",
+  "CLAUDE.md", "AGENTS.md", ".claude/*",                 # 규칙 문서
+  "*migrations/*", "*db/migration/*", "*alembic/versions/*",   # 마이그레이션(FOREMAN · Flyway · alembic)
+]
+resource_keys = ["cpu", "memory", "replicas", "limits", "requests", "storage", "ephemeral-storage"]   # *.yaml에서 이 키 줄이 바뀌면 자원 크기
+history_words = ["force push", "force-push", "push --force", "push -f", "filter-branch", "filter-repo", "reset --hard", "이력 다시 쓰"]
+deletions = true     # 파일을 지운 커밋 = 지우기
+submodules = true    # 서브모듈(gitlink) 바뀜 = 다른 저장소
+
 # [move] — 새 세션으로 옮기기 한 흐름(11-11 C 2물결 「일곱」, bridge/static/js/moveflow.js).
 #   켜면 [새 세션으로 옮기기] 하나가 잊은 것 찾기 → 문서 후보 목록 → (사람이 고르기) → 문서에 쓰기 → 요약 → 새 세션 → 옛 세션 끝내기를
 #   이어서 한다. 사람이 하는 것은 「무엇을 문서에 넣을지 고르기」 하나. 옮기기 전 요약 확인 창은 없고, 넘어간 글은 새 세션 패널에 보인다.
