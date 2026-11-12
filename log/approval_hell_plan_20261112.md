@@ -44,3 +44,5 @@
 - merge-tree exit 0(따로) → `--no-ff cc/foreman-3` **`f567676`** → `config/notify.toml` FOREMAN · 인프라 세 칸 true **`7c66c67`**(사용자 결정 「먼저 켤 곳 FOREMAN과 인프라」) → pytest **771** · node **123** → push → 승인 대기 0 → **브리지 19:01:25**(633656 → 728766), 오류 0
 - 312: `render.js` `relay` 이름표(「작업 세션 보고」) 허락 — 같은 브랜치에 따로 커밋. 299에게 켠 것 · 「물음은 답하지 말고 모아 사람에게」 알림(delivered)
 - 볼 것: 첫 작업 보고가 관리자 입력 칸에 오는지(session_action `mgr-relay`) · 21:00 첫 묶음이 나가는지 · 펫퍼민트 · 런슈즈는 그대로인지
+- 312 이름표 `8cbd8a8`(`relay: '작업 세션 보고'`, 화면만) — merge-tree exit 0 → `--no-ff` **`84e9370`** → node 123 → push. 브리지는 다시 띄우지 않음(파이썬 변경 없음)
+- **실제로 돎(19:01 뒤 DB)**: 312 턴 끝 → 관리자 309 입력 칸에 「[작업 보고 — 세션 312 …]」(session_action `mgr-relay` ok, 10:02:10 UTC) · 그 턴 알림 `digest`(`relayed:report`) · 312 합치기 카드 알림 `digest` · 299가 받은 309 부탁 턴 출처 `manager_ask` → `skipped`(`origin:manager_ask`). 21:00 첫 묶음은 아직
