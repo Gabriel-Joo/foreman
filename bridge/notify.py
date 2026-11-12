@@ -8,6 +8,14 @@
   task-notification이 연 턴은 보내지 않다가 그 세션의 백그라운드 서브에이전트가 모두 끝났을 때 한 번 묶어 보낸다
 - 보낸 것 · 안 보낸 것 · 묶음 대기는 notification 테이블에 이유와 함께 남는다
 - 토큰은 .env.telegram에서 읽고, 어떤 오류 메시지 · 로그에도 싣지 않는다
+
+11-12 「승인 지옥 줄이기」(log/notify_relay_20261112.md) — 프로젝트마다 켜는 칸, 처음엔 모두 꺼짐:
+- relay_reports: 작업 세션(coder · scribe · designer) 턴 끝 보고를 그 프로젝트 관리자 입력 칸에(bridge/managers.py relay)
+- relay_questions: 작업 세션의 마지막 응답이 사람에게 묻는 말이면(대시보드 「답 기다림」과 같은 판정 ask_line) 관리자에게
+  「사람에게 올릴 물음」으로. 관리자는 답하지 않고 모아 사람에게 올린다 — 그 관리자 턴(출처 relay)이 묻는 말로 끝나면 바로 보낸다
+- digest: 일상 알림(턴 끝 · 합치기 카드 등 [digest] kinds)을 바로 보내지 않고 notification.decision='digest'로 모아 두었다가
+  하루 한 번 [digest] at에 프로젝트마다 묶어 보낸다. 실패 · 멈춤 · 묻는 말 · 승인 대기 등 급한 것은 지금처럼 바로.
+  묶음을 못 보내면 그 자체를 바로 알리고, 모아 둔 것이 late_h 넘게 남으면 알린다
 """
 
 import asyncio
@@ -15,9 +23,10 @@ import logging
 import re
 import tomllib
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import text
@@ -40,7 +49,11 @@ TITLES = {
 }
 ORIGIN_LABEL = {"human": "요청", "meta": "입력", "agent_message": "다른 세션 메시지", "task_notification": "완료 알림",
                 "subagent_message": "서브에이전트 결과", "handoff": "옮기기 요약 요청", "handoff_in": "옮겨 온 요약",
-                "manager_ask": "관리자 부탁"}
+                "manager_ask": "관리자 부탁", "relay": "작업 세션에서 온 보고"}
+URGENT_REASONS = FAIL_REASONS | {"session_end"}     # 턴 끝 중 묶음으로 미루지 않는 것
+WORKER_ROLES = {"coder", "scribe", "designer"}      # 턴 끝을 관리자에게 넘기는 역할(관리자 · 교장 아닌 작업 세션)
+DIGEST_KIND_LABEL = {"turn": "턴 끝", "batch": "서브에이전트 묶음", "merge": "합치기", "handoff": "옮기기 · 기록",
+                     "docsync": "Notion 문서", "recon": "어긋남"}
 SUB_STATUS = {"done": "완료", "failed": "실패", "stopped": "중단", "running": "진행", "stale": "확인 안 됨"}
 _WRAP = re.compile(r'^\s*<pasted_content id="[0-9a-f]+">\s*', re.S)
 
@@ -54,6 +67,9 @@ class ProjectRule:
     batch_origins: set[str]
     only_failures: bool
     min_turn_s: float
+    relay_reports: bool = False      # ② 작업 세션 턴 끝 → 관리자
+    relay_questions: bool = False    # ③ 작업 세션이 묻는 말 → 관리자(사람에게 올릴 물음)
+    digest: bool = False             # ④ 일상 알림 하루 한 번 묶음
 
 
 @dataclass
@@ -63,6 +79,12 @@ class Rules:
     timeout_s: float = 10.0
     min_interval_s: float = 1.1
     settle_s: float = 2.0
+    digest_at: str = "21:00"
+    digest_tz: str = "Asia/Seoul"
+    digest_kinds: set[str] = field(default_factory=lambda: {"turn", "batch", "merge", "handoff", "docsync", "recon"})
+    urgent_marks: tuple[str, ...] = ("⚠", "❌", "🛑", "⏰", "❓")
+    digest_late_h: float = 26.0
+    digest_retry_min: float = 10.0
     defaults: ProjectRule = field(default_factory=lambda: ProjectRule(
         None, {"stop", "stop_failure", "interrupted", "session_end", "process_lost"}, {"human", "meta"},
         {"task_notification", "subagent_message"}, False, 0.0))
@@ -79,11 +101,24 @@ def load_rules(path: str | Path) -> Rules:
     r = Rules(enabled=tg.get("enabled", True), env_file=tg.get("env_file", ".env.telegram"),
               timeout_s=tg.get("timeout_s", 10.0), min_interval_s=tg.get("min_interval_s", 1.1),
               settle_s=tg.get("settle_s", 2.0))
+    dg = raw.get("digest", {})
+    r.digest_at = str(dg.get("at", r.digest_at))
+    r.digest_tz = str(dg.get("tz", r.digest_tz))
+    r.digest_kinds = set(dg.get("kinds", r.digest_kinds))
+    r.urgent_marks = tuple(dg.get("urgent_marks", r.urgent_marks))
+    r.digest_late_h = float(dg.get("late_h", r.digest_late_h))
+    r.digest_retry_min = float(dg.get("retry_min", r.digest_retry_min))
+    hh, _, mm = r.digest_at.partition(":")
+    if not (hh.isdigit() and mm.isdigit() and int(hh) < 24 and int(mm) < 60):
+        raise ValueError(f"[digest] at은 \"HH:MM\"이어야 합니다: {r.digest_at!r}")
+    ZoneInfo(r.digest_tz)      # 없는 시간대면 여기서 실패 — 조용히 다른 시각에 보내지 않게
 
     def rule(d: dict[str, Any], base: ProjectRule, prefix: str | None) -> ProjectRule:
         return ProjectRule(prefix, set(d.get("end_reasons", base.end_reasons)), set(d.get("origins", base.origins)),
                            set(d.get("batch_origins", base.batch_origins)), d.get("only_failures", base.only_failures),
-                           float(d.get("min_turn_s", base.min_turn_s)))
+                           float(d.get("min_turn_s", base.min_turn_s)),
+                           bool(d.get("relay_reports", base.relay_reports)),
+                           bool(d.get("relay_questions", base.relay_questions)), bool(d.get("digest", base.digest)))
 
     r.defaults = rule(dflt, r.defaults, None)
     for name, d in raw.get("projects", {}).items():
@@ -150,6 +185,55 @@ def compose_batch(prefix: str, subs: list[tuple[str, str | None]]) -> str:
     return "\n".join(lines)[:900]
 
 
+def relay_body(kind: str, reason: str, secs: float | None, prompt: str | None, reply: str | None,
+               error: str | None, ask: str | None) -> str:
+    """관리자 입력 칸에 넣을 본문 — 머리 · 안내는 managers.relay_text가 붙인다."""
+    from bridge.api.dashboard import last_paragraph
+    lines = [f"{TITLES.get(reason, reason)} · {fmt_duration(secs)}"]
+    if (p := first_line(prompt, 160)):
+        lines.append(f"맡은 일: {p}")
+    if kind == "question" and ask:
+        lines.append(f"물음: {ask.strip()[:400]}")
+    if error:
+        lines.append(f"오류: {first_line(error, 300)}")
+    if reply and (tail := last_paragraph(reply, 2).strip()):
+        lines.append("응답 끝:\n" + tail[-1200:])
+    return "\n".join(lines)
+
+
+def _digest_item(kind: str, prefix: str, msg: str | None) -> str:
+    rows = [x.strip() for x in (msg or "").splitlines() if x.strip()]
+    head = rows[0][len(prefix):].strip() if rows and rows[0].startswith(prefix) else (rows[0] if rows else "")
+    if kind == "turn" and len(rows) > 1:
+        head = f"{head} — {rows[1]}"
+    return head if len(head) <= 110 else head[:109] + "…"
+
+
+def compose_digest(prefix: str, day: str, items: list[tuple[str, datetime, str | None]], tz: ZoneInfo,
+                   limit: int = 3500) -> str:
+    """하루 묶음 한 통. items = (kind, created_at UTC, 알림 글). 종류별로 시각 순, 넘치면 「외 N건」."""
+    lines = [f"{prefix} 📦 하루 묶음 {day[5:]} — 일상 알림 {len(items)}건(급한 것은 그때그때 보냈습니다)"]
+    groups: dict[str, list[tuple[datetime, str | None]]] = {}
+    for kind, at, msg in items:
+        groups.setdefault(kind, []).append((at, msg))
+    shown = 0
+    for kind in sorted(groups, key=lambda k: list(DIGEST_KIND_LABEL).index(k) if k in DIGEST_KIND_LABEL else 99):
+        g = groups[kind]
+        head = f"■ {DIGEST_KIND_LABEL.get(kind, kind)} {len(g)}건"
+        if len("\n".join(lines)) + len(head) > limit - 60:
+            break
+        lines.append(head)
+        for at, msg in g:
+            ln = f"- {at.replace(tzinfo=UTC).astimezone(tz):%H:%M} {_digest_item(kind, prefix, msg)}"
+            if len("\n".join(lines)) + len(ln) > limit - 60:
+                break
+            lines.append(ln)
+            shown += 1
+    if shown < len(items):
+        lines.append(f"… 외 {len(items) - shown}건(알림 기록에 남아 있습니다)")
+    return "\n".join(lines)
+
+
 # ── 보내기 ──────────────────────────────────────────────────
 class SendError(Exception):
     pass
@@ -212,9 +296,13 @@ class Notifier:
         self._worker: asyncio.Task[None] | None = None
         self._batch_pending: dict[int, asyncio.Task[Any]] = {}  # 세션별 묶음 판정 예약(몇 초 모은다)
         self.batch_debounce_s = max(self.rules.settle_s, 0.0) + 1.0
+        self.managers: Any = None        # bridge.managers.Managers가 만들어질 때 스스로 건다(중계 ② · ③)
+        self.relay_timeout_s = 60.0
+        self._digest: asyncio.Task[None] | None = None
 
     def start(self) -> None:
         self._worker = asyncio.create_task(self._sender(), name="foreman-notify")
+        self._digest = asyncio.create_task(self._digest_loop(), name="foreman-notify-digest")
 
     async def baseline(self) -> int:
         """알림을 켜기 전에 이미 끝난 서브에이전트를 알린 것으로 표시한다 — 첫 묶음에 과거 것이 쏟아지지 않게."""
@@ -228,6 +316,8 @@ class Notifier:
             t.cancel()
         if self._worker:
             self._worker.cancel()
+        if self._digest:
+            self._digest.cancel()
 
     async def drain(self, timeout: float = 30.0) -> None:
         """테스트용 — 판정 작업과 전송 대기열이 빌 때까지."""
@@ -271,18 +361,25 @@ class Notifier:
         rule은 기록용 키(11-08 사용량 알림이 같은 창에서 한 번만 — 브리지를 다시 띄워도 — 보내려고 남긴다)."""
         if not self.rules.enabled:
             return
+        decision = "digest" if self.digestable(project, kind, msg) else "pending"
 
         async def go() -> None:
             try:
                 async with self.engine.begin() as c:
-                    nid = await self._record(c, session_id, None, kind, None, "pending", rule, msg)
-                if nid:
+                    nid = await self._record(c, session_id, None, kind, None, decision, rule, msg)
+                if nid and decision == "pending":
                     await self._send_q.put((nid, msg))
             except Exception as e:  # noqa: BLE001
                 log.warning("직접 알림 실패: %s", type(e).__name__)
         t = asyncio.create_task(go())
         self._tasks.add(t)
         t.add_done_callback(self._tasks.discard)
+
+    def digestable(self, project: str | None, kind: str, msg: str | None) -> bool:
+        """하루 묶음으로 미룰 일상 알림인가 — 묶음을 켠 프로젝트 · [digest] kinds · 급한 표시(⚠ ❌ 🛑 ⏰ ❓)가 없을 때만."""
+        r = self.rules.for_project(project)
+        return bool(r and r.digest and kind in self.rules.digest_kinds
+                    and not any(m in (msg or "") for m in self.rules.urgent_marks))
 
     def on_turn_closed(self, session_id: int, turn_id: int, reason: str, by: str, note: str | None = None) -> None:
         """조립기가 턴을 닫은 직후 부른다(트랜잭션 안일 수 있다 — 여기서는 기다렸다 읽기만 예약한다)."""
@@ -296,34 +393,83 @@ class Notifier:
         try:
             await asyncio.sleep(self.rules.settle_s)
             async with asyncio.timeout(15):
-                await self._decide_inner(session_id, turn_id, reason, by, note)
+                plan = await self._decide_inner(session_id, turn_id, reason, by, note)
+            if plan is not None:
+                await self._relay_turn(plan)
         except Exception as e:  # noqa: BLE001 — 알림 실패가 조립을 멈추면 안 된다
             log.warning("알림 판정 실패 turn=%s: %s: %s", turn_id, type(e).__name__, str(e)[:200])
 
-    async def _decide_inner(self, session_id: int, turn_id: int, reason: str, by: str, note: str | None) -> None:
+    async def _relay_turn(self, p: dict[str, Any]) -> None:
+        """관리자 입력 칸에 넣고(DB 트랜잭션 밖 — 넣고 확인하는 데 15초 넘게 걸린다), 그 결과로 텔레그램을 정한다.
+        넣었으면: 묻는 말 중계는 급하지 않게(관리자가 모아 올린다), 보고는 묶음(꺼져 있으면 안 보냄 — 관리자가 받았다).
+        관리자가 있는데 못 넣었으면: 사유를 붙여 바로 보낸다. 관리자가 없으면 지금처럼."""
+        r: dict[str, Any] = {}
+        try:
+            async with asyncio.timeout(self.relay_timeout_s):
+                r = await self.managers.relay(p["project"], p["relay"], p["session_id"], p["label"], p["body"])
+        except Exception as e:  # noqa: BLE001
+            r = {"delivered": False, "manager": True, "reason": f"넣지 못했습니다: {type(e).__name__}"}
+        ok = bool(r.get("delivered"))
+        msg, urgent = p["msg"], p["urgent"]
+        if ok and p["relay"] == "question":
+            urgent = p["reason"] in URGENT_REASONS
+        if not ok and r.get("manager"):
+            urgent = True
+            msg = (msg + f"\n⚠ 관리자에게 넘기지 못했습니다 — {r.get('reason') or '?'}")[:1200]
+        async with asyncio.timeout(15):
+            async with self.engine.begin() as c:
+                q = await self._emit_turn(c, p["rule"], p["session_id"], p["turn_id"], p["reason"], msg, urgent,
+                                          p["relay"] if ok else None)
+        if q:
+            await self._send_q.put(q)
+
+    async def _emit_turn(self, c: Any, rule: ProjectRule, session_id: int, turn_id: int, reason: str, msg: str,
+                         urgent: bool, relayed: str | None) -> tuple[int, str] | None:
+        """턴 끝 알림을 기록하고 바로 보낼 것이면 (id, 문장). 급한 것은 늘 바로, 아니면 묶음 · 중계에 따라."""
+        if urgent:
+            decision, why = "pending", None
+        elif rule.digest and "turn" in self.rules.digest_kinds:
+            decision, why = "digest", f"relayed:{relayed}" if relayed else "digest"
+        elif relayed:
+            decision, why = "skipped", f"relayed:{relayed}"
+        else:
+            decision, why = "pending", None
+        nid = await self._record(c, session_id, turn_id, "turn", reason, decision, why, msg)
+        if nid:
+            # 이 알림(또는 중계 · 묶음)에 실린 끝난 서브에이전트는 묶음에서 다시 세지 않는다
+            await c.execute(text(
+                "UPDATE subagent_run SET notified_at = UTC_TIMESTAMP(3) WHERE spawn_turn_id = :t "
+                "AND status <> 'running' AND notified_at IS NULL"), {"t": turn_id})
+        return (nid, msg) if nid and decision == "pending" else None
+
+    async def _decide_inner(self, session_id: int, turn_id: int, reason: str, by: str,
+                            note: str | None) -> dict[str, Any] | None:
+        """바로 끝낼 수 있으면 기록 · 보내기까지 하고 None. 관리자에게 넘길 턴이면 그 계획(dict)을 돌려준다."""
         async with self.engine.begin() as c:
             row = (await c.execute(text(
-                "SELECT t.origin, t.started_at, t.ended_at, t.duration_ms, t.prompt_text, t.end_reason, p.name "
+                "SELECT t.origin, t.started_at, t.ended_at, t.duration_ms, t.prompt_text, t.end_reason, p.name, "
+                "cs.role, COALESCE(cs.custom_title, cs.title) "
                 "FROM turn t JOIN character_session cs ON cs.id = t.session_id JOIN `character` ch ON ch.id = cs.character_id "
                 "LEFT JOIN project p ON p.id = ch.project_id WHERE t.id = :t"), {"t": turn_id})).first()
             if row is None or row[2] is None:
-                return  # 롤백됐거나 아직 안 닫힘
-            origin, started, ended, dur_ms, prompt, end_reason, project = row
+                return None  # 롤백됐거나 아직 안 닫힘
+            origin, started, ended, dur_ms, prompt, end_reason, project, role, title = row
             reason = end_reason or reason
             secs = dur_ms / 1000 if dur_ms else (ended - started).total_seconds()
             rule = self.rules.for_project(project)
             if rule is None:
                 await self._record(c, session_id, turn_id, "turn", reason, "skipped", f"project:{project or '미분류'}")
-                return
+                return None
             if origin in rule.batch_origins:
                 # 이 턴 자체는 알리지 않는다 — 묶음 판정만
                 await self._record(c, session_id, turn_id, "turn", reason, "skipped", f"batch_origin:{origin}")
                 queued = await self._batch(c, rule, session_id, turn_id, reason)
                 if queued:
                     await self._send_q.put(queued)
-                return
+                return None
             why = None
-            if origin not in rule.origins:
+            # relay = 작업 세션 보고 · 물음을 받아 관리자가 연 턴 — 관리자가 사람에게 올리는 길이라 origins와 상관없이 판정한다
+            if origin not in rule.origins and origin != "relay":
                 why = f"origin:{origin}"
             elif reason not in rule.end_reasons:
                 why = f"end_reason:{reason}"
@@ -335,8 +481,8 @@ class Notifier:
                 "SELECT status, description FROM subagent_run WHERE spawn_turn_id = :t ORDER BY id"), {"t": turn_id})).all()
             if why:
                 await self._record(c, session_id, turn_id, "turn", reason, "skipped", why)
-                return
-            reply = self.mask.text(note) if note else (await c.execute(text(
+                return None
+            reply =self.mask.text(note) if note else (await c.execute(text(
                 "SELECT JSON_UNQUOTE(JSON_EXTRACT(payload, '$.text')) FROM event WHERE turn_id = :t AND type = 'assistant_msg' "
                 "AND subagent_id IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.block')) = 'text' ORDER BY id DESC LIMIT 1"),
                 {"t": turn_id})).scalar()
@@ -351,14 +497,25 @@ class Notifier:
                     from bridge.api_error import classify, one_line
                     error = one_line(classify(er[0] if er[0] != "null" else None, er[1] if er[1] != "null" else None))
             msg = compose_turn(rule.prefix or "", reason, origin, secs, prompt, reply, error, [(s, d) for s, d in subs])
-            nid = await self._record(c, session_id, turn_id, "turn", reason, "pending", None, msg)
-            if nid:
-                # 이 알림에 실린 끝난 서브에이전트는 묶음에서 다시 세지 않는다
-                await c.execute(text(
-                    "UPDATE subagent_run SET notified_at = UTC_TIMESTAMP(3) WHERE spawn_turn_id = :t "
-                    "AND status <> 'running' AND notified_at IS NULL"), {"t": turn_id})
-        if nid:
-            await self._send_q.put((nid, msg))
+            # 사람에게 묻는 말로 끝난 턴(대시보드 「답 기다림」과 같은 판정)은 급한 것 — 묶음으로 미루지 않는다
+            from bridge.api.dashboard import ask_line
+            ask = ask_line(reply) if reason == "stop" else None
+            urgent = reason in URGENT_REASONS or ask is not None
+            relay = None
+            if role in WORKER_ROLES and self.managers is not None:
+                if ask is not None and rule.relay_questions:
+                    relay = "question"
+                elif rule.relay_reports:
+                    relay = "report"
+            if relay:
+                return {"rule": rule, "project": project, "session_id": session_id, "turn_id": turn_id,
+                        "reason": reason, "msg": msg, "urgent": urgent, "relay": relay,
+                        "label": f"세션 {session_id}" + (f" 「{title}」" if title else "") + f"({role})",
+                        "body": relay_body(relay, reason, secs, prompt, reply, error, ask)}
+            q = await self._emit_turn(c, rule, session_id, turn_id, reason, msg, urgent, None)
+        if q:
+            await self._send_q.put(q)
+        return None
 
     async def _batch(self, c: Any, rule: ProjectRule, session_id: int, turn_id: int | None, reason: str | None,
                      quiet: bool = False) -> tuple[int, str] | None:
@@ -386,12 +543,98 @@ class Notifier:
                 await self._record(c, session_id, turn_id, "batch", reason, "skipped", "batch_empty")
             return None
         msg = compose_batch(rule.prefix or "", [(s, d) for _, s, d in subs])
-        nid = await self._record(c, session_id, turn_id, "batch", reason, "pending", None, msg)
+        later = rule.digest and "batch" in self.rules.digest_kinds and "failed" not in {s for _, s, _ in subs}
+        nid = await self._record(c, session_id, turn_id, "batch", reason, "digest" if later else "pending",
+                                 "digest" if later else None, msg)
         if not nid:
             return None
         await c.execute(text("UPDATE subagent_run SET notified_at = UTC_TIMESTAMP(3) WHERE id IN :ids").bindparams(
             _expanding("ids")), {"ids": [i for i, _, _ in subs]})
-        return nid, msg
+        return None if later else (nid, msg)
+
+    # ── 하루 묶음(④) ──────────────────────────────────────────
+    async def _digest_loop(self) -> None:
+        while True:
+            try:
+                await self.digest_tick()
+            except Exception as e:  # noqa: BLE001 — 고리가 죽으면 묶음이 조용히 멈춘다. 다음 분에 다시
+                log.warning("하루 묶음 판정 실패: %s: %s", type(e).__name__, str(e)[:200])
+            await asyncio.sleep(60)
+
+    async def digest_tick(self, now: datetime | None = None) -> list[str]:
+        """1분마다. 보낼 시각이 지났고 오늘 아직 안 보냈으면 프로젝트마다 한 통. 돌려주는 값은 한 일(시험용).
+        묶음을 끈 프로젝트도 모아 둔 것이 남아 있으면 내보낸다(끄는 순간 남은 것이 갇히지 않게)."""
+        if not self.rules.enabled:
+            return []
+        tz = ZoneInfo(self.rules.digest_tz)
+        now_utc = now or utcnow()
+        local = now_utc.replace(tzinfo=UTC).astimezone(tz)
+        hh, mm = (int(x) for x in self.rules.digest_at.split(":"))
+        due = (local.hour, local.minute) >= (hh, mm)
+        day = local.date().isoformat()
+        out: list[str] = []
+        for name, r in self.rules.projects.items():
+            out += await self._digest_project(name, r, now_utc, day, due, tz)
+        return out
+
+    async def _has_rule(self, key: str) -> bool:
+        async with self.engine.connect() as c:
+            return (await c.execute(text("SELECT 1 FROM notification WHERE rule = :r LIMIT 1"), {"r": key[:64]})).first() is not None
+
+    async def _digest_project(self, name: str, r: ProjectRule, now_utc: datetime, day: str, due: bool,
+                              tz: ZoneInfo) -> list[str]:
+        pfx = r.prefix or ""
+        like = pfx.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        key = f"digest:{day}:{name}"[:64]
+        async with self.engine.connect() as c:
+            items = (await c.execute(text(
+                "SELECT id, kind, created_at, text FROM notification WHERE decision = 'digest' AND text LIKE :p ORDER BY id"),
+                {"p": like})).all()
+            if not items:
+                return []
+            tries = (await c.execute(text(
+                "SELECT decision, created_at FROM notification WHERE kind = 'digest' AND rule = :k ORDER BY id DESC"),
+                {"k": key})).all()
+        out: list[str] = []
+        late = self.rules.digest_late_h
+        if now_utc - items[0][2] > timedelta(hours=late):
+            lkey = f"digest-late:{day}:{name}"
+            if not await self._has_rule(lkey):
+                self.send_direct(name, "digest", None,
+                                 f"{pfx} ⚠ 하루 묶음이 {late:g}시간 넘게 나가지 않았습니다 — 모아 둔 일상 알림 {len(items)}건. "
+                                 "브리지 로그(foreman.notify)와 config/notify.toml [digest]를 확인해 주십시오", rule=lkey)
+                out.append(f"late:{name}")
+        if not due or any(d == "sent" for d, _ in tries):
+            return out
+        if tries and now_utc - tries[0][1] < timedelta(minutes=self.rules.digest_retry_min):
+            return out
+        msg = compose_digest(pfx, day, [(k, at, t) for _, k, at, t in items], tz)
+        try:
+            await self.tg.send(msg)
+            dec, err = "sent", None
+        except Exception as e:  # noqa: BLE001
+            dec, err = "failed", str(e)[:255]
+        async with self.engine.begin() as c:
+            await c.execute(text(
+                "INSERT INTO notification (kind, decision, rule, text, error, sent_at) "
+                "VALUES ('digest', :d, :k, :t, :e, IF(:d = 'sent', UTC_TIMESTAMP(3), NULL))"),
+                {"d": dec, "k": key, "t": msg, "e": err})
+            if dec == "sent":
+                await c.execute(text(
+                    "UPDATE notification SET decision = 'bundled', sent_at = UTC_TIMESTAMP(3) WHERE id IN :ids").bindparams(
+                    _expanding("ids")), {"ids": [i for i, *_ in items]})
+        if dec == "sent":
+            out.append(f"sent:{name}")
+            return out
+        log.warning("하루 묶음 전송 실패 %s: %s", name, err)
+        fkey = f"digest-fail:{day}:{name}"
+        if not await self._has_rule(fkey):
+            # 묶음이 너무 길거나 형식 때문에 거부된 것이면 짧은 이 글은 간다. 텔레그램 자체가 막혔으면 로그 · DB에 남는다
+            self.send_direct(name, "digest", None,
+                             f"{pfx} ⚠ 하루 묶음을 보내지 못했습니다({(err or '?')[:80]}) — 일상 알림 {len(items)}건이 남아 있고 "
+                             f"{self.rules.digest_retry_min:g}분마다 다시 보냅니다", rule=fkey)
+        out.append(f"failed:{name}")
+        return out
 
     async def _record(self, c: Any, session_id: int | None, turn_id: int | None, kind: str, reason: str | None,
                       decision: str, rule: str | None, msg: str | None = None) -> int | None:
