@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import text
 
-from bridge.notion import HumanEdited, OutOfScope, content_digest, git_show
+from bridge.notion import HumanEdited, OutOfScope, content_digest, first_h1, git_show
 
 log = logging.getLogger("foreman.docsync")
 
@@ -115,7 +115,7 @@ async def status(pub: Any) -> dict[str, Any]:
         rows = {r["path"]: dict(r) for r in (await c.execute(text(
             "SELECT path, status, title, content_hash, commit_sha, notion_page_id, url FROM doc_publish "
             "WHERE project = :p AND (path LIKE 'docs/%' OR path = :m)"), {"p": pub.project, "m": MARK})).mappings().all()}
-    new, changed, broken = [], [], []
+    new, changed, broken, h1_missing = [], [], [], []
     for f in files:
         r = rows.get(f)
         try:
@@ -124,6 +124,13 @@ async def status(pub: Any) -> dict[str, Any]:
         except (FileNotFoundError, OutOfScope) as e:
             broken.append({"path": f, "error": str(e)})
             continue
+        if getattr(pub, "h1_title", False):                          # title = "h1"(11-12): 제목 = 첫 H1. 없으면 README 표 제목 그대로
+            h1 = first_h1(body)[1]
+            if h1:
+                names[f] = h1                                        # H1이 바뀌면 아래 r["title"] != names[f]로 changed가 된다
+            else:
+                h1_missing.append(f)
+                log.warning("첫 H1이 없어 README 표 제목을 씁니다(%s): %s", pub.project, f)
         if getattr(pub, "keep_title", False) and r:
             names[f] = r["title"]                                    # 제목 유지(사람이 붙인 "00. 모델 준비" — 사이드바 순서)
         if not r or r["status"] != "published":
@@ -134,6 +141,7 @@ async def status(pub: Any) -> dict[str, Any]:
     mark = rows.get(MARK) or {}
     return {"project": pub.project, "mode": pub.docs_mode, "ref": pub.ref, "ref_sha": ref_sha(pub.repo, pub.ref),
             "files": files, "titles": names, "new": new, "changed": changed, "deleted": deleted, "broken": broken,
+            "h1_missing": h1_missing,      # title = "h1"인데 첫 H1이 없어 README 표 제목을 쓴 파일(서기 할 일에 한 줄)
             "synced": mark.get("commit_sha"), "behind_commits": commits_behind(pub.repo, mark.get("commit_sha"), pub.ref),
             "last_commit_at": last_docs_commit(pub.repo, pub.ref)}
 
@@ -291,6 +299,8 @@ async def todo_items(pub: Any, last: dict[str, Any] | None) -> list[dict[str, An
         out.append({"kind": "publish", "act": "docsync", "project": pub.project,
                     "title": f"Notion 기술문서 — {commits}파일 {n + len(st['broken'])}개 뒤처짐({' · '.join(p for p in parts if p)})",
                     "why": why})
+    # 첫 H1이 없는 문서(st["h1_missing"])는 서기 할 일에 넣지 않는다 — 화면이 act를 docsync · force만 알아서(scribe.js) 새 act는
+    # 보이지 않고 개수만 센다. 지금은 status 필드 + 로그 경고로 남기고, 화면 줄은 관리자 몫으로 넘긴다(log 기록)
     for h in (last or {}).get("held", []):
         if h["path"] in st["changed"]:
             out.append({"kind": "publish", "act": "force", "project": pub.project, "path": h["path"],

@@ -15,6 +15,13 @@
 #   ref        원본 커밋. FOREMAN은 HEAD(이 저장소 main), 다른 프로젝트는 origin/main(push된 것 — Notion은 GitHub의 사본)
 #   docs       off(기술문서를 다루지 않음) · manual(뒤처짐만 보이고 [지금 맞추기]로) · auto(docs 커밋 뒤 quiet_min분 조용하면 자동)
 #   quiet_min  auto의 기다림(분)
+#   title      (선택) "keep" = 이미 짝지은 페이지 제목을 건드리지 않음 · "h1" = Notion 제목을 문서의 첫 H1 줄로(11-12, docs/ 기술문서만)
+#     - "h1": 새 페이지와 이미 짝지은 페이지 모두 — H1이 바뀌면 다음 맞추기에서 Notion 제목이 바뀐다(status가 바뀐 것으로 잡는다).
+#       headings = "md"여도 그 H1은 제목으로만 쓰고 본문 heading으로 한 번 더 넣지 않는다. 새 페이지 제목은 new_title = "numbered"보다 H1이 앞선다
+#     - 「첫 H1」 = 코드 울타리 · 맨 위 YAML 머리말 · HTML 주석 밖에서 처음 나오는 `# ` 줄. 앞에 빈 줄 · 글 · 인용 · 소제목이 있어도 그 줄이다
+#       (그 한 줄만 본문에서 빠지고 둘째 H1부터는 본문 heading). 빈 제목(`# `만)은 건너뛴다
+#     - 첫 H1이 없는 문서는 옛 방식(파일 이름 — README 표 설명)으로 올리고, 로그 경고 + status의 h1_missing에 남긴다
+#     - "keep"과 "h1"은 같은 칸이라 함께 쓸 수 없다. 모르는 값(오타 포함)은 거부하지 않고 기본 방식으로 돌리며 로그 경고를 남긴다
 # 사람이 Notion에서 고친 블록이 있으면 덮지 않고 알린다(11-09 사용자 결정 — git이 원본, 조용히 갈라지지 않게).
 
 [foreman]
