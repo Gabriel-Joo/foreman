@@ -90,10 +90,12 @@
 
 - force push 4초 뒤 `foreman.pipeline check_watch 실패: TypeError: '>' not supported between instances of 'str' and 'datetime.datetime'`. 11-10부터 8번
 - `bridge/pipeline.py` 584 `check_watch` — 실패하면 경고 한 줄만 남기고 그 회차의 「빌드 끝 알림 없음」 · 「push했는데 빌드 없음」 감시를 건너뛴다. 원인 후보 600 ~ 602 `MAX(COALESCE(ended_at, :n))`가 글자로 돌아옴(확인 안 함). 코드 일 — 사용자에게 물음
+- **사용자 지시(310 경유): 지금 고칠 일** — 310 조사: 저널(11-06 12:31부터) 69번(11-06 9 · 11-09 51 · 11-10 3 · 11-11 1 · 11-12 5), 11-09 13:10 ~ 13:18 · 20:18 ~ 20:33은 30초마다 이어져 그동안 감시가 통째로 없었다. 나는 때 = push 뒤 시작 알림 전 + 지난 1시간 안에 빌드 — 「빌드 없음」을 재야 하는 바로 그때. 예외가 for 밖으로 나가 뒤 프로젝트도 건너뜀
+- 교장 경로 dispatch **407** → 코더 **311**(sonnet — 교장은 opus를 냈으나 바꿈, `.worktrees/foreman` · `cc/foreman`). 지시: 재현 시험부터 · `busy`를 datetime으로 · 프로젝트마다 감싸기 · 감시 실패 알림(한 번 + 다시 돎, 새 설정 칸이 필요하면 묻기) · 맡은 파일 `bridge/pipeline.py` · 시험, 커밋만, 되돌리는 법
 
 ## 남은 것
 
 - ~~310의 CLAUDE.md 보고 → push~~(5daee2c, 그 뒤 새 이력 7073123) · ~~커밋 메시지 정리~~(14개) · ~~옮기기 빈자리~~(README 「나중에 할 일」)
 - 합치기 카드(runshoes 더하기 · 브리지 · 전체 시험) — 300의 챗봇 일이 끝난 뒤. 300 브랜치는 합치기 전에 `rebase --onto bdce4a0 95a3e57`이 필요하다(그냥 합치면 옛 이력 202개가 다시 들어온다) — 카드가 그 브랜치를 그대로 합치려 하면 안 된다
 - 백업 참조 `refs/backup/main-before-reword-20261112`(로컬) · 원격 태그 `archive/main-before-reword-20261112`를 지울지 — 사용자가 따로 정함
-- `check_watch` TypeError — 사용자에게 물음
+- `check_watch` TypeError — 코더 311이 고치는 중. 끝나면 merge-tree 따로 → 합침 → 전체 시험 → push → 승인 대기 0 → 브리지 다시 띄우기
