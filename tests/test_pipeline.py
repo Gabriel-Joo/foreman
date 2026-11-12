@@ -548,3 +548,81 @@ async def test_argocd_running_read_closes_or_alerts(env):
         assert k2 == [f"argo_stuck:runshoes:{r2['build']}"] and "읽지 못했습니다: 종료 코드 1" in notifier.sent[-1][2]
     finally:
         await engine.dispose()
+
+
+def test_as_dt_accepts_strings():
+    """MySQL이 MAX(COALESCE(...))를 문자열로 돌려줘도(11-12 check_watch TypeError) datetime으로 맞춘다."""
+    from bridge.pipeline import _as_dt
+    d = datetime(2026, 11, 12, 9, 54, 42)
+    assert _as_dt("2026-11-12 09:54:42.000") == d and _as_dt(d) is d and _as_dt(None) is None
+
+
+@pytest.mark.db
+async def test_watch_with_running_build_does_not_raise(env):
+    """진행 중 빌드가 있고 push 대기가 있는 바퀴 — 예전엔 busy가 문자열이라 max(datetime, str)에서 TypeError였다."""
+    s, repo, conn = env
+    t0 = datetime.now(UTC).replace(tzinfo=None, microsecond=0) - timedelta(minutes=30)
+    c1 = _commit(repo, "a.txt", t0)
+    _git(repo, "update-ref", "refs/remotes/origin/main", c1)
+    engine = make_engine(s)
+    notifier = FakeNotifier()
+    pm = PipelineManager(engine, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+                         notifier)
+    try:
+        await pm.start(loops=False)
+        p = pm.rules.projects["runshoes"]
+        await pm.track_origin(p)
+        c2 = _commit(repo, "b.txt", t0 + timedelta(minutes=1))
+        _git(repo, "update-ref", "refs/remotes/origin/main", c2)
+        await pm.track_origin(p)
+        pend = pm._pending["runshoes"]
+        pend["at"] -= timedelta(minutes=20)
+        other = _commit(repo, "x.txt", t0 + timedelta(minutes=2))
+        await pm.on_jenkins({"job": "runshoes-app", "number": 20, "phase": "started", "commit": other, "cause": "webhook"})
+        await pm.check_watch()                      # 진행 중 빌드(ended_at NULL)가 있다 → busy = 지금
+        assert not [m for _, _, m in notifier.sent if "감시 실패" in m]
+        assert pend["state"] == "ok"                # 앞 빌드가 돌고 있으니 지금부터 잰다
+        # 끝난 빌드만 있을 때(busy = 끝난 시각, datetime)도 같다
+        await pm.on_jenkins({"job": "runshoes-app", "number": 20, "phase": "completed", "result": "SUCCESS",
+                             "commit": other, "cause": "webhook"})
+        await pm.check_watch()
+        assert not [m for _, _, m in notifier.sent if "감시 실패" in m]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.db
+async def test_watch_failure_isolated_alerted_once_and_recovery(env):
+    """프로젝트 하나가 예외여도 다른 프로젝트는 이어 돌고, 같은 사유는 한 번만 알리며, 다시 돌면 한 번 알린다."""
+    s, repo, conn = env
+    engine = make_engine(s)
+    notifier = FakeNotifier()
+    pm = PipelineManager(engine, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+                         notifier)
+    try:
+        await pm.start(loops=False)
+        jobs = [n for n, p in pm.rules.projects.items() if p.jenkins_job]
+        assert "runshoes" in jobs and len(jobs) >= 2
+        seen: list[str] = []
+        broken = {"on": True}
+
+        async def fake(p):
+            seen.append(p.name)
+            if p.name == "runshoes" and broken["on"]:
+                raise TypeError("'>' not supported between instances of 'str' and 'datetime.datetime'")
+        pm._watch_project = fake
+        await pm.check_watch()
+        await pm.check_watch()
+        assert {n for n in jobs} <= set(seen)                           # 하나가 실패해도 모든 프로젝트를 봤다
+        fails = [m for _, _, m in notifier.sent if "감시 실패" in m]
+        assert len(fails) == 1 and "runshoes" in fails[0] and "TypeError" in fails[0]   # 두 바퀴에 한 번
+        broken["on"] = False
+        await pm.check_watch()
+        await pm.check_watch()
+        ups = [m for _, _, m in notifier.sent if "감시 다시 돎" in m]
+        assert len(ups) == 1 and "runshoes" in ups[0]
+        broken["on"] = True                                             # 다시 고장나면 새로 한 번 알린다
+        await pm.check_watch()
+        assert len([m for _, _, m in notifier.sent if "감시 실패" in m]) == 2
+    finally:
+        await engine.dispose()
