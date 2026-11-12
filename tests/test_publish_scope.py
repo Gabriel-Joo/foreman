@@ -32,6 +32,12 @@ class FakeDocSync:
     def __init__(self):
         self.calls = []
 
+    def hold(self, name, path, edits, url):
+        return True
+
+    def release(self, name, path):
+        pass
+
     async def run_one(self, name, force=frozenset()):
         self.calls.append((name, set(force)))
         return {"done": [], "held": [], "failed": []}

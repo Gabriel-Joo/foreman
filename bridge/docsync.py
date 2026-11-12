@@ -240,6 +240,26 @@ class DocSync:
         self._alert(pub, res)
         return res
 
+    def hold(self, name: str, path: str, edits: list[str], url: str | None) -> bool:
+        """한 쪽 게시(POST /api/publish action=publish)가 사람 수정으로 멈췄을 때(11-12) — [지금 맞추기]로 멈춘 것과 같은 꼴로
+        last["held"]에 남기고(같은 파일은 한 줄) 텔레그램 ✋을 보낸다(같은 파일 · 같은 커밋이면 한 번). docs/ 문서만(서기 할 일의 덮기 줄 자리)."""
+        pub = self.pubs.get(name)
+        if pub is None or pub.docs_mode == "off" or not path.startswith("docs/"):
+            return False
+        sha = ref_sha(pub.repo, pub.ref)
+        res = self.last.setdefault(name, {"project": name, "ref_sha": sha, "done": [], "held": [], "failed": [], "at": time.time()})
+        # ref_sha를 항목에 둔다 — git이 다시 바뀌면 이 줄은 사라진다(todo_items). 같은 경로의 옛 줄은 바꿔 끼운다
+        entry = {"path": path, "edits": list(edits[:5]), "count": len(edits), "url": url, "ref_sha": sha}
+        res["held"] = [h for h in res["held"] if h["path"] != path] + [entry]
+        self._alert(pub, {"held": [entry], "failed": [], "ref_sha": sha})
+        return True
+
+    def release(self, name: str, path: str) -> None:
+        """한 쪽 게시가 성공했으면 그 파일의 덮기 줄을 치운다."""
+        res = self.last.get(name)
+        if res:
+            res["held"] = [h for h in res.get("held", []) if h["path"] != path]
+
     def _alert(self, pub: Any, res: dict[str, Any]) -> None:
         if not self.notifier:
             return
@@ -306,7 +326,8 @@ async def todo_items(pub: Any, last: dict[str, Any] | None) -> list[dict[str, An
     # 첫 H1이 없는 문서(st["h1_missing"])는 서기 할 일에 넣지 않는다 — 화면이 act를 docsync · force만 알아서(scribe.js) 새 act는
     # 보이지 않고 개수만 센다. 지금은 status 필드 + 로그 경고로 남기고, 화면 줄은 관리자 몫으로 넘긴다(log 기록)
     for h in (last or {}).get("held", []):
-        if h["path"] in st["changed"]:
+        # 한 쪽 게시가 남긴 줄(ref_sha가 있는 것)은 git이 그 뒤로 또 바뀌었으면 사라진다
+        if h["path"] in st["changed"] and h.get("ref_sha", st["ref_sha"]) == st["ref_sha"]:
             out.append({"kind": "publish", "act": "force", "project": pub.project, "path": h["path"],
                         "title": f"Notion에서 사람이 고친 곳 {h['count']}개 — {h['path']}",
                         "why": "덮지 않았습니다. 그 수정을 git에 옮기면 풀리고, 버리려면 [Notion 수정 버리고 덮기]"})
