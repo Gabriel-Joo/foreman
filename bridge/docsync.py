@@ -152,7 +152,10 @@ def behind(st: dict[str, Any]) -> int:
 
 async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset()) -> dict[str, Any]:
     """바뀐 파일만 올리고, 지워진 원본의 페이지는 휴지통으로, 새 페이지가 생겼으면 차례를 다시 세운다.
-    사람이 Notion에서 고친 페이지는 덮지 않는다(force에 든 경로만 덮는다). 하나라도 막히면 @docs-sync를 옮기지 않는다 — 뒤처짐이 남는다."""
+    사람이 Notion에서 고친 페이지는 덮지 않는다(force에 든 경로만 덮는다). 하나라도 막히면 @docs-sync를 옮기지 않는다 — 뒤처짐이 남는다.
+    저장소 게시 설정을 잃어 멈춘 게시기(config_halt, bridge/notioncfg.py)는 아무것도 하지 않는다 — API · tick이 먼저 막지만 마지막 문."""
+    if getattr(pub, "config_halt", None):
+        return {"project": pub.project, "ref_sha": None, "done": [], "held": [], "failed": [], "halted": pub.config_halt}
     st = await status(pub)
     done, held, failed = [], [], []
     for f in st["new"] + st["changed"]:
@@ -218,7 +221,7 @@ class DocSync:
     async def tick(self) -> None:
         now = datetime.now(UTC).replace(tzinfo=None)
         for name, pub in self.pubs.items():
-            if pub.docs_mode != "auto":
+            if pub.docs_mode != "auto" or getattr(pub, "config_halt", None):     # 멈춘 게시기는 건너뛴다(알림은 notioncfg가 했다)
                 continue
             st = await status(pub)
             if not behind(st) and not st["broken"]:
@@ -305,6 +308,11 @@ async def summary(pub: Any, last: dict[str, Any] | None) -> dict[str, Any]:
 
 async def todo_items(pub: Any, last: dict[str, Any] | None) -> list[dict[str, Any]]:
     """서기 할 일 — 프로젝트 · 묶음마다 한 줄(11-09 요청 3-1: 파일마다 한 줄을 묶는다) + 사람 수정으로 멈춘 파일마다 한 줄."""
+    if halt := getattr(pub, "config_halt", None):
+        # 저장소 게시 설정을 잃어 멈춤(11-12) — 이 한 줄만. act docsync — 서기 화면이 기술문서 줄 옆에 why를 보인다(scribe.js
+        # docsBlock). 그 줄의 [지금 맞추기]를 눌러도 서버가 같은 사유로 거절한다
+        return [{"kind": "publish", "act": "docsync", "project": pub.project, "halted": True,
+                 "title": "Notion 게시 멈춤 — 저장소 게시 설정을 읽지 못했습니다", "why": halt}]
     if pub.docs_mode == "off":
         return []
     st = await status(pub)

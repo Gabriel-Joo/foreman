@@ -32,6 +32,12 @@ def _pub(request: Request, project: str = "foreman") -> Any:
     return p
 
 
+def _halted(p: Any) -> JSONResponse | None:
+    """저장소 게시 설정(.foreman/notion.toml)을 잃어 멈춘 게시기(11-12, bridge/notioncfg.py) — 아무것도 쓰지 않고 거절."""
+    why = getattr(p, "config_halt", None)
+    return JSONResponse({"refused": why, "halted": True}, status_code=409) if why else None
+
+
 @router.get("/publish")
 async def publish_list(request: Request, project: str = "foreman") -> dict[str, Any]:
     """게시 상태 읽기. ?project= 없으면 FOREMAN(서기 화면 [게시] — 지금까지와 같음). 프로젝트 토큰은 자기 프로젝트만(scopetoken)."""
@@ -50,6 +56,25 @@ async def publish_list(request: Request, project: str = "foreman") -> dict[str, 
     return out
 
 
+@router.delete("/publish/repo-config")
+async def forget_repo_config(request: Request, project: str) -> JSONResponse:
+    """저장소 설정 기억 지우기(11-12) — 저장소 파일을 일부러 없애고 FOREMAN config/notion.toml 칸으로 되돌릴 때. 관리 토큰만
+    (프로젝트 토큰은 scopetoken이 이 길을 막고, 여기서 한 번 더). 저장소 파일이 아직 있으면 다음 읽기에서 다시 기억한다."""
+    if getattr(request.state, "token_scope", None) is not None:
+        raise HTTPException(403, "저장소 설정 기억 지우기는 FOREMAN 관리 토큰으로만 할 수 있습니다")
+    cfg = getattr(request.app.state, "notion_cfg", None)
+    if cfg is None:
+        raise HTTPException(503, getattr(request.app.state, "publisher_off", None) or "Notion 게시가 꺼져 있습니다")
+    pub = (getattr(request.app.state, "publishers", None) or {}).get(project)
+    lock = getattr(getattr(request.app.state, "docsync", None), "_lock", None)
+    if lock is not None:
+        async with lock:                              # 맞추기 도중에 칸이 바뀌지 않게
+            had = cfg.forget(project, pub)
+    else:
+        had = cfg.forget(project, pub)
+    return JSONResponse({"project": project, "forgot": had, "config": cfg.state.get(project)})
+
+
 class PairIn(BaseModel):
     project: str = Field(max_length=64)
     path: str = Field(min_length=4, max_length=255)
@@ -65,6 +90,8 @@ async def publish_pair(body: PairIn, request: Request) -> JSONResponse:
     if scope is not None and body.project != scope:
         raise HTTPException(403, f"프로젝트 토큰({scope})으로는 이 프로젝트 짝만 등록할 수 있습니다 — 받은 project: {body.project}")
     p = _pub(request, body.project)
+    if (stop := _halted(p)) is not None:
+        return stop
     try:
         r = await p.pair(body.path, body.page_id)
     except OutOfScope as e:
@@ -86,6 +113,8 @@ async def publish_do(body: PublishIn, request: Request) -> JSONResponse:
         if body.force or body.action == "docsync":
             raise HTTPException(403, f"프로젝트 토큰({scope})으로는 할 수 없습니다 — force · 한꺼번에 맞추기는 FOREMAN 관리자에게 부탁합니다")
     p = _pub(request, body.project)
+    if (stop := _halted(p)) is not None:
+        return stop
     when = (datetime.now(UTC) + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M KST")
     try:
         if body.action == "move" and not body.section:

@@ -187,7 +187,10 @@ def test_refresh_picks_up_new_push_and_removal(tmp_path):
     _git(tmp_path, "rm", "-q", ".foreman/notion.toml")
     _repo(tmp_path)
     assert cfg.refresh({"ronanlab-infra": pub}) == ["ronanlab-infra"]
-    assert pub.docs_mode == "manual" and pub.keep_title and pub.create is False      # 파일을 지우면 FOREMAN 칸으로
+    # 11-12 — 저장소 파일을 쓰던 프로젝트가 파일을 잃으면 FOREMAN 칸으로 떨어지지 않고 멈춘다(가장 좁은 칸 + config_halt)
+    assert pub.config_halt and pub.create is False and pub.archive_ok is False and pub.keep_order
+    cfg.forget("ronanlab-infra", pub)                                         # 일부러 되돌리기 — 그때만 FOREMAN 칸
+    assert pub.config_halt is None and pub.docs_mode == "manual" and pub.keep_title and pub.create is False
 
 
 def test_docsync_calls_before_tick(monkeypatch):
