@@ -1088,14 +1088,30 @@ class Publisher:
                 self._me_id = None
         return self._me_id
 
-    async def human_edits(self, pid: str, new: list[dict[str, Any]]) -> list[str]:
+    def prev_blocks(self, path: str, row: dict[str, Any] | None) -> list[dict[str, Any]] | None:
+        """지난번 올린 git 판(짝 commit_sha)의 블록 — human_edits가 "지난 판 그대로인 블록"을 사람 수정으로 보지 않게(11-12).
+        commit_sha가 없는 짝(사람이 옮긴 페이지를 처음 짝지음)이나 그 판을 못 읽으면(경로 바뀜을 따라가도 없음) None — 지금처럼 보수적으로."""
+        sha = (row or {}).get("commit_sha")
+        if not sha:
+            return None
+        try:
+            old = renamed_from(self.repo, sha, self.ref, path)        # 그 뒤 git mv 했으면 그때 경로로
+            body, _ = git_show(self.repo, old, sha)
+            _, blocks = md_to_blocks(body, self._ctx(path, sha))
+        except (FileNotFoundError, OutOfScope, OSError, subprocess.SubprocessError):
+            return None
+        return blocks
+
+    async def human_edits(self, pid: str, new: list[dict[str, Any]], prev: list[dict[str, Any]] | None = None) -> list[str]:
         """Notion에서 사람이 고친(또는 더한) 블록 — 마지막으로 고친 쪽이 우리 봇이 아니고, 글이 새 원본의 어느 블록과도 다른 것.
         11-09 사용자 결정: git이 원본이지만, 사람이 고친 것을 덮지 않고 알린다("git과 Notion이 조용히 갈라진다"를 막는다).
-        mermaid 코드는 뺀다 — 미리보기로만 바꿔도 마지막으로 고친 쪽이 사람이 된다. 돌려주는 값: 블록 글 앞부분들."""
+        mermaid 코드는 뺀다 — 미리보기로만 바꿔도 마지막으로 고친 쪽이 사람이 된다. 돌려주는 값: 블록 글 앞부분들.
+        prev(11-12) — 지난번 올린 git 판의 블록. 그 판과 글이 같은 블록도 사람 수정이 아니다: 맞추기는 글이 같은 블록(kept)을 손대지
+        않아 Notion의 마지막 수정자가 처음 쓴 사람으로 남는다 — git에서 그 문단만 고치면 사람이 고친 것으로 잘못 보았다(인프라 09, 28bc048)."""
         me = await self._me()
         if not me:
             return []
-        sigs = {_sig(b) for b in new}
+        sigs = {_sig(b) for b in new} | {_sig(b) for b in (prev or [])}
         out = []
         for b in await self.c.children(pid):
             t = b.get("type")
@@ -1146,9 +1162,12 @@ class Publisher:
                             "title": title}
                 if "shape" in self.keep_notion:
                     return await self._publish_shape(path, pid, row, blocks, commit, digest, title, force)
+                prev = None if force else self.prev_blocks(path, row)
                 if self.keep_notion:
-                    blocks = adopt_notion_shape(await self.c.children(pid), blocks, self.keep_notion)
-                if not force and (edits := await self.human_edits(pid, blocks)):
+                    kids = await self.c.children(pid)
+                    blocks = adopt_notion_shape(kids, blocks, self.keep_notion)
+                    prev = adopt_notion_shape(kids, prev, self.keep_notion) if prev is not None else None
+                if not force and (edits := await self.human_edits(pid, blocks, prev)):
                     raise HumanEdited(path, edits, row["url"])
                 blocks = await resolve_uploads(self.c, self.repo, blocks, await self._upload_limit(), self.ref)
                 st = await sync_children(self.c, pid, blocks)    # 같은 페이지 · 같은 URL, 바뀐 블록만(mermaid 미리보기가 남는다)
