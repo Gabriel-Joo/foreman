@@ -36,3 +36,11 @@
 - 312 물음: `render.js` `ORIGIN_LABEL`에 `manager_ask` 이름표가 없어 패널에 글자 그대로 보임(맡은 파일 밖) → 한 줄 허락(화면 글 「~습니다」), 같은 브랜치에 따로 커밋. `POST /api/sessions/312/input`(대기열)
 - **알아둘 것**: 이 세션 셸에는 `XDG_RUNTIME_DIR`이 없고 `DBUS_SESSION_BUS_ADDRESS`가 `/tmp/dbus-…`를 가리켜 `systemctl --user`가 「Process org.freedesktop.systemd1 exited with status 1」로 실패했다. `XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus`를 앞에 두면 된다(실패한 첫 시도는 브리지를 건드리지 않았다 — 15:13:04 그대로였음을 확인)
 - 실제로 `manager_ask`로 잡히는지는 다음 관리자 부탁 턴에서 DB로 본다
+
+## 312 ②~④ 합침 · FOREMAN · 인프라 켬
+
+- 312 보고: `9499739`(이름표 「관리자 부탁」) · `597cb6e`(② 작업 보고 → 관리자 「[작업 보고 — …]」 ③ 묻는 말 → 「[사람에게 올릴 물음 — …]」 + 「관리자가 답하지 않습니다」, 관리자가 그걸로 연 턴은 출처 `relay` ④ `notification.decision = 'digest'`로 모아 21:00 Asia/Seoul 프로젝트마다 한 통, 스키마 안 바꿈). 스위치 `notify.toml [projects.*] relay_reports · relay_questions · digest` 모두 false로
+- 관리자 품질 판단(이제 관리자 몫): 312 log의 급한 것 목록 · 되돌리는 법 · 시험 8개 읽음. 알아둘 것 — **보고 넘기기만 켜면 텔레그램이 일꾼 몫에서 관리자 relay 턴 몫으로 옮겨 갈 뿐**이라(312 「설계와 달랐던 점」) 셋을 함께 켬
+- merge-tree exit 0(따로) → `--no-ff cc/foreman-3` **`f567676`** → `config/notify.toml` FOREMAN · 인프라 세 칸 true **`7c66c67`**(사용자 결정 「먼저 켤 곳 FOREMAN과 인프라」) → pytest **771** · node **123** → push → 승인 대기 0 → **브리지 19:01:25**(633656 → 728766), 오류 0
+- 312: `render.js` `relay` 이름표(「작업 세션 보고」) 허락 — 같은 브랜치에 따로 커밋. 299에게 켠 것 · 「물음은 답하지 말고 모아 사람에게」 알림(delivered)
+- 볼 것: 첫 작업 보고가 관리자 입력 칸에 오는지(session_action `mgr-relay`) · 21:00 첫 묶음이 나가는지 · 펫퍼민트 · 런슈즈는 그대로인지
