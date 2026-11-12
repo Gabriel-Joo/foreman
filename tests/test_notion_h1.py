@@ -84,7 +84,7 @@ class _Pub(nt.Publisher):
     async def _upload_limit(self):
         return None
 
-    async def human_edits(self, pid, blocks):
+    async def human_edits(self, pid, blocks, prev=None):
         return []
 
 
