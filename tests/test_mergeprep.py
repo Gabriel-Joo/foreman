@@ -492,11 +492,16 @@ def test_load_per_project_and_human_always(tmp_path):
         mp.load(tmp_path / "b.toml")
 
 
-def test_live_config_starts_as_today():
-    """처음엔 모두 지금 동작(사람 승인 · ff) — 켜기는 합친 뒤 관리자가."""
-    c = mp.load(Path(__file__).resolve().parent.parent / "config" / "handoff.toml")
-    for p in ("foreman", "ronanlab-infra", "runshoes", "petmint-rag-chatbot"):
+def test_config_without_project_rules_is_human_and_ff(tmp_path):
+    """프로젝트 칸이 없으면 사람 승인 · ff, 칸이 있으면 그 값을 읽는다 — 실제 config/handoff.toml 대신 시험용 파일(11-12 사용자)."""
+    (tmp_path / "a.toml").write_text(
+        '[merge_prep]\nenabled = true\n[merge_prep.per_project.foreman]\napprover = "manager"\nsquash = true\n'
+        '[merge_prep.per_project.ronanlab-infra]\napprover = "human"\nsquash = false\n'
+        '[merge_prep.human_always]\npaths = ["config/*.toml"]\nresource_keys = ["cpu"]\nhistory_words = ["force push"]\n')
+    c = mp.load(tmp_path / "a.toml")
+    for p in ("ronanlab-infra", "runshoes", "petmint-rag-chatbot", "none"):           # 사람 · ff (칸이 없거나 human)
         assert c.approver_of(p) == "human" and not c.rule(p).squash
+    assert c.approver_of("foreman") == "manager" and c.rule("foreman").squash         # 칸이 있으면 그 값
     assert c.human_always.paths and c.human_always.resource_keys and c.human_always.history_words
 
 
