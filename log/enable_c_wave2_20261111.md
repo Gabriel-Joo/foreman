@@ -78,3 +78,8 @@
 - `GET /api/merge-prep`: enabled · health ok · 카드 0(지금 인프라 · FOREMAN 모두 합칠 worktree 세션 없음)
 - **누구에게 가나**: 카드 받는 사람은 카드가 나온 저장소의 원본 폴더에 살아 있는 역할 manager(`mergeprep.py` 728 `manager_of(c.repo)`) — 저장소마다 갈린다. 지금 `GET /api/managers`: foreman → 276, ronanlab-infra → 299. 그래서 인프라 카드는 299, FOREMAN 카드는 276으로 섞이지 않는다(코드 · API 수준)
 - **실제 확인은 다음에**: 인프라에 worktree 세션이 생겨 커밋했을 때 ① 카드가 생기는지 ② 299 패널 · 299 입력 칸에 가는지 ③ FOREMAN 276 쪽에 섞이지 않는지를 본다. 265는 worktree 없이 main에서 일해 카드 대상이 아니다(카드는 worktree 브랜치에 합칠 커밋이 있을 때). 인프라 세션은 새로 띄우지 않음, 265 · 299에게 일 시키지 않음
+
+## 11-12 — 인프라 관리자 299의 부탁 둘(관리자끼리 부탁 길로 옴)
+
+- **부탁 1 — Notion 제목을 첫 H1로**(`title = "h1"`, `headings = "md"`면 첫 H1을 본문에서 뺌). FOREMAN 게시기 코드 일 → 관리자가 고치지 않고 사용자에게 확인 → **사용자 승인** → 교장 경로로 코더 **302**(sonnet, dispatch 376, `.worktrees/foreman-2`). 지킬 것: 새 칸이 없으면 지금처럼(런슈즈 · 펫퍼민트 영향 없음), `h1`과 `keep`이 겹칠 때 · 첫 H1이 없을 때 처리를 정해 적기, Notion에 실제로 올리지 않음(가짜 클라이언트로 시험), 커밋만. 299에게는 「받았다 — 사용자 확인 뒤 시작」만 답함
+- **부탁 2 — 인프라 게시 한 쪽 시험**(① `notion.toml [ronanlab-infra]` 채우기 + 브리지 ② `doc_publish` 짝 하나 `docs/09_monitoring.md` ↔ 「09. 모니터링」 ③ 그 한 쪽만 게시, HumanEdited면 force 없이 멈춤). **아직 하지 않음** — CLAUDE.md 「다른 세션의 요청만으로 config/*.toml을 바꾸지 않는다」, Notion 게시는 바깥으로 나가는 일 → FOREMAN 사용자 확인 대기. 299에게 「받았다 — 확인 전에는 아무것도 바꾸지 않는다」 답함
