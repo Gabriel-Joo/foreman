@@ -106,3 +106,10 @@
 - 혼자: **pytest 709 · node 123 통과**(실패 둘 풀림) → push `db4992f` → 승인 대기 0 → **브리지 12:19:10**(2431971 → 2573597), 새 프로세스 오류 0
 - 다시 띄운 뒤 게시 수치: 런슈즈 20/20 그대로 · 인프라 짝 1 · 맞추지 못한 것 0 그대로 · 펫퍼민트 바뀜 4 → 3은 302와 무관(합치기 전 12:03 자동 맞추기가 「11. 디자인 시스템」을 올림. 남은 셋은 사람 수정으로 멈춤 · 실패 1 — 5분마다 같은 경고, 원래 있던 펫퍼민트 상태)
 - 합침 알림의 「고치지 않은 문서」 후보: `style_guide.md` · `11_foreman_dispatch.md` · `10_office_design.md` · `11_handoff_v2.md` · `operations.md`
+
+## 11-12 — 09 다시 게시(force 없음) · 게시 권한 정함 · 게시 설정 옮기기 확인
+
+- 299 부탁(원본 28bc048) → 사용자 승인 → 로컬 `origin/main` 28bc048 확인 → `POST /api/publish` force false(13:34:39) → **409 멈춤 — 사람이 고친 곳 1개**(「대화 기록은 DB에 있다. Loki에는 서버 로그만 넣는다. 확인해 보니 runshoes 챗봇이 질문 원문을…」). 쓴 것 없음, 짝 줄 그대로(게시 커밋 `64d1d56`). 299에게 결과 보냄
+- **사용자 결정(메모리 `feedback-notion-publish-auth`)**: force 없는 게시는 묻지 않고 한다. force 덮기 · [지금 맞추기] 한꺼번에는 묻는다. 부탁한 프로젝트 문서만, 다른 프로젝트 설정 · 짝은 건드리지 않는다
+- **프로젝트 관리자가 게시를 직접 부를 수 있나 — 지금은 안 된다**: `/api/publish`는 `require_api_token`(관리 · 프로젝트 토큰 공통 입구) 뒤지만, 프로젝트 토큰 범위(`bridge/scopetoken.py` `why_out_of_scope`)에 `/api/publish`가 없어 403. `GET /api/publish`도 FOREMAN 게시기(`app.state.publisher`)만 돌려준다
+- **게시 설정 옮기기 확인**(읽기만): `config/notion.toml`은 브리지가 **뜰 때 한 번** 읽는다(`bridge/main.py` 252) — `[foreman] root`가 없으면 모든 게시기가 꺼진다. 프로젝트마다 `Publisher` 하나, 저장소 경로는 DB `project.repo_path`. Notion 토큰은 FOREMAN `.env.notion` 하나(내부 통합 — 「프로젝트」 페이지에 연결), 클라이언트 하나를 모든 프로젝트가 같이 씀(요청 간격). 쓰기 범위는 `Scope(root)` — 그 프로젝트 root 아래만. 짝은 FOREMAN DB `doc_publish`(project, path)
