@@ -31,3 +31,6 @@
 
 ## README에서 뺄 줄
 없다.
+
+## 덧붙임 — 시험 두 줄 고침(관리자 276 부탁, 사용자 지시)
+위 pytest 실패 둘은 관리자가 `config/handoff.toml` 두 칸(`[merge_prep] projects`에 ronanlab-infra · `[move] one_flow = true`)을 켜서 실제 설정을 읽는 시험이 옛 값을 기대해 깨진 것이었다(main에서도 실패). `tests/test_mergeprep.py::test_load_config` · `tests/test_moveflow.py::test_switch_off_by_default_and_reads_file`이 실제 `config/` 대신 `tmp_path` 시험용 파일을 읽게 바꿨다(기대값 변경 아님 — 기본값 · 칸 읽기 · 꺼짐 · 깨짐은 그대로 본다). 다시 돌림: pytest 708 통과 · 1 skip · 실패 0, node(`tests/js/*.mjs`) 실패 없음.
