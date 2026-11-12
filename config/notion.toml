@@ -27,6 +27,10 @@
 # 저장소 파일(11-12, bridge/notioncfg.py): 프로젝트 저장소 origin/main에 .foreman/notion.toml이 있으면 docs · quiet_min · skip · create ·
 #   archive · title · order · header · headings · keep_notion · new_parent · new_title은 모두 그 파일 것(아래 칸의 같은 값은 안 씀 — 경고).
 #   root · docs_page · portfolio_page · github · ref는 여기서만. 맞추기 주기(5분)마다 다시 읽고, 깨지면 옛 설정 그대로 + 알림
+#   읽는 판은 그 프로젝트의 ref(없으면 origin/main) — ref를 그 파일이 생기기 전 커밋으로 잠깐 바꾸면 「파일이 사라짐」을 시험할 수 있다
+#   한 번이라도 저장소 파일로 돈 프로젝트(.run/notion_repo_config.json에 기억)가 그 파일을 잃으면(지워짐 · 다시 띄운 뒤에도 깨짐)
+#   여기 칸으로 떨어지지 않고 게시를 멈춘다(알림 · GET /api/publish config.halted · 서기 할 일). 일부러 여기 칸으로 되돌리려면
+#   저장소 파일을 지운 뒤 관리 토큰으로 DELETE /api/publish/repo-config?project=<이름>
 
 [foreman]
 root = "4133218bb52481309e43c865c460eda2"             # 「프로젝트」 > "FOREMAN - AI 에이전트 관제실"(11-09 만듦)

@@ -263,7 +263,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 # 11-12 — 저장소가 정할 수 있는 칸은 <저장소>/.foreman/notion.toml(origin/main)이 있으면 그것(bridge/notioncfg.py).
                 # root · docs_page · portfolio_page · github · ref는 여기(FOREMAN)서만
                 ncfgs = {n: v for n, v in allcfg.items() if isinstance(v, dict)}
-                app.state.notion_cfg = NotionConfig(ncfgs, app.state.notifier)
+                # 11-12 — 저장소 파일로 돈 적이 있는 프로젝트를 .run/에 기억(다시 띄워도 남게) — 잃으면 FOREMAN 칸으로 떨어지지 않고 게시를 멈춘다
+                app.state.notion_cfg = NotionConfig(ncfgs, app.state.notifier, memory=root_dir / ".run" / "notion_repo_config.json")
                 for name, ncfg in ncfgs.items():
                     repo = str(root_dir) if name == "foreman" else repos.get(name)
                     if not ncfg.get("root") or not repo:
@@ -272,6 +273,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         engine, client, ncfg["root"], repo, project=name, gh=ncfg.get("github") or "https://github.com/Gabriel-Joo/foreman",
                         ref=ncfg.get("ref") or "HEAD", docs_page=ncfg.get("docs_page"), portfolio_page=ncfg.get("portfolio_page"),
                         **app.state.notion_cfg.args_for(name, repo))
+                app.state.notion_cfg.mark(app.state.publishers)     # 멈춘 프로젝트의 게시기에 config_halt
                 app.state.publisher = app.state.publishers.get("foreman")
                 app.state.docsync = DocSync(app.state.publishers, app.state.notifier)
                 # 맞추기 주기(5분)마다 저장소 설정을 다시 읽는다 — 프로젝트 관리자는 브리지를 다시 띄울 수 없다. 그래서 auto가 하나도
