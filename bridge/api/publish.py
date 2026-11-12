@@ -42,7 +42,38 @@ async def publish_list(request: Request, project: str = "foreman") -> dict[str, 
     if p is None:
         why = getattr(request.app.state, "publisher_off", None) or f"{project}의 Notion 게시가 설정돼 있지 않습니다(config/notion.toml)"
         return {"enabled": False, "why": why, "docs": []}
-    return {"enabled": True, "root": p.root, "docs": await p.list()}
+    out = {"enabled": True, "root": p.root, "docs": await p.list()}
+    cfg = getattr(request.app.state, "notion_cfg", None)
+    if cfg is not None and project in cfg.state:
+        # 11-12 — 지금 쓰는 설정의 출처(repo · foreman) · 경고 · 오류(깨진 저장소 파일이면 옛 설정 그대로 + stale)
+        out["config"] = {**cfg.state[project], "docs_mode": p.docs_mode}
+    return out
+
+
+class PairIn(BaseModel):
+    project: str = Field(max_length=64)
+    path: str = Field(min_length=4, max_length=255)
+    page_id: str = Field(min_length=32, max_length=64)
+
+
+@router.post("/publish/pair")
+async def publish_pair(body: PairIn, request: Request) -> JSONResponse:
+    """짝 등록(11-12) — 사람이 옮겨 둔 Notion 페이지를 git 문서와 짝짓는다(관리자가 11-12에 SQL로 넣은 방식과 같게).
+    그 프로젝트 root 아래 페이지만(Scope.under_root), 제목 · 부모 · url은 Notion에서 읽은 그대로, content_hash · commit_sha는 비운다
+    (처음 짝이라 사람 수정 판정이 보수적으로 — 다음 게시가 다른 곳을 보여 준다). 같은 경로 · 같은 페이지 짝이 있으면 거부."""
+    scope = getattr(request.state, "token_scope", None)
+    if scope is not None and body.project != scope:
+        raise HTTPException(403, f"프로젝트 토큰({scope})으로는 이 프로젝트 짝만 등록할 수 있습니다 — 받은 project: {body.project}")
+    p = _pub(request, body.project)
+    try:
+        r = await p.pair(body.path, body.page_id)
+    except OutOfScope as e:
+        return JSONResponse({"refused": str(e)}, status_code=409)
+    except FileNotFoundError as e:
+        return JSONResponse({"refused": str(e)}, status_code=409)
+    except NotionError as e:
+        return JSONResponse({"refused": f"Notion이 거부했습니다 — {e}"}, status_code=502)
+    return JSONResponse(r)
 
 
 @router.post("/publish")

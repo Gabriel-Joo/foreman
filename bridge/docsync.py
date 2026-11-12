@@ -201,11 +201,15 @@ class DocSync:
         self.last: dict[str, dict[str, Any]] = {}       # 프로젝트 → 마지막 맞추기 결과(+ at)
         self._sent: set[str] = set()                    # 같은 막힘을 두 번 알리지 않는다(ref 커밋 · 경로 · 종류)
         self._lock = asyncio.Lock()
+        self.before_tick: Any = None                    # 11-12 — 맞추기 전에 저장소 설정 다시 읽기(bridge/notioncfg.py NotionConfig.refresh)
 
     async def run(self) -> None:
         await asyncio.sleep(60)                         # 브리지가 다 뜬 뒤
         while True:
             try:
+                if self.before_tick:
+                    async with self._lock:              # 게시 도중에 칸이 바뀌지 않게
+                        self.before_tick()
                 await self.tick()
             except Exception as e:  # noqa: BLE001 — 한 번 실패해도 다음에 다시
                 log.warning("기술문서 맞추기 실패: %s: %s", type(e).__name__, str(e)[:200])

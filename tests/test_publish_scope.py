@@ -23,6 +23,10 @@ class FakePub:
     async def list(self):
         return [{"path": f"docs/{self.project}.md"}]
 
+    async def pair(self, path, page_id):
+        self.calls.append(("pair", path, page_id))
+        return {"path": path, "action": "paired"}
+
 
 class FakeDocSync:
     def __init__(self):
@@ -85,6 +89,23 @@ def test_status_read_by_project(tmp_path):
     assert c.get("/api/publish?project=petmint-rag-chatbot", headers=h(RUN)).status_code == 403
     r = c.get("/api/publish?project=없는것", headers=h(ADMIN)).json()
     assert r["enabled"] is False and "없는것" in r["why"]
+
+
+def test_pair_api_own_project_only(tmp_path):
+    c, app = _app(tmp_path)
+    body = {"project": "runshoes", "path": "docs/a.md", "page_id": "a" * 32}
+    assert c.post("/api/publish/pair", json=body, headers=h(RUN)).json()["action"] == "paired"
+    r = c.post("/api/publish/pair", json={**body, "project": "petmint-rag-chatbot"}, headers=h(RUN))
+    assert r.status_code == 403 and "이 프로젝트 짝만" in r.json()["detail"]
+    assert c.post("/api/publish/pair", json={**body, "project": "petmint-rag-chatbot"}, headers=h(ADMIN)).status_code == 200
+    assert app.state.publishers["runshoes"].calls == [("pair", "docs/a.md", "a" * 32)]
+
+
+def test_status_shows_config_source(tmp_path):
+    c, app = _app(tmp_path)
+    app.state.notion_cfg = SimpleNamespace(state={"runshoes": {"source": "foreman", "error": None, "warnings": []}})
+    r = c.get("/api/publish?project=runshoes", headers=h(RUN)).json()
+    assert r["config"]["source"] == "foreman" and r["config"]["docs_mode"] == "manual"
 
 
 def test_scope_function_directly():

@@ -27,6 +27,7 @@ from sqlalchemy import text
 
 from bridge.docsync import DocSync
 from bridge.notion import NotionClient, Publisher, load_token
+from bridge.notioncfg import NotionConfig
 from bridge.foreman import ForemanDispatcher
 from bridge.wake import Waker, load_wake
 from bridge.handoff import HandoffManager
@@ -259,20 +260,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 client = NotionClient(tok)          # 프로젝트끼리 한 클라이언트(요청 간격 · 초당 한도를 같이 지킨다)
                 async with engine.connect() as c:
                     repos = {r[0]: r[1] for r in (await c.execute(text("SELECT name, repo_path FROM project"))).all()}
-                for name, ncfg in allcfg.items():
+                # 11-12 — 저장소가 정할 수 있는 칸은 <저장소>/.foreman/notion.toml(origin/main)이 있으면 그것(bridge/notioncfg.py).
+                # root · docs_page · portfolio_page · github · ref는 여기(FOREMAN)서만
+                ncfgs = {n: v for n, v in allcfg.items() if isinstance(v, dict)}
+                app.state.notion_cfg = NotionConfig(ncfgs, app.state.notifier)
+                for name, ncfg in ncfgs.items():
                     repo = str(root_dir) if name == "foreman" else repos.get(name)
-                    if not isinstance(ncfg, dict) or not ncfg.get("root") or not repo:
+                    if not ncfg.get("root") or not repo:
                         continue
                     app.state.publishers[name] = Publisher(
                         engine, client, ncfg["root"], repo, project=name, gh=ncfg.get("github") or "https://github.com/Gabriel-Joo/foreman",
                         ref=ncfg.get("ref") or "HEAD", docs_page=ncfg.get("docs_page"), portfolio_page=ncfg.get("portfolio_page"),
-                        docs_mode=ncfg.get("docs") or "off", quiet_min=float(ncfg.get("quiet_min") or 30),
-                        opts={k: ncfg.get(k) for k in ("create", "title", "order", "header", "keep_notion", "skip", "archive",
-                                                       "headings", "new_parent", "new_title") if k in ncfg})
+                        **app.state.notion_cfg.args_for(name, repo))
                 app.state.publisher = app.state.publishers.get("foreman")
                 app.state.docsync = DocSync(app.state.publishers, app.state.notifier)
-                if any(p.docs_mode == "auto" for p in app.state.publishers.values()):
-                    docsync_task = asyncio.create_task(app.state.docsync.run(), name="foreman-docsync")
+                # 맞추기 주기(5분)마다 저장소 설정을 다시 읽는다 — 프로젝트 관리자는 브리지를 다시 띄울 수 없다. 그래서 auto가 하나도
+                # 없어도 돈다(나중에 저장소 파일로 auto를 켤 수 있게. auto가 아닌 프로젝트는 tick이 건너뛴다)
+                cfg_ = app.state.notion_cfg
+                app.state.docsync.before_tick = lambda: cfg_.refresh(app.state.publishers)
+                docsync_task = asyncio.create_task(app.state.docsync.run(), name="foreman-docsync")
         except (OSError, ValueError) as e:
             app.state.publisher_off = f"Notion 설정을 읽지 못했습니다({type(e).__name__})"
         # 11-05 — 스키마 잠금(세션 둘 이상이 한 프로젝트에 붙을 때 DB 스키마는 한 세션만). 합치기 · 버리기에서 푼다
