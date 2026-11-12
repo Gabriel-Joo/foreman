@@ -5,7 +5,7 @@
 // 10b: 승인 카드 · 대화 · 활동 · 세션 정보 · 파이프라인 HTML은 함수로 내보낸다 — 픽셀 화면 옆 패널(opanel.js)도 같은 것을 쓴다.
 
 export const STATE_LABEL = { ACTIVE: '작업 중', IDLE: '대기', SUSPENDED: '정지', DORMANT: '종료' };
-export const ORIGIN_LABEL = { human: '나', task_notification: '완료 알림', subagent_message: '서브에이전트 결과', agent_message: '다른 세션', meta: '자동 메시지', handoff: '옮기기 요약 요청(FOREMAN)', handoff_in: '옮겨 온 요약(FOREMAN)', manager_ask: '관리자 부탁' };
+export const ORIGIN_LABEL = { human: '나', task_notification: '완료 알림', subagent_message: '서브에이전트 결과', agent_message: '다른 세션', meta: '자동 메시지', handoff: '옮기기 요약 요청(FOREMAN)', handoff_in: '옮겨 온 요약(FOREMAN)', manager_ask: '관리자 부탁', relay: '작업 세션 보고' };
 const END_LABEL = { stop: '끝남', stop_failure: 'API 오류', interrupted: '중단', session_end: '세션 종료', process_lost: '프로세스 사라짐', merged: '다음 입력에 합쳐짐', no_signal: '신호 없음', abandoned: '끝 신호 없이 버려짐' };
 
 import { stuckTurn } from './store.js';
