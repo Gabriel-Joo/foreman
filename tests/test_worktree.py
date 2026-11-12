@@ -219,3 +219,51 @@ async def test_in_base_outside_merge(repo):
     assert await wt.in_base(str(repo), "y") is True
     await wt.remove(str(repo), "y", force=True)
     assert await wt.in_base(str(repo), "y") is None              # 브랜치 없음
+
+
+# ── squash 합치기(11-12, 프로젝트마다 켬) ──
+async def test_squash_merge_one_commit_with_titles_and_dates(repo, monkeypatch):
+    monkeypatch.setattr(wt, "SQUASH_OF", None)
+    p = Path((await wt.create(str(repo), "s"))["path"])
+    for i, n in enumerate(("첫 일", "둘째 일", "기록")):
+        (p / f"f{i}.txt").write_text(f"{i}\n"); sh(p, "add", f"f{i}.txt")
+        sh(p, "commit", "-qm", f"{n}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+           f"--date=2026-11-12T1{i}:0{i}:00")
+    (repo / "c.txt").write_text("c\n"); sh(repo, "add", "c.txt"); sh(repo, "commit", "-qm", "c")   # 원본이 앞서감 → rebase 뒤 squash
+    before = sh(repo, "rev-parse", "main")
+    r = await wt.merge(str(repo), "s", squash=True)
+    assert r["ok"] and r["merged"] == 3 and r["squash"] and "커밋 하나" in r["note"]
+    assert sh(repo, "rev-list", "--count", f"{before}..main") == "1"            # 커밋 하나만 더해졌다
+    assert sh(repo, "rev-parse", "main^") == before
+    msg = sh(repo, "log", "-1", "--format=%B")
+    lines = msg.splitlines()
+    assert lines[0] == "합침(cc/s, 커밋 3개): 첫 일"
+    assert lines[3:6] == ["- 2026-11-12 10:00 첫 일", "- 2026-11-12 11:01 둘째 일", "- 2026-11-12 12:02 기록"]   # 오래된 차례
+    assert msg.count("Co-Authored-By:") == 1                                    # 겹치지 않게 하나로
+    assert all((repo / f"f{i}.txt").exists() for i in range(3))
+    assert not p.exists() and "cc/s" not in sh(repo, "branch")                  # 조상이 아니어도 -D로 지웠다
+
+
+async def test_squash_hook_and_single_commit_is_plain_ff(repo, monkeypatch):
+    seen = []
+
+    async def hook(r):
+        seen.append(r)
+        return True
+    monkeypatch.setattr(wt, "SQUASH_OF", hook)
+    p = Path((await wt.create(str(repo), "one"))["path"])
+    (p / "b.txt").write_text("b\n"); sh(p, "add", "b.txt"); sh(p, "commit", "-qm", "b 하나")
+    r = await wt.merge(str(repo), "one")                                         # squash=None → 훅이 정한다
+    assert seen == [str(repo)] and r["ok"] and "squash" not in r                 # 커밋 하나는 묶을 것이 없다
+    assert sh(repo, "log", "-1", "--format=%s") == "b 하나"
+
+
+async def test_squash_conflict_same_as_before(repo, monkeypatch):
+    monkeypatch.setattr(wt, "SQUASH_OF", None)
+    p = Path((await wt.create(str(repo), "y"))["path"])
+    (p / "a.txt").write_text("wt\n"); sh(p, "commit", "-qam", "wt")
+    (p / "z.txt").write_text("z\n"); sh(p, "add", "z.txt"); sh(p, "commit", "-qm", "z")
+    (repo / "a.txt").write_text("main\n"); sh(repo, "commit", "-qam", "main")
+    r = await wt.merge(str(repo), "y", squash=True)
+    assert not r["ok"] and r["conflict"] == ["a.txt"]
+    assert p.is_dir() and sh(p, "status", "--porcelain") == "" and sh(repo, "log", "-1", "--format=%s") == "main"

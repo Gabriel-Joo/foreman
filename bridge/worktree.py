@@ -200,9 +200,38 @@ async def save_progress(wt_path: str, message: str) -> dict[str, Any]:
     return {"commit": h, "files": len(keep), "skipped": skipped}
 
 
-async def merge(repo: str, name: str) -> dict[str, Any]:
+# squash로 합칠지 — 프로젝트마다(config/handoff.toml [merge_prep.per_project.<이름>] squash, 11-12). 합치기 준비(bridge/mergeprep.py)가
+# 켜져 있으면 저장소 경로 → bool을 돌려주는 async 함수를 넣는다. 없으면(꺼짐 · 시험) 늘 지금 동작(rebase → ff).
+# HandoffManager.worktree_act가 `merge(repo, name)`으로 부르므로(패널 [합치기] · 카드 승인 둘 다) 여기서 고른다.
+SQUASH_OF: Any = None
+
+
+async def squash_message(repo: str, base: str, branch: str) -> str:
+    """squash 커밋 글 — 제목 한 줄 + 원래 커밋들의 날짜 · 제목을 오래된 차례로(11-12 런슈즈 메시지 다시 쓰기처럼 옛 제목을 본문에 남긴다).
+    원래 커밋의 Co-Authored-By 줄은 겹치지 않게 끝에 모은다."""
+    _, rows = await git(repo, "log", "--reverse", "--date=format:%Y-%m-%d %H:%M", "--format=%ad%x09%s", f"{base}..{branch}")
+    _, bodies = await git(repo, "log", "--format=%B", f"{base}..{branch}")
+    items = [ln.split("\t", 1) for ln in rows.splitlines() if "\t" in ln]
+    first = items[0][1] if items else branch
+    title = f"합침({branch}, 커밋 {len(items)}개): {first}"
+    if len(title) > 120:
+        title = title[:119] + "…"
+    co: list[str] = []
+    for ln in bodies.splitlines():
+        if ln.strip().lower().startswith("co-authored-by:") and ln.strip() not in co:
+            co.append(ln.strip())
+    body = "원래 커밋(오래된 차례):\n" + "\n".join(f"- {d} {s}" for d, s in items)
+    return title + "\n\n" + body + ("\n\n" + "\n".join(co) if co else "") + "\n"
+
+
+async def merge(repo: str, name: str, squash: bool | None = None) -> dict[str, Any]:
     """rebase(worktree에서) → fast-forward(원본에서) → worktree · 브랜치 지우기. 충돌이면 rebase를 되돌리고 멈춘다.
+    squash(11-12, 프로젝트마다 켬 — None이면 SQUASH_OF가 정한다): rebase까지 같고, 브랜치 트리로 커밋 하나를 만들어(`commit-tree`,
+    부모 = 원본 브랜치 끝) 그것을 fast-forward한다 — 원본 작업 트리에서 `merge --squash`를 돌리지 않으니 실패 꼴(원본의 커밋 안 된
+    변경과 겹침 등)이 ff와 같다. squash 뒤 브랜치는 원본의 조상이 아니라 `-D`로 지운다(트리가 같은지 본 뒤에만).
     push는 하지 않는다(런슈즈는 push가 곧 배포 — 사람이 따로)."""
+    if squash is None:
+        squash = bool(SQUASH_OF and await SQUASH_OF(repo))
     st = await status(repo, name)
     if not st["exists"]:
         raise Refused("worktree가 없습니다")
@@ -220,19 +249,40 @@ async def merge(repo: str, name: str) -> dict[str, Any]:
             return {"ok": False, "conflict": files.splitlines(), "detail": out[-800:],
                     "note": "rebase 중 충돌이 나서 되돌렸습니다. 충돌 파일을 그 세션에서 풀어 커밋한 뒤 다시 합쳐 주세요."}
     _, dirty_main = await git(repo, "status", "--porcelain", "--untracked-files=no")
-    rc, out = await git(repo, "merge", "--ff-only", branch, check=False)
+    target, sq = branch, None
+    if squash and st["ahead"] >= 2:                      # 커밋 하나는 묶을 것이 없다 — 그대로 ff
+        _, tree = await git(repo, "rev-parse", f"{branch}^{{tree}}")
+        _, parent = await git(repo, "rev-parse", base)
+        rc, _ = await git(repo, "merge-base", "--is-ancestor", parent, branch, check=False)
+        if rc:
+            return {"ok": False, "conflict": [], "detail": "",
+                    "note": f"rebase 뒤에도 {base} 끝이 브랜치의 조상이 아닙니다({base}가 그 사이 움직였을 수 있습니다). 다시 합쳐 주세요."}
+        msg = await squash_message(repo, base, branch)
+        _, sq = await git(repo, "commit-tree", tree, "-p", parent, "-m", msg)
+        target = sq
+    rc, out = await git(repo, "merge", "--ff-only", target, check=False)
     if rc:
         return {"ok": False, "conflict": [], "detail": out[-800:],
                 "note": "원본 저장소에서 fast-forward가 되지 않았습니다(원본의 커밋 안 된 변경과 겹칠 수 있습니다)."
                         + (f" 원본에 커밋 안 된 파일 {len(dirty_main.splitlines())}개." if dirty_main else "")}
+    if sq:
+        # 원본 끝 트리 = 브랜치 트리일 때만 브랜치를 -D로 지운다. 아니면 브랜치를 남기고 그렇다고 알린다(조용히 잃지 않게)
+        rc, _ = await git(repo, "diff", "--quiet", base, branch, check=False)
+        await remove(repo, name, force=False, drop_branch=rc == 0)
+        return {"ok": True, "merged": st["ahead"], "commits": st["commits"], "squash": sq[:12],
+                "note": f"{base}에 커밋 {st['ahead']}개를 커밋 하나({sq[:8]})로 묶어 합쳤습니다(squash — 본문에 원래 제목 · 날짜)."
+                        + ("" if rc == 0 else f" 트리가 달라 브랜치 {branch}는 지우지 않고 남겼습니다.") + " push는 하지 않았습니다."}
     await remove(repo, name, force=False)
     return {"ok": True, "merged": st["ahead"], "commits": st["commits"],
             "note": f"{base}에 커밋 {st['ahead']}개를 합쳤습니다. push는 하지 않았습니다."}
 
 
-async def remove(repo: str, name: str, force: bool) -> None:
+async def remove(repo: str, name: str, force: bool, drop_branch: bool | None = None) -> None:
+    """worktree와 브랜치를 지운다. drop_branch=True면 worktree는 그대로(--force 없이) 지우고 브랜치만 `-D`(squash 뒤 — 원본의 조상이
+    아니라 `-d`가 거부한다). None이면 force를 따른다."""
     path = Path(repo) / WT_DIR / name
     if path.is_dir():
         await git(repo, "worktree", "remove", *(["--force"] if force else []), str(path))
     await git(repo, "worktree", "prune", check=False)
-    await git(repo, "branch", "-D" if force else "-d", BRANCH_PREFIX + name, check=False)
+    hard = force if drop_branch is None else drop_branch
+    await git(repo, "branch", "-D" if hard else "-d", BRANCH_PREFIX + name, check=False)

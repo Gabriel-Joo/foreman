@@ -37,6 +37,12 @@ README = """# x
 """
 
 
+@pytest.fixture(autouse=True)
+def _no_squash_hook(monkeypatch):
+    """MergePrep이 wt.SQUASH_OF를 넣는다 — 시험 사이에 남지 않게(monkeypatch가 끝에 되돌린다)."""
+    monkeypatch.setattr(wt, "SQUASH_OF", None)
+
+
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     home = tmp_path / "home"
@@ -465,3 +471,189 @@ async def test_handoff_discard_and_outside_merge_clear_card_at_once(repo, monkey
         r = SimpleNamespace(id=7, cc=None, cwd=str(p), project="proj")
         res = await HandoffManager.worktree_act(fake, r, act)
         assert res["ok"] and 7 not in m.cards and changes == [1], act
+
+
+# ── 11-12 승인자 · 늘 사람 · squash ──
+HA = mp.HumanAlways(paths=["*values*.yaml", "config/*.toml", "CLAUDE.md", "*migrations/*"], resource_keys=["cpu", "memory", "replicas"],
+                    history_words=["force push", "filter-branch"])
+
+
+def test_load_per_project_and_human_always(tmp_path):
+    (tmp_path / "a.toml").write_text(
+        '[merge_prep]\nenabled = true\n[merge_prep.per_project.foreman]\napprover = "manager"\nsquash = true\nhuman_paths = ["docs/x.md"]\n'
+        '[merge_prep.human_always]\npaths = ["config/*.toml"]\nresource_keys = ["cpu"]\n')
+    c = mp.load(tmp_path / "a.toml")
+    assert c.approver_of("foreman") == "manager" and c.rule("foreman").squash
+    assert c.approver_of("runshoes") == "human" and not c.rule("runshoes").squash and c.approver_of(None) == "human"
+    assert c.human_paths("foreman") == ["config/*.toml", "docs/x.md"] and c.human_paths("x") == ["config/*.toml"]
+    assert c.human_always.deletions and c.human_always.submodules
+    (tmp_path / "b.toml").write_text('[merge_prep]\n[merge_prep.per_project.x]\napprover = "robot"\n')
+    with pytest.raises(ValueError, match="approver"):
+        mp.load(tmp_path / "b.toml")
+
+
+def test_live_config_starts_as_today():
+    """처음엔 모두 지금 동작(사람 승인 · ff) — 켜기는 합친 뒤 관리자가."""
+    c = mp.load(Path(__file__).resolve().parent.parent / "config" / "handoff.toml")
+    for p in ("foreman", "ronanlab-infra", "runshoes", "petmint-rag-chatbot"):
+        assert c.approver_of(p) == "human" and not c.rule(p).squash
+    assert c.human_always.paths and c.human_always.resource_keys and c.human_always.history_words
+
+
+def test_human_reasons():
+    ch = lambda s, p, m="100644": {"status": s, "path": p, "old_mode": m, "new_mode": m}   # noqa: E731
+    assert mp.human_reasons([ch("M", "bridge/a.py")], "고침", "", HA.paths, HA) == []
+    why = mp.human_reasons([ch("M", "config/handoff.toml"), ch("A", "migrations/0030_x.sql"), ch("M", "sub/CLAUDE.md"),
+                            ch("M", "charts/app/values-prod.yaml"), ch("D", "old.txt"), ch("M", "vendor/lib", "160000"),
+                            ch("M", "k8s/deploy.yaml")],
+                           "정리\n\nforce push 했다", "diff --git a/k8s/deploy.yaml b/k8s/deploy.yaml\n--- a/k8s/deploy.yaml\n"
+                           "+++ b/k8s/deploy.yaml\n@@ -3 +3 @@\n-  replicas: 1\n+  replicas: 3\n"
+                           "diff --git a/charts/app/values-prod.yaml b/charts/app/values-prod.yaml\n+    cpu: 2\n", HA.paths, HA)
+    s = "\n".join(why)
+    for x in ("config/*.toml", "migrations/0030_x.sql", "sub/CLAUDE.md", "values-prod.yaml", "자원 크기(replicas): k8s/deploy.yaml",
+              "지우기 — 파일 1개를 지움: old.txt", "다른 저장소(서브모듈) 바뀜: vendor/lib", "「force push」"):
+        assert x in s, x
+    assert "자원 크기(cpu)" not in s                    # 이미 경로로 걸린 파일은 두 번 적지 않는다
+    off = mp.HumanAlways(paths=[], deletions=False, submodules=False)
+    assert mp.human_reasons([ch("D", "old.txt"), ch("M", "v", "160000")], "", "", [], off) == []
+
+
+def test_parse_raw():
+    out = ":100644 100644 aaa bbb M\0a.txt\0:000000 100644 000 ccc A\0dir/b c.txt\0:160000 160000 d e M\0sub\0"
+    assert mp.parse_raw(out) == [{"old_mode": "100644", "new_mode": "100644", "status": "M", "path": "a.txt"},
+                                 {"old_mode": "000000", "new_mode": "100644", "status": "A", "path": "dir/b c.txt"},
+                                 {"old_mode": "160000", "new_mode": "160000", "status": "M", "path": "sub"}]
+
+
+def _mgr_mode(m, **rule):
+    m.cfg.per_project["proj"] = mp.ProjectRule(approver="manager", **rule)
+    m.cfg.human_always = HA
+
+
+async def _drain(h):
+    import asyncio
+    while h._tasks:
+        await asyncio.gather(*list(h._tasks))
+
+
+async def test_manager_approver_card_tells_manager_and_manager_merges(repo, monkeypatch):
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    (p / "b.txt").write_text("b\n"); sh(p, "add", "b.txt"); sh(p, "commit", "-qm", "b")
+    m, h, sent, row, _ = _mk(repo, monkeypatch)
+    _mgr_mode(m)
+    card = await m.prep(row, {})
+    await _drain(h)
+    assert card.approver == "manager" and card.human_why == [] and card.manager_told is True
+    assert "관리자가 승인합니다" in card.note and "승인 manager" in h.acts[0][2]
+    assert len(sent) == 1 and '"by":"manager"' in sent[0][1] and "GET /api/merge-prep?project=proj" in sent[0][1]
+    m.cards[7] = card
+    r = await m.approve(7, by="manager")
+    assert r["ok"] and card.approved_by == "manager" and "관리자 승인" in h.acts[-1][2]
+    assert sent[-1][1].startswith("[FOREMAN 합치기] 관리자가 승인해")
+
+
+async def test_manager_refused_for_human_cards(repo, monkeypatch):
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    (p / "config").mkdir(); (p / "config" / "x.toml").write_text("a = 1\n")
+    sh(p, "add", "."); sh(p, "commit", "-qm", "설정")
+    m, h, sent, row, _ = _mk(repo, monkeypatch)
+    # 승인자가 사람인 프로젝트 — 관리자는 승인 · 미루기 못 함, 관리자에게 카드 알림도 없다(지금 동작)
+    card = await m.prep(row, {})
+    await _drain(h)
+    assert card.approver == "human" and card.human_why == [] and sent == [] and card.note is None
+    m.cards[7] = card
+    with pytest.raises(Refused, match="승인자는 사람"):
+        await m.approve(7, by="manager")
+    with pytest.raises(Refused, match="승인자는 사람"):
+        await m.skip(7, by="manager")
+    # 승인자가 관리자여도 늘-사람(config/*.toml)이면 사람 카드 — 까닭을 카드 · 관리자 글에
+    _mgr_mode(m)
+    del m.cards[7]
+    card = await m.prep(row, {})
+    await _drain(h)
+    assert card.approver == "human" and "config/x.toml" in card.human_why[0] and "사람 승인 카드" in card.note
+    assert len(sent) == 1 and "**사람 승인**" in sent[0][1] and "config/x.toml" in sent[0][1]
+    m.cards[7] = card
+    with pytest.raises(Refused, match="사람 승인입니다"):
+        await m.approve(7, by="manager")
+    assert p.is_dir()
+    r = await m.approve(7)                                  # 사람은 된다
+    assert r["ok"] and sent[-1][1].startswith("[FOREMAN 합치기] 사람이 승인해")
+
+
+async def test_manager_mode_without_manager_is_human(repo, monkeypatch):
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    (p / "b.txt").write_text("b\n"); sh(p, "add", "b.txt"); sh(p, "commit", "-qm", "b")
+    m, h, sent, row, _ = _mk(repo, monkeypatch)
+    _mgr_mode(m)
+
+    async def nobody(repo_):
+        return None
+    monkeypatch.setattr(m, "manager_of", nobody)
+    card = await m.prep(row, {})
+    assert card.approver == "human" and "관리자 세션이 없어" in card.note and sent == []
+
+
+async def test_merged_msg_docs_pick_follows_approver(repo, monkeypatch):
+    m, h, sent, row, _ = _mk(repo, monkeypatch)
+    c = mp.Card(sid=7, title="t", project="proj", role="coder", repo=str(repo), name="w", branch="cc/w", base="main", head="h" * 40,
+                base_head="b", live=False, why="", ahead=2, behind=0, commits=[], files=[], conflict=None,
+                docs={"readme": [{"line": 9, "text": "x", "score": 10, "why": []}], "docs": []})
+    assert "사람 승인 뒤" in m._merged_msg(c, {"merged": 2})
+    _mgr_mode(m)
+    c.approved_by = "manager"
+    s = m._merged_msg(c, {"merged": 2, "squash": "abcdef123456"})
+    assert "관리자가 골라 지운다" in s and "squash" in s and "abcdef12" in s and s.startswith("[FOREMAN 합치기] 관리자가")
+
+
+async def test_squash_for_repo_reads_project_table(repo, monkeypatch):
+    m, h, sent, row, _ = _mk(repo, monkeypatch)
+    assert await m.squash_for_repo(str(repo)) is False                   # 켠 프로젝트가 없으면 DB를 보지 않는다
+
+    class Rows:
+        def all(self):
+            return [("proj", str(repo)), ("other", "/x")]
+
+    class Cn(_Conn):
+        async def execute(self, q, p=None):
+            return Rows()
+
+    class Eng:
+        def connect(self):
+            return Cn()
+    m.engine = Eng()
+    m.cfg.per_project["proj"] = mp.ProjectRule(squash=True)
+    assert await m.squash_for_repo(str(repo)) is True and await m.squash_for_repo("/nowhere") is False
+    assert wt.SQUASH_OF == m.squash_for_repo
+
+
+async def test_api_project_filter_and_token_is_manager(repo, monkeypatch):
+    import httpx
+    from fastapi import FastAPI, Request
+
+    from bridge.api import handoff as api
+    from bridge.api.auth import require_api_token
+
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    (p / "b.txt").write_text("b\n"); sh(p, "add", "b.txt"); sh(p, "commit", "-qm", "b")
+    m, h, sent, row, _ = _mk(repo, monkeypatch)
+    m.cards[7] = await m.prep(row, {})
+    scope = {"v": None}
+
+    def tok(request: Request):
+        request.state.token_scope = scope["v"]
+    a = FastAPI()
+    a.include_router(api.router)
+    a.dependency_overrides[require_api_token] = tok
+    a.state.handoff = SimpleNamespace(mergeprep=m)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=a), base_url="http://t") as c:
+        assert [x["sid"] for x in (await c.get("/api/merge-prep?project=proj")).json()["cards"]] == [7]
+        v = (await c.get("/api/merge-prep?project=other")).json()
+        assert v["cards"] == [] and v["approver"] == "human" and v["squash"] is False
+        scope["v"] = "proj"
+        assert (await c.get("/api/merge-prep")).status_code == 403                       # 프로젝트 토큰은 ?project= 로만
+        r = await c.post("/api/sessions/7/merge-prep", json={"action": "merge"})          # 토큰이면 by는 저절로 manager
+        assert r.status_code == 409 and "승인자는 사람" in r.json()["refused"]
+        scope["v"] = None
+        r = (await c.post("/api/sessions/7/merge-prep", json={"action": "merge"})).json()
+        assert r["ok"] and r["status"] == "merged"

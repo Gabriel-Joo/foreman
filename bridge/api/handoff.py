@@ -98,6 +98,7 @@ async def handoff_view(sid: int, request: Request) -> dict[str, Any]:
 # ── 합치기 준비(11-11 1물결 A 「하나」 · 「넷」, bridge/mergeprep.py) ─────────────
 class MergePrepIn(BaseModel):
     action: Literal["merge", "skip", "refresh"]
+    by: Literal["human", "manager"] = "human"   # 11-12 — 관리자 세션이 승인할 때 manager. 프로젝트 토큰이면 저절로 manager
 
 
 def _mp(m: HandoffManager) -> Any:
@@ -108,25 +109,31 @@ def _mp(m: HandoffManager) -> Any:
 
 
 @router.get("/merge-prep")
-async def merge_prep_list(request: Request) -> dict[str, Any]:
-    """합치기 승인 카드 전부 + 준비 상태(health). 꺼져 있으면 enabled false."""
+async def merge_prep_list(request: Request, project: str | None = None) -> dict[str, Any]:
+    """합치기 승인 카드 전부 + 준비 상태(health). 꺼져 있으면 enabled false.
+    ?project= 면 그 프로젝트 카드만(11-12 — 관리자가 자기 카드를 모아 본다). 프로젝트 토큰은 자기 프로젝트로만(scopetoken이 먼저 본다)."""
+    scope = getattr(request.state, "token_scope", None)
+    if scope is not None and project != scope:
+        raise HTTPException(403, f"프로젝트 토큰({scope})으로는 ?project={scope} 로만 읽을 수 있습니다")
     mp = getattr(_mgr(request), "mergeprep", None)
-    return mp.view() if mp is not None else {"enabled": False, "cards": [], "health": None}
+    return mp.view(project) if mp is not None else {"enabled": False, "cards": [], "health": None}
 
 
 @router.post("/sessions/{sid}/merge-prep")
 async def merge_prep_act(sid: int, body: MergePrepIn, request: Request) -> JSONResponse:
     """merge — 사람 승인: 충돌 없고 깨끗하면 (살아 있으면 끝내고) 합침, 충돌이면 그 세션(끝났으면 관리자)에 풀라고 보냄.
-    skip — [나중에]: 이 브랜치 끝 커밋이 바뀌기 전까지 카드를 치움. refresh — 지금 다시 훑기."""
+    skip — [나중에]: 이 브랜치 끝 커밋이 바뀌기 전까지 카드를 치움. refresh — 지금 다시 훑기.
+    by=manager(11-12) — 그 프로젝트 승인자가 관리자이고 늘-사람에 안 걸린 카드만. 프로젝트 토큰은 늘 manager로 본다."""
     mp = _mp(_mgr(request))
+    by = "manager" if getattr(request.state, "token_scope", None) is not None else body.by
     try:
         if body.action == "skip":
-            r = await mp.skip(sid)
+            r = await mp.skip(sid, by=by)
         elif body.action == "refresh":
             await mp.check()
             r = {"ok": True, "card": mp.card_for(sid)}
         else:
-            r = await mp.approve(sid)
+            r = await mp.approve(sid, by=by)
     except Refused as e:
         return _refused(e)
     if body.action == "merge":
@@ -361,6 +368,12 @@ async def worktree_act(sid: int, body: WorktreeIn, request: Request) -> JSONResp
             name = m._wt_of(row)[1]
             if body.confirm != name:
                 raise Refused(f"버리려면 worktree 이름({name})을 그대로 적어 주세요")
+        mp = getattr(m, "mergeprep", None)
+        card = mp.cards.get(sid) if mp is not None else None
+        if (body.action == "merge" and card is not None and getattr(request.state, "token_scope", None) is not None
+                and card.human_why):
+            # 11-12 — 늘-사람 카드를 프로젝트 토큰(관리자)이 이 길로 돌아 합치지 못하게. 관리 토큰(사람 화면)은 그대로
+            raise Refused("이 세션의 합치기 카드는 사람 승인입니다 — 까닭: " + "; ".join(card.human_why))
         r = await m.worktree_act(row, body.action, end=body.end)
     except Refused as e:
         return _refused(e)
