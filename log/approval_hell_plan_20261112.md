@@ -28,3 +28,11 @@
 - 같이 도는 311(check_watch, `pipeline.py`)과 셋 — 동시 한도(11-09 사용자 「셋」)
 - 공통: 새 동작은 프로젝트마다 스위치 · 처음엔 꺼짐(B의 ①만 바로 모든 프로젝트), 관리자가 없으면 지금처럼 사람, 커밋만 · 되돌리는 법 · 브리지 안 띄움 · README 표 안 고침
 - 합친 뒤 관리자: FOREMAN · 인프라만 켬(인프라는 299에게 알림). 관리자 규칙 줄(FOREMAN · 인프라 CLAUDE.md)은 규칙 문서라 안을 사용자에게 보인 뒤
+
+## 312 ① 먼저 합침 — 관리자끼리 부탁 턴 텔레그램 끄기
+
+- 312 보고: `9707dc5` — 글 머리 「[관리자 부탁 — 」인 턴을 출처 `manager_ask`로(`assembler._origin`), `notify.toml` 기본 origins에 없어 안 보냄, overlap · 답 기다림 · 서기의 사람 입력 셈에서도 빠짐. 오늘 41건(276 12 · 309 11 · runshoes 12 · infra 6) 모두 해당. 계획 카드의 「사람 → 관리자」는 human 그대로
+- 312가 살아 있어 손으로: `merge-tree` exit 0(따로) → main이 앞서 `merge --no-ff 9707dc5` → **`e9d5247`** → pytest **762** · node **123** 통과 → push → 승인 대기 0 → **브리지 18:49:07**(3580901 → 633656), 새 프로세스 오류 0
+- 312 물음: `render.js` `ORIGIN_LABEL`에 `manager_ask` 이름표가 없어 패널에 글자 그대로 보임(맡은 파일 밖) → 한 줄 허락(화면 글 「~습니다」), 같은 브랜치에 따로 커밋. `POST /api/sessions/312/input`(대기열)
+- **알아둘 것**: 이 세션 셸에는 `XDG_RUNTIME_DIR`이 없고 `DBUS_SESSION_BUS_ADDRESS`가 `/tmp/dbus-…`를 가리켜 `systemctl --user`가 「Process org.freedesktop.systemd1 exited with status 1」로 실패했다. `XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus`를 앞에 두면 된다(실패한 첫 시도는 브리지를 건드리지 않았다 — 15:13:04 그대로였음을 확인)
+- 실제로 `manager_ask`로 잡히는지는 다음 관리자 부탁 턴에서 DB로 본다
