@@ -98,3 +98,11 @@
 - main(`8b1dc08`)에서도 둘 다 실패 — 302 고침과 무관. `config/notion.toml`(인프라 칸)을 읽는 시험은 없음. **관리자가 설정만 바꾸고 전체 시험을 돌리지 않아 놓쳤다**
 - 사용자 결정: 기대값만 바꾸지 않고 두 줄 모두 시험용 임시 파일을 읽게 → 302에 함께 맡김(302 브랜치는 두 시험 파일과 겹치지 않음, `config/notion.toml`은 302가 머리 주석 · main이 인프라 칸을 고쳤으나 merge-tree 충돌 없음)
 - **실제 config/ 파일을 읽는 시험이 더 있다**(고치지 않음 — 사용자가 따로 정함. 줄 번호 일부는 주석 속 언급일 수 있다): `test_approval.py`(approval · notify) · `test_approval_now.py`(approval · notify) · `test_approval_summary.py`(approval) · `test_promote.py`(notify) · `test_roleguard.py`(notify) · `test_scribe_room.py`(portfolio) · `test_stage2_db.py`(approval · scribe) · `test_units.py`(notify) · `test_usage.py`(usage) · `test_worktree.py`(worktree) — 10 파일. 설정을 켤 때마다 시험이 깨지는 길이라 조용한 고장에 가깝다
+
+## 11-12 — 302 합침(제목 H1 · 시험 두 줄)
+
+- 302가 시험 두 줄을 임시 파일로(`fe26cb6`) — 뜻(켜진 값 · 칸 없으면 기본값 · 꺼진 값) 그대로. 302 브랜치의 `config/notion.toml` 변경은 머리 주석 7줄뿐(정한 것: `keep`/`h1` 같은 칸 — 모르는 값은 기본 방식 + 경고, 첫 H1 = 코드 울타리 · YAML 머리말 · HTML 주석 밖 첫 `# ` 줄, 없으면 옛 방식 + 경고 · `h1_missing`)
+- merge-tree exit 0 → 카드 승인 → 커밋 2개(`db3a896` 제목 H1 · `db4992f` 시험), 인프라 칸 `title = "keep"` 그대로(81줄 — h1 켜지 않음)
+- 혼자: **pytest 709 · node 123 통과**(실패 둘 풀림) → push `db4992f` → 승인 대기 0 → **브리지 12:19:10**(2431971 → 2573597), 새 프로세스 오류 0
+- 다시 띄운 뒤 게시 수치: 런슈즈 20/20 그대로 · 인프라 짝 1 · 맞추지 못한 것 0 그대로 · 펫퍼민트 바뀜 4 → 3은 302와 무관(합치기 전 12:03 자동 맞추기가 「11. 디자인 시스템」을 올림. 남은 셋은 사람 수정으로 멈춤 · 실패 1 — 5분마다 같은 경고, 원래 있던 펫퍼민트 상태)
+- 합침 알림의 「고치지 않은 문서」 후보: `style_guide.md` · `11_foreman_dispatch.md` · `10_office_design.md` · `11_handoff_v2.md` · `operations.md`
