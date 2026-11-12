@@ -91,3 +91,22 @@
 - enforce였다면: heredoc 8은 막힘, 파이썬 1은 통과
 - 관리자 코드 7 — 모두 관리자 276: `CLAUDE.md` Edit ×4(11-11 19:11 ~ 19:18) · `docs/12_scribe.md` ×2 · `docs/operations.md` ×1(11-12 15:21 `2395477` 인계 전 결정 기록). `manager_allow`(config · log · README) 밖이라 enforce면 막힘. 사용자 지시로 한 정당한 일로 보인다(CLAUDE.md는 사용자가 시킨 규칙 고침 — 다만 그 지시가 어디 있었는지는 이번에 확인하지 않음)
 - 「관리자가 합친 뒤 시험 파일 고치기」는 기록 0(11-12 302 때는 코더에게 맡겼다)
+
+## 315 합침 · 승인자 · squash 켬 · 실제로 돎
+
+- 315 `942e2a5`(`test_live_config_starts_as_today` → `test_config_without_project_rules_is_human_and_ff`, `tmp_path` 설정 — 뜻 그대로) → merge-tree exit 0 → `--no-ff` `8ec776c`
+- `config/handoff.toml` FOREMAN · 인프라 `approver = "manager"` · `squash = true` → pytest **791** · node **124** → **`ca8fb8b`** push → 승인 대기 0 → **브리지 19:38:37**(939985 → 1008315)
+- 사용자: 맡길 일 2 버려라 → 315 `exit` → 셋 다 변경 0 · 앞 0 확인 뒤 버리기(314 `foreman` · 312 `foreman-3` · 315 `foreman-2`) ok. 남은 worktree는 313 `foreman-4`(합쳐짐 · 쉼)
+- 사용자: 310의 rebase는 시킨 것 — 되돌리지 말고 **push하지 마라**(V17 · V18 — 운영 스키마), 300이 다시 일하면 해시 바뀜 알려라 → 310에게 전함. 310은 「다시 시작하면」이 아니라 바로 300 입력 칸에 넣었다(「새 일은 시작하지 말고 확인만」을 붙임)
+- **실제 확인 — 시험 세션 316**(`/api/spawn`, sonnet): log 파일 하나를 커밋 2개로 → 카드: `approver: manager` · `human_why: []` · `manager_told: true` · 관리자 309 입력 칸에 「[FOREMAN 합치기 카드] … 승인자는 관리자다 …」 · 사람 화면 316 `merge_wait` 없음(막대 · 말풍선에서 빠짐) → 관리자 `POST /api/sessions/316/merge-prep {"action":"merge","by":"manager"}` → `merged`, **커밋 하나 `697685e`** 「합침(cc/foreman, 커밋 2개): docs: 합치기 실제 확인 1차」 + 본문 「원래 커밋(오래된 차례): - 2026-11-12 19:39 docs: … 1차 / 2차」, 316 끝냄 · worktree 지움 · 관리자에게 결과 알림 → push → 316 `hidden_reason = 'test'`
+  - 알아둘 것: squash 커밋 제목이 첫 커밋 제목을 그대로 따른다(위 「1차」) — 묶음 전체를 말하지 않을 수 있다. 원래 커밋의 본문은 실리지 않고 제목 · 날짜만
+
+## 역할 권한 — 검사를 지나가는 길 · 런슈즈 · 인프라로 넓히면(확인만)
+
+- 지나가는 길(`bridge/roleguard.py` 읽음): ① 해석기 안의 쓰기(`python -c` · `python - <<EOF` · `node -e` 등 — 일부러 안 봄, 261행) ② 경로에 `$`나 백틱(`sed -i … "$F"` · `> $OUT`) — 판정 안 함(228행) ③ `cd $X` 뒤 — 어디인지 몰라 안 막음 ④ 따옴표가 안 닫혀 나눌 수 없는 명령 ⑤ `>` · `>>` · `tee` · `sed/perl/gsed -i` 말고 쓰는 명령 — `cp` · `mv` · `install` · `dd of=` · `truncate` · `patch` · `git apply` · `git checkout -- 파일` · `awk -i inplace` · `ed` 등 ⑥ 스크래치에 쓴 뒤 `cp`로 저장소에 넣기(②+⑤) ⑦ 역할이 없는(미분류) 세션은 관리자 · 서기 규칙을 안 받음 ⑧ `[roles] projects = ["foreman"]` 밖은 처음부터 안 봄
+- 런슈즈 · 인프라 지난 7일(approval_req Bash · Edit · Write 3,780건)을 같은 검사기로 다시 돌림 → **290건 걸림**:
+  - 런슈즈 코더 Bash 파일 고침 137 — git이 무시하는 작업 폴더(`catalog/local/work` 등) 쪽이 적어도 37, 추적 파일(`DESIGN.md` 12 · `src/` 15 · `backend/src` 7 · `scripts/parity` 8 · 문서 · 시험 등)이 적어도 45 — 경로 가르기가 일부 어긋나 정확한 몫은 못 냄
+  - 런슈즈 worktree push 21(11-08 그때는 세션이 push하던 규칙)
+  - 인프라 관리자 「관리자 코드」 116 · 런슈즈 관리자 11 — 기본 `manager_allow`(config · log · README)가 FOREMAN 모양이라, 인프라 관리자가 원본 폴더에서 한 문서 옮기기 · `apps/monitoring` · CLAUDE.md, 런슈즈 관리자의 CLAUDE.md · HISTORY · TODO가 다 걸림
+  - 그 밖 4(서기 2 · 인프라 코더 1 · 인프라 관리자 Bash 1)
+- 넓히려면: `roles.toml projects`에 둘 더하기(설정) + **프로젝트마다 `manager_allow` · `scribe_deny`**(지금은 하나 — 코드 `roleguard.py` `RolesConfig`) + 무시되는 작업 폴더 · 생성물 경로를 막지 않을 목록(런슈즈 `catalog/local/` 등 — 코드 · 설정) + 각 저장소 CLAUDE.md에 같은 규칙(런슈즈 · 인프라엔 이미 「Edit · Write로만」 있음) + observe로 며칠 돌려 위 다시 돌리기와 견주기
