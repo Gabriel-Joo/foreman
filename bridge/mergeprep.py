@@ -603,7 +603,7 @@ class MergePrep:
                 card.note = "승인자는 관리자지만 살아 있는 관리자 세션이 없어 사람이 승인합니다."
             else:
                 card.approver = "manager"
-                card.note = "관리자가 승인합니다 — 관리자 세션에 카드를 알렸습니다. 사람이 [합치기]를 눌러도 됩니다."
+                card.note = "관리자가 승인합니다 — 관리자 세션에 카드를 알렸습니다. 사람 화면(승인 막대 · 말풍선 · [합치기])에는 띄우지 않습니다."
         if old is None or old.head != card.head:
             await self.h._act(sid, ACT_CARD, None, True, f"{name} {card.head[:8]} " + ("충돌 " + ",".join(conflict)[:300] if conflict else "충돌 없음")
                               + (" · 묻는 말 있음" if asks else "") + (" · 턴 끝" if via == "turn_end" else " · 훑기")

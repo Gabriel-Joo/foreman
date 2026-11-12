@@ -40,6 +40,9 @@ export function flowStep(flow, summary, live) {
 
 // 합치기 승인 카드(11-11 1물결 A, bridge/mergeprep.py) — 세션이 일을 마치면 브리지가 merge-tree로 만든다. 사람은 승인만 한다.
 // mp = /api/sessions/{id}/handoff의 merge_prep({card, health, stage}), b = 단추 만들기(act, label, on, cls, tip), sid = 세션 번호
+// 관리자가 승인하는 카드(11-12 사용자) — approver = manager이고 늘-사람 까닭(human_why)이 없는 것. 사람 화면에서 [합치기]를 숨긴다
+// (dashboard.py manager_card와 같은 기준 — 승인 막대 · 말풍선도 빠진다). 늘-사람 카드는 관리자가 못 누르니 그대로 보인다
+export const managerCard = (c) => !!c && c.approver === 'manager' && !(c.human_why && c.human_why.length);
 const MP_STATUS = { ready: '승인 기다림', merging: '합치는 중…', merged: '합쳤습니다', conflict_sent: '충돌 — 세션에 풀라고 보냈습니다',
   conflict_manager: '충돌 — 관리자에게 넘겼습니다', failed: '멈췄습니다' };
 export function mpSection(mp, b, sid) {
@@ -73,7 +76,8 @@ export function mpSection(mp, b, sid) {
     ${c.note ? `<div class="small ${c.status === 'merged' ? 'ok' : 'muted'}">${esc(c.note)}${c.manager_told === false ? ' 관리자 세션에는 알리지 못했습니다(텔레그램으로 남김).' : c.manager_told ? ' 관리자 세션에 알렸습니다.' : ''}</div>` : ''}
     ${c.error ? `<div class="small bad">${esc(c.error)}</div>` : ''}
     ${c.status === 'merged' ? '<div class="small muted">합치기까지 했습니다 — 시험 · push · 브리지 다시 띄우기는 관리자가 합니다.</div>' : ''}
-    ${open ? `<div class="hand-btns">${b('mp-merge', '합치기', !!c.head && c.status !== 'merging', 'primary', tip)}${b('mp-skip', '나중에', true, 'ghost', '나중에 — 이 카드를 치웁니다. 이 세션이 새로 커밋하면 다시 뜹니다.')}</div>` : ''}
+    ${open && managerCard(c) && c.status === 'ready' ? '<div class="small muted mp-by-manager" title="관리자 승인 — 이 프로젝트는 합치기 승인을 관리자 세션이 합니다. 사람이 누를 것은 없습니다.">관리자 세션이 승인합니다 — 사람이 누를 것은 없습니다.</div>'
+      : open ? `<div class="hand-btns">${b('mp-merge', '합치기', !!c.head && c.status !== 'merging', 'primary', tip)}${b('mp-skip', '나중에', true, 'ghost', '나중에 — 이 카드를 치웁니다. 이 세션이 새로 커밋하면 다시 뜹니다.')}</div>` : ''}
   </section>`;
 }
 
