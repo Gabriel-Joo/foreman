@@ -115,3 +115,12 @@
 - **게시 설정 옮기기 확인**(읽기만): `config/notion.toml`은 브리지가 **뜰 때 한 번** 읽는다(`bridge/main.py` 252) — `[foreman] root`가 없으면 모든 게시기가 꺼진다. 프로젝트마다 `Publisher` 하나, 저장소 경로는 DB `project.repo_path`. Notion 토큰은 FOREMAN `.env.notion` 하나(내부 통합 — 「프로젝트」 페이지에 연결), 클라이언트 하나를 모든 프로젝트가 같이 씀(요청 간격). 쓰기 범위는 `Scope(root)` — 그 프로젝트 root 아래만. 짝은 FOREMAN DB `doc_publish`(project, path)
 - 299 제보(사용자가 전하라 함) — **게시기가 사람 수정을 잘못 본다**: 동기화 때 같은 블록(kept)은 손대지 않아(`sync_children` equal) Notion 마지막 수정자가 처음 쓴 사람으로 남고, `human_edits`는 Notion 블록을 새 git 판하고만 견준다 → git에서 그 문단을 고치면 사람 수정으로 걸린다. 위 409가 바로 그것(코드로 확인). 299의 force 덮기 부탁은 **사용자: 지금 덮지 않고 판정을 고친 뒤 force 없이**
 - **사용자 결정 — 셋을 한 코더에**: 교장 경로 dispatch **384** → 세션 **304**(opus, `.worktrees/foreman-2`). ① 사람 수정 판정(지난번 올린 git 판 = 짝 `commit_sha` 블록과 같으면 사람 수정 아님) ② 프로젝트 토큰으로 자기 프로젝트 `/api/publish`(force · docsync는 관리 토큰만) · 상태 읽기 `?project=` ③ `<저장소>/.foreman/notion.toml`(origin/main)이 있으면 그것, 없으면 FOREMAN 칸 — Notion 토큰 · 허용 root(root · docs_page · portfolio_page) · 짝은 FOREMAN에, 범위 걸린 짝 등록 API, 설정 다시 읽는 길. 커밋 셋, 런슈즈 · 펫퍼민트 그대로, Notion에 올리지 않음. 인프라 저장소 파일은 인프라 관리자 몫. 299에게 진행 알림 보냄
+
+## 11-12 — 304 합침 · 09 force 없이 됨
+
+- 304 끝(쉼, 묻는 말 없음) → 카드 `ready` · merge-tree exit 0 → 사용자 「바로 합쳐라」로 승인 → 커밋 4(`9ceb773` 판정 · `5cde445` 프로젝트 토큰 게시 · `853ae1b` 저장소 설정 · 짝 등록 API · 5분마다 다시 읽기 · `199112b` 기록). `config/notion.toml`은 머리 주석 4줄뿐(저장소 칸 · FOREMAN에만: root · docs_page · portfolio_page · github · ref)
+- 혼자 **pytest 743 · node 123 통과** → push `199112b` → 승인 대기 0 → **브리지 14:02:29**(2573597 → 3148675), 오류 0
+- 다시 띄운 뒤: 런슈즈 20/20 그대로 · 인프라 바뀜 1(09가 28bc048로 — 맞음), 설정 출처 `foreman`(저장소 파일 없음) · 펫퍼민트 바뀜 3 → 4는 12:31 · 13:51 펫퍼민트 docs push 때문(304와 무관). `GET /api/publish?project=ronanlab-infra`에 `config`(출처 · 경고 · 오류) 나옴
+- **09 force 없이 다시 게시 → `updated`**(HTTP 200, 그 파일 커밋 28bc048, kept 21 · updated 40 · replaced 37 · added 27 · deleted 15 · reset 0, 페이지 id 그대로, 오류 없음) — 판정 고침이 먹음
+- **관리자 실수**: 원본 기준 확인과 게시를 한 명령에 묶어, 결과를 보기 전에 게시가 나갔다. 인프라 로컬 `origin/main` 28bc048(부탁한 판)이지만 **실제 원격은 fc6bc82로 앞서 있었다** — fc6bc82에서 09가 바뀌었으면 Notion은 한 판 뒤. 관리자는 인프라 저장소에 fetch할 수 없어 299에게 알림. 메모리 `feedback-notion-publish-auth`에 「확인을 따로 먼저」 더함
+- 299에게: 09 결과 · 원격 앞섬 · `.foreman/notion.toml` 꼴(표 없이 맨 위 칸, 예 포함) · 저장소 칸 / FOREMAN 칸 · 5분 다시 읽기 · 인프라 토큰으로 부를 수 있는 것(publish · `?project=` · `/publish/pair`, force · docsync는 관리 토큰만)
