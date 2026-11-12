@@ -142,3 +142,21 @@ def test_api(monkeypatch, enabled):
 def test_label_of():
     assert label_of("runshoes", "관리", "manager", None) == "runshoes 관리자 · 관리"
     assert label_of("runshoes", "코더", "manager", "/w") == "runshoes · 코더"
+
+
+def test_manager_ask_turn_origin_and_no_telegram():
+    """11-12 ① — 관리자끼리 부탁으로 연 턴은 사람 입력(human)이 아니고, 기본 규칙에서 텔레그램을 보내지 않는다."""
+    from bridge.assembler import Assembler
+    from bridge.notify import load_rules
+    o = Assembler._origin
+    msg = mg.ask_text("runshoes", "세션 290 「런슈즈 코더」", "foreman", "안내 문구를 고쳐 주세요")
+    assert o({}, msg) == "manager_ask"
+    assert o({"origin": {"kind": "human"}}, f'<pasted_content id="1a2b">\n{msg}\n</pasted_content id="1a2b">') == "manager_ask"
+    assert o({}, mg.ask_text("foreman", None, "foreman", "본문")) == "manager_ask"
+    # 계획 카드 [관리자에게 보내기](from 없음 — 사람이 누름)는 사람 요청 그대로
+    assert o({}, mg.ask_text(None, None, "foreman", "계획")) == "human"
+    assert o({}, "관리자 부탁 이야기를 하는 보통 입력") == "human"
+    r = load_rules("config/notify.toml")
+    for p in ("foreman", "runshoes", "ronanlab-infra", "petmint-rag-chatbot"):
+        rule = r.for_project(p)
+        assert "manager_ask" not in rule.origins and "manager_ask" not in rule.batch_origins
