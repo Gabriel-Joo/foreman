@@ -79,6 +79,13 @@
   - `cc/runshoes-3`(259 → 300) ec73193 그대로 · worktree 깨끗, 새 main 기준 앞 208 · 뒤 202. 합칠 때 `git rebase --onto bdce4a0 95a3e57 cc/runshoes-3`(bdce4a0 = 새 이력의 95a3e57). 250 브랜치는 이번 일 전부터 없음
 - 알아둘 것: Harbor · 인프라 newTag `4f57bc0e1537`은 옛 해시 — 원격 태그로 계속 열린다(새 이력 대응 `b74102b`, 트리 같음)
 
+## 310이 300의 브랜치를 잠시 옮김 — 되돌림
+
+- 사용자가 310에게 cc/runshoes-3 rebase 미리보기를 물었고, 310이 `git replay`(2.53)를 썼는데 미리보기가 아니라 참조를 바로 옮겼다: 18:23:29 ec73193 → 7a54264(bdce4a0 위 8개) → 18:24:10 `update-ref`(옛 값 확인)로 ec73193. 310이 스스로 알림
+- 309 확인: reflog 그대로, worktree 깨끗 · HEAD ec73193, 앞 208 · 뒤 202, 원격은 main · 태그뿐(나간 것 없음), 300 같은 PID · 쉼(영향 없음). 로컬 참조만이라 Jenkins · ArgoCD · 파드에 닿지 않음
+- 「300의 브랜치는 건드리지 않는다」를 어긴 일 — 310에게: 그 브랜치에 참조를 바꿀 수 있는 명령(replay · rebase · update-ref · reset)을 미리보기로도 쓰지 말고, 미리보기는 임시 복제본이나 `merge-tree`로, rebase는 사용자가 시킬 때만
+- 250: 끝난 세션, worktree `runshoes-2-2` · 브랜치 없음(310: 11-11 18:00:12에 함께 사라짐). 11-11 합치기 준비 훑기 때 커밋 0 — 잃은 커밋 없음. 누가 지웠는지는 FOREMAN 기록에 없다(17:59:09 FOREMAN 런슈즈 터미널이 열린 기록만)
+
 ## 같이 찾은 것 — `check_watch` TypeError(조용한 실패)
 
 - force push 4초 뒤 `foreman.pipeline check_watch 실패: TypeError: '>' not supported between instances of 'str' and 'datetime.datetime'`. 11-10부터 8번
