@@ -59,6 +59,8 @@
   - 패널 너비는 좁게 · 넓게 두 값뿐이라(11-10) 크기마다 둘 다 본다(`--panel narrow,wide` 기본, 넓게는 크기 이름 끝 `w`)
   - 옵션: `--views hq,map,<현장>` · `--session <id>` · `--base`(미리보기 82xx) · `--eval` · `--ui-scale <배율>`(사용자가 보는 글씨 배율로 찍는다 — 범위 0.8~1.1 · 5씩, 처음 값 0.9(11-10). 양 끝 예 0.8 · 1.1) [log:pixel_bigger_question_card_20261109.md]
   - 통과는 "고른 화면에서 문제 0"일 뿐이다 — 사용자가 말한 화면을 [⌂] · [전체] 같은 탭 글자로 확인하고 그 화면을 고른다 [log:screen_mismatch_waits_20261109.md]
+  - **screen.py를 브리지 `:8000`에 대고 돌리면 사용자가 보는 라이브 셸 창(터미널)이 바뀐다** — 터미널을 볼 때는 미리보기 서버(`--base`) · ttyd로 확인한다(11-10)
+  - **터미널 글씨 13px은 정상이다**(사용자가 글씨 배율 90% 기준으로 재서 작게 나온 것 — 고칠 일이 아니다, 11-10). 11-13까지 교장 노트(1096)에만 있던 것을 옮겼다 [log:note_threads_only_20261113.md]
   - 자동 재배치 계획은 `--eval "window.office.layoutPlan()"`
 - API 토큰은 `.env.bridge`의 `FOREMAN_API_TOKEN` — 셸 변수로만 쓴다. 프로젝트 토큰(`tokens.toml` **켜짐**, 11-11)은 `.env.project_tokens`의 `FOREMAN_TOKEN_<프로젝트>` — 만들기 `python -m bridge.scopetoken new <프로젝트>`(값은 화면에 안 찍힘), `list`는 키 이름만
 - 터미널(`bridge/static/js/terminal.js` · `bridge/terminal.py` · `deploy/shell/foreman-term-view`)의 스크롤과 글자 끌어 고르기(11-11) [log:d1_terminal_scroll_inputh_20261111.md] [log:d2_terminal_select_20261111.md]

@@ -52,13 +52,15 @@ def test_notes_check_apply_render():
         async with eng.begin() as c:
             ops, warn = await notes.check_ops(c, proj, [
                 {"op": "add", "kind": "thread", "body": "발볼 검증 120켤레 — 80까지", "source": "세션 156"},
-                {"op": "add", "kind": "decision", "body": "런슈즈 저장소엔 시킨 것만", "source": "아무말"},
+                {"op": "add", "kind": "decision", "body": "런슈즈 저장소엔 시킨 것만", "source": "세션 1"},  # 11-13 없앤 칸 — 빠지고 카드 경고
                 {"op": "add", "kind": "structure", "body": "src/ 구조"},              # 쌓지 않는 종류 — 빠진다
                 {"op": "retire", "id": 999999999},                                   # 남의 · 없는 줄 — 빠진다
+                {"op": "add", "body": "kind 없이 — 진행 중인 일로", "source": "아무말"},
             ])
-            assert [o["kind"] for o in ops] == ["thread", "decision"]
+            assert [o["kind"] for o in ops] == ["thread", "thread"]
+            assert [w for w in warn if w.startswith(notes.DROPPED_WARN)] and "런슈즈 저장소엔" in " ".join(warn)
             assert ops[1]["source"] == "" and any("출처" in w for w in warn)
-            assert any("모르는" in w or "비었음" in w for w in warn) and any("지금 노트가 아닙니다" in w for w in warn)
+            assert any("모르는" in w or "비었음" in w for w in warn) and any("지금 진행 중인 일이 아닙니다" in w for w in warn)
             ops[1]["on"] = False                                                     # 사람이 끈 제안은 반영 안 됨
             ids = await notes.apply(c, proj, ops, dispatch_id=7, session_id=201, head="abc")
             assert len(ids) == 1
@@ -80,7 +82,7 @@ def test_notes_check_apply_render():
             assert "⚠ 확인 뒤 세션 201에 활동 있음" in r["text"] and r["folded"] == 0
             # 상한 — 넘친 줄은 지우지 않고 접는다
             for k in range(12):
-                await c.execute(text("INSERT INTO foreman_note (project, kind, body, source, checked_at) VALUES (:p, 'decision', :b, 'dispatch #1', NOW(3))"),
+                await c.execute(text("INSERT INTO foreman_note (project, kind, body, source, checked_at) VALUES (:p, 'thread', :b, 'dispatch #1', NOW(3))"),
                                 {"p": proj, "b": f"판단 {k} " + "가" * 280})
             r = await notes.render(c, proj)
             assert r["tokens"] <= notes.TOKEN_CAP and r["folded"] > 0

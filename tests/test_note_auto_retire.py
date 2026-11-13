@@ -118,7 +118,7 @@ async def test_fifteen_lines_twelve_retired_three_kept(env, tmp_path):
     other = tmp_path / "other"
     other.mkdir()
     ids = _shape(conn, repo, other)
-    dec = _note(conn, "foreman", None, kind="decision", days=9)                 # 사람이 정한 판단 — 건드리지 않는다
+    dec = _note(conn, "foreman", None, kind="decision", days=9)                 # 옛 판단 줄 — 기계가 건드리지 않는다(관리자가 손으로 내린다)
     eng = make_engine(s)
     try:
         live = {"c310"}
@@ -217,7 +217,7 @@ async def test_render_splits_stale(env):
     s, conn, repo = env
     _note(conn, "foreman", [], days=5.3)                                        # 낡음
     fresh = _note(conn, "foreman", [], days=0.1)
-    _note(conn, "foreman", None, kind="decision", days=9)
+    dec = _note(conn, "foreman", None, kind="decision", days=0.1)              # 11-13 없앤 칸 — DB에 남아도 묶음에 안 들어간다
 
     async def git(repo_, *args):
         return "219" if args[0] == "rev-list" else ""
@@ -225,9 +225,13 @@ async def test_render_splits_stale(env):
     try:
         async with eng.connect() as c:
             r = await notes.render(c, "foreman", "y", git, "/r", rules=notes.NoteRules(stale_commits=10 ** 6))
+            r2 = await notes.render(c, "foreman", "y", git, "/r", rules=notes.NoteRules(stale_days=99, stale_commits=200))
     finally:
         await eng.dispose()
     lines = r["text"].splitlines()
-    assert len(lines) == 3 and f"[노트 {fresh} · 진행 중인 일]" in lines[0]
-    assert "사람이 정한 판단" in lines[1] and "낡음(확인 필요" in lines[2]       # 낡은 줄은 맨 뒤 · 따로
-    assert [bool(n["stale"]) for n in r["notes"]] == [False, False, True]
+    assert len(lines) == 2 and f"[줄 {fresh}]" in lines[0]
+    assert "낡음(확인 필요" in lines[1]                                         # 낡은 줄은 맨 뒤 · 따로
+    assert [bool(n["stale"]) for n in r["notes"]] == [False, True] and dec not in {n["id"] for n in r["notes"]}
+    # 「확인 뒤 커밋 N개」는 ⚠ 글로 붙이지 않고 낡음 문턱에만 쓴다
+    assert "확인 뒤 커밋" not in r["text"] and all(n["commits"] == 219 for n in r["notes"])
+    assert all(n["stale"] == ["확인 뒤 커밋 219개"] for n in r2["notes"])
