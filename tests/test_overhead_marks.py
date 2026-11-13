@@ -130,16 +130,18 @@ async def test_worker_grace_only_when_relay_on(env):
     s, conn = env
     ch = _char(conn)
     w = _session(conn, ch, "scribe", 3)
-    t1 = _turn(conn, w, 1, "human", NOW - timedelta(seconds=30))
-    _reply(conn, w, ch, t1, NOW - timedelta(seconds=10), "적었습니다.")
+    # 모듈의 NOW는 불러올 때 시각이라 전체 시험에서는 수십 초 낡아 RELAY_GRACE(30초) 밖으로 나간다(11-13 관리자 — 그 자리에서 잰다)
+    now = datetime.now(UTC).replace(tzinfo=None, microsecond=0)
+    t1 = _turn(conn, w, 1, "human", now - timedelta(seconds=30))
+    _reply(conn, w, ch, t1, now - timedelta(seconds=10), "적었습니다.")
     engine = make_engine(s)
     try:
         assert await _needs(engine, w, {"foreman": (True, True)}) == {}           # 넘기는 중 — 잠깐 안 띄움
         assert "report" in await _needs(engine, w, {"foreman": (False, False)})   # 중계 꺼짐 — 사람에게
         assert "report" in await _needs(engine, w, {"runshoes": (True, True)})    # 다른 프로젝트만 켜짐
         with conn.cursor() as c:                                                  # 넘기는 시간이 지나도 기록 없음 — 사람에게
-            c.execute("UPDATE event SET ts = %s WHERE session_id = %s", (NOW - RELAY_GRACE - timedelta(seconds=5), w))
-            c.execute("UPDATE turn SET started_at = %s WHERE session_id = %s", (NOW - RELAY_GRACE - timedelta(seconds=30), w))
+            c.execute("UPDATE event SET ts = %s WHERE session_id = %s", (now - RELAY_GRACE - timedelta(seconds=5), w))
+            c.execute("UPDATE turn SET started_at = %s WHERE session_id = %s", (now - RELAY_GRACE - timedelta(seconds=30), w))
         assert "report" in await _needs(engine, w, {"foreman": (True, True)})
     finally:
         await engine.dispose()
