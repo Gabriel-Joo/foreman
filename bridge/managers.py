@@ -69,13 +69,21 @@ RELAY_REPORT = "[작업 보고 — "
 RELAY_QUESTION = "[사람에게 올릴 물음 — "
 
 
-def relay_text(kind: str, from_label: str, to_project: str, body: str) -> str:
+def escalate_hint(manager_sid: int | None) -> str:
+    """사람에게 올리는 법 한 줄(11-13) — 사람 화면 관리자 머리 위 · 알림이 이 API 하나로 뜬다(응답 글로는 뜨지 않는다)."""
+    sid = manager_sid if manager_sid is not None else "{관리자 세션 id}"
+    return (f'사람에게 올릴 때: `POST /api/sessions/{sid}/escalate` 본문 {{"kind": "report" 또는 "question", "text": "…"}}'
+            " — 응답 글만으로는 사람 화면에 뜨지 않습니다")
+
+
+def relay_text(kind: str, from_label: str, to_project: str, body: str, manager_sid: int | None = None) -> str:
     if kind == "question":
         return (f"{RELAY_QUESTION}{from_label} → {to_project} 관리자]\n{body.strip()}\n"
                 "(이 물음에 관리자가 답하지 않습니다 — 판단은 사람이 합니다. 다른 물음과 모아 사람에게 올리고, "
-                "사람의 답을 그 세션에 전합니다)")
+                f"사람의 답을 그 세션에 전합니다. {escalate_hint(manager_sid)})")
     return (f"{RELAY_REPORT}{from_label} → {to_project} 관리자]\n{body.strip()}\n"
-            "(답하지 않아도 됩니다 — 맡긴 일이 한 덩어리 끝났을 때 모아서 사람에게 한 번 보고합니다)")
+            "(답하지 않아도 됩니다 — 맡긴 일이 한 덩어리 끝났을 때 모아서 사람에게 한 번 보고합니다. "
+            f"{escalate_hint(manager_sid)})")
 
 
 class Managers:
@@ -173,7 +181,7 @@ class Managers:
             return {"delivered": False, "reason": f"{project}에 관리자 세션이 없습니다", "manager": False}
         if m["session_id"] == from_session:
             return {"delivered": False, "reason": "보낸 세션이 관리자입니다", "manager": False}
-        msg = relay_text(kind, from_label, project, body)
+        msg = relay_text(kind, from_label, project, body, m["session_id"])
         reason = None
         from bridge.handoff import transcript_path
         lock = self._locks.setdefault(m["cc_session_id"], asyncio.Lock())

@@ -12,7 +12,9 @@
 11-12 「승인 지옥 줄이기」(log/notify_relay_20261112.md) — 프로젝트마다 켜는 칸, 처음엔 모두 꺼짐:
 - relay_reports: 작업 세션(coder · scribe · designer) 턴 끝 보고를 그 프로젝트 관리자 입력 칸에(bridge/managers.py relay)
 - relay_questions: 작업 세션의 마지막 응답이 사람에게 묻는 말이면(대시보드 「답 기다림」과 같은 판정 ask_line) 관리자에게
-  「사람에게 올릴 물음」으로. 관리자는 답하지 않고 모아 사람에게 올린다 — 그 관리자 턴(출처 relay)이 묻는 말로 끝나면 바로 보낸다
+  「사람에게 올릴 물음」으로. 관리자는 답하지 않고 모아 사람에게 올린다 — 11-13부터 관리자는 `POST /api/sessions/{sid}/escalate`로
+  올리고(물음은 ❓ 바로, 보고는 묶음), 관리자 턴(출처 relay · manager_ask)이 묻는 말로 끝난 것만으로는 급함으로 치지 않는다.
+  넘긴 결과는 작업 세션 쪽 session_action 'relay-out'에도 남는다(화면 「관리자에게 보고함」 · 「관리자 답 기다림」)
 - digest: 일상 알림(턴 끝 · 합치기 카드 등 [digest] kinds)을 바로 보내지 않고 notification.decision='digest'로 모아 두었다가
   하루 한 번 [digest] at에 프로젝트마다 묶어 보낸다. 실패 · 멈춤 · 묻는 말 · 승인 대기 등 급한 것은 지금처럼 바로.
   묶음을 못 보내면 그 자체를 바로 알리고, 모아 둔 것이 late_h 넘게 남으면 알린다
@@ -53,7 +55,7 @@ ORIGIN_LABEL = {"human": "요청", "meta": "입력", "agent_message": "다른 �
 URGENT_REASONS = FAIL_REASONS | {"session_end"}     # 턴 끝 중 묶음으로 미루지 않는 것
 WORKER_ROLES = {"coder", "scribe", "designer"}      # 턴 끝을 관리자에게 넘기는 역할(관리자 · 교장 아닌 작업 세션)
 DIGEST_KIND_LABEL = {"turn": "턴 끝", "batch": "서브에이전트 묶음", "merge": "합치기", "handoff": "옮기기 · 기록",
-                     "docsync": "Notion 문서", "recon": "어긋남"}
+                     "docsync": "Notion 문서", "recon": "어긋남", "escalate": "관리자 보고"}
 SUB_STATUS = {"done": "완료", "failed": "실패", "stopped": "중단", "running": "진행", "stale": "확인 안 됨"}
 _WRAP = re.compile(r'^\s*<pasted_content id="[0-9a-f]+">\s*', re.S)
 
@@ -356,12 +358,14 @@ class Notifier:
             self._batch_pending.pop(session_id, None)
             log.warning("묶음 판정 실패 session=%s: %s: %s", session_id, type(e).__name__, str(e)[:200])
 
-    def send_direct(self, project: str | None, kind: str, session_id: int | None, msg: str, rule: str | None = None) -> None:
+    def send_direct(self, project: str | None, kind: str, session_id: int | None, msg: str, rule: str | None = None,
+                    later: bool | None = None) -> None:
         """규칙 판정 없이 바로 보낸다(승인 대기 등 — 기다리는 사람이 있다). 기록은 kind로 남는다.
-        rule은 기록용 키(11-08 사용량 알림이 같은 창에서 한 번만 — 브리지를 다시 띄워도 — 보내려고 남긴다)."""
+        rule은 기록용 키(11-08 사용량 알림이 같은 창에서 한 번만 — 브리지를 다시 띄워도 — 보내려고 남긴다).
+        later를 주면 묶음 여부를 부른 쪽이 정한다(11-13 escalate 보고 — [digest] kinds와 상관없이 묶음을 켠 프로젝트면 묶음)."""
         if not self.rules.enabled:
             return
-        decision = "digest" if self.digestable(project, kind, msg) else "pending"
+        decision = "digest" if (self.digestable(project, kind, msg) if later is None else later) else "pending"
 
         async def go() -> None:
             try:
@@ -410,6 +414,7 @@ class Notifier:
         except Exception as e:  # noqa: BLE001
             r = {"delivered": False, "manager": True, "reason": f"넣지 못했습니다: {type(e).__name__}"}
         ok = bool(r.get("delivered"))
+        await self._relay_out(p["session_id"], ok, f"{p['relay']}:{p['turn_id']}")
         msg, urgent = p["msg"], p["urgent"]
         if ok and p["relay"] == "question":
             urgent = p["reason"] in URGENT_REASONS
@@ -422,6 +427,19 @@ class Notifier:
                                           p["relay"] if ok else None)
         if q:
             await self._send_q.put(q)
+
+    async def _relay_out(self, session_id: int, ok: bool, detail: str) -> None:
+        """작업 세션 쪽에도 넘긴 결과를 남긴다(11-13) — 사람 화면이 이 기록으로 「관리자에게 보고함」 · 「관리자 답 기다림」을 띄우고,
+        실패(ok=0)나 기록이 없으면 지금처럼 사람에게 띄운다(bridge/api/dashboard.py human_needs)."""
+        from bridge.api.dashboard import RELAY_OUT_ACT, invalidate
+        try:
+            async with asyncio.timeout(15):
+                async with self.engine.begin() as c:
+                    await c.execute(text("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, :a, :o, :d)"),
+                                    {"s": session_id, "a": RELAY_OUT_ACT, "o": ok, "d": detail[:512]})
+            invalidate()
+        except Exception as e:  # noqa: BLE001 — 기록이 없으면 화면은 사람에게 띄운다(묻히지 않는 쪽)
+            log.warning("중계 결과 기록 실패 session=%s: %s", session_id, type(e).__name__)
 
     async def _emit_turn(self, c: Any, rule: ProjectRule, session_id: int, turn_id: int, reason: str, msg: str,
                          urgent: bool, relayed: str | None) -> tuple[int, str] | None:
@@ -500,6 +518,10 @@ class Notifier:
             # 사람에게 묻는 말로 끝난 턴(대시보드 「답 기다림」과 같은 판정)은 급한 것 — 묶음으로 미루지 않는다
             from bridge.api.dashboard import ask_line
             ask = ask_line(reply) if reason == "stop" else None
+            # 11-13 관리자가 중계 · 부탁으로 연 턴의 묻는 말은 급함으로 치지 않는다 — 사람에게 올릴 물음은 escalate(❓ 바로)가 맡아
+            # 화면(「사용자 답 기다림」)과 알림이 같은 신호를 쓴다. 턴 끝 알림 자체는 그대로 나간다(묶음을 켰으면 묶음)
+            if role == "manager" and origin in ("relay", "manager_ask"):
+                ask = None
             urgent = reason in URGENT_REASONS or ask is not None
             relay = None
             if role in WORKER_ROLES and self.managers is not None:

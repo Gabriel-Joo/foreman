@@ -15,9 +15,10 @@ import os
 import re
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import bindparam, text
 
 from bridge.api.auth import require_api_token
@@ -164,9 +165,15 @@ def asks_text(reply: str | None) -> bool:
     return ask_line(reply) is not None
 
 
-async def human_needs(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
+async def human_needs(c: Any, in_ids: str, relay: dict[str, tuple[bool, bool]] | None = None) -> dict[int, dict[str, Any]]:
     """세션마다 — 마지막 사람 입력(origin human 턴) 뒤의 CC 권한 거부 마지막 한 건, 마지막 본 대화 응답이 묻는 말인지.
-    사람이 다시 입력하면(새 human 턴) 둘 다 풀린다."""
+    사람이 다시 입력하면(새 human 턴) 둘 다 풀린다.
+
+    11-13(사용자 — 사람이 봐야 하는 것은 관리자 머리 위에만):
+    - 관리자: 출처 relay · manager_ask 턴의 응답으로는 asks · report를 내지 않는다. 사람에게 올릴 것은 escalate(관리자가 API로 부름)
+    - 작업 세션(coder · scribe · designer): 그 응답의 턴을 관리자에게 넘긴 기록(relay-out, ok)이 있고 같은 종류면 asks · report 대신
+      relayed(「관리자에게 보고함」 · 「관리자 답 기다림」). 넘기지 못했거나 기록이 없으면 지금처럼 사람에게 — 조용히 묻히지 않게.
+      relay = {프로젝트: (relay_reports, relay_questions)} — 켜진 프로젝트는 턴 끝 뒤 RELAY_GRACE 동안 넘기기를 기다린다(그 사이 안 띄움)"""
     out: dict[int, dict[str, Any]] = {}
     last_human = {r[0]: r[1] for r in (await c.execute(text(
         f"SELECT session_id, MAX(started_at) FROM turn WHERE session_id IN {in_ids} AND origin = 'human' "
@@ -194,21 +201,71 @@ async def human_needs(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
             f"WHERE session_id IN {in_ids} AND action = :a AND ok GROUP BY session_id) x ON x.mid = a.id"), {"a": act})).all()}
     off = await last_detail(ASKS_OFF_ACT)
     read = await last_detail(REPORT_READ_ACT)      # 「보고 옴」을 사람이 읽음(그 세션 패널을 엶)
-    fresh = datetime.now(UTC).replace(tzinfo=None) - REPORT_FRESH
-    for sid, reply, ts, eid in (await c.execute(text(
-            f"SELECT e.session_id, JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.text')), e.ts, e.id FROM event e JOIN ("
+    relayed = {r[0]: (r[1], bool(r[2])) for r in (await c.execute(text(
+        f"SELECT a.session_id, a.detail, a.ok FROM session_action a JOIN (SELECT session_id, MAX(id) mid FROM session_action "
+        f"WHERE session_id IN {in_ids} AND action = :a GROUP BY session_id) x ON x.mid = a.id"), {"a": RELAY_OUT_ACT})).all()}
+    now = datetime.now(UTC).replace(tzinfo=None)
+    fresh = now - REPORT_FRESH
+    for sid, reply, ts, eid, turn_id, origin, role, project in (await c.execute(text(
+            f"SELECT e.session_id, JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.text')), e.ts, e.id, e.turn_id, t.origin, cs.role, p.name "
+            f"FROM event e JOIN ("
             f"  SELECT session_id, MAX(id) mid FROM event WHERE session_id IN {in_ids} AND type = 'assistant_msg' "
             f"  AND subagent_id IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.block')) = 'text' GROUP BY session_id"
-            f") x ON x.mid = e.id"))).all():
+            f") x ON x.mid = e.id LEFT JOIN turn t ON t.id = e.turn_id "
+            f"LEFT JOIN character_session cs ON cs.id = e.session_id LEFT JOIN `character` ch ON ch.id = cs.character_id "
+            f"LEFT JOIN project p ON p.id = ch.project_id"))).all():
         if last_human.get(sid) and ts < last_human[sid]:
             continue
         if off.get(sid) == str(eid):       # [답 안 해도 됨]을 누른 것은 읽은 것이기도 하다
             continue
-        if (line := ask_line(reply)):
+        if role == "manager" and origin in MGR_QUIET_ORIGINS:
+            continue                       # 중계 · 관리자끼리 부탁에 대한 응답 — 사람에게 올릴 것은 escalate로
+        line = ask_line(reply)
+        kind = "question" if line else ("report" if read.get(sid) != str(eid) and ts >= fresh else None)
+        if kind is None:
+            continue
+        if role in WORKER_ROLES:
+            rec = relayed.get(sid)
+            if rec and rec[1] and turn_id is not None and rec[0] == f"{kind}:{turn_id}":
+                out.setdefault(sid, {})["relayed"] = {"kind": kind, "at": _iso(ts), "event_id": eid}
+                continue
+            on = (relay or {}).get(project or "")
+            waiting = rec is None or rec[0].split(":", 1)[-1] != str(turn_id)
+            if on and on[kind == "question"] and waiting and turn_id is not None and now - ts < RELAY_GRACE:
+                continue                   # 알림이 아직 관리자에게 넘기는 중 — 끝나면 relayed 또는 사람에게
+        if kind == "question":
             out.setdefault(sid, {})["asks"] = {"at": _iso(ts), "tail": line.strip()[-160:], "event_id": eid}
-        elif read.get(sid) != str(eid) and ts >= fresh:
+        else:
             out.setdefault(sid, {})["report"] = {"at": _iso(ts), "tail": last_paragraph(reply or "").strip()[-160:], "event_id": eid}
+    # 사람에게 올린 것(escalate, 관리자만) — 종류마다 마지막 하나. 보고는 읽으면(esc-read) · 물음은 사람이 그 관리자에게 입력하거나
+    # [답 안 해도 됨](esc-off)이면 사라진다. 사람이 입력하면 둘 다 사라진다(사람이 그 관리자 대화를 보고 있다)
+    done = {r[0] for r in (await c.execute(text(
+        f"SELECT detail FROM session_action WHERE session_id IN {in_ids} AND action IN (:r, :o) AND ok"),
+        {"r": ESC_READ_ACT, "o": ESC_OFF_ACT})).all()}
+    for aid, sid, detail, at in (await c.execute(text(
+            f"SELECT id, session_id, detail, created_at FROM session_action WHERE session_id IN {in_ids} AND action = :a AND ok "
+            f"AND created_at > :cut ORDER BY id"), {"a": ESC_ACT, "cut": now - ESC_KEEP})).all():
+        kind, _, body = (detail or "").partition(":")
+        if kind not in ESC_KINDS:
+            continue
+        esc_ = out.setdefault(sid, {}).setdefault("escalate", {})
+        if str(aid) in done or (last_human.get(sid) and last_human[sid] > at):
+            esc_.pop(kind, None)
+        else:
+            esc_[kind] = {"id": aid, "at": _iso(at), "text": body[:300]}
+    for v in out.values():
+        if "escalate" in v and not v["escalate"]:
+            del v["escalate"]
     return out
+
+
+WORKER_ROLES = {"coder", "scribe", "designer"}      # notify.WORKER_ROLES와 같은 것(중계 대상)
+MGR_QUIET_ORIGINS = {"relay", "manager_ask"}        # 관리자 턴 중 사람에게 띄우지 않는 출처
+RELAY_OUT_ACT = "relay-out"     # 작업 세션 session_action — 알림이 그 턴을 관리자에게 넘긴 결과. detail = "<kind>:<turn_id>"
+RELAY_GRACE = timedelta(seconds=150)   # 알림 settle 2초 + 넘기기 제한 60초 + 여유 — 넘기면 relayed, 못 넘기면 사람에게
+ESC_ACT, ESC_READ_ACT, ESC_OFF_ACT = "escalate", "esc-read", "esc-off"   # 관리자가 사람에게 올림 · 사람이 읽음 · 사람이 끔
+ESC_KINDS = ("report", "question")
+ESC_KEEP = timedelta(days=7)
 
 
 ASKS_OFF_ACT = "asks-off"        # session_action — 사람이 「이 응답은 답 안 해도 됩니다」(11-11, 받은 할 일 #13)
@@ -245,6 +302,12 @@ async def asks_off(engine: Any, sid: int) -> dict[str, Any]:
     async with engine.begin() as c:
         needs = await human_needs(c, f"({int(sid)})")
         a = (needs.get(sid) or {}).get("asks")
+        q = ((needs.get(sid) or {}).get("escalate") or {}).get("question")
+        if not a and q:        # 관리자가 사람에게 올린 물음(11-13) — 그 물음만 끈다
+            await c.execute(text("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, :a, 1, :d)"),
+                            {"s": sid, "a": ESC_OFF_ACT, "d": str(q["id"])})
+            _cache["data"] = None
+            return {"ok": True, "escalate_id": q["id"], "note": "관리자가 올린 이 물음의 답 기다림을 껐습니다"}
         if not a:
             return {"ok": False, "note": "지금 답 기다림이 아닙니다"}
         await c.execute(text("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, :a, 1, :d)"),
@@ -256,6 +319,75 @@ async def asks_off(engine: Any, sid: int) -> dict[str, Any]:
 @router.post("/sessions/{sid}/asks-off")
 async def asks_off_api(sid: int, request: Request) -> dict[str, Any]:
     return await asks_off(request.app.state.store.engine, sid)
+
+
+# ── 11-13 사람에게 올리기(escalate) — 관리자만. 사람 화면의 「사용자 보고 기다림」 · 「사용자 답 기다림」과 알림이 이 신호 하나를 쓴다 ──
+class EscalateIn(BaseModel):
+    kind: Literal["report", "question"]
+    text: str = Field(min_length=1, max_length=8000)
+
+
+async def escalate(engine: Any, sid: int, kind: str, body: str, notifier: Any = None) -> dict[str, Any]:
+    """관리자 세션이 사람에게 보고 · 물음을 올린다. session_action 'escalate'(detail = "<kind>:<글 앞부분>")에 남기고 알린다 —
+    물음은 바로(❓ 급함), 보고는 그 프로젝트가 하루 묶음을 켰으면 묶음으로. 관리자가 아니면 403."""
+    async with engine.begin() as c:
+        r = (await c.execute(text(
+            "SELECT cs.role, p.name, COALESCE(cs.custom_title, cs.title) FROM character_session cs "
+            "JOIN `character` ch ON ch.id = cs.character_id LEFT JOIN project p ON p.id = ch.project_id "
+            "WHERE cs.id = :s AND cs.hidden_at IS NULL"), {"s": sid})).first()
+        if r is None:
+            raise HTTPException(404, "세션이 없습니다")
+        role, project, title = r
+        if role != "manager":
+            raise HTTPException(403, f"사람에게 올리기는 관리자 세션만 합니다 — 세션 {sid}의 역할은 {role or '없음'}입니다. "
+                                     "작업 세션은 관리자에게 보고하면 됩니다")
+        # created_at은 UTC로 직접 — 사람 입력(turn.started_at, UTC)과 비교해 물음을 내린다
+        res = await c.execute(text("INSERT INTO session_action (session_id, action, ok, detail, created_at) "
+                                   "VALUES (:s, :a, 1, :d, UTC_TIMESTAMP(3))"),
+                              {"s": sid, "a": ESC_ACT, "d": f"{kind}:{body.strip()}"[:512]})
+        aid = res.lastrowid
+    _cache["data"] = None
+    notified = False
+    if notifier is not None:
+        try:
+            rule = notifier.rules.for_project(project) if getattr(notifier, "rules", None) else None
+            prefix = (rule and rule.prefix) or f"[{project or '미분류'}]"
+            head = "❓ 관리자가 사용자 답을 기다립니다" if kind == "question" else "📋 관리자 보고"
+            msg = f"{prefix} {head} · 세션 {sid}" + (f" 「{title}」" if title else "") + f"\n{body.strip()}"
+            notifier.send_direct(project, "escalate", sid, msg[:3500], rule=f"escalate:{aid}",
+                                 later=bool(kind == "report" and rule and rule.digest))
+            notified = True
+        except Exception:  # noqa: BLE001 — 알림 실패가 화면 표시를 막지 않는다(화면에는 이미 남았다)
+            notified = False
+    return {"ok": True, "id": aid, "kind": kind, "notified": notified,
+            "note": "사람 화면 관리자 머리 위에 「사용자 답 기다림」으로 띄웠습니다" if kind == "question"
+            else "사람 화면 관리자 머리 위에 「사용자 보고 기다림」으로 띄웠습니다"}
+
+
+@router.post("/sessions/{sid}/escalate")
+async def escalate_api(sid: int, body: EscalateIn, request: Request) -> dict[str, Any]:
+    return await escalate(request.app.state.store.engine, sid, body.kind, body.text,
+                          getattr(request.app.state, "notifier", None))
+
+
+async def escalate_read(engine: Any, sid: int, esc_id: int) -> dict[str, Any]:
+    """「사용자 보고 기다림」을 읽음으로 — 사람이 그 관리자 패널을 열었다(report-read와 같은 방식)."""
+    async with engine.begin() as c:
+        needs = await human_needs(c, f"({int(sid)})")
+        r = ((needs.get(sid) or {}).get("escalate") or {}).get("report")
+        if not r or int(r["id"]) != int(esc_id):
+            return {"ok": False, "note": "읽을 보고가 없습니다"}
+        await c.execute(text("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, :a, 1, :d)"),
+                        {"s": sid, "a": ESC_READ_ACT, "d": str(r["id"])})
+    _cache["data"] = None
+    return {"ok": True, "id": r["id"]}
+
+
+@router.post("/sessions/{sid}/escalate-read")
+async def escalate_read_api(sid: int, request: Request, id: int) -> dict[str, Any]:  # noqa: A002
+    if request.headers.get("x-foreman-probe"):
+        return {"ok": False, "note": "점검 화면은 읽음으로 세지 않습니다"}
+    return await escalate_read(request.app.state.store.engine, sid, id)
 
 
 def visible_rows(rows: list[Any], live: Any, cut: datetime, done: dict[int, tuple[str, datetime]],
@@ -413,7 +545,9 @@ async def dashboard(request: Request) -> dict[str, Any]:
             f"  SELECT t2.session_id, MAX(m2.created_at) mx FROM message m2 JOIN turn t2 ON t2.id = m2.turn_id "
             f"  WHERE t2.session_id IN {in_ids} AND m2.subagent_id IS NULL AND m2.model <> '<synthetic>' GROUP BY t2.session_id"
             f") x ON x.session_id = t.session_id AND x.mx = m.created_at WHERE m.subagent_id IS NULL"))).all()}
-        needs = await human_needs(c, in_ids)
+        nt = getattr(request.app.state, "notifier", None)
+        relay_on = {k: (r.relay_reports, r.relay_questions) for k, r in (getattr(getattr(nt, "rules", None), "projects", None) or {}).items()}
+        needs = await human_needs(c, in_ids, relay_on)
         appr = (await c.execute(text(
             "SELECT id, session_id, tool, target, rule, reason, created_at, summary FROM approval WHERE status = 'pending' "
             "ORDER BY id"))).all()
@@ -447,6 +581,10 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "asks": (needs.get(sid) or {}).get("asks") if cc_status != "busy" and ot is None else None,
             # 보고 옴(11-11) — 묻지 않고 끝난 응답을 사람이 아직 안 읽음. 일하는 중이면 내지 않는다
             "report": (needs.get(sid) or {}).get("report") if cc_status != "busy" and ot is None else None,
+            # 11-13 작업 세션 — 그 보고 · 물음을 관리자에게 넘겼다(사람용 report · asks 대신 작게). 일하는 중이면 내지 않는다
+            "relayed": (needs.get(sid) or {}).get("relayed") if cc_status != "busy" and ot is None else None,
+            # 11-13 관리자가 사람에게 올린 것 {report?, question?} — 관리자가 일하는 중이어도 남는다(사람이 읽거나 답할 때까지)
+            "escalate": (needs.get(sid) or {}).get("escalate"),
             # 합치기 기다림(11-11) — 카드는 세션 탭 안에만 보여 사람이 몰랐다. 캐릭터 머리 위 · 승인 막대가 이걸 읽는다
             "merge_wait": mwait.get(sid),
             "subagents_running": len(subs.get(sid, [])),

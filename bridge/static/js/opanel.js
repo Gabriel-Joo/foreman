@@ -102,6 +102,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   let target = null, targetKey = '', lastSel = undefined;
   let reportSent = null;           // 「보고 옴」 읽음을 보낸 응답 이벤트 id(같은 것을 두 번 보내지 않게)
+  let escSent = null;              // 「사용자 보고 기다림」 읽음을 보낸 escalate id(11-13)
   let open = ls.get(KEY_OPEN) !== '0';
   let tab = TABS.some(([k]) => k === ls.get(KEY_TAB)) ? ls.get(KEY_TAB) : 'convo';
   let mode = ls.get(KEY_MODE) === 'wide' ? 'wide' : 'narrow';
@@ -660,7 +661,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const now = s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target || '', 60))}` : (s.state === 'ACTIVE' ? '생각 중' : '');
     // "쌓인 대화 N%"는 상태 바로 뒤 — 머리줄은 한 줄이라 좁은 패널에서 뒤쪽이 말줄임으로 잘린다(11-09 1366 사진)
     // 답 기다림 끄기(11-11, 받은 할 일 #13) — 판정이 묻지 않는 끝맺음을 잡았을 때 사람이 끈다. 다음 응답이 오면 다시 판정
-    const asksOff = s.asks && humanNeed(s)?.label === '답 기다림'
+    const asksOff = ['답 기다림', '사용자 답 기다림'].includes(humanNeed(s)?.label)
       ? `<button type="button" class="small" data-asksoff="${s.id}" title="답 안 해도 됨 — 이 응답은 답을 기다리는 것이 아니라고 표시합니다. 다음 응답이 오면 다시 판정합니다.">답 안 해도 됨</button> ` : '';
     // 끝난 세션(11-11, UI 불만 (나)) — 옛 보고가 새 일처럼 읽히지 않게 어떻게 · 언제 끝났는지를 맨 앞에
     const ended = s.state === 'DORMANT' && s.ended
@@ -672,6 +673,12 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (s.report && !document.hidden && reportSent !== s.report.event_id) {
       reportSent = s.report.event_id;
       store.reportRead(s.id, s.report.event_id).catch(() => { reportSent = null; });
+    }
+    // 사용자 보고 기다림(11-13) — 관리자가 사람에게 올린 보고. 패널을 열면 읽은 것(같은 방식)
+    const er = s.escalate && s.escalate.report;
+    if (er && !document.hidden && escSent !== er.id) {
+      escSent = er.id;
+      store.escalateRead(s.id, er.id).catch(() => { escSent = null; });
     }
     drawSwitch(s);                   // 먼저 — 떠 있으면 쌓인 대화 띠는 숨긴다(같은 버튼, 까닭은 이쪽이 분명)
     drawCompact(s);

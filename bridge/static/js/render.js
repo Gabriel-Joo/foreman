@@ -55,18 +55,33 @@ export function humanNeed(s) {
     return { label: '권한 거부', tip: `권한 거부 — CC 자체 권한 검사(auto mode)가 ${who}${s.denied.tool || '도구'}를 막았습니다${s.denied.reason ? '(' + s.denied.reason + ')' : ''}. FOREMAN 승인 카드로는 오지 않습니다. 그 세션에 허용 · 다른 방법을 지시하거나 settings에 허용 규칙을 넣어야 풀립니다.` };
   }
   if (s.asks) return { label: '답 기다림', tip: '답 기다림 — 마지막 응답이 사람에게 묻고 끝났습니다. 패널 입력 칸이나 그 세션 터미널에서 답하면 풀립니다.' };
+  if (s.escalate && s.escalate.question) return { label: '사용자 답 기다림', tip: ESC_TIP.question(s.escalate.question) };
   return null;
 }
+// 11-13(사용자) — 사람이 볼 것은 관리자 머리 위에만. 관리자가 POST /api/sessions/{sid}/escalate로 올린 것만 뜬다
+const ESC_TIP = {
+  question: (e) => `사용자 답 기다림 — 관리자가 사람에게 물었습니다. 패널 입력 칸에 답하면 풀립니다.${e && e.text ? `\n${e.text}` : ''}`,
+  report: (e) => `사용자 보고 기다림 — 관리자가 사람에게 보고했습니다. 누르면 대화가 열리고, 읽으면 사라집니다.${e && e.text ? `\n${e.text}` : ''}`,
+};
 // 캐릭터 머리 위 말풍선(11-11 사용자 — 답 기다림 · 보고가 캐릭터에 안 보였다). 답 기다림은 노랑(warn), 보고 옴은 초록(ok)으로 갈라
 // 「답해야 하는 것」과 「읽기만 하면 되는 것」을 한눈에. 보고 옴은 그 세션 패널을 열면 사라진다(opanel → store.reportRead)
 export function needMark(s) {
   if (!s || s.state === 'DORMANT') return null;
   if (s.denied) return { text: '권한 거부', tone: 'warn', tip: humanNeed(s).tip };
   if (s.asks) return { text: '답 기다림', tone: 'warn', tip: humanNeed(s).tip };
+  const e = s.escalate || {};
+  if (e.question) return { text: '사용자 답 기다림', tone: 'warn', tip: ESC_TIP.question(e.question) };
   // 겹치면(11-11): 권한 거부 > 답 기다림 > 합치기 기다림 > 보고 옴. 앞의 둘은 세션이 막혀 있어 지금 사람 손이 먼저 필요하고,
   // 합치기는 사람이 눌러야 끝나는 일이라 읽기만 하면 되는 보고보다 위다(합치기 카드가 떠 있으면 그 응답은 보고이기도 하다)
   if (s.merge_wait) return { text: '합치기 기다림', tone: 'merge', tip: '합치기 기다림 — 일을 마친 따로 작업의 합치기 카드가 승인을 기다립니다. 누르면 그 세션 패널의 「세션」 탭에서 합치거나 나중으로 미룹니다.' };
+  if (e.report) return { text: '사용자 보고 기다림', tone: 'ok', tip: ESC_TIP.report(e.report) };
   if (s.report) return { text: '보고 옴', tone: 'ok', tip: '보고 옴 — 묻지 않고 일을 마친 응답이 왔습니다. 누르면 대화가 열리고, 읽으면 사라집니다.' };
+  // 11-13 작업 세션이 관리자에게 넘긴 것 — 사람 몫이 아니라 작게(quiet). 넘기지 못했으면 서버가 위 asks · report로 낸다
+  if (s.relayed) {
+    return s.relayed.kind === 'question'
+      ? { text: '관리자 답 기다림', tone: 'quiet', tip: '관리자 답 기다림 — 이 세션의 물음을 관리자에게 넘겼습니다. 관리자가 모아 사람에게 올립니다.' }
+      : { text: '관리자에게 보고함', tone: 'quiet', tip: '관리자에게 보고함 — 이 세션의 보고를 관리자에게 넘겼습니다. 사람은 읽지 않아도 됩니다.' };
+  }
   return null;
 }
 // 합치기 기다림 세션을 가장 오래된 카드부터(승인 막대 건수 · 누르면 열 세션)
