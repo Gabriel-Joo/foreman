@@ -14,10 +14,10 @@ test('낡음 줄은 따로 가름', () => {
   assert.deepEqual(splitNotes(undefined), { fresh: [], stale: [] });
 });
 
-test('자동으로 내린 줄: 개수 · 까닭 · 되살리기 단추', () => {
+test('끝난 일: 개수 · 까닭 · 되살리기 단추', () => {
   assert.equal(autoBlock('foreman', []), '');
   const h = autoBlock('foreman', [{ id: 994, body: '한국어 훅 <b>', why: '자동: 세션 247 합침', retired_at: '2026-11-13T05:00:00Z' }]);
-  assert.match(h, /자동으로 내린 줄 1/);
+  assert.match(h, /끝난 일 1/);
   assert.match(h, /data-fm-restore="994"/);
   assert.match(h, /자동: 세션 247 합침/);
   assert.ok(h.includes('한국어 훅 &lt;b&gt;'));                    // 본문은 이스케이프
