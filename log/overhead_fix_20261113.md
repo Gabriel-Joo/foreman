@@ -6,7 +6,7 @@
 1. **글자**: 관리자 머리 위 「사용자 보고 기다림」 → **「사용자에게 보고함」**. 「사용자 답 기다림」은 그대로
    - 바꾼 곳: `render.js`(말풍선 글 · 툴팁) · `bridge/api/dashboard.py`(escalate 응답 note · 주석 · docstring) · `store.js` · `opanel.js` 주석 · 시연 `overhead_marks.json` note · `tests/js/overhead_marks.test.mjs`
    - `managers.py`의 `escalate_hint`에는 이 글자가 없었다(「응답 글만으로는 사람 화면에 뜨지 않습니다」만) — 고칠 것 없음
-   - `grep -rn "사용자 보고 기다림" bridge tests config docs README.md` → 0. **`log/`의 옛 기록 두 파일**(`overhead_marks_20261113.md` · `manager318_overhead_20261113.md`)은 그 시점 기록이라 그대로 뒀다
+   - `grep -rn "사용자 보고 기다림" bridge tests config docs README.md` → 0. **`log/`의 옛 기록 두 파일**(`overhead_marks_20261113.md` · `manager318_overhead_20261113.md`)은 그 시점 기록이라 그대로 뒀다 → 사용자 답(11-13): 기록 파일도 맞춰라 — 합친 뒤 관리자 318이 고침
 2. **[전체] 지도 방 카드**: `office.js` 방 통계에 `userAsks`를 새로 두고, 관리자 escalate 물음은 `asks`에서 빼 「사용자 답 기다림 N」으로 따로 센다
    - 지도 카드 「멈춤 — 사용자 답 기다림 N」 · 카드 호버 · 방 머리줄(`badgeLines`)에 줄 추가, 방 경고 색(`siteState` alert)에도 포함
    - 세션이 사람에게 묻고 끝난 「답 기다림 N」은 그대로(우선순위는 그 아래)
