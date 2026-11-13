@@ -18,8 +18,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from bridge import worktree as wt
 from bridge.inject import Refused, tmux
+from bridge.preview import IDENT_HEADER, IDENT_PATH
 
 PORTS = range(8200, 8300)
 
@@ -45,6 +48,7 @@ class Previews:
             self.state: dict[str, dict[str, Any]] = json.loads(self.state_path.read_text())
         except (OSError, ValueError):
             self.state = {}
+        self.dead: dict[str, str] = {}      # worktree 경로 → 죽어서 기록을 치운 까닭(다시 띄우기에 실패하면 그대로 알린다)
 
     def _save(self) -> None:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,17 +63,52 @@ class Previews:
         except Refused:
             return False
 
+    @staticmethod
+    async def _probe(port: int) -> bool:
+        """127.0.0.1의 그 포트가 **미리보기 브리지**로 답하는지 — 포트만 열려 있는 것으로는 믿지 않는다(남의 서비스일 수 있다)."""
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as c:
+                r = await c.get(f"http://127.0.0.1:{port}{IDENT_PATH}")
+            return r.status_code == 200 and r.headers.get(IDENT_HEADER) == "1" and r.json().get("foreman_preview") is True
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return False
+
     async def get(self, wt_path: str) -> dict[str, Any] | None:
+        """기록이 있어도 tmux가 살아 있고 그 포트가 미리보기로 답할 때만 「있음」. 아니면 기록을 치우고 까닭을 `dead`에 남긴다."""
         e = self.state.get(wt_path)
-        if e and not await self._alive(e["tmux"]):
-            self.state.pop(wt_path, None)
-            self._save()
+        if not e:
             return None
-        return e
+        if not await self._alive(e["tmux"]):
+            why = f"tmux 세션({e['tmux']})이 없습니다"
+        elif not await self._probe(e["port"]):
+            why = f"포트 {e['port']}가 미리보기로 답하지 않습니다"
+        else:
+            self.dead.pop(wt_path, None)
+            return e
+        self.state.pop(wt_path, None)
+        self.dead[wt_path] = why
+        self._save()
+        if await self._alive(e["tmux"]):          # 서버만 죽고 tmux가 남은 경우 — 치워야 다시 띄울 수 있다
+            try:
+                await tmux(self.socket, "kill-session", "-t", e["tmux"])
+            except Refused:
+                pass
+        return None
 
     async def start(self, project: str | None, wt_path: str) -> dict[str, Any]:
         if (e := await self.get(wt_path)):
             return e | {"reused": True}
+        was_dead = self.dead.get(wt_path)
+        try:
+            e = await self._start(project, wt_path)
+        except Refused as ex:
+            if was_dead:
+                raise Refused(f"미리보기가 죽어 있습니다 — {was_dead}. 다시 띄우지 못했습니다: {ex}") from ex
+            raise
+        self.dead.pop(wt_path, None)
+        return e | ({"restarted": True, "was_dead": was_dead} if was_dead else {})
+
+    async def _start(self, project: str | None, wt_path: str) -> dict[str, Any]:
         cmd = self.cmds.get(project or "")
         if not cmd:
             raise Refused(f"이 프로젝트({project})는 미리보기 명령이 없습니다(config/worktree.toml [preview.{project}])")
@@ -83,7 +122,7 @@ class Previews:
         if await self._alive(tname):
             await tmux(self.socket, "kill-session", "-t", tname)
         await tmux(self.socket, "new-session", "-d", "-s", tname, "-c", repo, line)
-        if not await self._ready(port):
+        if not await self._ready(port):               # 포트가 열리고 **미리보기 확인 주소**가 답해야 한다
             out = ""
             try:
                 out = (await tmux(self.socket, "capture-pane", "-p", "-t", tname))[-400:]
@@ -99,12 +138,9 @@ class Previews:
     @staticmethod
     async def _ready(port: int) -> bool:
         for _ in range(40):
-            try:
-                _r, w = await asyncio.open_connection("127.0.0.1", port)
-                w.close()
+            if await Previews._probe(port):
                 return True
-            except OSError:
-                await asyncio.sleep(0.25)
+            await asyncio.sleep(0.25)
         return False
 
     async def stop(self, wt_path: str) -> bool:

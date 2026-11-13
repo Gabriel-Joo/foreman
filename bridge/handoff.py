@@ -1115,6 +1115,7 @@ class HandoffManager:
         lock = (self.schema.state.get(row.project or "") if self.schema else None) or {}
         out["schema_lock"] = lock.get("wt") == name
         out["preview"] = await self.previews.get(out["path"]) if self.previews else None
+        out["preview_dead"] = (self.previews.dead.get(out["path"]) if self.previews and not out["preview"] else None)   # 죽어서 기록을 치운 까닭
         out["preview_ok"] = bool(self.previews and row.project in self.previews.cmds)
         if out.get("exists") and await self._role(row.id) == "scribe":
             out["review"] = await self._scribe_review(row, repo, out)
