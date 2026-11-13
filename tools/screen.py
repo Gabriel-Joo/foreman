@@ -8,6 +8,8 @@
   `audit()`(고정 안 된 것)을 돌리고, 화면마다 `nameAudit()`(사람 이름이 구역 이름표 · 다른 이름과 겹치나, 11-06)를 세고 PNG를 찍는다. 결과는 `<out>/report.json`, 사진은 `<out>/<테마>_<크기>_<화면>.png`
 - 화면마다 `labelAudit()`(11-10) — 지금 그린 그대로: 이름표(구역 · 출하 라인 · 캐릭터 이름 · 말풍선) ↔ 사람 몸, 이름표끼리, 구역 · 출하 라인 이름표 ↔ 가구(그림의 불투명 범위).
   layoutAudit(좌석 자리 기준) · nameAudit(이름 ↔ 구역 이름표)이 0건인데 실제로는 겹치던 것을 잡는다
+- 화면마다 `stackAudit()`(11-13) — 머리 위 표시 덩어리: 카드 ↔ 사람 몸(자기 몸 포함), 카드가 머리 위에 있나, 선 칸 위(복도 · 다른 방)로
+  넘치나, 글씨 카드(아래) · 동작 카드(위) 차례
 - 테마 × 크기마다 `termAudit`(11-10) — 패널 입력 칸이 패널 · 창 밖으로 넘치나 · 터미널과 겹치나, 터미널을 연 채로 한 번 더(`<…>_term.png`, `--no-term`이면 닫힌 채만).
   연 채로는 xterm 칸 폭 ≥ 글자 폭 · 이름표 줄 ↔ 터미널 겹침 · 툴팁이 터미널을 덮나(마우스를 올린 뒤도), 글씨 배율 전 단계 × dpr 1 · 0.7(`--no-term-sweep`이면 건너뜀)
 - **터미널을 여는 점검은 `/api/terminal/open`을 불러 실제 tmux 창을 바꾼다(select-window)** — :8000(라이브 셸)에서는 `--no-term`으로 돌리거나,
@@ -348,6 +350,10 @@ async def run(a: argparse.Namespace) -> int:
                         lb = await p.ev("window.office.labelAudit ? window.office.labelAudit() : []") or []
                         base.setdefault("labelAudit", {})[view] = lb
                         bad += len(lb)
+                        # 머리 위 표시(11-13) — 카드가 사람 몸을 덮나 · 머리 위에 있나 · 선 칸 위로 넘치나 · 글씨 아래/동작 위 차례
+                        sa = await p.ev("window.office.stackAudit ? window.office.stackAudit() : []") or []
+                        base.setdefault("stackAudit", {})[view] = sa
+                        bad += len(sa)
                         # [전체] 카드 · [⌂] 현황판 이름(11-09) — 겹침 · 그림 덮음 · 화면 · 칸 밖 · 잘림. 전엔 --eval로 따로 불러야 봤다
                         ca = await p.ev("window.office.cardAudit ? window.office.cardAudit().problems : []") or []
                         base.setdefault("cardAudit", {})[view] = ca
@@ -402,11 +408,12 @@ async def run(a: argparse.Namespace) -> int:
                         print(f"  gridAudit {x.get('kind')}: {x.get('text')}")
                     n_names = sum(len(v) for v in base.get("nameAudit", {}).values())
                     n_labels = sum(len(v) for v in base.get("labelAudit", {}).values())
+                    n_stack = sum(len(v) for v in base.get("stackAudit", {}).values())
                     n_cards = sum(len(v) for v in base.get("cardAudit", {}).values())
                     n_tips = sum(len(v.get("problems") or []) for v in base.get("tipAudit", {}).values())
                     n_tipn = sum(v.get("n") or 0 for v in base.get("tipAudit", {}).values())
                     n_term = len(ta["closed"]) + len(ta["open"] or [])
-                    print(f"{th} {size}: gridAudit {len(base['gridAudit'])} · layoutAudit {len(la or [])} · labelAudit {n_labels} · nameAudit {n_names} · cardAudit {n_cards} · "
+                    print(f"{th} {size}: gridAudit {len(base['gridAudit'])} · layoutAudit {len(la or [])} · labelAudit {n_labels} · stackAudit {n_stack} · nameAudit {n_names} · cardAudit {n_cards} · "
                           f"tipAudit {n_tips}/{n_tipn} · propAudit {len(base['propAudit_issues'])} · "
                           f"termAudit {n_term}{'' if ta['open'] is not None else '(닫힘만)'} · "
                           f"audit(고정 안 됨) {len(au or [])} · 페이지 오류 {len(base['page_errors'])} · 사진 {len(shots)}")
