@@ -936,6 +936,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | **서기 화면에 게시 설정 출처 · 경고 보이기**: 프로젝트마다 지금 게시 설정이 저장소 파일(`.foreman/notion.toml`)인지 FOREMAN 칸인지와 경고는 `GET /api/publish?project=`의 `config`로만 보인다. 멈춤(halted)만 서기 할 일 줄에 뜬다 | **정해짐**(11-12 사용자). 따로 작게(디자이너) | `log/notion_publish_three_20261112.md` 「README에서 뺄 줄」 |
 | **런슈즈 합치기 카드 · 승인자 · 중계 켜기**: 런슈즈를 `[merge_prep] projects`에 넣고 승인자 · squash · 알림 중계를 FOREMAN · 인프라처럼 켤지 | **사용자가 정할 것** — 조건(「300 일이 끝난 뒤」)은 11-12 300의 5-1 push로 찼다 | `log/runshoes_manager_20261112.md` |
 | **런슈즈 커밋 메시지 고치기 전 백업 지우기**: 태그 `archive/main-before-reword-20261112` · 로컬 ref `refs/backup/main-before-reword-20261112` | **사용자가 정할 것** — 정할 때까지 둔다 | `log/runshoes_manager_20261112.md` |
+| **CC 자체 안내 창이 세션을 붙잡는 것 알리기**: 11-13 서기 339의 터미널에 CC 안내 창(「We recommend compacting earlier … Autocompact at 400k tokens?」 — 고르기를 기다림)이 떠 있어, 사람 승인 합치기의 「세션 끝내기」 명령이 그 창에 들어가 45초 안에 안 끝나 합치기가 실패했다(카드 `failed` 「세션이 끝나지 않아 멈췄습니다 — 터미널을 확인해 주세요」). 관리자가 Esc(not now)로 닫고 사람이 다시 눌러 합침. 지금 감시(`bridge/stallwatch.py` exit_confirm)는 **끝내기 확인 창**(「Background work is running」)만 본다 — 다른 CC 안내 · 고르기 창이 떠 입력을 먹는 것은 모른다. 할 것: 일하지 않는 세션의 tmux 화면에서 고르기 창(「↑/↓ choose · enter confirm · esc」 같은 꼴)을 찾아 패널 표시 · 오래가면 알림, 세션 끝내기 · 입력 넣기 전에 그 창이 있으면 넣지 않고 까닭을 돌려주기 | **정해짐**(11-13 사용자). 따로 작게(코더) | `log/manager318_overhead_20261113.md` |
 
 ---
 
