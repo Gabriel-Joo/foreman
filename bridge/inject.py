@@ -251,7 +251,7 @@ async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, trans
         # Enter가 그 제안을 제출하는지 문서에 없다(11-05) — 사람이 쓰지 않은 글이 실행될 수 있으니 보내지 않는다
         raise Refused("빈 입력입니다 — 공백이나 줄바꿈만으로는 보내지 않습니다")
     t, _ls, busy = await resolve(session_id, sessions_dir)
-    escs = await clear_screen(t, busy)
+    escs, dialog = await clear_screen(t, busy)
     send, guarded_ = guarded(text, command)
     offset = os.path.getsize(transcript) if transcript and os.path.exists(transcript) else None
     steps = await paste_and_submit(t, send, delay_s=delay_s)
@@ -266,7 +266,7 @@ async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, trans
             if delivered:
                 break
     out = {"pane": t.pane, "queued": busy or bool(delivered and delivered["as"] == "queued"), "guarded": guarded_,
-           "steps": (["Escape"] * escs) + steps, "esc": escs, "delivered": delivered, "chars": len(text), "lines": text.count("\n") + 1}
+           "steps": (["Escape"] * escs) + steps, "esc": escs, "dialog": dialog, "delivered": delivered, "chars": len(text), "lines": text.count("\n") + 1}
     if transcript and not delivered:
         # 기록에서 못 찾았다 — 화면의 입력 칸을 직접 본다(11-05). 보낸 글 앞부분이 입력 칸(❯ 줄 아래)에 보이면 남은 것,
         # 안 보이면 제출된 것(기록 모양이 달라 못 맞췄을 뿐 — 11-05 끝 공백 건이 그랬다). 사람이 쓰던 글일 수 있어 지우지 않는다
@@ -280,44 +280,150 @@ ESC_TRIES = 3
 ESC_WAIT_S = 0.6          # Esc 뒤 화면이 바뀔 때까지(끝내기에서 쓰던 값)
 
 
-async def clear_screen(t: Target, busy: bool, tries: int = ESC_TRIES) -> int:
-    """입력 줄(❯)이 없으면 CC가 설정 · 사용량 같은 다른 화면을 띄운 것이다 — 거기 붙여넣은 글은 제출되지 않는다
-    (11-08 cc-foreman-2 /usage, 11-09 하루 세 번 — 사용자: "보내기 전에 Esc를 자동으로 보내고 다시 시도"). 사람이 하듯
-    Esc로 닫고 입력 줄이 돌아오는지 본다(최대 tries번, 끝내기와 같은 방식). 보낸 Esc 수를 돌려준다.
-    **작업 중이면 Esc를 보내지 않는다** — Esc는 작업을 끊고, 승인 · 질문 창(도구가 도는 중이라 busy)에서는 거부 · 취소가 된다.
-    그래도 안 풀리면 Refused — 화면에 그 이유가 뜬다(조용히 실패하지 않게)."""
-    if await prompt_showing(t):
-        return 0
+async def clear_screen(t: Target, busy: bool, tries: int = ESC_TRIES) -> tuple[int, str | None]:
+    """붙여넣기 전에 화면을 본다(screen_state). 입력 줄이면 그대로, 창이 떠 있으면 종류로 가른다(11-13).
+      - Esc가 「그대로 둠 · 지금은 아님」인 창(DISMISS — /model · /config · /usage · /autocompact · 자동 압축 권유):
+        Esc로 닫고 입력 줄이 돌아오는지 본다(최대 tries번, 11-09 사용자: "보내기 전에 Esc를 자동으로 보내고 다시 시도")
+      - Esc가 결정이 되는 창(DECISION — 폴더 신뢰 · 도구 권한 · 보류 메시지 승인 · 끝내기 확인)과 모르는 창:
+        Esc도 글도 보내지 않고 Refused(조용히 실패하지 않게 까닭을 돌려준다)
+    **작업 중이면 Esc를 보내지 않는다** — Esc는 작업을 끊고, 승인 · 질문 창에서는 거부 · 취소가 된다.
+    (보낸 Esc 수, 닫은 창 이름)을 돌려준다."""
+    kind, name = screen_state(await _capture(t))
+    if kind == "prompt":
+        return 0, None
     if busy:
-        raise Refused("CC가 입력 줄 대신 다른 화면을 띄워 두고 있습니다. 작업 중이라 Esc를 보내지 않았습니다"
-                      "(작업이 끊길 수 있습니다) — 그 세션 터미널에서 확인해 주세요")
-    for n in range(1, tries + 1):
+        raise Refused(f"CC에 {name or '알 수 없는'} 창이 떠 있습니다. 작업 중이라 Esc를 보내지 않았습니다"
+                      "(작업이 끊길 수 있습니다) — 그 세션 대화창에서 확인해 주세요")
+    sent, first = 0, name
+    while True:
+        what = f"{name} 창"
+        if kind == "decision":
+            log.warning("결정 창이 떠 있어 넣지 않음 %s: %s (Esc %d번 뒤)", t.pane, name, sent)
+            raise Refused(f"{what}이 떠 있어 넣지 못했습니다. Esc가 그 창의 답이 될 수 있어 보내지 않았습니다"
+                          " — 그 세션 대화창에서 확인해 주세요")
+        if kind == "unknown":
+            log.warning("모르는 창이 떠 있어 넣지 않음 %s (Esc %d번 뒤)", t.pane, sent)
+            raise Refused("CC에 입력 줄 대신 알 수 없는 창이 떠 있어 넣지 못했습니다. Esc가 무엇을 할지 몰라 보내지 않았습니다"
+                          " — 그 세션 대화창에서 확인해 주세요")
+        if sent >= tries:
+            log.warning("Esc %d번에도 입력 줄이 돌아오지 않음 %s: %s", tries, t.pane, name)
+            raise Refused(f"CC에 {what}이 떠 있고, Esc를 {tries}번 보내도 닫히지 않았습니다 — "
+                          "그 세션 대화창에서 확인해 주세요")
         await tmux(t.socket, "send-keys", "-t", t.pane, "Escape")
+        sent += 1
         await asyncio.sleep(ESC_WAIT_S)
-        if await prompt_showing(t):
-            log.warning("입력 줄이 없어 Esc %d번으로 닫음 %s", n, t.pane)
-            return n
-    log.warning("Esc %d번에도 입력 줄이 돌아오지 않음 %s", tries, t.pane)
-    raise Refused(f"CC가 입력 줄 대신 다른 화면을 띄워 두고 있고, Esc를 {tries}번 보내도 닫히지 않았습니다 — "
-                  "그 세션 터미널에서 확인해 주세요")
+        kind, name = screen_state(await _capture(t))
+        if kind == "prompt":
+            log.warning("%s 창이 떠 있어 Esc %d번으로 닫음 %s", first, sent, t.pane)
+            return sent, first
+
+
+async def _capture(t: Target) -> str:
+    return await tmux(t.socket, "capture-pane", "-p", "-J", "-t", t.pane)
+
+
+# ── 화면 가르기(11-13) ────────────────────────────────────────────────────────────────────────────────
+# CC 2.1.323 실측(tmux capture-pane, log/prompt_vs_dialog_20261113.md):
+#   입력 칸   = 0칸에서 시작하는 전폭 가로줄(────) 바로 아래, 0칸에서 시작하는 `❯` 줄 … 다음 가로줄
+#   지난 글   = 대화 영역의 사용자 글도 0칸 `❯`로 남는다(`❯ /model`, `❯ say ok only`) — 그래서 `❯` 줄만 보면
+#              대화가 있는 세션에선 창이 떠 있어도 늘 「입력 줄 있음」이 된다(11-13 전의 prompt_showing)
+#   창        = 고르기 줄은 들여 쓴 `❯`(`   ❯ 4.  Sonnet 5.5 ✔`, ` ❯ 1. Yes`, ` ❯ No, exit`). 위 테두리 ▔▔▔(/model ·
+#              /config · /usage · /autocompact)나 가로줄(신뢰 · 도구 권한) 아래에 뜨고, 맨 아래에 안내 줄
+#              (「Enter to confirm · Esc to cancel」, 「↑/↓ choose · … · esc not now」)이 있다.
+#              /autocompact 창은 입력 칸을 남긴 채 그 위에 뜬다 — 입력 칸이 있어도 창을 먼저 본다
+RULE = re.compile(r"^─{4,}")             # 실제로는 전폭. 0칸에서 시작해야 한다(창 안의 ╭── · ╌╌는 아님)
+BORDER = re.compile(r"^\s*▔{10,}")
+_ESC_SEG = re.compile(r"^(esc|escape)\b", re.I)
+
+# Esc가 결정이 되는 창 — 넣지도 Esc를 보내지도 않는다. 결정 창을 먼저 본다(둘 다 걸리면 결정 쪽)
+DECISION = [
+    ("폴더 신뢰 확인", ("Quick safety check", "trust this folder")),          # Esc = 「No, exit」일 수 있다
+    ("보류된 세션 메시지 승인", ("Held message from another session",)),     # Esc = Deny
+    ("끝내기 확인", ("Background work is running",)),
+    ("도구 권한 묻기", ("Do you want to proceed?", "Do you want to allow", "Do you want to make this edit",
+                       "Do you want to create")),                             # Esc = 거부, 기본 선택이 「1. Yes」
+    ("계획 승인", ("Would you like to proceed?",)),
+]
+# Esc가 「그대로 둠 · 지금은 아님」인 창 — Esc로 닫고 보낸다
+DISMISS = [
+    ("자동 압축 권유", ("We recommend compacting earlier",)),                 # onCancel = answer("esc") — 「esc not now」
+    ("모델 고르기(/model)", ("Select model",)),                               # Esc = 「Kept model as …」
+    ("자동 압축 설정(/autocompact)", ("Auto-compact window",)),              # Esc = 「… unchanged」
+    ("설정(/config · /usage · /status)", (re.compile(r"Settings\s+Status\s+Config\s+Usage"),)),  # 첫 Esc는 검색만 지울 수 있다
+]
+
+
+def _hint_line(ln: str) -> bool:
+    """창 맨 아래 안내 줄인가 — 「 · 」로 나뉜 짧은 토막 둘 이상에, Esc로 시작하는 토막이 있다."""
+    segs = [s.strip() for s in ln.strip().split(" · ")]
+    return 2 <= len(segs) <= 6 and len(ln.strip()) < 160 and any(_ESC_SEG.match(s) for s in segs)
+
+
+def _prompt_box(lines: list[str]) -> tuple[int, int] | None:
+    """화면 맨 아래쪽 입력 칸의 (위 가로줄, 아래 가로줄) 줄 번호. 없으면 None."""
+    for i in range(len(lines) - 1, 0, -1):
+        if not lines[i].startswith("❯"):
+            continue
+        top = next((k for k in range(i - 1, -1, -1) if lines[k].strip()), None)
+        if top is None or not RULE.match(lines[top]):
+            continue                                   # 대화 영역의 지난 사용자 글
+        bottom = next((k for k in range(i + 1, len(lines)) if RULE.match(lines[k])), None)
+        if bottom is not None:
+            return top, bottom
+    return None
+
+
+def _name(text: str, table: list) -> str | None:
+    for name, keys in table:
+        if any((k.search(text) if isinstance(k, re.Pattern) else k in text) for k in keys):
+            return name
+    return None
+
+
+def screen_state(screen: str) -> tuple[str, str | None]:
+    """화면을 가른다 → ("prompt", None) | ("dismiss", 창 이름) | ("decision", 창 이름) | ("unknown", None)."""
+    lines = screen.rstrip("\n").splitlines()
+    box = _prompt_box(lines)
+    border = max((i for i, ln in enumerate(lines) if BORDER.match(ln)), default=None)
+    if box is not None:
+        top = box[0]
+        if border is not None and border < top:
+            region = lines[border:top]                 # 입력 칸 위에 뜬 창(/autocompact)
+        else:
+            above = [ln for ln in lines[:top] if ln.strip()][-2:]
+            if not any(_hint_line(ln) for ln in above):
+                return "prompt", None
+            region = lines[max(0, top - 25):top]       # 테두리 없이 입력 칸 위에 뜬 창(안내 줄로 앎)
+    elif border is not None:
+        region = lines[border:]
+    else:
+        rule = max((i for i, ln in enumerate(lines) if RULE.match(ln)), default=0)
+        region = lines[rule:]                          # 신뢰 · 권한 창 — 가로줄 아래가 창
+    text = "\n".join(region)
+    if name := _name(text, DECISION):
+        return "decision", name
+    if name := _name(text, DISMISS):
+        return "dismiss", name
+    return "unknown", None
 
 
 async def prompt_showing(t: Target) -> bool:
-    """화면에 CC 입력 줄(❯)이 있나. 작업 중에도 입력 줄은 남아 있다(11-08 실측 — 다른 pane 4개)."""
-    screen = await tmux(t.socket, "capture-pane", "-p", "-J", "-t", t.pane)
-    return any(ln.lstrip().startswith("❯") for ln in screen.splitlines())
+    """화면에 CC 입력 칸이 떠 있고 그 위에 창이 없나(screen_state). 작업 중에도 입력 칸은 남아 있다(11-08 실측)."""
+    return screen_state(await _capture(t))[0] == "prompt"
 
 
 async def left_in_box(t: Target, sent: str) -> bool | None:
-    """입력 칸(마지막 ❯ 줄부터 아래)에 보낸 글 앞부분이 보이나. 화면을 못 읽으면 None."""
+    """입력 칸(입력 칸 ❯ 줄부터 아래, 칸을 못 찾으면 마지막 ❯ 줄부터)에 보낸 글 앞부분이 보이나. 화면을 못 읽으면 None."""
     try:
-        screen = await tmux(t.socket, "capture-pane", "-p", "-J", "-t", t.pane)
+        screen = await _capture(t)
     except Refused:
         return None
     lines = screen.rstrip("\n").splitlines()
-    idx = max((i for i, ln in enumerate(lines) if ln.lstrip().startswith("❯")), default=None)
+    box = _prompt_box(lines)
+    idx = box[0] + 1 if box else max((i for i, ln in enumerate(lines) if ln.lstrip().startswith("❯")), default=None)
     if idx is None:
         return None
-    box = re.sub(r"\s+", "", "".join(lines[idx:]))
+    end = box[1] if box else len(lines)
+    box = re.sub(r"\s+", "", "".join(lines[idx:end]))
     head = re.sub(r"\s+", "", sent.strip())[:20]
     return bool(head) and head in box

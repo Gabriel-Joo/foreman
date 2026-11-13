@@ -1059,7 +1059,8 @@ class HandoffManager:
         if act == "exit":
             tname = (await tmux(t.socket, "display-message", "-p", "-t", t.pane, "#{session_name}")).strip()
             # 11-08 — /usage · 설정 같은 화면이 떠 있으면 입력 줄(❯)이 없어 /exit를 못 받는다(세션 210, 끝내기가 안 됐다).
-            # 11-09부터 deliver가 Esc(최대 3번)로 닫고 보낸다(inject.clear_screen — 모든 보내기에 같게). 작업 중이 아닐 때만 여기 온다
+            # 11-09부터 deliver가 Esc(최대 3번)로 닫고 보낸다(inject.clear_screen — 모든 보내기에 같게). 작업 중이 아닐 때만 여기 온다.
+            # 11-13부터 Esc가 결정이 되는 창(신뢰 · 권한 · 끝내기 확인)이나 모르는 창이면 Esc 없이 거부한다
             res = await deliver(row.cc, "/exit", sessions_dir=self.sessions_dir, transcript=None, command=True)
             # 11-08 15 → 45초 — 맥락 520k 세션(200)이 /exit 뒤 15초 안에 내려가지 않아 "실패"로 보였고, 다시 누르자 끝났다
             gone = await self._wait(lambda: row.cc not in live_sessions(self.sessions_dir), 45)
