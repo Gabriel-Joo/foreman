@@ -20,6 +20,7 @@
 | **304** | 11-12 14:00 | `style_guide` · `11_foreman_dispatch` · `operations` · `10_office_design` · `11_handoff_v2` |
 | **305** | 11-12 14:45 | `12_scribe` |
 | **307** | 11-12 15:09 | `12_scribe` · `operations` |
+| **319** | 11-13 11:0x | `10_office_design` · `11_foreman_dispatch` · `operations` · `11_worktree` · `style_guide` — 머리 위 표시 · escalate API(`580c6d7`, `log/overhead_marks_20261113.md`). 적어도 `10_office_design` 「합치기 기다림」 · 머리 위 말풍선과 `operations` 「5.」 중계 · 묶음은 실제로 바뀜 |
 
 - 같은 글의 알림은 한 번만 셌다. 19:22 알림은 시각으로 286 합침과 가깝지만 확실하지 않다(`?`)
 
