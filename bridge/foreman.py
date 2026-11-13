@@ -874,7 +874,7 @@ class ForemanDispatcher:
     async def restore_note(self, note_id: int) -> None:
         async with self.engine.begin() as c:
             if not await notes.restore(c, note_id):
-                raise Refused("자동으로 내린 줄이 아니거나 이미 되살렸습니다")
+                raise Refused("기계가 끝났다고 본 일이 아니거나 이미 되살렸습니다")
         self._changed()
 
     async def touch_note(self, note_id: int) -> None:

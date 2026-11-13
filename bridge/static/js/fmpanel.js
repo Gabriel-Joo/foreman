@@ -25,9 +25,9 @@ function noteRow(n, project, staleRow) {
 
 export function autoBlock(project, auto) {
   if (!(auto || []).length) return '';
-  return `<details class="hand"${keep(`fm:${project}:auto`)}><summary class="small" title="자동으로 내린 줄 — 붙은 세션이 모두 끝나고 합치기 · 버리기로 남은 일이 없어 기계가 내린 진행 중인 일입니다. 지우지 않았습니다."><b>자동으로 내린 줄 ${auto.length}</b></summary>${
+  return `<details class="hand"${keep(`fm:${project}:auto`)}><summary class="small" title="끝난 일 — 붙은 세션이 모두 끝나고 합치기나 버리기로 남은 일이 없어 기계가 끝났다고 본 진행 중인 일입니다. 줄마다 어떻게 끝났는지(예: 세션 272 합침)가 붙습니다. 지우지 않았습니다."><b>끝난 일 ${auto.length}</b></summary>${
     auto.map((a) => `<div class="sc-row"><div class="small">${esc(a.body)}<div class="muted">${esc(a.why)} · ${ago(a.retired_at)}</div></div>
-      <button type="button" class="small ghost" data-fm-restore="${a.id}" data-proj="${esc(project)}" title="되살리기 — 다시 진행 중인 일로 둡니다. 이 줄은 다시 자동으로 내리지 않습니다.">되살리기</button></div>`).join('')}</details>`;
+      <button type="button" class="small ghost" data-fm-restore="${a.id}" data-proj="${esc(project)}" title="되살리기 — 끝나지 않았으면 되돌립니다. 다시 진행 중인 일로 두고, 다시 자동으로 내리지 않습니다.">되살리기</button></div>`).join('')}</details>`;
 }
 
 export function createForemanPanel(store) {
@@ -62,7 +62,7 @@ export function createForemanPanel(store) {
       + (stale.length ? `<div class="small warn" title="낡음 — 확인 필요: ${esc(rule)}끝났는지 기계로 가르지 못했습니다. 계획을 세울 때 진행 중인 일로 믿지 않게 따로 넣습니다."><b>낡음 — 확인 필요 ${stale.length}</b></div>`
         + stale.map((n) => noteRow(n, project, true)).join('') : '')
       + autoBlock(project, d.auto_retired);
-    const disp = (d.dispatches || []).length ? `<details class="hand"${keep(`fm:${project}:disp`)}><summary class="small" title="지난 계획 — 계획을 세울 때 이 목록(사람이 고친 칸)도 함께 들어갑니다. 같은 실수를 되풀이하지 않게 합니다."><b>지난 계획 ${d.dispatches.length}</b></summary>${
+    const disp = (d.dispatches || []).length ? `<details class="hand"${keep(`fm:${project}:disp`)}><summary class="small" title="지난 요청 — 사용자가 시킨 요청, 그때 띄운 것(모드, 역할, 제목), 사람이 고친 칸입니다. 계획을 세울 때 함께 들어가 같은 실수를 되풀이하지 않게 합니다."><b>지난 요청 ${d.dispatches.length}</b></summary>${
       d.dispatches.map((x) => `<div class="small">· ${esc(x)}</div>`).join('')}</details>` : '';
     return `<details class="hand"${keep(`fm:${project}:notes`, true)}><summary class="small" title="진행 중인 일 — 계획을 세울 때마다 함께 들어갑니다. 지금 도는 일만 쌓습니다(규칙 · 설계 결정 · 구조 · 명령은 CLAUDE.md · docs에 둡니다)."><b>${esc(label)} 진행 중인 일 ${d.notes.length}</b>
         <span class="muted">· 약 ${d.tokens}/${d.cap}토큰${d.folded ? ` · 접힘 ${d.folded}` : ''}</span></summary>${rows || '<p class="small muted">아직 없습니다. 계획을 세울 때 함께 제안되고, [이대로 시작]을 누를 때 쌓입니다.</p>'}</details>${disp}`;
@@ -90,7 +90,7 @@ export function createForemanPanel(store) {
     if (x) {
       ev.preventDefault();
       const restore = 'fmRestore' in x.dataset;
-      if (restore && !confirm('이 줄을 다시 진행 중인 일로 둡니다. 다시 자동으로 내리지 않습니다. 되살릴까요?')) return;
+      if (restore && !confirm('끝나지 않았으면 되돌립니다. 이 줄을 다시 진행 중인 일로 두고, 다시 자동으로 내리지 않습니다. 되살릴까요?')) return;
       const res = await fetch(`/api/foreman/notes/${restore ? x.dataset.fmRestore : x.dataset.fmTouch}/${restore ? 'restore' : 'touch'}`,
         { method: 'POST', headers: store.headers(true) });
       const j = await res.json().catch(() => ({}));
