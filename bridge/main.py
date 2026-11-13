@@ -368,6 +368,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 app.state.notifier.send_direct("foreman", "direct", None, f"{(rule and rule.prefix) or '[FOREMAN]'} ⚠ {why}")
         # 감독실 캐릭터(디스패처의 얼굴)가 계획을 세우는 중 · 제안 대기를 보이게 — 화면이 /api/foreman/state를 다시 읽는다
         app.state.foreman.on_change = lambda: pipeline.publish({"type": "foreman"})
+        # 11-13 끝난 「진행 중인 일」 노트 줄 내리기(bridge/foreman_note.py sweep) — 뜰 때 한 번 · 30분마다 · 세션 끝 · 합치기/버리기 · 계획 전
+        from bridge.foreman_note import load_rules as load_note_rules
+        app.state.foreman.note_rules = load_note_rules(Path(__file__).resolve().parent.parent / "config" / "wake.toml")
+        note_task = asyncio.create_task(app.state.foreman.note_loop(), name="foreman-note-loop")
+        app.state.foreman.poke_notes("브리지 뜸")
+        if app.state.reconciler is not None:
+            sw.on_gone = lambda: (app.state.reconciler.poke("세션 끝남"), app.state.foreman.poke_notes("세션 끝남"))
         # 11-11 C 2물결 — 역할 권한 · 프로젝트별 관리자 · 계획 넘기기(본문은 bridge/roleguard.py · managers.py · handover.py).
         # 하나가 안 떠도 브리지는 뜬다. 다만 조용히 넘어가지 않는다(로그 error + 텔레그램)
         def _c2_alert(why: str) -> None:
@@ -454,7 +461,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await app.state.terminal.stop()   # ttyd만 내린다 — tmux 셸은 남는다
             recon_task = app.state.reconciler._task if app.state.reconciler else None
             for t in (watch_task, state_task, health_task, usage_task, docsync_task, denied_task, schema_task, stall_task, recon_task,
-                      mprep_task, handover_task):
+                      mprep_task, handover_task, note_task, app.state.foreman._note_task):
                 if t:
                     t.cancel()
                     try:
