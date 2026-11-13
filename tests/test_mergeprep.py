@@ -437,8 +437,12 @@ async def test_api_off_and_on(repo, monkeypatch):
         v = (await c.get("/api/merge-prep")).json()
         assert v["enabled"] and v["cards"][0]["sid"] == 7 and v["cards"][0]["ff"] is True
         assert (await c.post("/api/sessions/8/merge-prep", json={"action": "merge"})).status_code == 409   # 카드 없음 — 거부
+        # 11-13 승인하면 대시보드 캐시(2초)를 비운다 — 화면이 응답 뒤 곧바로 받을 때 옛 대기 수(막대)를 받지 않게
+        from bridge.api import dashboard
+        dashboard._cache.update(data={"stale": True})
         r = (await c.post("/api/sessions/7/merge-prep", json={"action": "merge"})).json()
         assert r["ok"] and r["status"] == "merged"
+        assert dashboard._cache["data"] is None
 
 
 # ── 11-11 버리기 · 카드 밖 합치기 — 막대가 1분 훑기를 기다리지 않는다 ──

@@ -8,6 +8,12 @@ CC auto mode 자체 검사가 막은 것(이벤트 error_preview "Permission for
   — 거부 뒤 CC가 다른 방법으로 이어서 일하는 중이면 막힌 것이 아니다
 - 같은 거부(세션 · 거부 시각)는 notification.rule 키로 한 번만(브리지를 다시 띄워도)
 - "답 기다림"(글로 묻고 끝남)은 알리지 않는다 — 턴 끝 알림이 이미 간다(그 글이 곧 물음)
+
+11-13 API 오류로 멈춘 세션도 같은 틀로(README 「API 오류로 멈춘 세션이 화면에서 일하는 것처럼 보인다」): 턴이 끝날 때 「⚠ API 오류로
+멈춤」이 한 번 가고, 그 뒤 API_AFTER(30분) 지나도 새 턴이 없으면(대시보드 `api_stop`과 같은 `api_stops`) 한 번 더.
+키 `apistop:<세션>:<턴>` — 브리지를 다시 띄워도 한 번. 끝난 세션(살아 있지 않음) · 멈춰 둔 세션(T) · 일하는 세션은 뺀다(위와 같은 거름).
+30분: 사람이 첫 알림을 보고 손댈 틈(11-12 코더 311은 첫 턴 17초 만에 멈췄는데 화면에서는 쉬는 코더와 같았다 — 첫 알림을 놓치면
+남는 길이 없었다). 권한 거부와 같은 값이라 알림 쪽 리듬이 하나다
 """
 
 import asyncio
@@ -17,13 +23,14 @@ from typing import Any
 
 from sqlalchemy import bindparam, text
 
-from bridge.api.dashboard import human_needs
+from bridge.api.dashboard import api_stops, human_needs
 from bridge.inject import _status
 from bridge.liveness import live_sessions
 
 log = logging.getLogger("foreman.human_wait")
 
 AFTER = timedelta(minutes=30)
+API_AFTER = timedelta(minutes=30)     # API 오류로 멈춘 뒤 다시 알리기까지(첫 알림은 턴 끝 알림 「⚠ API 오류로 멈춤」)
 
 
 def _utc(iso: str) -> datetime:
@@ -79,6 +86,26 @@ class DeniedWatch:
                     "FOREMAN 승인 카드로 오지 않습니다. 그 세션에 허용하거나 다른 방법을 지시해 주세요(패널 입력 칸이나 터미널)"])
                 log.warning("권한 거부 알림: 세션 %s %d분", sid, mins)
                 self.notifier.send_direct(project, "denied", sid, msg, rule=key)
+                sent.append(key)
+            for sid, a in (await api_stops(c, "(" + ",".join(str(int(i)) for i in meta) + ")")).items():
+                if not a.get("at"):
+                    continue
+                at = _utc(a["at"])
+                if now - at < API_AFTER:
+                    continue
+                key = f"apistop:{sid}:{a['turn_id']}"
+                if (await c.execute(text("SELECT 1 FROM notification WHERE rule = :r LIMIT 1"), {"r": key})).first():
+                    continue
+                _, _, title, project = meta[sid]
+                rule = self.notifier.rules.for_project(project) if project else None
+                mins = int((now - at).total_seconds() // 60)
+                msg = "\n".join([
+                    f"{(rule and rule.prefix) or '[' + (project or 'FOREMAN') + ']'} ⚠ API 오류로 멈춤 {mins}분째 — "
+                    f"「{title or sid}」 세션이 API 오류로 턴을 끝낸 뒤 새 입력이 없습니다",
+                    f"▶ {a.get('line') or a.get('label') or 'API 오류'}",
+                    "화면에서는 쉬는 세션과 비슷해 보입니다. 그 세션에 다시 보내거나 다른 지시를 해 주세요(패널 입력 칸이나 터미널)"])
+                log.warning("API 오류 멈춤 알림: 세션 %s %d분", sid, mins)
+                self.notifier.send_direct(project, "apistop", sid, msg, rule=key)
                 sent.append(key)
         return sent
 

@@ -281,6 +281,34 @@ async def human_needs(c: Any, in_ids: str, relay: dict[str, tuple[bool, bool]] |
     return out
 
 
+async def api_stops(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
+    """API 오류로 멈춘 세션(11-13, README 「API 오류로 멈춘 세션이 화면에서 일하는 것처럼 보인다」) — 마지막 턴이 stop_failure로
+    끝났고 그 뒤 새 턴이 없다. 다음 턴이 시작되면(사람 입력 · 다른 세션 메시지 등 어떤 출처든) 마지막 턴이 바뀌어 저절로 풀린다.
+    빨간 「…」(stuck_turn)은 끝 신호가 안 온 **열린** 턴이고, 이것은 **닫힌** 턴이라 서버 상태는 IDLE이다 — 상태 값은 늘리지 않고
+    (README 3.11) 이 칸으로 가른다. 까닭은 대화 패널과 같은 bridge/api_error.py로(글이 있는 트랜스크립트 쪽을 먼저).
+    {세션: {turn_id, at(턴이 끝난 시각), kind, label, action, request_id, detail, reset, line}}"""
+    rows = (await c.execute(text(
+        f"SELECT t.session_id, t.id, t.ended_at FROM turn t JOIN (SELECT session_id, MAX(seq) ms FROM turn "
+        f"WHERE session_id IN {in_ids} GROUP BY session_id) x ON x.session_id = t.session_id AND x.ms = t.seq "
+        f"WHERE t.end_reason = 'stop_failure' AND t.ended_at IS NOT NULL"))).all()
+    if not rows:
+        return {}
+    errs: dict[int, tuple[str | None, str | None]] = {}
+    for tid, t_, err in (await c.execute(text(
+            "SELECT turn_id, JSON_UNQUOTE(JSON_EXTRACT(payload, '$.text')), JSON_UNQUOTE(JSON_EXTRACT(payload, '$.error')) "
+            "FROM event WHERE turn_id IN :ids AND type = 'error' ORDER BY id").bindparams(bindparam("ids", expanding=True)),
+            {"ids": [r[1] for r in rows]})).all():
+        t_ = t_ if t_ != "null" else None
+        if t_ or tid not in errs:          # 글이 있는 것(트랜스크립트)이 hook 것(error 값만)보다 낫다
+            errs[tid] = (t_, err if err != "null" else None)
+    out: dict[int, dict[str, Any]] = {}
+    for sid, tid, ended in rows:
+        ce = classify_api_error(*errs.get(tid, (None, None)))
+        out[sid] = {"turn_id": tid, "at": _iso(ended), **{k: ce[k] for k in ("kind", "label", "action", "request_id", "detail", "reset")},
+                    "line": api_error_line(ce)}
+    return out
+
+
 WORKER_ROLES = {"coder", "scribe", "designer"}      # notify.WORKER_ROLES와 같은 것(중계 대상)
 MGR_QUIET_ORIGINS = {"relay", "manager_ask"}        # 관리자 턴 중 사람에게 띄우지 않는 출처
 RELAY_OUT_ACT = "relay-out"     # 작업 세션 session_action — 알림이 그 턴을 관리자에게 넘긴 결과. detail = "<kind>:<turn_id>"
@@ -589,6 +617,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
         nt = getattr(request.app.state, "notifier", None)
         relay_on = {k: (r.relay_reports, r.relay_questions) for k, r in (getattr(getattr(nt, "rules", None), "projects", None) or {}).items()}
         needs = await human_needs(c, in_ids, relay_on)
+        apistop = await api_stops(c, in_ids)
         appr = (await c.execute(text(
             "SELECT id, session_id, tool, target, rule, reason, created_at, summary FROM approval WHERE status = 'pending' "
             "ORDER BY id"))).all()
@@ -619,6 +648,9 @@ async def dashboard(request: Request) -> dict[str, Any]:
                          "subagent": act[3] is not None} if act else None,
             # 11-09 사람이 해야 풀리는 것 — CC 자체 권한 거부(auto mode) · 글로 묻고 기다림(일하지 않을 때만)
             "denied": (needs.get(sid) or {}).get("denied"),
+            # 11-13 API 오류로 멈춤 — 마지막 턴이 stop_failure로 끝났고 새 턴이 없다(api_stops). 살아 있고 멈춰 두지(T) 않았고
+            # 일하지 않을 때만 — 끝난 세션은 「끝남」이, 멈춰 둔 세션은 사람이 일부러 둔 것이다
+            "api_stop": apistop.get(sid) if ls and ls.state != "T" and cc_status != "busy" and ot is None else None,
             "asks": (needs.get(sid) or {}).get("asks") if cc_status != "busy" and ot is None else None,
             # 보고 옴(11-11) — 묻지 않고 끝난 응답을 사람이 아직 안 읽음. 일하는 중이면 내지 않는다
             "report": (needs.get(sid) or {}).get("report") if cc_status != "busy" and ot is None else None,
