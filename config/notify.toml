@@ -35,6 +35,10 @@ min_turn_s = 0                 # 이보다 짧게 끝난 턴은 보내지 않는
 #   digest          일상 알림을 바로 보내지 않고 모아 [digest] at에 하루 한 번 프로젝트마다 묶어 보낸다. 급한 것은 바로
 [projects.runshoes]
 prefix = "[런슈즈]"
+# 11-13 사용자: 합치기 카드와 함께 켬(보고 · 물음 중계 + 21:00 묶음, 인프라 · 펫퍼민트와 같게)
+relay_reports = true
+relay_questions = true
+digest = true
 
 [projects.petmint-rag-chatbot]
 prefix = "[펫퍼민트]"
