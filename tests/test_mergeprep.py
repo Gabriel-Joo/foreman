@@ -65,7 +65,7 @@ class FakeH:
     def __init__(self, repo, cwd):
         self.engine, self.sessions_dir, self._tasks = None, "/nonexistent", set()
         self.repo, self.cwd = str(repo), cwd
-        self.acts, self.merges = [], []
+        self.acts, self.merges, self.titles = [], [], []
 
     async def _act(self, sid, action, pid, ok, detail):
         self.acts.append((action, ok, detail))
@@ -73,9 +73,10 @@ class FakeH:
     async def session(self, sid):
         return SimpleNamespace(id=sid, cc=CC, cwd=self.cwd, title="t", project="proj")
 
-    async def worktree_act(self, row, act, end=False):
+    async def worktree_act(self, row, act, end=False, title=None):
         self.merges.append((act, end))
-        r = await wt.merge(self.repo, wt.split(self.cwd)[1])
+        self.titles.append(title)
+        r = await wt.merge(self.repo, wt.split(self.cwd)[1], title=title, topic=row.title, sid=row.id)
         if end:
             r["ended"] = {"tmux_closed": True}
         return r
@@ -290,6 +291,48 @@ async def test_live_clean_behind_ends_and_rebases(repo, monkeypatch):
     assert "세션은 끝냈다" in sent[0][1] and "rebase" in sent[0][1]
 
 
+async def test_approve_squash_title_from_session_or_given(repo, monkeypatch):
+    """11-13 — squash 제목은 세션 제목으로 기계가 만들고, 승인 때 title을 넘기면 그것. 꼴이 틀리면 세션을 끝내기 전에 거부."""
+    (repo / "CLAUDE.md").write_text("꼴: `타입: 설명`\n"); sh(repo, "add", "."); sh(repo, "commit", "-qm", "docs: 규칙")
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    for s in ("fix: 가", "docs: 나"):
+        (p / f"{s[-1]}.txt").write_text("x\n"); sh(p, "add", "."); sh(p, "commit", "-qm", s)
+    m, h, sent, row, lv = _mk(repo, monkeypatch, live=True)
+    monkeypatch.setattr(wt, "SQUASH_OF", None)
+    m.cfg.per_project["proj"] = mp.ProjectRule(squash=True)
+    card = await m.prep(row, lv)
+    m.cards[7] = card
+    assert '"title"' in m._card_msg(card)                                        # 관리자에게 제목 넘기는 법을 알린다
+    with pytest.raises(Refused):
+        await m.approve(7, title="꼴 없는 제목")
+    assert h.merges == [] and p.is_dir()                                         # 끝내지도 합치지도 않았다
+    real = wt.merge
+
+    async def sq(repo_, name, squash=None, **kw):
+        return await real(repo_, name, True, **kw)
+    monkeypatch.setattr(wt, "merge", sq)
+    r = await m.approve(7, title="fix: 사람이 정한 묶음 제목")
+    assert r["ok"] and h.titles == ["fix: 사람이 정한 묶음 제목"] and h.merges == [("merge", True)]
+    assert sh(repo, "log", "-1", "--format=%s") == "fix: 사람이 정한 묶음 제목"
+    assert "fix: 사람이 정한 묶음 제목" in sent[-1][1] and wt.SQUASH_REF in sent[-1][1]   # 관리자 글에 제목 · 원래 커밋 ref
+
+
+async def test_approve_squash_title_machine_from_session(repo, monkeypatch):
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    for s in ("하나", "둘"):
+        (p / f"{s}.txt").write_text("x\n"); sh(p, "add", "."); sh(p, "commit", "-qm", s)
+    m, h, sent, row, _ = _mk(repo, monkeypatch)
+    real = wt.merge
+
+    async def sq(repo_, name, squash=None, **kw):
+        return await real(repo_, name, True, **kw)
+    monkeypatch.setattr(wt, "merge", sq)
+    m.cards[7] = await m.prep(row, {})
+    r = await m.approve(7)
+    assert r["ok"] and h.titles == [None]
+    assert sh(repo, "log", "-1", "--format=%s") == "합침(cc/w · 세션 7, 커밋 2개): t"     # FakeH 세션 제목 「t」
+
+
 async def test_new_commit_after_card_refuses(repo, monkeypatch):
     p = Path((await wt.create(str(repo), "w"))["path"])
     (p / "b.txt").write_text("b\n"); sh(p, "add", "b.txt"); sh(p, "commit", "-qm", "b")
@@ -483,8 +526,11 @@ async def test_api_off_and_on(repo, monkeypatch):
         # 11-13 승인하면 대시보드 캐시(2초)를 비운다 — 화면이 응답 뒤 곧바로 받을 때 옛 대기 수(막대)를 받지 않게
         from bridge.api import dashboard
         dashboard._cache.update(data={"stale": True})
-        r = (await c.post("/api/sessions/7/merge-prep", json={"action": "merge"})).json()
-        assert r["ok"] and r["status"] == "merged"
+        bad = await c.post("/api/sessions/7/merge-prep", json={"action": "merge", "title": "가\n둘째 줄"})
+        assert bad.status_code == 409 and "한 줄" in bad.json()["refused"] and h.merges == []   # 11-13 꼴이 틀린 제목은 아무것도 하기 전에
+        r = (await c.post("/api/sessions/7/merge-prep", json={"action": "merge", "title": "넘긴 제목"})).json()
+        assert r["ok"] and r["status"] == "merged" and h.titles == ["넘긴 제목"]
+        assert "넘긴 제목은 쓰지 않았습니다" in r["result"]["note"]                # 커밋 하나 — squash가 아니어서 안 쓴 것을 알린다
         assert dashboard._cache["data"] is None
 
 
@@ -515,7 +561,7 @@ async def test_handoff_discard_and_outside_merge_clear_card_at_once(repo, monkey
             _wt_of=lambda r: wt.split(r.cwd), _guard_reused=noop, sessions_dir="/nonexistent", _role=not_scribe,
             schema=None, _stop_preview=noop, _retire_wt_characters=noop, _act=noop, on_change=lambda: changes.append(1),
             mergeprep=m)
-        r = SimpleNamespace(id=7, cc=None, cwd=str(p), project="proj")
+        r = SimpleNamespace(id=7, cc=None, cwd=str(p), project="proj", title="t")
         res = await HandoffManager.worktree_act(fake, r, act)
         assert res["ok"] and 7 not in m.cards and changes == [1], act
 

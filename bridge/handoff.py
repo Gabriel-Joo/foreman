@@ -1210,12 +1210,17 @@ class HandoffManager:
         repo, name = wt.split(row.cwd)
         return bool(name) and await self.previews.stop(os.path.join(repo, wt.WT_DIR, name))
 
-    async def worktree_act(self, row: SessionRow, act: str, end: bool = False) -> dict[str, Any]:
+    async def worktree_act(self, row: SessionRow, act: str, end: bool = False, title: str | None = None) -> dict[str, Any]:
         """merge(사람 승인 — 화면의 확인 창) · discard(커밋까지 버림). 세션이 끝난 뒤에만 — 도는 세션의 바닥을 옮기지 않는다.
         end=True면 살아 있는 세션을 먼저 끝내고 이어서 한다(11-06 — 끝내기 누르고 합치기를 또 찾아 눌러야 했다).
-        합치기는 끝내기 **전에** 커밋 안 된 변경을 본다 — 끝낸 뒤에 알면 그 세션에게 커밋을 시킬 수 없다."""
+        합치기는 끝내기 **전에** 커밋 안 된 변경을 본다 — 끝낸 뒤에 알면 그 세션에게 커밋을 시킬 수 없다.
+        title(11-13) — squash 커밋 제목을 사람 · 관리자가 정할 때. 그 저장소 꼴이 아니면 끝내기 전에 거부. 안 넘기면 세션 제목으로 기계가 만든다."""
         repo, name = self._wt_of(row)
         await self._guard_reused(row, repo, name)
+        if act == "merge" and title is not None:
+            st_t = await wt.status(repo, name)
+            if st_t.get("exists"):
+                title = await wt.check_title_for(repo, st_t["base"], title)
         ended = None
         if row.cc and row.cc in live_sessions(self.sessions_dir):
             if not end:
@@ -1236,7 +1241,7 @@ class HandoffManager:
             if st0.get("exists"):
                 rv = await self._scribe_review(row, repo, st0)
         if act == "merge":
-            res = await wt.merge(repo, name)
+            res = await wt.merge(repo, name, title=title, topic=row.title, sid=row.id)
         elif act == "discard":
             await wt.remove(repo, name, force=True)
             res = {"ok": True, "note": "worktree와 브랜치를 지웠습니다(커밋 안 된 변경 · 합치지 않은 커밋도 함께)."}

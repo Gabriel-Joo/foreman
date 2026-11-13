@@ -81,8 +81,8 @@ class FakeH:
     async def session(self, sid):
         return SimpleNamespace(id=sid, cc=CC, cwd=self.cwd, title="t", project="foreman")
 
-    async def worktree_act(self, row, act, end=False):
-        return await wt.merge(self.repo, wt.split(self.cwd)[1])
+    async def worktree_act(self, row, act, end=False, title=None):
+        return await wt.merge(self.repo, wt.split(self.cwd)[1], title=title)
 
 
 class FakeNotifier:

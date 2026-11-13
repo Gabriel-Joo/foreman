@@ -1004,7 +1004,9 @@ class MergePrep:
         how = (f"충돌 {len(c.conflict)}개({', '.join(c.conflict[:5])})" if c.conflict
                else ("충돌 없음 · ff 가능" if c.ff else f"충돌 없음 · {c.base}에 새 커밋 {c.behind}개(rebase)"))
         dn = len((c.docs or {}).get("readme") or []) + len((c.docs or {}).get("docs") or [])
-        sq = " 이 프로젝트는 squash로 합친다(커밋 하나, 본문에 원래 제목 · 날짜)." if self.cfg.rule(c.project).squash else ""
+        sq = (" 이 프로젝트는 squash로 합친다(커밋 하나, 본문에 원래 날짜 · 해시 · 제목). 제목은 세션 제목으로 기계가 만든다 — "
+              "묶은 일을 더 잘 말하는 제목이 있으면 승인할 때 \"title\": \"…\"로 넘긴다(그 저장소 커밋 꼴로)."
+              if self.cfg.rule(c.project).squash and c.ahead >= 2 else "")
         head = (f"[FOREMAN 합치기 카드] 세션 {c.sid} 「{c.title or ''}」 {c.branch} 커밋 {c.ahead}개 · 바뀐 파일 {len(c.files)}개 · {how}."
                 f"{' 세션이 살아 있다 — 승인하면 끝낸다.' if c.live else ''}"
                 f"{' 세션이 묻는 말이 있다: ' + str((c.asks or {}).get('tail') or '') if c.asks else ''}")
@@ -1191,15 +1193,16 @@ class MergePrep:
             self.on_change()
         return {"ok": True, "note": f"정리 후보를 다 골랐다고 보고 합친 카드를 치웠습니다(정리 후보 {dn}개)."}
 
-    async def approve(self, sid: int, by: str = "human") -> dict[str, Any]:
+    async def approve(self, sid: int, by: str = "human", title: str | None = None) -> dict[str, Any]:
         """[합치기] — 사람(패널) 또는 관리자(by=manager, 11-12 — 그 프로젝트 승인자가 관리자이고 늘-사람에 안 걸린 카드만).
-        다시 재고 → 충돌이면 그 세션(끝났으면 관리자)에 풀라고 보냄 · 깨끗하면 (끝내고) 합침. 결과(거부 포함)는 DB에도 남긴다."""
+        다시 재고 → 충돌이면 그 세션(끝났으면 관리자)에 풀라고 보냄 · 깨끗하면 (끝내고) 합침. 결과(거부 포함)는 DB에도 남긴다.
+        title(11-13) — squash 커밋 제목을 정해 넘길 때(그 저장소 꼴이 아니면 아무것도 하기 전에 거부). 안 넘기면 세션 제목으로 기계가 만든다."""
         try:
-            return await self._approve(sid, by)
+            return await self._approve(sid, by, title)
         finally:
             await self.sync()
 
-    async def _approve(self, sid: int, by: str) -> dict[str, Any]:
+    async def _approve(self, sid: int, by: str, title: str | None = None) -> dict[str, Any]:
         c = self.cards.get(sid)
         if not c or c.status not in ("ready", "conflict_sent", "conflict_manager", "failed"):
             raise Refused("승인할 합치기 카드가 없습니다 — 카드가 사라졌거나 이미 합치는 중입니다")
@@ -1221,6 +1224,8 @@ class MergePrep:
             if st["head"] != c.head:
                 del self.cards[sid]
                 raise Refused("카드를 만든 뒤 브랜치에 커밋이 더 생겼습니다 — 다음 훑기에서 새 카드를 만듭니다. 아무것도 하지 않았습니다")
+            if title is not None:            # 끝내기 · 충돌 넘기기 전에 — 꼴이 틀린 제목으로 세션만 끝나는 일이 없게
+                title = await wt.check_title_for(c.repo, st["base"], title)
             live = bool(row.cc and row.cc in live_sessions(self.sessions_dir))
             conflict = await self._conflict(c.repo, st["base"], st["branch"])
             if not conflict and live and st["behind"]:
@@ -1233,7 +1238,7 @@ class MergePrep:
             if self.on_change:
                 self.on_change()
             try:
-                res = await self.h.worktree_act(row, "merge", end=live)
+                res = await self.h.worktree_act(row, "merge", end=live, title=title)
             except Refused as e:
                 c.status, c.error = "failed", str(e)
                 await self.h._act(sid, ACT_MERGE, None, False, f"{c.name} 거부: {e}"[:500])
@@ -1313,7 +1318,9 @@ class MergePrep:
     def _merged_msg(self, c: Card, res: dict[str, Any]) -> str:
         how = "fast-forward" if c.ff else f"{c.base} 위로 rebase 뒤 fast-forward"
         if res.get("squash"):
-            how = f"커밋 {res.get('merged', c.ahead)}개를 커밋 하나({res['squash'][:8]})로 묶어 squash — 본문에 원래 제목 · 날짜, " + how
+            how = (f"커밋 {res.get('merged', c.ahead)}개를 커밋 하나({res['squash'][:8]}"
+                   + (f" 「{res['title']}」" if res.get("title") else "") + ")로 묶어 squash — 본문에 원래 날짜 · 해시 · 제목"
+                   + (f", 원래 커밋은 `git log {res['orig_ref']}`" if res.get("orig_ref") else "") + ", " + how)
         who = "관리자가" if c.approved_by == "manager" else "사람이"
         mgr_picks = self.cfg.approver_of(c.project) == "manager" and not c.human_why
         ended = " 세션은 끝냈다." if res.get("ended") is not None else ""

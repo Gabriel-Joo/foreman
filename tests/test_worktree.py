@@ -237,11 +237,24 @@ async def test_squash_merge_one_commit_with_titles_and_dates(repo, monkeypatch):
     assert sh(repo, "rev-parse", "main^") == before
     msg = sh(repo, "log", "-1", "--format=%B")
     lines = msg.splitlines()
-    assert lines[0] == "합침(cc/s, 커밋 3개): 첫 일"
-    assert lines[3:6] == ["- 2026-11-12 10:00 첫 일", "- 2026-11-12 11:01 둘째 일", "- 2026-11-12 12:02 기록"]   # 오래된 차례
+    assert lines[0] == "합침(cc/s, 커밋 3개): 첫 일 외 2건"                     # 세션 제목이 없으면 「첫 제목 외 N건」(11-13)
+    assert r["title"] == lines[0] and lines[2] == "cc/s 커밋 3개를 하나로 묶음(squash)"
+    items = [ln for ln in lines if ln.startswith("- ")]
+    assert [ln.split(" ", 4)[1:3] + [ln.split(" ", 4)[4]] for ln in items] == [
+        ["2026-11-12", "10:00", "첫 일"], ["2026-11-12", "11:01", "둘째 일"], ["2026-11-12", "12:02", "기록"]]   # 오래된 차례
     assert msg.count("Co-Authored-By:") == 1                                    # 겹치지 않게 하나로
     assert all((repo / f"f{i}.txt").exists() for i in range(3))
     assert not p.exists() and "cc/s" not in sh(repo, "branch")                  # 조상이 아니어도 -D로 지웠다
+    # 원래 커밋 찾기 — 브랜치는 지웠지만 숨은 ref가 남아 본문의 해시를 그대로 볼 수 있다(11-13)
+    ref = r["orig_ref"]
+    assert ref.startswith(wt.SQUASH_REF) and f"git log {ref}" in msg and ref in r["note"]
+    assert sh(repo, "log", "--format=%s", f"main..{ref}").splitlines() == ["기록", "둘째 일", "첫 일"]
+    for ln in items:                                                            # 본문 해시가 모두 살아 있다
+        h = ln.split(" ")[3]
+        assert sh(repo, "log", "-1", "--format=%s", h) == ln.split(" ", 4)[4]
+    assert sh(repo, "branch", "--list") == "* main" and sh(repo, "tag") == ""   # 브랜치 · 태그 목록은 어지럽히지 않는다
+    found = sh(repo, "log", "--format=%H", "--grep", "둘째 일", "main").splitlines()
+    assert len(found) == 1 and found[0].startswith(r["squash"])                 # 원래 제목 낱말로 묶음 커밋을 찾는다
 
 
 async def test_squash_hook_and_single_commit_is_plain_ff(repo, monkeypatch):
@@ -267,3 +280,85 @@ async def test_squash_conflict_same_as_before(repo, monkeypatch):
     r = await wt.merge(str(repo), "y", squash=True)
     assert not r["ok"] and r["conflict"] == ["a.txt"]
     assert p.is_dir() and sh(p, "status", "--porcelain") == "" and sh(repo, "log", "-1", "--format=%s") == "main"
+    assert sh(repo, "for-each-ref", wt.SQUASH_REF) == ""                        # 못 합쳤으면 ref도 남기지 않는다
+
+
+# ── squash 커밋 제목(11-13 337) — 묶은 일 전체 · 그 저장소 꼴 · 원래 커밋 찾기 ──
+async def _branch(repo, name, subjects):
+    p = Path((await wt.create(str(repo), name))["path"])
+    for i, s in enumerate(subjects):
+        (p / f"{name}{i}.txt").write_text(f"{i}\n"); sh(p, "add", "."); sh(p, "commit", "-qm", s)
+    return p
+
+
+async def test_squash_title_uses_session_title_and_number(repo, monkeypatch):
+    monkeypatch.setattr(wt, "SQUASH_OF", None)
+    await _branch(repo, "foreman-4", ["squash 제목 함수", "시험", "기록: squash 제목"])
+    r = await wt.merge(str(repo), "foreman-4", squash=True, topic="squash 합친 커밋 제목", sid=337)
+    lines = sh(repo, "log", "-1", "--format=%B").splitlines()
+    assert lines[0] == "합침(cc/foreman-4 · 세션 337, 커밋 3개): squash 합친 커밋 제목" == r["title"]
+    assert lines[2] == "cc/foreman-4 커밋 3개를 하나로 묶음(squash) — 세션 337 「squash 합친 커밋 제목」"
+
+
+def _conv_claude_md(repo):
+    (repo / "CLAUDE.md").write_text("## 커밋 메시지\n\n꼴: `타입: 설명`. 설명은 한글로, 50자 안\n")
+    sh(repo, "add", "CLAUDE.md"); sh(repo, "commit", "-qm", "docs: 규칙")
+
+
+async def test_squash_title_conventional_repo_from_claude_md(repo, monkeypatch):
+    """런슈즈 · 인프라 · 펫퍼민트 꼴 — CLAUDE.md가 `타입: 설명`을 적었다. 타입은 원래 커밋 중 가장 무거운 것, 설명 50자 안."""
+    monkeypatch.setattr(wt, "SQUASH_OF", None)
+    _conv_claude_md(repo)
+    assert await wt.commit_style(str(repo), "main") == "conventional"
+    await _branch(repo, "runshoes-2", ["docs: 09 16절 5-2", "fix: 챗봇 5-2 9차 수정", "feat: 검색 색인", "기록"])
+    r = await wt.merge(str(repo), "runshoes-2", squash=True, topic="챗봇 5-2 검색 색인 · 경험·후기", sid=40)
+    assert r["title"] == "feat: 챗봇 5-2 검색 색인 · 경험·후기 — 커밋 4개"
+    assert wt.CONV_RE.match(r["title"]) and len(wt.CONV_RE.match(r["title"]).group(3)) <= wt.CONV_DESC_MAX
+    assert sh(repo, "log", "-1", "--format=%s") == r["title"]
+
+
+def test_squash_title_rules():
+    conv = ["fix: 가", "docs: 나"]
+    assert wt.squash_title("conventional", conv, "cc/x") == "fix: 가 외 1건"                   # 세션 제목 없음 → 첫 설명 외 N건
+    assert wt.squash_title("conventional", ["기록", "고침"], "cc/x", "합치기 제목") == "chore: 합치기 제목 — 커밋 2개"   # 타입 없음 → chore
+    assert wt.squash_title("conventional", ["ops: a", "docs: b"], "cc/x", "docs: 이미 타입.") == "ops: 이미 타입 — 커밋 2개"
+    long = wt.squash_title("conventional", conv, "cc/x", "가" * 80)
+    assert len(wt.CONV_RE.match(long).group(3)) == wt.CONV_DESC_MAX and long.endswith("… — 커밋 2개")
+    assert wt.squash_title("free", ["첫", "둘"], "cc/foreman") == "합침(cc/foreman, 커밋 2개): 첫 외 1건"
+    assert len(wt.squash_title("free", ["첫", "둘"], "cc/f", "나" * 300, 1)) == wt.FREE_TITLE_MAX
+    # 사람이 넘긴 제목 — 그 저장소 꼴로
+    assert wt.check_title("conventional", "  feat: 새 색인 ") == "feat: 새 색인"
+    for bad in ("새 색인", "feat: " + "가" * 51, "feat: 끝.", "feat: 가\n둘째 줄", "  "):
+        with pytest.raises(Refused):
+            wt.check_title("conventional", bad)
+    assert wt.check_title("free", "아무 꼴 제목") == "아무 꼴 제목"
+    with pytest.raises(Refused):
+        wt.check_title("free", "가" * 121)
+
+
+async def test_commit_style_from_log_when_claude_md_silent(repo):
+    assert await wt.commit_style(str(repo), "main") == "free"                    # FOREMAN — 한글 자유 꼴(「기록:」은 타입이 아니다)
+    for i, s in enumerate(["feat: a", "fix: b", "docs(x): c", "ops: d", "기록: e", "합침(cc/a, 커밋 2개): f"]):
+        (repo / f"l{i}").write_text("x"); sh(repo, "add", "."); sh(repo, "commit", "-qm", s)
+    assert await wt.commit_style(str(repo), "main") == "conventional"           # 4/6(합침 빼고) > 60%
+
+
+async def test_squash_human_title_and_refusal_before_anything(repo, monkeypatch):
+    monkeypatch.setattr(wt, "SQUASH_OF", None)
+    _conv_claude_md(repo)
+    p = await _branch(repo, "h", ["fix: 가", "docs: 나"])
+    before = sh(repo, "rev-parse", "main")
+    with pytest.raises(Refused):                                                 # 꼴이 틀리면 아무것도 하지 않는다
+        await wt.merge(str(repo), "h", squash=True, title="그냥 제목")
+    assert sh(repo, "rev-parse", "main") == before and p.is_dir() and sh(repo, "for-each-ref", wt.SQUASH_REF) == ""
+    r = await wt.merge(str(repo), "h", squash=True, title="fix: 사람이 정한 제목", topic="세션 제목")
+    assert r["ok"] and sh(repo, "log", "-1", "--format=%s") == "fix: 사람이 정한 제목"
+    assert "「세션 제목」" in sh(repo, "log", "-1", "--format=%b")
+
+
+async def test_title_unused_when_not_squashed(repo, monkeypatch):
+    monkeypatch.setattr(wt, "SQUASH_OF", None)
+    await _branch(repo, "one", ["하나뿐"])
+    r = await wt.merge(str(repo), "one", squash=True, title="넘긴 제목")
+    assert r["ok"] and "squash" not in r and "넘긴 제목은 쓰지 않았습니다" in r["note"]
+    assert sh(repo, "log", "-1", "--format=%s") == "하나뿐" and sh(repo, "for-each-ref", wt.SQUASH_REF) == ""

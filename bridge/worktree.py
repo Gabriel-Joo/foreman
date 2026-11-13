@@ -206,30 +206,115 @@ async def save_progress(wt_path: str, message: str) -> dict[str, Any]:
 SQUASH_OF: Any = None
 
 
-async def squash_message(repo: str, base: str, branch: str) -> str:
-    """squash 커밋 글 — 제목 한 줄 + 원래 커밋들의 날짜 · 제목을 오래된 차례로(11-12 런슈즈 메시지 다시 쓰기처럼 옛 제목을 본문에 남긴다).
-    원래 커밋의 Co-Authored-By 줄은 겹치지 않게 끝에 모은다."""
-    _, rows = await git(repo, "log", "--reverse", "--date=format:%Y-%m-%d %H:%M", "--format=%ad%x09%s", f"{base}..{branch}")
+# ── squash 커밋 제목(11-13 337) ──
+# 첫 커밋 제목만 쓰면 `git log --oneline` · 빌드 알림 · Notion 짝처럼 제목 한 줄만 보는 곳에서 나머지 커밋이 안 보였다(사용자).
+# 제목은 묶은 일 전체(사람이 넘긴 제목 > 세션 제목 > 「첫 제목 외 N건」)를, 그 저장소의 커밋 꼴로 말한다.
+# 원래 커밋은 본문(날짜 · 해시 · 제목)과 숨은 ref(SQUASH_REF — 브랜치 · 태그 목록에 안 보이고 push되지 않는다)로 찾는다.
+CONV_RE = re.compile(r"^([a-z]+)(\([^)]*\))?!?: (.+)$")
+CONV_ORDER = ("feat", "fix", "perf", "refactor", "ops", "build", "ci", "test", "docs", "style", "chore", "revert")
+CONV_DESC_MAX = 50          # 런슈즈 · 인프라 · 펫퍼민트 CLAUDE.md 「커밋 메시지」 — 설명 한 줄 50자 안, 마침표 없음
+FREE_TITLE_MAX = 120
+SQUASH_REF = "refs/foreman/squashed/"
+_DECLARED_CONV = re.compile(r"`타입(\([^)]*\))?: 설명`")
+
+
+def _cut(s: str, n: int) -> str:
+    return s if len(s) <= n else s[:n - 1].rstrip() + "…"
+
+
+async def commit_style(repo: str, base: str) -> str:
+    """그 저장소의 커밋 제목 꼴 — "conventional"(`타입: 설명`) 또는 "free"(FOREMAN처럼 한글 자유 꼴).
+    저장소 맨 위 CLAUDE.md가 `타입: 설명`을 적었으면 conventional(규칙이 앞선다 — 펫퍼민트처럼 최근 커밋이 꼴 밖이어도).
+    CLAUDE.md에 없으면 base 최근 제목 40개 중(합침 · Merge 빼고) 60% 넘게 `타입:` 꼴이면 conventional."""
+    try:
+        text = (Path(repo) / "CLAUDE.md").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        text = ""
+    if _DECLARED_CONV.search(text):
+        return "conventional"
+    _, out = await git(repo, "log", "-40", "--no-merges", "--format=%s", base, check=False)
+    subs = [s for s in out.splitlines() if s and not s.startswith(("합침(", "Merge "))]
+    conv = sum(1 for s in subs if CONV_RE.match(s))
+    return "conventional" if len(subs) >= 5 and conv / len(subs) > 0.6 else "free"
+
+
+def check_title(style: str, title: str) -> str:
+    """사람 · 관리자가 넘긴 squash 제목을 그 저장소 꼴로 본다. 맞으면 다듬은 제목, 아니면 Refused(아무것도 하기 전에)."""
+    t = (title or "").strip()
+    if not t:
+        raise Refused("제목이 비어 있습니다")
+    if "\n" in t or "\r" in t:
+        raise Refused("제목은 한 줄이어야 합니다 — 원래 커밋 목록은 본문에 저절로 들어갑니다")
+    if style == "conventional":
+        m = CONV_RE.match(t)
+        if not m:
+            raise Refused("이 저장소의 커밋 꼴은 `타입: 설명`입니다(예: feat: 챗봇 검색 색인) — 제목이 그 꼴이 아닙니다")
+        if len(m.group(3)) > CONV_DESC_MAX:
+            raise Refused(f"설명이 {len(m.group(3))}자입니다 — 이 저장소는 {CONV_DESC_MAX}자 안입니다")
+        if t.endswith("."):
+            raise Refused("이 저장소의 커밋 제목은 마침표로 끝내지 않습니다")
+    elif len(t) > FREE_TITLE_MAX:
+        raise Refused(f"제목이 {len(t)}자입니다 — {FREE_TITLE_MAX}자 안으로 넘겨 주세요")
+    return t
+
+
+async def check_title_for(repo: str, base: str, title: str) -> str:
+    return check_title(await commit_style(repo, base), title)
+
+
+def squash_title(style: str, subjects: list[str], branch: str, topic: str | None = None, sid: int | None = None) -> str:
+    """기계가 만드는 squash 제목. subjects = 원래 커밋 제목(오래된 차례), topic = 세션 제목(custom_title 우선 — 묶은 일 전체를 말한다).
+    conventional: `타입: <세션 제목> — 커밋 N개`(타입은 원래 커밋 타입 중 가장 무거운 것, 없으면 chore, 설명 50자 안).
+    free(FOREMAN): `합침(<브랜치> · 세션 N, 커밋 N개): <세션 제목>` — 브랜치 이름은 다시 쓰이니(foreman-4) 세션 번호로 log와 맞댄다."""
+    n = len(subjects)
+    topic = " ".join((topic or "").split())
+    first = subjects[0] if subjects else branch
+    if style == "conventional":
+        types = [m.group(1) for s in subjects if (m := CONV_RE.match(s))]
+        typ = min(types, key=lambda t: CONV_ORDER.index(t) if t in CONV_ORDER else len(CONV_ORDER)) if types else "chore"
+        if topic:
+            m = CONV_RE.match(topic)
+            what, tail = (m.group(3) if m else topic).rstrip("."), f" — 커밋 {n}개"
+        else:
+            m = CONV_RE.match(first)
+            what, tail = (m.group(3) if m else first).rstrip("."), f" 외 {n - 1}건"
+        return f"{typ}: {_cut(what, CONV_DESC_MAX - len(tail))}{tail}"
+    who = branch + (f" · 세션 {sid}" if sid else "")
+    what = topic or f"{first} 외 {n - 1}건"
+    return _cut(f"합침({who}, 커밋 {n}개): {what}", FREE_TITLE_MAX)
+
+
+async def squash_message(repo: str, base: str, branch: str, *, topic: str | None = None, title: str | None = None,
+                         sid: int | None = None, style: str | None = None) -> str:
+    """squash 커밋 글 — 제목(위 squash_title, title을 넘기면 그것) + 원래 커밋들의 날짜 · 해시 · 제목을 오래된 차례로 + 원래 커밋 찾는 법.
+    해시는 브랜치를 지우면 사라지므로 merge가 SQUASH_REF<끝 해시>를 남긴다(이 저장소에만). 원래 커밋의 Co-Authored-By 줄은
+    겹치지 않게 끝에 모은다."""
+    _, rows = await git(repo, "log", "--reverse", "--date=format:%Y-%m-%d %H:%M", "--format=%ad%x09%h%x09%s", f"{base}..{branch}")
     _, bodies = await git(repo, "log", "--format=%B", f"{base}..{branch}")
-    items = [ln.split("\t", 1) for ln in rows.splitlines() if "\t" in ln]
-    first = items[0][1] if items else branch
-    title = f"합침({branch}, 커밋 {len(items)}개): {first}"
-    if len(title) > 120:
-        title = title[:119] + "…"
+    _, tip = await git(repo, "rev-parse", branch)
+    items = [ln.split("\t", 2) for ln in rows.splitlines() if ln.count("\t") >= 2]
+    style = style or await commit_style(repo, base)
+    head = title or squash_title(style, [s for _, _, s in items], branch, topic, sid)
     co: list[str] = []
     for ln in bodies.splitlines():
         if ln.strip().lower().startswith("co-authored-by:") and ln.strip() not in co:
             co.append(ln.strip())
-    body = "원래 커밋(오래된 차례):\n" + "\n".join(f"- {d} {s}" for d, s in items)
-    return title + "\n\n" + body + ("\n\n" + "\n".join(co) if co else "") + "\n"
+    about = f"{branch} 커밋 {len(items)}개를 하나로 묶음(squash)" + (f" — 세션 {sid}" if sid else "") + (
+        f" 「{' '.join(topic.split())}」" if topic else "")
+    body = (about + "\n\n원래 커밋(오래된 차례):\n" + "\n".join(f"- {d} {h} {s}" for d, h, s in items)
+            + f"\n\n원래 커밋 보기: git log {SQUASH_REF}{tip[:12]} (이 저장소에만 있음 — push되지 않음)")
+    return head + "\n\n" + body + ("\n\n" + "\n".join(co) if co else "") + "\n"
 
 
-async def merge(repo: str, name: str, squash: bool | None = None) -> dict[str, Any]:
+async def merge(repo: str, name: str, squash: bool | None = None, *, title: str | None = None, topic: str | None = None,
+                sid: int | None = None) -> dict[str, Any]:
     """rebase(worktree에서) → fast-forward(원본에서) → worktree · 브랜치 지우기. 충돌이면 rebase를 되돌리고 멈춘다.
     squash(11-12, 프로젝트마다 켬 — None이면 SQUASH_OF가 정한다): rebase까지 같고, 브랜치 트리로 커밋 하나를 만들어(`commit-tree`,
     부모 = 원본 브랜치 끝) 그것을 fast-forward한다 — 원본 작업 트리에서 `merge --squash`를 돌리지 않으니 실패 꼴(원본의 커밋 안 된
     변경과 겹침 등)이 ff와 같다. squash 뒤 브랜치는 원본의 조상이 아니라 `-D`로 지운다(트리가 같은지 본 뒤에만).
-    push는 하지 않는다(런슈즈는 push가 곧 배포 — 사람이 따로)."""
+    push는 하지 않는다(런슈즈는 push가 곧 배포 — 사람이 따로).
+    squash 제목(11-13): title(사람 · 관리자가 넘긴 것 — 그 저장소 꼴이 아니면 아무것도 하기 전에 거부) > topic(세션 제목) > 기계.
+    합친 뒤 SQUASH_REF<브랜치 끝 해시>를 브랜치 끝에 남겨 원래 커밋을 찾을 수 있게 한다. 넘긴 제목을 못 썼으면(squash가 아님) 결과에 적는다."""
     if squash is None:
         squash = bool(SQUASH_OF and await SQUASH_OF(repo))
     st = await status(repo, name)
@@ -238,6 +323,10 @@ async def merge(repo: str, name: str, squash: bool | None = None) -> dict[str, A
     if st["dirty"]:
         raise Refused(f"커밋 안 된 변경이 {len(st['dirty'])}개 있습니다. 그 세션에서 커밋하거나 버린 뒤 합쳐 주세요")
     path, base, branch = st["path"], st["base"], st["branch"]
+    style = await commit_style(repo, base)
+    if title is not None:
+        title = check_title(style, title)
+    unused = "" if title is None else " 넘긴 제목은 쓰지 않았습니다(squash로 묶지 않아 원래 커밋이 그대로 들어갔습니다)."
     if st["ahead"] == 0:
         await remove(repo, name, force=False)
         return {"ok": True, "merged": 0, "note": "합칠 커밋이 없어 worktree만 지웠습니다."}
@@ -257,7 +346,8 @@ async def merge(repo: str, name: str, squash: bool | None = None) -> dict[str, A
         if rc:
             return {"ok": False, "conflict": [], "detail": "",
                     "note": f"rebase 뒤에도 {base} 끝이 브랜치의 조상이 아닙니다({base}가 그 사이 움직였을 수 있습니다). 다시 합쳐 주세요."}
-        msg = await squash_message(repo, base, branch)
+        msg = await squash_message(repo, base, branch, topic=topic, title=title, sid=sid, style=style)
+        _, tip = await git(repo, "rev-parse", branch)
         _, sq = await git(repo, "commit-tree", tree, "-p", parent, "-m", msg)
         target = sq
     rc, out = await git(repo, "merge", "--ff-only", target, check=False)
@@ -266,15 +356,22 @@ async def merge(repo: str, name: str, squash: bool | None = None) -> dict[str, A
                 "note": "원본 저장소에서 fast-forward가 되지 않았습니다(원본의 커밋 안 된 변경과 겹칠 수 있습니다)."
                         + (f" 원본에 커밋 안 된 파일 {len(dirty_main.splitlines())}개." if dirty_main else "")}
     if sq:
+        # 원래 커밋을 남긴다 — 브랜치를 지우면 해시만 남고 커밋은 gc로 사라지므로. 못 남기면 결과에 적는다(조용히 잃지 않게)
+        ref = SQUASH_REF + tip[:12]
+        rrc, rout = await git(repo, "update-ref", "-m", f"foreman squash {sq[:12]}", ref, tip, check=False)
+        kept = (f" 원래 커밋은 `git log {ref}`로 봅니다." if rrc == 0
+                else f" 원래 커밋 ref({ref})를 남기지 못했습니다 — {rout[-200:]}. 본문의 제목 · 날짜만 남습니다.")
         # 원본 끝 트리 = 브랜치 트리일 때만 브랜치를 -D로 지운다. 아니면 브랜치를 남기고 그렇다고 알린다(조용히 잃지 않게)
         rc, _ = await git(repo, "diff", "--quiet", base, branch, check=False)
         await remove(repo, name, force=False, drop_branch=rc == 0)
-        return {"ok": True, "merged": st["ahead"], "commits": st["commits"], "squash": sq[:12],
-                "note": f"{base}에 커밋 {st['ahead']}개를 커밋 하나({sq[:8]})로 묶어 합쳤습니다(squash — 본문에 원래 제목 · 날짜)."
-                        + ("" if rc == 0 else f" 트리가 달라 브랜치 {branch}는 지우지 않고 남겼습니다.") + " push는 하지 않았습니다."}
+        head = msg.split("\n", 1)[0]
+        return {"ok": True, "merged": st["ahead"], "commits": st["commits"], "squash": sq[:12], "title": head,
+                "orig_ref": ref if rrc == 0 else None,
+                "note": f"{base}에 커밋 {st['ahead']}개를 커밋 하나({sq[:8]} 「{head}」)로 묶어 합쳤습니다(squash — 본문에 원래 날짜 · 해시 · 제목)."
+                        + kept + ("" if rc == 0 else f" 트리가 달라 브랜치 {branch}는 지우지 않고 남겼습니다.") + " push는 하지 않았습니다."}
     await remove(repo, name, force=False)
     return {"ok": True, "merged": st["ahead"], "commits": st["commits"],
-            "note": f"{base}에 커밋 {st['ahead']}개를 합쳤습니다. push는 하지 않았습니다."}
+            "note": f"{base}에 커밋 {st['ahead']}개를 합쳤습니다." + unused + " push는 하지 않았습니다."}
 
 
 async def remove(repo: str, name: str, force: bool, drop_branch: bool | None = None) -> None:

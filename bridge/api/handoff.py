@@ -99,6 +99,7 @@ async def handoff_view(sid: int, request: Request) -> dict[str, Any]:
 class MergePrepIn(BaseModel):
     action: Literal["merge", "skip", "refresh", "docs_done"]   # docs_done(11-13) — 합친 카드의 정리 후보를 다 골랐다 → 카드를 치운다
     by: Literal["human", "manager"] = "human"   # 11-12 — 관리자 세션이 승인할 때 manager. 프로젝트 토큰이면 저절로 manager
+    title: str | None = Field(default=None, max_length=200)   # 11-13 squash 커밋 제목(merge만) — 안 넘기면 세션 제목으로 기계가 만든다
 
 
 def _mp(m: HandoffManager) -> Any:
@@ -135,7 +136,7 @@ async def merge_prep_act(sid: int, body: MergePrepIn, request: Request) -> JSONR
             await mp.check()
             r = {"ok": True, "card": mp.card_for(sid)}
         else:
-            r = await mp.approve(sid, by=by)
+            r = await mp.approve(sid, by=by, title=body.title)
     except Refused as e:
         return _refused(e)
     # 11-13 승인 막대 · 머리 위 말풍선은 대시보드 스냅샷(merge_waits, 서버 캐시 2초)에서 온다 — 화면이 응답 뒤 곧바로 다시 받을 때
@@ -295,6 +296,7 @@ class WorktreeIn(BaseModel):
     action: Literal["merge", "discard"]
     confirm: str = ""                 # 버리기는 worktree 이름을 그대로 적어야 한다(합치지 않은 커밋까지 지운다)
     end: bool = False                 # 세션이 살아 있으면 먼저 끝낸다(11-06 — 끝내고 합치기 · 끝내고 버리기)
+    title: str | None = Field(default=None, max_length=200)   # 11-13 squash 커밋 제목(merge만) — 안 넘기면 세션 제목으로 기계가 만든다
 
 
 @router.get("/spawn/options")
@@ -382,7 +384,7 @@ async def worktree_act(sid: int, body: WorktreeIn, request: Request) -> JSONResp
                 and card.human_why):
             # 11-12 — 늘-사람 카드를 프로젝트 토큰(관리자)이 이 길로 돌아 합치지 못하게. 관리 토큰(사람 화면)은 그대로
             raise Refused("이 세션의 합치기 카드는 사람 승인입니다 — 까닭: " + "; ".join(card.human_why))
-        r = await m.worktree_act(row, body.action, end=body.end)
+        r = await m.worktree_act(row, body.action, end=body.end, title=body.title if body.action == "merge" else None)
     except Refused as e:
         return _refused(e)
     from bridge.api import coder
