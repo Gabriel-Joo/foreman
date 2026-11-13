@@ -92,6 +92,9 @@ class MergePrepCfg:
     projects: list[str] = field(default_factory=list)     # 비면 모든 프로젝트
     keep_h: int = 6                # 끝난 카드(merged · failed · 충돌 넘김)를 남기는 시간 — updated_at(DB에 남은 시각) 기준
     keep_docs_h: int = 72          # 그중 합친 카드에 정리 후보가 남아 있으면 이만큼(11-13 — 관리자가 고를 시간)
+    # 관리자 머리 위 합치기 물음이 이 날수째 떠 있으면 텔레그램 바로 한 번(11-13 사용자 — 7일(ESC_KEEP)이 지나 조용히 묻히지 않게).
+    # 0이면 끈다. ESC_KEEP 날수보다 작아야 한다
+    remind_days: int = 5
     docs: DocsCfg = field(default_factory=DocsCfg)
     human_always: HumanAlways = field(default_factory=HumanAlways)
     per_project: dict[str, ProjectRule] = field(default_factory=dict)
@@ -125,6 +128,7 @@ def load(path: str | Path) -> MergePrepCfg:
                        stuck_min=int(raw.get("stuck_min", 10)), notify_ready=bool(raw.get("notify_ready", True)),
                        stage=int(raw.get("stage", 1)), projects=[str(x) for x in raw.get("projects") or []],
                        keep_h=int(raw.get("keep_h", 6)), keep_docs_h=int(raw.get("keep_docs_h", 72)),
+                       remind_days=int(raw.get("remind_days", 5)),
                        docs=DocsCfg(readme=str(d.get("readme", "README.md")), readme_section=str(d.get("readme_section", "나중에 할 일")),
                                     docs_dir=str(d.get("docs_dir", "docs")), max=int(d.get("max", 12))),
                        human_always=HumanAlways(paths=[str(x) for x in ha.get("paths") or []],
@@ -134,6 +138,9 @@ def load(path: str | Path) -> MergePrepCfg:
                        per_project=per)
     if cfg.every_s < 10 or cfg.stuck_min < 1 or cfg.stage not in (1, 2) or cfg.keep_h < 1 or cfg.keep_docs_h < cfg.keep_h:
         raise ValueError("merge_prep 값이 맞지 않습니다(every_s ≥ 10, stuck_min ≥ 1, stage 1 · 2, keep_h ≥ 1, keep_docs_h ≥ keep_h)")
+    from bridge.api.dashboard import ESC_KEEP
+    if not 0 <= cfg.remind_days < ESC_KEEP.days:
+        raise ValueError(f"merge_prep.remind_days는 0(끔) 이상 {ESC_KEEP.days} 미만입니다(받은 값: {cfg.remind_days})")
     return cfg
 
 
@@ -416,6 +423,9 @@ class Card:
     esc_id: int | None = None
     esc_mgr: int | None = None
     esc_error: str | None = None
+    # 11-13 사람이 그 물음을 [답 안 해도 됨]으로 끈 시각(브리지가 내린 것과 다르다 — 브리지는 내릴 때 esc_id를 비운다).
+    # 있으면 다시 올리지 않고 승인 막대 · 머리 위에서도 뺀다(merge_waits). 카드는 남는다. 새 커밋으로 카드가 다시 만들어지면 비워진다
+    esc_off_at: str | None = None
     made_at: str = ""
     updated_at: str = ""
 
@@ -482,6 +492,7 @@ class MergePrep:
         self._saved: dict[int, str] = {}    # DB에 쓴 카드 JSON — 바뀐 것만 다시 쓰고, 메모리에서 빠진 것은 지운다
         self._sync_lock = asyncio.Lock()
         self._restored = False
+        self._reminded: set[int] = set()    # 오래된 합치기 물음 알림을 낸 escalate id — 매 맞추기마다 DB를 보지 않게(DB 키가 진짜 한 번)
         wt.SQUASH_OF = self.squash_for_repo  # 패널 [합치기]도 같은 squash 설정을 따르게(handoff.worktree_act → wt.merge)
 
     # ── 보기 ──
@@ -659,16 +670,45 @@ class MergePrep:
                                   {"c": m[0]})).first()
         return int(r[0]) if r and r[0] is not None else None
 
-    async def _esc_open(self) -> dict[int, int]:
-        """아직 떠 있는 합치기 카드 물음 {escalate id: 관리자 세션 id} — DB에서 본다(메모리에서 빠진 카드 · 다시 띄운 사이 것도 줍는다)."""
+    async def _esc_open(self) -> dict[int, tuple[int, datetime]]:
+        """아직 떠 있는 합치기 카드 물음 {escalate id: (관리자 세션 id, 올린 시각)} — DB에서 본다(메모리에서 빠진 카드 · 다시 띄운
+        사이 것도 줍는다)."""
         from bridge.api.dashboard import ESC_ACT, ESC_KEEP, ESC_OFF_ACT
         async with self.engine.connect() as cn:
             rows = (await cn.execute(text(
-                "SELECT a.id, a.session_id FROM session_action a WHERE a.action = :a AND a.ok AND a.detail LIKE :p "
+                "SELECT a.id, a.session_id, a.created_at FROM session_action a WHERE a.action = :a AND a.ok AND a.detail LIKE :p "
                 "AND a.created_at > :cut AND NOT EXISTS (SELECT 1 FROM session_action o WHERE o.session_id = a.session_id "
                 "  AND o.action = :o AND o.ok AND o.detail = CAST(a.id AS CHAR))"),
                 {"a": ESC_ACT, "o": ESC_OFF_ACT, "p": "question:#merge:%", "cut": _now() - ESC_KEEP})).all()
-        return {int(a): int(s) for a, s in rows}
+        return {int(a): (int(s), at) for a, s, at in rows}
+
+    async def _esc_offs(self, ids: list[int]) -> dict[int, datetime]:
+        """이 물음들 중 꺼진 것 {escalate id: 끈 시각}. 카드가 아직 쥔 물음에 대한 esc-off는 사람의 [답 안 해도 됨]이다 —
+        브리지가 내릴 때(_esc_close)는 카드의 esc_id를 함께 비운다."""
+        from sqlalchemy import bindparam
+
+        from bridge.api.dashboard import ESC_OFF_ACT
+        async with self.engine.connect() as cn:
+            rows = (await cn.execute(text(
+                "SELECT detail, MIN(created_at) FROM session_action WHERE action = :o AND ok AND detail IN :d GROUP BY detail")
+                .bindparams(bindparam("d", expanding=True)), {"o": ESC_OFF_ACT, "d": [str(i) for i in ids]})).all()
+        return {int(d): at for d, at in rows}
+
+    def esc_remind_text(self, c: Card) -> str:
+        from bridge.api.dashboard import ESC_KEEP
+        left = ESC_KEEP.days - self.cfg.remind_days
+        when = {1: "하루", 2: "이틀", 3: "사흘", 4: "나흘", 5: "닷새", 6: "엿새"}.get(left, f"{left}일")
+        return (f"⏳ 합치기 카드가 {self.cfg.remind_days}일째 사람 승인을 기다립니다 — {when} 뒤 관리자 머리 위에서 사라집니다"
+                f"(카드는 남음) · 세션 {c.sid} 「{c.title or ''}」")
+
+    def _esc_remind(self, c: Card, eid: int, at: datetime) -> None:
+        """관리자 머리 위 합치기 물음이 remind_days째 떠 있으면 텔레그램 바로 한 번(묶음 아님). 열쇠는 그 물음 id —
+        브리지를 다시 띄워도 한 번(_notify가 notification.rule을 본다). 사람이 끈 물음은 _esc_open에 없으니 알리지 않는다."""
+        if not self.cfg.remind_days or eid in self._reminded or _now() - at < timedelta(days=self.cfg.remind_days):
+            return
+        self._reminded.add(eid)
+        self._notify(c, f"mergeprep:remind:{eid}", self.esc_remind_text(c), later=False)
+        log.info("합치기 카드 %s — 관리자 머리 위 물음 %s가 %d일째라 알렸다", c.sid, eid, self.cfg.remind_days)
 
     async def _esc_close(self, eid: int, msid: int) -> None:
         from bridge.api.dashboard import ESC_OFF_ACT, invalidate
@@ -688,7 +728,16 @@ class MergePrep:
         changed = False
         opened = await self._esc_open()
         held = {c.esc_id for c in want.values() if c.esc_id}
-        for eid, msid in opened.items():                    # 내리기 — 그 물음을 쥔 대기 카드가 없다
+        # 사람이 끈 것 알아보기(11-13 사용자 — 「답 안 해도 됨은 답을 안 하겠다는 뜻이다」) — 카드가 쥔 물음이 떠 있지 않으면 esc-off를
+        # 찾는다. 있으면 사람이 끈 것, 없으면 7일(ESC_KEEP)이 지나 사라진 것(이때는 지금처럼 둔다)
+        gone = [c for c in want.values() if c.esc_id and not c.esc_off_at and c.esc_id not in opened]
+        if gone:
+            offs = await self._esc_offs([c.esc_id for c in gone if c.esc_id])
+            for c in gone:
+                if c.esc_id in offs:
+                    c.esc_off_at, changed = _iso(offs[c.esc_id]), True
+                    log.info("합치기 카드 %s — 사람이 관리자 머리 위 물음 %s를 껐다(다시 올리지 않음)", c.sid, c.esc_id)
+        for eid, (msid, _) in opened.items():               # 내리기 — 그 물음을 쥔 대기 카드가 없다
             if eid in held:
                 continue
             await self._esc_close(eid, msid)
@@ -697,6 +746,8 @@ class MergePrep:
                     c.esc_id, c.esc_mgr = None, None
             changed = True
         for sid, c in want.items():                         # 올리기 — 관리자가 바뀌었으면 옛 것을 내리고 새 관리자에게
+            if c.esc_off_at:                                # 사람이 끈 카드 — 관리자가 바뀌어도 다시 올리지 않는다(새 커밋이면 새 카드)
+                continue
             try:
                 msid = await self._esc_manager(c)
             except Exception as e:  # noqa: BLE001 — 관리자를 못 찾으면 작업 세션 머리 위로(안전한 쪽)
@@ -704,6 +755,8 @@ class MergePrep:
             else:
                 why = "살아 있는 관리자 세션이 없습니다"
             if c.esc_id and c.esc_mgr == msid:
+                if c.esc_id in opened:                      # 같은 관리자에게 떠 있다 — 오래됐으면 한 번 알린다(인계로 다시 올리면 7일도 새로)
+                    self._esc_remind(c, c.esc_id, opened[c.esc_id][1])
                 continue
             if c.esc_id:
                 if c.esc_id in opened:
@@ -888,6 +941,7 @@ class MergePrep:
         elif old is not None and old.status == "ready":
             card.manager_told = old.manager_told              # 같은 커밋 — 관리자에게 다시 알리지 않는다(live만 바뀐 경우)
             card.esc_id, card.esc_mgr, card.esc_error = old.esc_id, old.esc_mgr, old.esc_error   # 올린 물음도 그대로
+            card.esc_off_at = old.esc_off_at                  # 사람이 끈 것도 그대로(같은 일)
         return card
 
     async def _human_why(self, repo: str, base: str, branch: str, project: str | None) -> list[str]:
@@ -1282,9 +1336,10 @@ class MergePrep:
                          ("관리자 세션이 없어" if not m else "관리자 세션에 보내지 못해") + f" 텔레그램으로 남깁니다 — {msg}")
         return ok
 
-    def _notify(self, c: Card | None, key: str, msg: str, check_db: bool = True) -> None:
+    def _notify(self, c: Card | None, key: str, msg: str, check_db: bool = True, later: bool | None = None) -> None:
         """텔레그램 한 번(key가 이미 있으면 보내지 않는다 — 브리지를 다시 띄워도). c가 없으면 FOREMAN 전체 알림.
-        check_db=False면 보낸 적을 DB에서 보지 않는다(DB 문제 알림 — 부른 쪽이 한 번만 부른다)."""
+        check_db=False면 보낸 적을 DB에서 보지 않는다(DB 문제 알림 — 부른 쪽이 한 번만 부른다).
+        later=False면 묶음을 켠 프로젝트여도 바로 보낸다(None이면 notifier가 정한다)."""
         if self.notifier is None:
             return
         project, sid = (c.project, c.sid) if c else ("foreman", None)
@@ -1297,7 +1352,8 @@ class MergePrep:
                             return
                 rule = self.notifier.rules.for_project(project) if project else None
                 prefix = (rule and rule.prefix) or "[" + (project or "FOREMAN") + "]"
-                self.notifier.send_direct(project, NOTIFY_KIND, sid, f"{prefix} {msg}"[:3500], rule=key[:64])
+                self.notifier.send_direct(project, NOTIFY_KIND, sid, f"{prefix} {msg}"[:3500], rule=key[:64],
+                                          **({"later": later} if later is not None else {}))
             except Exception as e:  # noqa: BLE001 — 알림 실패가 합치기를 막지 않는다
                 log.warning("합치기 알림 실패: %s", type(e).__name__)
         t = asyncio.get_running_loop().create_task(go())

@@ -4,7 +4,7 @@
 //   문서 정리(접힘, 할 일이 있으면 열림)  압축 손실 [잃은 것 찾기] · 문서에 남기기 [남길 것 찾기]
 // 자기 데이터(/api/sessions/{id}/handoff)를 따로 받아 따로 그린다 — 세션 칸이 다시 그려져도 고치던 글이 날아가지 않게.
 
-import { esc, ago, keep } from './render.js';
+import { esc, ago, keep, clock } from './render.js';
 import { promoteGroup, edits as promoteEdits } from './promote.js';
 import { lossGroup } from './losscheck.js';
 import { moveStep, MOVE_STEPS, MOVE_TIP, chooseCount, writeLabel } from './moveflow.js';
@@ -75,6 +75,7 @@ export function mpSection(mp, b, sid) {
     ${docs}
     ${c.note ? `<div class="small ${c.status === 'merged' ? 'ok' : 'muted'}">${esc(c.note)}${c.manager_told === false ? ' 관리자 세션에는 알리지 못했습니다(텔레그램으로 남김).' : c.manager_told ? ' 관리자 세션에 알렸습니다.' : ''}</div>` : ''}
     ${c.error ? `<div class="small bad">${esc(c.error)}</div>` : ''}
+    ${c.esc_off_at && c.status === 'ready' ? `<div class="small muted mp-off" title="답 안 해도 됨 — 사람이 관리자 머리 위의 이 카드 물음을 껐습니다. 머리 위 · 승인 막대 숫자에서 뺐고 카드는 남습니다. 이 세션이 새로 커밋하면 다시 올립니다.">사람이 답 안 해도 됨으로 둠 — ${esc(clock(c.esc_off_at))}. 관리자 머리 위 · 승인 막대에서 뺐습니다(합치려면 [합치기]).</div>` : ''}
     ${c.status === 'merged' ? '<div class="small muted">합치기까지 했습니다 — 시험 · push · 브리지 다시 띄우기는 관리자가 합니다.</div>' : ''}
     ${open && managerCard(c) && c.status === 'ready' ? '<div class="small muted mp-by-manager" title="관리자 승인 — 이 프로젝트는 합치기 승인을 관리자 세션이 합니다. 사람이 누를 것은 없습니다.">관리자 세션이 승인합니다 — 사람이 누를 것은 없습니다.</div>'
       : open ? `<div class="hand-btns">${b('mp-merge', '합치기', !!c.head && c.status !== 'merging', 'primary', tip)}${b('mp-skip', '나중에', true, 'ghost', '나중에 — 이 카드를 치웁니다. 이 세션이 새로 커밋하면 다시 뜹니다.')}</div>` : ''}

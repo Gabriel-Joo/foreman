@@ -68,3 +68,12 @@ test('묻는 말이 있어도 카드는 뜬다 — 묻는 말을 함께 보인�
   assert.match(h, /data-act="mp-merge"/);
   assert.doesNotMatch(mpSection({ card: card() }, b, 7), /묻는 말/);
 });
+
+test('사람이 답 안 해도 됨으로 끈 카드 — 카드 · [합치기]는 남고 끈 것을 보인다(11-13)', () => {
+  const h = mpSection({ card: card({ esc_off_at: '2026-11-13T03:00:00Z' }) }, b, 7);
+  assert.match(h, /mp-off/);
+  assert.match(h, /사람이 답 안 해도 됨으로 둠 — /);
+  assert.match(h, /data-act="mp-merge"/);
+  assert.doesNotMatch(mpSection({ card: card() }, b, 7), /mp-off/);
+  assert.doesNotMatch(mpSection({ card: card({ esc_off_at: '2026-11-13T03:00:00Z', status: 'merged' }) }, b, 7), /mp-off/);
+});
