@@ -14,7 +14,7 @@ enabled = true           # 11-11 사용자 지시로 켬(시험 세션으로 확
 every_s = 60             # 몇 초마다 훑나
 stuck_min = 10           # 한 번 훑기가 이만큼 끝나지 않으면 텔레그램 한 번 + 카드 목록에 사유
 notify_ready = true      # 카드를 새로 만들면 텔레그램 한 번(세션 · 브랜치 끝 커밋마다 한 번)
-projects = ["foreman", "ronanlab-infra", "petmint-rag-chatbot"]   # 카드를 만들 프로젝트(project.name). 비면 모두 — 11-11 사용자: 런슈즈 · 펫퍼민트에는 아직 보내지 않음, 인프라는 관리자 299와 함께 더함. 11-13 사용자: 펫퍼민트 관리자를 세우며 더함(런슈즈는 5-2 합친 뒤)
+projects = ["foreman", "ronanlab-infra", "petmint-rag-chatbot", "runshoes"]   # 카드를 만들 프로젝트(project.name). 비면 모두 — 11-11 사용자: 런슈즈 · 펫퍼민트에는 아직 보내지 않음, 인프라는 관리자 299와 함께 더함. 11-13 사용자: 펫퍼민트 관리자를 세우며 더함, 런슈즈는 5-2 합친 뒤 · squash 제목 고친 뒤 더함
 stage = 1                # 1 = 합치기까지. 2(승인 뒤 시험 → push → 승인 대기 0 → 브리지 → 점검)는 사용자가 1단계를 써 본 뒤 정한다 — 아직 없음
 remind_days = 5          # 관리자 머리 위 합치기 물음(사람 승인 카드)이 이 날수째면 텔레그램 바로 한 번 — 물음은 7일(ESC_KEEP) 뒤 사라지므로 그 이틀 전(11-13 사용자). 0 = 끔
 
@@ -46,6 +46,12 @@ human_paths = []
 approver = "manager"   # 11-13 사용자: 펫퍼민트 관리자를 세우며 인프라와 같게
 squash = true
 human_paths = []
+
+[merge_prep.per_project.runshoes]
+approver = "manager"   # 11-13 사용자: 5-2 합친 뒤 · squash 제목 고친 뒤(337 98492e6) 켬. 카드는 합치기까지, push는 관리자가 따로
+squash = true
+# 310이 든 그대로(11-13 사용자). 마이그레이션 순서 안내는 런슈즈 CLAUDE.md 「push할 때 볼 것」
+human_paths = ["backend/src/main/resources/db/migration/V*.sql", "CLAUDE.md", ".claude/*", "Jenkinsfile", "Dockerfile", "Dockerfile.chatbot"]
 
 # 늘 사람에게 올릴 것(11-12 사용자 확정) — 승인자가 관리자여도 카드의 바뀐 파일 · 커밋이 걸리면 그 카드는 사람 승인.
 #   paths는 fnmatch(`*`가 `/`도 넘는다) — 경로 전체 또는 파일 이름에 맞대 본다.
