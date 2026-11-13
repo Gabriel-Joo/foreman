@@ -476,7 +476,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         room.stats.question += asking.get(s.id) || 0;
         // 11-09 사람이 해야 풀리는 대기(브리지 /api/dashboard denied · asks) — 쉼으로 세지 않고 따로
         if (s.state !== 'DORMANT' && s.denied) room.stats.denied += 1;          // 종료된 세션의 옛 물음은 세지 않는다
-        else if (s.state !== 'DORMANT' && s.asks) room.stats.asks += 1;
+        else if (s.state !== 'DORMANT' && (s.asks || (s.escalate && s.escalate.question))) room.stats.asks += 1;
         room.stats.subs += s.subagents_running || 0;
         room.stats.tin += (s.tokens && s.tokens.today_input) || 0;
         room.stats.tout += (s.tokens && s.tokens.today_output) || 0;
@@ -1990,7 +1990,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     drawHeat(a, now);
     if (act.fx === 'smoke') drawSmokeS(a.x, a.y - 0.6, now);
     drawCompactMark(a, x + 7, top + 4);
-    if (act.bubble) {
+    if (act.bubble && act.flag === 'stuck_turn') {
+      // 11-13 멈춘 턴의 「…」은 경고 색(빨강) — 자식 일을 기다리는 파란 「· ·· ···」과 갈라 본다(테마 그림 e_…은 쓰지 않는다)
+      drawBubble(x, top - 4, act.bubble, P.bad || '#ff6b6b');
+    } else if (act.bubble) {
       const e = 'e_' + act.bubble;
       if (SP.has(e)) SP.draw(ctx, e, x - 7, top - 13 - Math.round(Math.abs(Math.sin(now / 300)) * 2), now);
       else drawBubble(x, top - 4, act.bubble, P.warn);
@@ -2000,16 +2003,21 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       ctx.globalAlpha = 1 - t; ctx.fillStyle = P.zz; ctx.font = 'bold 7px ui-monospace, monospace'; ctx.textAlign = 'left';
       ctx.fillText('z', x + 5 + t * 4, top + 2 - t * 8); ctx.globalAlpha = 1;
     }
-    if (!a.moving && act.anim === 'wait' && !act.flag) {                       // 기다림 — 책상에 서서 "…"이 차오른다
-      drawBubble(x, top - 3, '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), P.act, 7);
+    if (!a.moving && act.anim === 'wait' && !act.flag) {                       // 기다림 — 책상에 서서 자식 일을 기다린다
+      // 11-13 서브에이전트는 파란 상자에 차오르는 「· ·· ···」, 뒤에서 도는 명령(백그라운드 Bash · Monitor)만이면 어두운 상자 ·
+      // 파란 테두리에 도는 막대 「| / - \」(한 프레임만 봐도 갈리게 모양을 바꿈). 둘 다면 파란 상자에 「··|」처럼 나란히
+      const g = waitGlyph(a.s, now);
+      if (g.bgOnly) drawRingBubble(x, top - 3, g.text, P.act, 7);
+      else drawBubble(x, top - 3, g.text, P.act, 7);
     }
     if (a.kind === 'scribe' && scribeBubble(a)) {                                // 서기 — 할 일 N(누르면 목록), 쌓이면 "정리할까요?"
       placeBubble(a, x, top, scribeBubble(a), P.warn, todoPx() / cam.s);
     }
     const mk = markOf(a);
     // 답 기다림 · 보고 옴(11-11) — 맡길 일보다 먼저. 방이 작은 [전체] 지도에서는 글 대신 머리 위 색 점(글은 이웃 몸 · 이름표를 덮었다)
-    if (mk && view === 'map') { ctx.fillStyle = markColor(mk); ctx.beginPath(); ctx.arc(x, top - 3, 2.5, 0, Math.PI * 2); ctx.fill(); }
-    else if (mk) placeBubble(a, x, top, mk.text, markColor(mk), todoPx() / cam.s);
+    // 11-13 관리자에게 넘긴 것(quiet)은 작게 — 지도에서는 작은 회색 점, 방에서는 작은 글씨 · 흐린 색
+    if (mk && view === 'map') { ctx.fillStyle = markColor(mk); ctx.beginPath(); ctx.arc(x, top - 3, mk.tone === 'quiet' ? 1.5 : 2.5, 0, Math.PI * 2); ctx.fill(); }
+    else if (mk) placeBubble(a, x, top, mk.text, markColor(mk), (mk.tone === 'quiet' ? quietPx() : todoPx()) / cam.s);
     else if (coderBubbleOf(a) && !(act.anim === 'wait' && !act.flag) && !act.bubble) {   // 코더 — 맡길 일 N · 합치기 기다림(누르면 목록)
       placeBubble(a, x, top, coderBubbleOf(a), P.warn, todoPx() / cam.s);
     }
@@ -2036,7 +2044,16 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 답 기다림 · 권한 거부(노랑) · 보고 옴(초록) — 세션 캐릭터 머리 위(11-11). 승인 대기 같은 테마 말풍선이 있으면 그것이 먼저
   const markOf = (a) => (a.kind === 'session' && a.s && !(a.act && a.act.bubble) ? needMark(a.s) : null);
   // 합치기 기다림은 보라 — 초록(보고)·노랑(답/거부/승인 대기)·빨강(실패)·파랑(대기 점 · +N)이 모두 쓰여 어느 테마 팔레트에도 없는 색을 고름
-  const markColor = (m) => (m.tone === 'ok' ? (P.ok || P.act) : m.tone === 'merge' ? (P.merge || '#c9a7ff') : P.warn);
+  const markColor = (m) => (m.tone === 'ok' ? (P.ok || P.act) : m.tone === 'merge' ? (P.merge || '#c9a7ff')
+    : m.tone === 'quiet' ? (P.muted || '#a9b4c4') : P.warn);
+  const quietPx = () => tpx(10);                 // 11-13 「관리자에게 보고함」 · 「관리자 답 기다림」 — 사람 몫(12)보다 작게
+  // 기다림 머리 위 — 서브에이전트 「· ·· ···」(차오름) · 뒤에서 도는 명령 「| / - \」(돎). 둘 다면 「·· |」처럼 나란히
+  function waitGlyph(s, now) {
+    const subs = (s && s.subagents_running) || 0, bg = ((s && s.background) || []).length;
+    const dots = '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), spin = '|/-\\'[Math.floor(now / 250) % 4];
+    if (bg && !subs) return { text: ` ${spin} `, bgOnly: true };
+    return { text: bg ? `${dots}${spin}` : dots, bgOnly: false };
+  }
   function tagBoxesW() {
     const toW = (sx, sy) => [((sx - W / 2) / cam.s + cam.x), ((sy - H / 2) / cam.s + cam.y)];
     return HITS.filter((h) => h.zone).map((h) => { const [x0, y0] = toW(h.x, h.y), [x1, y1] = toW(h.x + h.w, h.y + h.h); return [x0, y0, x1 - x0, y1 - y0]; });
@@ -2070,6 +2087,15 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const pad = size * 0.25, w = Math.max(size, ctx.measureText(text).width + size * 0.7);
     ctx.fillStyle = color; ctx.fillRect(x - w / 2, y - size - pad, w, size + 2 * pad);
     ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y - size / 2);
+  }
+  // 테두리 말풍선(11-13) — 어두운 바탕 · 색 테두리 · 색 글자. 뒤에서 도는 명령 기다림(채운 파란 상자 = 서브에이전트와 가른다)
+  function drawRingBubble(x, y, text, color, size = 9) {
+    ctx.font = `bold ${size}px ui-monospace, monospace`;
+    const pad = size * 0.25, w = Math.max(size, ctx.measureText(text).width + size * 0.7), h = size + 2 * pad;
+    ctx.fillStyle = '#1b2333'; ctx.fillRect(x - w / 2, y - size - pad, w, h);
+    ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.strokeRect(x - w / 2 + 0.5, y - size - pad + 0.5, w - 1, h - 1);
+    ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(text, x, y - size / 2);
   }
   function drawSign(tx, ty, ch) { drawBubble(tx * T, ty * T, ch, P.warn, 10); }
@@ -3251,9 +3277,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 11-09 사용자 — 이름표는 역할만이라 호버 첫 줄에 역할 · 세션 번호 · 제목("237 합쳐라"를 듣고 어느 세션인지 찾게)
       return `<div class="tip-h">${esc(roleTag(roleOf(s)))} 세션 ${s.id}${a.temp ? ' · 임시' : ''}</div><div class="tip-b">${esc(a.name)}</div>${who}<div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', WAITING: '기다리는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[vs] || vs)}${
         a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
-        s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎${(s.subagent_descs || []).map((d) => `<div class="tip-s">· ${esc(short(d, 50))}</div>`).join('')}</div>` : ''}${
-        bg.length ? `<div>뒤에서 도는 일 ${bg.length}개(백그라운드 명령)${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}</div>`).join('')}</div>` : ''}${
-        a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝났는지 모름 — 끝 신호가 오지 않았습니다' }[a.act.flag] || a.act.flag)}</div>` : ''}${
+        s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎${vs === 'WAITING' ? ' — 머리 위 「···」' : ''}${(s.subagent_descs || []).map((d) => `<div class="tip-s">· ${esc(short(d, 50))}</div>`).join('')}</div>` : ''}${
+        bg.length ? `<div>뒤에서 도는 일 ${bg.length}개(백그라운드 명령)${vs === 'WAITING' ? ' — 머리 위 어두운 상자의 도는 막대 「|」' : ''}${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}</div>`).join('')}</div>` : ''}${
+        a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝났는지 모름(빨간 「…」) — 끝 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.' }[a.act.flag] || a.act.flag)}</div>` : ''}${
         needMark(s) ? `<div class="tip-s">${esc(needMark(s).tip)}</div>` : ''}${
         a.subHidden ? `<div class="tip-s">+${a.subHidden} — 서브에이전트가 많아 화면에 다 그리지 않고 접은 수입니다.</div>` : ''}${
         s.compact && s.compact.level ? `<div class="tip-s">📦 대화 자동 요약 ${s.compact.count}번(대화가 길어 앞부분을 요약해 줄였습니다. 줄일수록 처음에 정한 것을 잊습니다) —${s.compact.level === 'late' ? '늦었습니다' : '새 세션으로 넘어갈 때입니다'}</div>` : ''}

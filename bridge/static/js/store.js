@@ -449,7 +449,19 @@ export class Store {
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) throw new Error(j.note || j.detail || `HTTP ${r.status}`);
     const s = this.state.sessions.get(id);
-    if (s) s.asks = null;
+    if (s && j.escalate_id && s.escalate) s.escalate = { ...s.escalate, question: null };   // 관리자가 올린 물음을 끔(11-13)
+    else if (s) s.asks = null;
+    this.touch('grid', 'panel');
+    return j;
+  }
+  // 「사용자 보고 기다림」 읽음(11-13) — 관리자가 사람에게 올린 보고. 그 관리자 패널을 열면 opanel이 부른다
+  async escalateRead(id, escId) {
+    if (PROBE || this.demo) return { ok: false, note: '점검 · 시연 화면은 읽음으로 세지 않습니다' };
+    const r = await fetch(`/api/sessions/${id}/escalate-read?id=${encodeURIComponent(escId)}`, { method: 'POST', headers: this.headers() });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.note || j.detail || `HTTP ${r.status}`);
+    const s = this.state.sessions.get(id);
+    if (s && s.escalate && s.escalate.report && s.escalate.report.id === escId) s.escalate = { ...s.escalate, report: null };
     this.touch('grid', 'panel');
     return j;
   }
