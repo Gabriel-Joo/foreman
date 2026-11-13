@@ -16,7 +16,7 @@ def _mgr(monkeypatch, *, dirty, exit_ok=True):
     async def status(repo, name):
         return {"dirty": list(dirty)}
 
-    async def merge(repo, name):
+    async def merge(repo, name, **kw):
         calls.append("merge")
         return {"ok": True, "note": "합쳤습니다."}
 
@@ -43,7 +43,7 @@ def _mgr(monkeypatch, *, dirty, exit_ok=True):
         return None                   # 서기가 아니다 — 12b 검토를 건너뛴다
     m._role = role
     m._stop_preview = noop
-    row = SimpleNamespace(id=1, cc="cc1", cwd="/repo/.worktrees/scribe-1", project=None)
+    row = SimpleNamespace(id=1, cc="cc1", cwd="/repo/.worktrees/scribe-1", project=None, title=None)
     return m, row, calls
 
 
