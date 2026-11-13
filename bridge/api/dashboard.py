@@ -468,12 +468,15 @@ def merge_waits(mp: Any) -> dict[int, dict[str, Any]]:
     읽으므로 함께 빠진다. 늘-사람 카드(human_why)는 관리자가 승인할 수 없으니 그대로 보인다(안 보이면 아무도 누르지 않고 멈춘다).
     11-13(사용자 — 사람은 관리자하고만 이야기한다): 브리지가 그 카드를 관리자 머리 위 「사용자 답 기다림」으로 올렸으면 to_manager에
     그 관리자 세션 id — 작업 세션 머리 위 「합치기 기다림」은 이때 안 띄운다(render.js needMark). 승인 막대는 그대로 센다.
-    관리자가 없거나 올리지 못했으면 None → 지금처럼 작업 세션 머리 위(조용히 묻히지 않게)."""
+    관리자가 없거나 올리지 못했으면 None → 지금처럼 작업 세션 머리 위(조용히 묻히지 않게).
+    11-13(사용자 — 「답 안 해도 됨은 답을 안 하겠다는 뜻이다. 숫자로 남아 있으면 그것도 보게 된다」): 사람이 관리자 머리 위 그 물음을
+    [답 안 해도 됨]으로 끈 카드(esc_off_at)는 뺀다 — 승인 막대 숫자 · 작업 세션 머리 위 · 말풍선에서 함께 빠진다. 카드 자체는
+    GET /api/merge-prep · 세션 패널 「세션」 탭에 남는다(handoff.js가 끈 시각을 보인다)."""
     if mp is None or not getattr(mp.cfg, "enabled", False):
         return {}
     return {c["sid"]: {"since": c["made_at"], "head8": c["head8"], "files": len(c["files"]), "asks": bool(c.get("asks")),
                        "to_manager": c.get("esc_mgr") if c.get("esc_id") else None, "esc_error": c.get("esc_error")}
-            for c in mp.view()["cards"] if c["status"] == "ready" and not manager_card(c)}
+            for c in mp.view()["cards"] if c["status"] == "ready" and not manager_card(c) and not c.get("esc_off_at")}
 
 
 def manager_card(c: dict[str, Any]) -> bool:
