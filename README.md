@@ -936,7 +936,6 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | **서기 화면에 게시 설정 출처 · 경고 보이기**: 프로젝트마다 지금 게시 설정이 저장소 파일(`.foreman/notion.toml`)인지 FOREMAN 칸인지와 경고는 `GET /api/publish?project=`의 `config`로만 보인다. 멈춤(halted)만 서기 할 일 줄에 뜬다 | **정해짐**(11-12 사용자). 따로 작게(디자이너) | `log/notion_publish_three_20261112.md` 「README에서 뺄 줄」 |
 | **런슈즈 합치기 카드 · 승인자 · 중계 켜기**: 런슈즈를 `[merge_prep] projects`에 넣고 승인자 · squash · 알림 중계를 FOREMAN · 인프라처럼 켤지 | **사용자가 정할 것** — 조건(「300 일이 끝난 뒤」)은 11-12 300의 5-1 push로 찼다 | `log/runshoes_manager_20261112.md` |
 | **런슈즈 커밋 메시지 고치기 전 백업 지우기**: 태그 `archive/main-before-reword-20261112` · 로컬 ref `refs/backup/main-before-reword-20261112` | **사용자가 정할 것** — 정할 때까지 둔다 | `log/runshoes_manager_20261112.md` |
-| **squash 합친 커밋 제목**: 첫 커밋 제목을 그대로 써서, 여러 커밋을 뭉치면 제목이 일 전체를 말하지 못한다(11-12 시험 세션 316 — `697685e`) | **사용자가 정할 것** — 고칠지 | `log/approval_hell_plan_20261112.md` |
 
 ---
 
