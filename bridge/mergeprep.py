@@ -701,6 +701,19 @@ class MergePrep:
         return (f"⏳ 합치기 카드가 {self.cfg.remind_days}일째 사람 승인을 기다립니다 — {when} 뒤 관리자 머리 위에서 사라집니다"
                 f"(카드는 남음) · 세션 {c.sid} 「{c.title or ''}」")
 
+    def esc_expired_text(self, c: Card) -> str:
+        return (f"⏳ 합치기 카드 물음이 7일이 지나 관리자 머리 위에서 사라졌습니다 — 카드는 남아 있습니다 · 세션 {c.sid} "
+                f"「{c.title or ''}」 · 브리지가 꺼져 있던 동안 지났습니다")
+
+    def _esc_catchup(self, c: Card, eid: int) -> None:
+        """7일(ESC_KEEP)이 지나 머리 위에서 사라졌는데 5일째 알림을 못 받은 물음 — 브리지가 다시 떠서 보게 되면 한 번 알린다
+        (11-13 사용자). 열쇠는 5일째 알림과 같아 이미 보냈으면 _notify가 안 보낸다. 사람이 끈 것은 부르는 쪽이 걸러 둔다."""
+        if not self.cfg.remind_days or eid in self._reminded:
+            return
+        self._reminded.add(eid)
+        self._notify(c, f"mergeprep:remind:{eid}", self.esc_expired_text(c), later=False)
+        log.info("합치기 카드 %s — 물음 %s가 7일이 지나 사라졌다(이미 알렸으면 안 보냄)", c.sid, eid)
+
     def _esc_remind(self, c: Card, eid: int, at: datetime) -> None:
         """관리자 머리 위 합치기 물음이 remind_days째 떠 있으면 텔레그램 바로 한 번(묶음 아님). 열쇠는 그 물음 id —
         브리지를 다시 띄워도 한 번(_notify가 notification.rule을 본다). 사람이 끈 물음은 _esc_open에 없으니 알리지 않는다."""
@@ -737,6 +750,8 @@ class MergePrep:
                 if c.esc_id in offs:
                     c.esc_off_at, changed = _iso(offs[c.esc_id]), True
                     log.info("합치기 카드 %s — 사람이 관리자 머리 위 물음 %s를 껐다(다시 올리지 않음)", c.sid, c.esc_id)
+                elif c.esc_id:                              # 끈 것도 아닌데 떠 있지 않다 = 7일이 지나 사라졌다 — 못 받은 알림을 따라 보낸다
+                    self._esc_catchup(c, c.esc_id)
         for eid, (msid, _) in opened.items():               # 내리기 — 그 물음을 쥔 대기 카드가 없다
             if eid in held:
                 continue
