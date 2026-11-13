@@ -25,6 +25,13 @@
 | **321** | 11-13 11:3x | `operations` 23 · 112 / `10_office_design` 147 / `11_worktree` 142 — 합치기 카드 DB(`merge_card` 0032, 72시간, `4159f5d`). 6-1의 「6시간」 · 「메모리」 설명이 바뀜 |
 | **322** | 11-13 12:0x | `10_office_design` 147 · 148 · 149 · 151 · 152 · 156 / `11_foreman_dispatch` 107 · 130 · 132 · 140 · 141 / `11_worktree` 92 · 142 · 147 · 153 / `operations` 23 · 24 · 112 / `11_handoff` 20 — 사람 승인 카드는 관리자 머리 위 「사용자 답 기다림」(브리지가 escalate), `merge-prep docs_done`, 「관리자에게 보고함」이 이김(`b70018b`, `log/merge_wait_to_manager_20261113.md`). 6-1 「카드가 보이는 곳」 · 「합치기 기다림」 말풍선 설명이 바뀜 |
 
+**11-13 323(서기)이 위까지 맞춤(`1e8e4c9`).** 아래는 그 뒤 합친 것 — 다음 서기 몫:
+
+| 세션 | 알림 시각(KST) | 후보 |
+|---|---|---|
+| **325** | 11-13 12:2x | `11_worktree` 30 · 51 · 147 · 155 / `11_foreman_dispatch` 109 · 132 · 134 / `10_office_design` 153 / `11_handoff` 20 / `operations` 23 — 미리보기 살아 있음 확인(`/__foreman_preview`, 죽었으면 다시 띄움 · 「죽어 있습니다」, `691487e`, `log/preview_alive_20261113.md`). 실제로 바뀐 것은 `11_worktree` 미리보기 절 |
+| **324** | 11-13 12:3x | `operations` 23 · 95 · 115 · 116 / `10_office_design` 149 · 154 · 176 / `11_worktree` 135 · 142 / `11_handoff_v2` 79 / `style_guide` 106 — 사람이 끈 합치기 물음은 막대 숫자에서도 뺌 · 5일째 텔레그램(`remind_days`, `28911c6`, `log/merge_wait_off_remind_20261113.md`). 실제로 바뀐 것은 `11_worktree` 6-1 · `operations` 「5.」 표 |
+
 - 같은 글의 알림은 한 번만 셌다. 19:22 알림은 시각으로 286 합침과 가깝지만 확실하지 않다(`?`)
 
 ## 바뀐 파일로 본 판단(304 · 305 · 307 중심)
