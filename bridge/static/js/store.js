@@ -311,8 +311,11 @@ export class Store {
     if (m.op === 'open') {
       s.open_turn = { id: m.turn_id, origin: m.origin, started_at: m.ts, prompt: s.open_turn && s.open_turn.id === m.turn_id ? s.open_turn.prompt : null };
       s.replyPreview = null;
+      s.api_stop = null;                       // 11-13 새 턴이 시작되면 「API 오류로 멈춤」은 풀린다(서버 api_stops와 같은 기준)
     } else if (s.open_turn && s.open_turn.id === m.turn_id) {
       s.open_turn = null;
+      // 11-13 API 오류로 닫힌 턴 — 종류 · 까닭(api_stop)은 스냅샷에만 있어 곧바로 받는다(15초 주기를 기다리면 그동안 쉼으로 보인다)
+      if (m.reason === 'stop_failure') this.scheduleSnapshot();
       s.replyAt = Date.now();                  // 새 답이 왔다 — 머리말 프로젝트 줄이 "안 본 답" 점을 붙인다(11-05)
       this.pushFeed(s, m.ts, 'turn', `턴 끝 — ${m.reason}`);
       if (this.state.selected === s.id) this.convoLater(s.id);

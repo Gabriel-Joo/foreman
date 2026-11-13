@@ -138,6 +138,10 @@ async def merge_prep_act(sid: int, body: MergePrepIn, request: Request) -> JSONR
             r = await mp.approve(sid, by=by)
     except Refused as e:
         return _refused(e)
+    # 11-13 승인 막대 · 머리 위 말풍선은 대시보드 스냅샷(merge_waits, 서버 캐시 2초)에서 온다 — 화면이 응답 뒤 곧바로 다시 받을 때
+    # 캐시가 옛 값(카드 ready)이면 다음 주기(15초)까지 막대가 안 준다. 카드를 바꾸는 일은 모두 비운다
+    from bridge.api import dashboard
+    dashboard.invalidate()
     if body.action == "merge":
         from bridge.api import coder
         coder.invalidate()

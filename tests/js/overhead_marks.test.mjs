@@ -23,10 +23,10 @@ test('작업 세션이 관리자에게 넘긴 것 — 작게(quiet)', () => {
   assert.doesNotMatch(stateBadge({ state: 'IDLE', relayed: { kind: 'question' } }), /st-NEED/);
 });
 
-test('겹침 — 권한 거부 > 답 기다림 > 사용자 답 기다림 > 합치기 > 사용자에게 보고함 > 보고 옴 > 관리자에게 넘김', () => {
-  let s = { state: 'IDLE', denied: { tool: 'Bash' }, asks: {}, escalate: { question: { id: 1 }, report: { id: 2 } }, merge_wait: MW, report: { event_id: 3 }, relayed: { kind: 'report' } };
-  const order = ['권한 거부', '답 기다림', '사용자 답 기다림', '합치기 기다림', '사용자에게 보고함', '보고 옴', '관리자에게 보고함'];
-  const drop = [(x) => { delete x.denied; }, (x) => { delete x.asks; }, (x) => { x.escalate = { report: x.escalate.report }; },
+test('겹침 — 권한 거부 > API 오류로 멈춤 > 답 기다림 > 사용자 답 기다림 > 합치기 > 사용자에게 보고함 > 보고 옴 > 관리자에게 넘김', () => {
+  let s = { state: 'IDLE', denied: { tool: 'Bash' }, api_stop: { kind: 'server', label: '서버 오류' }, asks: {}, escalate: { question: { id: 1 }, report: { id: 2 } }, merge_wait: MW, report: { event_id: 3 }, relayed: { kind: 'report' } };
+  const order = ['권한 거부', 'API 오류로 멈춤', '답 기다림', '사용자 답 기다림', '합치기 기다림', '사용자에게 보고함', '보고 옴', '관리자에게 보고함'];
+  const drop = [(x) => { delete x.denied; }, (x) => { delete x.api_stop; }, (x) => { delete x.asks; }, (x) => { x.escalate = { report: x.escalate.report }; },
                 (x) => { delete x.merge_wait; }, (x) => { delete x.escalate; }, (x) => { delete x.report; }];
   for (let i = 0; i < order.length; i++) {
     assert.equal(needMark(s).text, order[i]);

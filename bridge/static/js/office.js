@@ -466,7 +466,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 패널 세션 목록의 "종료된 세션"에는 그대로 있다 — 거기서 골라 [새로 띄우기]. 멈춘 세션(SUSPENDED)은 그대로 보인다
       const shown = ss.filter((s) => !dormantGone(s, room.name));
       room.overflow = Math.max(0, shown.filter((s) => !mgrOf(s)).length - cap);
-      room.stats = { ACTIVE: 0, IDLE: 0, SUSPENDED: 0, DORMANT: 0, pending: 0, question: 0, denied: 0, asks: 0, userAsks: 0, subs: 0, tin: 0, tout: 0, opus_out: 0, all_out: 0 };
+      room.stats = { ACTIVE: 0, IDLE: 0, SUSPENDED: 0, DORMANT: 0, pending: 0, question: 0, denied: 0, apiStops: 0, asks: 0, userAsks: 0, subs: 0, tin: 0, tout: 0, opus_out: 0, all_out: 0 };
       let slot = 0;
       ss.forEach((s) => {
         // 기다림(IDLE + 자식 일)은 작업으로 센다 — 현장이 "쉼"으로 보이면 돌고 있는 일을 놓친다(11-06)
@@ -476,6 +476,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         room.stats.question += asking.get(s.id) || 0;
         // 11-09 사람이 해야 풀리는 대기(브리지 /api/dashboard denied · asks) — 쉼으로 세지 않고 따로
         if (s.state !== 'DORMANT' && s.denied) room.stats.denied += 1;          // 종료된 세션의 옛 물음은 세지 않는다
+        // 11-13 API 오류로 멈춤 — 서버 상태는 쉼이라 쉼으로도 세지만, 사람이 다시 보내야 풀리는 막힘이라 따로(머리 위 needMark와 같은 순서)
+        else if (s.state !== 'DORMANT' && s.api_stop) room.stats.apiStops += 1;
         else if (s.state !== 'DORMANT' && s.asks) room.stats.asks += 1;
         // 11-13 관리자가 사람에게 올린 물음은 「사용자 답 기다림」으로 따로 센다 — 섞으면 세션이 사람 답을 기다리는 것과 같아 보인다
         else if (s.state !== 'DORMANT' && s.escalate && s.escalate.question) room.stats.userAsks += 1;
@@ -2045,8 +2047,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 답 기다림 · 권한 거부(노랑) · 보고 옴(초록) — 세션 캐릭터 머리 위(11-11). 승인 대기 같은 테마 말풍선이 있으면 그것이 먼저
   const markOf = (a) => (a.kind === 'session' && a.s && !(a.act && a.act.bubble) ? needMark(a.s) : null);
   // 합치기 기다림은 보라 — 초록(보고)·노랑(답/거부/승인 대기)·빨강(실패)·파랑(대기 점 · +N)이 모두 쓰여 어느 테마 팔레트에도 없는 색을 고름
+  // 11-13 API 오류로 멈춤은 빨강(bad) — 멈춘 턴 빨간 「…」과 같은 색(둘 다 「멈췄다」), 글자로 갈린다
   const markColor = (m) => (m.tone === 'ok' ? (P.ok || P.act) : m.tone === 'merge' ? (P.merge || '#c9a7ff')
-    : m.tone === 'quiet' ? (P.muted || '#a9b4c4') : P.warn);
+    : m.tone === 'quiet' ? (P.muted || '#a9b4c4') : m.tone === 'bad' ? (P.bad || '#ff6b6b') : P.warn);
   const quietPx = () => tpx(10);                 // 11-13 「관리자에게 보고함」 · 「관리자 답 기다림」 — 사람 몫(12)보다 작게
   // 기다림 머리 위 — 뒤에서 도는 명령만 「| / - \」(돎). 서브에이전트는 작은 캐릭터로 이미 보여 그리지 않는다(11-13). 없으면 null
   function waitGlyph(s, now) {
@@ -2069,9 +2072,16 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
                    ...NAMES.filter((m) => m.key !== a.key).map((m) => toW(m.rect)),
                    // 11-11 먼저 놓인 다른 말풍선도 — 패널 넓게(화면 4 : 6)의 작은 [전체]에서 이웃 방 서기 둘의 「문서 할 일」이 겹쳤다
                    ...[...BUBBLES.entries()].filter(([k]) => k !== a.key).map(([, b]) => b.rect)];
+    // 11-13 화면(캔버스) 밖으로 나간 넓이도 겹침으로 센다 — 현장 1024x700 넓게에서 방 왼쪽 끝 코더의 「API 오류로 멈춤」이 왼쪽 자리로
+    // 가 캔버스 밖에서 잘렸는데(「로 멈춤」만 보임) 이름표와는 안 겹쳐 bubbleAudit도 0이었다. 이제 잘리면 다른 자리를 고르고, 다 잘리면 audit에 잡힌다
+    // 캐릭터 자신이 화면 안에 있을 때만 — 방 화면에서도 다른 방은 화면 밖에 그려져 그 말풍선은 어디에 두든 밖이다
+    const view = toW([0, 0, W, H]);
+    const seen = x >= view[0] && x <= view[0] + view[2] && top >= view[1] && feet <= view[1] + view[3];
     let best = null;
     for (const [bx, by] of spots) {
-      const r = [bx - w / 2, by - size - pad, w, h], cover = boxes.reduce((s, b) => s + areaOf(r, b), 0);
+      const r = [bx - w / 2, by - size - pad, w, h];
+      const out = seen ? w * h - areaOf(r, view) : 0;
+      const cover = boxes.reduce((s, b) => s + areaOf(r, b), 0) + (out > 0.5 ? out : 0);
       if (!best || cover < best.cover) best = { bx, by, r, cover };
       if (!cover) break;
     }
@@ -2566,7 +2576,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const st = r.stats || {}, pp = r.pipe;
     const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
     if (broke || (pp && pp.webhook_broken) || (pp && pp.watch && pp.watch.state === 'missing')) return 'fail';
-    if (st.pending || st.question || st.denied || st.asks || st.userAsks) return 'alert';
+    if (st.pending || st.question || st.denied || st.apiStops || st.asks || st.userAsks) return 'alert';
     if (st.ACTIVE) return 'busy';
     if ((st.IDLE || 0) + (st.SUSPENDED || 0) + (st.DORMANT || 0)) return 'idle';
     return 'empty';
@@ -2584,6 +2594,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (st.question) lines.push([`❓ 질문 ${st.question} — 패널에서 답합니다`, P.warn, 'bold 16px', true]);
     // 11-09 FOREMAN 승인 카드로 오지 않는 것 — 무엇을 어디서 해야 풀리는지 글에 넣는다
     if (st.denied) lines.push([`✋ 권한 거부 ${st.denied} — CC 자체 검사가 막았습니다. 그 세션에 허용하거나 다른 방법을 지시합니다`, P.warn, 'bold 16px', true]);
+    if (st.apiStops) lines.push([`⚠ API 오류로 멈춤 ${st.apiStops} — 그 세션에 다시 보내면 풀립니다(까닭은 머리 위 호버)`, P.bad, 'bold 16px', true]);
     if (st.asks) lines.push([`💬 답 기다림 ${st.asks} — 묻고 끝났습니다. 패널 입력 칸이나 터미널에서 답합니다`, P.warn, 'bold 16px', true]);
     // 11-13 사람 승인 합치기 카드도 관리자 머리 위 물음으로 센다 — 답은 관리자 패널, 합치기 카드는 말풍선을 눌러 [합치기]
     if (st.userAsks) lines.push([`💬 사용자 답 기다림 ${st.userAsks} — 관리자 패널에서 답하거나, 합치기 카드면 말풍선을 누릅니다`, P.warn, 'bold 16px', true]);
@@ -2673,6 +2684,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     else if (st.pending) state = [`멈춤 — 승인 대기 ${st.pending}`, P.warn, 'bold 16px'];
     else if (st.question) state = [`멈춤 — 질문 ${st.question}`, P.warn, 'bold 16px'];
     else if (st.denied) state = [`멈춤 — 권한 거부 ${st.denied}`, P.warn, 'bold 16px'];
+    else if (st.apiStops) state = [`멈춤 — API 오류 ${st.apiStops}`, P.bad, 'bold 16px'];
     else if (st.asks) state = [`멈춤 — 답 기다림 ${st.asks}`, P.warn, 'bold 16px'];
     else if (st.userAsks) state = [`멈춤 — 사용자 답 기다림 ${st.userAsks}`, P.warn, 'bold 16px'];
     else if (st.ACTIVE) state = [`작업 중 ${st.ACTIVE}`, P.act, '16px'];
@@ -2688,6 +2700,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       `작업 ${st.ACTIVE || 0} · 쉼 ${st.IDLE || 0}${st.SUSPENDED ? ' · 멈춰 둠 ' + st.SUSPENDED : ''}${st.subs ? ' · 서브에이전트 ' + st.subs : ''}${r.overflow ? ' · 책상 없음 +' + r.overflow : ''}`,
       ...(st.pending || st.question ? [`승인 대기 ${st.pending || 0} · 질문 ${st.question || 0} — 패널 카드에서 답합니다`] : []),
       ...(st.denied ? [`권한 거부 ${st.denied} — CC 자체 검사, 그 세션에 허용 · 다른 방법 지시`] : []),
+      ...(st.apiStops ? [`API 오류로 멈춤 ${st.apiStops} — 마지막 턴이 API 오류로 끝남, 그 세션에 다시 보내면 풀림`] : []),
       ...(st.asks ? [`답 기다림 ${st.asks} — 패널 입력 칸이나 터미널에서 답합니다`] : []),
       ...(st.userAsks ? [`사용자 답 기다림 ${st.userAsks} — 관리자 패널에서 답하거나, 합치기 카드면 말풍선을 누릅니다`] : []),
       ...(r.st_argocd === 'waiting' ? ['배포 대기 — ArgoCD에서 Sync를 눌러야 올라갑니다'] : []),

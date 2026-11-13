@@ -147,6 +147,9 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     note = { msg: `${label}…` }; draw();
     try { const r = await fn(); note = r && r.msg ? r : { ok: true, msg: `${label} — 마쳤습니다.` }; }
     catch (e) { note = { bad: true, msg: `${label} — ${e.message}` }; }
+    // 11-13 승인 · 버리기 등 뒤 사무실 스냅샷도 곧바로 — 승인 막대 「🔀 합치기 대기 N」 · 머리 위 말풍선은 스냅샷(merge_waits)에서 온다.
+    // 전엔 패널만 다시 받아 막대는 15초 주기(store.js RESNAP_MS)를 기다렸다 — 잰 값 2.0 · 3.1 · 13.2 · 11.2초(log/screen_api_error_bar_20261113.md)
+    store.scheduleSnapshot(0);
     await load();
   }
 

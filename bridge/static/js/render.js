@@ -54,9 +54,18 @@ export function humanNeed(s) {
     const who = s.denied.subagent ? '서브에이전트의 ' : '';
     return { label: '권한 거부', tip: `권한 거부 — CC 자체 권한 검사(auto mode)가 ${who}${s.denied.tool || '도구'}를 막았습니다${s.denied.reason ? '(' + s.denied.reason + ')' : ''}. FOREMAN 승인 카드로는 오지 않습니다. 그 세션에 허용 · 다른 방법을 지시하거나 settings에 허용 규칙을 넣어야 풀립니다.` };
   }
+  if (s.api_stop) return { label: 'API 오류로 멈춤', tip: apiStopTip(s.api_stop) };
   if (s.asks) return { label: '답 기다림', tip: '답 기다림 — 마지막 응답이 사람에게 묻고 끝났습니다. 패널 입력 칸이나 그 세션 터미널에서 답하면 풀립니다.' };
   if (s.escalate && s.escalate.question) return { label: '사용자 답 기다림', tip: ESC_TIP.question(s.escalate.question) };
   return null;
+}
+// 11-13 API 오류로 멈춤(브리지 dashboard.py api_stops) — 마지막 턴이 API 오류로 끝났고 새 턴이 없다. 서버 상태는 쉼(IDLE)이라
+// 따로 가르지 않으면 쉬는 세션과 똑같다(11-12 코더 311). 종류 · 할 일은 대화 패널 턴 끝 이름표와 같은 bridge/api_error.py
+export function apiStopTip(a) {
+  const named = a.label && a.label !== 'API 오류' ? a.label : '';     // 모르는 종류(unknown)는 「API 오류」 그대로
+  const kind = [named + (a.detail ? ` [${a.detail}]` : ''), a.reset ? `${a.reset}에 풀림` : ''].filter((x) => x.trim()).join(' · ');
+  return `API 오류로 멈춤 — 마지막 턴이 API 오류${kind ? `(${kind})` : ''}로 끝났고 그 뒤 새 입력이 없습니다. 할 일: ${a.action || '그 세션 터미널에서 오류 글을 보고 다시 보냅니다'}.`
+    + `${a.request_id ? ` (${a.request_id})` : ''} 다시 보내면 풀립니다. 30분 넘게 그대로면 텔레그램으로 한 번 더 알립니다.`;
 }
 // 11-13(사용자) — 사람이 볼 것은 관리자 머리 위에만. 관리자가 POST /api/sessions/{sid}/escalate로 올린 것만 뜬다
 const ESC_TIP = {
@@ -71,6 +80,9 @@ const ESC_TIP = {
 export function needMark(s) {
   if (!s || s.state === 'DORMANT') return null;
   if (s.denied) return { text: '권한 거부', tone: 'warn', tip: humanNeed(s).tip };
+  // 11-13 API 오류로 멈춤 — 세션이 막혔다는 뜻이라 권한 거부처럼 작업 세션에도 사람용으로, 빨강(bad). 권한 거부 다음(둘 다 막힘이고
+  // 권한 거부는 그 전부터 있던 순서), 답 기다림 위(묻는 말은 오류 전 응답일 수 있다 — 지금 막힌 것은 오류다)
+  if (s.api_stop) return { text: 'API 오류로 멈춤', tone: 'bad', tip: apiStopTip(s.api_stop) };
   if (s.asks) return { text: '답 기다림', tone: 'warn', tip: humanNeed(s).tip };
   const e = s.escalate || {};
   if (e.question) return { text: '사용자 답 기다림', tone: 'warn', tip: ESC_TIP.question(e.question), mergeSid: e.question.merge_sid ?? null };
