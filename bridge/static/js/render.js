@@ -60,7 +60,10 @@ export function humanNeed(s) {
 }
 // 11-13(사용자) — 사람이 볼 것은 관리자 머리 위에만. 관리자가 POST /api/sessions/{sid}/escalate로 올린 것만 뜬다
 const ESC_TIP = {
-  question: (e) => `사용자 답 기다림 — 관리자가 사람에게 물었습니다. 패널 입력 칸에 답하면 풀립니다.${e && e.text ? `\n${e.text}` : ''}`,
+  // 11-13 사람 승인 합치기 카드는 브리지가 관리자 머리 위로 올린다(merge_sid) — 답이 아니라 [합치기]를 눌러야 풀린다
+  question: (e) => (e && e.merge_sid != null
+    ? `사용자 답 기다림 — 세션 ${e.merge_sid}의 합치기 카드가 사람 승인을 기다립니다. 말풍선을 누르면 그 세션 패널의 「세션」 탭에서 합치거나 나중으로 미룹니다. 합치거나 미루면 사라집니다.${e.text ? `\n${e.text}` : ''}`
+    : `사용자 답 기다림 — 관리자가 사람에게 물었습니다. 패널 입력 칸에 답하면 풀립니다.${e && e.text ? `\n${e.text}` : ''}`),
   report: (e) => `사용자에게 보고함 —관리자가 사람에게 보고했습니다. 누르면 대화가 열리고, 읽으면 사라집니다.${e && e.text ? `\n${e.text}` : ''}`,
 };
 // 캐릭터 머리 위 말풍선(11-11 사용자 — 답 기다림 · 보고가 캐릭터에 안 보였다). 답 기다림은 노랑(warn), 보고 옴은 초록(ok)으로 갈라
@@ -70,19 +73,24 @@ export function needMark(s) {
   if (s.denied) return { text: '권한 거부', tone: 'warn', tip: humanNeed(s).tip };
   if (s.asks) return { text: '답 기다림', tone: 'warn', tip: humanNeed(s).tip };
   const e = s.escalate || {};
-  if (e.question) return { text: '사용자 답 기다림', tone: 'warn', tip: ESC_TIP.question(e.question) };
+  if (e.question) return { text: '사용자 답 기다림', tone: 'warn', tip: ESC_TIP.question(e.question), mergeSid: e.question.merge_sid ?? null };
   // 겹치면(11-11): 권한 거부 > 답 기다림 > 합치기 기다림 > 보고 옴. 앞의 둘은 세션이 막혀 있어 지금 사람 손이 먼저 필요하고,
   // 합치기는 사람이 눌러야 끝나는 일이라 읽기만 하면 되는 보고보다 위다(합치기 카드가 떠 있으면 그 응답은 보고이기도 하다)
-  if (s.merge_wait) return { text: '합치기 기다림', tone: 'merge', tip: '합치기 기다림 — 일을 마친 따로 작업의 합치기 카드가 승인을 기다립니다. 누르면 그 세션 패널의 「세션」 탭에서 합치거나 나중으로 미룹니다.' };
+  // 11-13(사용자): 관리자 머리 위로 올렸으면(to_manager) 여기에는 안 띄운다 — 관리자가 없거나 못 올렸을 때만 남는다
+  if (s.merge_wait && !s.merge_wait.to_manager) return { text: '합치기 기다림', tone: 'merge', tip: '합치기 기다림 — 일을 마친 따로 작업의 합치기 카드가 승인을 기다립니다. 누르면 그 세션 패널의 「세션」 탭에서 합치거나 나중으로 미룹니다.' + (s.merge_wait.esc_error ? ` 관리자 머리 위로 올리지 못해 여기 띄웠습니다(${s.merge_wait.esc_error}).` : ''), mergeSid: s.id };
   if (e.report) return { text: '사용자에게 보고함', tone: 'ok', tip: ESC_TIP.report(e.report) };
   if (s.report) return { text: '보고 옴', tone: 'ok', tip: '보고 옴 — 묻지 않고 일을 마친 응답이 왔습니다. 누르면 대화가 열리고, 읽으면 사라집니다.' };
-  // 11-13 작업 세션이 관리자에게 넘긴 것 — 사람 몫이 아니라 작게(quiet). 넘기지 못했으면 서버가 위 asks · report로 낸다
-  if (s.relayed) {
-    return s.relayed.kind === 'question'
-      ? { text: '관리자 답 기다림', tone: 'quiet', tip: '관리자 답 기다림 — 이 세션의 물음을 관리자에게 넘겼습니다. 관리자가 모아 사람에게 올립니다.' }
-      : { text: '관리자에게 보고함', tone: 'quiet', tip: '관리자에게 보고함 — 이 세션의 보고를 관리자에게 넘겼습니다. 사람은 읽지 않아도 됩니다.' };
-  }
-  return null;
+  return workerMark(s);
+}
+// 11-13 작업 세션이 관리자에게 넘긴 것 — 사람 몫이 아니라 작게(quiet). 넘기지 못했으면 서버가 위 asks · report로 낸다.
+// 11-13 사용자(관리자 318 전달): 「관리자 답 기다림」은 남긴다(코더가 관리자 답을 기다리느라 멈춰 있다). 같은 턴을 보고로도 · 물음으로도
+// 넘겼으면(kinds) 「관리자에게 보고함」이 이긴다 — 보고한 뒤에는 관리자가 답을 주든 말든 코더는 할 일이 없다
+function workerMark(s) {
+  if (!s.relayed) return null;
+  const kinds = s.relayed.kinds || [s.relayed.kind];
+  return !kinds.includes('report') && kinds.includes('question')
+    ? { text: '관리자 답 기다림', tone: 'quiet', tip: '관리자 답 기다림 — 이 세션의 물음을 관리자에게 넘겼습니다. 관리자가 모아 사람에게 올립니다.' }
+    : { text: '관리자에게 보고함', tone: 'quiet', tip: '관리자에게 보고함 — 이 세션의 보고를 관리자에게 넘겼습니다. 사람은 읽지 않아도 됩니다.' };
 }
 // 합치기 기다림 세션을 가장 오래된 카드부터(승인 막대 건수 · 누르면 열 세션)
 export function mergeWaits(sessions) {

@@ -97,7 +97,7 @@ async def handoff_view(sid: int, request: Request) -> dict[str, Any]:
 
 # ── 합치기 준비(11-11 1물결 A 「하나」 · 「넷」, bridge/mergeprep.py) ─────────────
 class MergePrepIn(BaseModel):
-    action: Literal["merge", "skip", "refresh"]
+    action: Literal["merge", "skip", "refresh", "docs_done"]   # docs_done(11-13) — 합친 카드의 정리 후보를 다 골랐다 → 카드를 치운다
     by: Literal["human", "manager"] = "human"   # 11-12 — 관리자 세션이 승인할 때 manager. 프로젝트 토큰이면 저절로 manager
 
 
@@ -129,6 +129,8 @@ async def merge_prep_act(sid: int, body: MergePrepIn, request: Request) -> JSONR
     try:
         if body.action == "skip":
             r = await mp.skip(sid, by=by)
+        elif body.action == "docs_done":
+            r = await mp.docs_done(sid, by=by)
         elif body.action == "refresh":
             await mp.check()
             r = {"ok": True, "card": mp.card_for(sid)}

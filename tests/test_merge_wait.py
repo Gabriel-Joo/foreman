@@ -16,7 +16,8 @@ def fake(cards, enabled=True):
 def test_only_ready_cards_wait():
     mp = fake([card(1, "ready"), card(2, "merging"), card(3, "merged"), card(4, "conflict_sent"), card(5, "failed")])
     assert set(merge_waits(mp)) == {1}
-    assert merge_waits(mp)[1] == {"since": "2026-11-11T10:00:00Z", "head8": "abcd1234", "files": 2, "asks": False}
+    assert merge_waits(mp)[1] == {"since": "2026-11-11T10:00:00Z", "head8": "abcd1234", "files": 2, "asks": False,
+                                  "to_manager": None, "esc_error": None}
 
 
 def test_asks_flag_and_off():

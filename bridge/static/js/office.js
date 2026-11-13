@@ -2585,7 +2585,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 11-09 FOREMAN 승인 카드로 오지 않는 것 — 무엇을 어디서 해야 풀리는지 글에 넣는다
     if (st.denied) lines.push([`✋ 권한 거부 ${st.denied} — CC 자체 검사가 막았습니다. 그 세션에 허용하거나 다른 방법을 지시합니다`, P.warn, 'bold 16px', true]);
     if (st.asks) lines.push([`💬 답 기다림 ${st.asks} — 묻고 끝났습니다. 패널 입력 칸이나 터미널에서 답합니다`, P.warn, 'bold 16px', true]);
-    if (st.userAsks) lines.push([`💬 사용자 답 기다림 ${st.userAsks} — 관리자가 사람에게 물었습니다. 관리자 패널 입력 칸에 답합니다`, P.warn, 'bold 16px', true]);
+    // 11-13 사람 승인 합치기 카드도 관리자 머리 위 물음으로 센다 — 답은 관리자 패널, 합치기 카드는 말풍선을 눌러 [합치기]
+    if (st.userAsks) lines.push([`💬 사용자 답 기다림 ${st.userAsks} — 관리자 패널에서 답하거나, 합치기 카드면 말풍선을 누릅니다`, P.warn, 'bold 16px', true]);
     if (r.name) lines.push(...schemaLines(r.name));                // 스키마 잠금(11-09)
     const pp = r.pipe;
     const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
@@ -2688,7 +2689,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       ...(st.pending || st.question ? [`승인 대기 ${st.pending || 0} · 질문 ${st.question || 0} — 패널 카드에서 답합니다`] : []),
       ...(st.denied ? [`권한 거부 ${st.denied} — CC 자체 검사, 그 세션에 허용 · 다른 방법 지시`] : []),
       ...(st.asks ? [`답 기다림 ${st.asks} — 패널 입력 칸이나 터미널에서 답합니다`] : []),
-      ...(st.userAsks ? [`사용자 답 기다림 ${st.userAsks} — 관리자가 사람에게 물었습니다. 관리자 패널 입력 칸에 답합니다`] : []),
+      ...(st.userAsks ? [`사용자 답 기다림 ${st.userAsks} — 관리자 패널에서 답하거나, 합치기 카드면 말풍선을 누릅니다`] : []),
       ...(r.st_argocd === 'waiting' ? ['배포 대기 — ArgoCD에서 Sync를 눌러야 올라갑니다'] : []),
       ...(pp && pp.webhook_broken ? ['빌드 알림 끊김 의심'] : []),
       ...(pp && pp.watch && pp.watch.state !== 'ok' ? [`빌드 알림 ${pp.watch.state === 'missing' ? '없음' : '늦음'}`] : []),
@@ -3228,6 +3229,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const room = [...world.rooms, world.lounge].find((q) => wx >= q.x * T && wx <= (q.x + q.w) * T && wy >= q.y * T && wy <= (q.y + q.h) * T);
       if (room) go(room.name || '_lounge');
       return;
+    }
+    // 11-13 합치기 카드 말풍선(관리자 머리 위 「사용자 답 기다림」 · 남은 「합치기 기다림」)을 누르면 그 카드의 세션 패널 「세션」 탭.
+    // 캐릭터를 누르면 지금처럼 그 세션(관리자) 대화가 열린다
+    for (const [k, b] of BUBBLES) {
+      const a = actors.get(k), mk = a && markOf(a);
+      if (!mk || mk.mergeSid == null || !b.rect) continue;
+      const [x, y, w, h] = b.rect;
+      if (wx >= x && wx <= x + w && wy >= y && wy <= y + h) { openSession(mk.mergeSid); panel.setOpen(true); panel.showTab('sess'); return; }
     }
     // 일하는 상주 코더의 말풍선(맡길 일)을 누르면 코더 목록(11-09) — 캐릭터를 누르면 세션이 열린다
     for (const [k, b] of BUBBLES) {
