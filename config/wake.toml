@@ -9,3 +9,12 @@ public_url = "https://foreman.ronanlab.dev"   # 텔레그램의 [시작] 링크(
 
 # 무엇을 실패로 보나 — 이름은 bridge/wake.py KINDS
 kinds = ["build_failed", "no_build", "webhook_broken", "infra_down", "ingest_stuck"]
+
+[note]
+# 교장 노트 「진행 중인 일」(11-13, bridge/foreman_note.py NoteRules, log/note_auto_retire_20261113.md).
+# 기계로 끝남을 못 가르는 줄을 「낡음 — 확인 필요」로 보이는 문턱(마지막 확인 뒤) — 표시만, 내리지 않는다.
+# 날수가 주 기준(FOREMAN 하루 커밋 60 ~ 110 · 펫퍼민트 나흘에 51처럼 프로젝트마다 열 배 달라서), 커밋은 넉넉히. 11-13 사용자: 설정 파일에 적어라
+stale_days = 3
+stale_commits = 150
+# 「관리자 띄우기」 줄을 첫 턴 끝에 기계로 내리는 길 — 11-13 사용자: 끈다. 대신 교장이 관리자 띄우기를 thread가 아니라 decision(「X 관리자가 있다」)으로 쓴다
+manager_spawn_done = false
