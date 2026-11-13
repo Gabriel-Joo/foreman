@@ -156,6 +156,13 @@ def same_text(a: str | None, b: str | None, min_words: int = 12, ratio: float = 
     return len(wa & wb) / len(wa | wb) >= ratio
 
 
+def without_spawner(rows: list[Any], dispatched: bool) -> list[Any]:
+    """11-13 — 교장 경로 · /api/spawn으로 띄운 세션(dispatched)의 첫 지시문은 띄운 관리자가 받은 글을 옮긴 것이다(11-12 311 ~ 309 헛경보).
+    dispatch에는 띄운 쪽 세션이 없다(dispatch.session_id는 띄워진 쪽) — 같은 프로젝트의 관리자 역할 세션(rows[i][5])을 띄운 쪽으로 보고 뺀다.
+    관리자가 아닌 다른 코더와는 그대로 맞댄다(진짜 겹침일 수 있다)."""
+    return [x for x in rows if x[5] != "manager"] if dispatched else rows
+
+
 def cross_message(prefix: str, sid: int, title: str, other: int, other_title: str, other_proj: str, at: datetime) -> str:
     return (f"{prefix} 📋 다른 프로젝트 — 세션 {sid}「{title}」에 방금 넣은 글이 {other_proj} 세션 {other}「{other_title}」에 "
             f"{kst_hm(at)}에 들어간 글과 거의 같습니다. 잘못된 창에 붙여 넣었을 수 있습니다.\n"
@@ -514,6 +521,13 @@ class OverlapWatch:
         rows = (await c.execute(q, {"cc": cc_session_id, "me": session_id, "reqs": reqs})).all()
         return {x for a, b in rows for x in (a, b) if x is not None and x != session_id}
 
+    @staticmethod
+    async def _dispatched(c: Any, session_id: int) -> bool:
+        """이 세션이 교장 계획 · /api/spawn · 옮기기(dispatch 기록)로 띄워진 것인가."""
+        return bool((await c.execute(text(
+            "SELECT 1 FROM dispatch WHERE session_id = :s UNION SELECT 1 FROM dispatch_session WHERE session_id = :s LIMIT 1"),
+            {"s": session_id})).first())
+
     async def _cross(self, c: Any, session_id: int, me: Any, prompt: str, ts: datetime, live: set[str]) -> dict[str, Any] | None:
         """다른 프로젝트의 살아 있는 세션이 최근(window_min) 받은 사람 글과 거의 같으면 알린다(11-08). 같은 프로젝트 겹침은
         드문 낱말 점수로 보지만, 이것은 "같은 글을 다른 창에 또 붙였다"를 잡는다 — 프로젝트를 건너 같은 일이 두 번 돈다."""
@@ -581,12 +595,13 @@ class OverlapWatch:
                 return cross
             rows = (await c.execute(text(
                 "SELECT t.session_id, t.prompt_text, t.started_at, cs.cc_session_id, "
-                "COALESCE(cs.custom_title, cs.title, LEFT(cs.cc_session_id, 8)) "
+                "COALESCE(cs.custom_title, cs.title, LEFT(cs.cc_session_id, 8)), cs.role "
                 "FROM turn t JOIN character_session cs ON cs.id = t.session_id JOIN `character` ch ON ch.id = cs.character_id "
                 "WHERE ch.project_id = :p AND t.session_id <> :me AND cs.hidden_at IS NULL AND cs.detached_at IS NULL "
                 "AND t.origin IN ('human', 'handoff_in') AND t.started_at >= :cut ORDER BY t.id DESC"),
                 {"p": me[0], "me": session_id, "cut": ts - timedelta(minutes=r.window_min)})).all()
             rows = [x for x in rows if x[3] in live and x[0] not in linked and not skip(x[1])]
+            rows = without_spawner(rows, bool(rows) and await self._dispatched(c, session_id))
             if not rows:
                 return None
             corpus = await self._get_corpus(c)
@@ -594,7 +609,7 @@ class OverlapWatch:
             edits = await edits_since(c, {x[0] for x in rows}, ts - timedelta(minutes=r.window_min))
         best: dict[int, dict[str, Any]] = {}
         seen: dict[int, int] = {}
-        for sid, ptxt, started, _cc, title in rows:
+        for sid, ptxt, started, _cc, title, _role in rows:
             if seen.get(sid, 0) >= r.per_session:
                 continue
             seen[sid] = seen.get(sid, 0) + 1

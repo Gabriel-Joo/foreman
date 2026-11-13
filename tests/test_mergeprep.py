@@ -163,6 +163,49 @@ def test_doc_candidates_ranks_by_evidence():
                                        ("log/coder_x_20261111.md", "없는 줄")]
 
 
+README3 = """### 나중에 할 일
+| 무엇 | 언제 | 근거 |
+|---|---|---|
+| **나중에 할 일 정리**: 895 줄 | 따로 | x |
+| **합치기 카드 README 정리 후보가 낱말만 보고 헛짚는다**: 943 | 따로 | x |
+| **화면 — 브리지를 다시 띄우면 합치기 카드의 「오래됨」 시각이 다시 잡힌다**: 카드가 메모리에서 | 따로 | x |
+| **docs 어긋남 맞추기**: operations 26 | 따로 | x |
+"""
+
+# 11-13 오늘 네 기록의 「README에서 뺄 줄」 절(줄 그대로) — 헛짚기 0이어야 하고, 진짜 둘은 잡혀야 한다
+LOGS_WRONG = {
+    "log/merge_wait_to_manager_20261113.md": "## README에서 뺄 줄\n- 없음(README 「나중에 할 일」에 이 일감 줄이 있으면: 「합치기 카드 정리 후보를 다 골랐다는 신호가 없다 — 시간이 지나야 치운다」 류)\n",
+    "log/merge_wait_off_remind_20261113.md": "## README에서 뺄 줄\n- README 「나중에 할 일」에 「사람이 끈 합치기 물음이 막대에 남음」 · 「7일 지나면 조용히 사라짐」 류의 줄이 있으면 뺀다(관리자가 확인)\n",
+    "log/docs_sync2_20261113.md": "## README에서 뺄 줄\n\n- 줄 번호로만: 없음(이번 일감에 대응하는 README 「나중에 할 일」 줄은 못 봤다 — 관리자가 확인)\n",
+}
+
+
+def _readme_hits(logs, readme=README3):
+    d = mp.doc_candidates(readme, "나중에 할 일", {}, ["log/x.md"], [], logs=logs)
+    return {x["line"]: x for x in d["readme"] if any("README에서 뺄 줄" in w for w in x["why"])}
+
+
+def test_drop_lines_do_not_match_section_name_or_substring():
+    """11-13 헛짚기 네 번 — 「나중에 할 일」(절 이름)이 「나중에 할 일 정리」 제목의 부분 문자열로 걸렸다."""
+    assert _readme_hits(LOGS_WRONG) == {}
+    assert _readme_hits({"log/a.md": "## README에서 뺄 줄\n- 「나중에 할 일」\n"}) == {}                  # 절 이름만
+    assert _readme_hits({"log/a.md": "## README에서 뺄 줄\n- 「나중에 할 일 정」 줄\n"}) == {}             # 제목의 앞부분도 아니다
+
+
+def test_drop_lines_match_whole_bold_title_or_line_number():
+    real_title = {"log/mergeprep_db_20261113.md": "## README에서 뺄 줄\n\n- 「브리지를 다시 띄우면 합치기 카드의 「오래됨」 시각이 다시 잡힌다」 — 카드가 DB에서 되살아난다\n"}
+    real_no = {"log/docs_sync_20261113.md": "## README에서 뺄 줄\n\n- `README.md` 「나중에 할 일」 941줄 **「docs 어긋남 맞추기」** — 이 기록으로 풀림\n"
+                                         "- 이 줄 밖에 새로 뺄 줄은 없다(321 「오래됨」 줄은 `ab9a286`에서 이미 지움)\n"}
+    assert set(_readme_hits(real_title)) == {6}                                      # 「화면 — 」 앞말 없이 적어도(뒤쪽 제목) 맞다
+    assert set(_readme_hits(real_no)) == {7}                                         # 줄 번호 941이 아니라 이 시험 README의 7줄로 다시 쓴다
+    assert set(_readme_hits({"log/a.md": "## README에서 뺄 줄\n- 「docs 어긋남 맞추기」\n"})) == {7}           # 굵은 제목 전체
+    assert set(_readme_hits({"log/a.md": "## README에서 뺄 줄\n- 「README 5줄」 · 「6」\n"})) == {5, 6}           # 줄 번호만
+    assert set(_readme_hits({"log/a.md": "## README에서 뺄 줄\n- 4줄\n"})) == {4}
+    # 이름이 아닌 것은 log_drop_lines에서 뺀다(줄 번호는 log_drop_numbers)
+    assert mp.log_drop_lines({"log/a.md": "## README에서 뺄 줄\n- 「README 941줄」 「941」\n"}) == []
+    assert mp.log_drop_numbers({"log/a.md": "## README에서 뺄 줄\n- 「README 941줄」 「942」 · 943줄\n"}) == [("log/a.md", 941), ("log/a.md", 942), ("log/a.md", 943)]
+
+
 def test_load_config(tmp_path):
     assert mp.load(tmp_path / "none.toml").enabled is False
     # 실제 config/handoff.toml 대신 시험용 파일을 읽는다(11-12 사용자 — 설정을 켜고 끌 때마다 시험이 깨지지 않게)

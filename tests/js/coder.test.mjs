@@ -1,7 +1,7 @@
 // 코더 상주(11-09) — 맡길 일 세기 · 머리 위 말풍선 · 받은 할 일 상태 호버 · 쉬게 한 날수
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { coderJobs, coderBubble, isCoder } from '../../bridge/static/js/coder.js';
+import { coderJobs, coderBubble, isCoder, emptyWorktrees } from '../../bridge/static/js/coder.js';
 import { stateTip } from '../../bridge/static/js/todoinbox.js';
 import { restDays } from '../../bridge/static/js/handoff.js';
 
@@ -52,6 +52,19 @@ test('받은 할 일 상태 호버 — 받는 사람마다', () => {
   assert.match(stateTip({ state: 'moved', label: '끝남', assignee: 'coder', taken_by: 5 }), /^끝남 — 세션 5이 이 일을 마쳤습니다/);
   assert.match(stateTip({ state: 'moved', label: '옮김', assignee: 'scribe' }), /README/);
   assert.match(stateTip({ state: 'new', label: '새로', assignee: 'coder' }), /코더를 누르면/);
+});
+
+test('빈 worktree(empty)는 맡길 일 · 말풍선에 세지 않고 치울 것으로 따로 — 어긋남은 그대로', () => {
+  const data = { drift: [
+    { kind: 'empty', session_id: 5, where: '/home/x/repo/.worktrees/foreman-4', detail: '빈 worktree foreman-4' },
+    { kind: 'dirty', session_id: 6, where: '/home/x/repo/.worktrees/foreman-5', detail: '세션 6이 끝났는데 커밋 안 된 변경이 2개 있습니다' },
+  ] };
+  const j = coderJobs('foreman', data, st());
+  assert.deepEqual(j.map((x) => [x.kind, x.sid]), [['drift', 6]]);
+  assert.equal(coderBubble(j), '맡길 일 1');
+  assert.deepEqual(emptyWorktrees(data).map((e) => [e.sid, e.name]), [[5, 'foreman-4']]);
+  assert.equal(coderBubble(coderJobs('foreman', { drift: [data.drift[0]] }, st())), null);      // 빈 worktree만 있으면 말풍선이 없다
+  assert.deepEqual(emptyWorktrees(null), []);
 });
 
 test('쉬게 한 날수', () => {
