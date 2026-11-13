@@ -1,0 +1,41 @@
+{
+ "title": "코더 여럿이 자리에서 나가고 돌아옴 — 걷는 길 점검",
+ "source": "script",
+ "note": "11-13 점검용(log/crew_merge_20261113.md). FOREMAN: 처음엔 코더 세션 셋이 끝난 채라 쉬는 코더 하나가 자리에. 2.5초에 셋이 한꺼번에 떠서 자리에서 0.6초씩 늦게 나가 책상으로, 10초에 둘이 끝나 책상에서 자리로 걸어가 닿으면 사라지고, 17초에 마지막이 끝나 쉬는 코더가 되어 자리로 돌아온다. window.office.walkLog()가 걷는 동안 겹침 · 가구 위를 모은다",
+ "snapshot": {
+  "generated_at": "@+0",
+  "projects": [
+   {"name": "runshoes", "label": "런슈즈", "sessions": []},
+   {"name": "petmint-rag-chatbot", "label": "펫퍼민트", "sessions": []},
+   {"name": "foreman", "label": "FOREMAN", "sessions": [
+    {"id": 981, "cc_session_id": "demo-0981", "short": "demo0981", "character": "코더", "project": "foreman", "title": "코더 — 화면 고침", "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10981, "proc": "S", "cc_status": "busy", "state": "DORMANT", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": null, "activity": {"tool": "Edit", "target": "", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": "@-1000"},
+    {"id": 982, "cc_session_id": "demo-0982", "short": "demo0982", "character": "코더", "project": "foreman", "title": "코더 — 시험", "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10982, "proc": "S", "cc_status": "busy", "state": "DORMANT", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": null, "activity": {"tool": "Bash", "target": "pytest -q", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": "@-1000"},
+    {"id": 983, "cc_session_id": "demo-0983", "short": "demo0983", "character": "코더", "project": "foreman", "title": "코더 — 조사", "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10983, "proc": "S", "cc_status": "busy", "state": "DORMANT", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": null, "activity": {"tool": "Read", "target": "", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": "@-1000"}
+   ]}
+  ],
+  "approvals": [],
+  "hidden_dormant": 0,
+  "terminal": {"enabled": false},
+  "ingest": null
+ },
+ "steps": [
+  {"at": 2500, "js": "window.office.walkWatch(); for (const id of [981, 982, 983]) { const s = store.state.sessions.get(id); s.state = 'ACTIVE'; s.detached_at = null; } store.touch('grid');"},
+  {"at": 10000, "js": "for (const id of [981, 982]) store.state.sessions.get(id).state = 'DORMANT'; store.touch('grid');"},
+  {"at": 17000, "js": "store.state.sessions.get(983).state = 'DORMANT'; store.touch('grid');"},
+  {"at": 24000, "end": true}
+ ],
+ "api": {
+  "/api/coder/todo": {"projects": {"runshoes": {"inbox": [], "rested": []}, "petmint-rag-chatbot": {"inbox": [], "rested": []},
+   "foreman": {"inbox": [{"id": 41, "body": "자리 말풍선 호버 글 다듬기", "created_at": "@-3600000"}], "rested": []}}},
+  "/api/scribe/todo": {"tasks": {}, "projects": {}}
+ }
+}

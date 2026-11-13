@@ -221,13 +221,7 @@ def test_visible_rows_reused_worktree_name():
     assert ended_info(done[258], None)["kind"] == "merged" and ended_info(None, old)["kind"] == "gone"
 
 
-def test_mark_crew():
-    """11-11(UI 불만 (가)) — 살아 있는 코더 중 번호가 가장 작은 것이 상주, 나머지 임시. 관리자는 manager, 끝난 세션은 없음."""
-    from bridge.api.dashboard import mark_crew
-    ss = [{"id": 244, "role": "manager", "state": "IDLE"}, {"id": 257, "role": "coder", "state": "DORMANT"},
-          {"id": 266, "role": "coder", "state": "ACTIVE"}, {"id": 267, "role": None, "state": "IDLE"},
-          {"id": 269, "role": "designer", "state": "ACTIVE"}]
-    mark_crew(ss, "foreman")
-    assert [x["crew"] for x in ss] == ["manager", None, "resident", "temp", None]
-    mark_crew(ss, None)
-    assert [x["crew"] for x in ss] == ["manager", None, None, None, None]
+def test_no_crew():
+    """11-13 사용자 — 코더 상주 · 임시 구분을 없앴다. 서버는 crew 값을 더 만들지 않는다(화면 배지도 역할만)."""
+    import bridge.api.dashboard as d
+    assert not hasattr(d, "mark_crew")

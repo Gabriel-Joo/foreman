@@ -97,7 +97,7 @@ export function createCoder(store) {
       return `<div class="sc-row" data-tip="${esc(WHY[j.kind] || '')}"><div class="small"><b>${head}</b></div><div class="hand-btns">${btn}</div></div>`;
     };
     const jobsHtml = jobs.length ? jobs.map(row).join('') : '<p class="small muted">맡길 일이 없습니다.</p>';
-    const liveHtml = live.length ? live.map((s, i) => `<div class="sc-row"><div class="small">${i ? '임시 · ' : '코더 · '}${esc(name(s))} <span class="muted">— ${s.state === 'ACTIVE' ? '작업 중' : '쉼'}</span></div>
+    const liveHtml = live.length ? live.map((s) => `<div class="sc-row"><div class="small">코더 · ${esc(name(s))} <span class="muted">— ${s.state === 'ACTIVE' ? '작업 중' : '쉼'}</span></div>
         <button type="button" class="small" data-cd-open="${s.id}" title="세션 열기 — 이 세션의 [세션] 탭을 엽니다.">세션 열기</button></div>`).join('')
       : '<p class="small muted">지금 도는 코더 세션이 없습니다. 코더는 자리에서 쉽니다.</p>';
     const empties = emptyWorktrees(roomData(room));
@@ -105,12 +105,12 @@ export function createCoder(store) {
       `<div class="sc-row" data-tip="${esc(WHY.empty)}"><div class="small"><b>${esc(e.title)}</b></div><div class="hand-btns">
         <button type="button" class="small" data-cd-open="${e.sid}" title="세션 열기 — 이 세션의 [세션] 탭을 엽니다.">세션 열기</button>
         <button type="button" class="small ghost" data-cd-clean="${e.sid}" data-cd-name="${esc(e.name)}" title="버리기 — 빈 worktree ${esc(e.name)}를 지웁니다. 잃는 커밋 · 변경은 없습니다.">버리기</button></div></div>`).join('')}</details>` : '';
-    return `<div class="small muted">${esc(label)} · 코더 — 이 방의 코딩 담당입니다. 새 일은 새 세션으로, 같은 일을 이어 할 때만 그 세션으로 합니다. 둘째 세션부터는 임시 일꾼이 맡고, 세션이 끝나면 사라집니다.</div>
+    return `<div class="small muted">${esc(label)} · 코더 — 이 방의 코딩 담당입니다. 새 일은 새 세션으로, 같은 일을 이어 할 때만 그 세션으로 합니다. 세션이 뜬 수만큼 코더가 자리에서 책상으로 가고, 끝나면 자리로 돌아갑니다.</div>
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}">${esc(note.msg)}</div>` : ''}
       <details class="hand"${keep(`coder:${room}:jobs`, true)}><summary title="맡길 일 — 코더에게 받은 할 일과, 브리지가 이미 아는 신호(쉬게 한 일 · 파이프라인 실패 · 빌드 알림 없음 · 승인 대기 · 권한 거부)입니다."><b>맡길 일 ${jobs.length}</b></summary>${jobsHtml}
         <div class="hand-btns"><button type="button" class="small ghost" data-cd-add="1" title="할 일 적기 — 받는 칸을 「코더에게」로 골라 엽니다.">＋ 할 일 적기</button></div></details>
       ${emptyHtml}
-      <details class="hand"${keep(`coder:${room}:live`, true)}><summary title="지금 일 — 이 방에서 도는 코더 세션입니다. 첫 세션은 상주 코더가, 둘째부터는 임시 일꾼이 맡습니다."><b>지금 일 ${live.length}</b></summary>${liveHtml}</details>`;
+      <details class="hand"${keep(`coder:${room}:live`, true)}><summary title="지금 일 — 이 방에서 도는 코더 세션입니다. 모두 같은 코더입니다."><b>지금 일 ${live.length}</b></summary>${liveHtml}</details>`;
   }
 
   async function onClick(ev, room, openSession, openTodo) {

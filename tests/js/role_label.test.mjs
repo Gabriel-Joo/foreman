@@ -62,11 +62,13 @@ test('아래 줄은 캐릭터 이름에서 역할을 뗀 나머지', () => {
   assert.equal(sessionSub({ role: 'coder' }), '');
 });
 
-// 11-11 UI 불만 (가) — 상주 · 임시가 글자로 바로 보인다(서버 crew)
-test('역할 배지에 상주 · 임시', () => {
-  assert.match(roleBadge({ role: 'coder', crew: 'resident' }), />코더 · 상주</);
-  assert.match(roleBadge({ role: 'coder', crew: 'temp' }), />코더 · 임시</);
-  assert.match(roleBadge({ role: 'manager', crew: 'manager' }), />관리자</);
-  assert.equal(panelRole({ kind: 'session' }, { role: 'coder', crew: 'temp' }).label, '코더 · 임시');
-  assert.match(panelRole({ kind: 'session' }, { role: 'coder', crew: 'temp' }).tip, /임시 일꾼 —/);
+// 11-13 사용자 — 코더 상주 · 임시 구분을 없앴다. 배지 · 호버는 역할만(옛 서버 값 crew가 남아 있어도 글자에 안 붙는다)
+test('역할 배지에 상주 · 임시 없음', () => {
+  assert.match(roleBadge({ role: 'coder', crew: 'resident' }), />코더</);
+  assert.match(roleBadge({ role: 'coder', crew: 'temp' }), />코더</);
+  assert.doesNotMatch(roleBadge({ role: 'coder', crew: 'temp' }), /상주|임시/);
+  assert.match(roleBadge({ role: 'manager' }), />관리자</);
+  const p = panelRole({ kind: 'session' }, { role: 'coder', crew: 'temp' });
+  assert.equal(p.label, '코더');
+  assert.doesNotMatch(p.tip, /상주|임시/);
 });

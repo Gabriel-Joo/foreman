@@ -113,5 +113,17 @@ export function pickStack(cands, tiers) {
   return best;
 }
 
+// 자리 말풍선의 주인(11-13 사용자 — 「맡길 일」 · 「문서 할 일」은 자리에 늘): 그 방에서 자리(x, y 타일) near칸 안에 멈춰 선 사람 중
+// 가장 가까운 사람. 걷는 사람 · 아직 안 나타난 사람(bornAt) · 서브에이전트(mini)는 주인이 아니다. 없으면 null(자리의 보이지 않는 몸 위에)
+export function seatHost(list, seat, near, now) {
+  let best = null, bd = near;
+  for (const a of list) {
+    if (a.room !== seat.room || a.kind === 'mini' || a.moving || (a.bornAt && now < a.bornAt)) continue;
+    const d = Math.hypot(a.x - seat.x, a.y - seat.y);
+    if (d < bd) { bd = d; best = a; }
+  }
+  return best;
+}
+
 // 덩어리 후보가 닿을 수 있는 칸(x ± half, base - up ~ base)에 걸친 것만 — 세상 전체의 몸 · 이름표 · 카드를 후보마다 훑지 않게
 export const nearBoxes = (boxes, x, half, base, up) => boxes.filter((b) => b[0] < x + half && b[0] + b[2] > x - half && b[1] < base + 1 && b[1] + b[3] > base - up);

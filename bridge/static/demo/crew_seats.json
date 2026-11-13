@@ -1,0 +1,55 @@
+{
+ "title": "코더 · 서기 자리 말풍선 — 코더 0 · 1 · 3명, 서기 세션 있음 · 없음",
+ "source": "script",
+ "note": "11-13 점검용(log/crew_merge_20261113.md). 상주 · 임시 구분 없음 — 모든 코더 세션이 같은 코더 그림. 「맡길 일」은 코더 자리, 「문서 할 일」 · 「정리할까요?」는 서기 자리에 늘. 런슈즈: 코더 0(쉬는 코더가 자리에 — 그 머리 위), 서기 세션이 서가(둘째 자리)에서 일함 → 서기 자리는 비어 보이지 않는 몸 위. 펫퍼민트: 코더 1(책상 — 코더 자리는 비어 보이지 않는 몸 위), 서기 세션 없음(서기실 서기 머리 위 「정리할까요?」). FOREMAN: 코더 3(모두 책상), 서기 세션이 쓰기 자리(첫 자리)에서 일함 → 그 세션 머리 위에 「문서 할 일」",
+ "snapshot": {
+  "generated_at": "@+0",
+  "projects": [
+   {"name": "runshoes", "label": "런슈즈", "sessions": [
+    {"id": 986, "cc_session_id": "demo-0986", "short": "demo0986", "character": "서기", "project": "runshoes", "title": "서기 — 문서 점검", "custom_title": null, "cc_name": null, "role": "scribe", "cwd": "/demo/runshoes", "pid": 10986, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": {"id": 9860, "origin": "human", "started_at": "@-30000", "prompt": "시연"}, "activity": {"tool": "Read", "target": "", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null}
+   ]},
+   {"name": "petmint-rag-chatbot", "label": "펫퍼민트", "sessions": [
+    {"id": 985, "cc_session_id": "demo-0985", "short": "demo0985", "character": "코더", "project": "petmint-rag-chatbot", "title": "코더 — 검색 카드", "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/petmint", "pid": 10985, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": {"id": 9850, "origin": "human", "started_at": "@-30000", "prompt": "시연"}, "activity": {"tool": "Edit", "target": "", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null}
+   ]},
+   {"name": "foreman", "label": "FOREMAN", "sessions": [
+    {"id": 981, "cc_session_id": "demo-0981", "short": "demo0981", "character": "코더", "project": "foreman", "title": "코더 — 화면 고침", "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10981, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": {"id": 9810, "origin": "human", "started_at": "@-30000", "prompt": "시연"}, "activity": {"tool": "Edit", "target": "", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null},
+    {"id": 982, "cc_session_id": "demo-0982", "short": "demo0982", "character": "코더", "project": "foreman", "title": "코더 — 시험", "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10982, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": {"id": 9820, "origin": "human", "started_at": "@-30000", "prompt": "시연"}, "activity": {"tool": "Bash", "target": "pytest -q", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null},
+    {"id": 983, "cc_session_id": "demo-0983", "short": "demo0983", "character": "코더", "project": "foreman", "title": "코더 — 조사", "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10983, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": {"id": 9830, "origin": "human", "started_at": "@-30000", "prompt": "시연"}, "activity": {"tool": "Read", "target": "", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null},
+    {"id": 984, "cc_session_id": "demo-0984", "short": "demo0984", "character": "서기", "project": "foreman", "title": "서기 — 정리", "custom_title": null, "cc_name": null, "role": "scribe", "cwd": "/demo/foreman", "pid": 10984, "proc": "S", "cc_status": "busy", "state": "ACTIVE", "stuck_turn": false, "injectable": true, "tmux_pane": null,
+     "open_turn": {"id": 9840, "origin": "human", "started_at": "@-30000", "prompt": "시연"}, "activity": {"tool": "Edit", "target": "", "ts": "@-1000", "subagent": false},
+     "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null}
+   ]}
+  ],
+  "approvals": [],
+  "hidden_dormant": 0,
+  "terminal": {"enabled": false},
+  "ingest": null
+ },
+ "steps": [{"at": 60000, "end": true}],
+ "api": {
+  "/api/coder/todo": {"projects": {
+   "runshoes": {"inbox": [], "rested": [{"session_id": 950, "title": "발볼 검증 화면", "project": "runshoes", "branch": "cc/runshoes-2", "rested_at": "@-172800000", "days": 2}]},
+   "petmint-rag-chatbot": {"inbox": [{"id": 31, "body": "검색 결과 카드 — 출처 링크가 잘린다. 한 줄로 접고 호버로 전체", "created_at": "@-3600000"}], "rested": []},
+   "foreman": {"inbox": [{"id": 41, "body": "자리 말풍선 호버 글 다듬기", "created_at": "@-3600000"}, {"id": 42, "body": "걷는 길 점검을 녹화에도", "created_at": "@-1800000"}], "rested": []}}},
+  "/api/scribe/todo": {"tasks": {}, "projects": {
+   "runshoes": {"items": [{"kind": "readme", "title": "README 로드맵 표가 낡음", "why": "마지막 커밋보다 오래됨"}], "open": [], "topics": [], "blocked": {}, "nudge": null},
+   "petmint-rag-chatbot": {"items": [{"kind": "later", "title": "받은 할 일 1개 — 가장 오래된 것 4일째", "why": "머리줄 [＋ 할 일]로 받은 글"}], "open": [], "topics": [], "blocked": {}, "nudge": {"n": 1, "days": 4, "why": "새로 1개 · 가장 오래된 것 4일째"}},
+   "foreman": {"items": [{"kind": "later", "title": "받은 할 일 3개", "why": "머리줄 [＋ 할 일]로 받은 글"}, {"kind": "readme", "title": "README 나중에 할 일 줄 정리", "why": "합친 일이 남아 있음"}], "open": [], "topics": [], "blocked": {}, "nudge": null}}}
+ }
+}

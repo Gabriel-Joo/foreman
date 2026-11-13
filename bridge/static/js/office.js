@@ -15,7 +15,7 @@ import { buildGrid, findPath, footprint, nearestFree, RES } from './walk.js';
 import { uiScale } from './uiscale.js';
 import { wrapWords } from './wrap.js';
 import { applyGrid, INFRA_STAGES, gridProblems } from './grid.js';
-import { STACK_GAP, column, stackCandidates, stackCover, pickStack, overTop, liftsOver, leapOver, nearBoxes } from './overhead.js';
+import { STACK_GAP, column, stackCandidates, stackCover, pickStack, overTop, liftsOver, leapOver, nearBoxes, seatHost } from './overhead.js';
 
 // 픽셀 화면 글씨(화면 좌표로 그리는 것 — 구역 · 캐릭터 이름표, 말풍선, 방 카드, 단계 이름) 배율(11-09 사용자:
 // "130%로 보는데 맨 윗줄 탭 글씨 정도면 좋겠다", [가+ · 가−]도 따라가게). 탭은 17px × 배율 — 이름표 14px × 배율 × 1.2가 그쯤.
@@ -109,9 +109,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const j = await r.json();
       scribeTodo.clear();
       for (const [k, v] of Object.entries(j.projects || {})) scribeTodo.set(k, v);
+      rebuild(store.state);          // 11-13 서기 자리 말풍선은 rebuild가 방에 싣는다 — 받자마자(다음 스냅샷을 기다리지 않게)
     } catch { /* 못 읽으면 배지만 안 뜬다 */ }
   }
-  loadScribeTodo();
+  // 11-13 코더 할 일(loadCoderTodo)처럼 0.4초 뒤 — 모듈을 읽자마자 부르면 시연(demo.js)이 fetch를 가로채기 전 · 토큰을 넣기 전이라
+  // 빈손으로 끝나고 1분 동안 서기 자리 말풍선이 없었다
+  setTimeout(loadScribeTodo, 400);
   setInterval(loadScribeTodo, 60000);
   // 코더 상주(11-09) — 방 → {inbox(코더에게 받은 할 일), rested(쉬게 한 일)}. 나머지 맡길 일은 store 값으로 센다(coder.js coderJobs)
   const coderTodo = new Map();
@@ -419,10 +422,16 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     return s ? [room.x + s[0], room.y + s[1]] : [room.x + Math.max(0.8, z.jenkins.x - 0.6), room.y + z.y + 2.3];
   }
 
-  // 코더 상주(11-09) — 상주 코더의 그림 · 색, 임시 일꾼의 비침(사용자 11-09 골랐다: 반투명 + "임시" 이름표)
-  const CODER_HUE = 205, TEMP_ALPHA = 0.6;
+  // 코더(11-09 상주 · 11-13 사용자 — 상주 · 임시 구분을 없앴다): 모든 코더 세션이 코더 그림 · 색. 자리(theme coder_home)에서 나가
+  // 책상으로 가고, 끝나면 자리로 걸어 돌아간다. 한꺼번에 여럿 나가거나 돌아가면 DEPART_GAP씩 늦게 — 같은 길에서 몸이 겹치지 않게
+  // (걷는 속도 SPEED 3.2칸/초 → 0.6초 = 앞사람과 두 칸쯤)
+  const CODER_HUE = 205, DEPART_GAP = 600;
   const coderChar = () => CH.coder || (CH.pool && CH.pool[0]) || null;
-  const coderLast = new Map();          // 방 → 상주 코더의 몸을 쓰던 세션 캐릭터 키(끝나면 그 자리에서 걸어 돌아오게)
+  // 코더 자리 · 서기 자리(월드 타일) — 자리 말풍선(맡길 일 · 문서 할 일)이 붙는 곳. 테마에 자리가 없으면 null
+  const coderSeatOf = (room) => (!room || room.lounge || !L.zones.coder_home || !L.zones.coder_home.seat ? null
+    : [room.x + L.zones.coder_home.seat[0], room.y + L.zones.coder_home.seat[1]]);
+  const scribeSeatOf = (room) => (!room || room.lounge || !L.zones.scribe || !L.zones.scribe.seats ? null
+    : [room.x + L.zones.scribe.seats[0][0], room.y + L.zones.scribe.seats[0][1]]);
 
   const DORMANT_SHOW_MS = 3 * 60000;
   function dormantGone(s, roomName) {
@@ -456,12 +465,13 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 디자이너(11-10 사용자)도 같은 규칙 — 자리만 작업 책상 옆(theme designer 구역, 코더 책상과 나란히 · 책상 5자리와 따로)
       const fixedN = {};
       const mgrOf = (s) => { const r = roleOf(s); return !room.lounge && FIXED_SEAT_ROLES.includes(r) && !!(L.zones[r] && L.zones[r].seats) ? r : null; };
-      // 코더 상주(11-09) — 방마다 코더가 늘 있다. 살아 있는 코더 세션 중 가장 먼저 뜬 것이 상주 코더의 몸을 쓰고(책상으로 걸어가 일하고
-      // 끝나면 자리로 돌아온다), 둘째부터는 임시 일꾼(반투명 · "임시" 이름표, 세션이 끝나면 사라진다). 끝난 코더 세션은 남기지 않는다
-      const homed = !room.lounge && !!(L.zones.coder_home && L.zones.coder_home.seat);
+      // 코더(11-09 상주 → 11-13 사용자 결정) — 방마다 코더가 늘 있다. 세션이 없으면 한 명이 자리에서 쉬고, 코더 세션이 뜨면 뜬 수만큼
+      // 자리에서 나가 책상으로 가고, 끝나면 자리로 걸어 돌아간다. 모두 같은 모양(코더 그림 · 색 — 전의 임시 일꾼 반투명 · 「임시」 없음).
+      // 끝난 코더 세션은 남기지 않는다
+      const homed = !!coderSeatOf(room);
       const coderOf = (s) => homed && isCoder({ role: roleOf(s) });
       const liveCoders = ss.filter((s) => coderOf(s) && s.state !== 'DORMANT');
-      const residentSid = liveCoders.length ? liveCoders[0].id : null;
+      let departN = 0;                 // 이번에 새로 나가는 코더 차례(DEPART_GAP씩 늦게)
       room.coders = liveCoders.length;
       // 끝난 세션(DORMANT)은 끝나고 3분 동안만 흐리게 자리에 남았다가 화면에서 사라진다(11-05 사용자 요청).
       // 패널 세션 목록의 "종료된 세션"에는 그대로 있다 — 거기서 골라 [새로 띄우기]. 멈춘 세션(SUSPENDED)은 그대로 보인다
@@ -491,7 +501,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
           if (m.family === 'opus') room.stats.opus_out += m.today_output || 0;
         }
         if (dormantGone(s, room.name)) return;
-        if (coderOf(s) && s.state === 'DORMANT') return;          // 코더 세션이 끝나면 상주 코더는 자리로, 임시 일꾼은 사라진다
+        if (coderOf(s) && s.state === 'DORMANT') return;          // 코더 세션이 끝나면 그 코더는 자리로 걸어 돌아간다(아래 leaving)
         const mgr = mgrOf(s);
         const k = mgr ? 0 : slot++;
         if (!mgr && k >= cap) return;
@@ -529,16 +539,19 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
           act = { ...act, anim: 'idle', handoff: true };
         }
         const key = 's:' + s.id;
-        const resident = s.id === residentSid, temp = coderOf(s) && !resident;
-        const char = resident ? coderChar() : CH.pool ? CH.pool[s.id % CH.pool.length] : null;
-        if (temp && act.alpha == null) act = { ...act, alpha: TEMP_ALPHA };
+        const coder = coderOf(s);
+        const char = coder ? coderChar() : CH.pool ? CH.pool[s.id % CH.pool.length] : null;
         const born = !actors.has(key);
-        upsert(key, { kind: 'session', room: room.name, tx, ty, face, act, desk, s, hue: resident ? CODER_HUE : hueOf(s.id), char, role: roleOf(s),
-                      name: s.custom_title || s.title || s.cc_name || ('세션 ' + s.id), resident, temp, coders: liveCoders.length });
-        // 상주 코더가 일을 받으면 자기 자리에서 책상으로 걸어간다(그 자리에서 나타나지 않게)
-        const home = actors.get('k:' + room.name);
-        if (born && resident && home) { const a = actors.get(key); a.x = home.x; a.y = home.y; }
-        if (resident) coderLast.set(room.name, key);
+        upsert(key, { kind: 'session', room: room.name, tx, ty, face, act, desk, s, hue: coder ? CODER_HUE : hueOf(s.id), char, role: roleOf(s),
+                      name: s.custom_title || s.title || s.cc_name || ('세션 ' + s.id), coder, coders: liveCoders.length });
+        // 코더가 일을 받으면 자리에서 책상으로 걸어간다(책상에서 나타나지 않게) — 첫 그리기(화면을 막 연 때)는 이미 책상에 있다.
+        // 둘째부터는 DEPART_GAP씩 늦게 자리에 나타난다(같은 자리에서 몸이 겹치지 않게)
+        if (born && coder && COURIER.primed) {
+          const a = actors.get(key), home = actors.get('k:' + room.name), p = coderSeatOf(room);
+          a.x = home ? home.x : p[0]; a.y = home ? home.y : p[1];
+          if (departN) a.bornAt = performance.now() + departN * DEPART_GAP;
+          departN++;
+        }
         seen.add(key);
         // 서브에이전트 — 부모의 축소판. 10명까지 보이고 나머지는 +N(10c). 새로 생기면 원탁방 마법진에서 소환, 끝나면 연기
         const n = s.subagents_running || 0;
@@ -578,24 +591,36 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
                          role: 'scribe', todo: scribeTodo.get(room.name) || null });
           seen.add(wkey);
         }
-        // 코더 상주(11-09) — 살아 있는 코더 세션이 없으면 자기 자리(theme coder_home)에서 그 테마의 쉬는 동작. 머리 위 "맡길 일 N"
+        // 서기 자리 말풍선(11-13 사용자) — 「문서 할 일 N」 · 「정리할까요?」는 서기 캐릭터가 아니라 서기 자리에 늘(서기 세션이 일해도)
+        room.scribeTodo = sz && sz.seats ? scribeTodo.get(room.name) || null : null;
+        // 코더(11-09 상주 → 11-13) — 살아 있는 코더 세션이 없으면 한 명이 자기 자리(theme coder_home)에서 그 테마의 쉬는 동작.
+        // 「맡길 일 N」은 이 코더가 아니라 코더 자리에 늘 붙는다(drawSeatCards — 방의 일이라 코더가 몇이든 · 자리에 아무도 없어도)
         if (homed) {
           const jobs = coderJobs(room.name, coderTodo.get(room.name) || null, st);
           room.coderJobs = jobs;
-          const ckey = 'k:' + room.name;
+          const ckey = 'k:' + room.name, z = L.zones.coder_home, p = z.seat, [hx, hy] = coderSeatOf(room);
+          const restAct = { anim: z.anim || 'idle', go: 'coder_home' };
+          // 방금 끝난(또는 사라진) 코더 세션 — 그 자리에서 코더 자리로 걸어 돌아간다
+          const leaving = [...actors.values()].filter((a) => a.kind === 'session' && a.coder && a.room === room.name && !seen.has(a.key))
+            .sort((a, b) => Math.hypot(a.x - hx, a.y - hy) - Math.hypot(b.x - hx, b.y - hy));
           if (!liveCoders.length) {
-            const z = L.zones.coder_home, p = z.seat, bornK = !actors.has(ckey);
-            upsert(ckey, { kind: 'coder', room: room.name, tx: room.x + p[0], ty: room.y + p[1], face: p[2] || 'down',
-                           act: { anim: z.anim || 'idle', go: 'coder_home' }, hue: CODER_HUE, name: '코더', char: coderChar(), role: 'coder', jobs });
-            // 방금 일을 마친 상주 코더 — 책상에서 자리로 걸어 돌아온다
-            const last = coderLast.get(room.name), la = last && actors.get(last);
-            if (bornK && la) { const a = actors.get(ckey); a.x = la.x; a.y = la.y; }
-            coderLast.delete(room.name);
+            const bornK = !actors.has(ckey);
+            upsert(ckey, { kind: 'coder', room: room.name, tx: hx, ty: hy, face: p[2] || 'down',
+                           act: restAct, hue: CODER_HUE, name: '코더', char: coderChar(), role: 'coder', jobs });
+            // 마지막 코더가 끝났으면 자리에 가장 가까운 사람이 쉬는 코더가 되어 걸어 돌아온다
+            if (bornK && leaving.length) { const a = actors.get(ckey), la = leaving.shift(); a.x = la.x; a.y = la.y; }
             seen.add(ckey);
-          } else {
-            const ra = actors.get('s:' + residentSid);
-            if (ra) ra.jobs = jobs;
           }
+          // 나머지는 자리로 걸어가서 닿으면 사라진다(frame — returning). 여럿이면 DEPART_GAP씩 늦게 떠난다
+          leaving.forEach((la, i) => {
+            const rk = 'r:' + la.key;
+            upsert(rk, { kind: 'coder', room: room.name, tx: hx, ty: hy, face: p[2] || 'down', act: restAct, hue: CODER_HUE, name: '코더',
+                         char: coderChar(), role: 'coder', jobs, returning: true });
+            const a = actors.get(rk);
+            a.x = la.x; a.y = la.y;
+            a.holdUntil = performance.now() + (i + (actors.has(ckey) && !liveCoders.length ? 1 : 0)) * DEPART_GAP;
+          });
+          for (const a of actors.values()) if (a.returning && a.room === room.name) { a.jobs = jobs; seen.add(a.key); }
         }
         // 출하 라인 — 단계 이름표의 상태는 배송 담당이 맡은 빌드(없으면 마지막 빌드) 것.
         // 단계마다 서 있던 Jenkins · Harbor · ArgoCD 캐릭터 대신 배송 담당 한 명이 돌아다닌다(11-05 사용자 요청)
@@ -703,7 +728,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   const puffs = [];
   function vanish(k) {
     const a = actors.get(k);
-    if (a && (a.kind === 'mini' || a.temp)) puffs.push({ x: a.x, y: a.y, t0: performance.now() });   // 임시 일꾼도 연기로(11-09)
+    if (a && a.kind === 'mini') puffs.push({ x: a.x, y: a.y, t0: performance.now() });   // (끝난 코더는 연기 대신 자리로 걸어 돌아간다 — 11-13)
     actors.delete(k);
   }
 
@@ -745,11 +770,50 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (a.room === '_hq') return null;
     return a.room == null ? world.lounge : world.rooms.find((r) => r.name === a.room);
   }
+  // 걷는 길 점검(11-13 — 코더가 여럿 자리에서 나가고 들어올 때). 지금 프레임에서
+  // ① 걷는 코더끼리 몸이 겹침(같은 방, 하나라도 걷는 중, 발 사이 WALK_NEAR칸 안) ② 걷는 코더가 가구 위(걷기 격자의 막힌 칸 —
+  // 떠난 자리 · 닿을 자리 반 칸 안은 빼고: 자리는 탁자에 붙어 있어 막힌 칸일 수 있다). walkWatch()를 부르면 프레임마다 모아 walkLog()로 본다
+  const WALK_NEAR = 0.7;
+  let WALK_LOG = null, WALK_OBST = null;
+  const walkObstacles = () => (WALK_OBST || (WALK_OBST = obstacles()));
+  function walkAudit() {
+    const out = [], now = performance.now();
+    const ws = [...actors.values()].filter((a) => (a.coder || a.kind === 'coder') && !(a.bornAt && now < a.bornAt));
+    for (let i = 0; i < ws.length; i++) for (let j = i + 1; j < ws.length; j++) {
+      const a = ws[i], b = ws[j];
+      if (a.room !== b.room || !(a.moving || b.moving)) continue;
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < WALK_NEAR) out.push({ kind: '걷는 코더끼리 겹침', a: a.key, b: b.key, d: +d.toFixed(2) });
+    }
+    for (const a of ws) {
+      const r = a.moving && GRID ? roomOf(a) : null;
+      if (!r) continue;
+      const near = (p) => p && Math.hypot(a.x - p[0], a.y - p[1]) < 0.5;
+      if (near(a.routeFrom) || near([a.tx, a.ty])) continue;
+      // 가구 칸은 걷기 격자와 같은 기준(가구 사각형의 0.1칸 안쪽 — walk.js buildGrid). 반 칸 격자로 재면 곧게 편 길이 가구 모서리를
+      // 0.02칸 스친 것까지 잡혔다(11-13 마법학교 긴 탁자 왼쪽 끝)
+      const lx = a.x - r.x, ly = a.y - r.y;
+      if (!r.lounge && walkObstacles().some(([x, y, w, h]) => lx > x + 0.1 && lx < x + w - 0.1 && ly > y + 0.1 && ly < y + h - 0.1)) {
+        out.push({ kind: '걷는 코더가 가구 위', a: a.key, at: [+lx.toFixed(2), +ly.toFixed(2)] });
+      }
+    }
+    return out;
+  }
+  function walkTick() {
+    if (!WALK_LOG) return;
+    WALK_LOG.frames += 1;
+    WALK_LOG.moving = Math.max(WALK_LOG.moving, [...actors.values()].filter((a) => (a.coder || a.kind === 'coder') && a.moving).length);
+    for (const p of walkAudit()) {
+      const k = p.kind + ':' + p.a + ':' + (p.b || '');
+      if (!WALK_LOG.seen.has(k)) { WALK_LOG.seen.add(k); WALK_LOG.issues.push(p); }
+    }
+  }
   // 목표가 바뀌면 길을 새로 찾는다(월드 좌표 점 목록). 작은 일꾼(서브에이전트)은 부모 둘레를 날아다녀 길을 찾지 않는다
   function routeOf(a) {
     const key = a.tx + ',' + a.ty;
     if (a.routeKey === key) return a.route;
     a.routeKey = key;
+    a.routeFrom = [a.x, a.y];
     const r = GRID && a.kind !== 'mini' ? roomOf(a) : null;
     if (!r) { a.route = [[a.tx, a.ty]]; return a.route; }
     const g = r.lounge ? GRID.lounge : GRID.room;
@@ -902,10 +966,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const k = Math.min(1, dt * 6);
     cam.x += (camT.x - cam.x) * k; cam.y += (camT.y - cam.y) * k; cam.s += (camT.s - cam.s) * k;
     for (const a of actors.values()) {
-      if (a.kind === 'mini') {
-        if (a.bornAt && now < a.bornAt) continue;              // 아직 소환 중 — 마법진 가운데서 기다린다
-        [a.tx, a.ty] = miniTarget(a, now);
-      }
+      if (a.bornAt && now < a.bornAt) continue;                // 아직 소환 중(마법진 가운데) · 차례를 기다리는 코더(자리) — 안 보이고 안 걷는다
+      if (a.holdUntil && now < a.holdUntil) { a.moving = false; a.phase += dt * 4; continue; }   // 자리로 돌아갈 차례를 기다린다(그 자리에 보인 채)
+      if (a.kind === 'mini') [a.tx, a.ty] = miniTarget(a, now);
       // 길(점 목록)의 다음 점으로 걷는다 — 점에 닿으면 다음 점, 남은 걸음은 이어서 쓴다
       const route = routeOf(a);
       let step = SPEED * dt * (a.kind === 'mini' ? 0.8 : 1);
@@ -918,7 +981,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         else { a.x += dx / d * step; a.y += dy / d * step; step = 0; }
       }
       a.phase += dt * (a.moving ? 10 : 4);
+      // 자리로 돌아가던 코더(11-13) — 자리에 닿으면 사라진다(자리에는 쉬는 코더 한 명만 남는다)
+      if (a.returning && !a.moving && Math.hypot(a.x - a.tx, a.y - a.ty) < 0.05) actors.delete(a.key);
     }
+    walkTick();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#15171c';
     ctx.fillRect(0, 0, W, H);
@@ -961,6 +1027,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       BUBBLES.clear();
       prepareStacks(list, now);
       for (const a of list) drawOverlay(a, now);
+      drawSeatStacks(now);
     } else {
       drawHQShapes(now);
       for (const r of world.rooms) drawRoom(r, now);
@@ -992,7 +1059,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       for (const a of list) if (a.room === '_hq') drawName(a);
     } else if (zoomedIn) {
       const room = roomByView();
-      if (room && !room.lounge) { drawZoneTags(room); if (SP) overTags(room, list, now); }
+      if (room && !room.lounge) { drawZoneTags(room); if (SP) overTags(room, list, now); seatHits(room); }
       const here = list.filter((a) => a.room === (view === '_lounge' ? null : view));
       markCrowd(here);
       for (const a of here) drawName(a);
@@ -2013,15 +2080,13 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function overheadCards(a, now) {
     const act = a.act || {};
     const texts = [], acts = [], tsz = todoPx() / cam.s;
-    if (a.kind === 'scribe' && scribeBubble(a)) texts.push(card('fill', scribeBubble(a), P.warn, tsz));   // 서기 — 할 일 N(누르면 목록), 쌓이면 "정리할까요?"
+    // 서기 「문서 할 일 N」 · 코더 「맡길 일 N」은 캐릭터가 아니라 자리에 붙는다(11-13 사용자 — seatCards). 자리에 사람이 서 있으면
+    // prepareStacks가 그 사람 덩어리의 글씨 카드 맨 위에 보탠다
     const mk = markOf(a);
     // 답 기다림 · 보고 옴(11-11) — 맡길 일보다 먼저. 방이 작은 [전체] 지도에서는 글 대신 머리 위 색 점(글은 이웃 몸 · 이름표를 덮었다)
     // 11-13 관리자에게 넘긴 것(quiet)은 작게 — 지도에서는 작은 회색 점, 방에서는 작은 글씨 · 흐린 색
     if (mk && view === 'map') texts.push(card('dot', '', markColor(mk), mk.tone === 'quiet' ? 1.5 : 2.5));
     else if (mk) texts.push(card('fill', mk.text, markColor(mk), (mk.tone === 'quiet' ? quietPx() : todoPx()) / cam.s));
-    else if (coderBubbleOf(a) && !(act.anim === 'wait' && !act.flag) && !act.bubble) {   // 코더 — 맡길 일 N · 합치기 기다림(누르면 목록)
-      texts.push(card('fill', coderBubbleOf(a), P.warn, tsz));
-    }
     if (a.kind === 'foreman' && a.fm && a.fm.pending.length) texts.push(card('fill', `시작할 일 ${a.fm.pending.length}`, P.warn, tsz));   // 교장 — [시작]을 기다리는 자동 제안
     if (a.kind === 'courier') {                                                  // 출하 대기 N(11-10 — 전엔 이름표 칸을 따로 골랐다. 호버는 drawZoneTags)
       const rm = world.rooms.find((q) => q.name === a.room), q = rm && rm.courier && rm.courier.queue;
@@ -2079,6 +2144,43 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const all = [...q.texts, ...q.acts].map((c) => sizeCard(c)), x = a.x * T;
       STACK_REQ.set(a.key, { ...q, spot: column(all, headOf(a) - STACK_GAP).map((r) => [x + r[0], r[1], r[2], r[3]]) });
     }
+    // 자리 말풍선(11-13 사용자) — 자리에 멈춰 선 사람이 있으면 그 사람 덩어리 글씨 카드의 맨 위(그 사람 표시 위)에 보태고, 없으면 자리의
+    // 보이지 않는 몸(SEAT_V) 머리 위에. 같은 쌓기 틀(placeStack · stackAudit)을 그대로 쓴다 — 머리 위 쌓기와 따로 놓여 서로 부딪치지 않게
+    SEAT_V.length = 0;
+    for (const c of seatCards()) {
+      // [전체] 지도는 방이 작아 글 대신 같은 색 점(머리 위 표시와 같은 규칙 — 글 카드는 자리에서 몇 칸씩 밀려 다른 자리 것처럼 보였다)
+      const sc = { ...(view === 'map' ? card('dot', '', P.warn, 2.5) : card('fill', c.text, P.warn, todoPx() / cam.s)), seat: c.seat };
+      const host = seatHost(list, c, SEAT_NEAR, now);
+      const owner = host || { key: `seat:${c.seat}:${c.room}`, kind: 'seat', seat: c.seat, room: c.room, x: c.x, y: c.y, drawH: seatH(), moving: false };
+      const q = STACK_REQ.get(owner.key) || { texts: [], acts: [] };
+      const texts = [...q.texts, sc], all = [...texts, ...q.acts].map((x) => sizeCard(x)), x = owner.x * T;
+      STACK_REQ.set(owner.key, { texts, acts: q.acts, spot: column(all, headOf(owner) - STACK_GAP).map((r) => [x + r[0], r[1], r[2], r[3]]) });
+      if (!host) SEAT_V.push(owner);
+    }
+  }
+  // 자리 말풍선 — 방의 일이라 그 자리에 늘(코더가 몇이든, 자리에 아무도 없어도, 서기 세션이 일해도). [{ seat, room, x, y(월드 타일), text }]
+  const SEAT_V = [], SEAT_NEAR = 0.5;
+  function seatCards() {
+    const out = [];
+    for (const r of world.rooms) {
+      const cs = coderSeatOf(r), ct = cs && coderBubble(r.coderJobs);
+      if (ct) out.push({ seat: 'coder', room: r.name, x: cs[0], y: cs[1], text: ct });
+      const ss = scribeSeatOf(r), st = ss && scribeText(r.scribeTodo);
+      if (st) out.push({ seat: 'scribe', room: r.name, x: ss[0], y: ss[1], text: st });
+    }
+    return out;
+  }
+  // 자리의 보이지 않는 몸 높이 — 코더 그림(쉬는 앞모습) 키. 사람이 앉거나 떠나도 말풍선 높이가 거의 같게
+  function seatH() {
+    const c = SP && SP.charFrame(coderChar(), 'idle', 'down', 0, null, null);
+    return c ? c.height : 24;
+  }
+  // 그리는 차례 — 사람 덩어리를 다 놓은 뒤(사람 표시가 먼저 자리를 잡고, 자리 말풍선은 그것을 피한다)
+  function drawSeatStacks(now) {
+    for (const v of SEAT_V) {
+      const q = STACK_REQ.get(v.key);
+      if (q) placeStack(v, v.x * T, v.y * T - v.drawH, q.texts, q.acts, now);
+    }
   }
 
   // 머리 위 표시 덩어리(11-13 — 전에는 placeBubble이 말풍선 하나씩 머리 위 → 오른쪽 → 왼쪽 → 발밑으로 비켰다).
@@ -2088,9 +2190,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 서기 "할 일 N"은 화면 px로 고정(11-06 — 월드 8px이 줌 2.5~3배로 20px 넘게 커져 다른 글씨보다 훨씬 컸다)
   const todoPx = () => tpx(12);                  // 11-10 방 안에서는 방 배율을 따른다(감독실은 글씨 배율)
   // 서기 말풍선(11-09) — 받은 할 일이 쌓이면(config/scribe.toml [nudge]) "정리할까요?" — 누르면 「나중에 할 일 정리」를 고른 창(세션은 사람이)
-  const scribeBubble = (a) => (a.todo && a.todo.nudge ? '정리할까요?' : a.todo && a.todo.items && a.todo.items.length ? `문서 할 일 ${a.todo.items.length}` : null);
-  // 코더 말풍선(11-09) — 쉬는 상주 코더, 또는 상주 코더의 몸을 쓰는 세션. 임시 일꾼에는 띄우지 않는다
-  const coderBubbleOf = (a) => ((a.kind === 'coder' || (a.kind === 'session' && a.resident)) ? coderBubble(a.jobs) : null);
+  const scribeText = (t) => (t && t.nudge ? '정리할까요?' : t && t.items && t.items.length ? `문서 할 일 ${t.items.length}` : null);
+  const scribeBubble = (a) => scribeText(a.todo);           // 도형 테마(시트 없는 그리기)의 서기만 — 시트 테마는 서기 자리(seatCards, 11-13)
+  // 코더 말풍선 — 도형 테마(시트 없는 그리기)의 쉬는 코더만. 시트 테마는 코더 자리에 붙는다(seatCards, 11-13)
+  const coderBubbleOf = (a) => (a.kind === 'coder' ? coderBubble(a.jobs) : null);
   // 답 기다림 · 권한 거부(노랑) · 보고 옴(초록) — 세션 캐릭터 머리 위(11-11). 승인 대기 같은 테마 말풍선이 있으면 그것이 먼저
   const markOf = (a) => (a.kind === 'session' && a.s && !(a.act && a.act.bubble) ? needMark(a.s) : null);
   // 합치기 기다림은 보라 — 초록(보고)·노랑(답/거부/승인 대기)·빨강(실패)·파랑(대기 점 · +N)이 모두 쓰여 어느 테마 팔레트에도 없는 색을 고름
@@ -2195,13 +2298,17 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       : Object.fromEntries(Object.entries(tiers).map(([n, f]) => [n, Math.round(f(cands[0].rects))]).filter(([, v]) => v > 0));
     const { texts: ts, acts: as } = sized(best.k), all = [...ts, ...as];
     all.forEach((c, i) => drawStackCard(c, best.rects[i], now));
-    const cards = all.map((c, i) => ({ text: c.text, kind: c.kind, layer: i < ts.length ? 'text' : 'act', rect: best.rects[i].map((v) => Math.round(v * 100) / 100) }));
+    const cards = all.map((c, i) => ({ text: c.text, kind: c.kind, layer: i < ts.length ? 'text' : 'act', rect: best.rects[i].map((v) => Math.round(v * 100) / 100),
+                                       ...(c.seat ? { seat: c.seat } : {}) }));   // seat = 자리 말풍선(coder · scribe — 누르기 · 호버)
     const main = cards.find((c) => c.layer === 'text') || cards[0];
     BUBBLES.set(a.key, { room: a.room, text: main.text, rect: main.rect, cards, shape: best.shape, k: best.k, dx: Math.round(best.dx), dy: best.dy, why,
-                         cover: Math.round(best.cover), corridor: Math.round(best.soft), over: Math.round(best.room), head: Math.round(head) });
+                         cover: Math.round(best.cover), corridor: Math.round(best.soft), over: Math.round(best.room), head: Math.round(head),
+                         ...(a.kind === 'seat' ? { virtual: true } : {}) });   // virtual = 자리에 아무도 없어 보이지 않는 몸 위에 놓은 자리 말풍선
   }
+  // 이번 프레임에 살아 있는 덩어리 — 캐릭터 것과 자리 말풍선(보이지 않는 몸, 11-13)
+  const liveBubble = (k, b) => actors.has(k) || !!(b && b.virtual);
   function bubbleAudit() {                       // 이름표 · 몸 · 다른 표시 · 화면 밖 · 위 칸을 덮은 덩어리 — tools/screen.py --eval 'window.office.bubbleAudit()'
-    return [...BUBBLES.entries()].filter(([k, b]) => b.cover > 0 && actors.has(k)).map(([key, b]) => ({ key, ...b }));
+    return [...BUBBLES.entries()].filter(([k, b]) => b.cover > 0 && liveBubble(k, b)).map(([key, b]) => ({ key, ...b }));
   }
   // 머리 위 표시 점검(11-13 사용자 — 「캐릭터 몸과 표시 겹침」). 지금 그린 그대로(월드 px):
   // ① 카드가 사람 몸(자기 몸 · 다른 사람)을 덮음 ② 카드 아래 끝이 자기 머리 위 끝보다 아래(= 머리 위가 아님)
@@ -2211,20 +2318,34 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 몸 칸은 보이는 부분(앞 탁자에 가려진 다리는 뺌 — visibleBodies)
     const bodies = [...BODIES.entries()].filter(([k]) => actors.has(k)).map(([k, { a, box }]) => ({ key: k, name: a.name || k, r: VIS_BODIES.get(k) || bodyBoxW(box) }));
     for (const [key, s] of BUBBLES) {
-      if (!actors.has(key) || !s.cards) continue;
+      if (!liveBubble(key, s) || !s.cards) continue;
       const own = BODIES.get(key);
+      // 자리 말풍선(보이지 않는 몸)은 그 몸의 머리 위 끝(s.head) 기준
+      const headTop = own ? own.box[1] : s.virtual ? s.head : null;
       for (const c of s.cards) {
         const label = c.text || c.kind;
         for (const b of bodies) {
           const px = areaOf(c.rect, b.r);
           if (px > 1) out.push({ key, kind: b.key === key ? '자기 몸 덮음' : '다른 몸 덮음', text: label, by: b.name, px: Math.round(px) });
         }
-        if (own && c.rect[1] + c.rect[3] > own.box[1] + 1) out.push({ key, kind: '머리 위 아님', text: label, bottom: c.rect[1] + c.rect[3], head: Math.round(own.box[1]) });
+        if (headTop != null && c.rect[1] + c.rect[3] > headTop + 1) out.push({ key, kind: '머리 위 아님', text: label, bottom: c.rect[1] + c.rect[3], head: Math.round(headTop) });
       }
       if (s.over > 1) out.push({ key, kind: '위 방으로 넘침', text: s.text, px: s.over });
       const tb = s.cards.filter((c) => c.layer === 'text'), ab = s.cards.filter((c) => c.layer === 'act');
       if (tb.length && ab.length && Math.min(...ab.map((c) => c.rect[1] + c.rect[3])) > Math.max(...tb.map((c) => c.rect[1] + c.rect[3])) + 1) {
         out.push({ key, kind: '쌓는 차례', text: s.text });
+      }
+    }
+    // ⑤ 자리 말풍선(11-13) — 띄울 것이 있는 자리마다 이번 프레임에 그 카드가 실제로 놓였나(코더 0 · 1 · 3명, 서기 세션 있음 · 없음 모두)
+    //    · 그 카드가 자리에서 멀리 떠나지 않았나(자리 가운데에서 가로 3칸 · 위로 몸 키 4배 안 — 누구 자리 것인지 헷갈리지 않게)
+    const placed = [...BUBBLES.values()].flatMap((b) => (b.cards || []).filter((c) => c.seat).map((c) => ({ ...c, room: b.room })));
+    for (const c of SP ? seatCards() : []) {                // 도형 테마는 이 틀 밖(캐릭터 말풍선 그대로)
+      const got = placed.find((p) => p.seat === c.seat && p.room === c.room);
+      const key = `seat:${c.seat}:${c.room}`;
+      if (!got) { out.push({ key, kind: '자리 말풍선 없음', text: c.text }); continue; }
+      const cx = got.rect[0] + got.rect[2] / 2, bottom = got.rect[1] + got.rect[3];
+      if (Math.abs(cx - c.x * T) > 3 * T || bottom > c.y * T || c.y * T - bottom > 4 * seatH() + T) {
+        out.push({ key, kind: '자리 말풍선이 자리에서 멂', text: c.text, dx: Math.round(cx - c.x * T), up: Math.round(c.y * T - bottom) });
       }
     }
     return out;
@@ -2441,11 +2562,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 붐비는 사람(11-06) — 발밑 기본 자리끼리 겹치면 둘 다 이름의 끝부분만 쓴다(「서기 — 포트폴리오 쓰기: 포먼 디스패처」 → 「포먼 디스패처」).
   // 먼저 그린 사람이 긴 이름으로 자리를 다 차지해 둘째가 갈 데가 없었다(오피스 1024 필사실)
   const nameTail = (s) => { const m = String(s || '').split(/:\s|\s—\s/); return m[m.length - 1] || s; };
-  // 세션 캐릭터 · 쉬는 상주 코더 · 서기의 이름표는 역할만(11-09 사용자 — 제목이 들어가 "임시 · 세션 역할 관리자(man…"처럼 잘렸다).
-  // 제목 · 세션 번호는 호버와 패널 머리줄에. 임시 일꾼이면 "임시"만 덧붙인다
+  // 세션 캐릭터 · 쉬는 코더 · 서기의 이름표는 역할만(11-09 사용자 — 제목이 들어가 "임시 · 세션 역할 관리자(man…"처럼 잘렸다).
+  // 제목 · 세션 번호는 호버와 패널 머리줄에. 11-13 상주 · 임시 구분을 없애 「임시」 꼬리 · 점선 테두리도 없다
   const roleNamed = (a) => a.kind === 'session' || a.kind === 'coder' || a.kind === 'scribe';
   // 11-11 사용자: 대괄호 [ ]는 뺀다 — 이름은 노란 글씨(NAME_INK)라 이미 눈에 띈다. 패널 · 호버의 「[코더] 세션 N」은 그대로(roleTag)
-  const roleName = (a) => roleTag(a.role).replace(/^\[|\]$/g, '') + (a.temp ? ' 임시' : '');
+  const roleName = (a) => roleTag(a.role).replace(/^\[|\]$/g, '');
   function markCrowd(as) {
     ctx.font = `${tpx(15)}px system-ui, sans-serif`;
     const bx = as.filter((a) => !(a.kind === 'mini' && a.key !== selected)).map((a) => {
@@ -2462,7 +2583,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const [sx, sy] = toScreen(a.x * T, a.y * T);
     // 끝난 세션(DORMANT)과 멈춘 세션(SUSPENDED)이 그림만으로는 헷갈렸다(11-05) — 이름 뒤에 글로 붙인다
     const suffix = a.kind === 'session' && a.s ? ({ DORMANT: ' · 끝남', SUSPENDED: ' · 멈춤' }[a.s.state] || '') : '';
-    const text = roleNamed(a) ? roleName(a) + suffix : short(a.name, 30) + suffix;   // 임시 일꾼은 테두리도 점선(11-09)
+    const text = roleNamed(a) ? roleName(a) + suffix : short(a.name, 30) + suffix;
     // 11-06 글씨 키움(11 → 15px, 두 번) — 줄 높이 NH, 줄 사이 1px
     const NH = tpx(15) + 3;                                  // 11-10 방 안은 방 배율(배율 3에서 15px · 18), 감독실은 글씨 배율
     ctx.font = `${tpx(15)}px system-ui, sans-serif`;
@@ -2483,7 +2604,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const bodyList = bodyRects(), bodies = bodyList.map((b) => b.r);
     const ownR = (bodyList.find((b) => b.key === a.key) || {}).r || null;
     const others = [...HITS.filter((h) => !h.soft).map((h) => [h.x, h.y, h.w, h.h]), ...NAMES.map((m) => m.rect), ...bodies,
-                    ...[...BUBBLES.entries()].filter(([k]) => actors.has(k)).flatMap(([, b]) => cardRects(b).map(toScr))];   // soft = 호버만(그림 위 넓은 칸)
+                    ...[...BUBBLES.entries()].filter(([k, b]) => liveBubble(k, b)).flatMap(([, b]) => cardRects(b).map(toScr))];   // soft = 호버만(그림 위 넓은 칸)
     const place = (ls) => {
       const ws = ls.map(([t]) => ctx.measureText(t).width + 6), mw = Math.max(...ws), bh = ls.length * (NH + 1) - 1;
       const cover = (cx, top) => others.reduce((s, o) => s + areaOf([cx - mw / 2, top, mw, bh], o), 0);
@@ -2524,10 +2645,6 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     best.ls.forEach(([t, col], i) => {
       const y = best.top + i * (NH + 1);
       ctx.fillStyle = INK_BG; ctx.fillRect(best.cx - ws[i] / 2, y, ws[i], NH);
-      if (a.temp && i === 0) {                                   // 임시 일꾼 — 점선 테두리(11-09)
-        ctx.save(); ctx.setLineDash([3, 2]); ctx.strokeStyle = P.label; ctx.lineWidth = 1;
-        ctx.strokeRect(Math.round(best.cx - ws[i] / 2) + 0.5, y + 0.5, Math.round(ws[i]) - 1, NH - 1); ctx.restore();
-      }
       ctx.fillStyle = col; ctx.fillText(t, best.cx, y + 1);
     });
     NAMES.push({ key: a.key, name: best.ls[0][0], rect: [best.cx - mw / 2, best.top, mw, bh].map(Math.round), cover: Math.round(best.c) });
@@ -2678,7 +2795,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function labelAudit() {
     const out = [];
     // 11-13 머리 위 덩어리의 카드 하나하나(글씨 · 동작) — 전에는 글씨 말풍선 하나만 재서 동작 카드가 깔려도 몰랐다
-    const bub = [...BUBBLES.entries()].filter(([k]) => actors.has(k))
+    const bub = [...BUBBLES.entries()].filter(([k, b]) => liveBubble(k, b))
       .flatMap(([, b]) => (b.cards || [{ text: b.text, rect: b.rect }]).map((c) => ({ kind: '말풍선', text: c.text || c.kind, r: toScr(c.rect) })));
     const labels = [...LABELS.map((l) => ({ kind: l.zone ? '구역 이름표' : '이름표', text: l.text, r: l.rect })),
                     ...NAMES.map((m) => ({ kind: '캐릭터 이름표', text: m.name, r: m.rect })), ...bub];
@@ -3392,12 +3509,21 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const [x, y, w, h] = b.rect;
       if (wx >= x && wx <= x + w && wy >= y && wy <= y + h) { openSession(mk.mergeSid); panel.setOpen(true); panel.showTab('sess'); return; }
     }
-    // 일하는 상주 코더의 말풍선(맡길 일)을 누르면 코더 목록(11-09) — 캐릭터를 누르면 세션이 열린다
+    // 자리 말풍선(11-13) — 코더 자리 「맡길 일」은 코더 목록, 서기 자리 「문서 할 일」 · 「정리할까요?」는 서기실 창.
+    // 자리에 선 캐릭터를 누르면 지금처럼 그 캐릭터(세션이면 대화)
     for (const [k, b] of BUBBLES) {
-      const a = actors.get(k);
-      if (!a || !a.resident || !b.rect) continue;
-      const [x, y, w, h] = b.rect;
-      if (wx >= x && wx <= x + w && wy >= y && wy <= y + h) { panel.show({ kind: 'coder', room: a.room }); return; }
+      if (!liveBubble(k, b)) continue;
+      for (const c of b.cards || []) {
+        if (!c.seat) continue;
+        const [x, y, w, h] = c.rect;
+        if (!(wx >= x && wx <= x + w && wy >= y && wy <= y + h)) continue;
+        if (c.seat === 'coder') panel.show({ kind: 'coder', room: b.room });
+        else {
+          const rm = world.rooms.find((q) => q.name === b.room), t = rm && rm.scribeTodo;
+          panel.show({ kind: 'scribe', room: b.room, pick: t && t.nudge ? 'later' : null });
+        }
+        return;
+      }
     }
     let best = null, bd = 1.4 * T;
     for (const [k, a] of actors) {
@@ -3418,6 +3544,22 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
     return best;
   }
+  // 자리 말풍선 호버(11-13) — 그 자리의 일이라는 것 · 무엇이 있는지 · 누르면 무엇이 열리는지
+  function seatHits(room) {
+    for (const [k, b] of BUBBLES) {
+      if (b.room !== room.name || !liveBubble(k, b)) continue;
+      for (const c of b.cards || []) {
+        if (!c.seat) continue;
+        const [x, y, w, h] = toScr(c.rect), t = room.scribeTodo;
+        const tip = c.seat === 'coder'
+          ? `<div class="tip-h">맡길 일 — 코더 자리</div><div class="tip-b">이 방 코더에게 맡길 일입니다. 코더가 몇이든, 자리에 아무도 없어도 자리에 늘 뜹니다.</div>${coderJobsTip(room.coderJobs)}<div class="tip-t">누르면 맡길 일 목록이 열립니다.</div>`
+          : `<div class="tip-h">${t && t.nudge ? '정리할까요? — 서기 자리' : '문서 할 일 — 서기 자리'}</div><div class="tip-b">이 방 서기에게 맡길 문서 일입니다. 서기 세션이 일하는 동안에도 자리에 늘 뜹니다.</div>${
+            t && t.nudge ? `<div class="tip-s">서기 몫 받은 할 일이 쌓였습니다(${esc(t.nudge.why)}). 누르면 「나중에 할 일 정리」를 고른 창이 열립니다. [시키기]를 눌러야 세션이 뜹니다.</div>` : ''}${
+            t && t.items && t.items.length ? `<div>문서 할 일 ${t.items.length} — README가 낡은 것처럼 브리지가 찾은 문서 정리 거리입니다.${t.items.slice(0, 3).map((q) => `<div class="tip-s">· ${esc(q.title)}</div>`).join('')}</div>` : ''}<div class="tip-t">누르면 일을 고르는 창이 열립니다.</div>`;
+        HITS.push({ x, y, w, h, soft: true, tip });
+      }
+    }
+  }
   // 코더 맡길 일 호버 줄(11-09) — 몇 개 · 앞의 셋
   function coderJobsTip(jobs) {
     if (!jobs || !jobs.length) return '';
@@ -3437,11 +3579,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const s = a.s;
       const now = s.state === 'ACTIVE' ? (s.activity ? `${esc(s.activity.tool)} ${softEsc(short(s.activity.target || '', 70))}` : '생각 중') : '';
       const vs = viewState(s), bg = s.background || [];
-      // 코더 상주(11-09) — 상주 코더의 몸을 쓰는 세션은 "코더 · 일 N", 임시 일꾼은 어느 세션 · 무슨 일인지
-      const who = a.resident ? `<div class="tip-s">코더 · 일 ${a.coders || 1} — 이 방 코더가 맡은 세션입니다.${a.coders > 1 ? ` 나머지 ${a.coders - 1}개는 임시 일꾼이 합니다.` : ''}</div>${coderJobsTip(a.jobs)}${a.jobs && a.jobs.length ? '<div class="tip-t">머리 위 말풍선을 누르면 맡길 일 목록이 열립니다.</div>' : ''}`
-        : a.temp ? `<div class="tip-s">임시 일꾼 — 이 방에 코더 세션이 둘 이상이라 세션 ${s.id}을 맡았습니다. 세션이 끝나면 사라집니다.</div>` : '';
+      // 코더(11-13 — 상주 · 임시 구분 없음): 이 방에서 일하는 코더 수 · 끝나면 자리로. 맡길 일은 코더 자리 말풍선에
+      const who = a.coder ? `<div class="tip-s">코더 · 일 ${a.coders || 1} — 이 방에서 일하는 코더 세션입니다. 끝나면 코더 자리로 걸어 돌아갑니다. 맡길 일은 코더 자리 말풍선에 있습니다.</div>` : '';
       // 11-09 사용자 — 이름표는 역할만이라 호버 첫 줄에 역할 · 세션 번호 · 제목("237 합쳐라"를 듣고 어느 세션인지 찾게)
-      return `<div class="tip-h">${esc(roleTag(roleOf(s)))} 세션 ${s.id}${a.temp ? ' · 임시' : ''}</div><div class="tip-b">${esc(a.name)}</div>${who}<div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', WAITING: '기다리는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[vs] || vs)}${
+      return `<div class="tip-h">${esc(roleTag(roleOf(s)))} 세션 ${s.id}</div><div class="tip-b">${esc(a.name)}</div>${who}<div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', WAITING: '기다리는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[vs] || vs)}${
         a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
         s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎${vs === 'WAITING' ? ' — 둘레의 작은 캐릭터' : ''}${(s.subagent_descs || []).map((d) => `<div class="tip-s">· ${esc(short(d, 50))}</div>`).join('')}</div>` : ''}${
         bg.length ? `<div>뒤에서 도는 일 ${bg.length}개(백그라운드 명령)${vs === 'WAITING' ? ' — 머리 위 어두운 상자의 도는 막대 「|」' : ''}${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}</div>`).join('')}</div>` : ''}${
@@ -3476,7 +3617,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         <div class="tip-t">누르면 일을 고르는 창이 열립니다.</div>`;
     }
     if (a.kind === 'coder') {
-      return `<div class="tip-h">코더</div><div class="tip-b">코딩 담당 — 지금은 세션이 없어 자리에서 쉽니다. 코더 세션이 뜨면 책상으로 가서 일합니다.</div>${coderJobsTip(a.jobs)}
+      const now_ = a.returning ? '일을 마치고 코더 자리로 돌아가는 중입니다.' : '지금은 세션이 없어 자리에서 쉽니다. 코더 세션이 뜨면 뜬 수만큼 책상으로 가서 일합니다.';
+      return `<div class="tip-h">코더</div><div class="tip-b">코딩 담당 — ${now_}</div>${coderJobsTip(a.jobs)}
         <div class="tip-t">누르면 맡길 일 목록이 열립니다.</div>`;
     }
     return `<div class="tip-h">${esc(a.name || '')}</div>`;
@@ -3564,7 +3706,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
            roomBox: () => { const q = view === 'hq' || view === 'map' ? null : roomByView(); if (!q) return null;
              const [x0, y0] = toScreen(q.x * T, q.y * T), [x1, y1] = toScreen((q.x + q.w) * T, (q.y + q.h) * T); return [x0, y0, x1, y1].map(Math.round); }, openSession, panel, actors, newSession: (p) => newSession.open(p), openTodo: (p, to) => todoInbox.open(p, to), foremanName: FM_NAME,
            probeMode: () => PROBE,       // 점검 화면인가(?probe=1, 11-11) — screen.py가 확인한다. 아니면 읽음 같은 사람 흔적이 남는다
-           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: (o) => layoutAudit(o), labelAudit: () => labelAudit(), gridAudit: () => gridAudit(), camScale: () => ({ cam: cam.s, room: roomViewScale() }), roomLabels: (name) => roomLabels(world.rooms.find((r) => r.name === name) || null).map((l) => ({ ...l, box: labelBox(l) })),furnRects: (w) => furnRects(w), standSpots: () => standSpots(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), stackAudit: () => stackAudit(), stacks: () => [...BUBBLES.entries()].filter(([k]) => actors.has(k)).map(([key, b]) => ({ key, ...b, scr: (b.cards || []).map((c) => toScr(c.rect).map(Math.round)) })), nameAudit: () => nameAudit(), names: () => NAMES.slice(),
+           audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: (o) => layoutAudit(o), labelAudit: () => labelAudit(), gridAudit: () => gridAudit(), camScale: () => ({ cam: cam.s, room: roomViewScale() }), roomLabels: (name) => roomLabels(world.rooms.find((r) => r.name === name) || null).map((l) => ({ ...l, box: labelBox(l) })),furnRects: (w) => furnRects(w), standSpots: () => standSpots(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), stackAudit: () => stackAudit(), walkAudit: () => walkAudit(),
+           walkWatch: () => { WALK_LOG = { frames: 0, moving: 0, issues: [], seen: new Set() }; return true; },
+           walkLog: () => (WALK_LOG ? { frames: WALK_LOG.frames, moving: WALK_LOG.moving, issues: WALK_LOG.issues.slice() } : null),
+           seats: () => seatCards(), stacks: () => [...BUBBLES.entries()].filter(([k, b]) => liveBubble(k, b)).map(([key, b]) => ({ key, ...b, scr: (b.cards || []).map((c) => toScr(c.rect).map(Math.round)) })), nameAudit: () => nameAudit(), names: () => NAMES.slice(),
            // 터미널을 열 때 고를 프로젝트(11-10) — 보고 있는 현장, 없으면(감독실 · 지도 · 라운지) 고른 세션의 프로젝트, 그것도 없으면 null
            currentProject: () => (world.rooms.some((r) => r.name === view) ? view
              : ((store.state.sessions.get(store.state.selected) || {}).project || null)),
