@@ -31,6 +31,7 @@
 |---|---|---|
 | **325** | 11-13 12:2x | `11_worktree` 30 · 51 · 147 · 155 / `11_foreman_dispatch` 109 · 132 · 134 / `10_office_design` 153 / `11_handoff` 20 / `operations` 23 — 미리보기 살아 있음 확인(`/__foreman_preview`, 죽었으면 다시 띄움 · 「죽어 있습니다」, `691487e`, `log/preview_alive_20261113.md`). 실제로 바뀐 것은 `11_worktree` 미리보기 절 |
 | **324** | 11-13 12:3x | `operations` 23 · 95 · 115 · 116 / `10_office_design` 149 · 154 · 176 / `11_worktree` 135 · 142 / `11_handoff_v2` 79 / `style_guide` 106 — 사람이 끈 합치기 물음은 막대 숫자에서도 뺌 · 5일째 텔레그램(`remind_days`, `28911c6`, `log/merge_wait_off_remind_20261113.md`). 실제로 바뀐 것은 `11_worktree` 6-1 · `operations` 「5.」 표 |
+| **326** | 11-13 13:3x | `operations` 23 · 115 / `10_office_design` 149 / `11_worktree` 142 — 브리지가 꺼져 있던 동안 7일이 지나 사라진 합치기 물음도 다시 뜰 때 한 번 알림(`2552526`, `log/merge_remind_catchup_20261113.md`). `config/handoff.toml remind_days = 5`를 적음(`49e2eed`). 실제로 바뀐 것은 `11_worktree` 6-1 · `operations` 「5.」 표의 5일 알림 줄 |
 
 - 같은 글의 알림은 한 번만 셌다. 19:22 알림은 시각으로 286 합침과 가깝지만 확실하지 않다(`?`)
 
