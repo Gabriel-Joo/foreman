@@ -102,7 +102,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   let target = null, targetKey = '', lastSel = undefined;
   let reportSent = null;           // 「보고 옴」 읽음을 보낸 응답 이벤트 id(같은 것을 두 번 보내지 않게)
-  let escSent = null;              // 「사용자 보고 기다림」 읽음을 보낸 escalate id(11-13)
+  let escSent = null;              // 「사용자에게 보고함」 읽음을 보낸 escalate id(11-13)
   let open = ls.get(KEY_OPEN) !== '0';
   let tab = TABS.some(([k]) => k === ls.get(KEY_TAB)) ? ls.get(KEY_TAB) : 'convo';
   let mode = ls.get(KEY_MODE) === 'wide' ? 'wide' : 'narrow';
@@ -674,7 +674,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       reportSent = s.report.event_id;
       store.reportRead(s.id, s.report.event_id).catch(() => { reportSent = null; });
     }
-    // 사용자 보고 기다림(11-13) — 관리자가 사람에게 올린 보고. 패널을 열면 읽은 것(같은 방식)
+    // 사용자에게 보고함(11-13) — 관리자가 사람에게 올린 보고. 패널을 열면 읽은 것(같은 방식)
     const er = s.escalate && s.escalate.report;
     if (er && !document.hidden && escSent !== er.id) {
       escSent = er.id;

@@ -466,7 +466,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 패널 세션 목록의 "종료된 세션"에는 그대로 있다 — 거기서 골라 [새로 띄우기]. 멈춘 세션(SUSPENDED)은 그대로 보인다
       const shown = ss.filter((s) => !dormantGone(s, room.name));
       room.overflow = Math.max(0, shown.filter((s) => !mgrOf(s)).length - cap);
-      room.stats = { ACTIVE: 0, IDLE: 0, SUSPENDED: 0, DORMANT: 0, pending: 0, question: 0, denied: 0, asks: 0, subs: 0, tin: 0, tout: 0, opus_out: 0, all_out: 0 };
+      room.stats = { ACTIVE: 0, IDLE: 0, SUSPENDED: 0, DORMANT: 0, pending: 0, question: 0, denied: 0, asks: 0, userAsks: 0, subs: 0, tin: 0, tout: 0, opus_out: 0, all_out: 0 };
       let slot = 0;
       ss.forEach((s) => {
         // 기다림(IDLE + 자식 일)은 작업으로 센다 — 현장이 "쉼"으로 보이면 돌고 있는 일을 놓친다(11-06)
@@ -476,7 +476,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         room.stats.question += asking.get(s.id) || 0;
         // 11-09 사람이 해야 풀리는 대기(브리지 /api/dashboard denied · asks) — 쉼으로 세지 않고 따로
         if (s.state !== 'DORMANT' && s.denied) room.stats.denied += 1;          // 종료된 세션의 옛 물음은 세지 않는다
-        else if (s.state !== 'DORMANT' && (s.asks || (s.escalate && s.escalate.question))) room.stats.asks += 1;
+        else if (s.state !== 'DORMANT' && s.asks) room.stats.asks += 1;
+        // 11-13 관리자가 사람에게 올린 물음은 「사용자 답 기다림」으로 따로 센다 — 섞으면 세션이 사람 답을 기다리는 것과 같아 보인다
+        else if (s.state !== 'DORMANT' && s.escalate && s.escalate.question) room.stats.userAsks += 1;
         room.stats.subs += s.subagents_running || 0;
         room.stats.tin += (s.tokens && s.tokens.today_input) || 0;
         room.stats.tout += (s.tokens && s.tokens.today_output) || 0;
@@ -1991,7 +1993,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (act.fx === 'smoke') drawSmokeS(a.x, a.y - 0.6, now);
     drawCompactMark(a, x + 7, top + 4);
     if (act.bubble && act.flag === 'stuck_turn') {
-      // 11-13 멈춘 턴의 「…」은 경고 색(빨강) — 자식 일을 기다리는 파란 「· ·· ···」과 갈라 본다(테마 그림 e_…은 쓰지 않는다)
+      // 11-13 멈춘 턴의 「…」은 경고 색(빨강) — 뒤에서 도는 명령의 파란 테두리 막대와 갈라 본다(테마 그림 e_…은 쓰지 않는다)
       drawBubble(x, top - 4, act.bubble, P.bad || '#ff6b6b');
     } else if (act.bubble) {
       const e = 'e_' + act.bubble;
@@ -2004,11 +2006,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       ctx.fillText('z', x + 5 + t * 4, top + 2 - t * 8); ctx.globalAlpha = 1;
     }
     if (!a.moving && act.anim === 'wait' && !act.flag) {                       // 기다림 — 책상에 서서 자식 일을 기다린다
-      // 11-13 서브에이전트는 파란 상자에 차오르는 「· ·· ···」, 뒤에서 도는 명령(백그라운드 Bash · Monitor)만이면 어두운 상자 ·
-      // 파란 테두리에 도는 막대 「| / - \」(한 프레임만 봐도 갈리게 모양을 바꿈). 둘 다면 파란 상자에 「··|」처럼 나란히
+      // 11-13 뒤에서 도는 명령(백그라운드 Bash · Monitor)이 있으면 어두운 상자 · 파란 테두리에 도는 막대 「| / - \」.
+      // 서브에이전트는 작은 캐릭터로 둘레에 이미 보여 머리 위에는 안 그린다(11-13 사용자) — 서브에이전트만이면 아무것도 없다
       const g = waitGlyph(a.s, now);
-      if (g.bgOnly) drawRingBubble(x, top - 3, g.text, P.act, 7);
-      else drawBubble(x, top - 3, g.text, P.act, 7);
+      if (g) drawRingBubble(x, top - 3, g.text, P.act, 7);
     }
     if (a.kind === 'scribe' && scribeBubble(a)) {                                // 서기 — 할 일 N(누르면 목록), 쌓이면 "정리할까요?"
       placeBubble(a, x, top, scribeBubble(a), P.warn, todoPx() / cam.s);
@@ -2047,12 +2048,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   const markColor = (m) => (m.tone === 'ok' ? (P.ok || P.act) : m.tone === 'merge' ? (P.merge || '#c9a7ff')
     : m.tone === 'quiet' ? (P.muted || '#a9b4c4') : P.warn);
   const quietPx = () => tpx(10);                 // 11-13 「관리자에게 보고함」 · 「관리자 답 기다림」 — 사람 몫(12)보다 작게
-  // 기다림 머리 위 — 서브에이전트 「· ·· ···」(차오름) · 뒤에서 도는 명령 「| / - \」(돎). 둘 다면 「·· |」처럼 나란히
+  // 기다림 머리 위 — 뒤에서 도는 명령만 「| / - \」(돎). 서브에이전트는 작은 캐릭터로 이미 보여 그리지 않는다(11-13). 없으면 null
   function waitGlyph(s, now) {
-    const subs = (s && s.subagents_running) || 0, bg = ((s && s.background) || []).length;
-    const dots = '·'.repeat(1 + Math.floor(now / 500) % 3).padEnd(3, ' '), spin = '|/-\\'[Math.floor(now / 250) % 4];
-    if (bg && !subs) return { text: ` ${spin} `, bgOnly: true };
-    return { text: bg ? `${dots}${spin}` : dots, bgOnly: false };
+    const bg = ((s && s.background) || []).length;
+    if (!bg) return null;
+    return { text: ` ${'|/-\\'[Math.floor(now / 250) % 4]} ` };
   }
   function tagBoxesW() {
     const toW = (sx, sy) => [((sx - W / 2) / cam.s + cam.x), ((sy - H / 2) / cam.s + cam.y)];
@@ -2566,7 +2566,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const st = r.stats || {}, pp = r.pipe;
     const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
     if (broke || (pp && pp.webhook_broken) || (pp && pp.watch && pp.watch.state === 'missing')) return 'fail';
-    if (st.pending || st.question || st.denied || st.asks) return 'alert';
+    if (st.pending || st.question || st.denied || st.asks || st.userAsks) return 'alert';
     if (st.ACTIVE) return 'busy';
     if ((st.IDLE || 0) + (st.SUSPENDED || 0) + (st.DORMANT || 0)) return 'idle';
     return 'empty';
@@ -2585,6 +2585,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 11-09 FOREMAN 승인 카드로 오지 않는 것 — 무엇을 어디서 해야 풀리는지 글에 넣는다
     if (st.denied) lines.push([`✋ 권한 거부 ${st.denied} — CC 자체 검사가 막았습니다. 그 세션에 허용하거나 다른 방법을 지시합니다`, P.warn, 'bold 16px', true]);
     if (st.asks) lines.push([`💬 답 기다림 ${st.asks} — 묻고 끝났습니다. 패널 입력 칸이나 터미널에서 답합니다`, P.warn, 'bold 16px', true]);
+    if (st.userAsks) lines.push([`💬 사용자 답 기다림 ${st.userAsks} — 관리자가 사람에게 물었습니다. 관리자 패널 입력 칸에 답합니다`, P.warn, 'bold 16px', true]);
     if (r.name) lines.push(...schemaLines(r.name));                // 스키마 잠금(11-09)
     const pp = r.pipe;
     const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
@@ -2672,6 +2673,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     else if (st.question) state = [`멈춤 — 질문 ${st.question}`, P.warn, 'bold 16px'];
     else if (st.denied) state = [`멈춤 — 권한 거부 ${st.denied}`, P.warn, 'bold 16px'];
     else if (st.asks) state = [`멈춤 — 답 기다림 ${st.asks}`, P.warn, 'bold 16px'];
+    else if (st.userAsks) state = [`멈춤 — 사용자 답 기다림 ${st.userAsks}`, P.warn, 'bold 16px'];
     else if (st.ACTIVE) state = [`작업 중 ${st.ACTIVE}`, P.act, '16px'];
     else if ((st.IDLE || 0) + (st.SUSPENDED || 0) + (st.DORMANT || 0)) state = ['쉼', P.muted, '16px'];
     else state = ['세션 없음', P.muted, '16px'];
@@ -2686,6 +2688,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       ...(st.pending || st.question ? [`승인 대기 ${st.pending || 0} · 질문 ${st.question || 0} — 패널 카드에서 답합니다`] : []),
       ...(st.denied ? [`권한 거부 ${st.denied} — CC 자체 검사, 그 세션에 허용 · 다른 방법 지시`] : []),
       ...(st.asks ? [`답 기다림 ${st.asks} — 패널 입력 칸이나 터미널에서 답합니다`] : []),
+      ...(st.userAsks ? [`사용자 답 기다림 ${st.userAsks} — 관리자가 사람에게 물었습니다. 관리자 패널 입력 칸에 답합니다`] : []),
       ...(r.st_argocd === 'waiting' ? ['배포 대기 — ArgoCD에서 Sync를 눌러야 올라갑니다'] : []),
       ...(pp && pp.webhook_broken ? ['빌드 알림 끊김 의심'] : []),
       ...(pp && pp.watch && pp.watch.state !== 'ok' ? [`빌드 알림 ${pp.watch.state === 'missing' ? '없음' : '늦음'}`] : []),
@@ -3277,7 +3280,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 11-09 사용자 — 이름표는 역할만이라 호버 첫 줄에 역할 · 세션 번호 · 제목("237 합쳐라"를 듣고 어느 세션인지 찾게)
       return `<div class="tip-h">${esc(roleTag(roleOf(s)))} 세션 ${s.id}${a.temp ? ' · 임시' : ''}</div><div class="tip-b">${esc(a.name)}</div>${who}<div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', WAITING: '기다리는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[vs] || vs)}${
         a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
-        s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎${vs === 'WAITING' ? ' — 머리 위 「···」' : ''}${(s.subagent_descs || []).map((d) => `<div class="tip-s">· ${esc(short(d, 50))}</div>`).join('')}</div>` : ''}${
+        s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎${vs === 'WAITING' ? ' — 둘레의 작은 캐릭터' : ''}${(s.subagent_descs || []).map((d) => `<div class="tip-s">· ${esc(short(d, 50))}</div>`).join('')}</div>` : ''}${
         bg.length ? `<div>뒤에서 도는 일 ${bg.length}개(백그라운드 명령)${vs === 'WAITING' ? ' — 머리 위 어두운 상자의 도는 막대 「|」' : ''}${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}</div>`).join('')}</div>` : ''}${
         a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝났는지 모름(빨간 「…」) — 끝 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.' }[a.act.flag] || a.act.flag)}</div>` : ''}${
         needMark(s) ? `<div class="tip-s">${esc(needMark(s).tip)}</div>` : ''}${
