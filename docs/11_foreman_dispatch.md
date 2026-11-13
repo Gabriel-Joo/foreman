@@ -101,6 +101,8 @@
 
 **흐름을 "교장 → 관리자 → worktree"로 고정하지 않고 교장을 키운다. 관리자(FOREMAN 원본 폴더 세션)는 상주로 두지 않고 필요할 때만 쓴다.**
 
+> (11-11 바뀜) 관리자 상주는 11-11 2물결에서 **프로젝트마다 상주 관리자(원본 폴더)**로 바뀌었다 — 지금 FOREMAN · 인프라 · 런슈즈에 관리자가 서 있고, 합치기 · 시험 · push · 브리지 다시 띄우기 · 사람에게 올리기(escalate)를 맡는다 [log:plan_structure_20261111.md] [log:enable_c_wave2_20261111.md]. 아래 「9-1.」의 **띄우는 길 하나**(계획 → 시작)와 「9-2.」가 든 까닭은 그대로 읽는다 — 상주하면 맥락이 쌓이는 문제는 인계(새 세션으로 옮기기)로 이어 간다(관리자 309 → 318 인계처럼 — [log:manager318_overhead_20261113.md]).
+
 ### 9-1. 띄우는 길 — 하나로
 
 - 관리자가 세션을 띄울 때도 **`POST /api/foreman/plan`(짧은 요청) → 계획을 받아 `first_prompt`를 지시문으로 바꿔 `POST /api/foreman/start`**로 한다. 바꾼 칸은 `dispatch.edited`에 남는다 — 계획 카드에서 사람이 칸을 고치는 것과 같은 경로
@@ -149,17 +151,17 @@
 - **맡을 파일 겹침 경고**: 새로 띄울 세션의 맡을 파일이 이미 도는 세션이 고치는 파일과 겹치면 계획 경고에 뜬다(11-11 282 때 286 계획이 `tests/test_terminal.py`로 처음 잡았다)
 - **받은 할 일에서 바로**(받은 할 일 #8): [＋ 할 일] 창에서 새로인 줄을 골라 [고른 것으로 계획 받기] → 교장 계획 창이 열려 바로 계획을 받는다. 번호는 `inbox_ids`로 [이대로 시작]에 실려 뜬 세션이 가져간다(`PUT /api/todo/{id}`로 그 자리에서 고치기, `bridge/api/todo.py`) [log:coder_c_wave2_20261111.md]
 
-**설정 스위치 뒤에 꺼져 있는 것(11-11 286, 합친 뒤에도 하나도 켜지 않음)** [log:coder_c_wave2_20261111.md] [log:merge_c_wave2_20261111.md]
+**설정 스위치 뒤에 있던 것 — 합칠 때(11-11 286)는 하나도 켜지 않았고, 같은 날 저녁 사용자 지시로 넷을 켰다(역할 권한만 관찰)** [log:coder_c_wave2_20261111.md] [log:merge_c_wave2_20261111.md] [log:enable_c_wave2_20261111.md]
 
-| 기능 | 스위치(커밋된 값) | 하는 일 |
+| 기능 | 스위치(지금 커밋된 값) | 하는 일 |
 |---|---|---|
-| 프로젝트 토큰 범위 | `config/tokens.toml [project_tokens] enabled = false` | 관리 토큰(`FOREMAN_API_TOKEN`)은 그대로 모든 API. 프로젝트 토큰(`.env.project_tokens`의 `FOREMAN_TOKEN_<프로젝트>`)은 그 프로젝트 세션 · 방 API만 열고 나머지는 403 + 사유. 같은 유닉스 사용자 세션은 `.env.bridge`도 읽을 수 있어 **벽이 아니라 잘못 부르는 것을 막는 칸막이**다(`bridge/scopetoken.py` · `bridge/api/auth.py`) |
-| 프로젝트별 관리자 | `config/managers.toml [managers] enabled = false` | `GET /api/managers`(프로젝트마다 관리자 또는 「관리자가 없습니다」 — 꺼져 있어도 읽힘), `POST /api/managers/{project}/ask`(그 관리자 입력 칸에 부탁 — 꺼져 있으면 503). 관리자가 없거나 못 넣으면 텔레그램 한 번 + `delivered:false, reason`(`bridge/managers.py`) |
-| 계획을 관리자에게 | `config/managers.toml [handover] enabled = false` (`wait_min = 15`) | 계획 카드 [관리자에게 보내기] — 고친 계획을 저장(`dispatch.handed_to · handed_at`, 0031)하고 그 프로젝트 관리자 입력 칸에 계획 요약 + 시작 명령(`POST /api/foreman/start {"dispatch_id": N, "use_saved": true}`)을 넣는다. 못 넣으면 되돌리고 카드에 사유 + 텔레그램. 넘기고 15분 안에 안 띄우면 텔레그램 한 번(`bridge/handover.py`). 꺼져 있으면 단추가 없고 [이대로 시작]은 그대로 |
+| 프로젝트 토큰 범위 | `config/tokens.toml [project_tokens] enabled = true`(**켜짐**, 첫 토큰 ronanlab-infra) | 관리 토큰(`FOREMAN_API_TOKEN`)은 그대로 모든 API. 프로젝트 토큰(`.env.project_tokens`의 `FOREMAN_TOKEN_<프로젝트>`)은 그 프로젝트 세션 · 방 API와, **11-12부터 자기 프로젝트의 Notion 게시**(`POST /api/publish` · `GET /api/publish?project=` · `POST /api/publish/pair` — 본문 · 쿼리의 project가 자기 프로젝트일 때)만 열고 나머지는 403 + 사유. **force 덮기 · `action=docsync`(한꺼번에 맞추기)는 관리 토큰만**(사람에게 묻는 일이라서). 같은 유닉스 사용자 세션은 `.env.bridge`도 읽을 수 있어 **벽이 아니라 잘못 부르는 것을 막는 칸막이**다(`bridge/scopetoken.py` · `bridge/api/auth.py`) |
+| 프로젝트별 관리자 | `config/managers.toml [managers] enabled = true`(**켜짐**, `projects = []` — 비면 DB의 모든 프로젝트) | `GET /api/managers`(프로젝트마다 관리자 또는 「관리자가 없습니다」 — 꺼져 있어도 읽힘), `POST /api/managers/{project}/ask`(그 관리자 입력 칸에 부탁 — 꺼져 있으면 503). 관리자가 없거나 못 넣으면 텔레그램 한 번 + `delivered:false, reason`(`bridge/managers.py`) |
+| 계획을 관리자에게 | `config/managers.toml [handover] enabled = true`(**켜짐**, `wait_min = 15`) | 계획 카드 [관리자에게 보내기] — 고친 계획을 저장(`dispatch.handed_to · handed_at`, 0031)하고 그 프로젝트 관리자 입력 칸에 계획 요약 + 시작 명령(`POST /api/foreman/start {"dispatch_id": N, "use_saved": true}`)을 넣는다. 못 넣으면 되돌리고 카드에 사유 + 텔레그램. 넘기고 15분 안에 안 띄우면 텔레그램 한 번(`bridge/handover.py`). 꺼져 있으면 단추가 없고 [이대로 시작]은 그대로 |
 | 역할 권한 | `config/roles.toml [roles] mode = "observe"` | **관찰이 켜져 있다 — 막지 않고 기록만.** PreToolUse에서 `worktree-push` · `bash-file-edit` · `manager-code` · `scribe-code`를 판정해 `approval_req` 이벤트 payload에 `role_rule` · `role_reason`을 남긴다. `enforce`면 거부 + 사유, `off`면 보지 않음. 기본 `projects = ["foreman"]`(`bridge/roleguard.py`). 해석기 안 쓰기(`python -c "open(…,'w')"`)는 못 막는다 |
-| 새 세션으로 옮기기 한 흐름 | `config/handoff.toml [move] one_flow = false` | 잊은 것 찾기 → 문서 후보 → (사람이 문서에 넣을 것 고르기) → 문서에 쓰기 → 요약 → 새 세션 → 옛 세션 끝내기를 단추 하나로(`bridge/static/js/moveflow.js`). 요약 확인 창 없음, 넘어간 글은 새 세션 패널 「넘겨받은 글」에 보인다. 끄면 옛 흐름(요약 → 확인 → 새 세션 → 옛 세션 끝내기). 화면이 다음에 그릴 때 읽어 브리지 재시작이 필요 없다 |
+| 새 세션으로 옮기기 한 흐름 | `config/handoff.toml [move] one_flow = true`(**켜짐**) | 잊은 것 찾기 → 문서 후보 → (사람이 문서에 넣을 것 고르기) → 문서에 쓰기 → 요약 → 새 세션 → 옛 세션 끝내기를 단추 하나로(`bridge/static/js/moveflow.js`). 요약 확인 창 없음, 넘어간 글은 새 세션 패널 「넘겨받은 글」에 보인다. 끄면 옛 흐름(요약 → 확인 → 새 세션 → 옛 세션 끝내기). 화면이 다음에 그릴 때 읽어 브리지 재시작이 필요 없다 |
 
-- **켜는 법**(기록 `log/coder_c_wave2_20261111.md`에 있는 것만): 토큰 · 관리자 — ① `python -m bridge.scopetoken new <프로젝트>`(값은 화면에 안 찍히고 파일에만) ② `tokens.toml enabled = true` · `managers.toml [managers] enabled = true` ③ 그 저장소 CLAUDE.md에 관리자 규칙 줄(초안은 같은 log, 그 저장소 세션에 부탁) ④ 관리자 세션을 원본 폴더에 띄움(역할 manager) ⑤ 필요하면 `roles.toml projects` · `handoff.toml [merge_prep] projects`에 그 프로젝트를 더함. 계획 넘기기 · 옮기기 한 흐름은 `[handover] enabled = true` · `[move] one_flow = true`로 켜 보고 시험 계획 · 시험 세션 하나로 15분 알림 · ①~⑦을 확인한다(끝나면 시험 세션은 `hidden_reason='test'`). 역할 권한은 하루 관찰 뒤 규칙별 걸린 수를 보고 사용자가 `enforce`로 올린다(그 쿼리는 같은 log 「합친 뒤 관리자가 할 일」 2). 바꾼 뒤에는 모두 브리지를 다시 띄운다(`[move]`만 제외)
+- **켜는 법**(기록 `log/coder_c_wave2_20261111.md`에 있는 것만): 토큰 · 관리자 — ① `python -m bridge.scopetoken new <프로젝트>`(값은 화면에 안 찍히고 파일에만) ② `tokens.toml enabled = true` · `managers.toml [managers] enabled = true` ③ 그 저장소 CLAUDE.md에 관리자 규칙 줄(초안은 같은 log, 그 저장소 세션에 부탁) ④ 관리자 세션을 원본 폴더에 띄움(역할 manager) ⑤ 필요하면 `roles.toml projects` · `handoff.toml [merge_prep] projects`에 그 프로젝트를 더함. 계획 넘기기 · 옮기기 한 흐름은 `[handover] enabled = true` · `[move] one_flow = true`로 켜 보고 시험 계획 · 시험 세션 하나로 15분 알림 · ①~⑦을 확인한다(끝나면 시험 세션은 `hidden_reason='test'`). 역할 권한은 하루 관찰 뒤 규칙별 걸린 수를 보고 사용자가 `enforce`로 올린다(그 쿼리는 같은 log 「합친 뒤 관리자가 할 일」 2). 바꾼 뒤에는 모두 브리지를 다시 띄운다(`[move]`만 제외). 이 문단은 켜기 전에 정한 순서이고, 토큰 · 관리자 · 넘기기 · 옮기기 한 흐름은 11-11 저녁 사용자 지시로 켜졌다 — 켠 경위 · 시험은 [log:enable_c_wave2_20261111.md]
 - **기능 사이에 무엇을 먼저 켤지, enforce로 켠 뒤 무엇을 볼지는 정해지지 않았다**(기록에도 없다 — [log:merge_c_wave2_20261111.md] 「켜는 순서가 기록에 있는가」)
 - (11-12 바뀜) 인프라 · 런슈즈(310)에 관리자가 섰다. `[merge_prep] projects`는 `["foreman", "ronanlab-infra"]` — 런슈즈는 사용자가 정할 때 더한다(`docs/11_worktree.md` 「6-1.」)
 - **역할 권한은 관찰만 하고 켜지 않는다**(11-12 사용자 — "확인만이다. 켜지 마라"). enforce와 런슈즈 · 인프라로 넓히는 것은 사용자가 정한다. 넓히려면 `projects`, 프로젝트별 `manager_allow` · `scribe_deny`(코드), 무시되는 작업 폴더 빼기, 관찰 기간이 있어야 한다(지난 7일 다시 돌리기 290건). 해석기 · `$` 경로 · cp/mv 같은 지나가는 길도 같이 막아야 한다 [log:approval_hell_plan_20261112.md]
