@@ -40,6 +40,10 @@ prefix = "[런슈즈]"
 prefix = "[펫퍼민트]"
 # 펫퍼민트 CLAUDE.md의 원래 규칙 "짧은 작업(5분 안)이나 단순 확인에는 보내지 않는다"를 옮긴 것(실패는 예외)
 min_turn_s = 300
+# 11-13 사용자: 펫퍼민트에 관리자를 세우며 인프라와 같게(보고 · 물음 중계 + 21:00 묶음)
+relay_reports = true
+relay_questions = true
+digest = true
 
 [projects.foreman]
 prefix = "[FOREMAN]"
