@@ -39,7 +39,7 @@ ERROR_KIND = {"rate_limit": "rate_limit", "overloaded": "overloaded", "authentic
 def classify(text: str | None, error: str | None = None) -> dict[str, Any]:
     """{kind, label, action, request_id, detail, reset}. 모르면 kind 'unknown'(「API 오류」)."""
     t = text or ""
-    kind, label, action = "unknown", "API 오류", "그 세션 터미널에서 오류 글을 보고 다시 보냅니다"
+    kind, label, action = "unknown", "API 오류", "그 세션 대화창에서 오류 글을 보고 다시 보냅니다"
     hit = False
     for k, rx, lab, act in KINDS:
         if rx.search(t):

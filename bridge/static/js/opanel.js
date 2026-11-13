@@ -667,7 +667,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const ended = s.state === 'DORMANT' && s.ended
       ? `<span class="muted" title="끝난 세션 — 이 세션은 ${esc(s.ended.at ? ago(s.ended.at) : '')} ${esc(s.ended.label)}. 아래 대화는 지난 일입니다.">끝난 세션 · ${esc(s.ended.label)}${s.ended.at ? ` · ${esc(ago(s.ended.at))}` : ''}</span> · ` : '';
     put('pMeta', 'meta', `${ended}${stateBadge(s)} ${asksOff}${stallChip(s)}${ctxChip(s)}<span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
-      · <span class="muted" title="오늘 출력 토큰 — 이 세션이 오늘 쓴 글의 양입니다.">오늘 출력 토큰 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn" title="끝났는지 모름 — 작업이 끝났다는 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.">⚠ 끝났는지 모름</span>' : ''}`);
+      · <span class="muted" title="오늘 출력 토큰 — 이 세션이 오늘 쓴 글의 양입니다.">오늘 출력 토큰 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn" title="끝났는지 모름 — 작업이 끝났다는 신호가 오지 않았습니다. 대화창을 확인하거나 [작업 중단]을 누릅니다.">⚠ 끝났는지 모름</span>' : ''}`);
     $('pMeta').title = [sessionSub(s), sessionIds(s), projectLabel(st, s.project), s.cwd || ''].filter(Boolean).join(' · ');
     // 보고 옴(11-11) — 이 세션 패널에 대화가 떠 있으면 읽은 것으로 본다(창이 가려져 있으면 아직). 캐릭터 위 「보고 옴」이 사라진다
     if (s.report && !document.hidden && reportSent !== s.report.event_id) {
@@ -699,7 +699,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       put('pInfo', 'info', `<div class="small muted">${esc(projectLabel(st, s.project))} · ${esc((s.cwd || '').replace(/^\/home\/[^/]+/, '~'))}</div>
         ${s.open_turn ? (() => {           // 11-09 "턴 나 · 10분 전 시작" → "작업 중 · 10분째"(무엇으로 시작했는지는 호버)
           const o = s.open_turn, el = ago(o.started_at).replace(/ 전$/, '째'), by = o.origin === 'human' ? '내 입력' : (ORIGIN_LABEL[o.origin] || '');
-          const tip = stuck ? `끝났는지 모름 — ${by}으로 시작한 작업이 끝났다는 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.`
+          const tip = stuck ? `끝났는지 모름 — ${by}으로 시작한 작업이 끝났다는 신호가 오지 않았습니다. 대화창을 확인하거나 [작업 중단]을 누릅니다.`
             : `작업 중 — ${by}으로 시작한 작업이 ${el} 돌고 있습니다.`;
           return `<div class="small${stuck ? ' warn' : ''}" title="${esc(tip)}">${stuck ? '⚠ 끝났는지 모름' : '▶ 작업 중'} · ${esc(el)}</div>`;
         })() : ''}`);

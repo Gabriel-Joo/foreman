@@ -262,7 +262,7 @@ class ApprovalManager:
         tuid, dec, _pid, summary = self.recent.get(_key(sid, tool, inp), (None, None, None, None))
         rule, reason = (dec.rule, dec.reason) if dec and dec.verdict == "ask" else ("cc", "CC가 묻는다(auto mode 분류기 · 설정)")
         if tool == "AskUserQuestion":
-            rule, reason = "질문", "세션이 사용자에게 묻는 질문입니다 — 패널의 선택지나 그 세션의 터미널에서 답합니다"
+            rule, reason = "질문", "세션이 사용자에게 묻는 질문입니다 — 패널의 선택지나 그 세션의 대화창에서 답합니다"
         if not summary:   # CC 자체가 묻는 것에도 — 규칙이 아니라 명령을 본다
             summary = self._summary(tool, inp, rule, reason, p.get("cwd"))
         target = self.mask.text(_target(tool, inp)) or ""
@@ -301,7 +301,7 @@ class ApprovalManager:
                 self.notifier.send_direct(project, "appr_to", sess_id, "\n".join([
                     f"{rule_.prefix if rule_ else '[미분류]'} ⏰ 승인 대기 시간이 지났습니다 · {tool}",
                     *([f"▶ {summary}"] if summary else [_short(target, 120)]),
-                    f"{int(pp.wait_s // 60)}분 동안 답이 없어 화면 승인을 닫았습니다. 이제 그 세션의 터미널에서만 답할 수 있습니다"]))
+                    f"{int(pp.wait_s // 60)}분 동안 답이 없어 화면 승인을 닫았습니다. 이제 그 세션의 대화창에서만 답할 수 있습니다"]))
         finally:
             self.waiting.pop(aid, None)
             q_inp = self.questions.pop(aid, None)
@@ -423,14 +423,14 @@ def _approval_text(project: str | None, tool: str, target: str, rule: str, reaso
     prefix = rule_.prefix if rule_ else "[미분류]"
     if tool == "AskUserQuestion":          # 질문은 승인이 아니다 — 질문과 선택지를 그대로(11-09)
         return "\n".join([f"{prefix} ❓ 세션이 묻습니다 — 답을 기다립니다", _short(target, 700),
-                          "확인 페이지의 선택지를 누르거나 그 세션의 터미널에서 답합니다"])
+                          "확인 페이지의 선택지를 누르거나 그 세션의 대화창에서 답합니다"])
     # 무엇을 대상으로가 둘째 줄(11-03) — 명령 원문은 그 아래 짧게
     return "\n".join([
         f"{prefix} 🔐 승인 대기 · {tool}",
         *([f"▶ {summary}"] if summary else []),
         f"명령: {_short(target, 120)}" if summary else _short(target, 160),
         f"규칙: {rule} — {reason}",
-        f"확인 페이지에서 승인 · 거부, 또는 터미널에서. {int(wait_s // 60)}분이 지나면 터미널로만",
+        f"확인 페이지에서 승인 · 거부, 또는 대화창에서. {int(wait_s // 60)}분이 지나면 대화창으로만",
     ])
 
 

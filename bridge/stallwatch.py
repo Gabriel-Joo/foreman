@@ -268,9 +268,9 @@ class StallWatch:
         rule = self.notifier.rules.for_project(project) if project else None
         prefix = (rule and rule.prefix) or "[" + (project or "FOREMAN") + "]"
         what = {"died": "다시 띄우거나 [새로 띄우기]로 이어 갑니다",
-                "silent": "터미널에서 무엇이 도는지 보고, 필요하면 [작업 중단]을 누릅니다",
+                "silent": "대화창에서 무엇이 도는지 보고, 필요하면 [작업 중단]을 누릅니다",
                 "loop": "그 세션에 다른 방법을 지시하거나 [작업 중단]을 누릅니다",
-                "exit_confirm": "터미널에서 고릅니다 — 뒤에서 도는 일이 끝나도 되면 1, 남기려면 3"}.get(f["kind"], "")
+                "exit_confirm": "대화창에서 고릅니다 — 뒤에서 도는 일이 끝나도 되면 1, 남기려면 3"}.get(f["kind"], "")
         msg = "\n".join([f"{prefix} ⏸ {f['label']} — 「{title or sid}」(세션 {sid})", f"▶ {f['detail']}", what])
         log.warning("멈춤 알림: 세션 %s %s — %s", sid, f["kind"], f["detail"][:120])
         self.notifier.send_direct(project, "stall", sid, msg, rule=key)

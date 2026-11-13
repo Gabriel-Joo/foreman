@@ -76,7 +76,7 @@ def test_ask_user_question_is_readable():
     assert len(t) > 300
     assert summarize("AskUserQuestion", inp, "cc", "", None) == "질문 — 어떻게 키울까요?"
     msg = _approval_text("foreman", "AskUserQuestion", t, "질문", "", 3600, None)
-    assert "❓" in msg and "승인" not in msg and msg.endswith("그 세션의 터미널에서 답합니다")
+    assert "❓" in msg and "승인" not in msg and msg.endswith("그 세션의 대화창에서 답합니다")
 
 
 def test_answer_question_from_panel():

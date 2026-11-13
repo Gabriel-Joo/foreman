@@ -510,8 +510,8 @@ export class Store {
       : r.status === 202 ? { ok: true, msg: j.queued ? '보냈습니다. 작업이 끝나면 이어서 전달됩니다.' : '보냈습니다.' }
       : r.status === 504 ? (j.left_in_box === false
           ? { ok: true, msg: '보냈습니다.' }
-          : j.left_in_box ? { ok: false, msg: '제출되지 않았습니다. 입력 칸에 글이 남아 있으니 터미널에서 Enter를 누르거나 지워 주세요.' }
-          : { ok: false, msg: '제출됐는지 확인하지 못했습니다. 터미널에서 입력 칸을 확인해 주세요.' })
+          : j.left_in_box ? { ok: false, msg: '제출되지 않았습니다. 입력 칸에 글이 남아 있으니 대화창에서 Enter를 누르거나 지워 주세요.' }
+          : { ok: false, msg: '제출됐는지 확인하지 못했습니다. 대화창에서 입력 칸을 확인해 주세요.' })
       : { ok: false, msg: `보내지 못했습니다 (HTTP ${r.status}).` };
     // 11-09 — 입력 줄을 가리던 설정 · 사용량 화면을 Esc로 닫고 보냈다(bridge/inject.clear_screen). 반복되는지 알 수 있게 한 마디
     if (j.esc && r.status !== 409) res.msg += ` 떠 있던 설정 화면을 Esc ${j.esc}번으로 닫고 보냈습니다.`;
@@ -527,7 +527,7 @@ export class Store {
     const ok = r.status === 202 || (r.status === 504 && j.left_in_box === false);
     const res = r.status === 409 ? { ok: false, msg: `모델을 바꾸지 못했습니다 — ${j.refused}` }
       : ok ? { ok: true, msg: j.queued ? `${label}(으)로 바꾸기를 대기열에 넣었습니다. 지금 작업이 끝나면 바뀝니다.` : `${label}(으)로 바꿨습니다. 다음 응답부터 적용됩니다.` }
-      : r.status === 504 ? { ok: false, msg: '모델 바꾸기가 제출됐는지 확인하지 못했습니다. 터미널에서 입력 칸을 확인해 주세요.' }
+      : r.status === 504 ? { ok: false, msg: '모델 바꾸기가 제출됐는지 확인하지 못했습니다. 대화창에서 입력 칸을 확인해 주세요.' }
       : { ok: false, msg: `모델을 바꾸지 못했습니다 (HTTP ${r.status}).` };
     if (ok || r.status === 504) this.state.pendingModel.set(id, { model, label, queued: !!j.queued, ts: Date.now() });
     this.state.lastInput = { sessionId: id, ts: Date.now(), ...res };

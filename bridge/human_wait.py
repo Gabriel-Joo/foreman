@@ -83,7 +83,7 @@ class DeniedWatch:
                     f"「{title or sid}」 세션이 CC 자체 검사에 막힌 뒤 멈춰 있습니다",
                     f"▶ 막힌 도구 {d.get('tool') or '?'}" + (f" · 이유 [{d['reason']}]" if d.get("reason") else "")
                     + (" (서브에이전트)" if d.get("subagent") else ""),
-                    "FOREMAN 승인 카드로 오지 않습니다. 그 세션에 허용하거나 다른 방법을 지시해 주세요(패널 입력 칸이나 터미널)"])
+                    "FOREMAN 승인 카드로 오지 않습니다. 그 세션에 허용하거나 다른 방법을 지시해 주세요(대화창 입력 칸)"])
                 log.warning("권한 거부 알림: 세션 %s %d분", sid, mins)
                 self.notifier.send_direct(project, "denied", sid, msg, rule=key)
                 sent.append(key)
@@ -103,7 +103,7 @@ class DeniedWatch:
                     f"{(rule and rule.prefix) or '[' + (project or 'FOREMAN') + ']'} ⚠ API 오류로 멈춤 {mins}분째 — "
                     f"「{title or sid}」 세션이 API 오류로 턴을 끝낸 뒤 새 입력이 없습니다",
                     f"▶ {a.get('line') or a.get('label') or 'API 오류'}",
-                    "화면에서는 쉬는 세션과 비슷해 보입니다. 그 세션에 다시 보내거나 다른 지시를 해 주세요(패널 입력 칸이나 터미널)"])
+                    "화면에서는 쉬는 세션과 비슷해 보입니다. 그 세션에 다시 보내거나 다른 지시를 해 주세요(대화창 입력 칸)"])
                 log.warning("API 오류 멈춤 알림: 세션 %s %d분", sid, mins)
                 self.notifier.send_direct(project, "apistop", sid, msg, rule=key)
                 sent.append(key)

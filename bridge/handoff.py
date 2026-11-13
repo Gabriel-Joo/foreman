@@ -856,7 +856,7 @@ class HandoffManager:
             return out
         if cc is None:
             await self._act(src_session, "spawn", None, False, f"{name} {pane} CC를 못 찾음")
-            out["note"] = "45초 안에 새 세션을 찾지 못했습니다. 터미널에서 확인해 주세요."
+            out["note"] = "45초 안에 새 세션을 찾지 못했습니다. 대화창에서 확인해 주세요."
             return out
         return out | await self._finish_spawn(name, pane, cwd, summary_id, title, src_session, cc=cc, pid=pid, **extra)
 
@@ -1068,7 +1068,7 @@ class HandoffManager:
                 await self._stop_preview(row)             # 세션을 끝내면 미리보기도(다시 보려면 [미리보기 열기])
             await self._act(row.id, "exit", ls.pid, gone, f"{t.pane} {tname} steps={','.join(res['steps'])}{' tmux 정리' if cleaned else ''}")
             return {"ok": gone, "pane": t.pane, "tmux_closed": cleaned,
-                    "note": None if gone else "45초 안에 끝나지 않았습니다. 터미널을 확인해 주세요."}
+                    "note": None if gone else "45초 안에 끝나지 않았습니다. 대화창을 확인해 주세요."}
         if act == "stop":
             await tmux(t.socket, "send-keys", "-t", t.pane, "C-z")
             stopped = await self._wait(lambda: (_proc_stat(ls.pid) or ("?",))[0] == "T", 5)
@@ -1233,7 +1233,7 @@ class HandoffManager:
                                   " 세션은 끝내지 않았습니다")
             r = await self.action(row, "exit")
             if not r.get("ok"):
-                raise Refused("세션이 끝나지 않아 멈췄습니다 — " + (r.get("note") or "터미널을 확인해 주세요"))
+                raise Refused("세션이 끝나지 않아 멈췄습니다 — " + (r.get("note") or "대화창을 확인해 주세요"))
             ended = {"tmux_closed": r.get("tmux_closed")}
         rv = None
         if act == "merge" and await self._role(row.id) == "scribe":   # 합치면 브랜치가 지워진다 — 검토는 먼저(12b)
@@ -1412,7 +1412,7 @@ class HandoffManager:
         await tmux(socket, "send-keys", "-t", pane, "Enter")
         ok = await self._wait(lambda: (_proc_stat(live.pid) or ("?",))[0] != "T", 5)
         await self._act(row.id, "resume", live.pid, ok, pane)
-        return {"ok": ok, "pane": pane, "note": None if ok else "5초 안에 다시 시작하지 않았습니다. 터미널을 확인해 주세요."}
+        return {"ok": ok, "pane": pane, "note": None if ok else "5초 안에 다시 시작하지 않았습니다. 대화창을 확인해 주세요."}
 
     @staticmethod
     async def _wait(cond: Any, secs: float) -> bool:

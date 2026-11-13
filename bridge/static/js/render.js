@@ -49,7 +49,7 @@ export function humanNeed(s) {
     return { label: '권한 거부', tip: `권한 거부 — CC 자체 권한 검사(auto mode)가 ${who}${s.denied.tool || '도구'}를 막았습니다${s.denied.reason ? '(' + s.denied.reason + ')' : ''}. FOREMAN 승인 카드로는 오지 않습니다. 그 세션에 허용 · 다른 방법을 지시하거나 settings에 허용 규칙을 넣어야 풀립니다.` };
   }
   if (s.api_stop) return { label: 'API 오류로 멈춤', tip: apiStopTip(s.api_stop) };
-  if (s.asks) return { label: '답 기다림', tip: '답 기다림 — 마지막 응답이 사람에게 묻고 끝났습니다. 패널 입력 칸이나 그 세션 터미널에서 답하면 풀립니다.' };
+  if (s.asks) return { label: '답 기다림', tip: '답 기다림 — 마지막 응답이 사람에게 묻고 끝났습니다. 패널 입력 칸이나 그 세션 대화창에서 답하면 풀립니다.' };
   if (s.escalate && s.escalate.question) return { label: '사용자 답 기다림', tip: ESC_TIP.question(s.escalate.question) };
   return null;
 }
@@ -58,7 +58,7 @@ export function humanNeed(s) {
 export function apiStopTip(a) {
   const named = a.label && a.label !== 'API 오류' ? a.label : '';     // 모르는 종류(unknown)는 「API 오류」 그대로
   const kind = [named + (a.detail ? ` [${a.detail}]` : ''), a.reset ? `${a.reset}에 풀림` : ''].filter((x) => x.trim()).join(' · ');
-  return `API 오류로 멈춤 — 마지막 턴이 API 오류${kind ? `(${kind})` : ''}로 끝났고 그 뒤 새 입력이 없습니다. 할 일: ${a.action || '그 세션 터미널에서 오류 글을 보고 다시 보냅니다'}.`
+  return `API 오류로 멈춤 — 마지막 턴이 API 오류${kind ? `(${kind})` : ''}로 끝났고 그 뒤 새 입력이 없습니다. 할 일: ${a.action || '그 세션 대화창에서 오류 글을 보고 다시 보냅니다'}.`
     + `${a.request_id ? ` (${a.request_id})` : ''} 다시 보내면 풀립니다. 30분 넘게 그대로면 텔레그램으로 한 번 더 알립니다.`;
 }
 // 11-13(사용자) — 사람이 볼 것은 관리자 머리 위에만. 관리자가 POST /api/sessions/{sid}/escalate로 올린 것만 뜬다
@@ -336,14 +336,14 @@ function questionCard(a, st, done) {
   const doneTxt = a.status === 'allowed' ? '답했습니다 · 화면에서' : a.status === 'terminal' ? '답했습니다 · 터미널에서' : (APPR_DONE[a.status] || [a.status])[0];
   return `<div class="appr appr-ask ${done ? 'done' : ''}">
     <div class="appr-main">
-      <div><b>❓ ${esc(apprWho(a, st))}</b> · <span title="세션의 질문 — 세션이 고를 것을 묻고 답을 기다립니다. 선택지를 누르면 그 답이 세션에 바로 들어갑니다. 터미널에서 답해도 됩니다.">세션이 묻습니다</span></div>
+      <div><b>❓ ${esc(apprWho(a, st))}</b> · <span title="세션의 질문 — 세션이 고를 것을 묻고 답을 기다립니다. 선택지를 누르면 그 답이 세션에 바로 들어갑니다. 대화창에서 답해도 됩니다.">세션이 묻습니다</span></div>
       ${body}
       ${note}
       ${a.error ? `<div class="small bad">${esc(a.error)}</div>` : ''}
     </div>
     <div class="appr-act">${done ? `<span class="small ${(APPR_DONE[a.status] || [])[1] || ''}">${esc(doneTxt)}</span>`
       : qs ? `${instant ? '' : `<button data-aid="${a.id}" data-act="answer" class="primary" ${ready ? '' : 'disabled'} title="답 보내기 — 고른 답을 적은 글과 함께 세션에 넣습니다.">답 보내기</button>`}<button data-aid="${a.id}" data-act="note" class="ghost small" ${(NOTES.get(a.id) || '').trim() ? '' : 'disabled'} title="글만 보내기 — 고르지 않고 적은 글만 답으로 보냅니다. 고른 것이 있으면 같이 갑니다.">글만 보내기</button>`
-        : '<span class="small warn" title="터미널에서 답합니다 — 브리지가 다시 떠서 이 질문의 선택지를 잃었습니다.">터미널에서 답합니다</span>'}
+        : '<span class="small warn" title="대화창에서 답합니다 — 브리지가 다시 떠서 이 질문의 선택지를 잃었습니다.">대화창에서 답합니다</span>'}
       ${a.session_id ? `<button data-aid="${a.id}" data-sid="${a.session_id}" data-act="open" class="ghost small" title="세션 — 이 질문을 한 세션의 패널을 엽니다.">세션</button>` : ''}</div>
   </div>`;
 }
@@ -483,7 +483,7 @@ export function mountApprovalHistory(det, head, body, store) {
       const h = await r.json();
       const t = h.total;
       head.textContent = `— ${histDays === 1 ? '오늘' : histDays + '일'} ${t.n}건 · 승인 ${t.approved} · 거부 ${t.denied}${t.unknown ? ' · 답 확인 못 함 ' + t.unknown : ''}`;
-      head.title = '답 확인 못 함 — 터미널에서 직접 답했거나 시간이 지나, 어떻게 됐는지 FOREMAN이 알 수 없는 것입니다.';
+      head.title = '답 확인 못 함 — 대화창에서 직접 답했거나 시간이 지나, 어떻게 됐는지 FOREMAN이 알 수 없는 것입니다.';
       const yes = h.by_rule.filter((b) => b.always_yes);
       const rules = h.by_rule.map((b) => `<tr${b.always_yes ? ' class="warn"' : ''}><td>${esc(b.rule)}</td><td>${b.n}</td><td>${b.approved}</td><td>${b.denied}</td><td>${b.unknown}</td><td>${b.always_yes ? '늘 허락함 — 묻지 않게 바꿀 후보' :''}</td></tr>`).join('');
       // 질문은 고른 답(DB message)까지 — 답한 질문 줄을 치운 뒤 다시 보는 곳(11-10)

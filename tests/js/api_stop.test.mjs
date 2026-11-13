@@ -23,7 +23,7 @@ test('호버 — 종류 · 할 일 · request id, 「~습니다」', () => {
   assert.match(tip, /req_abc12345/);
   assert.match(tip, /니다\.$/);
   // 종류를 모르면(unknown) 일반 글
-  assert.match(apiStopTip({ kind: 'unknown', label: 'API 오류' }), /^API 오류로 멈춤 — 마지막 턴이 API 오류로 끝났고 .*할 일: 그 세션 터미널에서/);
+  assert.match(apiStopTip({ kind: 'unknown', label: 'API 오류' }), /^API 오류로 멈춤 — 마지막 턴이 API 오류로 끝났고 .*할 일: 그 세션 대화창에서/);
   assert.match(apiStopTip({ kind: 'rate_limit', label: '사용량 한도', reset: '3pm', action: '기다립니다' }), /3pm에 풀림/);
 });
 
