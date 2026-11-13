@@ -141,10 +141,12 @@ worktree 세션을 **끝내지 않고 잠깐 내려놓는** 길. 끝내면 합�
 
 ### 6-1. 합치기 준비 — 일을 마친 worktree 세션에 승인 카드 (11-11, `bridge/mergeprep.py`)
 
-- **켜져 있다**(`config/handoff.toml [merge_prep] enabled = true`, `projects = ["foreman"]`, `stage = 1`, 11-11 사용자). 브리지가 LLM 없이 `merge-tree`를 돌려 카드를 만든다. 카드는 「합치기까지」다 — 시험 · push · 브리지 다시 띄우기 · 화면 점검은 여전히 관리자 몫(2단계는 사용자가 1단계를 써 본 뒤 정한다, 아직 없음)
+- **켜져 있다**(`config/handoff.toml [merge_prep] enabled = true`, `projects = ["foreman", "ronanlab-infra"]`(11-12 — 런슈즈는 관리자 310이 섰지만 아직 넣지 않음), `stage = 1`, 11-11 사용자). 브리지가 LLM 없이 `merge-tree`를 돌려 카드를 만든다. 카드는 「합치기까지」다 — 시험 · push · 브리지 다시 띄우기 · 화면 점검은 여전히 관리자 몫(2단계는 사용자가 1단계를 써 본 뒤 정한다, 아직 없음)
 - **언제 만드나**: 세션이 일을 마쳤을 때 — 턴 끝 신호에서 바로(`check_one(via="turn_end")`, 묻는 말이 있어도 만든다) + `every_s`(60초)마다 훑기가 줍는다. 합칠 커밋이 있고(ahead > 0) 커밋 안 한 변경이 0이어야 한다
 - **카드**: 브랜치 · 커밋 · 바뀐 파일 · 충돌 여부 · ff 가능 / main이 앞섬 · README 정리 후보 · docs. 상태 `ready` · `merging` · `merged` · `conflict_sent` · `conflict_manager` · `failed`
 - **사람이 승인**하면 충돌이 없을 때 살아 있는 세션도 끝내고 합친다(main이 앞섰으면 rebase). 충돌이면 세션을 끝내지 않고 그 세션에 「main을 가져와 풀라」를 보낸다(끝난 세션이면 관리자 세션에). 결과와 「정리 후보」는 관리자 세션에 남는다. API: `GET /api/merge-prep`, `POST /api/sessions/{sid}/merge-prep {"action": "merge" | "skip" | "refresh"}`(`bridge/api/handoff.py`). `skip`은 그 브랜치 끝 커밋이 바뀌기 전까지 카드를 치운다
+- **승인자 — 프로젝트별**(11-12 사용자, `config/handoff.toml [merge_prep.per_project.<프로젝트>] approver`): FOREMAN · 인프라는 `approver = "manager"` — 관리자가 `POST /api/sessions/{sid}/merge-prep {"action": "merge", "by": "manager"}`로 합친다. 관리자가 승인하는 카드는 사람 화면(카드 · 「합치기 기다림」 말풍선 · 승인 막대)에 띄우지 않는다. `human_paths`(FOREMAN: `docs/style_guide.md` · `docs/operations.md`)를 건드린 카드만 사람에게 간다
+- **커밋을 하나로 뭉친다**(`squash = true`, FOREMAN · 인프라 11-12부터): 원래 커밋의 제목 · 시각은 합친 커밋 본문 「원래 커밋(오래된 차례)」에 남는다. 합친 커밋 제목은 첫 커밋 제목을 그대로 쓴다(고칠지는 README 「나중에 할 일」)
 - **조용한 고장 금지**: 준비 실패 · 훑기가 `stuck_min`(10분) 넘게 안 끝남 · 합치기 실패 · 관리자에게 못 알림은 텔레그램 한 번 + 카드 목록에 사유. 카드가 새로 생길 때도 텔레그램 한 번(`notify_ready` — 11-11 시험에서 실제로 나갔는지는 확인하지 못했다)
 - **정리 후보**(11-11 2물결): README 「나중에 할 일」 줄에 점수 — 100 세션 log의 「README에서 뺄 줄」에 그 줄 이름 · 50 근거 칸이 링크한 log를 이번에 고침 · 40 「받은 할 일 #N」이 커밋 글 · log에도 나옴 · 10 바뀐 파일 · 1 드문 낱말(낱말만으로는 셋 넘게 겹쳐야 후보). 낱말만 겹친 것(`weak`)은 카드에서 접는다. docs 줄은 문서마다 묶고, 바뀐 파일을 적었는데 이번에 그 문서를 고치지 않았으면 `stale`(「이번에 안 고침」) — 이 문서를 고치게 된 계기다. 고르고 지우는 것은 사람 승인 뒤 관리자(`doc_candidates`)
 - **카드가 보이는 곳**: 세션 패널 「세션」 탭 + 캐릭터 머리 위 「합치기 기다림」 말풍선 · 승인 막대 「🔀 합치기 대기 N」(`docs/10_office_design.md` 「합치기 기다림」)
