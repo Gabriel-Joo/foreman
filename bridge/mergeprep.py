@@ -19,20 +19,22 @@ worktree 세션이 「일을 마침」이 되면 merge-tree를 돌려 **합치�
   squash = true면 bridge/worktree.py merge가 커밋 하나로 묶는다(SQUASH_OF)
 
 조용한 고장 금지: 준비 실패 · 훑기가 stuck_min 넘게 안 끝남 · 합치기 실패 · 관리자에게 못 알림 → 텔레그램 한 번 + 카드(목록)에 사유.
-카드는 브리지 메모리에 둔다(마이그레이션 없음) — 다시 띄우면 다음 훑기에서 다시 만든다. [나중에]는 session_action 'mprep-skip'
-(detail = 브랜치 끝 커밋)에 남아 그 커밋이 바뀌기 전까지 다시 띄우지 않는다.
+카드는 메모리(self.cards)에서 돌고 DB 표 merge_card(0032)에 맞춰 남긴다(11-13, log/mergeprep_db_20261113.md) — 브리지를 다시
+띄우면 뜰 때 되살린다(made_at · 정리 후보 그대로). DB 쓰기가 실패해도 카드는 메모리로 계속 돌고, 텔레그램 한 번 + 목록에 사유.
+[나중에]는 session_action 'mprep-skip'(detail = 브랜치 끝 커밋)에 남아 그 커밋이 바뀌기 전까지 다시 띄우지 않는다.
 """
 
 from __future__ import annotations
 
 import asyncio
 import fnmatch
+import json
 import logging
 import os
 import re
 import tempfile
 import tomllib
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -87,6 +89,8 @@ class MergePrepCfg:
     notify_ready: bool = True
     stage: int = 1
     projects: list[str] = field(default_factory=list)     # 비면 모든 프로젝트
+    keep_h: int = 6                # 끝난 카드(merged · failed · 충돌 넘김)를 남기는 시간 — updated_at(DB에 남은 시각) 기준
+    keep_docs_h: int = 72          # 그중 합친 카드에 정리 후보가 남아 있으면 이만큼(11-13 — 관리자가 고를 시간)
     docs: DocsCfg = field(default_factory=DocsCfg)
     human_always: HumanAlways = field(default_factory=HumanAlways)
     per_project: dict[str, ProjectRule] = field(default_factory=dict)
@@ -119,6 +123,7 @@ def load(path: str | Path) -> MergePrepCfg:
     cfg = MergePrepCfg(enabled=bool(raw.get("enabled", False)), every_s=int(raw.get("every_s", 60)),
                        stuck_min=int(raw.get("stuck_min", 10)), notify_ready=bool(raw.get("notify_ready", True)),
                        stage=int(raw.get("stage", 1)), projects=[str(x) for x in raw.get("projects") or []],
+                       keep_h=int(raw.get("keep_h", 6)), keep_docs_h=int(raw.get("keep_docs_h", 72)),
                        docs=DocsCfg(readme=str(d.get("readme", "README.md")), readme_section=str(d.get("readme_section", "나중에 할 일")),
                                     docs_dir=str(d.get("docs_dir", "docs")), max=int(d.get("max", 12))),
                        human_always=HumanAlways(paths=[str(x) for x in ha.get("paths") or []],
@@ -126,8 +131,8 @@ def load(path: str | Path) -> MergePrepCfg:
                                                 history_words=[str(x) for x in ha.get("history_words") or []],
                                                 deletions=bool(ha.get("deletions", True)), submodules=bool(ha.get("submodules", True))),
                        per_project=per)
-    if cfg.every_s < 10 or cfg.stuck_min < 1 or cfg.stage not in (1, 2):
-        raise ValueError("merge_prep 값이 맞지 않습니다(every_s ≥ 10, stuck_min ≥ 1, stage 1 · 2)")
+    if cfg.every_s < 10 or cfg.stuck_min < 1 or cfg.stage not in (1, 2) or cfg.keep_h < 1 or cfg.keep_docs_h < cfg.keep_h:
+        raise ValueError("merge_prep 값이 맞지 않습니다(every_s ≥ 10, stuck_min ≥ 1, stage 1 · 2, keep_h ≥ 1, keep_docs_h ≥ keep_h)")
     return cfg
 
 
@@ -415,6 +420,16 @@ class Card:
     def view(self) -> dict[str, Any]:
         return asdict(self) | {"ff": self.ff, "head8": self.head[:8]}
 
+    def has_docs(self) -> bool:
+        d = self.docs or {}
+        return bool(d.get("readme") or d.get("docs"))
+
+    @classmethod
+    def from_saved(cls, d: dict[str, Any]) -> Card:
+        """DB(merge_card.card)의 JSON → 카드. 모르는 칸은 버리고(뒤 버전이 칸을 더해도 뜬다) 없는 칸은 기본값."""
+        names = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in d.items() if k in names})
+
 
 def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
@@ -422,6 +437,25 @@ def _now() -> datetime:
 
 def _iso(d: datetime) -> str:
     return d.isoformat(timespec="seconds") + "Z"
+
+
+def _dt(s: str | None) -> datetime:
+    """카드 시각 글(…Z, UTC) → DB DATETIME. 읽지 못하면 지금(칸이 NOT NULL이라)."""
+    try:
+        return datetime.fromisoformat((s or "").removesuffix("Z"))
+    except ValueError:
+        return _now()
+
+
+def card_json(c: Card) -> str:
+    return json.dumps(asdict(c), ensure_ascii=False, sort_keys=True)
+
+
+STORE_UPSERT = text(
+    "INSERT INTO merge_card (session_id, project, head, status, card, made_at, updated_at) "
+    "VALUES (:sid, :project, :head, :status, :card, :made, :upd) "
+    "ON DUPLICATE KEY UPDATE project = VALUES(project), head = VALUES(head), status = VALUES(status), card = VALUES(card), "
+    "made_at = VALUES(made_at), updated_at = VALUES(updated_at)")
 
 
 class MergePrep:
@@ -436,13 +470,19 @@ class MergePrep:
         self._touched = False                # 있던 카드의 표시(묻는 말)만 바뀜 — 화면을 다시 그린다
         self.turn_end: dict[str, Any] = {"ok": 0, "fail": 0, "error": None, "at": None}   # 턴 끝 넘기기 — health로 보인다
         self.health["turn_end"] = self.turn_end
+        # 카드를 DB(merge_card, 0032)에 남긴다(11-13). engine이 없으면(시험의 가짜) 메모리로만
+        self.store: dict[str, Any] = {"on": self.engine is not None, "ok": True, "error": None, "at": None,
+                                      "restored": None}
+        self._saved: dict[int, str] = {}    # DB에 쓴 카드 JSON — 바뀐 것만 다시 쓰고, 메모리에서 빠진 것은 지운다
+        self._sync_lock = asyncio.Lock()
+        self._restored = False
         wt.SQUASH_OF = self.squash_for_repo  # 패널 [합치기]도 같은 squash 설정을 따르게(handoff.worktree_act → wt.merge)
 
     # ── 보기 ──
     def view(self, project: str | None = None) -> dict[str, Any]:
         """project를 주면 그 프로젝트 카드만(관리자가 자기 카드를 모아 본다 — GET /api/merge-prep?project=, 11-12)."""
         cards = [c for c in self.cards.values() if project is None or c.project == project]
-        return {"enabled": self.cfg.enabled, "stage": self.cfg.stage, "health": self.health,
+        return {"enabled": self.cfg.enabled, "stage": self.cfg.stage, "health": self.health, "store": self.store,
                 **({"project": project, "approver": self.cfg.approver_of(project),
                     "squash": self.cfg.rule(project).squash} if project is not None else {}),
                 "cards": [c.view() for c in sorted(cards, key=lambda c: c.made_at, reverse=True)]}
@@ -466,6 +506,126 @@ class MergePrep:
     def card_for(self, sid: int) -> dict[str, Any] | None:
         c = self.cards.get(sid)
         return c.view() if c else None
+
+    # ── DB에 남기기(11-13, merge_card) ──
+    async def restore(self) -> int:
+        """브리지가 뜰 때 DB의 카드를 되살린다 — made_at · updated_at · 정리 후보 그대로(「오래됨」이 다시 잡히지 않게, 끝난 카드의
+        남김 시간도 DB 시각 기준). 브랜치 끝 커밋이 바뀌었으면 다음 훑기가 지금처럼 다시 만든다(prep). 합치는 중(merging)이던
+        카드는 결과를 모르니 failed로 바꿔 사유를 단다. 읽기가 실패하면 빈 카드로 돌고 텔레그램 한 번 + 목록에 사유."""
+        if not self.store["on"]:
+            self._restored = True
+            return 0
+        async with self._lock:
+            try:
+                async with asyncio.timeout(15):
+                    async with self.engine.connect() as cn:
+                        rows = (await cn.execute(text("SELECT session_id, card FROM merge_card"))).all()
+            except Exception as e:  # noqa: BLE001 — 못 읽어도 브리지 · 훑기는 돈다(카드는 다시 만든다)
+                self._store_bad(f"합치기 카드를 DB에서 되살리지 못했습니다({type(e).__name__}: {str(e)[:160]}) — 카드는 다시 "
+                                "만들지만 정리 후보 · 「오래됨」 시각 · 합친 카드가 사라졌을 수 있습니다", "load")
+                self._restored = True
+                return 0
+            n = 0
+            for sid, raw in rows:
+                try:
+                    d = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+                    c = Card.from_saved(d)
+                except Exception as e:  # noqa: BLE001 — 한 장이 깨져도 나머지는 되살린다
+                    log.warning("합치기 카드 %s를 되살리지 못함: %s", sid, type(e).__name__)
+                    continue
+                self._saved[int(sid)] = card_json(c)   # DB에 있는 그대로 — 바뀌면 다시 쓴다
+                if c.status == "merging":
+                    c.status = "failed"
+                    c.error = "합치는 중에 브리지가 다시 떴습니다 — 결과를 모릅니다. git log · worktree를 확인해 주세요"
+                    c.updated_at = _iso(_now())
+                cur = self.cards.get(int(sid))
+                if cur is not None:                    # 되살리기 전에 턴 끝이 먼저 만든 카드 — 같은 커밋이면 처음 시각을 잇는다
+                    if cur.head == c.head:
+                        cur.made_at = c.made_at
+                    continue
+                self.cards[int(sid)] = c
+                n += 1
+            self.store["restored"] = n
+            self._restored = True
+        await self.sync()
+        if n and self.on_change:
+            self.on_change()
+        log.info("합치기 카드 %d장을 DB에서 되살렸다", n)
+        return n
+
+    async def sync(self) -> None:
+        """메모리 카드 → DB. 바뀐 카드만 쓰고(card JSON을 견준다) 메모리에서 빠진 카드는 지운다. 실패하면 다음 번에 다시 —
+        카드는 메모리로 계속 돈다. 되살리기 전에는 쓰지 않는다(DB에 남은 카드를 지우지 않게)."""
+        if not self.store["on"] or not self._restored:
+            return
+        async with self._sync_lock:
+            snap = {sid: (c, card_json(c)) for sid, c in list(self.cards.items())}
+            put = {sid: v for sid, v in snap.items() if self._saved.get(sid) != v[1]}
+            gone = [sid for sid in self._saved if sid not in snap]
+            if not put and not gone:
+                return
+            try:
+                async with asyncio.timeout(15):
+                    async with self.engine.begin() as cn:
+                        for sid, (c, js) in put.items():
+                            await cn.execute(STORE_UPSERT, {"sid": sid, "project": c.project, "head": c.head or "", "status": c.status,
+                                                            "card": js, "made": _dt(c.made_at), "upd": _dt(c.updated_at)})
+                        if gone:
+                            from sqlalchemy import bindparam
+                            await cn.execute(text("DELETE FROM merge_card WHERE session_id IN :s")
+                                             .bindparams(bindparam("s", expanding=True)), {"s": gone})
+            except Exception as e:  # noqa: BLE001 — 저장 실패가 카드 · 합치기를 막지 않는다
+                self._store_bad(f"합치기 카드를 DB에 남기지 못했습니다({type(e).__name__}: {str(e)[:160]}) — 카드는 메모리로 돌지만 "
+                                "브리지를 다시 띄우면 사라집니다", "save")
+                return
+            for sid, (_, js) in put.items():
+                self._saved[sid] = js
+            for sid in gone:
+                self._saved.pop(sid, None)
+            if not self.store["ok"]:
+                log.info("합치기 카드 DB 저장이 다시 됩니다")
+                self.store.update(ok=True, error=None, at=_iso(_now()))
+                self._apply_store_health()
+                if self.on_change:
+                    self.on_change()
+
+    def _sync_soon(self) -> None:
+        """잠금 밖 · 동기 자리(worktree_gone 등)에서 — 저장을 예약만 한다."""
+        if not self.store["on"]:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        t = loop.create_task(self.sync())
+        self._tasks.add(t)
+        t.add_done_callback(self._tasks.discard)
+
+    def _store_bad(self, why: str, what: str) -> None:
+        """조용한 고장 금지 — 처음 실패할 때 텔레그램 한 번 + 목록(health)에 사유. 다시 될 때까지 또 보내지 않는다.
+        _notify는 보낸 적이 있는지 DB에서 보는데, DB가 문제일 수 있어 여기서는 메모리 표시로 한 번만 보낸다(DB 전체가 죽었으면
+        알림 기록도 못 해 텔레그램이 안 나간다 — notifier 한계, log/mergeprep_db_20261113.md)."""
+        first = self.store["ok"]
+        self.store.update(ok=False, error=why, at=_iso(_now()))
+        self._apply_store_health()
+        log.warning(why)
+        if first:
+            self._notify(None, f"mergeprep:db:{what}:{_now():%Y%m%d%H%M}", f"⚠ {why}", check_db=False)
+        if self.on_change:
+            self.on_change()
+
+    def _apply_store_health(self) -> None:
+        """저장 실패는 health에도 싣는다 — 패널 「합치기 승인」이 health.error를 띄운다(handoff.js)."""
+        if not self.store["ok"]:
+            self.health = {**self.health, "ok": False, "error": self.store["error"], "store": False}
+        elif self.health.get("store") is False:
+            self.health = {**self.health, "ok": True, "error": None, "store": True}
+
+    def _expired(self, c: Card, cut: str, cut_docs: str) -> bool:
+        """끝난 카드를 치울 때인가 — updated_at 기준 keep_h, 합친 카드에 정리 후보가 남았으면 keep_docs_h(11-13)."""
+        if c.status == "merged" and c.has_docs():
+            return c.updated_at < cut_docs
+        return c.updated_at < cut
 
     # ── 훑기 ──
     async def _candidates(self) -> list[tuple[Any, ...]]:
@@ -586,10 +746,12 @@ class MergePrep:
             docs = {"error": f"정리 후보를 뽑지 못했습니다({type(e).__name__})", "readme": [], "docs": []}
         _, files = await wt.git(repo, "diff", "--name-only", f"{st['base']}...{st['branch']}")
         now = _iso(_now())
+        # 같은 커밋(main만 앞섬 · live만 바뀜)이면 처음 만든 시각을 잇는다 — 「오래됨」은 사람이 기다린 시간이다(11-13)
+        made = old.made_at if old is not None and old.status == "ready" and old.head == st["head"] and old.made_at else now
         card = Card(sid=sid, title=title, project=project, role=role, repo=repo, name=name, branch=st["branch"], base=st["base"],
                     head=st["head"], base_head=st["base_head"], live=bool(ls), why=why, ahead=st["ahead"], behind=st["behind"],
                     commits=st["commits"], files=files.splitlines()[:60], conflict=conflict, docs=docs, asks=asks, via=via,
-                    made_at=now, updated_at=now)
+                    made_at=made, updated_at=now)
         mgr = None
         if self.cfg.approver_of(project) == "manager":
             try:
@@ -656,6 +818,7 @@ class MergePrep:
             if c.approver == "manager":
                 c.approver = "human"
                 c.note = "관리자 세션에 알리지 못해 사람이 승인합니다."
+        await self.sync()
         if self.on_change:
             self.on_change()
 
@@ -690,11 +853,15 @@ class MergePrep:
             for sid in [s for s, c in self.cards.items() if s not in keep and c.status == "ready"]:
                 del self.cards[sid]                       # 더는 일을 마친 상태가 아니다(다시 일함 · 합침 · 버림)
                 changed = True
-            # 끝난 카드(merged 등)는 6시간 뒤 치운다
-            cut = _iso(_now() - timedelta(hours=6))
-            for sid in [s for s, c in self.cards.items() if s not in keep and c.status != "ready" and c.updated_at < cut]:
+            # 끝난 카드(merged 등)는 keep_h(6시간) 뒤 치운다 — 합친 카드에 정리 후보가 남았으면 keep_docs_h(11-13)
+            cut = _iso(_now() - timedelta(hours=self.cfg.keep_h))
+            cut_docs = _iso(_now() - timedelta(hours=self.cfg.keep_docs_h))
+            for sid in [s for s, c in self.cards.items() if s not in keep and c.status != "ready" and self._expired(c, cut, cut_docs)]:
                 del self.cards[sid]
+                changed = True
             self.health = {"ok": True, "last": _iso(_now()), "error": None, "turn_end": self.turn_end}
+            self._apply_store_health()
+        await self.sync()
         if changed and self.on_change:
             self.on_change()
         return len(self.cards)
@@ -720,6 +887,7 @@ class MergePrep:
             elif old is not card:
                 self.cards[sid] = card
                 changed = True
+        await self.sync()
         if changed and self.on_change:
             self.on_change()
         return card
@@ -772,6 +940,7 @@ class MergePrep:
         if c is None or c.status == "merging":
             return False
         del self.cards[sid]
+        self._sync_soon()
         return True
 
     # ── 승인 ──
@@ -792,13 +961,20 @@ class MergePrep:
             self._manager_may(c, "미루기")
         await self.h._act(sid, ACT_SKIP, None, True, c.head)
         del self.cards[sid]
+        await self.sync()
         if self.on_change:
             self.on_change()
         return {"ok": True, "note": "카드를 치웠습니다 — 이 세션이 새로 커밋하면 다시 만듭니다."}
 
     async def approve(self, sid: int, by: str = "human") -> dict[str, Any]:
         """[합치기] — 사람(패널) 또는 관리자(by=manager, 11-12 — 그 프로젝트 승인자가 관리자이고 늘-사람에 안 걸린 카드만).
-        다시 재고 → 충돌이면 그 세션(끝났으면 관리자)에 풀라고 보냄 · 깨끗하면 (끝내고) 합침."""
+        다시 재고 → 충돌이면 그 세션(끝났으면 관리자)에 풀라고 보냄 · 깨끗하면 (끝내고) 합침. 결과(거부 포함)는 DB에도 남긴다."""
+        try:
+            return await self._approve(sid, by)
+        finally:
+            await self.sync()
+
+    async def _approve(self, sid: int, by: str) -> dict[str, Any]:
         c = self.cards.get(sid)
         if not c or c.status not in ("ready", "conflict_sent", "conflict_manager", "failed"):
             raise Refused("승인할 합치기 카드가 없습니다 — 카드가 사라졌거나 이미 합치는 중입니다")
@@ -828,6 +1004,7 @@ class MergePrep:
             if conflict:
                 return await self._send_conflict(c, row, live)
             c.status, c.error = "merging", None
+            await self.sync()            # 합치는 중에 브리지가 내려가면 되살릴 때 「결과 모름」으로 보이게
             if self.on_change:
                 self.on_change()
             try:
@@ -929,7 +1106,8 @@ class MergePrep:
         if not dn:
             pick = ""
         elif mgr_picks:     # 11-12 — 승인자가 관리자인 프로젝트는 정리 후보 고르기 · 지우기도 관리자
-            pick = (f" README · docs 정리 후보 {dn}개는 카드에 있다(GET /api/merge-prep?project={c.project} 의 card.docs, 6시간 남는다) — "
+            pick = (f" README · docs 정리 후보 {dn}개는 카드에 있다(GET /api/merge-prep?project={c.project} 의 card.docs, "
+                    f"{self.cfg.keep_docs_h}시간 남는다 — 브리지를 다시 띄워도 DB에서 되살린다) — "
                     "관리자가 골라 지운다. 판단이 안 서는 줄만 사람에게 묻는다.")
         else:
             pick = (f" README · docs 정리 후보 {dn}개는 그 세션 패널 카드에 있다 — 고르고 지우는 것은 사람 승인 뒤"
@@ -979,17 +1157,19 @@ class MergePrep:
                          ("관리자 세션이 없어" if not m else "관리자 세션에 보내지 못해") + f" 텔레그램으로 남깁니다 — {msg}")
         return ok
 
-    def _notify(self, c: Card | None, key: str, msg: str) -> None:
-        """텔레그램 한 번(key가 이미 있으면 보내지 않는다 — 브리지를 다시 띄워도). c가 없으면 FOREMAN 전체 알림."""
+    def _notify(self, c: Card | None, key: str, msg: str, check_db: bool = True) -> None:
+        """텔레그램 한 번(key가 이미 있으면 보내지 않는다 — 브리지를 다시 띄워도). c가 없으면 FOREMAN 전체 알림.
+        check_db=False면 보낸 적을 DB에서 보지 않는다(DB 문제 알림 — 부른 쪽이 한 번만 부른다)."""
         if self.notifier is None:
             return
         project, sid = (c.project, c.sid) if c else ("foreman", None)
 
         async def go() -> None:
             try:
-                async with self.engine.connect() as cn:
-                    if (await cn.execute(text("SELECT 1 FROM notification WHERE rule = :r LIMIT 1"), {"r": key[:64]})).first():
-                        return
+                if check_db:
+                    async with self.engine.connect() as cn:
+                        if (await cn.execute(text("SELECT 1 FROM notification WHERE rule = :r LIMIT 1"), {"r": key[:64]})).first():
+                            return
                 rule = self.notifier.rules.for_project(project) if project else None
                 prefix = (rule and rule.prefix) or "[" + (project or "FOREMAN") + "]"
                 self.notifier.send_direct(project, NOTIFY_KIND, sid, f"{prefix} {msg}"[:3500], rule=key[:64])
@@ -1002,6 +1182,11 @@ class MergePrep:
     # ── 돌기 ──
     async def run(self) -> None:
         stuck_s = self.cfg.stuck_min * 60
+        try:
+            await self.restore()               # 실패는 restore가 알린다(텔레그램 + 사유)
+        except Exception as e:  # noqa: BLE001 — 되살리기가 감시를 막지 않는다
+            self._restored = True
+            self._store_bad(f"합치기 카드 되살리기 실패: {type(e).__name__}: {str(e)[:160]}", "load")
         while True:
             await asyncio.sleep(self.cfg.every_s)
             try:
@@ -1016,7 +1201,8 @@ class MergePrep:
 
     def _health_bad(self, why: str, key: str) -> None:
         log.warning(why)
-        self.health = {"ok": False, "last": self.health.get("last"), "error": why, "at": _iso(_now()), "turn_end": self.turn_end}
+        self.health = {"ok": False, "last": self.health.get("last"), "error": why, "at": _iso(_now()), "turn_end": self.turn_end,
+                       **({"store": self.health["store"]} if "store" in self.health else {})}
         self._notify(None, key, f"⚠ {why}")
         if self.on_change:
             self.on_change()
