@@ -217,9 +217,46 @@ FREE_TITLE_MAX = 120
 SQUASH_REF = "refs/foreman/squashed/"
 _DECLARED_CONV = re.compile(r"`타입(\([^)]*\))?: 설명`")
 
+# ── 커밋 글의 기호(11-13 사용자 결정) ──
+# FOREMAN · 런슈즈 CLAUDE.md 「커밋 메시지」: em dash(—)와 가운뎃점(·)을 쓰지 않고, 화살표(→)로 문장을 대신하지 않고, 범위 표시
+# `타입(범위):`를 쓰지 않는다. 세션 제목 · 원래 커밋 제목에는 이것들이 흔해서 그대로 두면 관리자가 커밋마다 다시 썼다.
+# 바꾸기는 여기 한 곳에서만 한다(squash 제목 · 본문 목록 · 사람이 넘긴 제목 모두).
+_SYMBOL_CHARS = "—·・→"                     # em dash, 가운뎃점(라틴 · 가타카나), 화살표. en dash(–)는 범위(1–3)라 두었다
+_SYMBOL_RE = re.compile(rf"\s*[{_SYMBOL_CHARS}]\s*")
+_COMMAS_RE = re.compile(r",(\s*,)+")
+_CONV_PARTS = re.compile(r"^([a-z]+)(\([^)]*\))?(!?): (.*)$")
+
+
+def plain(s: str | None) -> str:
+    """글 한 줄의 em dash · 가운뎃점 · 화살표를 쉼표로 바꾼다. 빈칸을 하나로, 쉼표 앞 빈칸을 빼고, 겹친 쉼표를 하나로,
+    앞뒤 쉼표와 끝 마침표를 뺀다. 예: 「A — B · C → D」 → 「A, B, C, D」, 「경험·후기」 → 「경험, 후기」, 「A, — B」 → 「A, B」."""
+    s = " ".join((s or "").split())
+    s = _SYMBOL_RE.sub(", ", s)
+    s = _COMMAS_RE.sub(",", s)
+    s = re.sub(r"\s+,", ",", s)
+    return s.strip(" ,").rstrip(".").rstrip(" ,")
+
+
+def plain_title(t: str | None) -> str:
+    """커밋 제목 한 줄 — `타입(범위): 설명`이면 범위를 빼고(`!`는 둔다) 설명에 plain을, 아니면 전체에 plain을."""
+    t = " ".join((t or "").split())
+    m = _CONV_PARTS.match(t)
+    return f"{m.group(1)}{m.group(3)}: {plain(m.group(4))}" if m else plain(t)
+
+
+def _title_changes(t: str) -> str:
+    """사람이 넘긴 제목을 plain_title이 어떻게 바꿨는지 — 결과 note에 쓴다(조용히 바꾸지 않게)."""
+    said = []
+    if any(c in t for c in _SYMBOL_CHARS):
+        said.append("제목의 em dash · 가운뎃점 · 화살표를 쉼표로 바꿨습니다.")
+    m = _CONV_PARTS.match(t.strip())
+    if m and m.group(2):
+        said.append(f"제목의 범위 표시 {m.group(2)}를 뺐습니다.")
+    return " ".join(said)
+
 
 def _cut(s: str, n: int) -> str:
-    return s if len(s) <= n else s[:n - 1].rstrip() + "…"
+    return s if len(s) <= n else s[:n - 1].rstrip(" ,") + "…"
 
 
 async def commit_style(repo: str, base: str) -> str:
@@ -239,22 +276,27 @@ async def commit_style(repo: str, base: str) -> str:
 
 
 def check_title(style: str, title: str) -> str:
-    """사람 · 관리자가 넘긴 squash 제목을 그 저장소 꼴로 본다. 맞으면 다듬은 제목, 아니면 Refused(아무것도 하기 전에)."""
+    """사람 · 관리자가 넘긴 squash 제목을 그 저장소 꼴로 본다. 맞으면 앞뒤 빈칸만 뗀 제목, 아니면 Refused(아무것도 하기 전에).
+    em dash · 가운뎃점 · 화살표 · 범위 표시는 거부하지 않는다 — 길이는 plain_title로 바꾼 뒤 모양으로 재고, 실제 바꾸기와
+    「바꿨습니다」 note는 merge가 한다(여기서 바꿔 돌려주면 merge가 바뀐 줄 모른다 — handoff · mergeprep가 이 값을 그대로 넘긴다)."""
     t = (title or "").strip()
     if not t:
         raise Refused("제목이 비어 있습니다")
     if "\n" in t or "\r" in t:
         raise Refused("제목은 한 줄이어야 합니다 — 원래 커밋 목록은 본문에 저절로 들어갑니다")
+    p = plain_title(t)
     if style == "conventional":
-        m = CONV_RE.match(t)
-        if not m:
+        if not CONV_RE.match(t):
             raise Refused("이 저장소의 커밋 꼴은 `타입: 설명`입니다(예: feat: 챗봇 검색 색인) — 제목이 그 꼴이 아닙니다")
-        if len(m.group(3)) > CONV_DESC_MAX:
-            raise Refused(f"설명이 {len(m.group(3))}자입니다 — 이 저장소는 {CONV_DESC_MAX}자 안입니다")
         if t.endswith("."):
             raise Refused("이 저장소의 커밋 제목은 마침표로 끝내지 않습니다")
-    elif len(t) > FREE_TITLE_MAX:
-        raise Refused(f"제목이 {len(t)}자입니다 — {FREE_TITLE_MAX}자 안으로 넘겨 주세요")
+        m = CONV_RE.match(p)
+        if not m:
+            raise Refused("설명이 비어 있습니다 — 기호를 쉼표로 바꾸고 나니 남는 글이 없습니다")
+        if len(m.group(3)) > CONV_DESC_MAX:
+            raise Refused(f"설명이 {len(m.group(3))}자입니다 — 이 저장소는 {CONV_DESC_MAX}자 안입니다")
+    elif len(p) > FREE_TITLE_MAX:
+        raise Refused(f"제목이 {len(p)}자입니다 — {FREE_TITLE_MAX}자 안으로 넘겨 주세요")
     return t
 
 
@@ -264,23 +306,23 @@ async def check_title_for(repo: str, base: str, title: str) -> str:
 
 def squash_title(style: str, subjects: list[str], branch: str, topic: str | None = None, sid: int | None = None) -> str:
     """기계가 만드는 squash 제목. subjects = 원래 커밋 제목(오래된 차례), topic = 세션 제목(custom_title 우선 — 묶은 일 전체를 말한다).
-    conventional: `타입: <세션 제목> — 커밋 N개`(타입은 원래 커밋 타입 중 가장 무거운 것, 없으면 chore, 설명 50자 안).
-    free(FOREMAN): `합침(<브랜치> · 세션 N, 커밋 N개): <세션 제목>` — 브랜치 이름은 다시 쓰이니(foreman-4) 세션 번호로 log와 맞댄다."""
+    conventional(FOREMAN도 11-13부터): `타입: <세션 제목>`(타입은 원래 커밋 타입 중 가장 무거운 것, 없으면 chore, 설명 50자 안).
+    커밋 수는 제목에 넣지 않고 본문 첫 문장에 쓴다(11-13 — 「— 커밋 N개」 꼬리가 em dash였다).
+    free(CLAUDE.md에 꼴이 없고 최근 제목도 자유 꼴인 저장소): `합침(<브랜치>, 세션 N, 커밋 N개): <세션 제목>`.
+    세션 제목 · 첫 제목의 em dash · 가운뎃점 · 화살표 · 범위 표시는 plain으로 바꾼다."""
     n = len(subjects)
-    topic = " ".join((topic or "").split())
     first = subjects[0] if subjects else branch
     if style == "conventional":
         types = [m.group(1) for s in subjects if (m := CONV_RE.match(s))]
         typ = min(types, key=lambda t: CONV_ORDER.index(t) if t in CONV_ORDER else len(CONV_ORDER)) if types else "chore"
-        if topic:
-            m = CONV_RE.match(topic)
-            what, tail = (m.group(3) if m else topic).rstrip("."), f" — 커밋 {n}개"
-        else:
+        m = CONV_RE.match(" ".join((topic or "").split()))
+        what, tail = plain(m.group(3) if m else topic), ""
+        if not what:
             m = CONV_RE.match(first)
-            what, tail = (m.group(3) if m else first).rstrip("."), f" 외 {n - 1}건"
+            what, tail = plain(m.group(3) if m else first), f" 외 {n - 1}건"
         return f"{typ}: {_cut(what, CONV_DESC_MAX - len(tail))}{tail}"
-    who = branch + (f" · 세션 {sid}" if sid else "")
-    what = topic or f"{first} 외 {n - 1}건"
+    who = branch + (f", 세션 {sid}" if sid else "")
+    what = plain(topic) or f"{plain(first)} 외 {n - 1}건"
     return _cut(f"합침({who}, 커밋 {n}개): {what}", FREE_TITLE_MAX)
 
 
@@ -299,10 +341,12 @@ async def squash_message(repo: str, base: str, branch: str, *, topic: str | None
     for ln in bodies.splitlines():
         if ln.strip().lower().startswith("co-authored-by:") and ln.strip() not in co:
             co.append(ln.strip())
-    about = f"{branch} 커밋 {len(items)}개를 하나로 묶음(squash)" + (f" — 세션 {sid}" if sid else "") + (
-        f" 「{' '.join(topic.split())}」" if topic else "")
-    body = (about + "\n\n원래 커밋(오래된 차례):\n" + "\n".join(f"- {d} {h} {s}" for d, h, s in items)
-            + f"\n\n원래 커밋 보기: git log {SQUASH_REF}{tip[:12]} (이 저장소에만 있음 — push되지 않음)")
+    # 본문도 자연어 문장 · 기호 없이(11-13). 원래 커밋 목록은 찾기용으로 남기되(337) 각 제목에도 같은 바꾸기를 한다
+    what = plain(topic)
+    lead = (f"세션 {sid}의 일" if sid else "이 일" if what else "이 브랜치의 일") + (f"({what})" if what else "")
+    about = f"{lead}을 커밋 {len(items)}개에서 하나로 묶었다. 작업한 브랜치는 {branch}이다."
+    body = (about + "\n\n원래 커밋(오래된 차례):\n" + "\n".join(f"- {d} {h} {plain_title(s)}" for d, h, s in items)
+            + f"\n\n원래 커밋 보기: git log {SQUASH_REF}{tip[:12]} (이 저장소에만 있고 push되지 않는다)")
     return head + "\n\n" + body + ("\n\n" + "\n".join(co) if co else "") + "\n"
 
 
@@ -324,9 +368,11 @@ async def merge(repo: str, name: str, squash: bool | None = None, *, title: str 
         raise Refused(f"커밋 안 된 변경이 {len(st['dirty'])}개 있습니다. 그 세션에서 커밋하거나 버린 뒤 합쳐 주세요")
     path, base, branch = st["path"], st["base"], st["branch"]
     style = await commit_style(repo, base)
+    changed = ""
     if title is not None:
         title = check_title(style, title)
-    unused = "" if title is None else " 넘긴 제목은 쓰지 않았습니다(squash로 묶지 않아 원래 커밋이 그대로 들어갔습니다)."
+        changed, title = _title_changes(title), plain_title(title)     # 기호 · 범위 표시를 바꾸고 그렇다고 알린다
+    unused ="" if title is None else " 넘긴 제목은 쓰지 않았습니다(squash로 묶지 않아 원래 커밋이 그대로 들어갔습니다)."
     if st["ahead"] == 0:
         await remove(repo, name, force=False)
         return {"ok": True, "merged": 0, "note": "합칠 커밋이 없어 worktree만 지웠습니다."}
@@ -368,7 +414,8 @@ async def merge(repo: str, name: str, squash: bool | None = None, *, title: str 
         return {"ok": True, "merged": st["ahead"], "commits": st["commits"], "squash": sq[:12], "title": head,
                 "orig_ref": ref if rrc == 0 else None,
                 "note": f"{base}에 커밋 {st['ahead']}개를 커밋 하나({sq[:8]} 「{head}」)로 묶어 합쳤습니다(squash — 본문에 원래 날짜 · 해시 · 제목)."
-                        + kept + ("" if rc == 0 else f" 트리가 달라 브랜치 {branch}는 지우지 않고 남겼습니다.") + " push는 하지 않았습니다."}
+                        + kept + ("" if rc == 0 else f" 트리가 달라 브랜치 {branch}는 지우지 않고 남겼습니다.")
+                        + (f" {changed}" if changed else "") + " push는 하지 않았습니다."}
     await remove(repo, name, force=False)
     return {"ok": True, "merged": st["ahead"], "commits": st["commits"],
             "note": f"{base}에 커밋 {st['ahead']}개를 합쳤습니다." + unused + " push는 하지 않았습니다."}

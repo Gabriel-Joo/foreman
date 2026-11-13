@@ -238,7 +238,7 @@ async def test_squash_merge_one_commit_with_titles_and_dates(repo, monkeypatch):
     msg = sh(repo, "log", "-1", "--format=%B")
     lines = msg.splitlines()
     assert lines[0] == "합침(cc/s, 커밋 3개): 첫 일 외 2건"                     # 세션 제목이 없으면 「첫 제목 외 N건」(11-13)
-    assert r["title"] == lines[0] and lines[2] == "cc/s 커밋 3개를 하나로 묶음(squash)"
+    assert r["title"] == lines[0] and lines[2] == "이 브랜치의 일을 커밋 3개에서 하나로 묶었다. 작업한 브랜치는 cc/s이다."
     items = [ln for ln in lines if ln.startswith("- ")]
     assert [ln.split(" ", 4)[1:3] + [ln.split(" ", 4)[4]] for ln in items] == [
         ["2026-11-12", "10:00", "첫 일"], ["2026-11-12", "11:01", "둘째 일"], ["2026-11-12", "12:02", "기록"]]   # 오래된 차례
@@ -296,8 +296,8 @@ async def test_squash_title_uses_session_title_and_number(repo, monkeypatch):
     await _branch(repo, "foreman-4", ["squash 제목 함수", "시험", "기록: squash 제목"])
     r = await wt.merge(str(repo), "foreman-4", squash=True, topic="squash 합친 커밋 제목", sid=337)
     lines = sh(repo, "log", "-1", "--format=%B").splitlines()
-    assert lines[0] == "합침(cc/foreman-4 · 세션 337, 커밋 3개): squash 합친 커밋 제목" == r["title"]
-    assert lines[2] == "cc/foreman-4 커밋 3개를 하나로 묶음(squash) — 세션 337 「squash 합친 커밋 제목」"
+    assert lines[0] == "합침(cc/foreman-4, 세션 337, 커밋 3개): squash 합친 커밋 제목" == r["title"]
+    assert lines[2] == "세션 337의 일(squash 합친 커밋 제목)을 커밋 3개에서 하나로 묶었다. 작업한 브랜치는 cc/foreman-4이다."
 
 
 def _conv_claude_md(repo):
@@ -312,19 +312,49 @@ async def test_squash_title_conventional_repo_from_claude_md(repo, monkeypatch):
     assert await wt.commit_style(str(repo), "main") == "conventional"
     await _branch(repo, "runshoes-2", ["docs: 09 16절 5-2", "fix: 챗봇 5-2 9차 수정", "feat: 검색 색인", "기록"])
     r = await wt.merge(str(repo), "runshoes-2", squash=True, topic="챗봇 5-2 검색 색인 · 경험·후기", sid=40)
-    assert r["title"] == "feat: 챗봇 5-2 검색 색인 · 경험·후기 — 커밋 4개"
+    assert r["title"] == "feat: 챗봇 5-2 검색 색인, 경험, 후기"                  # 기호는 쉼표로, 커밋 수는 본문으로(11-13)
     assert wt.CONV_RE.match(r["title"]) and len(wt.CONV_RE.match(r["title"]).group(3)) <= wt.CONV_DESC_MAX
     assert sh(repo, "log", "-1", "--format=%s") == r["title"]
+    msg = sh(repo, "log", "-1", "--format=%B")
+    assert "세션 40의 일(챗봇 5-2 검색 색인, 경험, 후기)을 커밋 4개에서 하나로 묶었다." in msg
+    assert not any(c in msg for c in "—·→")                                     # 본문(원래 커밋 목록 포함)에도 기호가 없다
+
+
+def test_foreman_claude_md_is_conventional():
+    """11-13부터 FOREMAN CLAUDE.md도 `타입: 설명`을 적었다 — 「합침(…): 제목」 free 꼴은 FOREMAN에서 더 쓰이지 않는다."""
+    text = (Path(__file__).resolve().parents[1] / "CLAUDE.md").read_text(encoding="utf-8")
+    assert wt._DECLARED_CONV.search(text)
+
+
+def test_plain_symbols_to_commas():
+    """em dash · 가운뎃점 · 화살표를 쉼표로 바꾸는 한 곳(11-13 사용자 결정)."""
+    assert wt.plain("A — B · C → D") == "A, B, C, D"
+    assert wt.plain("챗봇 검색 색인 · 경험·후기") == "챗봇 검색 색인, 경험, 후기"              # 한글 문장 안 가운뎃점(빈칸 없이)
+    assert wt.plain("A, — B") == "A, B" and wt.plain("A —, B") == "A, B"                 # 옆에 이미 쉼표
+    assert wt.plain("A — · B") == "A, B"                                                  # 기호가 겹쳐도 쉼표 하나
+    assert wt.plain("— 앞 기호, 끝 기호 —") == "앞 기호, 끝 기호"                           # 앞뒤 쉼표는 뺀다
+    assert wt.plain("끝 마침표.") == "끝 마침표" and wt.plain("  A   —B  ") == "A, B"
+    assert wt.plain("1,000건 · 1–3단계") == "1,000건, 1–3단계"                           # 숫자 쉼표 · en dash는 그대로
+    assert wt.plain("가・나") == "가, 나" and wt.plain(None) == "" and wt.plain("—") == ""
+    assert wt.plain_title("docs(11_worktree): 6-1 — 합치기 · 제목") == "docs: 6-1, 합치기, 제목"   # 범위 표시도 뺀다
+    assert wt.plain_title("feat!: 끊는 바꿈 → 새 API") == "feat!: 끊는 바꿈, 새 API"
+    assert wt.plain_title("기록: 330 · 331 합침 — 판단 줄") == "기록: 330, 331 합침, 판단 줄"
 
 
 def test_squash_title_rules():
     conv = ["fix: 가", "docs: 나"]
     assert wt.squash_title("conventional", conv, "cc/x") == "fix: 가 외 1건"                   # 세션 제목 없음 → 첫 설명 외 N건
-    assert wt.squash_title("conventional", ["기록", "고침"], "cc/x", "합치기 제목") == "chore: 합치기 제목 — 커밋 2개"   # 타입 없음 → chore
-    assert wt.squash_title("conventional", ["ops: a", "docs: b"], "cc/x", "docs: 이미 타입.") == "ops: 이미 타입 — 커밋 2개"
+    assert wt.squash_title("conventional", ["기록", "고침"], "cc/x", "합치기 제목") == "chore: 합치기 제목"   # 타입 없음 → chore
+    assert wt.squash_title("conventional", ["ops: a", "docs: b"], "cc/x", "docs: 이미 타입.") == "ops: 이미 타입"
+    assert wt.squash_title("conventional", conv, "cc/x", "판정 — 빈 worktree · 겹침 낱말") == "fix: 판정, 빈 worktree, 겹침 낱말"
+    assert wt.squash_title("conventional", ["docs(a): 첫 — 일", "x"], "cc/x") == "docs: 첫, 일 외 1건"
+    assert wt.squash_title("conventional", conv, "cc/x", " — ") == "fix: 가 외 1건"            # 기호만인 세션 제목은 없는 것과 같다
     long = wt.squash_title("conventional", conv, "cc/x", "가" * 80)
-    assert len(wt.CONV_RE.match(long).group(3)) == wt.CONV_DESC_MAX and long.endswith("… — 커밋 2개")
+    assert len(wt.CONV_RE.match(long).group(3)) == wt.CONV_DESC_MAX and long.endswith("가…")
+    cut = wt.squash_title("conventional", conv, "cc/x", "가" * 48 + " · 나나")
+    assert cut == "fix: " + "가" * 48 + "…"                                     # 자른 자리에 쉼표가 남지 않는다
     assert wt.squash_title("free", ["첫", "둘"], "cc/foreman") == "합침(cc/foreman, 커밋 2개): 첫 외 1건"
+    assert wt.squash_title("free", ["첫", "둘"], "cc/f", "가 · 나", 3) == "합침(cc/f, 세션 3, 커밋 2개): 가, 나"
     assert len(wt.squash_title("free", ["첫", "둘"], "cc/f", "나" * 300, 1)) == wt.FREE_TITLE_MAX
     # 사람이 넘긴 제목 — 그 저장소 꼴로
     assert wt.check_title("conventional", "  feat: 새 색인 ") == "feat: 새 색인"
@@ -334,6 +364,12 @@ def test_squash_title_rules():
     assert wt.check_title("free", "아무 꼴 제목") == "아무 꼴 제목"
     with pytest.raises(Refused):
         wt.check_title("free", "가" * 121)
+    # 기호 · 범위 표시는 거부하지 않는다(merge가 바꾸고 note에 적는다). 길이는 바꾼 뒤 모양으로
+    assert wt.check_title("conventional", "fix(x): 가 — 나") == "fix(x): 가 — 나"
+    with pytest.raises(Refused):
+        wt.check_title("conventional", "fix: " + "가·" * 25)                       # 바꾸면 74자
+    with pytest.raises(Refused, match="비어"):
+        wt.check_title("conventional", "fix: —")
 
 
 async def test_commit_style_from_log_when_claude_md_silent(repo):
@@ -353,7 +389,21 @@ async def test_squash_human_title_and_refusal_before_anything(repo, monkeypatch)
     assert sh(repo, "rev-parse", "main") == before and p.is_dir() and sh(repo, "for-each-ref", wt.SQUASH_REF) == ""
     r = await wt.merge(str(repo), "h", squash=True, title="fix: 사람이 정한 제목", topic="세션 제목")
     assert r["ok"] and sh(repo, "log", "-1", "--format=%s") == "fix: 사람이 정한 제목"
-    assert "「세션 제목」" in sh(repo, "log", "-1", "--format=%b")
+    assert "이 일(세션 제목)을 커밋 2개에서" in sh(repo, "log", "-1", "--format=%b")
+    assert "바꿨습니다" not in r["note"] and "뺐습니다" not in r["note"]
+
+
+async def test_squash_human_title_symbols_replaced_and_said(repo, monkeypatch):
+    """사람이 넘긴 제목의 기호 · 범위 표시는 바꿔서 쓰고 note에 그렇다고 적는다(조용히 바꾸지 않게, 11-13)."""
+    monkeypatch.setattr(wt, "SQUASH_OF", None)
+    _conv_claude_md(repo)
+    await _branch(repo, "k", ["fix(a): 가 — 나", "docs: 다 → 라"])
+    r = await wt.merge(str(repo), "k", squash=True, title="fix(bridge): 제목 — 기호 · 빼기")
+    assert r["ok"] and r["title"] == "fix: 제목, 기호, 빼기" == sh(repo, "log", "-1", "--format=%s")
+    assert "제목의 em dash · 가운뎃점 · 화살표를 쉼표로 바꿨습니다" in r["note"] and "범위 표시 (bridge)를 뺐습니다" in r["note"]
+    body = sh(repo, "log", "-1", "--format=%b")
+    assert [ln.split(" ", 4)[4] for ln in body.splitlines() if ln.startswith("- ")] == ["fix: 가, 나", "docs: 다, 라"]
+    assert not any(c in body for c in "—·→")
 
 
 async def test_title_unused_when_not_squashed(repo, monkeypatch):

@@ -330,7 +330,7 @@ async def test_approve_squash_title_machine_from_session(repo, monkeypatch):
     m.cards[7] = await m.prep(row, {})
     r = await m.approve(7)
     assert r["ok"] and h.titles == [None]
-    assert sh(repo, "log", "-1", "--format=%s") == "합침(cc/w · 세션 7, 커밋 2개): t"     # FakeH 세션 제목 「t」
+    assert sh(repo, "log", "-1", "--format=%s") == "합침(cc/w, 세션 7, 커밋 2개): t"     # FakeH 세션 제목 「t」
 
 
 async def test_new_commit_after_card_refuses(repo, monkeypatch):
