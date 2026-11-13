@@ -17,7 +17,8 @@ export function coderJobs(room, data, st) {
   for (const x of (data && data.inbox) || []) out.push({ kind: 'inbox', id: x.id, title: firstLine(x.body, 50), body: x.body, at: x.created_at });
   for (const r of (data && data.rested) || []) out.push({ kind: 'rested', sid: r.session_id, title: r.title, branch: r.branch, days: r.days || 0, at: r.rested_at });
   // 끝난 뒤 어긋난 것(11-11, bridge/reconcile.py) — 고아 worktree · 커밋 안 된 변경 · 실제와 다른 합치기 기다림 · 남은 브랜치
-  for (const d of (data && data.drift) || []) out.push({ kind: 'drift', sid: d.session_id, title: d.detail });
+  // 빈 worktree(kind 'empty', 11-13)는 맡길 일이 아니라 치울 것 — 여기서 세지 않는다(emptyWorktrees)
+  for (const d of (data && data.drift) || []) if (d.kind !== 'empty') out.push({ kind: 'drift', sid: d.session_id, title: d.detail });
   const pp = st && st.pipeline && st.pipeline.get ? st.pipeline.get(room) : null;
   const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
   if (broke) out.push({ kind: 'pipe', title: `파이프라인 실패 · ${broke}` });
@@ -37,6 +38,12 @@ export function coderJobs(room, data, st) {
   return out;
 }
 
+// 치울 것 — 빈 worktree(앞선 커밋 0 · 변경 0 · 세션 끝남, bridge/reconcile.py kind 'empty'). 맡길 일 · 말풍선에 세지 않는다
+export function emptyWorktrees(data) {
+  return ((data && data.drift) || []).filter((d) => d.kind === 'empty' && d.session_id)
+    .map((d) => ({ sid: d.session_id, name: String(d.where || '').split('/').filter(Boolean).pop() || '', title: d.detail }));
+}
+
 // 코더 머리 위 말풍선 글(순수) — 없으면 null. 쉬게 한 일만 있으면 "맡은 일 N — 합치기 기다림", 오래되면 "· N일째"
 export function coderBubble(jobs) {
   if (!jobs || !jobs.length) return null;
@@ -54,6 +61,7 @@ const WHY = {
   build: '빌드 알림 없음 — Jenkins를 확인합니다. FOREMAN 밖에서 풉니다.',
   appr: '멈춤 — 승인 대기. 세션을 열어 승인 카드에서 답합니다.',
   denied: '멈춤 — 권한 거부(CC 자체 검사). 세션을 열어 허용하거나 다른 방법을 지시합니다.',
+  empty: '치울 것 — 빈 worktree입니다. [버리기]를 누르면 확인 창을 거쳐 폴더와 브랜치를 지웁니다. 저절로 지우지 않습니다.',
   drift: '어긋남 — 세션이 끝난 뒤 브리지가 훑어 찾은, 실제와 다른 것입니다. 세션을 열어 [합치기] · [버리기]로 정리합니다. 저절로 지우지 않습니다.',
 };
 
@@ -92,18 +100,33 @@ export function createCoder(store) {
     const liveHtml = live.length ? live.map((s, i) => `<div class="sc-row"><div class="small">${i ? '임시 · ' : '코더 · '}${esc(name(s))} <span class="muted">— ${s.state === 'ACTIVE' ? '작업 중' : '쉼'}</span></div>
         <button type="button" class="small" data-cd-open="${s.id}" title="세션 열기 — 이 세션의 [세션] 탭을 엽니다.">세션 열기</button></div>`).join('')
       : '<p class="small muted">지금 도는 코더 세션이 없습니다. 코더는 자리에서 쉽니다.</p>';
+    const empties = emptyWorktrees(roomData(room));
+    const emptyHtml = empties.length ? `<details class="hand"${keep(`coder:${room}:empty`, true)}><summary title="치울 것 — 빈 worktree입니다. 커밋이 모두 원본에 들어 있고 변경이 없으며 세션도 끝났습니다. 누구에게 맡길 일이 아니라 치우기만 하면 됩니다."><b>치울 것 — 빈 worktree ${empties.length}</b></summary>${empties.map((e) =>
+      `<div class="sc-row" data-tip="${esc(WHY.empty)}"><div class="small"><b>${esc(e.title)}</b></div><div class="hand-btns">
+        <button type="button" class="small" data-cd-open="${e.sid}" title="세션 열기 — 이 세션의 [세션] 탭을 엽니다.">세션 열기</button>
+        <button type="button" class="small ghost" data-cd-clean="${e.sid}" data-cd-name="${esc(e.name)}" title="버리기 — 빈 worktree ${esc(e.name)}를 지웁니다. 잃는 커밋 · 변경은 없습니다.">버리기</button></div></div>`).join('')}</details>` : '';
     return `<div class="small muted">${esc(label)} · 코더 — 이 방의 코딩 담당입니다. 새 일은 새 세션으로, 같은 일을 이어 할 때만 그 세션으로 합니다. 둘째 세션부터는 임시 일꾼이 맡고, 세션이 끝나면 사라집니다.</div>
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}">${esc(note.msg)}</div>` : ''}
       <details class="hand"${keep(`coder:${room}:jobs`, true)}><summary title="맡길 일 — 코더에게 받은 할 일과, 브리지가 이미 아는 신호(쉬게 한 일 · 파이프라인 실패 · 빌드 알림 없음 · 승인 대기 · 권한 거부)입니다."><b>맡길 일 ${jobs.length}</b></summary>${jobsHtml}
         <div class="hand-btns"><button type="button" class="small ghost" data-cd-add="1" title="할 일 적기 — 받는 칸을 「코더에게」로 골라 엽니다.">＋ 할 일 적기</button></div></details>
+      ${emptyHtml}
       <details class="hand"${keep(`coder:${room}:live`, true)}><summary title="지금 일 — 이 방에서 도는 코더 세션입니다. 첫 세션은 상주 코더가, 둘째부터는 임시 일꾼이 맡습니다."><b>지금 일 ${live.length}</b></summary>${liveHtml}</details>`;
   }
 
   async function onClick(ev, room, openSession, openTodo) {
     const o = ev.target.closest('[data-cd-open]'), p = ev.target.closest('[data-cd-plan]'),
-      d = ev.target.closest('[data-cd-drop]'), a = ev.target.closest('[data-cd-add]');
-    if (!o && !p && !d && !a) return;
+      d = ev.target.closest('[data-cd-drop]'), a = ev.target.closest('[data-cd-add]'), cl = ev.target.closest('[data-cd-clean]');
+    if (!o && !p && !d && !a && !cl) return;
     ev.preventDefault();
+    if (cl) {
+      const name = cl.dataset.cdName;
+      if (!window.confirm(`빈 worktree ${name}를 버립니다. 커밋은 모두 원본에 들어 있고 변경이 없습니다. 계속합니까?`)) return;
+      cl.disabled = true;
+      const r = await fetch(`/api/sessions/${cl.dataset.cdClean}/worktree`, { method: 'POST', headers: store.headers(true), body: JSON.stringify({ action: 'discard', confirm: name }) });
+      note = r.ok ? { msg: `빈 worktree ${name}를 버렸습니다.` } : { bad: true, msg: `버리지 못했습니다 — HTTP ${r.status}` };
+      await load(true);
+      return;
+    }
     if (o) { if (openSession) openSession(Number(o.dataset.cdOpen)); return; }
     if (a) { if (openTodo) openTodo(room, 'coder'); return; }
     if (p) {

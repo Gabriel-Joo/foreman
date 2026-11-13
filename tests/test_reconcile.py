@@ -72,6 +72,42 @@ async def _wt(repo, name, commit=False):
 
 
 @pytest.mark.db
+async def test_empty_worktree_is_separate_from_drift_and_not_alerted(env):
+    """11-13 313 — 커밋이 모두 원본에 들어 있고 변경 0 · 세션 끝남이면 어긋남(orphan)이 아니라 empty(치울 것). 알림은 보내지 않는다."""
+    s, conn, repo = env
+    e_p = await _wt(repo, "emptyone")                                   # 앞선 커밋 0
+    e_sid = _session(conn, e_p, "cc-empty")
+    m_p = await _wt(repo, "mergedone", commit=True)
+    sh(repo, "merge", "-q", "--ff-only", "cc/mergedone")                # 커밋이 모두 main에 들어감
+    m_sid = _session(conn, m_p, "cc-merged")
+    a_p = await _wt(repo, "ahead", commit=True)                         # 앞선 커밋 있음 — 어긋남 그대로
+    a_sid = _session(conn, a_p, "cc-ahead")
+    d_p = await _wt(repo, "dirtyone")
+    (d_p / "x.txt").write_text("x\n")                                   # 변경 있음 — dirty
+    d_sid = _session(conn, d_p, "cc-dirty")
+    engine = make_engine(s)
+    try:
+        found = await sweep(engine, "/없음", {str(repo): "foreman"}, live={})
+        got = {(f["kind"], f.get("session_id")) for f in found}
+        assert {("empty", e_sid), ("empty", m_sid), ("orphan", a_sid), ("dirty", d_sid)} <= got
+        assert ("orphan", e_sid) not in got and ("orphan", m_sid) not in got
+        import bridge.reconcile as rmod
+        orig = rmod.sweep
+
+        async def fixed(engine_, dir_):
+            return [f for f in found if f["kind"] == "empty"]
+        rmod.sweep = fixed
+        try:
+            rc = Reconciler(engine, FakeNotifier(), "/없음", debounce_s=0)
+            assert await rc.run_once() == [] and rc.notifier.sent == []   # 빈 worktree만 있으면 알리지 않는다
+            assert len(rc.for_project("foreman")) == 2                    # 화면용 결과(drift)에는 남는다
+        finally:
+            rmod.sweep = orig
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.db
 async def test_sweep_finds_each_kind_and_alerts_once(env):
     s, conn, repo = env
     live_p = await _wt(repo, "live", commit=True)

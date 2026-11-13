@@ -9,6 +9,7 @@
 - orphan       worktree 폴더가 남았는데 그 폴더를 쓴 세션이 없거나, 이미 합치기 · 버리기를 했거나, 끝났는데 쉬게 하기도 안 했다
 - stale_rest   「합치기 기다림」(쉬게 하기 기록)인데 실제로는 끝남 — 밖에서 합침 · 이름이 다시 쓰임(받은 할 일 #17과 같은 판정,
                bridge/coder_room.py rest_stale. 화면은 이미 빼고 보인다 — 여기는 기록이 남았다는 것만)
+- empty        끝난 세션의 worktree인데 앞선 커밋 0 · 변경 0 — 어긋남이 아니라 치울 것(화면 「치울 것 — 빈 worktree」, 알림 없음)
 - branch       worktree 없이 cc/* 브랜치만 남음 — 원본에 들어 있으면 지워도 되고, 아니면 합치지 않은 일
 - prunable     git이 아는 worktree인데 폴더가 없다(`git worktree prune` 거리)
 겹치는 판정(밖에서 합침 · 이름 다시 씀)은 둘(coder_room)의 것을 쓴다.
@@ -92,8 +93,12 @@ async def sweep(engine: Any, sessions_dir: Any, repo_map: dict[str, str | None] 
                     add("orphan", project, str(d), f"세션 {sid}은 이미 합치기 · 버리기를 했는데 worktree {d.name}가 남았습니다", sid)
                 elif "rest" not in acts:
                     st = await wt.in_base(repo, d.name) if (wt_root / d.name).is_dir() else None
+                    if st:
+                        # 11-13 — 앞선 커밋 0 · 변경 0 · 세션 끝남: 어긋남이 아니라 치우기만 하면 되는 빈 worktree
+                        add("empty", project, str(d), f"빈 worktree {d.name} — 세션 {sid}이 끝났고 커밋이 모두 원본에 들어 있으며 변경이 없습니다", sid)
+                        continue
                     add("orphan", project, str(d), f"세션 {sid}이 합치기 · 쉬게 하기 없이 끝났습니다 — worktree {d.name}"
-                        + (" (커밋이 모두 원본에 들어 있습니다)" if st else " (합치지 않은 커밋이 있습니다)" if st is False else ""), sid)
+                        + (" (합치지 않은 커밋이 있습니다)" if st is False else ""), sid)
             # 쉬게 하기 기록이 실제와 다름(받은 할 일 #17 판정 그대로)
             for sid, cwd in (await c.execute(text(
                     "SELECT cs.id, cs.cwd FROM session_action sa JOIN character_session cs ON cs.id = sa.session_id "
@@ -152,6 +157,7 @@ class Reconciler:
         self.last, self.at = found, datetime.now(UTC).replace(tzinfo=None)
         if self.on_change:
             self.on_change()
+        found = [f for f in found if f["kind"] != "empty"]      # 빈 worktree는 고장이 아니다 — 화면 「치울 것」에만, 텔레그램은 보내지 않는다
         if found:
             log.info("훑기: 어긋난 것 %d — %s", len(found), ", ".join(f"{f['kind']} {f['where']}" for f in found)[:400])
         if self.notifier is None:

@@ -298,8 +298,12 @@ def _plain(s: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[*`]", "", s or "")).strip()
 
 
-def log_drop_lines(logs: dict[str, str]) -> list[tuple[str, str]]:
-    """세션 log의 「README에서 뺄 줄」 절에 적은 표 줄 이름들 — [(log 경로, 이름)]. 세션이 직접 「이 줄은 끝났다」고 적은 것(1순위)."""
+_LINE_NO_ONLY = re.compile(r"^(?:README(?:\.md)?\s*)?(\d{1,5})\s*(?:줄)?$")
+_LINE_NO = re.compile(r"(?<![\d.\-/])(\d{1,5})\s*줄")
+
+
+def _drop_section(logs: dict[str, str]) -> list[tuple[str, str]]:
+    """세션 log의 「README에서 뺄 줄」 절의 목록 줄들 — [(log 경로, 줄)]."""
     out: list[tuple[str, str]] = []
     for path, body in sorted(logs.items()):
         inside = False
@@ -308,11 +312,39 @@ def log_drop_lines(logs: dict[str, str]) -> list[tuple[str, str]]:
                 inside = "README에서 뺄" in ln
                 continue
             if inside and ln.lstrip().startswith(("-", "*", "|")):
-                for q in _quoted(ln):
-                    q = _plain(q)
-                    if len(q) >= 4:
-                        out.append((path, q))
+                out.append((path, ln))
     return out
+
+
+def log_drop_lines(logs: dict[str, str]) -> list[tuple[str, str]]:
+    """세션 log의 「README에서 뺄 줄」 절에 적은 표 줄 이름들 — [(log 경로, 이름)]. 세션이 직접 「이 줄은 끝났다」고 적은 것(1순위).
+    이름은 「…」 안의 글이다. 맞대는 쪽(doc_candidates)이 **굵은 글씨 제목 전체**와 같을 때만 맞다고 본다(11-13 — 낱말·부분 문자열로
+    맞추면 「나중에 할 일」 같은 절 이름이 줄 제목 「나중에 할 일 정리」에 걸렸다). 줄 번호만 적은 「941」 · 「README 941줄」은 이름이 아니다."""
+    out: list[tuple[str, str]] = []
+    for path, ln in _drop_section(logs):
+        for q in _quoted(ln):
+            q = _plain(q)
+            if len(q) >= 4 and not _LINE_NO_ONLY.match(q):
+                out.append((path, q))
+    return out
+
+
+def log_drop_numbers(logs: dict[str, str]) -> list[tuple[str, int]]:
+    """「README에서 뺄 줄」 절에 줄 번호로 적은 것 — [(log 경로, 줄 번호)]. 「941」 · 「README 941줄」 · 본문의 「941줄」."""
+    out: list[tuple[str, int]] = []
+    for path, ln in _drop_section(logs):
+        nums = {int(m.group(1)) for q in _quoted(ln) if (m := _LINE_NO_ONLY.match(_plain(q)))}
+        nums |= {int(n) for n in _LINE_NO.findall(re.sub(r"[「」*`]", "", ln))}
+        out += [(path, n) for n in sorted(nums)]
+    return out
+
+
+def row_titles(cell: str) -> set[str]:
+    """README 표 줄 첫 칸의 굵은 글씨 제목(`**…**`) — 없으면 칸 전체. 「화면 — 제목」처럼 「 — 」로 앞이 붙은 줄은 뒤쪽도 제목으로 센다."""
+    m = re.search(r"\*\*(.+?)\*\*", cell)
+    t = _plain(m.group(1) if m else cell)
+    parts = t.split(" — ")
+    return {" — ".join(parts[i:]) for i in range(len(parts))}
 
 
 _INBOX_NO = re.compile(r"받은 할 일\s*#\s*(\d+)")
@@ -324,7 +356,8 @@ def doc_candidates(readme: str, section: str, docs: dict[str, str], files: list[
     """넷 — 이번 작업으로 없어지거나 바뀔 수 있는 줄 **후보**(고르기 · 지우기는 승인 뒤 관리자 — 승인자가 사람인 프로젝트는 사람
     승인 뒤, 관리자인 프로젝트는 관리자가 혼자(11-12)). 브리지는 맞대기만 한다.
     README 표 줄 — 점수 높은 차례(11-11 2물결 「넷」: 282 카드 후보 15개 중 맞는 것은 2순위 하나뿐이었다):
-      100  세션 log(이번에 바뀐 log/*.md)의 「README에서 뺄 줄」에 그 줄 이름을 적음 — 세션이 직접 끝났다고 한 것
+      100  세션 log(이번에 바뀐 log/*.md)의 「README에서 뺄 줄」에 그 줄 이름(굵은 글씨 제목 전체와 같게)이나 줄 번호를 적음 —
+           세션이 직접 끝났다고 한 것. 낱말 · 부분 문자열로는 맞추지 않는다(11-13)
        50  표 줄 「근거」 칸이 링크한 log를 이번에 고침
        40  표 줄의 「받은 할 일 #N」이 이번 커밋 글 · 세션 log에도 나옴
        10  바뀐 파일(경로 · 이름 · 줄기, 낱말 경계로)을 적음(파일마다)
@@ -339,15 +372,16 @@ def doc_candidates(readme: str, section: str, docs: dict[str, str], files: list[
     row_words = [(_words(ln)) for _, ln in rows]
     common = {w for w in sub_words if rows and sum(w in rw for rw in row_words) > max(2, len(rows) // 10)}
     drops = log_drop_lines(logs)
+    drop_nos = log_drop_numbers(logs)
     inbox_seen = {m for s in [*subjects, *logs.values()] for m in _INBOX_NO.findall(s)}
     cand: list[dict[str, Any]] = []
     for (no, ln), rw in zip(rows, row_words):
         cells = [c.strip() for c in ln.strip().strip("|").split("|")]
         cell, evidence = cells[0], cells[-1] if len(cells) > 1 else ""
-        title = _plain(cell)
         why: list[str] = []
         score = 0
-        named = [p for p, q in drops if q in title]
+        titles = row_titles(cell)
+        named = [p for p, q in drops if q in titles] + [p for p, n in drop_nos if n == no]
         if named:
             score += 100
             why.append(f"세션 기록 「README에서 뺄 줄」({os.path.basename(named[0])})")

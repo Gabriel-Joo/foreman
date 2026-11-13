@@ -105,6 +105,14 @@ def test_cross_project_alert_with_fake_db(tmp_path):
     assert asyncio.run(w._cross(C(), 215, me, "짧은 글 확인", now, {"cc-217"})) is None
 
 
+def test_spawned_session_is_not_matched_against_its_manager():
+    """11-12 311 ~ 309 헛경보 — dispatch로 띄운 세션은 같은 프로젝트의 관리자 역할 세션과 맞대지 않고, 다른 코더와는 맞댄다."""
+    from bridge.overlap import without_spawner
+    rows = [(309, "p", None, "cc-309", "관리자", "manager"), (310, "p", None, "cc-310", "코더", "coder"), (312, "p", None, "cc-312", "역할 없음", None)]
+    assert [r[0] for r in without_spawner(rows, True)] == [310, 312]
+    assert [r[0] for r in without_spawner(rows, False)] == [309, 310, 312]       # 띄운 기록이 없으면(사람이 직접 연 세션) 그대로
+
+
 def test_scribe_jobs_are_skipped():
     assert skip('\n\n<pasted_content id="d36c">\n[FOREMAN 서기 일감 — 회고] foreman')
     assert not skip("[FOREMAN 인계 r=690cec] 직전 세션의 인계다") and not skip(B)
