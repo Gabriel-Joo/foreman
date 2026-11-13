@@ -28,6 +28,8 @@ from starlette.websockets import WebSocketDisconnect
 from websockets.asyncio.client import connect as ws_connect
 
 PAGES = {"/": "office.html", "/office": "office.html", "/classic": "dashboard.html"}
+IDENT_PATH = "/__foreman_preview"      # bridge/previews.py가 살아 있는지 볼 때 두드리는 주소
+IDENT_HEADER = "X-Foreman-Preview"
 DROP = {"host", "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "content-length",
         "content-encoding", "proxy-authorization", "proxy-authenticate"}
 
@@ -85,6 +87,12 @@ def create_app(static_dir: str | Path, upstream: str, label: str, transport: htt
         return resp
 
     app.mount("/static", StaticFiles(directory=static), name="static")
+
+    @app.get(IDENT_PATH, include_in_schema=False)
+    async def ident() -> Response:
+        """「이 포트가 미리보기 브리지다」 확인용 — 다른 서비스가 같은 포트를 잡고 있어도 가를 수 있게(11-13)."""
+        return Response(json.dumps({"foreman_preview": True, "label": label}), media_type="application/json",
+                        headers={IDENT_HEADER: "1", "Cache-Control": "no-store"})
 
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
     async def proxy(path: str, request: Request) -> Response:
