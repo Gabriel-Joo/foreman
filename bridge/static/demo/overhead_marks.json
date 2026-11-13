@@ -1,7 +1,7 @@
 {
  "title": "머리 위 표시 — 관리자는 사람 몫, 작업 세션은 작게",
  "source": "script",
- "note": "11-13 점검용(log/overhead_marks_20261113.md). FOREMAN: 관리자 980 사용자 답 기다림, 코더 981 관리자에게 보고함, 982 관리자 답 기다림, 서기 983 관리자에게 보고함, 984 서브에이전트 기다림(머리 위 표시 없음 — 둘레의 작은 캐릭터), 985 뒤에서 도는 명령(어두운 상자 | / - \\), 986 멈춘 턴(빨간 …). 인프라: 관리자 990 사용자에게 보고함, 코더 991 관리자 답 기다림",
+ "note": "11-13 점검용(log/overhead_marks_20261113.md). FOREMAN: 관리자 980 사용자 답 기다림(11-13 코더 981의 사람 승인 합치기 카드 — 말풍선을 누르면 981 패널 「세션」 탭), 코더 981 관리자에게 보고함(합치기 기다림은 관리자 머리 위로 갔다 — 막대만 셈), 982 관리자 답 기다림, 서기 983 관리자에게 보고함, 984 서브에이전트 기다림(머리 위 표시 없음 — 둘레의 작은 캐릭터), 985 뒤에서 도는 명령(어두운 상자 | / - \\), 986 멈춘 턴(빨간 …). 인프라: 관리자 990 사용자에게 보고함, 코더 991 합치기 기다림(관리자에게 올리지 못한 카드 — 작업 세션 머리 위에 남음, 그 아래 관리자 답 기다림)",
  "snapshot": {
   "generated_at": "@+0",
   "projects": [
@@ -15,7 +15,7 @@
      "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
      "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
      "last_ts": "@-120000", "attached_at": "@-600000", "detached_at": null,
-     "escalate": {"question": {"id": 1, "at": "@-120000", "text": "런슈즈 배포를 오늘 할지 정해 주십시오"}}},
+     "escalate": {"question": {"id": 3, "at": "@-60000", "text": "세션 981 「코더 — 화면 고침」 합치기 카드 — 사람 승인이 필요합니다(사유: 마이그레이션: migrations/0099_x.sql). 패널 [합치기]를 눌러 주십시오(세션 981 패널 「세션」 탭)", "merge_sid": 981}, "merges": [981]}},
     {"id": 981, "cc_session_id": "demo-0981", "short": "demo0981", "character": "코더", "project": "foreman", "title": "코더 — 화면 고침",
      "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10981, "proc": "S", "cc_status": "idle",
      "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null, "open_turn": null, "activity": null,
@@ -23,7 +23,8 @@
      "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
      "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
      "last_ts": "@-120000", "attached_at": "@-600000", "detached_at": null,
-     "relayed": {"kind": "report", "at": "@-120000", "event_id": 11}},
+     "relayed": {"kind": "report", "at": "@-120000", "event_id": 11},
+     "merge_wait": {"since": "@-60000", "head8": "a1b2c3d4", "files": 3, "asks": false, "to_manager": 980, "esc_error": null}},
     {"id": 982, "cc_session_id": "demo-0982", "short": "demo0982", "character": "코더", "project": "foreman", "title": "코더 — 시험",
      "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10982, "proc": "S", "cc_status": "idle",
      "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null, "open_turn": null, "activity": null,
@@ -80,7 +81,8 @@
      "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
      "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
      "last_ts": "@-200000", "attached_at": "@-600000", "detached_at": null,
-     "relayed": {"kind": "question", "at": "@-200000", "event_id": 21}}
+     "relayed": {"kind": "question", "at": "@-200000", "event_id": 21},
+     "merge_wait": {"since": "@-30000", "head8": "e5f6a7b8", "files": 1, "asks": false, "to_manager": null, "esc_error": "관리자에게 올리지 못했습니다(시연)"}}
    ]}
   ],
   "approvals": [],

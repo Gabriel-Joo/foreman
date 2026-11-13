@@ -204,6 +204,13 @@ async def human_needs(c: Any, in_ids: str, relay: dict[str, tuple[bool, bool]] |
     relayed = {r[0]: (r[1], bool(r[2])) for r in (await c.execute(text(
         f"SELECT a.session_id, a.detail, a.ok FROM session_action a JOIN (SELECT session_id, MAX(id) mid FROM session_action "
         f"WHERE session_id IN {in_ids} AND action = :a GROUP BY session_id) x ON x.mid = a.id"), {"a": RELAY_OUT_ACT})).all()}
+    # 같은 턴을 관리자에게 넘긴 종류 모두(ok) — 보고 · 물음이 겹치면 화면은 「관리자에게 보고함」이 이긴다(11-13 사용자, render.js workerMark)
+    relayed_kinds: dict[tuple[int, str], set[str]] = {}
+    for rsid, rdet in (await c.execute(text(
+            f"SELECT session_id, detail FROM session_action WHERE session_id IN {in_ids} AND action = :a AND ok "
+            f"AND created_at > :cut"), {"a": RELAY_OUT_ACT, "cut": datetime.now() - REPORT_FRESH})).all():
+        k, _, t = (rdet or "").partition(":")
+        relayed_kinds.setdefault((rsid, t), set()).add(k)
     now = datetime.now(UTC).replace(tzinfo=None)
     fresh = now - REPORT_FRESH
     for sid, reply, ts, eid, turn_id, origin, role, project in (await c.execute(text(
@@ -227,7 +234,8 @@ async def human_needs(c: Any, in_ids: str, relay: dict[str, tuple[bool, bool]] |
         if role in WORKER_ROLES:
             rec = relayed.get(sid)
             if rec and rec[1] and turn_id is not None and rec[0] == f"{kind}:{turn_id}":
-                out.setdefault(sid, {})["relayed"] = {"kind": kind, "at": _iso(ts), "event_id": eid}
+                kinds = sorted(relayed_kinds.get((sid, str(turn_id)), set()) | {kind})
+                out.setdefault(sid, {})["relayed"] = {"kind": kind, "kinds": kinds, "at": _iso(ts), "event_id": eid}
                 continue
             on = (relay or {}).get(project or "")
             waiting = rec is None or rec[0].split(":", 1)[-1] != str(turn_id)
@@ -242,6 +250,7 @@ async def human_needs(c: Any, in_ids: str, relay: dict[str, tuple[bool, bool]] |
     done = {r[0] for r in (await c.execute(text(
         f"SELECT detail FROM session_action WHERE session_id IN {in_ids} AND action IN (:r, :o) AND ok"),
         {"r": ESC_READ_ACT, "o": ESC_OFF_ACT})).all()}
+    merges: dict[int, list[dict[str, Any]]] = {}
     for aid, sid, detail, at in (await c.execute(text(
             f"SELECT id, session_id, detail, created_at FROM session_action WHERE session_id IN {in_ids} AND action = :a AND ok "
             f"AND created_at > :cut ORDER BY id"), {"a": ESC_ACT, "cut": now - ESC_KEEP})).all():
@@ -249,10 +258,23 @@ async def human_needs(c: Any, in_ids: str, relay: dict[str, tuple[bool, bool]] |
         if kind not in ESC_KINDS:
             continue
         esc_ = out.setdefault(sid, {}).setdefault("escalate", {})
+        if (m := _MERGE_TAG.match(body)) and kind == "question":
+            # 11-13 브리지가 올린 합치기 카드 물음 — 카드가 남아 있는 동안 남는다(사람이 그 관리자에게 입력해도). 내리는 것은 브리지
+            # (카드가 합쳐짐 · 미뤄짐 · 없어짐 → esc-off)와 사람의 [답 안 해도 됨]. 관리자의 다른 물음과 서로 덮지 않는다
+            if str(aid) not in done:
+                merges.setdefault(sid, []).append({"id": aid, "at": _iso(at), "text": body[m.end():][:300],
+                                                   "merge_sid": int(m.group(1))})
+            continue
         if str(aid) in done or (last_human.get(sid) and last_human[sid] > at):
             esc_.pop(kind, None)
         else:
             esc_[kind] = {"id": aid, "at": _iso(at), "text": body[:300]}
+    for sid, ms in merges.items():
+        esc_ = out.setdefault(sid, {}).setdefault("escalate", {})
+        q = esc_.get("question")
+        if q is None or q["id"] < ms[-1]["id"]:       # 머리 위에는 가장 최근 물음 하나 — 합치기 카드가 여럿이면 merges에 모두
+            esc_["question"] = ms[-1]
+        esc_["merges"] = [x["merge_sid"] for x in ms]
     for v in out.values():
         if "escalate" in v and not v["escalate"]:
             del v["escalate"]
@@ -270,6 +292,13 @@ RELAY_GRACE = timedelta(seconds=30)
 ESC_ACT, ESC_READ_ACT, ESC_OFF_ACT = "escalate", "esc-read", "esc-off"   # 관리자가 사람에게 올림 · 사람이 읽음 · 사람이 끔
 ESC_KINDS = ("report", "question")
 ESC_KEEP = timedelta(days=7)
+# 11-13 사람 승인 합치기 카드를 브리지가 관리자 머리 위로 올린 물음 — detail 글 앞에 기계 표시(모델이 쓰는 글이 아니다).
+# 사람에게 보이는 글 · 알림에는 붙지 않는다(human_needs가 떼어 낸다)
+_MERGE_TAG = re.compile(r"#merge:(\d+)# ")
+
+
+def merge_tag(card_sid: int) -> str:
+    return f"#merge:{int(card_sid)}# "
 
 
 ASKS_OFF_ACT = "asks-off"        # session_action — 사람이 「이 응답은 답 안 해도 됩니다」(11-11, 받은 할 일 #13)
@@ -331,9 +360,10 @@ class EscalateIn(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
 
 
-async def escalate(engine: Any, sid: int, kind: str, body: str, notifier: Any = None) -> dict[str, Any]:
+async def escalate(engine: Any, sid: int, kind: str, body: str, notifier: Any = None, tag: str = "") -> dict[str, Any]:
     """관리자 세션이 사람에게 보고 · 물음을 올린다. session_action 'escalate'(detail = "<kind>:<글 앞부분>")에 남기고 알린다 —
-    물음은 바로(❓ 급함), 보고는 그 프로젝트가 하루 묶음을 켰으면 묶음으로. 관리자가 아니면 403."""
+    물음은 바로(❓ 급함), 보고는 그 프로젝트가 하루 묶음을 켰으면 묶음으로. 관리자가 아니면 403.
+    tag는 브리지가 기계적으로 올릴 때만(합치기 카드 — merge_tag). detail 글 앞에 붙고 알림 글에는 안 붙는다."""
     async with engine.begin() as c:
         r = (await c.execute(text(
             "SELECT cs.role, p.name, COALESCE(cs.custom_title, cs.title) FROM character_session cs "
@@ -348,7 +378,7 @@ async def escalate(engine: Any, sid: int, kind: str, body: str, notifier: Any = 
         # created_at은 UTC로 직접 — 사람 입력(turn.started_at, UTC)과 비교해 물음을 내린다
         res = await c.execute(text("INSERT INTO session_action (session_id, action, ok, detail, created_at) "
                                    "VALUES (:s, :a, 1, :d, UTC_TIMESTAMP(3))"),
-                              {"s": sid, "a": ESC_ACT, "d": f"{kind}:{body.strip()}"[:512]})
+                              {"s": sid, "a": ESC_ACT, "d": f"{kind}:{tag}{body.strip()}"[:512]})
         aid = res.lastrowid
     _cache["data"] = None
     notified = False
@@ -435,10 +465,14 @@ def merge_waits(mp: Any) -> dict[int, dict[str, Any]]:
     """사람 승인을 기다리는 합치기 카드(status=ready)를 세션 id별로. 합치는 중 · 합침 · 충돌을 보낸 카드는 뺀다.
     mergeprep.py는 고치지 않고 이미 있는 view()를 읽는다(GET /api/merge-prep과 같은 값).
     11-12(사용자): 관리자가 승인하는 카드(approver = manager, 늘-사람 까닭 없음)는 뺀다 — 승인 막대 · 머리 위 말풍선이 모두 이 값을
-    읽으므로 함께 빠진다. 늘-사람 카드(human_why)는 관리자가 승인할 수 없으니 그대로 보인다(안 보이면 아무도 누르지 않고 멈춘다)."""
+    읽으므로 함께 빠진다. 늘-사람 카드(human_why)는 관리자가 승인할 수 없으니 그대로 보인다(안 보이면 아무도 누르지 않고 멈춘다).
+    11-13(사용자 — 사람은 관리자하고만 이야기한다): 브리지가 그 카드를 관리자 머리 위 「사용자 답 기다림」으로 올렸으면 to_manager에
+    그 관리자 세션 id — 작업 세션 머리 위 「합치기 기다림」은 이때 안 띄운다(render.js needMark). 승인 막대는 그대로 센다.
+    관리자가 없거나 올리지 못했으면 None → 지금처럼 작업 세션 머리 위(조용히 묻히지 않게)."""
     if mp is None or not getattr(mp.cfg, "enabled", False):
         return {}
-    return {c["sid"]: {"since": c["made_at"], "head8": c["head8"], "files": len(c["files"]), "asks": bool(c.get("asks"))}
+    return {c["sid"]: {"since": c["made_at"], "head8": c["head8"], "files": len(c["files"]), "asks": bool(c.get("asks")),
+                       "to_manager": c.get("esc_mgr") if c.get("esc_id") else None, "esc_error": c.get("esc_error")}
             for c in mp.view()["cards"] if c["status"] == "ready" and not manager_card(c)}
 
 

@@ -48,6 +48,7 @@ from bridge.liveness import live_sessions
 log = logging.getLogger("foreman.mergeprep")
 
 ACT_CARD, ACT_SKIP, ACT_MERGE, ACT_CONFLICT = "mprep-card", "mprep-skip", "mprep-merge", "mprep-conf"   # session_action(12자까지)
+ACT_DOCS = "mprep-docs"      # 11-13 정리 후보를 다 골랐다 — 합친 카드를 치움(detail = 브랜치 끝 커밋)
 NOTIFY_KIND = "merge"                                                                                # notification.kind(8자까지)
 TURN_END_DELAYS = (3.0, 10.0)        # 턴 끝 뒤 두 번 본다(초) — 시험이 바꾼다
 
@@ -410,6 +411,11 @@ class Card:
     approver: str = "human"       # 이 카드를 누가 승인하나(11-12) — human · manager. 늘-사람에 걸리거나 관리자가 없으면 human
     human_why: list[str] = field(default_factory=list)   # 늘 사람에게 올린 까닭(비면 걸린 것 없음)
     approved_by: str | None = None    # human · manager — 누가 [합치기]를 눌렀나
+    # 11-13 사람 승인 카드를 관리자 머리 위 「사용자 답 기다림」으로 올린 escalate 물음(session_action id) · 그 관리자 세션 id.
+    # 못 올렸으면 esc_error에 까닭 — 이때는 작업 세션 머리 위 「합치기 기다림」으로 남는다. 카드 JSON에 실려 DB(merge_card)에도 남는다
+    esc_id: int | None = None
+    esc_mgr: int | None = None
+    esc_error: str | None = None
     made_at: str = ""
     updated_at: str = ""
 
@@ -559,6 +565,10 @@ class MergePrep:
         if not self.store["on"] or not self._restored:
             return
         async with self._sync_lock:
+            try:
+                await self._esc_sync()       # 사람 승인 카드 → 관리자 머리 위 물음(카드 칸 esc_*가 바뀌면 아래에서 함께 쓴다)
+            except Exception as e:  # noqa: BLE001 — 올리기 실패가 카드 저장을 막지 않는다. 카드에 까닭이 남고 작업 세션 머리 위로
+                log.warning("합치기 카드 물음 맞추기 실패: %s", type(e).__name__)
             snap = {sid: (c, card_json(c)) for sid, c in list(self.cards.items())}
             put = {sid: v for sid, v in snap.items() if self._saved.get(sid) != v[1]}
             gone = [sid for sid in self._saved if sid not in snap]
@@ -626,6 +636,100 @@ class MergePrep:
         if c.status == "merged" and c.has_docs():
             return c.updated_at < cut_docs
         return c.updated_at < cut
+
+    # ── 사람 승인 카드 → 관리자 머리 위(11-13 사용자 — 「나는 관리자하고만 이야기한다」) ──
+    @staticmethod
+    def human_card(c: Card) -> bool:
+        """사람이 눌러야 하는 대기 카드인가 — dashboard.merge_waits와 같은 기준(관리자가 승인하는 카드는 뺀다)."""
+        return c.status == "ready" and not (c.approver == "manager" and not c.human_why)
+
+    def esc_text(self, c: Card) -> str:
+        why = "; ".join(c.human_why) if c.human_why else (c.note or "이 프로젝트의 합치기 승인자는 사람입니다")
+        cf = f" 충돌 파일 {len(c.conflict)}개." if c.conflict else ""
+        return (f"세션 {c.sid} 「{c.title or ''}」 합치기 카드 — 사람 승인이 필요합니다(사유: {why}).{cf} "
+                f"패널 [합치기]를 눌러 주십시오(세션 {c.sid} 패널 「세션」 탭)")
+
+    async def _esc_manager(self, c: Card) -> int | None:
+        """그 저장소 원본 폴더에 살아 있는 관리자 세션 id — 없으면 None."""
+        m = await self.manager_of(c.repo)
+        if m is None:
+            return None
+        async with self.engine.connect() as cn:
+            r = (await cn.execute(text("SELECT MAX(id) FROM character_session WHERE cc_session_id = :c AND hidden_at IS NULL"),
+                                  {"c": m[0]})).first()
+        return int(r[0]) if r and r[0] is not None else None
+
+    async def _esc_open(self) -> dict[int, int]:
+        """아직 떠 있는 합치기 카드 물음 {escalate id: 관리자 세션 id} — DB에서 본다(메모리에서 빠진 카드 · 다시 띄운 사이 것도 줍는다)."""
+        from bridge.api.dashboard import ESC_ACT, ESC_KEEP, ESC_OFF_ACT
+        async with self.engine.connect() as cn:
+            rows = (await cn.execute(text(
+                "SELECT a.id, a.session_id FROM session_action a WHERE a.action = :a AND a.ok AND a.detail LIKE :p "
+                "AND a.created_at > :cut AND NOT EXISTS (SELECT 1 FROM session_action o WHERE o.session_id = a.session_id "
+                "  AND o.action = :o AND o.ok AND o.detail = CAST(a.id AS CHAR))"),
+                {"a": ESC_ACT, "o": ESC_OFF_ACT, "p": "question:#merge:%", "cut": _now() - ESC_KEEP})).all()
+        return {int(a): int(s) for a, s in rows}
+
+    async def _esc_close(self, eid: int, msid: int) -> None:
+        from bridge.api.dashboard import ESC_OFF_ACT, invalidate
+        async with self.engine.begin() as cn:
+            await cn.execute(text("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, :a, 1, :d)"),
+                             {"s": msid, "a": ESC_OFF_ACT, "d": str(eid)})
+        invalidate()
+
+    async def _esc_sync(self) -> None:
+        """사람 승인 카드가 있으면 그 프로젝트 관리자에게 escalate 물음을 기계적으로 만든다(관리자가 잊으면 조용히 묻히니 모델 판단에
+        맡기지 않는다). 카드가 합쳐지거나 · 미뤄지거나 · 없어지거나 · 관리자가 바뀌면 그 물음을 내린다(esc-off).
+        관리자가 없거나 올리지 못하면 esc_error에 까닭 — 작업 세션 머리 위 「합치기 기다림」으로 남는다(dashboard.merge_waits)."""
+        if self.engine is None or not self._restored:
+            return
+        from bridge.api.dashboard import escalate, merge_tag
+        want = {sid: c for sid, c in list(self.cards.items()) if self.cfg.enabled and self.human_card(c)}
+        changed = False
+        opened = await self._esc_open()
+        held = {c.esc_id for c in want.values() if c.esc_id}
+        for eid, msid in opened.items():                    # 내리기 — 그 물음을 쥔 대기 카드가 없다
+            if eid in held:
+                continue
+            await self._esc_close(eid, msid)
+            for c in self.cards.values():
+                if c.esc_id == eid:
+                    c.esc_id, c.esc_mgr = None, None
+            changed = True
+        for sid, c in want.items():                         # 올리기 — 관리자가 바뀌었으면 옛 것을 내리고 새 관리자에게
+            try:
+                msid = await self._esc_manager(c)
+            except Exception as e:  # noqa: BLE001 — 관리자를 못 찾으면 작업 세션 머리 위로(안전한 쪽)
+                msid, why = None, f"관리자를 찾지 못했습니다({type(e).__name__})"
+            else:
+                why = "살아 있는 관리자 세션이 없습니다"
+            if c.esc_id and c.esc_mgr == msid:
+                continue
+            if c.esc_id:
+                if c.esc_id in opened:
+                    await self._esc_close(c.esc_id, c.esc_mgr or 0)
+                c.esc_id = c.esc_mgr = None
+                changed = True
+            if msid is None:
+                if c.esc_error != why:
+                    c.esc_error, changed = why, True
+                continue
+            try:
+                r = await escalate(self.engine, msid, "question", self.esc_text(c),
+                                   notifier=None if self.cfg.notify_ready else self.notifier, tag=merge_tag(sid))
+            except Exception as e:  # noqa: BLE001 — 못 올리면 작업 세션 머리 위로
+                why = f"관리자에게 올리지 못했습니다({type(e).__name__}: {str(getattr(e, 'detail', e))[:120]})"
+                if c.esc_error != why:
+                    c.esc_error, changed = why, True
+                log.warning("합치기 카드 %s 물음 올리기 실패: %s", sid, why)
+                continue
+            cur = self.cards.get(sid)                       # 기다리는 사이 같은 커밋으로 카드가 바뀌었으면 그 카드에도
+            for x in [c] + ([cur] if cur is not None and cur is not c and cur.head == c.head else []):
+                x.esc_id, x.esc_mgr, x.esc_error = int(r["id"]), msid, None
+            changed = True
+            log.info("합치기 카드 %s를 관리자 세션 %s 머리 위로 올렸다(escalate %s)", sid, msid, r["id"])
+        if changed and self.on_change:
+            self.on_change()
 
     # ── 훑기 ──
     async def _candidates(self) -> list[tuple[Any, ...]]:
@@ -783,6 +887,7 @@ class MergePrep:
                 self._spawn(self._tell_manager_card(card, mgr))
         elif old is not None and old.status == "ready":
             card.manager_told = old.manager_told              # 같은 커밋 — 관리자에게 다시 알리지 않는다(live만 바뀐 경우)
+            card.esc_id, card.esc_mgr, card.esc_error = old.esc_id, old.esc_mgr, old.esc_error   # 올린 물음도 그대로
         return card
 
     async def _human_why(self, repo: str, base: str, branch: str, project: str | None) -> list[str]:
@@ -803,7 +908,8 @@ class MergePrep:
         see = f" 카드 전부: GET /api/merge-prep?project={c.project}(커밋 · 바뀐 파일 · 정리 후보 {dn}개)."
         if c.human_why:
             return (head + " 이 카드는 **사람 승인**이다 — 승인자는 관리자지만 늘 사람에게 올릴 것에 걸렸다: " + "; ".join(c.human_why)
-                    + ". 관리자는 승인하지 않는다(API가 거부한다). 사람이 볼 것을 짧게 정리해 두는 것은 좋다." + see)
+                    + ". 관리자는 승인하지 않는다(API가 거부한다). 브리지가 이 카드를 관리자 머리 위 「사용자 답 기다림」으로 올린다"
+                    "(따로 escalate하지 않는다 — 카드가 합쳐지거나 미뤄지면 브리지가 내린다). 사람이 볼 것을 짧게 정리해 두는 것은 좋다." + see)
         return (head + " 이 프로젝트 합치기 승인자는 관리자다 — 커밋 · 바뀐 파일 · 시험을 보고 합칠지 정한다. 합치기: "
                 f"POST /api/sessions/{c.sid}/merge-prep {{\"action\":\"merge\",\"by\":\"manager\"}}(프로젝트 토큰이면 by는 저절로 관리자). "
                 "미루기: {\"action\":\"skip\",\"by\":\"manager\"}(새 커밋이 생기면 다시 뜬다). 판단이 안 서면 사람에게 묻는다."
@@ -966,6 +1072,22 @@ class MergePrep:
             self.on_change()
         return {"ok": True, "note": "카드를 치웠습니다 — 이 세션이 새로 커밋하면 다시 만듭니다."}
 
+    async def docs_done(self, sid: int, by: str = "human") -> dict[str, Any]:
+        """정리 후보를 다 골랐다(11-13 사용자) — 합친 카드를 바로 치운다(DB merge_card에서도). 안 부르면 지금처럼 keep_docs_h 뒤 치운다.
+        합친 카드만 — 대기 · 충돌 카드는 skip(나중에)으로 치운다."""
+        c = self.cards.get(sid)
+        if not c:
+            raise Refused("치울 합치기 카드가 없습니다 — 이미 치웠거나 시간이 지나 사라졌습니다")
+        if c.status != "merged":
+            raise Refused(f"합친 카드가 아닙니다(지금 {c.status}) — 정리 후보는 합친 뒤에 고릅니다. 대기 카드를 치우려면 skip")
+        dn = len((c.docs or {}).get("readme") or []) + len((c.docs or {}).get("docs") or [])
+        await self.h._act(sid, ACT_DOCS, None, True, f"{c.name} {c.head[:8]} 정리 후보 {dn}개 · {by}")
+        del self.cards[sid]
+        await self.sync()
+        if self.on_change:
+            self.on_change()
+        return {"ok": True, "note": f"정리 후보를 다 골랐다고 보고 합친 카드를 치웠습니다(정리 후보 {dn}개)."}
+
     async def approve(self, sid: int, by: str = "human") -> dict[str, Any]:
         """[합치기] — 사람(패널) 또는 관리자(by=manager, 11-12 — 그 프로젝트 승인자가 관리자이고 늘-사람에 안 걸린 카드만).
         다시 재고 → 충돌이면 그 세션(끝났으면 관리자)에 풀라고 보냄 · 깨끗하면 (끝내고) 합침. 결과(거부 포함)는 DB에도 남긴다."""
@@ -1103,15 +1225,18 @@ class MergePrep:
                 f"README:{x['line']} {x['text'][:80]}({' · '.join(x.get('why') or [])})" for x in sure) + "."
         if stale:
             extra += f" 이번에 바뀐 파일을 적었는데 고치지 않은 문서: {', '.join(stale)} — 설계가 바뀌었으면 맞출 후보."
+        # 11-13 다 골랐으면 카드를 바로 치운다(안 부르면 keep_docs_h 뒤 치운다 — 다 고르고도 카드가 남지 않게)
+        done = (f" 다 골랐으면 POST /api/sessions/{c.sid}/merge-prep {{\"action\":\"docs_done\",\"by\":\"manager\"}}로 카드를 치운다"
+                f"(안 부르면 {self.cfg.keep_docs_h}시간 뒤 치운다).")
         if not dn:
             pick = ""
         elif mgr_picks:     # 11-12 — 승인자가 관리자인 프로젝트는 정리 후보 고르기 · 지우기도 관리자
             pick = (f" README · docs 정리 후보 {dn}개는 카드에 있다(GET /api/merge-prep?project={c.project} 의 card.docs, "
                     f"{self.cfg.keep_docs_h}시간 남는다 — 브리지를 다시 띄워도 DB에서 되살린다) — "
-                    "관리자가 골라 지운다. 판단이 안 서는 줄만 사람에게 묻는다.")
+                    "관리자가 골라 지운다. 판단이 안 서는 줄만 사람에게 묻는다." + done)
         else:
             pick = (f" README · docs 정리 후보 {dn}개는 그 세션 패널 카드에 있다 — 고르고 지우는 것은 사람 승인 뒤"
-                    "(판단이 필요하면 사람에게 묻고, 혼자 지우지 않는다).")
+                    "(판단이 필요하면 사람에게 묻고, 혼자 지우지 않는다)." + done)
         return (f"[FOREMAN 합치기] {who} 승인해 세션 {c.sid} 「{c.title or ''}」의 {c.branch}(커밋 {res.get('merged', c.ahead)}개)를 "
                 f"{c.base}에 합쳤다({how}).{ended} 1단계라 브리지는 합치기까지만 했다 — 시험 · push · 브리지 다시 띄우기 · 화면 점검은 "
                 f"관리자가 한다." + pick + extra)

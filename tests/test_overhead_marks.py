@@ -112,6 +112,7 @@ async def test_worker_relayed_quiet_failed_or_off_stays_human(env):
         _act(conn, w, "relay-out", 1, f"report:{t1}")
         n = await _needs(engine, w)
         assert n.get("relayed", {}).get("kind") == "report" and "report" not in n
+        assert n["relayed"]["kinds"] == ["report"]                        # 넘기지 못한 기록(ok=0)은 kinds에 안 든다
         # 묻는 말인데 보고로 넘겼으면(relay_questions 꺼짐) 사람에게 물음 그대로
         t2 = _turn(conn, w, 2, "human", NOW - timedelta(minutes=8))
         _reply(conn, w, ch, t2, NOW - timedelta(minutes=7), "두 길이 있습니다.\n\n(가)로 할지 (나)로 할지 정해 주세요")
@@ -121,6 +122,8 @@ async def test_worker_relayed_quiet_failed_or_off_stays_human(env):
         _act(conn, w, "relay-out", 1, f"question:{t2}")
         n = await _needs(engine, w)
         assert n.get("relayed", {}).get("kind") == "question" and "asks" not in n
+        # 같은 턴(t2)을 보고로도 넘겼다 — kinds에 둘 다(화면은 「관리자에게 보고함」이 이긴다, 11-13 사용자)
+        assert n["relayed"]["kinds"] == ["question", "report"]
     finally:
         await engine.dispose()
 
