@@ -17,6 +17,17 @@ export const ROLE_LABEL = { coder: '코더', designer: '디자이너', manager: 
 // 세션 역할로 고를 수 있는 것 — bridge/api/handoff.py SessionRole과 같다
 export const SESSION_ROLES = ['coder', 'designer', 'manager', 'scribe', 'inspector', 'cicd'];
 export const roleLabel = (r) => ROLE_LABEL[r] || null;
+// 역할 색 — 한 곳(11-13 사용자 「발밑 역할 색은 역할 배지와 같게」). 패널 배지(.rolebadge.role-*)와 픽셀 화면 발밑 색 원(office.js drawAura)이
+// 모두 이 값을 쓴다. 배지 CSS는 아래 roleColorCss()가 문서에 넣는다(panel.css에는 색이 없고 역할 없음 · 기본 회색만 있다).
+// 테마 옷 색(theme.json roles.colors — 로브 · 사원증 끈 · 안전모)은 그림에 맞춘 다른 값이라 따로 둔다
+export const ROLE_COLOR = { coder: '#5b9be6', manager: '#e0604f', scribe: '#d08b4f', inspector: '#3fbf85', cicd: '#b07ad0', designer: '#e8619f', foreman: '#c9a227' };
+export const roleColorCss = () => Object.entries(ROLE_COLOR).map(([r, c]) => `.rolebadge.role-${r} { --rc:${c}; }`).join('\n');
+if (typeof document !== 'undefined' && !document.getElementById('roleColors')) {
+  const st = document.createElement('style');
+  st.id = 'roleColors';
+  st.textContent = roleColorCss();
+  document.head.appendChild(st);
+}
 // 제목 앞 역할 배지 글(11-09 사용자 — "서기인지 코더인지 모르고 지나쳤다"). 역할은 제목 글자가 아니라 따로 — 제목을 고쳐도 남는다
 export const roleTag = (r) => `[${roleLabel(r) || '역할?'}]`;
 export const ROLE_UNKNOWN_TIP = '역할? — 이 세션의 역할을 알 수 없습니다. 머리줄 역할을 눌러 정합니다.';

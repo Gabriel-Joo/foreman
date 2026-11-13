@@ -95,13 +95,19 @@ export const TIER = { cover: 1e6, room: 1e3, leap: 100, spot: 10, soft: 1 };
 // 위 방 10px² · 건너뜀 100px²보다 무겁게. 11-13 오피스 넓게 · 1024의 작은 라운지에서 위 줄 코더 바로 아래 코더의 「API 오류로 멈춤」이
 // 덮지 않으려고 위 방(팀장실)까지 떴고, 현장 1024에서는 위 줄 코더의 카드 옆 위로 건너뛰어 누구 것인지 헷갈렸다
 export const SHRINK = 500, DOT = 1e4, RAISE = 30;
+// 옆 붙이기(side-right · side-left) 한 번 — 11-13 사용자 「위에 자리가 있으면 위로 쌓는다. 옆으로 비키는 것은 정말 자리가 없을 때만」.
+// 전에는 0이라 한 줄 쌓기가 복도로 조금 나가기만 해도(soft, 시연 981에서 159~752px²) 복도로 덜 나가는 옆 붙이기가 이겼다 —
+// 18조합 중 24화면에서 위 방(room) · 덮음 없이 soft만으로 옆으로 갔다. 복도는 빈 바닥이라 허용한 층이다(331).
+// 그래서 soft · spot · 줄임(SHRINK)보다 무겁고, 위 방 몇 px² · 덮음보다 가볍게: 위가 정말 막혔을 때(위 방 · 덮음 · 건너뜀)만 옆으로 간다
+export const SIDE = 2000;
+export const isSide = (shape) => String(shape).startsWith('side');
 // tiers = { cover: fn(rects), room: fn, leap: fn, spot: fn, soft: fn } — 없는 층은 0
 // 층은 모두 0 이상이라, 더하는 도중 이미 지금 최선 이상이면 그 후보는 나머지 층을 재지 않는다(붐비는 자리에서 후보가 수천 개)
 export function pickStack(cands, tiers) {
   let best = null;
   for (const c of cands) {
     const v = {}, n = (x) => (x > 0.5 ? x : 0);
-    let score = (c.k === 'dot' ? DOT : c.k < 1 ? SHRINK : 0) + (c.dy || 0) * RAISE, cut = false;
+    let score = (c.k === 'dot' ? DOT : c.k < 1 ? SHRINK : 0) + (c.dy || 0) * RAISE + (isSide(c.shape) ? SIDE : 0), cut = false;
     for (const [name, w] of Object.entries(TIER)) {
       if (best && score >= best.score) { cut = true; break; }
       v[name] = tiers[name] ? tiers[name](c.rects) : 0; score += n(v[name]) * w;
@@ -111,6 +117,19 @@ export function pickStack(cands, tiers) {
     if (!score) break;
   }
   return best;
+}
+
+// 옆 붙이기를 골랐을 때 — 위에 자리가 있었나: 한 줄 쌓기(같은 크기, 옆으로 밀기 · 들어 올림 포함) 중 덮음 · 위 방 · 건너뜀 · 이웃 제자리가
+// 모두 0이고 들어 올림 값(dy × RAISE)이 옆 붙이기 값(SIDE)보다 싼 것. 복도로 나감(soft)은 막힘이 아니다(빈 바닥).
+// 있으면 그 후보(「위에 자리가 있는데 옆으로 감」 — stackAudit ⑥), 없으면 null
+export function freeColumn(cands, tiers, k) {
+  const n = (x) => (x > 0.5 ? x : 0);
+  for (const c of cands) {
+    if (c.shape !== 'column' || c.k !== k || (c.dy || 0) * RAISE >= SIDE) continue;
+    if (['cover', 'room', 'leap', 'spot'].some((t) => tiers[t] && n(tiers[t](c.rects)))) continue;
+    return c;
+  }
+  return null;
 }
 
 // 자리 말풍선의 주인(11-13 사용자 — 「맡길 일」 · 「문서 할 일」은 자리에 늘): 그 방에서 자리(x, y 타일) near칸 안에 멈춰 선 사람 중

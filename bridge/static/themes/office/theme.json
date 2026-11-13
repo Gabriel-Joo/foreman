@@ -64,6 +64,7 @@
     "infra": { "title": "배포 파이프", "jenkins": ["빌드 모니터", "Jenkins 빌드"], "harbor": ["저장소", "Harbor 이미지"], "argocd": ["배포 보드", "ArgoCD 배포"] }
   },
 
+  "aura": { "_": "발밑 역할 색 원(11-13, js/aura.js) — mat 둥근 러그 · spot 조명 웅덩이 · glow 번짐만. 견주기 ?aura=<꼴>|off. 색은 render.js ROLE_COLOR(역할 배지와 같은 값)", "style": "mat" },
   "roles": {
     "_": "역할 → 사원증 끈 색. 이름은 DB · 디스패처와 같다(11-05 통일: foreman coder inspector cicd helper). 미리 보기 ?roles=demo",
     "mode": "lanyard",

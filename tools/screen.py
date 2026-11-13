@@ -9,7 +9,7 @@
 - 화면마다 `labelAudit()`(11-10) — 지금 그린 그대로: 이름표(구역 · 출하 라인 · 캐릭터 이름 · 말풍선) ↔ 사람 몸, 이름표끼리, 구역 · 출하 라인 이름표 ↔ 가구(그림의 불투명 범위).
   layoutAudit(좌석 자리 기준) · nameAudit(이름 ↔ 구역 이름표)이 0건인데 실제로는 겹치던 것을 잡는다
 - 화면마다 `stackAudit()`(11-13) — 머리 위 표시 덩어리: 카드 ↔ 사람 몸(자기 몸 포함), 카드가 머리 위에 있나, 선 칸 위(복도 · 다른 방)로
-  넘치나, 글씨 카드(아래) · 동작 카드(위) 차례
+  넘치나, 글씨 카드(아래) · 동작 카드(위) 차례, 위에 자리가 있는데 옆으로 붙였나(11-13 ⑥)
 - 테마 × 크기마다 `termAudit`(11-10) — 패널 입력 칸이 패널 · 창 밖으로 넘치나 · 터미널과 겹치나, 터미널을 연 채로 한 번 더(`<…>_term.png`, `--no-term`이면 닫힌 채만).
   연 채로는 xterm 칸 폭 ≥ 글자 폭 · 이름표 줄 ↔ 터미널 겹침 · 툴팁이 터미널을 덮나(마우스를 올린 뒤도), 글씨 배율 전 단계 × dpr 1 · 0.7(`--no-term-sweep`이면 건너뜀)
 - **터미널을 여는 점검은 `/api/terminal/open`을 불러 실제 tmux 창을 바꾼다(select-window)** — :8000(라이브 셸)에서는 `--no-term`으로 돌리거나,
@@ -215,7 +215,7 @@ async def record(p: Page, a: argparse.Namespace, out: Path, report: dict) -> int
         kw["clip"] = {"x": x, "y": y, "width": cw, "height": ch, "scale": a.scale}
     n, bad, info = 0, 0, []
     for th in a.themes.split(","):
-        url = f"{a.base.rstrip('/')}/office?probe=1&theme={th}" + (f"&demo={a.record}&hold=1" if demo else "")
+        url = f"{a.base.rstrip('/')}/office?probe=1&theme={th}" + (f"&demo={a.record}&hold=1" if demo else "") + (f"&{a.query}" if a.query else "")
         await p.call("Page.navigate", url=url)
         if not await p.wait("!!(window.office && window.office.layoutAudit)"):
             print(f"{th}: 화면이 뜨지 않았습니다")
@@ -315,7 +315,8 @@ async def run(a: argparse.Namespace) -> int:
                     await p.call("Emulation.setDeviceMetricsOverride", width=w, height=h, deviceScaleFactor=1, mobile=False)
                     if a.demo:                             # 시연 장면으로 정지 사진(13e) — 실제 /api에 닿지 않게
                         await p.ev("localStorage.removeItem('foremanToken'); 1")
-                    await p.call("Page.navigate", url=f"{a.base.rstrip('/')}/office?probe=1&theme={th}" + (f"&demo={a.demo}" if a.demo else ""))
+                    await p.call("Page.navigate", url=f"{a.base.rstrip('/')}/office?probe=1&theme={th}" + (f"&demo={a.demo}" if a.demo else "")
+                                 + (f"&{a.query}" if a.query else ""))
                     if not await p.wait("!!(window.office && window.office.layoutAudit)"):
                         report["runs"].append({"theme": th, "size": size, "error": "화면이 뜨지 않았습니다"})
                         bad += 1
@@ -452,6 +453,7 @@ def main() -> None:
     ap.add_argument("--out")
     ap.add_argument("--ui-scale", type=float, help="글씨 크기 배율(가+ · 가−, uiscale.js STEPS 0.8~1.1 중 하나, 처음 값 0.9 — 양 끝 예: 0.8 · 1.1)")
     # 녹화(13) — 예: --record pipeline --themes office --sizes 1366x768 --views runshoes --clip 60,135,890,570 --gif-width 640
+    ap.add_argument("--query", default="", help="화면 주소 끝에 붙일 것(예: aura=star — 발밑 색 원의 다른 꼴을 견줄 때, 11-13)")
     ap.add_argument("--demo", help="정지 사진을 시연 장면(bridge/static/demo/<이름>.json)으로 — 점검 · 찍기는 그대로")
     ap.add_argument("--record", help="시연 대본 이름(bridge/static/demo/<이름>.json) — '-'면 대본 없이 실제 화면")
     ap.add_argument("--name", help="결과 파일 이름(기본: 대본 이름)")

@@ -61,9 +61,11 @@ test('고르기 — 막는 것이 없으면 제자리, 있으면 옆으로 조�
 test('위 칸(복도)은 피하되 허용, 위 방은 더 무겁게 — 동작 카드를 옆에 붙여 피한다', () => {
   const x = 500, base = 200;
   const cands = stackCandidates(sized([T1], [A1]), x, base, { reach: 4, raise: 30 });
-  const tiers = { room: (rs) => overTop(rs, 186), soft: (rs) => overTop(rs, 194) };
+  // 11-13 바로잡음 — 전에는 위 방 끝이 186이라 한 줄(높이 14, 위 끝 186)이 딱 들어갔는데 복도(soft)만으로 옆에 붙인 것을 맞다고 봤다.
+  // 옆 붙이기는 위가 정말 막혔을 때만(SIDE, tests/js/stack_side.test.mjs) — 위 방 끝 190이면 한 줄은 0.85배(높이 12)로 줄여도 넘친다
+  const tiers = { room: (rs) => overTop(rs, 190), soft: (rs) => overTop(rs, 194) };
   const b = pickStack(cands, tiers);
-  assert.match(b.shape, /^side-/);                     // 한 줄(높이 14)은 위 방(186)을 넘는다 — 옆에 붙임(높이 7)
+  assert.match(b.shape, /^side-/);                     // 한 줄(높이 14 · 줄여 12)은 위 방(190)을 넘는다 — 옆에 붙임(높이 7)
   assert.equal(b.room, 0);
 });
 

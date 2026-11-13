@@ -15,7 +15,8 @@ import { buildGrid, findPath, footprint, nearestFree, RES } from './walk.js';
 import { uiScale } from './uiscale.js';
 import { wrapWords } from './wrap.js';
 import { applyGrid, INFRA_STAGES, gridProblems } from './grid.js';
-import { STACK_GAP, column, stackCandidates, stackCover, pickStack, overTop, liftsOver, leapOver, nearBoxes, seatHost } from './overhead.js';
+import { auraOf, auraStyle, drawAura } from './aura.js';
+import { STACK_GAP, column, stackCandidates, stackCover, pickStack, overTop, liftsOver, leapOver, nearBoxes, seatHost, isSide, freeColumn } from './overhead.js';
 
 // 픽셀 화면 글씨(화면 좌표로 그리는 것 — 구역 · 캐릭터 이름표, 말풍선, 방 카드, 단계 이름) 배율(11-09 사용자:
 // "130%로 보는데 맨 윗줄 탭 글씨 정도면 좋겠다", [가+ · 가−]도 따라가게). 탭은 17px × 배율 — 이름표 14px × 배율 × 1.2가 그쯤.
@@ -706,6 +707,50 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     return (role && ROLES[role]) || R.default || null;
   }
 
+  // 발밑 역할 색 원(11-13 사용자, aura.js) — 꼴은 테마마다(theme.json aura.style), 견주기용 ?aura=<꼴>|off. 걷는 동안도 발 점을 따라간다
+  const AURA_STYLE = auraStyle(theme.name, theme.aura, new URLSearchParams(location.search).get('aura'));
+  let AURAS = [];                                              // 이번 프레임에 그린 원(window.office.auras — 점검 · 사진용)
+  const SILS = new Map();                                      // 이번 프레임에 그린 사람 그림(drawActorS) — 원에서 몸을 지울 때
+  let auraCv = null;
+  function eachAura(list, now, fn) {
+    AURAS = [];
+    if (AURA_STYLE === 'off') return;
+    for (const a of list) {
+      if (a.bornAt && now < a.bornAt) continue;                  // 누워 있어도 그린다(늘 켜 둔다 — 현장 쉬는 관리자가 눕는다)
+      const au = auraOf(a, MINI);
+      if (!au) continue;
+      fn(a, au);
+      AURAS.push({ key: a.key, role: a.role, color: au.color, k: au.k, x: +a.x.toFixed(2), y: +a.y.toFixed(2), moving: !!a.moving });
+    }
+  }
+  // 도형 테마 — 바닥에 깔고 사람을 그 위에(가구가 낮아 가릴 것이 없다)
+  function drawAuras(list, now) { eachAura(list, now, (a, au) => drawAura(ctx, AURA_STYLE, a.x * T, a.y * T, T, au, now / 1000)); }
+  // 시트 테마 — 바닥에만 깔면 책상 뒤에 앉은 코더 · 디자이너(가장 흔한 자리)의 원을 앞 책상이 거의 다 가렸다(11-13 사진).
+  // 그래서 가구 · 사람을 다 그린 뒤 따로 캔버스에 원을 그리고, 사람 그림(보이는 부분 — 앞 가구에 가린 다리는 빼고, VIS_BODIES)만 지워 얹는다.
+  // 사람은 늘 원 앞에 서고, 원은 바닥 · 앞 책상 위로 퍼진다(마법 문양이 빛나는 꼴). 이름표 · 머리 위 표시 · 열기(drawHeat)는 이 뒤에 그린다
+  function drawAurasOver(list, now) {
+    const cv = ctx.canvas;
+    if (!auraCv) auraCv = document.createElement('canvas');
+    if (auraCv.width !== cv.width || auraCv.height !== cv.height) { auraCv.width = cv.width; auraCv.height = cv.height; }
+    const g = auraCv.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, auraCv.width, auraCv.height);
+    g.setTransform(ctx.getTransform()); g.imageSmoothingEnabled = false;
+    let n = 0;
+    eachAura(list, now, (a, au) => { drawAura(g, AURA_STYLE, a.x * T, a.y * T, T, au, now / 1000); n++; });
+    if (!n) return;
+    g.globalCompositeOperation = 'destination-out';
+    for (const [k, s] of SILS) {
+      const vis = VIS_BODIES.get(k), cut = vis ? vis[1] + vis[3] : Infinity;   // 앞 가구에 가린 아랫부분은 지우지 않는다(가구 위 원이 다리 모양으로 뚫리지 않게)
+      g.save();
+      if (s.rot) { g.translate(s.cx, s.cy); g.rotate(-Math.PI / 2); g.drawImage(s.img, -s.w / 2, -s.h / 2, s.w, s.h); g.restore(); continue; }   // 누운 그림
+      if (cut < s.y + s.h) { g.beginPath(); g.rect(s.x - 1, s.y - 1, s.w + 2, cut - s.y + 1); g.clip(); }
+      g.drawImage(s.img, s.x, s.y, s.w, s.h);
+      g.restore();
+    }
+    g.globalCompositeOperation = 'source-over';
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(auraCv, 0, 0); ctx.restore();
+  }
+
   // 서브에이전트(10c) — 소환 자리: 그 방에 마법진(circle 구역)이 있으면 그 가운데, 없으면 부모 자리
   const MINI_CAP = 10;
   const MINI = theme.sprites.mini_scale || 0.6;
@@ -1003,6 +1048,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       drawHQS(now, sorted);
       for (const r of world.rooms) drawRoomS(r, now, sorted);
       if (world.lounge) drawLoungeS(world.lounge, now, sorted);
+      SILS.clear();
       for (const a of list) {
         if (a.bornAt && now < a.bornAt) continue;
         // 소파 · 침대 같은 "위에 앉는" 가구에 자리 잡은 사람은 그 가구 바로 다음(가구 위에). 걸어가는 동안은 발 위치 순서
@@ -1025,13 +1071,15 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       for (const r of world.rooms) overTopItems(r, list, now);       // 탁자 위 소품이 사람 앞에 그려진 자리만 사람을 덧그린다
       if (world.hq) overTopItems(world.hq, list, now, 'hq');        // 감독실(교장실 · 팀장실 · 감독 컨테이너) 탁자도
       BUBBLES.clear();
-      prepareStacks(list, now);
+      prepareStacks(list, now);                               // (보이는 몸 칸 VIS_BODIES도 여기서 잰다)
+      drawAurasOver(list, now);                               // 발밑 역할 색 원(11-13) — 사람 뒤 · 가구 위, 표시들 아래
       for (const a of list) drawOverlay(a, now);
       drawSeatStacks(now);
     } else {
       drawHQShapes(now);
       for (const r of world.rooms) drawRoom(r, now);
       if (world.lounge) drawLounge(world.lounge);
+      drawAuras(list, now);
       for (const a of list) if (!(a.bornAt && now < a.bornAt)) drawActor(a, now);
     }
     drawSummonsPuffs(now);
@@ -1861,6 +1909,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const w = Math.round(c.width * MINI), h = Math.round(c.height * MINI);
       const bob = c.static ? Math.round(Math.abs(Math.sin(a.phase * 1.3)) * 1.5) : 0;
       ctx.drawImage(c.img, Math.round(a.x * T - w / 2), Math.round(a.y * T - h) - bob, w, h);
+      SILS.set(a.key, { img: c.img, x: Math.round(a.x * T - w / 2), y: Math.round(a.y * T - h) - bob, w, h });
       return;
     }
     const act = a.act || {};
@@ -1889,11 +1938,13 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       ctx.rotate(-Math.PI / 2);
       ctx.drawImage(c.img, -c.width / 2, -c.height / 2, c.width, c.height);
       ctx.restore();
+      SILS.set(a.key, { img: c.img, rot: true, cx: Math.round(cx * T), cy: Math.round(cy * T), w: c.width, h: c.height });
       ctx.globalAlpha = 1;
       a.drawH = Math.round(10 * K);
       return;
     }
     ctx.drawImage(c.img, px, py, c.width, c.height);
+    SILS.set(a.key, { img: c.img, x: px, y: py, w: c.width, h: c.height });   // 발밑 원에서 이 몸을 지운다(drawAurasOver)
     if (!a.moving) BODIES.set(a.key, { a, box: [px, py, c.width, c.height] });   // 이름표가 사람을 덮나(labelAudit · drawName, 11-10)
     // 역할 표시 — 오피스는 사원증 끈, 현장은 안전모 색(마법학교는 위에서 로브 색을 바꿨다). 원본 픽셀 단위로 그리고 K배
     const rc = !mode && roleColor(a.role);
@@ -2296,6 +2347,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 제자리(머리 바로 위 한 줄 · 원래 크기)를 어느 층이 막았는지 — 왜 옆 · 위로 갔는지 볼 때(window.office.stacks())
     const why = best === cands[0] || (!best.dx && !best.dy && best.k === 1 && best.shape === 'column') ? null
       : Object.fromEntries(Object.entries(tiers).map(([n, f]) => [n, Math.round(f(cands[0].rects))]).filter(([, v]) => v > 0));
+    // 옆 붙이기를 골랐는데 위에 자리가 있었나(11-13 사용자 「위에 자리가 있어 보이는데」) — stackAudit ⑥
+    const upFree = isSide(best.shape) && best.k !== 'dot' ? freeColumn(cands, tiers, best.k) : null;
     const { texts: ts, acts: as } = sized(best.k), all = [...ts, ...as];
     all.forEach((c, i) => drawStackCard(c, best.rects[i], now));
     const cards = all.map((c, i) => ({ text: c.text, kind: c.kind, layer: i < ts.length ? 'text' : 'act', rect: best.rects[i].map((v) => Math.round(v * 100) / 100),
@@ -2303,6 +2356,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const main = cards.find((c) => c.layer === 'text') || cards[0];
     BUBBLES.set(a.key, { room: a.room, text: main.text, rect: main.rect, cards, shape: best.shape, k: best.k, dx: Math.round(best.dx), dy: best.dy, why,
                          cover: Math.round(best.cover), corridor: Math.round(best.soft), over: Math.round(best.room), head: Math.round(head),
+                         ...(upFree ? { upFree: { dx: Math.round(upFree.dx), dy: upFree.dy } } : {}),
                          ...(a.kind === 'seat' ? { virtual: true } : {}) });   // virtual = 자리에 아무도 없어 보이지 않는 몸 위에 놓은 자리 말풍선
   }
   // 이번 프레임에 살아 있는 덩어리 — 캐릭터 것과 자리 말풍선(보이지 않는 몸, 11-13)
@@ -2331,6 +2385,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         if (headTop != null && c.rect[1] + c.rect[3] > headTop + 1) out.push({ key, kind: '머리 위 아님', text: label, bottom: c.rect[1] + c.rect[3], head: Math.round(headTop) });
       }
       if (s.over > 1) out.push({ key, kind: '위 방으로 넘침', text: s.text, px: s.over });
+      // ⑥(11-13) 옆 붙이기는 위가 정말 막혔을 때만 — 위에 덮음 · 위 방 · 건너뜀 · 이웃 제자리 없는 한 줄 자리가 있었는데 옆으로 갔다
+      if (s.upFree) out.push({ key, kind: '위에 자리가 있는데 옆으로 감', text: s.text, shape: s.shape, up: s.upFree });
       const tb = s.cards.filter((c) => c.layer === 'text'), ab = s.cards.filter((c) => c.layer === 'act');
       if (tb.length && ab.length && Math.min(...ab.map((c) => c.rect[1] + c.rect[3])) > Math.max(...tb.map((c) => c.rect[1] + c.rect[3])) + 1) {
         out.push({ key, kind: '쌓는 차례', text: s.text });
@@ -3586,7 +3642,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
         s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎${vs === 'WAITING' ? ' — 둘레의 작은 캐릭터' : ''}${(s.subagent_descs || []).map((d) => `<div class="tip-s">· ${esc(short(d, 50))}</div>`).join('')}</div>` : ''}${
         bg.length ? `<div>뒤에서 도는 일 ${bg.length}개(백그라운드 명령)${vs === 'WAITING' ? ' — 머리 위 어두운 상자의 도는 막대 「|」' : ''}${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}</div>`).join('')}</div>` : ''}${
-        a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝났는지 모름(빨간 「…」) — 끝 신호가 오지 않았습니다. 터미널을 확인하거나 [작업 중단]을 누릅니다.' }[a.act.flag] || a.act.flag)}</div>` : ''}${
+        a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝났는지 모름(빨간 「…」) — 끝 신호가 오지 않았습니다. 대화창을 확인하거나 [작업 중단]을 누릅니다.' }[a.act.flag] || a.act.flag)}</div>` : ''}${
         needMark(s) ? `<div class="tip-s">${esc(needMark(s).tip)}</div>` : ''}${
         a.subHidden ? `<div class="tip-s">+${a.subHidden} — 서브에이전트가 많아 화면에 다 그리지 않고 접은 수입니다.</div>` : ''}${
         s.compact && s.compact.level ? `<div class="tip-s">📦 대화 자동 요약 ${s.compact.count}번(대화가 길어 앞부분을 요약해 줄였습니다. 줄일수록 처음에 정한 것을 잊습니다) —${s.compact.level === 'late' ? '늦었습니다' : '새 세션으로 넘어갈 때입니다'}</div>` : ''}
@@ -3709,7 +3765,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
            audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: (o) => layoutAudit(o), labelAudit: () => labelAudit(), gridAudit: () => gridAudit(), camScale: () => ({ cam: cam.s, room: roomViewScale() }), roomLabels: (name) => roomLabels(world.rooms.find((r) => r.name === name) || null).map((l) => ({ ...l, box: labelBox(l) })),furnRects: (w) => furnRects(w), standSpots: () => standSpots(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), stackAudit: () => stackAudit(), walkAudit: () => walkAudit(),
            walkWatch: () => { WALK_LOG = { frames: 0, moving: 0, issues: [], seen: new Set() }; return true; },
            walkLog: () => (WALK_LOG ? { frames: WALK_LOG.frames, moving: WALK_LOG.moving, issues: WALK_LOG.issues.slice() } : null),
-           seats: () => seatCards(), stacks: () => [...BUBBLES.entries()].filter(([k, b]) => liveBubble(k, b)).map(([key, b]) => ({ key, ...b, scr: (b.cards || []).map((c) => toScr(c.rect).map(Math.round)) })), nameAudit: () => nameAudit(), names: () => NAMES.slice(),
+           seats: () => seatCards(), auras: () => ({ style: AURA_STYLE, list: AURAS.slice() }), stacks:() => [...BUBBLES.entries()].filter(([k, b]) => liveBubble(k, b)).map(([key, b]) => ({ key, ...b, scr: (b.cards || []).map((c) => toScr(c.rect).map(Math.round)) })), nameAudit: () => nameAudit(), names: () => NAMES.slice(),
            // 터미널을 열 때 고를 프로젝트(11-10) — 보고 있는 현장, 없으면(감독실 · 지도 · 라운지) 고른 세션의 프로젝트, 그것도 없으면 null
            currentProject: () => (world.rooms.some((r) => r.name === view) ? view
              : ((store.state.sessions.get(store.state.selected) || {}).project || null)),
