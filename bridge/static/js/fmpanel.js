@@ -1,10 +1,9 @@
 // 감독실 캐릭터 패널(11-08, docs/14_dispatcher_note_wake.md) — 팀장(교장 · 소장 · 디스패처)을 누르면 패널에 뜬다.
-// 이 캐릭터는 세션이 아니라 디스패처의 얼굴이다: 들고 있는 것(노트) · 해 온 것(지난 디스패치) · [시작]을 기다리는 자동 제안을 보인다.
-// 말하기는 가운데 창(foremanchat.js). 노트는 디스패처가 제안하고 사람이 [시작] 때 승인한다 — 여기서는 사람이 내리기만.
+// 이 캐릭터는 세션이 아니라 디스패처의 얼굴이다: 들고 있는 것(진행 중인 일) · 해 온 것(지난 디스패치) · [시작]을 기다리는 자동 제안을 보인다.
+// 말하기는 가운데 창(foremanchat.js). 진행 중인 일은 디스패처가 제안하고 사람이 [시작] 때 승인한다 — 여기서는 사람이 내리기만.
+// 11-13 사용자 — 노트(foreman_note)는 「진행 중인 일」 한 칸뿐. 옛 「사람이 정한 판단」 칸은 없앴다(규칙은 CLAUDE.md · docs)
 
 import { esc, ago, keep } from './render.js';
-
-const KIND = { thread: '진행 중인 일', decision: '사람이 정한 판단' };
 
 // 11-13 — 끝난 일이 「진행 중인 일」로 남아 있었다. 기계로 끝남을 못 가르는 줄 중 오래 확인 안 한 줄은 「낡음 — 확인 필요」로 따로
 export function splitNotes(notes) {
@@ -15,9 +14,9 @@ export function splitNotes(notes) {
 
 function noteRow(n, project, staleRow) {
   const btns = (staleRow ? `<button type="button" class="small ghost" data-fm-touch="${n.id}" data-proj="${esc(project)}" title="아직 진행 중 — 확인 시각을 지금으로 바꿉니다. 낡음 표시가 풀립니다.">아직 진행 중</button>` : '')
-    + `<button type="button" class="small ghost" data-fm-retire="${n.id}" data-proj="${esc(project)}" title="내리기 — 이 줄을 노트에서 뺍니다. 기록은 남습니다.">내리기</button>`;
+    + `<button type="button" class="small ghost" data-fm-retire="${n.id}" data-proj="${esc(project)}" title="내리기 — 이 줄을 진행 중인 일에서 뺍니다. 기록은 남습니다.">내리기</button>`;
   return `<div class="sc-row${n.folded ? ' fm-folded' : ''}"><div class="small">
-        <b>${staleRow ? '낡음' : (KIND[n.kind] || esc(n.kind))}</b> ${esc(n.body)}
+        ${staleRow ? '<b>낡음</b> ' : ''}${esc(n.body)}
         <div class="muted">출처 ${esc(n.source)} · 확인 ${ago(n.checked_at)}${n.folded ? ' · <span class="warn">접힘 — 상한을 넘어 계획을 세울 때 안 들어갑니다</span>' : ''}</div>
         ${staleRow ? `<div class="warn">확인 필요 — ${(n.stale || []).map(esc).join(' · ')}</div>` : ''}
         ${n.drift.length ? `<div class="warn">⚠ ${n.drift.map(esc).join(' · ')}</div>` : ''}</div>
@@ -54,9 +53,9 @@ export function createForemanPanel(store) {
 
   function notesBlock(project, label) {
     const c = cache.get(project);
-    if (!c) return `<p class="small muted">${esc(label)} 노트를 읽는 중입니다.</p>`;
+    if (!c) return `<p class="small muted">${esc(label)} 진행 중인 일을 읽는 중입니다.</p>`;
     const d = c.data;
-    if (d.error) return '<p class="small warn">노트를 읽지 못했습니다.</p>';
+    if (d.error) return '<p class="small warn">진행 중인 일을 읽지 못했습니다.</p>';
     const { fresh, stale } = splitNotes(d.notes);
     const rule = d.stale_rule ? `마지막 확인 뒤 ${d.stale_rule.days}일 또는 커밋 ${d.stale_rule.commits}개가 넘은 진행 중인 일입니다. ` : '';
     const rows = fresh.map((n) => noteRow(n, project, false)).join('')
@@ -65,7 +64,7 @@ export function createForemanPanel(store) {
       + autoBlock(project, d.auto_retired);
     const disp = (d.dispatches || []).length ? `<details class="hand"${keep(`fm:${project}:disp`)}><summary class="small" title="지난 계획 — 계획을 세울 때 이 목록(사람이 고친 칸)도 함께 들어갑니다. 같은 실수를 되풀이하지 않게 합니다."><b>지난 계획 ${d.dispatches.length}</b></summary>${
       d.dispatches.map((x) => `<div class="small">· ${esc(x)}</div>`).join('')}</details>` : '';
-    return `<details class="hand"${keep(`fm:${project}:notes`, true)}><summary class="small" title="노트 — 계획을 세울 때마다 함께 들어갑니다. 진행 중인 일과 사람이 정한 판단만 쌓습니다(구조 · 명령은 쌓지 않습니다)."><b>${esc(label)} 노트 ${d.notes.length}줄</b>
+    return `<details class="hand"${keep(`fm:${project}:notes`, true)}><summary class="small" title="진행 중인 일 — 계획을 세울 때마다 함께 들어갑니다. 지금 도는 일만 쌓습니다(규칙 · 설계 결정 · 구조 · 명령은 CLAUDE.md · docs에 둡니다)."><b>${esc(label)} 진행 중인 일 ${d.notes.length}</b>
         <span class="muted">· 약 ${d.tokens}/${d.cap}토큰${d.folded ? ` · 접힘 ${d.folded}` : ''}</span></summary>${rows || '<p class="small muted">아직 없습니다. 계획을 세울 때 함께 제안되고, [이대로 시작]을 누를 때 쌓입니다.</p>'}</details>${disp}`;
   }
 
@@ -102,7 +101,7 @@ export function createForemanPanel(store) {
     }
     if (!r) return;
     ev.preventDefault();
-    if (!confirm('이 줄을 노트에서 내립니다. 다음 계획부터 들어가지 않습니다(기록은 남습니다). 내릴까요?')) return;
+    if (!confirm('이 줄을 진행 중인 일에서 내립니다. 다음 계획부터 들어가지 않습니다(기록은 남습니다). 내릴까요?')) return;
     const res = await fetch(`/api/foreman/notes/${r.dataset.fmRetire}/retire`, { method: 'POST', headers: store.headers(true) });
     const j = await res.json().catch(() => ({}));
     note = res.ok ? { msg: '내렸습니다.' } : { bad: true, msg: `내리지 못했습니다 — ${j.refused || j.detail || res.status}` };

@@ -1,9 +1,9 @@
 """디스패처(11-05, docs/11_foreman_dispatch.md · 11-08 docs/14_dispatcher_note_wake.md) — 사람이 "뭘 하려는지" 말하면 계획을 낸다.
 
 화면의 감독실 캐릭터(오피스 팀장 · 마법학교 교장 · 현장 소장 · 기본 디스패처)가 이 디스패처의 얼굴이다. 세션은 없다.
-디스패처는 상주하지 않는다. 요청마다 브리지가 "상황 묶음"(프로젝트 · CLAUDE.md · 메모리 색인 · docs 색인 · 노트 · 지난 디스패치 ·
+디스패처는 상주하지 않는다. 요청마다 브리지가 "상황 묶음"(프로젝트 · CLAUDE.md · 메모리 색인 · docs 색인 · 진행 중인 일(노트) · 지난 디스패치 ·
 세션 · 인계 요약 · 파이프라인)을 LLM 없이 모아 `claude -p` 한 번에 넣고, 정해진 모양의 계획(JSON)을 받는다.
-계획은 사람이 화면에서 보고 고친 뒤 승인해야 시작한다. 노트 고치기 제안도 같은 [시작]으로 반영한다(bridge/foreman_note.py).
+계획은 사람이 화면에서 보고 고친 뒤 승인해야 시작한다. 진행 중인 일 고치기 제안도 같은 [시작]으로 반영한다(bridge/foreman_note.py).
 
 - 디스패처는 읽기만: Read · Grep · Glob(docs를 찾아보게). 셸 · 쓰기 없음, 훅 끔, 세션 기록 안 남김(--no-session-persistence)
 - 파일(CLAUDE.md · MEMORY.md · docs)은 mtime이 바뀐 것만 다시 읽는다
@@ -136,25 +136,26 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
    - 무엇을 하려는지(사람의 요청을 구체적으로)
    - 먼저 읽을 문서 경로(docs/… — 새 세션은 CLAUDE.md와 메모리 색인은 스스로 읽으니 다시 옮기지 마라)
    - 지켜야 할 것: 상황 묶음에 보이는 사용자 결정 · 금지(특히 압축 손실 점검 목록에서 이 일과 겹치는 것)
-   - 받으면 바로 시작하게 쓴다. "이해한 것을 요약하고 확인을 기다려라" 같은 말은 붙이지 마라 — 사람이 계획 카드에서 이미 보고 고쳤다
-     (같은 확인을 두 번 하게 된다, 11-10). 일 중에 사람이 정해야 할 것(운영 적재 · push 등)에서 멈추라는 말은 '지켜야 할 것'에 그대로 둔다
+   - 받으면 바로 시작하게 쓴다. first_prompt 끝에 "이해한 것 N줄 말하고 확인 기다려라" · "이해한 것을 요약하고 확인을 기다려라" 같은 말은
+     붙이지 마라 — 사람이 [계획 받기]에서 이미 보고 고쳤다(같은 확인을 두 번 하게 된다, 11-10). 세션은 받으면 바로 시작한다.
+     일 중에 사람이 정해야 할 것(운영 적재 · push 등)에서 멈추라는 말은 '지켜야 할 것'에 그대로 둔다
    - 인계 요약 본문은 넣지 마라 — summary_id를 고르면 브리지가 뒤에 붙인다
 7. reasons — 왜 이렇게 판단했는지(짧게, 근거가 된 세션 · 요약 · 문서를 짚어서)
 8. confidence — 0~1. 0.6 아래면 mode "ask"를 생각하라
-9. note_updates — 그 프로젝트 "노트"를 고칠 제안(없으면 []). 노트는 다음에 너를 부를 때 다시 들어간다. 사람이 [시작]을 누를 때만 반영된다
-   - 쌓는 것은 둘뿐: "thread"(진행 중인 일 줄기 — 무엇을 · 어느 세션들에서 · 어디까지 · 남은 것) ·
-     "decision"(사람이 정한 판단 · 금지 — 사람의 말이나 log에 근거가 있는 것만)
-   - 쌓지 마라: 저장소 구조 · 자주 쓰는 명령 · 파일 경로 목록 — CLAUDE.md · 메모리 · docs에 있고 새 세션이 스스로 읽는다
-   - {"op": "add", "kind": "thread|decision", "body": "300자 안", "source": "세션 N | log/….md | docs/….md | dispatch #N | 커밋 <sha>"}
-     · {"op": "update", "id": 노트번호, "kind": ..., "body": ..., "source": ...} · {"op": "retire", "id": 노트번호, "why": "..."}
-     · {"op": "touch", "id": 노트번호} (다시 확인했는데 아직 맞다 — 확인 시각만 새로)
-   - 이번 요청이 노트의 진행 중인 일을 잇는다면 그 줄을 update해 지금 상태로. 끝난 일은 retire
-   - 역할 manager 세션을 띄우는 계획이면 thread를 쓰지 마라 — 관리자 띄우기는 할 일이 아니라 있냐 없냐다(관리자는 계속 살아 있어 thread는 끝남을 못 가르고 영영 남는다).
-     decision 한 줄 「<프로젝트> 관리자가 있다(세션 N, 원본 폴더)」 꼴로 쓰고, 관리자가 바뀌면(옮기기 · 새로 띄움) 그 줄을 update한다.
-     관리자를 띄우면서 다른 일(「띄워서 X를 정리하게」)도 맡기면 그 X만 thread로 쓴다
+9. note_updates — 그 프로젝트 「진행 중인 일」을 고칠 제안(없으면 []). 진행 중인 일은 다음에 너를 부를 때 다시 들어간다. 사람이 [시작]을 누를 때만 반영된다
+   - 쌓는 것은 하나뿐: 지금 도는 일 줄기 — 무엇을 · 어느 세션들에서 · 어디까지 · 남은 것. 일이 끝나면 내려간다
+   - 쌓지 마라: 규칙 · 금지 · 설계 결정 · 사람이 정한 판단(「~는 ~로 한다」 「~하지 않는다」), 저장소 구조 · 자주 쓰는 명령 · 파일 경로 목록.
+     요청 글에 「사용자 지시」 「사용자 결정」이 있어도 그것은 이번 세션의 first_prompt '지켜야 할 것'에 넣는다 — 진행 중인 일이 아니다.
+     오래 지킬 규칙이면 그 일의 세션이 CLAUDE.md · docs에 적게 first_prompt에 쓴다(새 세션은 CLAUDE.md · docs를 스스로 읽는다)
+   - {"op": "add", "body": "300자 안", "source": "세션 N | log/….md | docs/….md | dispatch #N | 커밋 <sha>"}
+     · {"op": "update", "id": 줄번호, "body": ..., "source": ...} · {"op": "retire", "id": 줄번호, "why": "..."}
+     · {"op": "touch", "id": 줄번호} (다시 확인했는데 아직 진행 중이다 — 확인 시각만 새로)
+   - 이번 요청이 진행 중인 일을 잇는다면 그 줄을 update해 지금 상태로. 끝난 일은 retire
+   - 관리자 띄우기는 진행 중인 일에 쓰지 않는다(관리자 자리는 /api/managers에 있다).
+     관리자를 띄우면서 다른 일(「띄워서 X를 정리하게」)도 함께 맡기면 그 일만 thread로 쓴다
    - ⚠ 표시(확인 뒤 바뀜)가 붙은 줄은 그대로 믿지 말고, 필요하면 Read로 확인한 뒤 update · retire · touch를 제안하라
    - 사람의 요청 글 자체가 근거면 source를 비워 둔다(브리지가 이번 dispatch 번호를 넣는다)
-   - 노트 상한은 프로젝트마다 약 2000토큰이다. 짧게 쓰고, 넘치면 오래된 것을 retire하라
+   - 상한은 프로젝트마다 약 2000토큰이다. 짧게 쓰고, 넘치면 오래된 것을 retire하라
 10. sessions — 띄울 세션 목록. 위 3 ~ 6(role · read_only · title · first_prompt)은 세션마다 이 안에 쓴다. 기본은 하나
    - 여럿은 사람이 개수를 말했거나("둘 띄워"), 큰 일을 맡을 파일이 겹치지 않게 나눠 동시에 하는 것이 분명히 나을 때만
    - files — 그 세션이 맡을 파일(저장소 기준 경로, 폴더는 끝에 /, 글롭 * 가능). 고칠 파일을 알면 하나여도 적는다 —
@@ -381,12 +382,12 @@ class ForemanDispatcher:
                     loss = sorted(Path(__file__).resolve().parent.parent.joinpath("log").glob(f"{name}_compaction_loss_*.md"))
                     if loss:
                         sec.append(f"- 압축 손실 점검(이 프로젝트 세션이 잊은 사용자 지시 · 결정 목록): {loss[-1]} — 이 일과 겹치는 항목은 first_prompt의 '지켜야 할 것'에")
-                    # 노트(11-08) — 진행 중인 일 · 사람이 정한 판단. 확인 뒤 바뀐 것은 ⚠로. 상한을 넘친 줄은 접혀 안 들어간다
+                    # 진행 중인 일(11-08 노트, 11-13 이 칸 하나만). 확인 뒤 바뀐 것은 ⚠로. 상한을 넘친 줄은 접혀 안 들어간다
                     head = await _git(repo, "rev-parse", "HEAD")
                     nt = await notes.render(c, name, head or None, _git_checked, repo, rules=self.note_rules)
                     fold = f", 접힌 줄 {nt['folded']}개" if nt["folded"] else ""
-                    sec.append(f"- 노트(약 {nt['tokens']}/{nt['cap']}토큰{fold}):\n"
-                               + (nt["text"] or "  (아직 없음 — 이번 일이 이어질 일이면 thread를, 사람이 정한 판단이 보이면 decision을 제안하라)"))
+                    sec.append(f"- 진행 중인 일(note_updates로 고친다, 약 {nt['tokens']}/{nt['cap']}토큰{fold}):\n"
+                               + (nt["text"] or "  (없음 — 이번 일이 여러 세션 · 여러 번에 걸쳐 이어질 일이면 한 줄 제안하라)"))
                     rd = await notes.recent_dispatches(c, name)
                     if rd:
                         sec.append("- 지난 디스패치(사람이 고친 칸 — 같은 실수를 되풀이하지 마라):\n" + "\n".join(rd))
@@ -547,6 +548,8 @@ class ForemanDispatcher:
                                                              plan.get("note_updates") or [])
             for w in nw:                  # 노트 제안 다듬기(출처를 '이번 요청'으로 · 자름 · 모양이 틀려 뺌) — 로그로만
                 log.info("계획 다듬기(노트 제안): %s", w)
+                if w.startswith(notes.DROPPED_WARN):   # 11-13 없앤 칸(규칙 · 판단)을 쌓자고 했다 — 사람이 보게 카드에
+                    warn.append(w)
         if plan["mode"] == "attach" and not plan.get("attach_session"):
             plan["mode"] = "new"
         if plan["mode"] == "handoff" and not plan.get("summary_id"):

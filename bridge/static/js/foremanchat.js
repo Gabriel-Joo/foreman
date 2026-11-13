@@ -1,5 +1,5 @@
 // 디스패처에게 말하기(11-05 · 11-08, docs/11_foreman_dispatch.md · docs/14_dispatcher_note_wake.md) — [+ 세션] 창 맨 위.
-// "뭘 하려는지" 말하면 디스패처가 계획(프로젝트 · 방식 · 쓸 요약 · 역할 · 이름 · 넣을 첫 글 · 노트 고치기 제안)을 내고, 사람이 보고 고친 뒤
+// "뭘 하려는지" 말하면 디스패처가 계획(프로젝트 · 방식 · 쓸 요약 · 역할 · 이름 · 넣을 첫 글 · 진행 중인 일 고치기 제안)을 내고, 사람이 보고 고친 뒤
 // [이대로 시작]. 원래 창(직접 고르기)은 아래에 접어 둔다 — 디스패처가 틀릴 때 쓴다.
 // 감독실 캐릭터(팀장 · 교장 · 소장 · 디스패처)를 누르면 이 창이 그 방의 프로젝트로 열린다(window.foremanChat.open).
 // 실패 이벤트가 만든 자동 제안(2단계)은 텔레그램 링크(?dispatch=N) · 캐릭터 말풍선에서 window.foremanChat.openDispatch(N)으로 연다.
@@ -8,7 +8,6 @@
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const MODE = { new: '새로 시작', handoff: '옮기기용 요약 넣고 시작', attach: '살아 있는 세션에 보내기', ask: '되묻기(시작하지 않음)' };
 const OPK = { add: '더하기', update: '바꾸기', retire: '내리기', touch: '아직 맞음' };
-const KIND = { thread: '진행 중인 일', decision: '사람이 정한 판단' };
 import { ROLE_PICK as ROLE, bindRoleModel, modelOptions } from './modelpick.js';
 
 // 감독실 캐릭터 이름 — 테마마다(오피스 팀장 · 마법학교 교장 · 현장 소장 · 기본 디스패처)
@@ -150,7 +149,7 @@ function mount(dlg) {
     sent = true;
     $('fmAsk').disabled = true; clearPlan(); $('fmWake').hidden = true;
     const t0 = Date.now();
-    const wait = () => msg(`${josa(fmName())} 계획을 세우고 있습니다… ${Math.round((Date.now() - t0) / 1000)}초\n프로젝트 상황 · 노트 · 문서를 읽느라 보통 20초쯤 걸립니다.`);
+    const wait = () => msg(`${josa(fmName())} 계획을 세우고 있습니다… ${Math.round((Date.now() - t0) / 1000)}초\n프로젝트 상황 · 진행 중인 일 · 문서를 읽느라 보통 20초쯤 걸립니다.`);
     wait();
     const tick = setInterval(wait, 1000);
     try {
@@ -195,10 +194,10 @@ function mount(dlg) {
       : o.op === 'touch' ? esc(o.was)
       : `${esc(o.body)}${o.op === 'update' ? ` <span class="muted">(전: ${esc(o.was)})</span>` : ''}`;
     // 11-09 사용자 — 접어 두고 몇 개인지만. 펼치면 줄마다 켜고 끄기
-    return `<details class="fm-fold fm-notes-box"><summary title="노트 고치기 제안 — ${esc(fmName())}${josa(fmName(), '이', '가')} 이 방 노트(진행 중인 일 · 사람이 정한 판단)를 이렇게 고치자고 합니다. [이대로 시작]을 누를 때 켠 것만 반영합니다.">노트 고치기 제안 ${ups.length}개</summary>
+    return `<details class="fm-fold fm-notes-box"><summary title="진행 중인 일 고치기 제안 — ${esc(fmName())}${josa(fmName(), '이', '가')} 이 방의 진행 중인 일을 이렇게 고치자고 합니다. [이대로 시작]을 누를 때 켠 것만 반영합니다.">진행 중인 일 고치기 제안 ${ups.length}개</summary>
       <div class="fm-notes">${
       ups.map((o, i) => `<label class="small fm-note"><input type="checkbox" data-ni="${i}"${o.on !== false ? ' checked' : ''}>
-        <span><b>${OPK[o.op] || o.op}</b> · ${KIND[o.kind] || ''} — ${line(o)} <span class="muted">출처 ${esc(o.source || '이번 요청')}</span></span></label>`).join('')}</div></details>`;
+        <span><b>${OPK[o.op] || o.op}</b> — ${line(o)} <span class="muted">출처 ${esc(o.source || '이번 요청')}</span></span></label>`).join('')}</div></details>`;
   }
   // "자세히"가 접혀 있어도 지금 값이 보이게 — 접힌 줄에 한 줄 요약
   function moreLine() {
@@ -371,7 +370,7 @@ function mount(dlg) {
       const ok = r.mode === 'attach' ? (r.injected ? '보냈습니다.' : '보냈지만 제출을 확인하지 못했습니다.')
         : `새 세션을 띄웠습니다${r.tmux ? `(tmux ${r.tmux}${r.model ? ' · ' + r.model : ''})` : ''}.${r.worktree ? ` 따로 작업 ${r.worktree.branch}에서 합니다.` : ''}${r.injected ? ' 첫 글을 넣었습니다.' : ''}${startedLine(r)}`;
       $('fmStartMsg').className = `small ${r.note ? 'warn' : 'ok'}`;
-      $('fmStartMsg').textContent = ok + (r.notes ? ` 노트 ${r.notes}줄을 고쳤습니다.` : '') + (r.note ? ' ' + r.note : '');
+      $('fmStartMsg').textContent = ok + (r.notes ? ` 진행 중인 일 ${r.notes}줄을 고쳤습니다.` : '') + (r.note ? ' ' + r.note : '');
       $('fmDrop').disabled = true;
       if (r.session_id && window.office) setTimeout(() => { dlg.classList.remove('on'); window.office.openSession(r.session_id); }, r.note ? 4000 : 1200);
     } catch (e) {

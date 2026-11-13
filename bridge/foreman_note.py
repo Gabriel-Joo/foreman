@@ -1,9 +1,10 @@
 """디스패처 노트(11-08, docs/14_dispatcher_note_wake.md) — 프로젝트마다 크기를 정한 기록. 디스패처를 부를 때마다 상황 묶음에 넣는다.
 
 상주 세션은 대화가 쌓여 압축되고, 압축 요약에 무엇이 남을지 고를 수 없다. 노트는 "무엇이 남을지 사람이 고르는 압축 요약"이다.
-- 쌓는 것: thread(진행 중인 일 줄기) · decision(사람이 정한 판단). 지난 디스패치와 사람이 고친 칸은 dispatch 표에서 바로 읽는다
-- 쌓지 않는 것: 구조 · 명령 — CC 메모리 · CLAUDE.md · docs에 있고 새 세션이 스스로 읽는다. 사본은 원본이 바뀌면 조용히 낡는다
-- 줄마다 출처와 확인 시각. 확인 뒤 바뀐 것(그 세션의 활동 · 커밋)을 기계로 붙여 낡은 줄이 사실처럼 보이지 않게 한다
+- 쌓는 것: 진행 중인 일(thread) 하나뿐(11-13 사용자 — 화면 · 묶음 이름도 「진행 중인 일」). 지난 디스패치와 사람이 고친 칸은 dispatch 표에서 바로 읽는다
+- 쌓지 않는 것: 구조 · 명령 · 규칙 · 금지 · 설계 결정 — CLAUDE.md · docs · CC 메모리에 있고 새 세션이 스스로 읽는다. 사본은 원본이 바뀌면
+  조용히 낡는다. 옛 「사람이 정한 판단(decision)」 칸은 11-13에 없앴다 — 남은 decision 줄은 읽지 않고(active), 새로 쌓는 제안은 뺀다(check_ops)
+- 줄마다 출처와 확인 시각. 확인 뒤 바뀐 것(그 세션의 활동)을 기계로 붙여 낡은 줄이 사실처럼 보이지 않게 한다
 - 상한 TOKEN_CAP(2k). 넘친 줄은 지우지 않고 접는다 — 묶음에 안 들어가고, 화면에 "접힘 N줄"로 보인다
 - 고치기는 디스패처가 계획(note_updates)에 제안하고, 사람이 [시작]을 누를 때 같이 반영한다
 """
@@ -22,7 +23,9 @@ from bridge import worktree as wt
 
 TOKEN_CAP = 2000
 BODY_MAX = 300
-KINDS = {"thread": "진행 중인 일", "decision": "사람이 정한 판단"}
+KINDS = {"thread": "진행 중인 일"}
+# 11-13 없앤 칸 — 교장이 그래도 제안하면 빼고 계획 카드에 이 말로 시작하는 경고(「노트 」로 시작하는 글은 카드가 숨긴다)
+DROPPED_WARN = "규칙 · 판단 제안을 뺐습니다"
 OPS = ("add", "update", "retire", "touch")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # 사람이 고친 칸으로 볼 것(디스패처가 고르는 칸) — 이유 · 경고 · 확신도는 사람이 고치는 칸이 아니다
@@ -81,16 +84,18 @@ def changed_fields(plan: dict[str, Any] | None, edited: dict[str, Any] | None) -
 
 
 async def active(c: Any, project: str) -> list[dict[str, Any]]:
+    """지금 진행 중인 일 줄. 11-13 전 decision 줄은 DB에 남아 있어도 읽지 않는다 — 묶음 · 패널 · 제안 맞추기에 안 들어간다."""
     rows = (await c.execute(text(
         "SELECT id, kind, body, source, refs, checked_at, created_at, dispatch_id FROM foreman_note "
-        "WHERE project = :p AND retired_at IS NULL ORDER BY checked_at DESC, id DESC"), {"p": project})).all()
+        "WHERE project = :p AND retired_at IS NULL AND kind = 'thread' ORDER BY checked_at DESC, id DESC"), {"p": project})).all()
     return [{"id": r[0], "kind": r[1], "body": r[2], "source": r[3], "refs": json.loads(r[4]) if r[4] else {},
              "checked_at": r[5], "created_at": r[6], "dispatch_id": r[7]} for r in rows]
 
 
 async def drift(c: Any, note: dict[str, Any], head: str | None, git: Any = None, repo: str | None = None) -> list[str]:
-    """확인 뒤 바뀐 것 — 그 줄이 가리키는 세션에 뒤 활동이 있거나 HEAD가 움직였거나 출처 파일이 없어졌으면 한 마디씩.
-    확인 뒤 커밋 수는 note["commits"]에도 남긴다(낡음 문턱)."""
+    """확인 뒤 바뀐 것 — 그 줄이 가리키는 세션에 뒤 활동이 있거나 출처 파일이 없어졌으면 한 마디씩.
+    확인 뒤 커밋 수는 글로 붙이지 않고 note["commits"]에만 남긴다(낡음 문턱 stale_commits). 11-13 — 「⚠ 확인 뒤 커밋 N개」는 저장소 전체의
+    커밋이라 그 줄의 일과 상관없이 FOREMAN에서 거의 모든 줄에 늘 붙었다(하루 100개 남짓). log/note_threads_only_20261113.md"""
     out = []
     note["commits"] = None
     refs = note.get("refs") or {}
@@ -106,11 +111,9 @@ async def drift(c: Any, note: dict[str, Any], head: str | None, git: Any = None,
     if head and refs.get("head") and refs["head"] != head and git and repo:
         try:
             n = (await git(repo, "rev-list", "--count", f"{refs['head']}..{head}")).strip()
-            if n and n != "0":
-                out.append(f"확인 뒤 커밋 {n}개")
-                note["commits"] = int(n) if n.isdigit() else None
-        except Exception:  # noqa: BLE001 — 옛 HEAD가 없어졌으면(리베이스) 그냥 "움직임"
-            out.append("확인 뒤 HEAD가 바뀜")
+            note["commits"] = int(n) if n.isdigit() else None
+        except Exception:  # noqa: BLE001 — 옛 HEAD가 없어졌으면(리베이스) 셀 수 없다 — 날수 문턱만
+            pass
     src = note.get("source") or ""
     if re.match(r"^(log|docs)/", src) and not (REPO_ROOT / src).exists():
         out.append("출처 파일이 없음")
@@ -132,19 +135,19 @@ def stale_why(note: dict[str, Any], rules: NoteRules, now: datetime | None = Non
 
 async def render(c: Any, project: str, head: str | None = None, git: Any = None, repo: str | None = None,
                  cap: int = TOKEN_CAP, rules: NoteRules | None = None, now: datetime | None = None) -> dict[str, Any]:
-    """노트 → 상황 묶음 글. 진행 중인 일 먼저, 최근 확인한 것부터 상한까지. 넘친 줄은 접는다(지우지 않는다).
-    낡은 진행 중인 일(stale_why)은 「낡음(확인 필요)」으로 갈라 맨 뒤에 — 디스패처가 진행 중인 일로 믿지 않게(11-13)."""
+    """진행 중인 일 → 상황 묶음 글. 최근 확인한 것부터 상한까지. 넘친 줄은 접는다(지우지 않는다).
+    낡은 줄(stale_why)은 「낡음(확인 필요)」으로 갈라 맨 뒤에 — 디스패처가 진행 중인 일로 믿지 않게(11-13)."""
     rules = rules or NoteRules()
     notes = await active(c, project)
     for n in notes:
         n["drift"] = await drift(c, n, head, git, repo)
         n["stale"] = stale_why(n, rules, now)
-    notes.sort(key=lambda n: (2 if n["stale"] else n["kind"] != "thread", -n["checked_at"].timestamp()))
+    notes.sort(key=lambda n: (bool(n["stale"]), -n["checked_at"].timestamp()))
     lines, used, folded = [], 0, []
     for n in notes:
         d = n["drift"]
-        what = "낡음(확인 필요 — 끝났을 수 있다. 진행 중이라고 믿지 말고 확인하라)" if n["stale"] else KINDS.get(n["kind"], n["kind"])
-        ln = (f"  - [노트 {n['id']} · {what}] {n['body']} "
+        what = " · 낡음(확인 필요 — 끝났을 수 있다. 진행 중이라고 믿지 말고 확인하라)" if n["stale"] else ""
+        ln = (f"  - [줄 {n['id']}{what}] {n['body']} "
               f"(출처 {n['source']}, 확인 {n['checked_at']:%m-%d %H:%M} UTC{' — ⚠ ' + ' · '.join(d) if d else ''})")
         t = est_tokens(ln)
         if used + t > cap:
@@ -174,7 +177,8 @@ async def recent_dispatches(c: Any, project: str, limit: int = 5) -> list[str]:
 
 
 async def check_ops(c: Any, project: str | None, ops: Any) -> tuple[list[dict[str, Any]], list[str]]:
-    """디스패처가 제안한 노트 고치기를 사실과 맞춘다. 모양이 틀리거나 남의 프로젝트 줄이면 빼고 경고."""
+    """디스패처가 제안한 진행 중인 일 고치기를 사실과 맞춘다. 모양이 틀리거나 남의 프로젝트 줄이면 빼고 경고.
+    없앤 칸(decision — 규칙 · 판단)을 쌓자는 제안은 빼고 DROPPED_WARN으로 시작하는 경고(계획 카드에 뜬다, 11-13)."""
     warn: list[str] = []
     if not isinstance(ops, list) or not project:
         return [], ([] if not ops else ["노트 고치기 제안을 읽지 못했습니다(프로젝트가 정해지지 않음)"])
@@ -191,14 +195,17 @@ async def check_ops(c: Any, project: str | None, ops: Any) -> tuple[list[dict[st
             except (TypeError, ValueError):
                 nid = None
             if nid not in mine:
-                warn.append(f"노트 {o.get('id')}은(는) 이 프로젝트의 지금 노트가 아닙니다 — 제안을 뺐습니다")
+                warn.append(f"노트 {o.get('id')}은(는) 이 프로젝트의 지금 진행 중인 일이 아닙니다 — 제안을 뺐습니다")
                 continue
             op["id"] = nid
             op["was"] = mine[nid]["body"]
             op["kind"] = mine[nid]["kind"]
         if op["op"] in ("add", "update"):
-            kind = o.get("kind") or op.get("kind")
+            kind = o.get("kind") or op.get("kind") or "thread"
             body = re.sub(r"\s+", " ", str(o.get("body") or "")).strip()
+            if kind == "decision":
+                warn.append(f"{DROPPED_WARN} — 진행 중인 일만 쌓습니다(규칙 · 금지 · 설계 결정은 CLAUDE.md · docs 몫): {body[:60]}")
+                continue
             if kind not in KINDS or not body:
                 warn.append("노트 제안 하나를 뺐습니다(종류 · 내용이 비었음)")
                 continue
@@ -270,7 +277,7 @@ async def touch_by_hand(c: Any, note_id: int) -> bool:
 
 # ── 끝난 「진행 중인 일」 줄을 기계로 내리기(11-13 사용자 결정, log/note_auto_retire_20261113.md) ─────────────
 # 줄에 붙은 세션(refs.sessions)이 모두 끝났고 그 세션들이 남긴 일이 없으면 내린다. 지우지 않는다 — retired_at과
-# refs.auto_retired {why, at}(스키마 그대로). 사람이 되살리면 refs.keep — 다시 기계로 내리지 않는다. decision은 건드리지 않는다.
+# refs.auto_retired {why, at}(스키마 그대로). 사람이 되살리면 refs.keep — 다시 기계로 내리지 않는다. 남은 decision 줄은 보지 않는다(active).
 # 원본 폴더 세션은 끝남을 못 가른다(같은 줄기가 다음 세션으로 이어진다) — 붙은 세션이 원본 폴더 세션뿐이면 내리지 않는다.
 
 async def session_facts(c: Any, sids: list[int], live: set[str] | None) -> dict[int, dict[str, Any]]:
@@ -369,7 +376,7 @@ async def sweep(c: Any, project: str, live: set[str] | None, rules: NoteRules | 
     in_base = in_base or wt.in_base
     out = []
     for n in await active(c, project):
-        if n["kind"] != "thread" or n["refs"].get("keep"):
+        if n["refs"].get("keep"):
             continue
         sids = [int(s) for s in (n["refs"].get("sessions") or []) if str(s).isdigit()]
         facts = await session_facts(c, sids, live)

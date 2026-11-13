@@ -110,6 +110,26 @@ def test_check_per_session_role_model_worktree(tmp_path, monkeypatch):
     assert p2["warnings"].count("세션 1: 역할이 점검이라 읽기 전용으로 시작합니다") <= 1
 
 
+def test_check_dropped_decision_warns_on_card(tmp_path, monkeypatch):
+    """11-13 — 없앤 칸(규칙 · 판단)을 쌓자는 제안은 빠지고 계획 카드에 경고, 다른 노트 다듬기는 로그로만."""
+    d = _disp(tmp_path, _HM(), monkeypatch)
+
+    class C:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+
+    async def go():
+        from bridge import foreman_note
+        dropped = f"{foreman_note.DROPPED_WARN} — 진행 중인 일만 쌓습니다(…): 글씨 배율 90%"
+        monkeypatch.setattr(foreman_note, "check_ops", lambda c, p, o: _aw(([], [dropped, "노트 제안이 300자를 넘어 잘랐습니다"])))
+        d.engine = SimpleNamespace(connect=lambda: C())
+        return dropped, await d.check({"project": "zz", "mode": "new", "title": "t", "first_prompt": "a",
+                                       "note_updates": [{"op": "add", "kind": "decision", "body": "글씨 배율 90%"}]})
+    dropped, p = asyncio.run(go())
+    assert dropped in p["warnings"] and not any(w.startswith("노트 ") for w in p["warnings"])
+    assert p["note_updates"] == []
+
+
 async def _aw(v):
     return v
 
