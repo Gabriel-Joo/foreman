@@ -395,6 +395,30 @@ button.danger:not(:disabled):hover { background:color-mix(in srgb, var(--bad) 14
 /* 긴 넣을 글 · 읽을 곳 아래로 버튼이 묻히지 않게 — 흐름의 버튼 줄은 스크롤해도 아래에 붙어 있다 */
 .flow .row.flow-act { position:sticky; bottom:0; z-index:1; background:var(--card); padding:8px 0 4px; margin-top:6px; border-top:1px solid var(--line); }
 .flow { border:1px solid var(--line); border-radius:8px; padding:6px 10px; margin:6px 0; background:var(--card); }
+/* 11-13 옮기기 ③ 고르기 — 후보마다 칸(무엇 · 갈 문서 · 왜 거기). 목록은 제 높이 안에서 스크롤하고,
+   단추 줄은 목록 아래에 그대로 둔다(붙어 다니면 아래 후보를 가렸다) */
+.mv-bar { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; margin:6px 0 4px; }
+.mv-bar > span { flex:1 1 12em; min-width:0; }
+.mv-items { max-height:min(55vh, 640px); overflow:auto; padding-right:2px; }
+/* .flow label.mv-item — office.html의 label:has(> input[type=checkbox])(inline-flex · 가운데 맞춤)보다 세게 */
+.flow label.mv-item { display:flex; gap:8px; align-items:flex-start; border:1px solid var(--line); border-left:3px solid var(--line);
+  border-radius:6px; padding:6px 8px; margin:4px 0; cursor:pointer; }
+.flow label.mv-item.on { border-left-color:var(--ok); }
+.flow label.mv-item.off { opacity:.6; cursor:default; }
+.flow label.mv-item > input { flex:none; margin:3px 0 0; width:18px; height:18px; }
+.mv-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.mv-what { line-height:1.45; overflow-wrap:anywhere; }
+.mv-kind { display:inline-block; font-size:13px; padding:0 6px; border:1px solid var(--line); border-radius:9px; color:var(--muted); }
+.mv-meta { overflow-wrap:anywhere; }
+.mv-meta { display:block; }
+.mv-meta code { display:inline; margin:0; padding:1px 5px; word-break:break-all; }   /* 패널 code는 블록이다 — 「갈 문서」 한 줄에 두게 */
+.flow .row.flow-act.mv-act { position:static; }
+/* 11-13 잊은 것 찾기 결과 — 사람이 볼 두 수(사라짐 · 약해짐)만 크게, 나머지는 호버 */
+.loss-sum { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; margin:4px 0; }
+.loss-n { font-weight:700; font-size:17px; }
+.loss-n.gone { color:var(--bad); }
+.loss-n.weak { color:var(--warn); }
+.loss-rest { cursor:help; border-bottom:1px dotted var(--muted); }
 .flow-steps { display:flex; flex-wrap:wrap; gap:4px 10px; list-style:none; padding:0; margin:0 0 6px; font-size:14px; color:var(--muted); }
 .flow-steps li.done { color:var(--ok); }
 .flow-steps li.now { color:var(--fg); font-weight:700; }

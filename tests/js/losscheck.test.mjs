@@ -18,11 +18,26 @@ test('잃은 것 — 끝나면 사라짐 · 약해짐만, 글은 이스케이프
     lost: [{ id: '구간0-1-a', kind: '금지', status: '사라짐', gist: '<b>ttyd</b> 밖에 열지 않음', quote: '열지 마', where: 'repo:README.md', dropped_at: 'summary_00' },
            { id: '구간2-3-b', kind: '기준', status: '약해짐', gist: '조용한 고장', missing: '이유', where: '' }] };
   const h = lossGroup(lc, true, null);
-  assert.ok(h.includes('사라짐 1 · 약해짐 1') && h.includes('뒤집힘 2'));
+  assert.ok(/loss-n gone[^>]*>사라짐 1</.test(h) && /loss-n weak[^>]*>약해짐 1</.test(h));   // 사람이 볼 두 수만 크게
+  assert.ok(h.includes('그 밖 2개') && h.includes('뒤집힘 2'));                              // 나머지는 호버로
   assert.ok(h.includes('&lt;b&gt;ttyd') && !h.includes('<b>ttyd'));
   assert.ok(h.includes('빠진 요약: summary_00') && h.includes('빠진 것: 이유'));
   assert.match(h, /data-act="loss-use"[^>]*data-lc="4"/);
   assert.ok(h.includes('뒤집힌) 결정이 섞일 수 있습니다'));                    // 사람이 마지막 관문이라는 안내
   assert.ok(lossGroup({ ...lc, lost_total: 0, lost: [] }, true, null).indexOf('loss-use') < 0);
-  assert.ok(lossGroup({ id: 5, status: 'failed', error: '압축된 적이 없습니다', created_at: NOW }, true, null).includes('압축된 적이 없습니다'));
+});
+
+test('잃은 것 — 「없음」과 「실패」를 다른 글 · 다른 색으로(11-13 조용한 고장)', () => {
+  const ok = [{ error: null, skipped: [] }];
+  const clean = lossGroup({ id: 6, status: 'done', outcome: 'clean', prompts: 9, counts: { '살아 있음': 9 }, lost_total: 0, lost: [], runs: ok, created_at: NOW }, true, null);
+  assert.ok(clean.includes('잊은 것이 없습니다') && !clean.includes('class="small bad"'));
+  const fail = lossGroup({ id: 7, status: 'failed', outcome: 'failed', error: 'TimeoutError', created_at: NOW }, true, null);
+  assert.ok(fail.includes('찾기 실패') && fail.includes('class="small bad"') && fail.includes('TimeoutError'));
+  assert.ok(!fail.includes('잊은 것이 없습니다'));
+  const part = lossGroup({ id: 8, status: 'done', outcome: 'partial', error: '묶음 1개 실패', prompts: 9, counts: {}, lost_total: 0, lost: [], groups_failed: 1, created_at: NOW }, true, null);
+  assert.ok(part.includes('일부만') && part.includes('「없음」이 아닙니다') && !part.includes('잊은 것이 없습니다'));
+  const none = lossGroup({ id: 9, status: 'nothing', outcome: 'nothing', error: '압축된 적이 없습니다 — 볼 것이 없습니다', created_at: NOW }, true, null);
+  assert.ok(none.includes('찾을 것 없음') && !none.includes('찾기 실패'));
+  // 서버가 outcome을 주지 않던 11-13 전 기록 — 압축 없음은 실패가 아니다
+  assert.ok(!lossGroup({ id: 5, status: 'failed', error: '압축된 적이 없습니다 — 볼 것이 없습니다', created_at: NOW }, true, null).includes('찾기 실패'));
 });

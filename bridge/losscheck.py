@@ -317,6 +317,28 @@ def summarize(items: list[dict[str, Any]]) -> dict[str, int]:
     return dict(Counter(x["status"] for x in items))
 
 
+NO_COMPACT = "압축된 적이 없습니다 — 볼 것이 없습니다"
+OUTCOMES = ("running", "found", "clean", "nothing", "partial", "failed")
+
+
+def outcome(status: str, error: str | None, runs: list[dict[str, Any]], lost_total: int) -> str:
+    """점검 결과를 화면이 가를 다섯 갈래로(11-13 사용자 — 「없음」과 「실패」가 같은 글로 보였다. 조용한 고장).
+    found 잊은 것을 찾음 · clean 다 봤고 잊은 것 없음 · nothing 압축된 적이 없어 볼 것 없음 ·
+    partial 묶음 일부가 실패했거나 건너뛴 프롬프트가 있음(「없음」이라고 말할 수 없다) · failed 찾지 못함.
+    status는 DB 값(running · done · nothing · failed). 11-13 전에는 「볼 것 없음」도 failed + NO_COMPACT 글로 남았다."""
+    if status == "running":
+        return "running"
+    if status == "nothing" or (status == "failed" and (error or "").startswith("압축된 적이 없습니다")):
+        return "nothing"
+    if status != "done" or not runs:
+        return "failed"
+    bad = sum(1 for r in runs if r.get("error"))
+    skipped = sum(len(r.get("skipped") or []) for r in runs if not r.get("error"))
+    if bad or skipped:
+        return "partial"
+    return "found" if lost_total else "clean"
+
+
 def lost(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """화면 · c 입력용 — 사라짐 먼저, 그다음 약해짐. 뒤집힘 · 끝남 · 살아 있음은 내지 않는다(되살리면 안 되거나 남아 있다)."""
     order = {"사라짐": 0, "약해짐": 1}
@@ -408,7 +430,8 @@ class LossChecker:
     async def _run_inner(self, lid: int, row: Any, path: str, repo: str) -> None:
         segs = await asyncio.to_thread(extract, path)
         if len(segs) < 2 or not any(s.prompts for s in segs[:-1]):
-            await self._save(lid, status="failed", segments=len(segs), error="압축된 적이 없습니다 — 볼 것이 없습니다")
+            # 11-13 — 실패가 아니다(볼 것이 없을 뿐). 전엔 failed로 남아 옮기기 흐름이 「실패」라고 했다
+            await self._save(lid, status="nothing", segments=len(segs), error=NO_COMPACT)
             return
         md = memory_dir(row.cwd or repo)
         claude_md = Path(repo, "CLAUDE.md")
@@ -462,6 +485,9 @@ class LossChecker:
             d["lost"] = [{k: x.get(k) for k in ("id", "kind", "status", "gist", "quote", "where", "dropped_at", "missing",
                                                 "why_matters")} for x in lost(items)[:SHOW]]
             d["lost_total"] = len(lost(items))
+            d["groups_failed"] = sum(1 for x in d["runs"] if x.get("error"))
+            d["skipped"] = sum(len(x.get("skipped") or []) for x in d["runs"] if not x.get("error"))
+            d["outcome"] = outcome(d["status"], d["error"], d["runs"], d["lost_total"])
             d["cost_usd"] = float(d["cost_usd"]) if d["cost_usd"] is not None else None
             for k in ("created_at", "updated_at"):
                 d[k] = d[k].isoformat() + "Z" if d[k] else None

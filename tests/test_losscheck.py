@@ -75,3 +75,18 @@ def test_compare_by_prompt():
     assert c["lost_prompts"]["recall"] == 0.5 and c["lost_prompts"]["missed"] == ["구간0-2"]
     assert c["lost_prompts"]["extra"] == ["구간1-0", "구간1-3"] and c["flipped"]["mine_said_lost"] == ["구간1-0"]
     assert c["repo_where_lost"] == {"mine": 1, "base": 1}
+
+
+def test_outcome_splits_none_from_failure():
+    """11-13 사용자 — 「잊은 것 없음」과 「찾기 실패」를 가른다. 실패가 「없음」으로 보이면 조용한 고장이다."""
+    ok = [{"error": None, "skipped": []}]
+    assert lc.outcome("running", None, [], 0) == "running"
+    assert lc.outcome("done", None, ok, 3) == "found"
+    assert lc.outcome("done", None, ok, 0) == "clean"                          # 다 보고 없음
+    assert lc.outcome("nothing", lc.NO_COMPACT, [], 0) == "nothing"           # 압축된 적이 없음 — 실패 아님
+    assert lc.outcome("failed", lc.NO_COMPACT, [], 0) == "nothing"            # 11-13 전 기록
+    assert lc.outcome("failed", "TimeoutError: x", [], 0) == "failed"
+    assert lc.outcome("done", None, [], 0) == "failed"                         # 판정이 하나도 없으면 「없음」이 아니다
+    # 일부 실패 · 건너뜀 — 찾은 게 0개여도 「없음」이라고 하지 않는다
+    assert lc.outcome("done", "묶음 1개 실패", [{"error": "x", "skipped": []}, {"error": None, "skipped": []}], 0) == "partial"
+    assert lc.outcome("done", "건너뛴 프롬프트 2개", [{"error": None, "skipped": ["a", "b"]}], 0) == "partial"

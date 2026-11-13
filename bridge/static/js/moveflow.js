@@ -27,7 +27,8 @@ export function moveStep(flow, data, now = Date.now()) {
   if (flow.stage === 'find') {
     const lc = byId(data && data.losschecks, flow.lcId);
     if (!lc || lc.status === 'running') return stall(0, lc ? `잊은 것을 찾는 중입니다 ${lc.groups_done || 0}/${lc.groups_total || '?'}` : '잊은 것 찾기를 시작하는 중입니다');
-    return { i: 1, auto: 'promote', lost: lc.status === 'done' ? lc.lost_total || 0 : null, lcFailed: lc.status !== 'done' };
+    const out = lossOutcome(lc);
+    return { i: 1, auto: 'promote', lost: lc.status === 'done' ? lc.lost_total || 0 : null, lcFailed: out === 'failed', lcNote: lossNote(lc) };
   }
   if (flow.stage === 'list') {
     if (!flow.promId) return { i: 1, auto: 'promote' };
@@ -60,14 +61,58 @@ export function moveStep(flow, data, now = Date.now()) {
   return { i: 0, bad: true, msg: '모르는 단계입니다' };
 }
 
-// 고르기 칸 — 항목마다 「넣기」 체크(승인) 하나. 고친 값은 promote.js merged와 같은 draft에 둔다
+// 잊은 것 찾기 결과 — 서버 outcome(bridge/losscheck.py outcome, 11-13). 옛 서버 응답(outcome 없음)은 여기서 맞춘다
+export function lossOutcome(lc) {
+  if (!lc) return null;
+  if (lc.outcome) return lc.outcome;
+  if (lc.status === 'running') return 'running';
+  if (lc.status === 'nothing' || (lc.status === 'failed' && /^압축된 적이 없습니다/.test(lc.error || ''))) return 'nothing';
+  if (lc.status !== 'done') return 'failed';
+  if (lc.error) return 'partial';
+  return lc.lost_total ? 'found' : 'clean';
+}
+
+// 흐름 위에 남길 한 줄 — 「없음」과 「실패」를 다른 글 · 다른 색으로(11-13 사용자 — 실패가 조용히 「없음」으로 보이면 안 된다)
+export function lossNote(lc) {
+  const o = lossOutcome(lc);
+  const why = lc && lc.error ? ` — ${lc.error}` : '';
+  if (o === 'found') return { tone: 'ok', msg: `잊은 것 찾기 — 잊은 것 ${lc.lost_total}개를 찾아 문서 후보를 물을 때 같이 넣었습니다.` };
+  if (o === 'clean') return { tone: 'ok', msg: '잊은 것 찾기 — 끝까지 찾았고 잊은 것이 없습니다.' };
+  if (o === 'nothing') return { tone: 'muted', msg: '잊은 것 찾기 — 압축된 적이 없어 찾을 것이 없었습니다.' };
+  if (o === 'partial') return { tone: 'warn', msg: `잊은 것 찾기가 일부만 끝났습니다${why}. ${lc.lost_total ? `찾은 ${lc.lost_total}개만 같이 넣었습니다` : '찾은 것은 없지만 「없음」은 아닙니다'}. 「옮기기 전 정리」에서 다시 찾을 수 있습니다.` };
+  if (o === 'failed') return { tone: 'bad', msg: `잊은 것 찾기가 실패했습니다${why}. 그 결과 없이 문서 후보를 물었습니다.` };
+  return null;
+}
+
+// 고를 수 있는 후보 — 목적지 확인에 걸렸거나 세션이 「버림」을 권한 것은 여기서 못 고른다(「옮기기 전 정리」에서 목적지를 고친다)
+export function selectable(it) {
+  return (it.check || {}).ok !== false && it.dest !== 'drop';
+}
+
+// 고르기 칸 — 항목마다 「넣기」 체크(승인) 하나. 고친 값은 promote.js merged와 같은 draft에 둔다.
+// 세는 것 · 체크 표시 · 실제 쓰는 것이 같아야 한다(11-13 — 「고른 1개를」인데 여럿 고른 일). 셋 다 chosen()을 본다
+export function chosen(it, draft) {
+  if (!selectable(it)) return false;
+  const d = (draft && draft[it.id]) || {};
+  return (d.state ?? it.state) === 'approved';
+}
 export function chooseCount(items, draft) {
-  let on = 0;
+  return (items || []).filter((it) => chosen(it, draft)).length;
+}
+// [전부 고르기] · [전부 풀기] — 고를 수 있는 것만 바꾼 새 draft
+export function chooseAll(items, draft, on) {
+  const out = { ...(draft || {}) };
+  for (const it of items || []) if (selectable(it)) out[it.id] = { ...(out[it.id] || {}), state: on ? 'approved' : 'dropped' };
+  return out;
+}
+// 쓰기 전에 — 화면에 체크가 없는데 서버 값이 승인인 것(고를 수 없는 후보)을 빼서, 쓰는 것이 화면과 같게
+export function chooseFinal(items, draft) {
+  const out = { ...(draft || {}) };
   for (const it of items || []) {
-    const d = (draft && draft[it.id]) || {};
-    if ((d.state ?? it.state) === 'approved') on += 1;
+    const d = out[it.id] || {};
+    if (!selectable(it) && (d.state ?? it.state) === 'approved') out[it.id] = { ...d, state: 'dropped' };
   }
-  return on;
+  return out;
 }
 
 // [고른 것을 문서에 쓰고 옮기기] 단추 글 — 고른 것이 없으면 쓰지 않고 바로 옮긴다

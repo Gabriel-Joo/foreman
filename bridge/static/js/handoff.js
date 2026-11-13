@@ -7,7 +7,7 @@
 import { esc, ago, keep, clock } from './render.js';
 import { promoteGroup, edits as promoteEdits } from './promote.js';
 import { lossGroup } from './losscheck.js';
-import { moveStep, MOVE_STEPS, MOVE_TIP, chooseCount, writeLabel } from './moveflow.js';
+import { moveStep, MOVE_STEPS, MOVE_TIP, chooseCount, writeLabel, chosen, selectable, chooseAll, chooseFinal, lossOutcome } from './moveflow.js';
 
 const SOURCE = { self: '세션이 씀', self_headless: '끝난 세션을 잠깐 불러 씀', compact: '자동 압축 요약에서', edited: '사람이 고침' };
 const STATUS = { requested: '기다리는 중…', ok: '저장됨', failed: '실패', timeout: '시간 초과' };
@@ -262,23 +262,35 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     else if (m.i === 0) body = `<div class="small muted">${esc(m.msg)}… 끝나면 문서에 넣을 후보를 보여 드립니다.</div><div class="row">${skip('잊은 것 찾기 건너뛰기')}${stop}</div>`;
     else if (m.i === 6 && !m.busy) body = `<div class="small">새 세션이 이어받았습니다. 옛 세션 끝내기만 남았습니다.</div><div class="row flow-act">${b('flow-end', '옛 세션 끝내기', c.can.exit, 'primary danger', '옛 세션 끝내기 — 이 세션을 /exit로 끝냅니다.')}${stop}</div>`;
     else body = `<div class="small muted">${esc(m.msg || (m.i === 6 ? '옛 세션을 끝내는 중입니다… 맥락이 큰 세션은 수십 초 걸립니다' : m.i === 5 ? '새 세션을 띄우고 요약을 넣는 중입니다' : m.note || '다음 단계로 넘어가는 중입니다'))}…</div><div class="row">${stop}</div>`;
-    return `<div class="flow">${steps}${flow && flow.note ? `<div class="small warn">${esc(flow.note)}</div>` : ''}${body}</div>`;
+    // 잊은 것 찾기 결과 줄 — 없음(muted · ok)과 실패(bad) · 일부 실패(warn)를 색으로도 가른다(11-13)
+    const fnote = flow && flow.note ? `<div class="small ${esc(flow.noteTone || 'warn')}">${flow.noteTone === 'bad' ? '✗ ' : flow.noteTone === 'warn' ? '⚠ ' : ''}${esc(flow.note)}</div>` : '';
+    return `<div class="flow">${steps}${fnote}${body}</div>`;
   }
-  // ③ 고르기 — 사람이 하는 유일한 판단. 항목마다 「넣기」 하나, 단추 하나로 쓰기 → 옮기기까지
+  // ③ 고르기 — 사람이 하는 유일한 판단. 후보마다 칸(무엇 · 갈 문서 · 왜 거기), 단추 하나로 쓰기 → 옮기기까지.
+  // 11-13 사용자 — 글이 통째로 흐르고 갈 문서가 본문에 끼어 있어 읽기 힘들었다. 「옮기기 전 정리」 목록처럼 칸을 나눈다
   function chooseHtml(m, b) {
     const items = m.p.items || [];
-    const n = chooseCount(items, promDraft);
+    const n = chooseCount(items, promDraft), can = items.filter(selectable).length;
     const rows = items.map((it) => {
-      const ck = it.check || {}, on = ((promDraft[it.id] || {}).state ?? it.state) === 'approved';
-      const bad = ck.ok === false;
-      return `<label class="mv-item small"${bad ? ' title="고를 수 없음 — 목적지가 틀렸습니다. 아래 「옮기기 전 정리」에서 목적지를 고치면 고를 수 있습니다."' : ''}><input type="checkbox" data-mv-item="${it.id}"${on && !bad ? ' checked' : ''}${bad ? ' disabled' : ''}>
-        <span>${esc(it.what)}</span> <span class="muted">→ ${esc(it.dest)}${it.section ? ` 「${esc(it.section)}」` : ''}</span>${bad ? ` <span class="bad">✗ ${esc(ck.problem || '')}</span>` : ''}</label>`;
+      const ck = it.check || {}, on = chosen(it, promDraft), sel = selectable(it);
+      const why = !sel ? (ck.ok === false ? `목적지가 틀렸습니다 — ${ck.problem || ''}` : '세션이 문서에 남기지 않아도 된다고 했습니다') : '';
+      const dest = it.dest === 'memory' ? '메모리(사람 선호)' : it.dest === 'drop' ? '버림' : it.dest;
+      return `<label class="mv-item${on ? ' on' : ''}${sel ? '' : ' off'}" data-tip="${esc(sel ? `후보 #${it.id} — 고르면 세션이 이 문장을 ${dest}에 씁니다.` : `고를 수 없음 — ${why}. 「옮기기 전 정리」에서 목적지를 고치면 고를 수 있습니다.`)}">
+        <input type="checkbox" data-mv-item="${it.id}"${on ? ' checked' : ''}${sel ? '' : ' disabled'}>
+        <span class="mv-body">
+          <span class="mv-what">${it.kind ? `<span class="mv-kind">${esc(it.kind)}</span> ` : ''}${esc(it.what)}</span>
+          <span class="mv-meta small"><span class="muted">갈 문서</span> <code>${esc(dest)}</code>${it.section ? ` 「${esc(it.section)}」` : ''}</span>
+          ${it.why ? `<span class="mv-meta small"><span class="muted">왜 거기</span> ${esc(it.why)}</span>` : ''}
+          ${sel ? '' : `<span class="mv-meta small ${ck.ok === false ? 'bad' : 'muted'}">${ck.ok === false ? '✗ ' : ''}${esc(why)}</span>`}
+        </span></label>`;
     }).join('');
-    const tip = n ? `${writeLabel(n)} — 고른 것을 세션이 문서에 쓰고 커밋합니다. 브리지가 커밋을 확인하면 요약 · 새 세션 · 옛 세션 끝내기까지 이어서 합니다.`
+    const tip = n ? `${writeLabel(n)} — 고른 ${n}개를 세션이 문서에 쓰고 커밋합니다. 브리지가 커밋을 확인하면 요약 · 새 세션 · 옛 세션 끝내기까지 이어서 합니다.`
       : '문서에 넣지 않고 옮기기 — 아무것도 쓰지 않고 요약 · 새 세션 · 옛 세션 끝내기로 갑니다.';
     return `${m.msg ? `<div class="small bad">${esc(m.msg)}</div>` : ''}
       <div class="small"><b>문서에 넣을 것을 고르십시오</b> — 사람이 고르는 곳은 여기 하나입니다. 고른 것만 세션이 문서에 쓰고 커밋한 뒤 이어서 옮깁니다.</div>
-      <div class="mv-items">${rows}</div><div class="row flow-act">${b('mv-write', writeLabel(n), true, 'primary', tip)}`;
+      <div class="mv-bar"><span class="small"><b>후보 ${items.length}개 중 ${n}개 고름</b>${can < items.length ? ` <span class="muted">(고를 수 없는 것 ${items.length - can}개)</span>` : ''}</span>
+        ${b('mv-all', '전부 고르기', can > 0 && n < can, 'ghost', '전부 고르기 — 고를 수 있는 후보를 모두 고릅니다.')}${b('mv-none', '전부 풀기', n > 0, 'ghost', '전부 풀기 — 고른 것을 모두 풉니다.')}</div>
+      <div class="mv-items">${rows}</div><div class="row flow-act mv-act">${b('mv-write', writeLabel(n), true, 'primary', tip)}`;
   }
 
   function draw() {
@@ -348,7 +360,8 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     const p0 = prom(), lc0 = (data.losschecks || [])[0] || null;
     const docsBusy = (p0 && ['requested', 'listed', 'writing', 'write_failed'].includes(p0.status)) || (lc0 && lc0.status === 'running');
     const docsHint = p0 && p0.status === 'listed' ? '승인할 목록이 있습니다' : p0 && p0.status === 'write_failed' ? '확인 실패 — 봐 주세요'
-      : docsBusy ? '도는 중…' : lc0 && lc0.status === 'done' && lc0.lost_total ? `잃은 것 ${lc0.lost_total}` : '';
+      : docsBusy ? '도는 중…' : lossOutcome(lc0) === 'failed' ? '잊은 것 찾기 실패' : lossOutcome(lc0) === 'partial' ? '잊은 것 찾기 일부만 끝'
+      : lc0 && lc0.status === 'done' && lc0.lost_total ? `잃은 것 ${lc0.lost_total}` : '';
     const docsOn = docsOpen ?? !!docsBusy;
     const wtLive = !!(c.worktree && c.worktree.exists && c.worktree.live);   // 살아 있는 따로 작업 — 끝내기를 세 갈래로
     // 요약 카드 머리의 작은 [고치기] — 자주 안 쓰므로 버튼 줄에서 뺐다(11-06, 이력 1번)
@@ -439,6 +452,11 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     }
     if (act === 'hand-more') { handMore = !handMore; draw(); return; }
     if (act === 'mv-write') return moveWrite();
+    if (act === 'mv-all' || act === 'mv-none') {
+      const m = moveStep(flow, data);
+      if (m && m.wait) { promDraft = chooseAll(m.p.items, promDraft, act === 'mv-all'); draw(); }
+      return;
+    }
     if (act === 'mv-retry') return moveRetry();
     if (act === 'mv-skip-find') { setFlow({ ...flow, stage: 'list', lcId: null, promId: null, err: null, errAt: null, at: Date.now() }); await load(); return; }
     if (act === 'flow-start') return startFlow();
@@ -591,7 +609,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       if (m.auto === 'promote') {
         const r = await api('POST', `/api/sessions/${id}/promote`, m.lost ? { loss_check_id: flow.lcId } : { no_input: true });
         if (id === sid) setFlow({ ...flow, stage: 'list', promId: r.promotion_id, at: Date.now(),
-          note: m.lcFailed && flow.lcId ? '잊은 것 찾기가 실패해 그 결과 없이 문서 후보를 물었습니다.' : flow.note });
+          note: m.lcNote ? m.lcNote.msg : flow.note, noteTone: m.lcNote ? m.lcNote.tone : flow.noteTone });
       } else if (m.auto === 'summary') {
         const r = await api('POST', `/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'live', fmt: 'v2' });
         if (id === sid) setFlow({ ...flow, stage: 'summary', sumId: r.summary_id, at: Date.now() });
@@ -607,7 +625,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     const p = m.p, n = chooseCount(p.items, promDraft);
     moveBusy = true;
     try {
-      const ed = promoteEdits(p.items, promDraft);
+      const ed = promoteEdits(p.items, chooseFinal(p.items, promDraft));      // 쓰는 것 = 화면에 체크한 것(11-13)
       if (ed.length) await api('PUT', `/api/promotions/${p.id}`, { items: ed });
       promDraft = {};
       if (n) {

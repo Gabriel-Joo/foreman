@@ -1,0 +1,31 @@
+{
+  "title": "새 세션으로 옮기기 — 잊은 것 찾기 실패",
+  "source": "script",
+  "snapshot": {
+    "generated_at": "@+0", "approvals": [], "hidden_dormant": 0, "terminal": {"enabled": false}, "ingest": null,
+    "projects": [{"name": "foreman", "label": "FOREMAN", "sessions": [
+      {"id": 981, "cc_session_id": "demo-0981", "short": "demo0981", "character": "코더", "project": "foreman", "title": "코더 — 옮기기 화면", "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman", "pid": 10981, "proc": "S", "cc_status": "idle", "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null, "open_turn": null, "activity": null, "subagents_running": 0, "subagent_descs": [], "background": [], "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []}, "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": {"count": 2, "last_ts": "@-20000", "level": "due", "short": false, "gaps": []}, "overlap": null, "last_ts": "@-1000", "attached_at": "@-600000", "detached_at": null}
+    ]}]
+  },
+  "api": {
+    "/api/sessions/981/handoff": {
+      "controls": {"live": true, "pid": 10981, "state": "S", "tmux": true, "busy": false, "pending_req": null, "foreman_stopped": false, "why": "살아 있음", "move_flow": true,
+        "can": {"summary": true, "promote": true, "headless": false, "compact": false, "exit": true, "stop": true, "resume": false, "interrupt": true, "spawn": true, "losscheck": true}, "worktree": null, "reads": null},
+      "summaries": [], "promotions_error": null, "promote_inputs": [], "losschecks_error": null,
+      "losschecks": [{"id": 42, "status": "failed", "outcome": "failed", "model": "sonnet", "prompts": 33, "groups_total": 2, "groups_done": 2, "groups_failed": 2, "skipped": 0, "cost_usd": 0.0, "error": "묶음 2개 실패", "created_at": "@-200000", "updated_at": "@-100000",
+        "counts": {}, "lost_total": 0, "lost": []}],
+      "promotions": [{"id": 52, "summary_id": null, "loss_check_id": null, "req": "dm52", "status": "requested", "commit_sha": null, "result": null, "error": null, "raw": null, "items": [], "created_at": "@-30000", "updated_at": "@-30000"}]
+    },
+    "/api/sessions/981/conversation": {"turns": []}
+  },
+  "steps": [
+    {"at": 100, "js": "localStorage.setItem('foremanFlow:981', JSON.stringify({v: 2, stage: 'list', lcId: 42, promId: 52, at: Date.now(), note: '잊은 것 찾기가 실패했습니다 — 묶음 2개 실패. 그 결과 없이 문서 후보를 물었습니다.', noteTone: 'bad'}))"},
+    {"at": 200, "js": "if (!document.querySelector('#pHand .flow')) { window.office.openSession(981); setTimeout(() => { const t = document.querySelector('#pTabs [data-tab=sess]'); if (t) t.click(); }, 600); }"},
+    {"at": 2500, "js": "if (!document.querySelector('#pHand .flow')) { window.office.openSession(981); setTimeout(() => { const t = document.querySelector('#pTabs [data-tab=sess]'); if (t) t.click(); }, 600); }"},
+    {"at": 5000, "js": "if (!document.querySelector('#pHand .flow')) { window.office.openSession(981); setTimeout(() => { const t = document.querySelector('#pTabs [data-tab=sess]'); if (t) t.click(); }, 600); }"},
+    {"at": 8000, "js": "if (!document.querySelector('#pHand .flow')) { window.office.openSession(981); setTimeout(() => { const t = document.querySelector('#pTabs [data-tab=sess]'); if (t) t.click(); }, 600); }"},
+    {"at": 6000, "js": "const x = document.querySelector('#pHand .flow'); if (x) x.scrollIntoView({block: 'start'})"},
+    {"at": 8500, "js": "const x = document.querySelector('#pHand .flow'); if (x) x.scrollIntoView({block: 'start'})"},
+    {"at": 60000, "end": true}
+  ]
+}

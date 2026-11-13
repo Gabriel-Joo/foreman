@@ -1126,6 +1126,7 @@ async def test_losscheck_run_list_recover_and_promote_input(env, monkeypatch, tm
     assert {"prompts_A.md", "summary_00.md", "current_context.md"} <= set(seen["files"])
     got = (await chk.list(sid))[0]
     assert got["status"] == "done" and got["prompts"] == 2 and got["groups_done"] == 1 and got["cost_usd"] == 0.12
+    assert got["outcome"] == "found" and got["groups_failed"] == 0 and got["skipped"] == 0      # 11-13 없음 · 실패 가르기
     assert got["counts"] == {"사라짐": 1, "약해짐": 1, "뒤집힘": 1}
     assert [x["status"] for x in got["lost"]] == ["사라짐", "약해짐"]                 # 뒤집힘은 내지 않는다
     assert SECRET not in json.dumps(got, ensure_ascii=False)                          # 비밀값은 가려서 남긴다

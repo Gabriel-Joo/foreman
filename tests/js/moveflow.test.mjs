@@ -1,7 +1,38 @@
 // 새 세션으로 옮기기 한 흐름(11-11 C 2물결 일곱) — 사람이 멈추는 곳은 고르기 하나, 나머지는 저절로
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { moveStep, MOVE_STEPS, chooseCount, writeLabel, STALL_MS } from '../../bridge/static/js/moveflow.js';
+import { moveStep, MOVE_STEPS, chooseCount, writeLabel, STALL_MS, lossNote, chooseAll, chooseFinal, chosen } from '../../bridge/static/js/moveflow.js';
+import { edits } from '../../bridge/static/js/promote.js';
+
+test('11-13 잊은 것 찾기 — 없음 · 볼 것 없음 · 일부 · 실패를 다른 줄로', () => {
+  assert.equal(lossNote({ status: 'done', outcome: 'clean', lost_total: 0 }).tone, 'ok');
+  assert.equal(lossNote({ status: 'nothing', outcome: 'nothing' }).tone, 'muted');
+  const p = lossNote({ status: 'done', outcome: 'partial', error: '묶음 1개 실패', lost_total: 0 });
+  assert.equal(p.tone, 'warn'); assert.match(p.msg, /「없음」은 아닙니다/);
+  const f = lossNote({ status: 'failed', outcome: 'failed', error: 'TimeoutError' });
+  assert.equal(f.tone, 'bad'); assert.match(f.msg, /실패했습니다 — TimeoutError/);
+  // 흐름 — 볼 것 없음은 실패가 아니다
+  const fl = { v: 2, stage: 'find', lcId: 5, at: T };
+  const none = moveStep(fl, data({ losschecks: [{ id: 5, status: 'nothing', outcome: 'nothing' }] }), T);
+  assert.equal(none.lcFailed, false); assert.equal(none.lcNote.tone, 'muted');
+  const bad = moveStep(fl, data({ losschecks: [{ id: 5, status: 'failed', outcome: 'failed', error: 'x' }] }), T);
+  assert.equal(bad.lcFailed, true); assert.equal(bad.lcNote.tone, 'bad');
+});
+
+test('11-13 고르기 — 센 수 · 체크 · 실제 쓰는 것이 같다, 전부 고르기 · 풀기', () => {
+  const items = [{ id: 1, state: 'pending', dest: 'README.md' }, { id: 2, state: 'pending', dest: 'docs/a.md' },
+    { id: 3, state: 'dropped', dest: 'drop' }, { id: 4, state: 'approved', dest: 'x.md', check: { ok: false, problem: '없는 파일' } }];
+  assert.equal(chooseCount(items, {}), 0);                               // 고를 수 없는 #4는 승인이어도 세지 않는다
+  let d = chooseAll(items, {}, true);
+  assert.equal(chooseCount(items, d), 2); assert.ok(!chosen(items[2], d));   // 버림 · 틀린 목적지는 안 고른다
+  d = { ...d, 3: { state: 'approved' } };                                // 버림을 억지로 고른 draft도 세지 않는다
+  assert.equal(chooseCount(items, d), 2);
+  const sent = edits(items, chooseFinal(items, d)).filter((e) => e.state === 'approved').map((e) => e.id);
+  assert.deepEqual(sent, [1, 2]);                                        // 쓰는 것 = 센 것
+  assert.ok(edits(items, chooseFinal(items, d)).some((e) => e.id === 4 && e.state === 'dropped'));
+  assert.equal(chooseCount(items, chooseAll(items, d, false)), 0);
+  assert.equal(writeLabel(chooseCount(items, d)), '고른 2개를 문서에 쓰고 옮기기');
+});
 import { flowStep } from '../../bridge/static/js/handoff.js';
 
 const T = 1_000_000;
