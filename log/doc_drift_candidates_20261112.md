@@ -33,6 +33,14 @@
 | **324** | 11-13 12:3x | `operations` 23 · 95 · 115 · 116 / `10_office_design` 149 · 154 · 176 / `11_worktree` 135 · 142 / `11_handoff_v2` 79 / `style_guide` 106 — 사람이 끈 합치기 물음은 막대 숫자에서도 뺌 · 5일째 텔레그램(`remind_days`, `28911c6`, `log/merge_wait_off_remind_20261113.md`). 실제로 바뀐 것은 `11_worktree` 6-1 · `operations` 「5.」 표 |
 | **326** | 11-13 13:3x | `operations` 23 · 115 / `10_office_design` 149 / `11_worktree` 142 — 브리지가 꺼져 있던 동안 7일이 지나 사라진 합치기 물음도 다시 뜰 때 한 번 알림(`2552526`, `log/merge_remind_catchup_20261113.md`). `config/handoff.toml remind_days = 5`를 적음(`49e2eed`). 실제로 바뀐 것은 `11_worktree` 6-1 · `operations` 「5.」 표의 5일 알림 줄 |
 
+**11-13 327(서기)이 위 324 · 325 · 326까지 맞춤(`3be0c82`).** 아래는 그 뒤 — 다음 서기 몫:
+
+| 세션 | 알림 시각(KST) | 후보 |
+|---|---|---|
+| **329** | 11-13 14:1x | `10_office_design` 149 · 150 · 151 · 153 · 154 · 158 · 165 · 176 / `11_foreman_dispatch` 109 · 132 · 134 · 142 · 143 / `11_worktree` 97 · 103 · 146 · 158 · 169 / `operations` 23 · 24 · 95 · 110 · 116 / `11_handoff` 20 / `11_handoff_v2` 79 / `style_guide` 106 — API 오류로 멈춤 표시 · 30분 다시 알림 · 승인 뒤 막대 곧바로(`1a61703`, `log/screen_api_error_bar_20261113.md`). 329가 적은 것: `10_office_design` 「머리 위 표시 (11-13)」 표에 「API 오류로 멈춤」 줄 · 11-11 줄의 「몇 초인지 못 쟀다」를 잰 값으로. `operations` 「5.」 표에 API 오류 30분 다시 알림 |
+| **332** | 11-13 15:2x | `11_foreman_dispatch` 95 · 109 · 131 · 132 · 134 · 150 / `11_worktree` 97 · 158 · 169 / `10_office_design` 153 / `11_handoff` 20 / `12_scribe` 271 / `operations` 23 — 교장 노트 끝난 줄 자동 내리기 · 「낡음 — 확인 필요」(`2bd174e`, `log/note_auto_retire_20261113.md`). 실제로 바뀐 것은 `14_dispatcher_note_wake`(노트 절) — 후보에 없지만 맞출 곳. `config/wake.toml [note]`(`81aa3ea`) |
+| **334** | 11-13 15:3x | `11_foreman_dispatch` 95 · 109 · 131 · 132 · 134 · 150 / `12_scribe` 271 — 교장 지시문: 관리자 띄우기는 decision(`6153c9d`, `log/note_manager_decision_20261113.md`). 실제로 바뀐 것은 `14_dispatcher_note_wake` 노트 쌓는 것 |
+
 - 같은 글의 알림은 한 번만 셌다. 19:22 알림은 시각으로 286 합침과 가깝지만 확실하지 않다(`?`)
 
 ## 바뀐 파일로 본 판단(304 · 305 · 307 중심)
