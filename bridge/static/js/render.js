@@ -61,7 +61,7 @@ export function humanNeed(s) {
 // 11-13(사용자) — 사람이 볼 것은 관리자 머리 위에만. 관리자가 POST /api/sessions/{sid}/escalate로 올린 것만 뜬다
 const ESC_TIP = {
   question: (e) => `사용자 답 기다림 — 관리자가 사람에게 물었습니다. 패널 입력 칸에 답하면 풀립니다.${e && e.text ? `\n${e.text}` : ''}`,
-  report: (e) => `사용자 보고 기다림 — 관리자가 사람에게 보고했습니다. 누르면 대화가 열리고, 읽으면 사라집니다.${e && e.text ? `\n${e.text}` : ''}`,
+  report: (e) => `사용자에게 보고함 —관리자가 사람에게 보고했습니다. 누르면 대화가 열리고, 읽으면 사라집니다.${e && e.text ? `\n${e.text}` : ''}`,
 };
 // 캐릭터 머리 위 말풍선(11-11 사용자 — 답 기다림 · 보고가 캐릭터에 안 보였다). 답 기다림은 노랑(warn), 보고 옴은 초록(ok)으로 갈라
 // 「답해야 하는 것」과 「읽기만 하면 되는 것」을 한눈에. 보고 옴은 그 세션 패널을 열면 사라진다(opanel → store.reportRead)
@@ -74,7 +74,7 @@ export function needMark(s) {
   // 겹치면(11-11): 권한 거부 > 답 기다림 > 합치기 기다림 > 보고 옴. 앞의 둘은 세션이 막혀 있어 지금 사람 손이 먼저 필요하고,
   // 합치기는 사람이 눌러야 끝나는 일이라 읽기만 하면 되는 보고보다 위다(합치기 카드가 떠 있으면 그 응답은 보고이기도 하다)
   if (s.merge_wait) return { text: '합치기 기다림', tone: 'merge', tip: '합치기 기다림 — 일을 마친 따로 작업의 합치기 카드가 승인을 기다립니다. 누르면 그 세션 패널의 「세션」 탭에서 합치거나 나중으로 미룹니다.' };
-  if (e.report) return { text: '사용자 보고 기다림', tone: 'ok', tip: ESC_TIP.report(e.report) };
+  if (e.report) return { text: '사용자에게 보고함', tone: 'ok', tip: ESC_TIP.report(e.report) };
   if (s.report) return { text: '보고 옴', tone: 'ok', tip: '보고 옴 — 묻지 않고 일을 마친 응답이 왔습니다. 누르면 대화가 열리고, 읽으면 사라집니다.' };
   // 11-13 작업 세션이 관리자에게 넘긴 것 — 사람 몫이 아니라 작게(quiet). 넘기지 못했으면 서버가 위 asks · report로 낸다
   if (s.relayed) {

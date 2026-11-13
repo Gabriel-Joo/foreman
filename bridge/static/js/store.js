@@ -454,7 +454,7 @@ export class Store {
     this.touch('grid', 'panel');
     return j;
   }
-  // 「사용자 보고 기다림」 읽음(11-13) — 관리자가 사람에게 올린 보고. 그 관리자 패널을 열면 opanel이 부른다
+  // 「사용자에게 보고함」 읽음(11-13) — 관리자가 사람에게 올린 보고. 그 관리자 패널을 열면 opanel이 부른다
   async escalateRead(id, escId) {
     if (PROBE || this.demo) return { ok: false, note: '점검 · 시연 화면은 읽음으로 세지 않습니다' };
     const r = await fetch(`/api/sessions/${id}/escalate-read?id=${encodeURIComponent(escId)}`, { method: 'POST', headers: this.headers() });

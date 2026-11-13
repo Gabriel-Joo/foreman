@@ -262,7 +262,11 @@ async def human_needs(c: Any, in_ids: str, relay: dict[str, tuple[bool, bool]] |
 WORKER_ROLES = {"coder", "scribe", "designer"}      # notify.WORKER_ROLES와 같은 것(중계 대상)
 MGR_QUIET_ORIGINS = {"relay", "manager_ask"}        # 관리자 턴 중 사람에게 띄우지 않는 출처
 RELAY_OUT_ACT = "relay-out"     # 작업 세션 session_action — 알림이 그 턴을 관리자에게 넘긴 결과. detail = "<kind>:<turn_id>"
-RELAY_GRACE = timedelta(seconds=150)   # 알림 settle 2초 + 넘기기 제한 60초 + 여유 — 넘기면 relayed, 못 넘기면 사람에게
+# 넘기는 동안(턴 끝 → 관리자 입력 칸) 사람용 표시를 안 띄우는 시간 — 넘기면 relayed, 못 넘기면 사람에게.
+# 11-13 관리자가 잰 실제 값(11-12 ~ 11-13 session_action mgr-relay 6건): 2.5초 ×3 · 17.4초 ×3, 실패 0. 17.4초는 settle 2초 +
+# deliver(verify_s=15)(관리자가 일하는 중이라 대기열)로 보인다. 30초 = 가장 긴 성공 17.4초 + 여유(전엔 150초 — 넘기기 제한 60초까지 기다렸다).
+# 대가: 넘기기 제한(60초)에 걸리는 드문 경우는 30초에 사람용 표시가 먼저 떴다가 넘기기가 성공하면 relayed로 바뀐다(잠깐 떴다 사라짐)
+RELAY_GRACE = timedelta(seconds=30)
 ESC_ACT, ESC_READ_ACT, ESC_OFF_ACT = "escalate", "esc-read", "esc-off"   # 관리자가 사람에게 올림 · 사람이 읽음 · 사람이 끔
 ESC_KINDS = ("report", "question")
 ESC_KEEP = timedelta(days=7)
@@ -321,7 +325,7 @@ async def asks_off_api(sid: int, request: Request) -> dict[str, Any]:
     return await asks_off(request.app.state.store.engine, sid)
 
 
-# ── 11-13 사람에게 올리기(escalate) — 관리자만. 사람 화면의 「사용자 보고 기다림」 · 「사용자 답 기다림」과 알림이 이 신호 하나를 쓴다 ──
+# ── 11-13 사람에게 올리기(escalate) — 관리자만. 사람 화면의 「사용자에게 보고함」 · 「사용자 답 기다림」과 알림이 이 신호 하나를 쓴다 ──
 class EscalateIn(BaseModel):
     kind: Literal["report", "question"]
     text: str = Field(min_length=1, max_length=8000)
@@ -361,7 +365,7 @@ async def escalate(engine: Any, sid: int, kind: str, body: str, notifier: Any = 
             notified = False
     return {"ok": True, "id": aid, "kind": kind, "notified": notified,
             "note": "사람 화면 관리자 머리 위에 「사용자 답 기다림」으로 띄웠습니다" if kind == "question"
-            else "사람 화면 관리자 머리 위에 「사용자 보고 기다림」으로 띄웠습니다"}
+            else "사람 화면 관리자 머리 위에 「사용자에게 보고함」으로 띄웠습니다"}
 
 
 @router.post("/sessions/{sid}/escalate")
@@ -371,7 +375,7 @@ async def escalate_api(sid: int, body: EscalateIn, request: Request) -> dict[str
 
 
 async def escalate_read(engine: Any, sid: int, esc_id: int) -> dict[str, Any]:
-    """「사용자 보고 기다림」을 읽음으로 — 사람이 그 관리자 패널을 열었다(report-read와 같은 방식)."""
+    """「사용자에게 보고함」을 읽음으로 — 사람이 그 관리자 패널을 열었다(report-read와 같은 방식)."""
     async with engine.begin() as c:
         needs = await human_needs(c, f"({int(sid)})")
         r = ((needs.get(sid) or {}).get("escalate") or {}).get("report")

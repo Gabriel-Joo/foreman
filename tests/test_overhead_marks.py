@@ -131,7 +131,7 @@ async def test_worker_grace_only_when_relay_on(env):
     ch = _char(conn)
     w = _session(conn, ch, "scribe", 3)
     t1 = _turn(conn, w, 1, "human", NOW - timedelta(seconds=30))
-    _reply(conn, w, ch, t1, NOW - timedelta(seconds=20), "적었습니다.")
+    _reply(conn, w, ch, t1, NOW - timedelta(seconds=10), "적었습니다.")
     engine = make_engine(s)
     try:
         assert await _needs(engine, w, {"foreman": (True, True)}) == {}           # 넘기는 중 — 잠깐 안 띄움
