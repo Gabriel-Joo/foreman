@@ -288,6 +288,48 @@ class ForemanDispatcher:
         self.workdir = Path(workdir or Path.home() / ".foreman" / "dispatch")
         self.running: dict[int, str | None] = {}    # 지금 claude -p가 도는 디스패치 → 프로젝트(캐릭터가 일하는 모습)
         self.on_change: Any = None                  # 상태가 바뀌면(계획 시작 · 끝 · 시작 · 버림) 화면에 알린다
+        # 11-13 끝난 「진행 중인 일」 줄 내리기 · 낡음 문턱(bridge/foreman_note.py NoteRules). 설정 파일([note])은 main이 읽어 넣는다
+        self.note_rules = notes.NoteRules()
+        self._note_task: asyncio.Task[Any] | None = None
+        self.note_sweep_at: datetime | None = None
+
+    # ── 끝난 줄 내리기(11-13) ──────────────────────────────
+    async def sweep_notes(self, why: str = "") -> list[dict[str, Any]]:
+        """모든 프로젝트의 진행 중인 일 줄을 훑어 끝난 줄을 내린다. 프로젝트 하나가 실패해도 나머지는 한다."""
+        live = set(live_sessions(self.sessions_dir))
+        done: list[dict[str, Any]] = []
+        for _repo, _pid, name, _ch in self.projects() or []:
+            try:
+                async with self.engine.begin() as c:
+                    rs = await notes.sweep(c, name, live, self.note_rules)
+                done += [dict(r, project=name) for r in rs if r["retired"]]
+            except Exception as e:  # noqa: BLE001 — 훑기 실패가 계획 · 브리지를 멈추지 않는다(로그로는 남긴다)
+                log.warning("노트 훑기 실패(%s, %s): %s: %s", why, name, type(e).__name__, str(e)[:200])
+        self.note_sweep_at = datetime.now(UTC).replace(tzinfo=None)
+        if done:
+            log.info("노트 훑기(%s): 끝난 줄 %d 내림 — %s", why, len(done),
+                     ", ".join(f"{r['project']} #{r['id']} {r['why']}" for r in done)[:600])
+            self._changed()
+        return done
+
+    def poke_notes(self, why: str = "", delay: float = 5.0) -> None:
+        """세션 끝 · 합치기 · 버리기 · 브리지 뜸 — 조금 뒤 한 번 훑는다(그 사이 또 오면 한 번으로)."""
+        if self._note_task and not self._note_task.done():
+            return
+
+        async def later() -> None:
+            await asyncio.sleep(delay)
+            await self.sweep_notes(why)
+        try:
+            self._note_task = asyncio.create_task(later(), name="foreman-note-sweep")
+        except RuntimeError:            # 이벤트 루프 밖(시험 등)
+            self._note_task = None
+
+    async def note_loop(self, every_s: float = 1800.0) -> None:
+        """주기 훑기 — 세션 끝 · 합치기 신호를 놓쳐도(브리지 밖에서 합침 등) 30분 안에 맞춘다."""
+        while True:
+            await asyncio.sleep(every_s)
+            await self.sweep_notes("주기")
 
     def _changed(self) -> None:
         if self.on_change:
@@ -338,7 +380,7 @@ class ForemanDispatcher:
                         sec.append(f"- 압축 손실 점검(이 프로젝트 세션이 잊은 사용자 지시 · 결정 목록): {loss[-1]} — 이 일과 겹치는 항목은 first_prompt의 '지켜야 할 것'에")
                     # 노트(11-08) — 진행 중인 일 · 사람이 정한 판단. 확인 뒤 바뀐 것은 ⚠로. 상한을 넘친 줄은 접혀 안 들어간다
                     head = await _git(repo, "rev-parse", "HEAD")
-                    nt = await notes.render(c, name, head or None, _git_checked, repo)
+                    nt = await notes.render(c, name, head or None, _git_checked, repo, rules=self.note_rules)
                     fold = f", 접힌 줄 {nt['folded']}개" if nt["folded"] else ""
                     sec.append(f"- 노트(약 {nt['tokens']}/{nt['cap']}토큰{fold}):\n"
                                + (nt["text"] or "  (아직 없음 — 이번 일이 이어질 일이면 thread를, 사람이 정한 판단이 보이면 decision을 제안하라)"))
@@ -402,6 +444,7 @@ class ForemanDispatcher:
             project = None
         t0 = time.monotonic()
         wake = origin == "wake"
+        await self.sweep_notes("계획 전")        # 11-13 끝난 일을 진행 중인 일로 넣지 않게 — 부르기 전에 한 번 더 맞춘다
         ctx = await self.context(request, project, wake)
         prompt = INSTRUCTIONS + (WAKE_HINT if wake else "") + "\n\n# 상황 묶음\n" + ctx
         did = await self._record(request, len(ctx), origin, project, wake_key, wake_text)
@@ -808,17 +851,30 @@ class ForemanDispatcher:
             raise Refused("모르는 프로젝트입니다")
         head = await _git(repo, "rev-parse", "HEAD")
         async with self.engine.connect() as c:
-            nt = await notes.render(c, project, head or None, _git_checked, repo)
+            nt = await notes.render(c, project, head or None, _git_checked, repo, rules=self.note_rules)
             rd = await notes.recent_dispatches(c, project, 8)
+            auto = await notes.auto_retired(c, project)
         items = [{"id": n["id"], "kind": n["kind"], "body": n["body"], "source": n["source"], "drift": n["drift"],
-                  "folded": n["folded"], "checked_at": n["checked_at"].isoformat() + "Z"} for n in nt["notes"]]
+                  "stale": n["stale"], "folded": n["folded"], "checked_at": n["checked_at"].isoformat() + "Z"} for n in nt["notes"]]
         return {"project": project, "notes": items, "tokens": nt["tokens"], "cap": nt["cap"], "folded": nt["folded"],
-                "dispatches": [x.strip()[2:] for x in rd]}
+                "dispatches": [x.strip()[2:] for x in rd], "auto_retired": auto,
+                "stale_rule": {"days": self.note_rules.stale_days, "commits": self.note_rules.stale_commits}}
 
     async def retire_note(self, note_id: int) -> None:
         async with self.engine.begin() as c:
             if not await notes.retire_by_hand(c, note_id):
                 raise Refused("이미 내린 줄입니다")
+
+    async def restore_note(self, note_id: int) -> None:
+        async with self.engine.begin() as c:
+            if not await notes.restore(c, note_id):
+                raise Refused("자동으로 내린 줄이 아니거나 이미 되살렸습니다")
+        self._changed()
+
+    async def touch_note(self, note_id: int) -> None:
+        async with self.engine.begin() as c:
+            if not await notes.touch_by_hand(c, note_id):
+                raise Refused("진행 중인 일 줄이 아니거나 이미 내린 줄입니다")
 
     async def _record(self, request: str, chars: int, origin: str = "human", project: str | None = None,
                       wake_key: str | None = None, wake_text: str | None = None) -> int:

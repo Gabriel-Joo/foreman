@@ -10,11 +10,15 @@
 
 import json
 import re
-from datetime import UTC, datetime
+import tomllib
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import bindparam, text
+
+from bridge import worktree as wt
 
 TOKEN_CAP = 2000
 BODY_MAX = 300
@@ -24,6 +28,30 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # 사람이 고친 칸으로 볼 것(디스패처가 고르는 칸) — 이유 · 경고 · 확신도는 사람이 고치는 칸이 아니다
 EDIT_FIELDS = ("project", "mode", "role", "read_only", "summary_id", "attach_session", "title", "worktree", "model", "first_prompt")
 SOURCE_RE = re.compile(r"^(세션 \d+|dispatch #\d+|(log|docs)/[\w.\-/]+\.md|커밋 [0-9a-f]{7,40})$")
+
+
+@dataclass
+class NoteRules:
+    """끝난 「진행 중인 일」 줄 다루기(11-13, log/note_auto_retire_20261113.md).
+    - stale_days · stale_commits: 기계로 끝남을 못 가르는 thread 줄을 「낡음 — 확인 필요」로 보이는 문턱(마지막 확인 뒤).
+      FOREMAN은 하루 커밋이 100개 남짓(11-10~13 실측)이라 커밋 수는 프로젝트마다 속도가 달라 날수를 주로 · 커밋은 넉넉히
+    - manager_spawn_done: 「관리자 띄우기」 줄 — 붙은 세션이 살아 있는 관리자이고 그 줄의 dispatch가 그 관리자를 띄웠고 첫 턴이
+      끝났으면 끝으로 본다. 띄운 계획의 첫 글에 다른 일이 들었는지는 기계로 못 가른다 — 켤지는 사람이 정한다(기본 끔)"""
+    stale_days: float = 3.0
+    stale_commits: int = 150
+    manager_spawn_done: bool = False
+
+
+def load_rules(path: str | Path) -> NoteRules:
+    """config/wake.toml의 [note] 칸(없으면 코드 기본값). 읽지 못해도 기본값으로 돈다."""
+    try:
+        raw = tomllib.loads(Path(path).read_text(encoding="utf-8")).get("note") or {}
+    except (OSError, tomllib.TOMLDecodeError):
+        raw = {}
+    d = NoteRules()
+    return NoteRules(stale_days=float(raw.get("stale_days", d.stale_days)),
+                     stale_commits=int(raw.get("stale_commits", d.stale_commits)),
+                     manager_spawn_done=bool(raw.get("manager_spawn_done", d.manager_spawn_done)))
 
 
 def est_tokens(s: str) -> int:
@@ -54,15 +82,17 @@ def changed_fields(plan: dict[str, Any] | None, edited: dict[str, Any] | None) -
 
 async def active(c: Any, project: str) -> list[dict[str, Any]]:
     rows = (await c.execute(text(
-        "SELECT id, kind, body, source, refs, checked_at, created_at FROM foreman_note "
+        "SELECT id, kind, body, source, refs, checked_at, created_at, dispatch_id FROM foreman_note "
         "WHERE project = :p AND retired_at IS NULL ORDER BY checked_at DESC, id DESC"), {"p": project})).all()
     return [{"id": r[0], "kind": r[1], "body": r[2], "source": r[3], "refs": json.loads(r[4]) if r[4] else {},
-             "checked_at": r[5], "created_at": r[6]} for r in rows]
+             "checked_at": r[5], "created_at": r[6], "dispatch_id": r[7]} for r in rows]
 
 
 async def drift(c: Any, note: dict[str, Any], head: str | None, git: Any = None, repo: str | None = None) -> list[str]:
-    """확인 뒤 바뀐 것 — 그 줄이 가리키는 세션에 뒤 활동이 있거나 HEAD가 움직였거나 출처 파일이 없어졌으면 한 마디씩."""
+    """확인 뒤 바뀐 것 — 그 줄이 가리키는 세션에 뒤 활동이 있거나 HEAD가 움직였거나 출처 파일이 없어졌으면 한 마디씩.
+    확인 뒤 커밋 수는 note["commits"]에도 남긴다(낡음 문턱)."""
     out = []
+    note["commits"] = None
     refs = note.get("refs") or {}
     at = note["checked_at"]
     sids = [int(s) for s in (refs.get("sessions") or []) if str(s).isdigit()]
@@ -78,6 +108,7 @@ async def drift(c: Any, note: dict[str, Any], head: str | None, git: Any = None,
             n = (await git(repo, "rev-list", "--count", f"{refs['head']}..{head}")).strip()
             if n and n != "0":
                 out.append(f"확인 뒤 커밋 {n}개")
+                note["commits"] = int(n) if n.isdigit() else None
         except Exception:  # noqa: BLE001 — 옛 HEAD가 없어졌으면(리베이스) 그냥 "움직임"
             out.append("확인 뒤 HEAD가 바뀜")
     src = note.get("source") or ""
@@ -86,16 +117,34 @@ async def drift(c: Any, note: dict[str, Any], head: str | None, git: Any = None,
     return out
 
 
+def stale_why(note: dict[str, Any], rules: NoteRules, now: datetime | None = None) -> list[str]:
+    """「낡음 — 확인 필요」 까닭(thread만). 마지막 확인 뒤 stale_days가 지났거나 커밋이 stale_commits개를 넘었으면."""
+    if note.get("kind") != "thread":
+        return []
+    out = []
+    days = ((now or _now()) - note["checked_at"]).total_seconds() / 86400
+    if days >= rules.stale_days:
+        out.append(f"확인 뒤 {days:.0f}일")
+    if (note.get("commits") or 0) >= rules.stale_commits:
+        out.append(f"확인 뒤 커밋 {note['commits']}개")
+    return out
+
+
 async def render(c: Any, project: str, head: str | None = None, git: Any = None, repo: str | None = None,
-                 cap: int = TOKEN_CAP) -> dict[str, Any]:
-    """노트 → 상황 묶음 글. 진행 중인 일 먼저, 최근 확인한 것부터 상한까지. 넘친 줄은 접는다(지우지 않는다)."""
+                 cap: int = TOKEN_CAP, rules: NoteRules | None = None, now: datetime | None = None) -> dict[str, Any]:
+    """노트 → 상황 묶음 글. 진행 중인 일 먼저, 최근 확인한 것부터 상한까지. 넘친 줄은 접는다(지우지 않는다).
+    낡은 진행 중인 일(stale_why)은 「낡음(확인 필요)」으로 갈라 맨 뒤에 — 디스패처가 진행 중인 일로 믿지 않게(11-13)."""
+    rules = rules or NoteRules()
     notes = await active(c, project)
-    notes.sort(key=lambda n: (n["kind"] != "thread", -n["checked_at"].timestamp()))
+    for n in notes:
+        n["drift"] = await drift(c, n, head, git, repo)
+        n["stale"] = stale_why(n, rules, now)
+    notes.sort(key=lambda n: (2 if n["stale"] else n["kind"] != "thread", -n["checked_at"].timestamp()))
     lines, used, folded = [], 0, []
     for n in notes:
-        d = await drift(c, n, head, git, repo)
-        n["drift"] = d
-        ln = (f"  - [노트 {n['id']} · {KINDS.get(n['kind'], n['kind'])}] {n['body']} "
+        d = n["drift"]
+        what = "낡음(확인 필요 — 끝났을 수 있다. 진행 중이라고 믿지 말고 확인하라)" if n["stale"] else KINDS.get(n["kind"], n["kind"])
+        ln = (f"  - [노트 {n['id']} · {what}] {n['body']} "
               f"(출처 {n['source']}, 확인 {n['checked_at']:%m-%d %H:%M} UTC{' — ⚠ ' + ' · '.join(d) if d else ''})")
         t = est_tokens(ln)
         if used + t > cap:
@@ -210,3 +259,159 @@ async def retire_by_hand(c: Any, note_id: int) -> bool:
     r = await c.execute(text("UPDATE foreman_note SET retired_at = :t WHERE id = :i AND retired_at IS NULL"),
                         {"t": _now(), "i": note_id})
     return bool(r.rowcount)
+
+
+async def touch_by_hand(c: Any, note_id: int) -> bool:
+    """화면에서 사람이 「아직 진행 중」 — 확인 시각을 지금으로(낡음이 풀린다). 진행 중인 일 줄만."""
+    r = await c.execute(text("UPDATE foreman_note SET checked_at = :t WHERE id = :i AND retired_at IS NULL AND kind = 'thread'"),
+                        {"t": _now(), "i": note_id})
+    return bool(r.rowcount)
+
+
+# ── 끝난 「진행 중인 일」 줄을 기계로 내리기(11-13 사용자 결정, log/note_auto_retire_20261113.md) ─────────────
+# 줄에 붙은 세션(refs.sessions)이 모두 끝났고 그 세션들이 남긴 일이 없으면 내린다. 지우지 않는다 — retired_at과
+# refs.auto_retired {why, at}(스키마 그대로). 사람이 되살리면 refs.keep — 다시 기계로 내리지 않는다. decision은 건드리지 않는다.
+# 원본 폴더 세션은 끝남을 못 가른다(같은 줄기가 다음 세션으로 이어진다) — 붙은 세션이 원본 폴더 세션뿐이면 내리지 않는다.
+
+async def session_facts(c: Any, sids: list[int], live: set[str] | None) -> dict[int, dict[str, Any]]:
+    """세션마다 끝남을 가를 사실 — 살아 있나 · worktree(저장소, 이름) · 합침/버림 기록 · 합치기 카드 · 같은 자리를 뒤에 쓴 세션.
+    live: 살아 있는 CC 세션 id들(liveness.live_sessions). None이면 detached_at으로."""
+    if not sids:
+        return {}
+    rows = (await c.execute(text(
+        "SELECT cs.id, cs.cc_session_id, cs.cwd, cs.worktree_path, cs.detached_at, cs.role, "
+        " (SELECT GROUP_CONCAT(DISTINCT m.action) FROM session_action m WHERE m.session_id = cs.id AND m.ok "
+        "   AND m.action IN ('wt-merge', 'wt-discard')), "
+        " (SELECT mc.status FROM merge_card mc WHERE mc.session_id = cs.id), "
+        " (SELECT MIN(cs2.id) FROM character_session cs2 WHERE cs2.id > cs.id AND cs2.cwd = cs.cwd) "
+        "FROM character_session cs WHERE cs.id IN :s").bindparams(bindparam("s", expanding=True)), {"s": sids})).all()
+    out: dict[int, dict[str, Any]] = {}
+    for sid, cc, cwd, wtp, det, role, acts, card, later in rows:
+        repo, name = wt.split(wtp or cwd or "")
+        alive = (cc in live) if live is not None and cc else det is None
+        out[int(sid)] = {"alive": bool(alive), "repo": repo if name else None, "wt": name, "acts": set((acts or "").split(",")) - {""},
+                         "card": card, "later": later, "role": role, "in_base": None, "dir": None}
+    return out
+
+
+async def _git_facts(f: dict[str, Any], in_base: Any) -> None:
+    """worktree 세션에 합침 · 버림 · 카드 · 뒤 세션이 없을 때만 git을 본다(폴더 · 브랜치가 아직 이 세션의 것)."""
+    if not f["wt"] or f["alive"] or f["acts"] or f["card"] == "merged" or f["later"]:
+        return
+    f["dir"] = (Path(f["repo"]) / wt.WT_DIR / f["wt"]).is_dir()
+    try:
+        f["in_base"] = await in_base(f["repo"], f["wt"])
+    except Exception:  # noqa: BLE001 — 저장소를 못 읽으면 「끝났다」고 하지 않는다
+        f["in_base"] = "error"
+
+
+def verdict(sids: list[int], facts: dict[int, dict[str, Any]], spawned: set[int] | None = None) -> tuple[str, str]:
+    """("done" | "open" | "unknown", 까닭). done만 내린다.
+    spawned: 이 줄의 dispatch가 띄웠고 첫 턴이 끝난 관리자 세션들(rules.manager_spawn_done일 때만 넘어온다)."""
+    if not sids:
+        return "unknown", "붙은 세션이 없음"
+    missing = [s for s in sids if s not in facts]
+    if missing:
+        return "unknown", f"세션 {', '.join(map(str, missing))}을 찾지 못함"
+    spawned = spawned or set()
+    parts, decided = [], False             # decided: 기계로 끝남을 가른 세션이 하나라도 있나(원본 폴더 세션은 못 가른다)
+    for s in sids:
+        f = facts[s]
+        if f["alive"]:
+            if s in spawned:
+                parts.append(f"{s} 관리자 띄움 끝(첫 턴 끝, 세션은 계속 돈다)")
+                decided = True             # 띄운 일은 기계로 갈린다 — 원본 폴더 세션이어도
+                continue
+            return "unknown", f"세션 {s}이 살아 있음"
+        if not f["wt"]:
+            parts.append(f"{s} 끝남(원본 폴더)")
+            continue
+        decided = True
+        if "wt-merge" in f["acts"]:
+            parts.append(f"{s} 합침")
+        elif "wt-discard" in f["acts"]:
+            parts.append(f"{s} 버림")
+        elif f["card"] == "merged":
+            parts.append(f"{s} 합침(카드)")
+        elif f["later"]:
+            # worktree.create는 쓰던 이름(폴더 · 브랜치)을 피한다 — 같은 자리를 뒤 세션이 썼으면 이 세션의 브랜치는 그 전에 없어졌다
+            parts.append(f"{s} 브랜치 없어짐(자리를 세션 {f['later']}이 다시 씀)")
+        elif f["in_base"] is True:
+            parts.append(f"{s} 커밋이 원본에 들어 있음")
+        elif f["in_base"] is None and f["dir"] is False:
+            parts.append(f"{s} 폴더 · 브랜치 없어짐")
+        else:
+            return "open", f"세션 {s}의 일이 남음(합치지 않은 커밋 · 폴더)"
+    if not decided:
+        return "unknown", "원본 폴더 세션뿐 — 끝남을 기계로 못 가름"
+    return "done", "자동: 세션 " + " · ".join(parts)
+
+
+async def _spawned_managers(c: Any, note: dict[str, Any], sids: list[int]) -> set[int]:
+    """이 줄의 dispatch가 띄운 관리자 세션 중 첫 턴이 끝난 것(「관리자 띄우기」 줄 — rules.manager_spawn_done)."""
+    did = note.get("dispatch_id")
+    m = re.match(r"^dispatch #(\d+)$", note.get("source") or "")
+    ids = {int(x) for x in (did, m and m.group(1)) if x}
+    if not ids or not sids:
+        return set()
+    rows = (await c.execute(text(
+        "SELECT ds.session_id FROM dispatch_session ds JOIN character_session cs ON cs.id = ds.session_id "
+        "WHERE ds.dispatch_id IN :d AND ds.session_id IN :s AND ds.status = 'started' AND ds.role = 'manager' AND cs.role = 'manager' "
+        "AND EXISTS (SELECT 1 FROM turn t WHERE t.session_id = cs.id AND t.seq = 1 AND t.ended_at IS NOT NULL)").bindparams(
+            bindparam("d", expanding=True), bindparam("s", expanding=True)), {"d": sorted(ids), "s": sids})).all()
+    return {int(r[0]) for r in rows}
+
+
+async def sweep(c: Any, project: str, live: set[str] | None, rules: NoteRules | None = None,
+                in_base: Any = None, dry_run: bool = False) -> list[dict[str, Any]]:
+    """그 프로젝트의 진행 중인 일 줄을 훑어 끝난 줄을 내린다. 돌려주는 값: 줄마다 {id, verdict, why}(내린 줄은 retired=True)."""
+    rules = rules or NoteRules()
+    in_base = in_base or wt.in_base
+    out = []
+    for n in await active(c, project):
+        if n["kind"] != "thread" or n["refs"].get("keep"):
+            continue
+        sids = [int(s) for s in (n["refs"].get("sessions") or []) if str(s).isdigit()]
+        facts = await session_facts(c, sids, live)
+        for f in facts.values():
+            await _git_facts(f, in_base)
+        spawned = await _spawned_managers(c, n, sids) if rules.manager_spawn_done else set()
+        v, why = verdict(sids, facts, spawned)
+        row = {"id": n["id"], "verdict": v, "why": why, "retired": False}
+        if v == "done" and not dry_run:
+            refs = dict(n["refs"], auto_retired={"why": why, "at": _now().isoformat(timespec="seconds") + "Z"})
+            r = await c.execute(text("UPDATE foreman_note SET retired_at = :t, refs = :r WHERE id = :i AND retired_at IS NULL"),
+                                {"t": _now(), "r": json.dumps(refs, ensure_ascii=False), "i": n["id"]})
+            row["retired"] = bool(r.rowcount)
+        out.append(row)
+    return out
+
+
+async def auto_retired(c: Any, project: str, days: int = 14, limit: int = 30) -> list[dict[str, Any]]:
+    """화면 「자동으로 내린 줄」 — 기계가 내린 줄(최근 days일). 조용히 사라지지 않게 보인다."""
+    rows = (await c.execute(text(
+        "SELECT id, body, refs, retired_at FROM foreman_note WHERE project = :p AND retired_at IS NOT NULL "
+        "AND replaced_by IS NULL AND JSON_EXTRACT(refs, '$.auto_retired') IS NOT NULL AND retired_at > :t "
+        "ORDER BY retired_at DESC, id DESC LIMIT :n"),
+        {"p": project, "t": _now() - timedelta(days=days), "n": limit})).all()
+    out = []
+    for nid, body, refs, at in rows:
+        a = (json.loads(refs) if refs else {}).get("auto_retired") or {}
+        out.append({"id": nid, "body": body, "why": a.get("why") or "", "retired_at": at.isoformat() + "Z"})
+    return out
+
+
+async def restore(c: Any, note_id: int) -> bool:
+    """기계가 내린 줄을 사람이 되살린다 — 다시 진행 중으로, refs.keep(다시 자동으로 내리지 않음), 확인 시각은 지금."""
+    r = (await c.execute(text("SELECT refs FROM foreman_note WHERE id = :i AND retired_at IS NOT NULL AND replaced_by IS NULL"),
+                         {"i": note_id})).first()
+    if not r:
+        return False
+    refs = json.loads(r[0]) if r[0] else {}
+    if not refs.get("auto_retired"):
+        return False                     # 사람 · 디스패처가 내린 줄은 여기서 되살리지 않는다
+    refs.pop("auto_retired")
+    refs["keep"] = True
+    u = await c.execute(text("UPDATE foreman_note SET retired_at = NULL, checked_at = :t, refs = :r WHERE id = :i AND retired_at IS NOT NULL"),
+                        {"t": _now(), "r": json.dumps(refs, ensure_ascii=False), "i": note_id})
+    return bool(u.rowcount)

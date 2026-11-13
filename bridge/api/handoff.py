@@ -147,6 +147,8 @@ async def merge_prep_act(sid: int, body: MergePrepIn, request: Request) -> JSONR
         coder.invalidate()
         if (rc := getattr(request.app.state, "reconciler", None)) is not None:
             rc.poke("합치기 승인")
+        if (fm := getattr(request.app.state, "foreman", None)) is not None:
+            fm.poke_notes("합치기 승인")    # 11-13 끝난 「진행 중인 일」 노트 줄 내리기
     return JSONResponse(r)
 
 
@@ -387,6 +389,8 @@ async def worktree_act(sid: int, body: WorktreeIn, request: Request) -> JSONResp
     coder.invalidate()            # 쉬게 한 일 · 코더가 가져간 할 일의 상태가 바뀐다
     if (rc := getattr(request.app.state, "reconciler", None)) is not None:
         rc.poke("합치기 · 버리기")    # 11-11 끝난 뒤 어긋난 것 훑기
+    if (fm := getattr(request.app.state, "foreman", None)) is not None:
+        fm.poke_notes("합치기 · 버리기")    # 11-13 끝난 「진행 중인 일」 노트 줄 내리기
     return JSONResponse(r)
 
 

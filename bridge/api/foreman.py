@@ -180,6 +180,24 @@ async def retire(note_id: int, request: Request) -> JSONResponse:
     return await _run(go())
 
 
+@router.post("/notes/{note_id}/restore")
+async def restore(note_id: int, request: Request) -> JSONResponse:
+    """기계가 내린 줄을 사람이 되살린다(11-13) — 다시 자동으로 내리지 않는다."""
+    async def go() -> dict[str, Any]:
+        await _d(request).restore_note(note_id)
+        return {"ok": True}
+    return await _run(go())
+
+
+@router.post("/notes/{note_id}/touch")
+async def touch(note_id: int, request: Request) -> JSONResponse:
+    """「아직 진행 중」 — 낡음 줄의 확인 시각을 지금으로(11-13)."""
+    async def go() -> dict[str, Any]:
+        await _d(request).touch_note(note_id)
+        return {"ok": True}
+    return await _run(go())
+
+
 class WakeTestIn(BaseModel):
     project: str | None = Field(default=None, max_length=64)
     kind: str = Field(default="infra_down", max_length=20)
