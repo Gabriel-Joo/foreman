@@ -23,6 +23,7 @@
 | **319** | 11-13 11:0x | `10_office_design` · `11_foreman_dispatch` · `operations` · `11_worktree` · `style_guide` — 머리 위 표시 · escalate API(`580c6d7`, `log/overhead_marks_20261113.md`). 적어도 `10_office_design` 「합치기 기다림」 · 머리 위 말풍선과 `operations` 「5.」 중계 · 묶음은 실제로 바뀜 |
 | **320** | 11-13 11:2x | 카드 줄 번호: `10_office_design` 147 · 148 · 149 · 151 · 152 · 156 / `11_foreman_dispatch` 140 · 141 / `11_worktree` 92 / `operations` 24 / `style_guide` 97 — 「사용자에게 보고함」 · 지도 「사용자 답 기다림 N」 · 서브에이전트 ··· 뺌 · RELAY_GRACE 30초(`622d6a1`) |
 | **321** | 11-13 11:3x | `operations` 23 · 112 / `10_office_design` 147 / `11_worktree` 142 — 합치기 카드 DB(`merge_card` 0032, 72시간, `4159f5d`). 6-1의 「6시간」 · 「메모리」 설명이 바뀜 |
+| **322** | 11-13 12:0x | `10_office_design` 147 · 148 · 149 · 151 · 152 · 156 / `11_foreman_dispatch` 107 · 130 · 132 · 140 · 141 / `11_worktree` 92 · 142 · 147 · 153 / `operations` 23 · 24 · 112 / `11_handoff` 20 — 사람 승인 카드는 관리자 머리 위 「사용자 답 기다림」(브리지가 escalate), `merge-prep docs_done`, 「관리자에게 보고함」이 이김(`b70018b`, `log/merge_wait_to_manager_20261113.md`). 6-1 「카드가 보이는 곳」 · 「합치기 기다림」 말풍선 설명이 바뀜 |
 
 - 같은 글의 알림은 한 번만 셌다. 19:22 알림은 시각으로 286 합침과 가깝지만 확실하지 않다(`?`)
 
