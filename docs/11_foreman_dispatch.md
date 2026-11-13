@@ -161,4 +161,5 @@
 
 - **켜는 법**(기록 `log/coder_c_wave2_20261111.md`에 있는 것만): 토큰 · 관리자 — ① `python -m bridge.scopetoken new <프로젝트>`(값은 화면에 안 찍히고 파일에만) ② `tokens.toml enabled = true` · `managers.toml [managers] enabled = true` ③ 그 저장소 CLAUDE.md에 관리자 규칙 줄(초안은 같은 log, 그 저장소 세션에 부탁) ④ 관리자 세션을 원본 폴더에 띄움(역할 manager) ⑤ 필요하면 `roles.toml projects` · `handoff.toml [merge_prep] projects`에 그 프로젝트를 더함. 계획 넘기기 · 옮기기 한 흐름은 `[handover] enabled = true` · `[move] one_flow = true`로 켜 보고 시험 계획 · 시험 세션 하나로 15분 알림 · ①~⑦을 확인한다(끝나면 시험 세션은 `hidden_reason='test'`). 역할 권한은 하루 관찰 뒤 규칙별 걸린 수를 보고 사용자가 `enforce`로 올린다(그 쿼리는 같은 log 「합친 뒤 관리자가 할 일」 2). 바꾼 뒤에는 모두 브리지를 다시 띄운다(`[move]`만 제외)
 - **기능 사이에 무엇을 먼저 켤지, enforce로 켠 뒤 무엇을 볼지는 정해지지 않았다**(기록에도 없다 — [log:merge_c_wave2_20261111.md] 「켜는 순서가 기록에 있는가」)
-- 다른 저장소에 관리자를 실제로 띄우지 않았다 — `[merge_prep] projects`도 `["foreman"]` 그대로. 넓히는 것은 그 저장소 CLAUDE.md 줄과 함께 사용자가 시킬 때
+- (11-12 바뀜) 인프라 · 런슈즈(310)에 관리자가 섰다. `[merge_prep] projects`는 `["foreman", "ronanlab-infra"]` — 런슈즈는 사용자가 정할 때 더한다(`docs/11_worktree.md` 「6-1.」)
+- **역할 권한은 관찰만 하고 켜지 않는다**(11-12 사용자 — "확인만이다. 켜지 마라"). enforce와 런슈즈 · 인프라로 넓히는 것은 사용자가 정한다. 넓히려면 `projects`, 프로젝트별 `manager_allow` · `scribe_deny`(코드), 무시되는 작업 폴더 빼기, 관찰 기간이 있어야 한다(지난 7일 다시 돌리기 290건). 해석기 · `$` 경로 · cp/mv 같은 지나가는 길도 같이 막아야 한다 [log:approval_hell_plan_20261112.md]
