@@ -942,6 +942,7 @@ CC의 `cleanupPeriodDays`(기본 30일)가 트랜스크립트 원본을 지우�
 | **docs 어긋남 맞추기**: operations 26 「꺼짐」 · notify 표 Notion 줄 · 11_foreman_dispatch 152 ~ 162 · 11_worktree 6-1 등 | **정해짐**(11-12 사용자). 후보 목록이 다 차면 서기를 띄워 맞춘다 | `log/doc_drift_candidates_20261112.md` |
 | **런슈즈 커밋 메시지 고치기 전 백업 지우기**: 태그 `archive/main-before-reword-20261112` · 로컬 ref `refs/backup/main-before-reword-20261112` | **사용자가 정할 것** — 정할 때까지 둔다 | `log/runshoes_manager_20261112.md` |
 | **squash 합친 커밋 제목**: 첫 커밋 제목을 그대로 써서, 여러 커밋을 뭉치면 제목이 일 전체를 말하지 못한다(11-12 시험 세션 316 — `697685e`) | **사용자가 정할 것** — 고칠지 | `log/approval_hell_plan_20261112.md` |
+| **빈 worktree가 「맡길 일 1 — 어긋남」으로 뜬다 — 이름이 실제와 다르다**: 11-13 313(`.worktrees/foreman-4`)은 커밋이 모두 main에 들어갔고 세션도 제대로 끝났는데, worktree가 남았다는 것만으로 코더 머리 위 「맡길 일 1 — 어긋남」으로 떴다(`bridge/reconcile.py` → `/api/coder/todo` `drift` → `coder.js` `WHY.drift`). 누구에게 시킬 일이 아니라 치우기만 하면 되는 것이고, 어긋난 것도 아니다. 할 것: 앞 0 · 변경 0 · 세션 끝남인 worktree는 「맡길 일」 · 「어긋남」에서 빼고 「치울 것 — 빈 worktree」처럼 따로(누르면 [버리기]) | **정해짐**(11-13 사용자). 따로 작게(코더) | 11-13 사용자 대화 |
 
 ---
 
