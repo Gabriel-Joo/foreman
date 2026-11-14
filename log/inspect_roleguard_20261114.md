@@ -1,0 +1,135 @@
+# 역할 권한 observe → enforce 점검(2026-11-14, 점검 세션 · worktree `foreman-4`)
+
+관리자 362의 점검 일감(사용자 지시 11-14). 살펴보고 보고만 했다 — 코드 · 설정 · 문서 · 시험은 고치지 않았다. DB는 SELECT만.
+시각은 모두 UTC(DB `event.ts` 그대로). 숫자는 모두 SQL · 스크래치 스크립트로 셌고, 짐작인 곳은 「짐작」이라고 적었다.
+
+## 결론 — 「이것을 먼저 고친 뒤면 된다」(FOREMAN) · 「아직 아니다」(런슈즈 · 인프라)
+
+- **FOREMAN `bash-file-edit` · `worktree-push`는 지금 막아도 된다** — 켜진 뒤 Bash 걸림 10건이 모두 진짜 위반(10/10), 잘못 걸린 것 0. worktree push 걸림 0
+- **`manager-code`는 막으면 안 된다** — 21건 중 20건이 정당한 일(사용자 직접 지시 · 사람이 승인한 인계 카드 · 예외 1). 진짜 위반은 1건(11-14 07:53 관리자 362 CLAUDE.md)
+- 그런데 **mode가 규칙마다가 아니라 하나라서**(`[roles] mode`) 지금 enforce로 바꾸면 넷이 함께 막힌다. 그리고 enforce의 거부는 기록 · 화면 · 알림에 제대로 남지 않는다(아래 「먼저 고칠 것」 3). 그래서 그대로 바꾸면 안 되고, 아래 1 ~ 3을 고친 뒤 바꾼다
+- 런슈즈 · 인프라로 넓히는 것은 아직 아니다 — 11-12 뒤 이틀치 걸림 74건이 모두 정당한 일이었다(진짜 위반 0)
+
+### 먼저 고칠 것(제안만)
+
+| # | 무엇 | 어느 파일 | 까닭 |
+|---|---|---|---|
+| 1 | **규칙마다 mode**(`[roles.rules] bash-file-edit = "enforce"`, `manager-code = "observe"`처럼) | `bridge/roleguard.py` `RolesConfig`(rules를 bool → mode), `bridge/approvals.py:173`(`self.roles.cfg.mode` 대신 그 규칙의 mode), `config/roles.toml` | 정확한 규칙(Bash 10/10)만 먼저 막고, 헛걸림이 많은 규칙(관리자 20/21)은 계속 기록만 하게 |
+| 2 | **`manager-code`는 거부가 아니라 사람에게 묻기(ask)** | `bridge/approvals.py:173~182`(역할 판정을 `Decision("ask", …)`로 승인 카드 경로에), `bridge/roleguard.py:205~207` 거부 글 | 정당한 20건이 모두 「사람이 시킨 일」이다. 지금 거부 글은 「몇 줄이면 사람에게 허락을 받습니다」라고 하지만 **enforce에는 허락받을 길이 없다**(바로 deny). CLAUDE.md 11-14 「관리자는 CLAUDE.md를 고치기 전에 묻는다」와도 ask가 맞다 |
+| 3 | **거부가 조용히 묻히지 않게** — 거부 기록에 `role_rule` · `role_reason`을 남기고, 거부되면 관리자(또는 사람)에게 한 줄 알림 | `bridge/approvals.py:181`(`_record_pre(..., None)` — 역할 거부도 `extra`를 넘김), 알림은 `notify.toml` 또는 관리자 중계 | 지금 거부 기록은 `payload.rule`에만 규칙 이름이 들어가 `role_rule`로 세는 지금 방법(이번 점검 · 11-12)에서 빠진다. `RoleGuard.seen`(최근 200개)은 어디서도 읽지 않는다(`grep` 0). 세션이 막힌 뒤 해석기 · `cp`로 돌아가도 아무도 모른다 |
+| 4 | 관리자가 원본 폴더에서 **코더 worktree 안 파일**을 Edit하는 것도 보기 | `bridge/roleguard.py:200~202`(`_top`이 worktree의 `.git` 파일에서 멈춰 「다른 저장소」로 빠짐 — `<저장소>/.worktrees/` 아래는 같은 프로젝트로) | 직접 시험: 관리자 Edit `…/.worktrees/foreman-4/bridge/roleguard.py` → 안 잡힘, 원본 `bridge/roleguard.py` → 잡힘. FOREMAN 실제 0건, 런슈즈 310은 11-14에 14건 |
+| 5 | (enforce와 함께, observe로 먼저) 해석기 찾아바꾸기 꼴 기록 | `bridge/roleguard.py:261` 자리 | 아래 「4. 구멍」 — FOREMAN 1, 런슈즈 206. 「읽기 + replace + 같은 추적 파일 쓰기」 꼴만 보면 데이터 만들기와 대부분 갈린다(짐작 — 이번 꼴 맞추기 기준) |
+
+## 1. FOREMAN 실제 기록(11-11 08:39 켜짐 ~ 11-14 08:58)
+
+`event` `approval_req` 중 payload에 `role_rule`이 있는 것 **31건**(켜진 뒤 FOREMAN Bash · Edit · Write 요청 5,371건의 0.6%).
+
+- 다시 돌림과 맞대기: 같은 기간 요청을 지금 `RoleGuard`로 다시 돌리면 31건, 실제 기록 31건과 **id까지 같다** — 아래 2의 다시 돌리기 방법이 믿을 만하다는 근거
+- payload의 `mode: enforce`는 승인 정책(`approval.toml`) 모드다. 역할 권한은 observe라 31건 모두 통과했다
+
+| 규칙 | 수 | 역할 · 자리 |
+|---|---|---|
+| manager-code(역할-관리자코드) | 21 | 관리자 원본 폴더 21(276 ×7 · 309 ×4 · 318 ×8 · 362 ×2) |
+| bash-file-edit(역할-Bash파일고침) | 10 | 코더 worktree 9(312 ×3 · 313 ×3 · 314 · 325 · 365) · 디자이너 worktree 1(291) |
+| worktree-push | 0 | |
+| scribe-code | 0 | (서기 세션이 코드를 Edit한 것 자체가 0 — 서기 Edit 148건 모두 문서) |
+
+| 날짜 | 관리자코드 | Bash파일고침 | 합 |
+|---|---|---|---|
+| 11-11 | 4 | 1 | 5 |
+| 11-12 | 3 | 7 | 10 |
+| 11-13 | 11 | 1 | 12 |
+| 11-14 | 3 | 1 | 4 |
+
+### 갈래
+
+**(a) 진짜 위반 11**
+- Bash 10 — 모두 worktree에서 저장소 시험 파일을 `cat >> … <<'EOF'`(9)나 `sed -i`(1)로 고침. 예: 11-11 08:39 디자이너 291 `cat >> tests/test_mergeprep.py <<'EOF'` · 11-12 09:43 ~ 10:17 312 · 313 · 314 시험 파일 7건 · 11-13 03:20 325 `sed -i 's/taken + 1 …/' tests/test_preview.py` · 11-14 06:13 365 `cd …/foreman-4; cat >> tests/test_stallwatch_bg.py <<'EOF'`(자동 모드가 막음 — 일감 글)
+- 관리자 1 — 11-14 07:53 362 `CLAUDE.md` 링크 줄에 `.tools`(묻지 않고 고침, 사용자가 정리함 — `log/manager318_overhead_20261114.md` 102행)
+
+**(b) 잘못 걸린 것 20 — 모두 manager-code**
+- 사용자 직접 지시로 CLAUDE.md 9 — 276 11-11 10:11 ~ 10:18 ×4(직전 입력 「CLAUDE.md 48줄을 고쳐라 …」 「22줄을 빼라」 「CI/CD 줄 고치기」), 318 11-13 02:13 · 02:24 · 04:24 · 08:26 · 08:53 ×5(「CLAUDE.md 줄을 넣어라」 「이것을 CLAUDE.md에 한 줄 넣어라」 「위반 보고 줄은 CLAUDE.md에」 「커밋 메시지 규칙」 「docs 함께」)
+- 사람이 패널에서 승인한 인계 카드(「대화 결정 문서에 적기 2/2 — 승인한 것만」)로 docs 7 — 276 11-12 06:21 `docs/12_scribe.md` ×2 · `docs/operations.md`, 309 11-13 01:29 `docs/11_worktree.md` ×2 · `docs/operations.md` · `docs/11_foreman_dispatch.md`
+- 사용자 직접 지시 `docs/style_guide.md` 1 — 318 11-14 05:21(「「대화창」을 style_guide 화면 말 약속에 넣어라」)
+- CLAUDE.md 예외 1(합친 뒤 깨진 시험 몇 줄) 3 — 318 11-13 02:33 `tests/test_overhead_marks.py` ×2(`2cb36cc`, 모듈 `NOW`가 낡아 전체 실행에서만 실패), 362 11-14 06:13 `tests/js/name_ink.test.mjs`(`fa41788`, `AURA_LIFT` 0 → 「0 이하」)
+
+**(c) 판단이 서지 않는 것 0**
+
+정리: Bash 규칙은 10/10 맞음. 관리자 규칙은 1/21 맞음 — 관리자가 원본 폴더에서 `config` · `log` · `README` 밖을 고치는 일은 대부분 사람이 시킨 것이다.
+
+## 2. 런슈즈 · 인프라 다시 돌리기 — 11-12와 견주기
+
+방법: `approval_req`(Bash · Edit · Write · MultiEdit · NotebookEdit)를 세션 → 캐릭터 → 프로젝트로 묶어 뽑고, 지금 `RoleGuard`(기본 `manager_allow` · `scribe_deny`, `projects`만 셋으로)에 `check()`만 불렀다. cwd는 `character_session`의 worktree 경로 또는 cwd(그 호출의 실제 cwd는 기록에 없다 — 11-12와 같은 한계). 11-12 기록 커밋이 19:41 KST(10:41 UTC)라 창 A = 11-05 10:41 ~ 11-12 10:41(11-12와 같은 7일), 창 B = 11-12 10:41 ~ 11-14 08:58.
+
+| | 요청 | 걸림 | 내역 |
+|---|---|---|---|
+| 11-12 기록(창 A) | 3,780 | 290 | 런슈즈 코더 Bash 137 · 런슈즈 worktree push 21 · 인프라 관리자 116 · 런슈즈 관리자 11 · 그 밖 4 |
+| 이번 다시 돌림 창 A | 3,778 | 295 | 런슈즈 Bash 144(코더 142 · 서기 2) · push 22(코더 21 · 서기 1) · 관리자 11 / 인프라 관리자 116 · Bash 2 |
+| **창 B(새 이틀치)** | 2,846 | **74** | 런슈즈 56(Bash 30 · push 3 · 관리자 23) / 인프라 18(관리자 18) |
+
+창 A의 5건 차이는 창 경계 몇 분 · 11-12 뒤 검사기 변경으로 보인다(짐작 — 따로 가르지 않음).
+
+창 B 74건을 하나하나 갈랐다 — **(a) 0 · (b) 74 · (c) 0**
+- 런슈즈 Bash 30 — 모두 코더 317의 `python -m chatbot.prompt > chatbot/tests/prompt_snapshot.txt`(추적 파일, 프로그램 출력으로 스냅숏 다시 만들기, 11-12 12:08 ~ 11-13 08:00). 손으로 고친 것이 아니라 생성물이다
+- 런슈즈 worktree push 3 — 코더 300, 11-12 10:45 · 11:04. 직전 입력이 사용자의 「자동 Sync 껐다. 확인하고 push해라.」 「켰어」. 런슈즈의 「push는 관리자」는 11-13부터(런슈즈 CLAUDE.md 35행)
+- 런슈즈 관리자 23 — 310. docs · CLAUDE.md 9(사용자 지시 · 합치기 카드 뒤 기록), **코더 worktree 안 파일 14**(11-14 07:20 `recommend.py` 「한 줄짜리라 새 코더 세션을 띄우지 말고 관리자가 직접 고친다」, 07:51 docs 정리 지시, 08:08 `eval/run.py` 「(나)로 가자」, 08:15 「문서에 적고 푸쉬해」). 이 14건은 worktree가 지워진 지금이라 걸렸고, **그때 실제로 돌렸다면 안 걸렸다**(먼저 고칠 것 4)
+- 인프라 관리자 18 — 299. `apps/monitoring/grafana/dashboards/gen_petmint.py` 14(사용자가 대화로 시킨 패널 고치기), `apps/runshoes/app/deployment.yaml` 1(런슈즈 관리자 부탁, 사용자 지시), `CLAUDE.md` 3(FOREMAN · 펫퍼민트 관리자가 전한 사용자 지시)
+
+### 저장소마다 `manager_allow` · `scribe_deny`가 달라야 하는가 — 달라야 한다
+
+- **인프라**: CLAUDE.md 8절 「클러스터를 만지는 일은 원본 폴더 main에서 관리자가」 — 관리자가 `apps/` · `platform/` 매니페스트를 고치는 것이 규칙 안의 일이다. 창 A 116 + 창 B 18 = 134건이 모두 이 꼴. FOREMAN 모양 `manager_allow`로는 관리자 일 전부가 걸린다 → 인프라는 `manager-code`를 끄거나 `["*"]`에 가깝게
+- **런슈즈**: 사용자가 관리자에게 「작으면 직접 고쳐라」를 시킨다(310 11-14). `manager_allow`에 `docs/*` · `CLAUDE.md`를 넣거나 ask로
+- **`scribe_deny`**: 지금 값(`bridge/*` · `tests/*` · `migrations/*` · `tools/*`)은 FOREMAN 폴더 이름이라 런슈즈(`src/` · `backend/` · `chatbot/` · `scripts/`) · 인프라(`apps/` · `platform/` · `cluster/`)에서는 아무것도 막지 못한다
+- **생성물**: 런슈즈는 프로그램 출력을 추적 파일로 다시 만드는 일이 잦다(창 B 30, 창 A의 `catalog/` 무시 폴더 40 · 추적 안 된 경로 37). 저장소마다 생성물 목록을 두거나, 리디렉션은 `cat` · `echo` · `printf` · heredoc처럼 손으로 쓴 글일 때만 보기 — FOREMAN 진짜 위반 10건은 모두 `cat >> <<EOF` · `sed -i`라 그렇게 좁혀도 그대로 잡힌다
+- 지금 `RolesConfig`는 값이 한 벌뿐이다(`roleguard.py:43~48`) — 프로젝트별 표(`[roles.projects.runshoes]` 등)가 필요하다
+
+## 3. enforce로 바꾸면 막히는 정상 작업
+
+| enforce면 막히는 일 | 수(FOREMAN / 런슈즈 · 인프라 창 B) | 이렇게 하면 안 막힌다 |
+|---|---|---|
+| 사용자가 관리자에게 직접 시킨 CLAUDE.md · style_guide 고치기 | 10 / 7 | manager-code를 ask로(사람 승인 카드). CLAUDE.md는 원래 「먼저 묻는다」(11-14) |
+| 사람이 승인한 인계 카드로 관리자가 docs에 쓰기 | 7 / 0 | ask, 또는 인계 카드가 dest 파일을 그 턴에만 허용 |
+| 합친 뒤 깨진 시험 몇 줄(예외 1) | 3 / 0 | ask(거부 글이 이미 그렇게 말한다 — 길만 없다) |
+| 사용자가 관리자에게 시킨 코드 · 문서 고치기(런슈즈) | 0 / 23 | 런슈즈 `manager_allow` 넓히기 또는 ask |
+| 인프라 관리자의 매니페스트 · 대시보드 고치기 | 0 / 15 | 인프라는 manager-code 끔 |
+| 프로그램 출력으로 생성물 다시 만들기(`cmd > 추적파일`) | 0 / 30 | 리디렉션은 손으로 쓴 글일 때만 보기, 또는 생성물 허용 목록 |
+| 사용자가 worktree 세션에 직접 시킨 push | 0 / 3 | 11-13 뒤로는 규칙상 관리자 몫이라 막는 것이 맞다. 다만 사용자 직접 지시가 앞서는 경우(메모리 「사용자 직접 지시가 앞선다」)를 위해 거부 대신 ask도 생각할 만하다 |
+
+FOREMAN만 보면 막히는 정상 작업은 모두 manager-code에서 나온다 — 먼저 고칠 것 1 · 2면 없어진다.
+
+## 4. 구멍 — 지금 코드에서 그대로인가, 실제로 이 길로 바뀐 것
+
+지금 `RoleGuard.check()`에 명령을 넣어 직접 판정했다(실행하지 않음). **11-12 기록 ⑤의 열 가지 + `git restore`, ① ~ ④ 모두 그대로 안 잡힌다.** 새로 찾은 것 셋:
+- 관리자가 원본 폴더에서 코더 worktree 안 파일을 Edit — 안 잡힘(먼저 고칠 것 4)
+- `$G push`처럼 변수로 부른 git push — 안 잡힘(`git -C 원본 push`는 잡힘)
+- 디자이너 · 점검(inspector) · 역할 없음 세션의 원본 코드 Edit — 규칙이 없다(11-12 ⑦). FOREMAN 켜진 뒤 실제 0건
+
+지난 기록(창 A + B, 세 저장소 Bash 요청)에서 구멍 꼴을 찾아 대상이 저장소 추적 파일인지 · 그 뒤 24시간 안에 그 파일을 건드린 커밋이 있는지(모든 브랜치) 맞댔다. 명령 안 경로 뽑기는 꼴 맞추기라 놓친 것 · 잘못 뽑은 것이 섞인다(짐작 섞임).
+
+| 꼴 | FOREMAN(추적 + 뒤 커밋 있음) | 런슈즈 | 인프라 | 성격 |
+|---|---|---|---|---|
+| `cp`(스크래치 → 저장소) | 13 — 대부분 `portfolio/img` · `log/img` 그림(png · gif), `tests/fixtures/approval_now.toml` 1(370) | 12 — `contract/baseline/` 기준 결과 복사 · `scripts/parity/reference/history/` | 3 — `~/k8s-cluster`에서 `cluster/` 가져오기 · 대시보드 생성기 | 대부분 정당. **그림은 Edit · Write로 쓸 수 없어 `cp`가 유일한 길** |
+| `git checkout -- 파일` · `git restore` | 5 · (1, 뒤 커밋 0) | 2 | 0 | 자기 변경 버리기 — 정당 |
+| `mv` · `git mv` | 0 | 1 | 1 | 파일 옮기기 — 정당 |
+| 해석기 안 찾아바꾸기(읽기 + replace + 같은 추적 파일 쓰기) | **1**(314 11-12 10:17 `bridge/pipeline.py`, 11-12 기록의 「안 잡힌 것 1」 그대로) | **창 A 203**(코더 193 · 서기 10, 예: 221 11-09 `R('docs/README.md', …)` · 225 `src/components/ShoeModal.tsx`) · **창 B 3**(317 `chatbot/llm.py` · `chatbot/branches/common.py`, 379 `chatbot/branches/experience.py`) | 0 | **진짜 위반 꼴** — 검사가 일부러 안 본다 |
+| 해석기로 데이터 json 고치기 | 0(FOREMAN 6건은 모두 추적 안 되는 `bridge/static/demo/pool_check.json`) | 13(`catalog/decisions.json` · `copy.json` — 매번 `local/work/`에 백업 뒤) | 0 | 데이터 일 — 판단이 서지 않음 |
+| `dd of=` · `truncate` · `install` · `awk -i inplace` · `ed` · `patch` · `git apply` | 0(대상 모름 `patch` 1 · `git apply` 1) | 0(대상 모름 `install` 5 · `patch` 1 · `git apply` 1) | 0(대상 모름 `patch` 12 · `git apply` 1) | 실제로 쓰인 일 없음(대상을 알 수 있는 것 기준) |
+| 경로에 `$` 등 대상 모름 | `cp` 16 · `mv` 3 · 해석기 쓰기 44 | 해석기 쓰기 448 · `cp` 13 | 8 | 가를 수 없음 |
+
+막을 수 있는 것 · 막기 어려운 것:
+- **막을 수 있다**: `dd of=` · `truncate` · `awk -i inplace` · `ed` · `install` — 대상이 글자로 보이고 지난 기록에서 정당하게 쓴 일이 0. 넣어도 헛걸림이 없다(지난 기록 기준)
+- **넣으면 헛걸림이 크다**: `cp` · `mv`(그림 · 기준 결과 · 옮기기), `git checkout --` · `git restore`(버리기). 넣는다면 텍스트 소스 확장자로 들어가는 `cp`만, 그림 등 바이너리는 빼고
+- **해석기 안**: 「읽기 + replace + 같은 추적 파일 쓰기」 꼴은 글로 꽤 갈린다(FOREMAN 1 · 런슈즈 206). 데이터 json은 판단이 안 서니 빼고 소스 · 문서 확장자만. 다만 `python script.py`처럼 파일 안의 쓰기는 보이지 않는다 — 끝까지 막으려면 글이 아니라 샌드박스(작업 폴더 쓰기 막기)여야 한다(README 구조 3단계 「Bash 샌드박스」 줄)
+- **막기 어렵다**: `$` · 백틱 경로, `cd $X` 뒤, 따옴표가 안 닫힌 명령 — 값이 실행 때 정해진다. 「모름」을 거부로 바꾸면 스크래치 쓰기(`S=…scratchpad; cd $S && …`)가 대부분 걸린다(FOREMAN `cp` 모름 16 중 스크래치 꼴이 대부분 — 짐작, 하나하나 보지 않음)
+- 참고: enforce로 Bash만 막으면 해석기로 돌아가는 길이 남는다. 그래서 먼저 고칠 것 3(거부가 보이게)과 5(해석기 꼴 기록)를 함께 둔다
+
+## 쓴 것
+
+- 스크래치 스크립트(읽기만): `q.py`(SELECT 도우미 — SELECT · SHOW · DESCRIBE · WITH만 받음) · `show_hits.py` · `ctx.py` · `ctx2.py`(직전 입력 글) · `replay.py`(다시 돌리기) · `fm_diff.py` · `split.py` · `holes.py`(판정만) · `holescan.py` · `holegit.py`(git 읽기) · `pyedit.py` · `roles_edit.py`
+- 저장소에 쓴 것: 이 파일 하나
+
+## 규칙 위반 없음
+
+- 진행 글 · 답은 모두 한국어. 저장소 파일은 이 log 하나를 Write로만 썼다. 스크래치 스크립트는 Write · Edit로 썼다
+- Bash heredoc을 한 번 썼다(`.venv/bin/python - "$S/reqs.json" <<'EOF'` — 스크래치 JSON을 읽어 수만 세기, 파일 쓰기 없음). 저장소 파일을 고친 것이 아니라 위반은 아니라고 보지만 적어 둔다
+- DB는 SELECT만, 다른 세션 tmux에 키를 보내지 않음, push · 브리지 다시 띄우기 없음, `pgrep -f` 안 씀. 명령 앞부분을 옮길 때 토큰 · 비밀번호 자리는 가리게 스크립트에서 걸렀다(이번 표에는 그런 자리가 나오지 않았다)
