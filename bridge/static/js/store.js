@@ -352,7 +352,7 @@ export class Store {
     switch (e.type) {
       case 'tool_use':
         if (e.source !== 'transcript') return;
-        s.activity = { tool: e.tool, target: e.target || '', ts: e.ts, subagent: !!e.subagent_id };
+        s.activity = { tool: e.tool, target: e.target || '', ts: e.ts, subagent: !!e.subagent_id, description: e.description || null };
         this.pushFeed(s, e.ts, 'tool', `${e.tool}${sub} ${e.target || ''}`, e.id);
         break;
       case 'start':

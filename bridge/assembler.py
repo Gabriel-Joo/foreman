@@ -1152,7 +1152,7 @@ class Assembler:
                 "target": (e["target"] or "")[:200] or None, "status": e["status"], "turn_id": e["turn_id"],
                 "session_id": e["session_id"], "subagent_id": e["subagent_id"], "project": st.project,
                 "ts": e["ts"].isoformat(timespec="milliseconds") + "Z",
-                "summary": _summary(e["type"], pl)}})
+                "summary": _summary(e["type"], pl), "description": _tool_description(e["type"], e["tool"], pl)}})
 
     async def stats_snapshot(self) -> dict[str, Any]:
         return self.stats.__dict__ | {"turns_closed": dict(self.stats.turns_closed), "live": self.live}
@@ -1196,6 +1196,19 @@ def _summary(type_: str, payload_json: str | None) -> str | None:
     if type_ == "stop":
         return f"{p['durationMs']}ms" if p.get("durationMs") is not None else None
     return (p.get("summary") or p.get("text") or "")[:200] or None
+
+
+def _tool_description(type_: str, tool: str | None, payload_json: str | None) -> str | None:
+    """Bash 도구 입력에 CC가 붙인 description(하는 일 한 줄). 화면 머리줄이 명령 대신 쓴다(11-14).
+    payload.input은 _event를 지나며 이미 Masker로 가려진 값이다. 200자까지."""
+    if type_ != "tool_use" or tool != "Bash" or not payload_json:
+        return None
+    import json
+    try:
+        d = (json.loads(payload_json).get("input") or {}).get("description")
+    except (ValueError, AttributeError):
+        return None
+    return d.strip()[:200] or None if isinstance(d, str) else None
 
 
 def _json(obj: Any) -> str:

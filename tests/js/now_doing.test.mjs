@@ -35,6 +35,13 @@ test('Bash는 하는 일 + 호버에 명령, 서버 description이 오면 그것
   const a = { tool: 'Bash', target: 'node --test tests/js/' };
   assert.deepEqual(nowDoing(a), { text: '시험 돌리는 중', tip: '명령 — 지금 돌리는 명령입니다.\nnode --test tests/js/', tool: 'Bash' });
   assert.equal(nowDoing({ ...a, description: '합친 뒤 pytest와 node 시험' }).text, '합친 뒤 pytest와 node 시험');
+  const en = { ...a, description: 'Run the node test suite' };      // 영어여도 CC가 쓴 그대로, 끝에 「중」을 붙이지 않는다
+  assert.equal(nowDoing(en).text, 'Run the node test suite');
+  assert.match(doingHtml(en), /^<span data-tip="명령 — [^"]*">Run the node test suite<\/span>$/);   // 명령은 그대로 호버
+  assert.equal(nowDoing({ ...a, description: null }).text, '시험 돌리는 중');                       // 설명이 없으면 표
+  assert.equal(nowDoing({ ...a, description: '' }).text, '시험 돌리는 중');
+  assert.ok(nowDoing({ ...a, description: 'x'.repeat(100) }).text.length <= 60);
+  assert.equal(nowDoing({ tool: 'Read', target: 'a.js', description: '무시' }).text, 'Read a.js');   // Bash가 아니면 쓰지 않는다
   assert.match(doingHtml(a), /^<span data-tip="명령 — [^"]*">시험 돌리는 중<\/span>$/);
   assert.ok(!doingHtml({ tool: 'Bash', target: 'echo "<b>"' }).includes('<b>'));   // 명령 글은 이스케이프
 });

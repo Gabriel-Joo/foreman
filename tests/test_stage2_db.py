@@ -1660,3 +1660,37 @@ async def test_digest_send_failure_and_late_are_reported(env, tmp_path):
     await n.drain()
     assert "하루 묶음이 26시간 넘게 나가지 않았습니다" in tg.sent[-1]
     await n.stop()
+
+
+async def test_bash_description_to_live_event_and_dashboard(env):
+    """Bash description(11-14) — 실시간 tool_use 이벤트와 대시보드 마지막 활동에 실린다. 비밀값은 가려진 채, 200자 안.
+    Bash가 아닌 도구 · 설명이 없는 Bash는 None."""
+    from bridge.api.dashboard import latest_tool_acts
+    s, main = env
+    for p in (main.parent / SID / "subagents").iterdir():
+        p.unlink()
+    main.write_text("", encoding="utf-8")
+    asm = await run(s)
+    pub: list = []
+    asm.publish = pub.append
+    asm.live = True
+    await _append(s, asm, main,
+                  user(U(701), "d1", "돌려", origin={"kind": "human"}),
+                  asst(U(702), "msg_d1", {"type": "tool_use", "id": "toolu_D1", "name": "Bash",
+                                          "input": {"command": "pytest -q", "description": f"Run tests MY_TOKEN={SECRET} " + "x" * 300}}),
+                  asst(U(703), "msg_d2", {"type": "tool_use", "id": "toolu_D2", "name": "Read", "input": {"file_path": "/x"}}),
+                  asst(U(704), "msg_d3", {"type": "tool_use", "id": "toolu_D3", "name": "Bash", "input": {"command": "ls"}}))
+    evs = [m["event"] for m in pub if m.get("type") == "event" and m["event"]["type"] == "tool_use"]
+    by_tool = {(e["tool"], e["target"]): e["description"] for e in evs}
+    d = by_tool[("Bash", "pytest -q")]
+    assert d.startswith("Run tests") and SECRET not in d and len(d) <= 200
+    assert by_tool[("Read", "/x")] is None and by_tool[("Bash", "ls")] is None
+    sid = q(s, "SELECT id FROM character_session")[0][0]
+    async with asm.engine.connect() as c:
+        acts = await latest_tool_acts(c, f"({int(sid)})")
+    assert acts[sid][0] == "Bash" and acts[sid][4] in (None, "null")                    # 마지막은 설명 없는 ls
+    ex(s, "DELETE FROM event WHERE tool = 'Bash' AND target = 'ls'")
+    ex(s, "DELETE FROM event WHERE tool = 'Read' AND type = 'tool_use' AND target = '/x'")
+    async with asm.engine.connect() as c:
+        acts = await latest_tool_acts(c, f"({int(sid)})")
+    assert acts[sid][0] == "Bash" and acts[sid][4].startswith("Run tests") and SECRET not in acts[sid][4]

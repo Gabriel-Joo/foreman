@@ -61,6 +61,16 @@ def _started(sessions_dir: Any, pid: int) -> datetime | None:
     return datetime.fromtimestamp(ms / 1000, UTC).replace(tzinfo=None) if isinstance(ms, (int, float)) else None
 
 
+async def latest_tool_acts(c: Any, in_ids: str) -> dict[int, tuple[Any, ...]]:
+    """세션마다 마지막 도구 호출 — {세션: (tool, target, ts, subagent_id, description)}.
+    description은 Bash 입력에 CC가 붙인 하는 일 한 줄(11-14, payload.input은 수집기가 이미 가렸다). Bash 아니면 None."""
+    return {r[0]: r[1:] for r in (await c.execute(text(
+        f"SELECT e.session_id, e.tool, e.target, e.ts, e.subagent_id, "
+        f"IF(e.tool = 'Bash', JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.input.description')), NULL) FROM event e JOIN ("
+        f"  SELECT session_id, MAX(id) mid FROM event WHERE session_id IN {in_ids} AND type = 'tool_use' "
+        f"  AND source = 'transcript' GROUP BY session_id) x ON x.mid = e.id"))).all()}
+
+
 def background_running(rows: list[tuple[Any, ...]], started: datetime | None, cc_session_id: str | None = None) -> list[dict[str, Any]]:
     """bg_start(끝 알림 없는 것) 중 지금 프로세스가 뜬 뒤에 시작한 것만 — [{task, tool, description, since, out_changed, out_size}].
     out_changed = 출력 파일(tasks/<task>.output)이 마지막으로 바뀐 때(11-14 — 오래 도는 일이 멈췄는지 보이려고, 못 찾으면 None).
@@ -551,10 +561,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
         open_turns = {r[0]: r[1:] for r in (await c.execute(text(
             f"SELECT session_id, id, origin, started_at, LEFT(prompt_text, 300) FROM turn "
             f"WHERE session_id IN {in_ids} AND ended_at IS NULL"))).all()}
-        acts = {r[0]: r[1:] for r in (await c.execute(text(
-            f"SELECT e.session_id, e.tool, e.target, e.ts, e.subagent_id FROM event e JOIN ("
-            f"  SELECT session_id, MAX(id) mid FROM event WHERE session_id IN {in_ids} AND type = 'tool_use' "
-            f"  AND source = 'transcript' GROUP BY session_id) x ON x.mid = e.id"))).all()}
+        acts = await latest_tool_acts(c, in_ids)
         subs = {}
         for sid, status, desc in (await c.execute(text(
                 f"SELECT session_id, status, description FROM subagent_run WHERE session_id IN {in_ids} "
@@ -638,7 +645,10 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "injectable": bool(ls and te and ls.state != "T"), "tmux_pane": te[1] if te else None,
             "open_turn": {"id": ot[0], "origin": ot[1], "started_at": _iso(ot[2]), "prompt": ot[3]} if ot else None,
             "activity": {"tool": act[0], "target": (act[1] or "")[:200], "ts": _iso(act[2]),
-                         "subagent": act[3] is not None} if act else None,
+                         "subagent": act[3] is not None,
+                         # 11-14 Bash 도구에 CC가 붙인 하는 일 한 줄(수집기가 이미 가린 값). 없으면 화면이 명령 머리로 고른다
+                         "description": ((act[4] or "").strip()[:200] or None) if act[4] not in (None, "null") else None,
+                         } if act else None,
             # 11-09 사람이 해야 풀리는 것 — CC 자체 권한 거부(auto mode) · 글로 묻고 기다림(일하지 않을 때만)
             "denied": (needs.get(sid) or {}).get("denied"),
             # 11-13 API 오류로 멈춤 — 마지막 턴이 stop_failure로 끝났고 새 턴이 없다(api_stops). 살아 있고 멈춰 두지(T) 않았고

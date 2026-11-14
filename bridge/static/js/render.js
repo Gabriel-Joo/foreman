@@ -221,7 +221,7 @@ export function bashDoing(cmd) {
 export function nowDoing(a) {
   if (!a) return { text: '', tip: '', tool: '' };
   if (a.tool === 'Bash') {
-    const text = (a.description && oneLine(a.description, 40)) || bashDoing(a.target);
+    const text = (a.description && oneLine(a.description, 60)) || bashDoing(a.target);
     return { text, tip: a.target ? `명령 — 지금 돌리는 명령입니다.\n${oneLine(a.target, 200)}` : '', tool: 'Bash' };
   }
   return { text: `${a.tool} ${oneLine(a.target || '', 60)}`.trim(), tip: '', tool: a.tool };
