@@ -541,7 +541,7 @@ export function sessionKv(s, pend) {
       <span>상태</span><span title="${esc(procTip(s))}">${procLabel(s)}</span>
       <span>지금</span><span>${s.activity && s.state === 'ACTIVE' ? doingHtml(s.activity) + ` (${ago(s.activity.ts)})` : (s.state === 'ACTIVE' ? '생각 중' : STATE_LABEL[s.state])}</span>
       <span>서브에이전트</span><span>${s.subagents_running ? `${s.subagents_running}개 — ${esc((s.subagent_descs || []).join(', '))}` : '없음'}</span>
-      <span>모델</span><span>${modelChip(s, pend) || '<span class="muted">아직 응답 없음</span>'}${s.model_req ? ` <span class="muted">· 고른 것 ${esc(s.model_req)}</span>` : ''}</span>
+      <span>모델</span><span>${modelChip(s, pend) || '<span class="muted">아직 응답 없음</span>'}</span>
       <span>토큰</span><span><span title="입력(캐시 포함) — 대화가 이어질 때마다 앞 대화를 다시 읽는 몫(캐시)까지 더한 양입니다. 캐시는 싸게 매겨집니다.">입력(캐시 포함) ${tok(t.input)}</span> · 출력 ${tok(t.output)} · 오늘 입력 ${tok(t.today_input)} · 출력 ${tok(t.today_output)}<br><span class="muted" title="서브에이전트 토큰(추정) — 서브에이전트 기록에서 셈한 값이라 실제와 조금 다를 수 있습니다.">서브에이전트 입력 ${tok(t.subagent_input)} · 출력 ${tok(t.subagent_output)}(추정)</span></span>
       ${(t.by_model || []).length ? `<span>모델별</span><span>${byModelTable(t.by_model)}</span>` : ''}
     </div>`;

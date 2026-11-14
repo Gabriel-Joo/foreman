@@ -147,9 +147,9 @@ function render(d) {
   $('read').title = r.ok ? `사용량 읽기 — ${Math.round((r.poll_s || 600) / 60)}분마다 /usage를 읽습니다.` : `사용량 읽기 — ${r.error || '오래 읽지 못했습니다'}`;
   const bands = [];
   if (!r.ok) bands.push(`<div class="band"><b>⚠ 사용량(/usage)을 읽지 못하고 있습니다.</b> ${esc(r.error || '마지막으로 읽은 지 오래됐습니다')} — 아래 측정 %는 ${r.last_ok_at ? mdhm(r.last_ok_at) + ' 값' : '없습니다'}. ${r.fails ? `연달아 ${r.fails}번 실패했습니다.` : ''}</div>`);
-  // 11-14 CC가 /usage에서 한도 줄을 뺀 경우 — 실패가 아니라 "CC가 그 한도를 보이지 않음". 옛 값은 지금 값이 아니다
+  // 11-14 CC가 /usage에서 한도 줄을 뺀 경우 — 실패가 아니라 "그 한도를 확인할 수 없음". 옛 값은 지금 값이 아니다
   for (const l of (d.limits || []).filter((x) => x.absent))
-    bands.push(`<div class="band warn"><b>${esc(l.label)}: CC가 보이지 않음.</b> /usage에 ${esc(l.label)} 줄이 없습니다. 서버가 ${esc(l.label)} 한도 값을 주지 않을 때 CC가 줄을 뺍니다. ${l.last_pct != null ? `마지막으로 본 값은 ${l.last_pct}%(${mdhm(l.last_at)})이며 지금 값이 아닙니다. ` : ''}${l.scoped ? '' : '이 한도의 80 · 95% 알림은 줄이 다시 나올 때까지 멈춥니다.'}</div>`);
+    bands.push(`<div class="band warn"><b>${esc(l.label)} 확인할 수 없음.</b> /usage에 ${esc(l.label)} 줄이 없습니다. 서버가 ${esc(l.label)} 한도 값을 주지 않을 때 CC가 줄을 뺍니다. ${l.last_pct != null ? `마지막으로 본 값은 ${l.last_pct}%(${mdhm(l.last_at)})이며 지금 값이 아닙니다. ` : ''}${l.scoped ? '' : '이 한도의 80 · 95% 알림은 줄이 다시 나올 때까지 멈춥니다.'}</div>`);
   if (r.credential_expires_at && D(r.credential_expires_at) - Date.now() < 864e5)
     bands.push(`<div class="band warn"><b>⚠ CC 로그인이 ${mdhm(r.credential_expires_at)}에 만료됩니다.</b> 만료되면 모든 세션과 계획 세우기가 멈춥니다. 아무 CC 터미널에서 /login 해 주세요.</div>`);
   $('bands').innerHTML = bands.join('');
@@ -172,7 +172,7 @@ function card(x) {
   const eta = x.eta_100 ? `<span class="${x.eta_before_reset ? 'bad' : 'muted'}">이 속도면 ${mdhm(x.eta_100)}에 100%${x.eta_before_reset ? ' — 리셋 전입니다' : ' — 리셋이 먼저입니다'}</span>` : '<span class="muted">—</span>';
   return `<div class="card" title="${esc(x.label)} — ${LIMIT_TIP}">
     <div><b>${esc(x.label)}</b> <span class="small muted">${x.window_h >= 24 ? '이번 주(7일)' : '지금 5시간 구간'}</span></div>
-    <div class="big ${show >= 95 ? 'bad' : show >= 80 ? 'warn' : ''}">${x.absent ? '<span class="small">CC가 보이지 않음</span>' : show == null ? '—' : (e != null && m != null && Math.abs(e - m) >= 0.5 ? '약 ' : '') + Math.round(show) + '%'}</div>
+    <div class="big ${show >= 95 ? 'bad' : show >= 80 ? 'warn' : ''}">${x.absent ? '<span class="small">확인할 수 없음</span>' : show == null ? '—' : (e != null && m != null && Math.abs(e - m) >= 0.5 ? '약 ' : '') + Math.round(show) + '%'}</div>
     <div class="small muted">${x.absent ? '/usage에 이 줄이 없습니다' : `측정 ${m == null ? '—' : m + '%'} · ${mdhm(x.measured_at)} 읽음${e != null && m != null && Math.abs(e - m) >= 0.5 ? ` · 그 뒤 추정 +${(e - m).toFixed(1)}%p` : ''}`}</div>
     <div class="bar ${cls}"><i class="e" style="width:${Math.min(100, e ?? 0)}%"></i><i class="m" style="width:${Math.min(100, m ?? 0)}%"></i></div>
     <dl class="kv">

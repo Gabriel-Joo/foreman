@@ -60,7 +60,14 @@ export function textTip(t) {
   const top = i > 0 ? `<div class="tip-b">${esc(head.slice(0, i))}</div><div class="tip-d">${sentences(head.slice(i + 3))}</div>`
     : `<div class="tip-d">${sentences(head)}</div>`;
   const rows = nums.filter(Boolean);
-  return top + (rows.length ? `<div class="tip-n">${rows.map((x, k) => `<div${sub[k] ? ' class="sub"' : ''}>${esc(x)}</div>`).join('')}</div>` : '');
+  // 숫자 줄 꼴 둘을 더 둔다(11-14, 사용량 한도 호버만 쓴다): "**머리**" = 굵은 머리 줄(.hd), "¶ 글" = 설명 문단(.pp, 접힌 줄도 왼쪽 끝을 맞춘다)
+  const rowHtml = (x, k) => {
+    const hd = /^\*\*(.+)\*\*$/.exec(x);
+    if (hd) return `<div class="hd">${esc(hd[1])}</div>`;
+    if (x.startsWith('¶ ')) return `<div class="pp">${esc(x.slice(2))}</div>`;
+    return `<div${sub[k] ? ' class="sub"' : ''}>${esc(x)}</div>`;
+  };
+  return top + (rows.length ? `<div class="tip-n">${rows.map(rowHtml).join('')}</div>` : '');
 }
 // 설명은 문장마다 줄(11-09 — 긴 한 문단이 "넘쳐 쓸 / 크레딧이"처럼 뜻 가운데서 끊겼다). "…습니다." · "…다." · "?" 뒤 공백에서 나눈다
 export function splitSentences(t) {

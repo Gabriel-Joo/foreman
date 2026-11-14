@@ -461,7 +461,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
         </div>
         ${wtGroup(c.worktree, b)}
       </section>
-      <details class="hand hand-docs"${docsOn ? ' open' : ''}><summary title="옮기기 전 정리 — 새 세션으로 옮기기 전에, 압축으로 잊은 것과 대화에서만 정한 것을 찾아 문서에 적습니다. 문서 정리 · 포트폴리오는 서기실에서 합니다."><b>옮기기 전 정리</b> <span class="small muted">잊은 것 · 대화 결정을 문서에${docsHint ? ` · <span class="warn">${esc(docsHint)}</span>` : ''}</span></summary>
+      <details class="hand hand-docs"${docsOn ? ' open' : ''}><summary title="옮기기 전 정리 — 새 세션으로 옮기기 전에, 압축으로 잊은 것과 대화에서만 정한 것을 찾아 문서에 적습니다. 문서 정리 · 포트폴리오는 서기실에서 합니다."><b>옮기기 전 정리</b>${docsHint ? ` <span class="small muted"><span class="warn">${esc(docsHint)}</span></span>` : ''}</summary>
         ${lossGroup(lc0, can.losscheck !== false && !!data.losschecks && !data.losschecks_error, data.losschecks_error)}
         ${promoteGroup(p0, !!can.promote, promDraft, data.promotions_error, data.promote_inputs, promIn)}
       </details>`;

@@ -223,7 +223,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const gone = (l) => !!l.absent;
     const goneLong = ls.some((l) => gone(l) && !l.scoped && l.absent_since && Date.now() - new Date(l.absent_since).getTime() >= 6 * 36e5);
     const parts = ls.filter((l) => gone(l) ? !l.scoped : (usagePct(l) != null && (l.key !== 'weekly_fable' || usagePct(l) >= 1)))
-      .map((l) => gone(l) ? `${short[l.key] || l.label}: CC가 보이지 않음`
+      .map((l) => gone(l) ? `${short[l.key] || l.label} 확인할 수 없음`
         : `${short[l.key] || l.label} ${(l.est_pct != null && l.measured_pct != null && Math.abs(l.est_pct - l.measured_pct) >= 0.5) ? '약 ' : ''}${Math.round(usagePct(l))}%`
         + (l.eta_before_reset && l.eta_100 ? ` · ${etaKo(l.eta_100)} 소진 예상` : ''));
     const bad = usage.failed || !rd.ok;
@@ -237,10 +237,22 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const d = new Date(iso), now = new Date(), hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       return d.toDateString() === now.toDateString() ? hm : `${d.getMonth() + 1}월 ${d.getDate()}일 ${hm}`;
     };
-    const lines = ls.filter((l) => gone(l) || l.key !== 'weekly_fable' || (usagePct(l) || 0) >= 1).map((l) => gone(l)
-      ? `${short[l.key] || l.label} CC가 보이지 않음 — /usage에 ${short[l.key] || l.label} 줄이 없습니다. 서버가 ${short[l.key] || l.label} 한도 값을 주지 않을 때 CC가 줄을 뺍니다.`
-        + `${l.last_pct != null ? ` 마지막으로 본 값은 ${Math.round(l.last_pct)}%(${resetKo(l.last_at)})이고 지금 값이 아닙니다.` : ''} 이 한도의 80 · 95% 알림은 줄이 다시 나올 때까지 멈춥니다.`
-      : `${short[l.key] || l.label} ${usagePct(l) == null ? '—' : Math.round(usagePct(l)) + '%'}${l.reset_at ? ` — ${resetKo(l.reset_at)} 리셋` : ''}${l.eta_before_reset ? ` (이 속도면 ${l.eta_100 ? resetKo(l.eta_100) + '에 ' : '리셋 전에 '}100%)` : ''}`);
+    // 호버 줄 꼴(11-14 사용자, tip.js textTip) — 「**머리**」는 한도 머리 줄(굵게), 「¶ 글」은 그 아래 설명 문단(접혀도 왼쪽 끝을 맞춘다). 이 호버만 쓴다
+    const head = (s) => `**${s}**`, para = (s) => `¶ ${s}`;
+    const contribNote = '¶ Claude Code가 어림한 값이고 이 컴퓨터의 세션만 셉니다. 한 요청이 서브에이전트이면서 MCP 서버를 쓰는 것처럼 여러 갈래에 함께 들어가므로 합이 100%가 되지 않습니다';
+    const lines = [];
+    let noted = false;
+    for (const l of ls.filter((x) => gone(x) || x.key !== 'weekly_fable' || (usagePct(x) || 0) >= 1)) {
+      const nm = short[l.key] || l.label;
+      if (gone(l)) {
+        lines.push(head(`${nm} 확인할 수 없음`),
+          para(`/usage에 ${nm} 줄이 없습니다. 서버가 ${nm} 한도 값을 주지 않을 때 CC가 줄을 뺍니다.`
+            + `${l.last_pct != null ? ` 마지막으로 본 값은 ${Math.round(l.last_pct)}%(${resetKo(l.last_at)})이고 지금 값이 아닙니다.` : ''} 이 한도의 80 · 95% 알림은 줄이 다시 나올 때까지 멈춥니다.`));
+      } else {
+        lines.push(head(`${nm} ${usagePct(l) == null ? '—' : Math.round(usagePct(l)) + '%'}${l.reset_at ? ` — ${resetKo(l.reset_at)} 리셋` : ''}${l.eta_before_reset ? ` (이 속도면 ${l.eta_100 ? resetKo(l.eta_100) + '에 ' : '리셋 전에 '}100%)` : ''}`));
+        if (l.key === 'weekly_all' && (usage.contributing || []).length) { lines.push(contribNote); noted = true; }   // 「어림한 값」 문단은 주간 머리 아래
+      }
+    }
     const why = usage.failed ? ` 지금은 불러오지 못했습니다(${usage.failed}).` : !rd.ok ? ` 지금은 /usage를 읽지 못하고 있습니다(${rd.error || '오래됐습니다'}).` : '';
     // 11-09 사용자 — /usage "What's contributing"(CC 추정: 대략 · 이 기기 세션만 · 비중끼리 겹침). 서브에이전트 · MCP 비중
     // 11-14 사용자 — 읽으면 알게 한국말로(무엇의 몇 %인지 · 왜 합이 100%가 아닌지). 가운뎃점 없이. CC 제안 줄은 뺐다(영어 · 조언이 맞지 않음)
@@ -266,10 +278,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const items = [...row('서브에이전트', b.subagents), ...row('MCP 서버', b.mcp)];
       return items.length ? [`지난 ${name} 동안 쓴 양 가운데`, ...items] : [];
     });
-    if (contrib.length) lines.push('Claude Code가 어림한 값이고 이 컴퓨터의 세션만 셉니다. 한 요청이 서브에이전트이면서 MCP 서버를 쓰는 것처럼 여러 갈래에 함께 들어가므로 합이 100%가 되지 않습니다', ...contrib);
+    if (contrib.length) lines.push(...(noted ? [] : [contribNote]), ...contrib);
     usageTipRows = { lines, why };                     // 감독실 경고등 호버도 같은 줄을 쓴다(11-09)
     overChip(usage.over);
-    el.dataset.tip =`한도 — 구독 사용 한도를 몇 % 썼는지입니다. "약"은 마지막으로 읽은 뒤 FOREMAN이 더해 본 추정입니다. 누르면 어디서 나가는지 봅니다.${why}\n${lines.join('\n')}`;
+    el.dataset.tip =`한도 — 구독 사용 한도를 몇 % 썼는지입니다. 누르면 어디서 나가는지 봅니다.${why}\n${lines.join('\n')}`;
   }
   if (new URLSearchParams(location.search).get('demo')) {   // 시연 재생은 /api를 막는다 — 칩을 숨긴다(⚠로 찍히지 않게)
     setTimeout(() => { for (const id of ['oUsage', 'oOver']) { const el = document.getElementById(id); if (el) el.hidden = true; } }, 0);
