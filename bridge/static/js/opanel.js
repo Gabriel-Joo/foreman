@@ -33,7 +33,7 @@ const MIN_W = 280;
 // 「세션」 → 「세션 정리」(11-14 사용자). 「CC 화면」은 탭이 아니라 탭 줄 끝 단추 → 띄우는 창(11-14 사용자, ccscreen.js)
 const TABS = [['convo', '대화'], ['act', '활동'], ['sess', '세션 정리']];
 const TAB_TIP = {
-  sess: '세션 정리 — 세션 정보 · 넘기기 · 합치기 · 끝내기 · 승인 기록입니다.',
+  sess: '세션 정리 — 이 세션을 새 세션으로 넘기거나 끝냅니다.',
 };
 const CC_TIP = '세션 화면 — 이 세션의 Claude Code 창을 띄우는 창으로 봅니다. 권한 · 계획 승인 · 고르기 창도 보이고, 여기서 친 키(화살표 · Esc · 숫자 · Enter)는 CC에 바로 갑니다.';
 const ls = { get(k) { try { return localStorage.getItem(k); } catch { return null; } },
