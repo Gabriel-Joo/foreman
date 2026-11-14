@@ -3547,7 +3547,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     $('oAlerts').innerHTML = (pend ? `<button id="oPend" class="ghost warn" title="승인 대기 — 누르면 그 세션 패널을 엽니다. 거기서 승인하거나 거부합니다.">❗ 승인 대기 ${pend}</button>` : '') +
       (ques ? `<button id="oAsk" class="ghost warn" title="질문 — 세션이 고를 것을 묻고 있습니다. 누르면 그 세션 패널을 엽니다. 선택지를 누르면 답이 들어갑니다.">❓ 질문 ${ques}</button>` : '') +
       // 합치기 기다림(11-11) — 합치기 카드는 그 세션 패널 안에만 있어 사람이 몰랐다. 0건이면 아무것도 그리지 않는다
-      (mwait.length ? `<button id="oMerge" class="ghost warn" title="합치기 대기 — 일을 마친 따로 작업 ${mwait.length}건이 합치기 승인을 기다립니다. 누르면 가장 오래된 세션 패널을 엽니다.">🔀 합치기 대기 ${mwait.length}</button>` : '') +
+      (mwait.length ? `<button id="oMerge" class="ghost warn" title="합치기 대기 — 일을 마친 작업방 ${mwait.length}건이 합치기 승인을 기다립니다. 누르면 가장 오래된 세션 패널을 엽니다.">🔀 합치기 대기 ${mwait.length}</button>` : '') +
       (ig && !ig.ok ? `<span class="bad" title="${esc(igWhy)}">⚠ ${ig.stalled ? '화면 갱신 멈춤' : `기록 못 읽는 세션 ${(ig.stuck || []).length}`}</span>` : '');
     const stat = `작업 중 <b>${active}</b>/${live}${subs ? ` · 서브에이전트 ${subs}` : ''} · 출력 토큰 ${fmt(outToday)}`;
     if ($('oStat').innerHTML !== stat) $('oStat').innerHTML = stat;

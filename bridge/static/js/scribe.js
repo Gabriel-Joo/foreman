@@ -145,7 +145,7 @@ export function createScribe(store) {
     const inboxRow = pj.inbox ? `<div class="small sc-line" title="받은 할 일 — 머리줄 [＋ 할 일]로 받은 글입니다. 「나중에 할 일 정리」가 README 표로 옮깁니다."><b>받은 할 일 ${pj.inbox.n}개</b> <span class="muted">${pj.inbox.oldest_days >= 1 ? `— 가장 오래된 것 ${pj.inbox.oldest_days}일째` : '— 오늘 받음'}</span></div>` : '';
     const openHtml = opened.length ? `<div class="small"><b>열려 있는 일 ${opened.length}</b> <span class="muted">— 합치거나 버리기 전까지(동시에 2개까지, 같은 파일을 고치는 일은 하나씩)</span>${
       opened.map((o) => `<div class="sc-row"><div class="small">· ${esc((tasks[o.task] || {}).title || o.task)}${o.topic ? ` — ${esc(o.topic)}` : ''} <span class="muted">세션 ${o.session_id}</span></div>
-        <button type="button" class="small" data-sc-open="${o.session_id}" title="세션 열기 — 이 서기 세션의 [세션 정리] 탭을 엽니다. 「따로 작업」에서 diff를 보고 합치거나 버립니다(끝난 세션은 화면에서 사라져도 여기서 엽니다).">세션 열기</button></div>`).join('')}</div>` : '';
+        <button type="button" class="small" data-sc-open="${o.session_id}" title="세션 열기 — 이 서기 세션의 [세션 정리] 탭을 엽니다. 「작업방」에서 diff를 보고 합치거나 버립니다(끝난 세션은 화면에서 사라져도 여기서 엽니다).">세션 열기</button></div>`).join('')}</div>` : '';
     const nudge = pj.nudge;
     const pickHead = pick && tasks[pick] ? `<div class="small warn">정리할까요? — 받은 할 일이 쌓였습니다(${esc(nudge ? nudge.why : '')}). 「${esc(tasks[pick].title)}」을 골라 두었습니다. [시키기]를 눌러야 서기 세션이 뜹니다.</div>` : '';
     const nAlert = items.filter((x) => x.kind === 'publish' && x.act === 'force').length;

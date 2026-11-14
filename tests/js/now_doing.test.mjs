@@ -59,6 +59,17 @@ test('따로 작업 호버는 worktree 이름과 브랜치만', () => {
   assert.ok(!/abc123|%12|\/home/.test(worktreeTip(s)));
 });
 
+test('응답 전에는 띄울 때 고른 모델을 같은 이름 꼴로, 응답이 오면 실제 모델', () => {
+  const s = { model: null, model_req: 'claude-sonnet-5-5' };
+  const h = modelChip(s, null, true);
+  assert.ok(h.includes('Sonnet 5.5') && h.includes('mdl-pre') && h.includes('f-sonnet'), h);
+  assert.ok(modelChip(s, null, false).includes('띄울 때 고른 모델입니다. 첫 응답이 오면 실제로 쓴 모델로 바뀝니다.'));
+  assert.ok(!modelChip(s, null, false).includes('고른 것'));
+  const live = modelChip({ ...s, model: 'claude-opus-5-5', model_label: 'Opus 5.5', model_family: 'opus' }, null, false);
+  assert.ok(live.includes('Opus 5.5') && !live.includes('mdl-pre') && !live.includes('Sonnet'), live);
+  assert.equal(modelChip({ model: null }, null, false), '');
+});
+
 test('모델 호버 — /model을 빼고 읽기 쉬운 이름', () => {
   const s = { model: 'claude-opus-5-5', model_label: 'Opus 5.5', model_family: 'opus' };
   const h = modelChip(s, null, true);

@@ -53,9 +53,9 @@ test('역할 배지는 제목과 따로 — 제목을 고쳐도 역할이 남는
 
 test('아래 줄은 캐릭터 이름에서 역할을 뗀 나머지', () => {
   assert.equal(sessionSub({ character: '코더', role: 'coder' }), '');
-  assert.equal(sessionSub({ character: '코더 foreman-3', role: 'manager' }), '따로 작업 foreman-3');
-  assert.equal(sessionSub({ character: '서기 foreman-2', role: 'scribe' }), '따로 작업 foreman-2');
-  assert.equal(sessionSub({ character: '디자이너 foreman-6', role: 'designer' }), '따로 작업 foreman-6');
+  assert.equal(sessionSub({ character: '코더 foreman-3', role: 'manager' }), '작업방 foreman-3');
+  assert.equal(sessionSub({ character: '서기 foreman-2', role: 'scribe' }), '작업방 foreman-2');
+  assert.equal(sessionSub({ character: '디자이너 foreman-6', role: 'designer' }), '작업방 foreman-6');
   assert.equal(sessionSub({ character: '디자이너', role: 'designer' }), '');
   assert.match(roleBadge({ role: 'designer' }), /role-designer.*>디자이너</);
   assert.equal(sessionSub({ character: '떠돌이', role: 'coder' }), '떠돌이');

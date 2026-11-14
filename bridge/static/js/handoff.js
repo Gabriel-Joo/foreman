@@ -149,7 +149,7 @@ export function mpSection(mp, b, sid) {
       <details${keep(`hand:${sid}:mp-commits`)}><summary class="small muted">커밋 ${c.commits.length} · 바뀐 파일 ${c.files.length}</summary><pre class="hand-body">${esc(c.commits.join('\n'))}\n\n${esc(c.files.join('\n'))}</pre></details>
       ${docs}
     </details>`;
-  return `<section class="hand mp-card"><div class="hand-h mp-head"><b>합치기 승인</b> <span class="mp-badge mp-${badge}">${esc(MP_STATUS[c.status] || c.status)}</span><code class="mp-branch" title="브랜치 — 이 카드가 합칠 따로 작업 브랜치입니다.">${esc(c.branch)}</code></div>${h}
+  return `<section class="hand mp-card"><div class="hand-h mp-head"><b>합치기 승인</b> <span class="mp-badge mp-${badge}">${esc(MP_STATUS[c.status] || c.status)}</span><code class="mp-branch" title="브랜치 — 이 카드가 합칠 작업방 브랜치입니다.">${esc(c.branch)}</code></div>${h}
     <div class="small">커밋 <b>${c.ahead}</b>개 · 바뀐 파일 ${c.files.length}개 · ${conf ? how : '<span class="ok" title="충돌 없음 — 합칠 때 같은 줄을 서로 고친 곳이 없습니다. ff · rebase 여부는 「자세히」에 있습니다.">충돌 없음</span>'}</div>
     ${c.asks && c.status === 'ready' ? `<div class="small warn mp-asks" title="묻는 말 — 일을 마친 보고 끝에 사람에게 묻는 말이 있습니다. 합치기 전에 답할지 정합니다.">❓ 세션이 묻는 말이 있습니다 — 패널에서 답하십시오: ${esc(c.asks.tail || '')}</div>` : ''}
     ${conf ? `<div class="small bad">충돌 파일: ${c.conflict.map(esc).join(', ')}</div>` : ''}
@@ -267,7 +267,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
   // 따로 작업(worktree, 11-05) — 이 세션만의 폴더 · 브랜치. 끝낸 뒤 [합치기](rebase → fast-forward) · [버리기]
   function wtGroup(w, b) {
     if (!w) return '';
-    if (w.error) return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div class="small bad">${esc(w.error)}</div></div>`;
+    if (w.error) return `<div class="hand-group"><span class="hand-lbl small muted">작업방</span><div class="small bad">${esc(w.error)}</div></div>`;
     // 11-14 사용자 — 칸에 든 것은 worktree 이름이 아니라 브랜치 이름이다(칸 이름 「따로 작업」 → 「브랜치 이름」, 오류 줄만 그대로).
     // 처음엔 지시대로 「branch 이름」으로 했다가 같은 날 사용자가 「브랜치 이름」으로, 호버 안 글도 같이
     if (!w.exists) return `<div class="hand-group"><span class="hand-lbl hand-lbl-br small muted">브랜치 이름</span><div class="small muted">${esc(w.branch)} — 합쳤거나 버려서 지금은 없습니다.</div></div>`;
@@ -641,7 +641,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       const kind = end ? act.slice(7) : act.slice(3);
       let confirmName = '';
       // 서기 글의 근거가 틀렸으면 합치기 전에 한 번 더(12b) — 막지는 않는다, 사람이 정한다
-      const rvWarn = w.review && w.review.bad ? `\n\n주의: 근거 표시 ${w.review.bad}개가 틀렸습니다(없는 커밋 · 파일 · 턴). 「따로 작업」의 「자세히」에서 봅니다. 그래도 합칠까요?` : '';
+      const rvWarn = w.review && w.review.bad ? `\n\n주의: 근거 표시 ${w.review.bad}개가 틀렸습니다(없는 커밋 · 파일 · 턴). 「작업방」의 「자세히」에서 봅니다. 그래도 합칠까요?` : '';
       if (end && kind === 'merge') {
         if (!confirm(`세션을 끝내고 ${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 커밋 안 된 변경이 있으면 끝내지 않고 알립니다. 충돌이 나면 되돌리고 멈춥니다(세션은 이미 끝난 뒤입니다). push는 하지 않습니다. 진행할까요?${rvWarn}`)) return;
         return run('합치고 끝내기', () => post(`/api/sessions/${id}/worktree`, { action: 'merge', end: true })
@@ -666,7 +666,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
                     stop: '이 세션을 일시정지합니다(Ctrl+Z). [다시 시작]을 누르기 전까지 입력을 받지 않습니다. 멈출까요?' }[act];
       const w = data.controls.worktree;
       const dirtyWarn = (act === 'exit' || act === 'exit-after') && w && w.exists && w.dirty && w.dirty.length
-        ? `\n\n주의: 따로 작업(${w.branch})에 커밋 안 된 변경이 ${w.dirty.length}개 있습니다. 끝내면 합칠 수 없고 버리기만 됩니다. 먼저 세션에게 커밋을 시키는 것이 좋습니다.` : '';
+        ? `\n\n주의: 작업방(${w.branch})에 커밋 안 된 변경이 ${w.dirty.length}개 있습니다. 끝내면 합칠 수 없고 버리기만 됩니다. 먼저 세션에게 커밋을 시키는 것이 좋습니다.` : '';
       if (ask && !confirm(ask + dirtyWarn)) return;
       const action = act === 'exit-after' ? 'exit' : act;
       return run(ACT[act], () => post(`/api/sessions/${id}/action`, { action }).then((r) => (r.ok

@@ -120,7 +120,7 @@ export function needMark(s) {
   // 겹치면(11-11): 권한 거부 > 답 기다림 > 합치기 기다림 > 보고 옴. 앞의 둘은 세션이 막혀 있어 지금 사람 손이 먼저 필요하고,
   // 합치기는 사람이 눌러야 끝나는 일이라 읽기만 하면 되는 보고보다 위다(합치기 카드가 떠 있으면 그 응답은 보고이기도 하다)
   // 11-13(사용자): 관리자 머리 위로 올렸으면(to_manager) 여기에는 안 띄운다 — 관리자가 없거나 못 올렸을 때만 남는다
-  if (s.merge_wait && !s.merge_wait.to_manager) return { text: '합치기 기다림', tone: 'merge', tip: '합치기 기다림 — 일을 마친 따로 작업의 합치기 카드가 승인을 기다립니다. 누르면 그 세션 패널의 「세션 정리」 탭에서 합치거나 나중으로 미룹니다.' + (s.merge_wait.esc_error ? ` 관리자 머리 위로 올리지 못해 여기 띄웠습니다(${s.merge_wait.esc_error}).` : ''), mergeSid: s.id };
+  if (s.merge_wait && !s.merge_wait.to_manager) return { text: '합치기 기다림', tone: 'merge', tip: '합치기 기다림 — 일을 마친 작업방의 합치기 카드가 승인을 기다립니다. 누르면 그 세션 패널의 「세션 정리」 탭에서 합치거나 나중으로 미룹니다.' + (s.merge_wait.esc_error ? ` 관리자 머리 위로 올리지 못해 여기 띄웠습니다(${s.merge_wait.esc_error}).` : ''), mergeSid: s.id };
   if (e.report) return { text: '사용자에게 보고함', tone: 'ok', tip: ESC_TIP.report(e.report) };
   if (s.report) return { text: '보고 옴', tone: 'ok', tip: '보고 옴 — 묻지 않고 일을 마친 응답이 왔습니다. 누르면 대화가 열리고, 읽으면 사라집니다.' };
   return workerMark(s);
@@ -157,7 +157,7 @@ export function sessionSub(s) {
   const c = s.character || '';
   for (const l of Object.values(ROLE_LABEL)) {
     if (c === l) return '';
-    if (c.startsWith(l + ' ')) return `따로 작업 ${c.slice(l.length + 1)}`;
+    if (c.startsWith(l + ' ')) return `작업방 ${c.slice(l.length + 1)}`;
   }
   return c;
 }
@@ -561,15 +561,30 @@ function procTip(s) {
 // 모델(11-05) — 지금 쓰는 모델(마지막 응답). Opus는 비싸서 색으로 구분한다
 // pend: /model을 보냈지만 아직 응답 모델이 안 바뀐 것({ model, label, queued }). button이면 눌러서 고르는 칸(패널 머리줄)
 export function modelChip(s, pend, button) {
-  if (!s.model && !pend && !button) return '';
-  const now = s.model ? esc(s.model_label) : '모델';
+  // 11-14 응답이 아직 없으면(s.model 없음) 띄울 때 고른 모델(s.model_req)을 같은 이름 꼴로 보인다. 응답이 오면 실제 모델로 바뀐다
+  const picked = !s.model && s.model_req ? s.model_req : '';
+  if (!s.model && !picked && !pend && !button) return '';
+  const label = s.model ? s.model_label : (picked ? pickedLabel(picked) : '');
+  const family = s.model ? s.model_family : (picked ? pickedFamily(picked) : '');
+  const now = label ? esc(label) : '모델';
   const to = pend ? ` → <b>${esc(pend.label)}</b>${pend.queued ? ' <span class="muted">(대기열)</span>' : ''}` : '';
+  const PICKED_TIP = '띄울 때 고른 모델입니다. 첫 응답이 오면 실제로 쓴 모델로 바뀝니다.';
   const tip = button
-    ? `모델 — 눌러서 이 세션의 모델을 바꿉니다. 지금 ${s.model ? esc(s.model_label || s.model) : '응답 없음'}${pend ? `, ${esc(pend.label)}(으)로 바꾸는 중` : ''}.`
-    : `모델 — 이 세션이 마지막 응답에 쓴 모델입니다(${esc(s.model_label || s.model || '')}).`;
+    ? `모델 — 눌러서 이 세션의 모델을 바꿉니다. 지금 ${s.model ? esc(s.model_label || s.model) : (picked ? `${esc(label)}(띄울 때 고른 모델, 첫 응답 전)` : '응답 없음')}${pend ? `, ${esc(pend.label)}(으)로 바꾸는 중` : ''}.`
+    : picked ? `모델 — ${PICKED_TIP}` : `모델 — 이 세션이 마지막 응답에 쓴 모델입니다(${esc(s.model_label || s.model || '')}).`;
+  const pre = picked ? ' mdl-pre' : '';
   return button
-    ? `<button type="button" class="mdl mdl-btn f-${esc(s.model_family || '')}" data-mdl="1" data-tip="${tip}">${now}${to} ▾</button>`
-    : `<span class="mdl f-${esc(s.model_family)}" title="${tip}">${now}${to}</span>`;
+    ? `<button type="button" class="mdl mdl-btn${pre} f-${esc(family || '')}" data-mdl="1" data-tip="${tip}">${now}${to} ▾</button>`
+    : `<span class="mdl${pre} f-${esc(family || '')}" title="${tip}">${now}${to}</span>`;
+}
+// 서버 model_choice.label · family와 같은 꼴(claude-sonnet-5-5 → Sonnet 5.5). 별칭(opus 등) · 모르는 꼴은 그대로
+function pickedLabel(id) {
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
+  return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? '.' + m[3] : ''}` : (/^[a-z]+$/.test(id) ? id[0].toUpperCase() + id.slice(1) : id);   // 옛 별칭(opus · sonnet)은 「Opus」
+}
+function pickedFamily(id) {
+  const m = /^claude-([a-z]+)-/.exec(id);
+  return m ? m[1] : (/^[a-z]+$/.test(id) ? id : 'other');
 }
 // 세션의 모델별 토큰 — 서브에이전트 · CC 내부 호출(제목 붙이기 등)도 각자의 모델로 들어간다
 function byModelTable(rows) {
