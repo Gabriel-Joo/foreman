@@ -699,8 +699,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (tab === 'act' || switched) put('pFeed', 'feed', feedHtml(s));
     if (tab === 'sess' || switched) {
       // 11-06 정리 — 위에는 어디서 무엇을 하는지 한 줄, 표(프로세스 · 모델 · 토큰)는 아래 접는 칸으로
-      put('pInfo', 'info', `<div class="small muted">${esc(projectLabel(st, s.project))} · ${esc((s.cwd || '').replace(/^\/home\/[^/]+/, '~'))}</div>
-        ${s.open_turn ? (() => {           // 11-09 "턴 나 · 10분 전 시작" → "작업 중 · 10분째"(무엇으로 시작했는지는 호버)
+      // 11-14 사용자 — 「프로젝트 · 서버 경로」 줄은 뺐다(사람이 서버 경로를 볼 일이 없다). 작업 중 줄만 남는다
+      put('pInfo', 'info', `${s.open_turn ? (() => {           // 11-09 "턴 나 · 10분 전 시작" → "작업 중 · 10분째"(무엇으로 시작했는지는 호버)
           const o = s.open_turn, el = ago(o.started_at).replace(/ 전$/, '째'), by = o.origin === 'human' ? '내 입력' : (ORIGIN_LABEL[o.origin] || '');
           const tip = stuck ? `끝났는지 모름 — ${by}으로 시작한 작업이 끝났다는 신호가 오지 않았습니다. 대화창을 확인하거나 [작업 중단]을 누릅니다.`
             : `작업 중 — ${by}으로 시작한 작업이 ${el} 돌고 있습니다.`;

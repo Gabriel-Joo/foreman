@@ -443,3 +443,26 @@ async def test_title_unused_when_not_squashed(repo, monkeypatch):
     r = await wt.merge(str(repo), "one", squash=True, title="넘긴 제목")
     assert r["ok"] and "squash" not in r and "넘긴 제목은 쓰지 않았습니다" in r["note"]
     assert sh(repo, "log", "-1", "--format=%s") == "하나뿐" and sh(repo, "for-each-ref", wt.SQUASH_REF) == ""
+
+
+# ── 11-14 합친 뒤 안내 갈래(화면이 「합쳤다 · push 아직」 두 줄로 그린다) · push 여부 ──
+async def test_merge_result_parts_and_pushed(repo, monkeypatch):
+    from bridge.mergeprep import merge_result_of, pushed_to_origin
+    monkeypatch.setattr(wt, "SQUASH_OF", None)
+    await _branch(repo, "q", ["하나", "둘"])
+    r = await wt.merge(str(repo), "q", squash=True)
+    assert r["into"] == r["squash"] and r["into"] == sh(repo, "rev-parse", "main")[:12]
+    m = merge_result_of(r, "main")
+    assert m == {"count": 2, "commit": r["squash"], "title": r["title"], "squash": True, "orig_ref": r["orig_ref"], "base": "main"}
+    assert merge_result_of({"ok": True, "merged": 1}, "main") is None            # 해시가 없는 옛 결과 — 화면은 note 원문
+    await _branch(repo, "p", ["셋"])
+    r2 = await wt.merge(str(repo), "p")                                           # 묶지 않은 합치기도 원본 끝 해시 · 제목
+    assert r2["into"] == sh(repo, "rev-parse", "main")[:12] and r2["title"] == "셋" and "squash" not in r2
+    # push 여부 — 원격 추적 ref가 없으면 모름(None), 있으면 그 ref에 들어갔나
+    assert await pushed_to_origin(str(repo), "main", r2["into"]) is None
+    assert await pushed_to_origin(str(repo), "main", None) is None
+    sh(repo, "update-ref", "refs/remotes/origin/main", "main~1")                  # push 전: 원격은 하나 뒤
+    assert await pushed_to_origin(str(repo), "main", r2["into"]) is False
+    sh(repo, "update-ref", "refs/remotes/origin/main", "main")                    # push 뒤
+    assert await pushed_to_origin(str(repo), "main", r2["into"]) is True
+    assert await pushed_to_origin(str(repo), "main", m["commit"]) is True         # 그 앞 커밋도 들어갔다

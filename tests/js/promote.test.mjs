@@ -53,3 +53,13 @@ test('같이 넣을 인계 — 여럿이면 말없이 첫째를 고르지 않고
   assert.equal(sel(withLoss), 'lc:3');
   assert.ok(withLoss.includes('잃은 것 점검 #3 — 사라짐 2 · 약해짐 1'));
 });
+
+// 11-14 사용자 — 평소 한 줄: [대화에서만 정한 것 문서에 적기] 아직 없습니다 같이 넣을 것(N개). 소제목 · 설명문은 버튼 호버로
+test('문서 적기 한 줄: 버튼 이름 그대로, 설명은 호버, 온점 없는 「아직 없습니다」', () => {
+  const two = [{ id: 7, title: 'a', why: 'x' }, { id: 6, title: 'b', why: 'y' }];
+  const h = promoteGroup(null, true, {}, null, two, null);
+  assert.match(h, /data-act="prom-req"[^>]*title="대화에서만 정한 것 문서에 적기 — [^"]+"[^>]*>대화에서만 정한 것 문서에 적기</);
+  assert.ok(h.includes('>아직 없습니다<') && !h.includes('아직 없습니다.'));
+  assert.ok(!h.includes('hand-item-h'));
+  assert.ok(h.indexOf('아직 없습니다') < h.indexOf('같이 넣을 것(2개)'));          // 버튼 · 상태 · 같이 넣을 것 차례
+});

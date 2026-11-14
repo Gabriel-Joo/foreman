@@ -178,6 +178,21 @@ body { --term-h:0px; }
 .sc-row.sc-pick { outline:2px solid var(--warn); outline-offset:2px; border-radius:4px; }
 /* 11-09 [쉬게 하기] 결과 · 쉬는 중 줄 */
 .wt-rest { margin:4px 0; }
+/* 11-14 합치기 승인 카드 — 제목 옆 상태 배지, 브랜치는 오른쪽 끝, 걸린 파일은 이름만 한 줄씩 */
+.mp-head { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.mp-branch { margin-left:auto; font-size:14px; color:var(--muted); overflow-wrap:anywhere; }
+.mp-badge { --bc:var(--muted); display:inline-block; white-space:nowrap; font-size:14px; font-weight:700; line-height:1.3; padding:0 6px; border-radius:4px;
+  color:var(--bc); border:1px solid var(--bc); background:color-mix(in srgb, var(--bc) 16%, transparent); }
+.mp-badge.mp-wait { --bc:var(--warn); } .mp-badge.mp-ok { --bc:var(--ok); } .mp-badge.mp-bad { --bc:var(--bad); } .mp-badge.mp-busy { --bc:var(--act, var(--muted)); }
+.mp-hf { margin:4px 0; }
+.mp-hf-row { padding-left:1.2em; font-family:ui-monospace, monospace; font-size:14px; overflow-wrap:anywhere; }
+.mp-more { margin:4px 0; }
+.mp-more > div { margin:2px 0 2px 1.2em; }
+/* 11-14 옮기기 전 정리 두 줄 — 두 버튼 폭을 맞춰 「아직 없습니다」 · 상태가 같은 세로줄에 선다 */
+.hand-docs .hand-item { margin:4px 0 2px; }
+.hand-docs .hand-btns { align-items:center; margin:4px 0; }
+.hand-docs .hand-btns button.docs-run { min-width:15.5em; text-align:left; }
+.hand-docs #promIn { max-width:13em; padding:1px 4px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
 .hand-item-h { line-height:1.4; }
 .hand-item-h .muted { display:block; }
 

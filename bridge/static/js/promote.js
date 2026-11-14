@@ -60,7 +60,7 @@ export function inputPick(inputs, chosen) {
   const cur = chosen != null ? String(chosen) : inputs.length === 1 ? String(inputs[0].id) : '';
   const opt = (v, label, tip) => `<option value="${v}"${cur === String(v) ? ' selected' : ''}${tip ? ` title="${esc(tip)}"` : ''}>${esc(label)}</option>`;
   return `<select id="promIn" class="small" title="같이 넣을 것 — 옮기기용 요약의 「문서와 다른 지금」 절이나 잃은 것 점검의 사라짐 · 약해짐을 목록 요청에 같이 넣습니다.">${
-    inputs.length > 1 ? opt('', `같이 넣을 것 고르기(${inputs.length}개)`) : ''}${
+    inputs.length > 1 ? opt('', `같이 넣을 것(${inputs.length}개)`) : ''}${
     inputs.map((x) => opt(x.id, x.kind === 'loss' ? `${x.title} — ${x.why}` : `#${x.id} ${x.title || x.cc} — ${x.why}`, x.diff)).join('')}${opt('none', '넣지 않음')}</select>`;
 }
 
@@ -74,9 +74,10 @@ function inputUsed(p) {
 // p = 마지막 옮기기(없으면 null), can = 목록 요청 가능, draft = {id: {칸: 값}}, err = 표를 못 읽은 사유
 export function promoteGroup(p, can, draft, err, inputs = [], chosen = null) {
   const b = (act, label, on, cls = '', tip = '') => `<button type="button" data-act="${act}" class="small ${cls}"${tip ? ` title="${esc(tip)}"` : ''}${on ? '' : ' disabled'}>${label}</button>`;
-  const head = `<div class="hand-btns">${b('prom-req', '문서 후보 묻기', can, '', '문서 후보 묻기 — 이 대화에서 정했지만 아직 문서에 없는 결정 · 금지 · 기준을 세션이 후보로 냅니다. 이때는 파일을 고치지 않고, 고른 것만 [고른 것을 문서에 쓰기]로 씁니다.')}
-    ${can ? inputPick(inputs, chosen) : ''}
-    ${p ? `<span class="small">${esc(STATUS[p.status] || p.status)} · ${ago(p.updated_at || p.created_at)}${inputUsed(p)}</span>` : '<span class="small muted">아직 없습니다.</span>'}</div>`;
+  // 11-14 사용자 — 소제목 · 설명문을 빼고 한 줄(버튼 + 상태 + 같이 넣을 것). 설명은 버튼 호버로. 누르면 하는 일(문서 후보 묻기)은 그대로
+  const head = `<div class="hand-btns">${b('prom-req', '대화에서만 정한 것 문서에 적기', can, 'docs-run', '대화에서만 정한 것 문서에 적기 — 대화에서만 정한 결정, 금지, 기준을 README, docs, CLAUDE.md에 적어 다음 세션이 읽게 합니다. 누르면 세션이 문서 후보를 내고(이때는 파일을 고치지 않습니다), 사람이 고치고 승인한 것만 [고른 것을 문서에 쓰기]로 커밋합니다.')}
+    ${p ? `<span class="small">${esc(STATUS[p.status] || p.status)} · ${ago(p.updated_at || p.created_at)}${inputUsed(p)}</span>` : '<span class="small muted">아직 없습니다</span>'}
+    ${can ? inputPick(inputs, chosen) : ''}</div>`;
   if (err) return wrap(head + `<div class="small bad">${esc(err)}</div>`);
   if (!p) return wrap(head);
   let body = '';
@@ -106,6 +107,5 @@ export function promoteGroup(p, can, draft, err, inputs = [], chosen = null) {
 }
 
 function wrap(inner) {
-  return `<div class="hand-item"><div class="hand-item-h"><b>대화에서 정한 것 문서에 적기</b> <span class="small muted">대화에서만 정한 결정 · 금지를 README · docs · CLAUDE.md에 적어 다음 세션이 읽게 합니다. 목록 → 고치고 승인 → 커밋.</span></div>
-    <div class="prom">${inner}</div></div>`;
+  return `<div class="hand-item"><div class="prom">${inner}</div></div>`;
 }

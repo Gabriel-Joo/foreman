@@ -211,6 +211,28 @@ def human_reasons(changes: list[dict[str, str]], messages: str, yaml_diff: str, 
     return why
 
 
+def merge_result_of(res: dict[str, Any], base: str) -> dict[str, Any] | None:
+    """합치기 결과(bridge/worktree.py merge) → 화면 갈래(11-14). 새 커밋 해시가 없으면(옛 결과 등) None — 화면은 note 원문을 그린다."""
+    commit = res.get("into") or res.get("squash")
+    if not commit:
+        return None
+    return {"count": res.get("merged"), "commit": str(commit)[:12], "title": res.get("title"), "squash": bool(res.get("squash")),
+            "orig_ref": res.get("orig_ref"), "base": base}
+
+
+async def pushed_to_origin(repo: str, base: str, commit: str | None) -> bool | None:
+    """합친 커밋이 원격 추적 ref(refs/remotes/origin/<base>)에 들어갔나(11-14). push하면 그 ref가 갱신된다.
+    True · False, 알 길이 없으면(ref가 없음 · git 실패 · 커밋 모름) None. 원격에 직접 묻지 않는다(fetch 없음 — 1분마다 네트워크를 쓰지 않게)."""
+    if not commit:
+        return None
+    ref = f"refs/remotes/origin/{base}"
+    rc, _ = await wt.git(repo, "rev-parse", "--verify", "--quiet", ref, check=False)
+    if rc:
+        return None
+    rc, _ = await wt.git(repo, "merge-base", "--is-ancestor", commit, ref, check=False)
+    return True if rc == 0 else False if rc == 1 else None
+
+
 # ── 순수 판정(시험하기 쉽게 git · DB와 떼어 둠) ────────────────────
 def parse_merge_tree(rc: int, out: str) -> list[str] | None:
     """`git merge-tree --write-tree --name-only --no-messages` 결과 → None(충돌 없음) · [충돌 파일]. 그 밖의 실패는 Refused."""
@@ -460,6 +482,11 @@ class Card:
     # 11-13 사람이 그 물음을 [답 안 해도 됨]으로 끈 시각(브리지가 내린 것과 다르다 — 브리지는 내릴 때 esc_id를 비운다).
     # 있으면 다시 올리지 않고 승인 막대 · 머리 위에서도 뺀다(merge_waits). 카드는 남는다. 새 커밋으로 카드가 다시 만들어지면 비워진다
     esc_off_at: str | None = None
+    # 11-14 사용자 「합쳤다는 것과 push가 아직인지 둘뿐」 — 합친 결과를 화면이 나눠 그릴 갈래(note 원문은 그대로 둔다).
+    # {count, commit(12), title, squash(bool), orig_ref, base}. pushed = 그 커밋이 refs/remotes/origin/<base>에 들어갔나(훑기가 본다,
+    # 모르면 None — 원격 추적 ref가 없거나 git이 실패). 합치기(1단계)는 push하지 않으니 처음엔 False
+    merge_result: dict[str, Any] | None = None
+    pushed: bool | None = None
     made_at: str = ""
     updated_at: str = ""
 
@@ -1070,6 +1097,15 @@ class MergePrep:
             for sid in [s for s, c in self.cards.items() if s not in keep and c.status != "ready" and self._expired(c, cut, cut_docs)]:
                 del self.cards[sid]
                 changed = True
+            # 11-14 합친 카드가 남아 있는 동안 push됐는지 본다(관리자가 나중에 push한다). 한 번 True면 다시 보지 않는다
+            for c in self.cards.values():
+                if c.status == "merged" and c.merge_result and c.pushed is not True:
+                    try:
+                        p = await pushed_to_origin(c.repo, c.base, c.merge_result.get("commit"))
+                    except Exception:  # noqa: BLE001 — 표시용이다. 실패해도 훑기를 멈추지 않는다
+                        p = None
+                    if p != c.pushed:
+                        c.pushed, changed = p, True
             self.health = {"ok": True, "last": _iso(_now()), "error": None, "turn_end": self.turn_end}
             self._apply_store_health()
         await self.sync()
@@ -1249,6 +1285,8 @@ class MergePrep:
             c.updated_at = _iso(_now())
             if res.get("ok"):
                 c.status, c.note = "merged", res.get("note")
+                c.merge_result = merge_result_of(res, c.base)
+                c.pushed = await pushed_to_origin(c.repo, c.base, (c.merge_result or {}).get("commit"))
                 await self.h._act(sid, ACT_MERGE, None, True, f"{c.name} {c.head[:8]} 커밋 {res.get('merged')}개"
                                   + (f" squash {res['squash'][:8]}" if res.get("squash") else "")
                                   + (" · 관리자 승인" if by == "manager" else " · 사람 승인"))

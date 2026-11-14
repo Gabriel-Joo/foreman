@@ -1,6 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { flowStep, FLOW_STEPS } from '../../bridge/static/js/handoff.js';
+import { flowStep, FLOW_STEPS, autoNote } from '../../bridge/static/js/handoff.js';
+
+// 11-14 사용자 — 「(자동: CLAUDE.md, CLAUDE.md, CLAUDE.md)」. 같은 이름은 하나로, 셋을 넘으면 「첫 것 외 N개」
+test('읽을 곳 자동 목록: 중복을 빼고 넷부터 줄인다', () => {
+  assert.equal(autoNote([]), '');
+  assert.equal(autoNote(null), '');
+  const one = autoNote(['CLAUDE.md', 'CLAUDE.md', './CLAUDE.md']);
+  assert.ok(one.includes('(자동: CLAUDE.md)') && one.includes('읽을 곳 3곳이 이 문서를 가리킵니다'));
+  assert.ok(autoNote(['a.md', 'b.md', 'c.md']).includes('(자동: a.md, b.md, c.md)'));
+  const four = autoNote(['a.md', 'b.md', 'c.md', 'd.md', 'a.md']);
+  assert.ok(four.includes('(자동: a.md 외 3개)') && four.includes('d.md'));     // 전부는 호버에
+});
 
 // 넘기고 새로 시작(11-08) — 저장한 흐름 + 서버 데이터로 지금 단계를 정한다
 test('단계: 요약 중 → 확인 → 새 세션 → 옛 세션 끝내기 → 끝', () => {
