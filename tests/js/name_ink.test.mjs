@@ -38,7 +38,7 @@ test('묻히는 색만 밝힌다 — 가장 나쁜 바탕에서도 4.5 넘게, �
   assert.equal(roleNameInk('coder', true), ROLE_COLOR.coder);
 });
 
-test('발밑 원 — 가운데는 발 점, 위 끝이 발 점보다 반 칸 안쪽(허리에 걸리지 않게)', () => {
-  assert.equal(AURA_LIFT, 0);
+test('발밑 원 — 가운데는 발 점이거나 그 아래, 위 끝이 발 점보다 반 칸 안쪽(허리에 걸리지 않게)', () => {
+  assert.ok(AURA_LIFT <= 0, `원 가운데가 발 점보다 ${AURA_LIFT}칸 위`);   // 11-14 363: 발 점보다 0.12칸 아래(음수 = 내림)
   assert.ok(AURA_RX * AURA_FLAT + AURA_LIFT <= 0.5, `원 위 끝 ${AURA_RX * AURA_FLAT + AURA_LIFT}칸`);
 });
