@@ -28,6 +28,32 @@ if (typeof document !== 'undefined' && !document.getElementById('roleColors')) {
   st.textContent = roleColorCss();
   document.head.appendChild(st);
 }
+// 픽셀 화면 캐릭터 이름표 글자색(11-14 사용자 — 「역할 이름표도 발밑 원처럼 역할 배지 색으로」, 전에는 모두 노랑 #ffd84a).
+// 이름표 바탕은 office.js INK_BG(#000000d9 — 85% 검정)라 밑이 비친다. 가장 나쁜 경우(흰 바닥 · 밝은 원 위 → #262626)에서도
+// 작은 글씨 대비 기준(WCAG AA 4.5:1)을 넘게, 못 넘는 색만 흰색 쪽으로 5%씩 섞어 넘을 때까지 밝힌다 — 배지 · 발밑 원 색은 그대로(이름표에서만).
+// 11-14 잼: 관리자 #e0604f만 4.29 → 5% 밝혀 #e26858(4.58). 나머지(역할? · 기본 회색 포함)는 4.66~7.53으로 그대로 [log:select_aura_label_20261114.md]
+export const NAME_BG_WORST = '#262626', NAME_MIN_CONTRAST = 4.5;
+export const ROLE_NONE_COLOR = '#e0b040', ROLE_OTHER_COLOR = '#8a8f98';   // panel.css .rolebadge.role-none(역할?) · .rolebadge 기본 회색과 같은 값
+const rgbOf = (hex) => { const n = parseInt(hex.slice(1, 7), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const lumOf = (hex) => {
+  const [r, g, b] = rgbOf(hex).map((c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+export const contrastOf = (a, b) => { const [x, y] = [lumOf(a), lumOf(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+export const lighten = (hex, t) => `#${rgbOf(hex).map((c) => Math.round(c + (255 - c) * t).toString(16).padStart(2, '0')).join('')}`;
+export function nameInkOf(color) {
+  for (let i = 0; i <= 20; i++) {
+    const ink = i ? lighten(color, i / 20) : color;
+    if (contrastOf(ink, NAME_BG_WORST) >= NAME_MIN_CONTRAST) return { ink, lift: i / 20, ratio: +contrastOf(ink, NAME_BG_WORST).toFixed(2) };
+  }
+  return { ink: '#ffffff', lift: 1, ratio: +contrastOf('#ffffff', NAME_BG_WORST).toFixed(2) };
+}
+// 캐릭터 이름표 색 — 배지와 같은 갈래: 역할 색이 있으면 그 색, 역할을 모르는 세션은 배지 「역할?」의 경고 노랑,
+// 그 밖(배송 담당 · 인프라처럼 배지가 없는 파이프라인 캐릭터, 색이 없는 역할)은 배지 기본 회색
+export function roleNameColor(role, isSession = false) {
+  return ROLE_COLOR[role] || (isSession && !role ? ROLE_NONE_COLOR : ROLE_OTHER_COLOR);
+}
+export const roleNameInk = (role, isSession = false) => nameInkOf(roleNameColor(role, isSession)).ink;
 // 제목 앞 역할 배지 글(11-09 사용자 — "서기인지 코더인지 모르고 지나쳤다"). 역할은 제목 글자가 아니라 따로 — 제목을 고쳐도 남는다
 export const roleTag = (r) => `[${roleLabel(r) || '역할?'}]`;
 export const ROLE_UNKNOWN_TIP = '역할? — 이 세션의 역할을 알 수 없습니다. 머리줄 역할을 눌러 정합니다.';

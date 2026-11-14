@@ -8,7 +8,7 @@ import { createSidePanel } from './opanel.js';
 import { mountNewSession } from './newsession.js';
 import { mountTodoInbox } from './todoinbox.js';
 import { coderJobs, coderBubble, isCoder, REST_DAYS } from './coder.js';
-import { roleTag, sessionName, needMark, mergeWaits } from './render.js';
+import { roleTag, sessionName, needMark, mergeWaits, roleNameInk } from './render.js';
 import { PROBE } from './store.js';
 import { showTip, hideTip, themeTips, attachDomTips, textTip, softEsc, tipAudit as tipAuditOf } from './tip.js';
 import { buildGrid, findPath, footprint, nearestFree, RES } from './walk.js';
@@ -35,7 +35,8 @@ const NO_SHIP = new Set(['ronanlab-infra']);
 const KEEP_KEY = 'foremanKeepView';      // 테마를 바꿀 때 보던 화면 · 고른 세션(sessionStorage, 11-11)
 // 글자 색(11-11 사용자) — 테마마다 다르게 하지 않는다(글씨체만 테마 것). 캐릭터 이름은 움직이고 먼저 찾는 것이라 노랑,
 // 방 이름(감독실 이름표 포함)은 자리가 고정이라 흰색으로 가라앉힌다. 바탕은 둘 다 검정. 전엔 방 이름 = 테마 팀장 색(11-10)
-const NAME_INK = '#ffd84a', ROOM_LABEL_INK = '#ffffff', INK_BG = '#000000d9';
+// 캐릭터 이름표 글자색은 역할 배지 색(11-14 — render.js roleNameInk, 전에는 모두 노랑 #ffd84a). 방 이름은 흰색, 바탕은 둘 다 검정
+const ROOM_LABEL_INK = '#ffffff', INK_BG = '#000000d9';
 const RATE_WIN = 10 * 60 * 1000;          // 토큰 속도 창 — 최근 10분
 const SPEED = 3.2;                         // 걷는 속도(타일/초)
 // 역할 고정 자리(11-09 관리자 · 11-10 디자이너) — 테마 layout.zones.<역할>.seats에 서고, 일할 때도 그 자리. 작업 책상 수 · "+N"에 들지 않는다
@@ -710,7 +711,33 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 발밑 역할 색 원(11-13 사용자, aura.js) — 꼴은 테마마다(theme.json aura.style), 견주기용 ?aura=<꼴>|off. 걷는 동안도 발 점을 따라간다
   const AURA_STYLE = auraStyle(theme.name, theme.aura, new URLSearchParams(location.search).get('aura'));
   let AURAS = [];                                              // 이번 프레임에 그린 원(window.office.auras — 점검 · 사진용)
-  const SILS = new Map();                                      // 이번 프레임에 그린 사람 그림(drawActorS) — 원에서 몸을 지울 때
+  const SILS = new Map();                                      // 이번 프레임에 그린 사람 그림(drawActorS) — 원에서 몸을 지울 때 · 고르기 네모
+  // 캐릭터 그림의 불투명 범위(그림 px, [x0, y0, x1, y1]) — 그림 칸에는 위 · 옆 · 아래 투명 여백이 있다(11-14 고르기 네모 · 발밑 원 높이)
+  const INKBOX = new WeakMap();
+  function inkBox(img) {
+    let b = INKBOX.get(img);
+    if (b) return b;
+    b = [0, 0, img.width, img.height];
+    try {
+      const d = img.getContext('2d').getImageData(0, 0, img.width, img.height).data;
+      let x0 = img.width, y0 = img.height, x1 = -1, y1 = -1;
+      for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
+        if (d[(y * img.width + x) * 4 + 3] > 40) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      }
+      if (x1 >= 0) b = [x0, y0, x1 + 1, y1 + 1];
+    } catch { /* 읽지 못하면 그림 칸 그대로 */ }
+    INKBOX.set(img, b);
+    return b;
+  }
+  // 그린 사람 그림(SILS 한 칸)의 불투명 범위 — 월드 px [x, y, w, h]. 누운 그림은 돌린 그대로
+  function silBox(s) {
+    const [x0, y0, x1, y1] = inkBox(s.img), kx = s.w / s.img.width, ky = s.h / s.img.height;
+    if (s.rot) {                                               // -90도: 그림 (u, v) → 화면 (v, -u), 그림 가운데 기준
+      const u0 = x0 * kx - s.w / 2, u1 = x1 * kx - s.w / 2, v0 = y0 * ky - s.h / 2, v1 = y1 * ky - s.h / 2;
+      return [s.cx + v0, s.cy - u1, v1 - v0, u1 - u0];
+    }
+    return [s.x + x0 * kx, s.y + y0 * ky, (x1 - x0) * kx, (y1 - y0) * ky];
+  }
   let auraCv = null;
   function eachAura(list, now, fn) {
     AURAS = [];
@@ -719,12 +746,15 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       if (a.bornAt && now < a.bornAt) continue;                  // 누워 있어도 그린다(늘 켜 둔다 — 현장 쉬는 관리자가 눕는다)
       const au = auraOf(a, MINI);
       if (!au) continue;
-      fn(a, au);
-      AURAS.push({ key: a.key, role: a.role, color: au.color, k: au.k, x: +a.x.toFixed(2), y: +a.y.toFixed(2), moving: !!a.moving });
+      // 원 가운데 — 발 점(월드 px). 누운 그림(현장 쉬는 관리자)은 자리 점이 침대 아래 끝이라 누운 몸 가운데에(11-14)
+      const s = SILS.get(a.key), [x, y] = s && s.rot ? [s.cx, s.cy] : [a.x * T, a.y * T];
+      fn(a, au, x, y);
+      AURAS.push({ key: a.key, role: a.role, color: au.color, k: au.k, x: +a.x.toFixed(2), y: +a.y.toFixed(2), moving: !!a.moving,
+                   at: toScreen(x, y).map(Math.round), lie: !!(s && s.rot) });       // at = 원 가운데(화면 px)
     }
   }
   // 도형 테마 — 바닥에 깔고 사람을 그 위에(가구가 낮아 가릴 것이 없다)
-  function drawAuras(list, now) { eachAura(list, now, (a, au) => drawAura(ctx, AURA_STYLE, a.x * T, a.y * T, T, au, now / 1000)); }
+  function drawAuras(list, now) { eachAura(list, now, (a, au, x, y) => drawAura(ctx, AURA_STYLE, x, y, T, au, now / 1000)); }
   // 시트 테마 — 바닥에만 깔면 책상 뒤에 앉은 코더 · 디자이너(가장 흔한 자리)의 원을 앞 책상이 거의 다 가렸다(11-13 사진).
   // 그래서 가구 · 사람을 다 그린 뒤 따로 캔버스에 원을 그리고, 사람 그림(보이는 부분 — 앞 가구에 가린 다리는 빼고, VIS_BODIES)만 지워 얹는다.
   // 사람은 늘 원 앞에 서고, 원은 바닥 · 앞 책상 위로 퍼진다(마법 문양이 빛나는 꼴). 이름표 · 머리 위 표시 · 열기(drawHeat)는 이 뒤에 그린다
@@ -736,7 +766,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, auraCv.width, auraCv.height);
     g.setTransform(ctx.getTransform()); g.imageSmoothingEnabled = false;
     let n = 0;
-    eachAura(list, now, (a, au) => { drawAura(g, AURA_STYLE, a.x * T, a.y * T, T, au, now / 1000); n++; });
+    eachAura(list, now, (a, au, x, y) => { drawAura(g, AURA_STYLE, x, y, T, au, now / 1000); n++; });
     if (!n) return;
     g.globalCompositeOperation = 'destination-out';
     for (const [k, s] of SILS) {
@@ -1112,6 +1142,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       markCrowd(here);
       for (const a of here) drawName(a);
     }
+    if (SP) drawSelect(); else SEL = null;          // 고르기 네모 — 몸 + 이름표(11-14). 도형 테마는 drawActor 안에서
     requestAnimationFrame(frame);
   }
 
@@ -2122,7 +2153,32 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const q = STACK_REQ.get(a.key);                                              // 머리 위 덩어리(prepareStacks에서 모음)
     if (q) placeStack(a, x, top, q.texts, q.acts, now);
     if (a.subHidden) drawBubble(x + 11, top + 4, `+${a.subHidden}`, P.act, 7);      // 10명 넘는 서브에이전트는 접는다
-    if (a.key === selected) { const h = (a.drawH || 16) + 4, w = Math.round(h * 0.9); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x - w / 2, top - 2, w, h); }
+    // 고르기 네모는 이름표까지 감싸야 해서 화면 좌표(이름표 다음)에서 그린다 — drawSelect(11-14)
+  }
+
+  // 고르기 네모(11-14 사용자 — 「캐릭터와 역할 이름표만 아주 조금 여백을 두고 감싸게」). 전에는 drawOverlay에서 월드 좌표로
+  // 가로 = 그림 높이(drawH) × 0.9 칸을 발 점 기준으로 그려, 투명 여백까지 감싸 옆으로 넓고 · 이름표는 밖이고 · 누운 그림(drawH 10)이나
+  // drawH가 없는 서브에이전트(16으로 짐작)는 몸과 어긋났다. 이제 그린 그림의 불투명 범위(SILS · inkBox)와 그 캐릭터 이름표(NAMES)를 합쳐
+  // SEL_PAD px 띄우고 그 바깥에 SEL_LINE px 선(전에는 월드 1px — 방 배율에 따라 화면 1.75~3px). box = 선 바깥 끝(화면 px)
+  const SEL_PAD = 2, SEL_LINE = 2;
+  let SEL = null;
+  function selBox(a) {
+    const s = SILS.get(a.key);
+    if (!s) return null;
+    const body = toScr(silBox(s)), nm = NAMES.find((m) => m.key === a.key);
+    let [x0, y0, x1, y1] = [body[0], body[1], body[0] + body[2], body[1] + body[3]];
+    if (nm) { const r = nm.rect; x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]); x1 = Math.max(x1, r[0] + r[2]); y1 = Math.max(y1, r[1] + r[3]); }
+    const e = SEL_PAD + SEL_LINE;
+    x0 = Math.floor(x0) - e; y0 = Math.floor(y0) - e; x1 = Math.ceil(x1) + e; y1 = Math.ceil(y1) + e;
+    return { key: a.key, box: [x0, y0, x1 - x0, y1 - y0], body: body.map(Math.round), name: nm ? nm.rect : null };
+  }
+  function drawSelect() {
+    const a = selected && actors.get(selected);
+    SEL = a ? selBox(a) : null;
+    if (!SEL) return;
+    const [x, y, w, h] = SEL.box;
+    const k = SEL_LINE / 2;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = SEL_LINE; ctx.strokeRect(x + k, y + k, w - SEL_LINE, h - SEL_LINE);
   }
 
   // 11-13 사용자 — 머리 위 표시는 캐릭터 위에 쌓는다. 캐릭터를 덮지 않고, 하나만 떠도 위로(옆 · 발밑으로 비키지 않는다).
@@ -2621,7 +2677,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 세션 캐릭터 · 쉬는 코더 · 서기의 이름표는 역할만(11-09 사용자 — 제목이 들어가 "임시 · 세션 역할 관리자(man…"처럼 잘렸다).
   // 제목 · 세션 번호는 호버와 패널 머리줄에. 11-13 상주 · 임시 구분을 없애 「임시」 꼬리 · 점선 테두리도 없다
   const roleNamed = (a) => a.kind === 'session' || a.kind === 'coder' || a.kind === 'scribe';
-  // 11-11 사용자: 대괄호 [ ]는 뺀다 — 이름은 노란 글씨(NAME_INK)라 이미 눈에 띈다. 패널 · 호버의 「[코더] 세션 N」은 그대로(roleTag)
+  // 11-11 사용자: 대괄호 [ ]는 뺀다 — 이름은 색 글씨라 이미 눈에 띈다(11-14부터 역할 배지 색, roleNameInk). 패널 · 호버의 「[코더] 세션 N」은 그대로(roleTag)
   const roleName = (a) => roleTag(a.role).replace(/^\[|\]$/g, '');
   function markCrowd(as) {
     ctx.font = `${tpx(15)}px system-ui, sans-serif`;
@@ -2644,7 +2700,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const NH = tpx(15) + 3;                                  // 11-10 방 안은 방 배율(배율 3에서 15px · 18), 감독실은 글씨 배율
     ctx.font = `${tpx(15)}px system-ui, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    const lines = [[text, NAME_INK]];
+    const lines = [[text, roleNameInk(a.role, a.kind === 'session')]];        // 역할 배지 색(11-14) — 서브에이전트는 부모 역할
     const n = a.kind === 'session' && a.s ? a.s.subagents_running || 0 : 0;
     // 11-10 사용자(받은 할 일 #9) — 캐릭터 아래는 수만("뒤에서 도는 일 2"). 무슨 일인지는 호버(세션 호버에 하나씩 적는다).
     // 전에는 "· 세 테마 × 세 폭 × 다섯 화면 다시…"처럼 설명이 붙어 이름표가 길게 깔렸다
@@ -3765,6 +3821,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
            audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: (o) => layoutAudit(o), labelAudit: () => labelAudit(), gridAudit: () => gridAudit(), camScale: () => ({ cam: cam.s, room: roomViewScale() }), roomLabels: (name) => roomLabels(world.rooms.find((r) => r.name === name) || null).map((l) => ({ ...l, box: labelBox(l) })),furnRects: (w) => furnRects(w), standSpots: () => standSpots(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), stackAudit: () => stackAudit(), walkAudit: () => walkAudit(),
            walkWatch: () => { WALK_LOG = { frames: 0, moving: 0, issues: [], seen: new Set() }; return true; },
            walkLog: () => (WALK_LOG ? { frames: WALK_LOG.frames, moving: WALK_LOG.moving, issues: WALK_LOG.issues.slice() } : null),
+           // 고르기(11-14) — select(key)로 캐릭터를 고르고 sel()로 그린 네모 · 몸(불투명 범위) · 이름표 칸(화면 px). bodies()는 그린 사람마다 불투명 범위
+           select: (key) => { if (!actors.has(key)) return false; selected = key; info(); return true; }, sel: () => (SEL ? { ...SEL } : null),
+           bodies: () => [...SILS.entries()].map(([key, s]) => { const a = actors.get(key) || {}; return { key, kind: a.kind, role: a.role || null, room: a.room, anim: a.moving ? 'walk' : (a.act && a.act.anim) || 'stand', lie: !!s.rot, foot: toScreen(a.x * T, a.y * T).map(Math.round), body: toScr(silBox(s)).map(Math.round) }; }),
            seats: () => seatCards(), auras: () => ({ style: AURA_STYLE, list: AURAS.slice() }), stacks:() => [...BUBBLES.entries()].filter(([k, b]) => liveBubble(k, b)).map(([key, b]) => ({ key, ...b, scr: (b.cards || []).map((c) => toScr(c.rect).map(Math.round)) })), nameAudit: () => nameAudit(), names: () => NAMES.slice(),
            // 터미널을 열 때 고를 프로젝트(11-10) — 보고 있는 현장, 없으면(감독실 · 지도 · 라운지) 고른 세션의 프로젝트, 그것도 없으면 null
            currentProject: () => (world.rooms.some((r) => r.name === view) ? view
