@@ -9,7 +9,7 @@ test('끝내기 메뉴: 셋 · 버리기 없음 · 같은 동작 · 꺼진 항�
   assert.deepEqual(END_ITEMS.map((x) => x[0]), ['wt-end-merge', 'rest', 'exit']);     // 전 버튼과 같은 data-act → 같은 확인 창
   const all = endMenu({ exit: true, rest: true }, null);
   assert.ok(!all.includes('wt-end-discard') && !all.includes('버리기'));
-  assert.ok(all.includes('<span class="small muted">작업방에 저장만 해두고 끝냅니다</span>'));
+  assert.ok(all.includes('<span class="small muted">작업방에 커밋만 해두고 끝냅니다</span>'));
   assert.ok(!all.includes('disabled') && !all.includes('title='));                    // 켜진 항목은 호버 없이 설명 줄로
   const dim = endMenu({ exit: true, rest: false }, '작업 중입니다');
   assert.match(dim, /data-act="rest" class="end-item" role="menuitem" disabled title="커밋만 하고 끝내기 — 지금은 할 수 없습니다. 작업 중입니다\."/);

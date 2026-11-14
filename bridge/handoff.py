@@ -712,7 +712,7 @@ class HandoffManager:
             src = await repo_root(row.cwd if row else None)
             base = wt.split(src)[0] if src else None
             ps = await ptr.check(ptr.parse(s["body"]), base or "", other=src,
-                                 other_note="원본 폴더에는 아직 없고 요약을 쓴 worktree에만 있습니다(합친 뒤 넣습니다)")
+                                 other_note="원본 폴더에는 아직 없고 요약을 쓴 작업방에만 있습니다(합친 뒤 넣습니다)")
             out["pointers"] = ptr.as_dicts(ps)
             bad = [p for p in ps if not p.ok]
             if not ps:
@@ -748,7 +748,7 @@ class HandoffManager:
         if repo and base and os.path.realpath(base) != os.path.realpath(repo):
             bb = await wt.base_branch(base)
             n = await ptr._git(repo, "rev-list", "--count", f"HEAD..{bb}")
-            note = (f"이 worktree가 {bb}보다 커밋 {n}개 뒤처졌습니다({bb}에는 있습니다) — fast-forward하면 읽을 수 있습니다"
+            note = (f"이 작업방이 {bb}보다 커밋 {n}개 뒤처졌습니다({bb}에는 있습니다) — fast-forward하면 읽을 수 있습니다"
                     if n.isdigit() and int(n) else f"{bb}에는 있습니다")
         ps = await ptr.check(ptr.parse(s[1]), repo or "", other=base, other_note=note)
         # drift — 넣을 때 붙인 "인계 뒤 바뀐 것"(11-06). 받은 세션 패널에 보인다
@@ -817,7 +817,7 @@ class HandoffManager:
             # 11-11 아홉 — 관리자는 늘 원본 폴더. 전에는 살아 있는 세션만 보고 worktree로 보냈다(관리자가 .worktrees/에 떴다).
             # 아무것도 만들기 전(tmux · worktree)에 거절한다
             if worktree or wt.split(cwd)[1] is not None:
-                raise Refused("관리자는 원본 폴더에서만 띄웁니다 — 따로 작업(worktree)을 끄고 저장소 맨 위 폴더에서 띄워 주세요")
+                raise Refused("관리자는 원본 폴더에서만 띄웁니다 — 작업방을 끄고 저장소 맨 위 폴더에서 띄워 주세요")
             if why := await self.manager_conflict(cwd, exclude_cc):
                 raise Refused(why)
             worktree = False
@@ -834,7 +834,7 @@ class HandoffManager:
             worktree = self.will_worktree(cwd, exclude_cc, role)
         if worktree:
             if wt.split(cwd)[1] is not None or not await wt.is_repo(cwd):
-                raise Refused("따로 작업(worktree)은 저장소 맨 위 폴더에서만 띄울 수 있습니다")
+                raise Refused("작업방은 저장소 맨 위 폴더에서만 띄울 수 있습니다")
             wt_info = await wt.create(cwd, name.removeprefix("cc-"))
             cwd = wt_info["path"]
         await tmux(self.socket, "new-session", "-d", "-s", name, "-c", cwd)
@@ -1104,7 +1104,7 @@ class HandoffManager:
     def _wt_of(self, row: SessionRow) -> tuple[str, str]:
         repo, name = wt.split(row.cwd or "")
         if not name:
-            raise Refused("따로 작업(worktree)에서 띄운 세션이 아닙니다")
+            raise Refused("작업방에서 띄운 세션이 아닙니다")
         return repo, name
 
     async def worktree(self, row: SessionRow) -> dict[str, Any] | None:
@@ -1145,7 +1145,7 @@ class HandoffManager:
         async with self.engine.connect() as c:
             later = await reused_by(c, row.id, os.path.join(repo, wt.WT_DIR, name))
         if later:
-            raise Refused(f"이 worktree 이름({name})은 지금 세션 {later}이 쓰고 있습니다 — 이 세션의 worktree는 이미 지워졌습니다. "
+            raise Refused(f"이 작업방 이름({name})은 지금 세션 {later}이 쓰고 있습니다 — 이 세션의 작업방은 이미 지워졌습니다. "
                           f"세션 {later}의 패널에서 합치거나 버립니다")
 
     async def _role(self, sid: int) -> str | None:
@@ -1245,7 +1245,7 @@ class HandoffManager:
             res = await wt.merge(repo, name, title=title, topic=row.title, sid=row.id)
         elif act == "discard":
             await wt.remove(repo, name, force=True)
-            res = {"ok": True, "note": "worktree와 브랜치를 지웠습니다(커밋 안 된 변경 · 합치지 않은 커밋도 함께)."}
+            res = {"ok": True, "note": "작업방과 브랜치를 지웠습니다(커밋 안 된 변경 · 합치지 않은 커밋도 함께)."}
         else:
             raise Refused(f"모르는 조작입니다: {act}")
         if ended is not None:
@@ -1344,7 +1344,7 @@ class HandoffManager:
             self.on_change()
         return {"ok": True, "commit": saved["commit"], "files": saved["files"], "skipped": saved["skipped"],
                 "tmux_closed": r.get("tmux_closed"),
-                "note": f"쉬게 했습니다 — {saved_txt}. worktree {wt.BRANCH_PREFIX}{name}는 남아 있습니다. [이어서] · [합치기] · [버리기]로 이어 갑니다."}
+                "note": f"쉬게 했습니다 — {saved_txt}. 작업방 {wt.BRANCH_PREFIX}{name}는 남아 있습니다. [이어서] · [합치기] · [버리기]로 이어 갑니다."}
 
     async def rest_resume(self, row: SessionRow) -> dict[str, Any]:
         """[이어서] — 같은 worktree에서 그 CC 세션을 `claude --resume`으로 다시 붙인다. 새 tmux 창에서."""
@@ -1352,7 +1352,7 @@ class HandoffManager:
         await self._guard_reused(row, repo, name)
         path = os.path.join(repo, wt.WT_DIR, name)
         if not Path(path).is_dir():
-            raise Refused("worktree가 없습니다 — 이미 합쳤거나 버렸습니다")
+            raise Refused("작업방이 없습니다 — 이미 합쳤거나 버렸습니다")
         if not row.cc:
             raise Refused("CC 세션 ID가 없어 이어 붙일 수 없습니다")
         if row.cc in live_sessions(self.sessions_dir):

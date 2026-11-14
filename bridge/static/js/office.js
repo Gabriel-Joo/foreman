@@ -147,7 +147,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function schemaLines(name) {
     const out = [], lk = schemaBoard.locks && schemaBoard.locks[name], rel = schemaBoard.released && schemaBoard.released[name];
     if (lk && lk.held) {
-      const who = lk.session_id ? `세션 ${lk.session_id}` : `세션 ${lk.cc}`, where = lk.wt ? `worktree ${lk.wt}` : '원본 폴더';
+      const who = lk.session_id ? `세션 ${lk.session_id}` : `세션 ${lk.cc}`, where = lk.wt ? `작업방 ${lk.wt}` : '원본 폴더';
       const b = lk.blocked;
       // 겉은 짧게(한 줄), 쥔 곳 · 무엇으로는 호버(BANNER_LOCK tip) — 11-09 두 줄로 넘쳐 방이 줄고 이름이 겹쳤다
       if (b) out.push([`🔒 멈춤 — ${b.session_id ? `세션 ${b.session_id}` : `세션 ${b.cc}`}이 스키마 잠금에 막혔습니다(쥔 ${who}) — 눌러서 풉니다`, P.warn, 'bold 15px', true, 'schemalock']);
@@ -3641,7 +3641,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (!lk) return;
     const label = (store.state.projects.find((p) => p.name === project) || {}).label || project;
     const who = lk.session_id ? `세션 ${lk.session_id}` : `세션 ${lk.cc}`;
-    if (!confirm(`${label}의 DB 구조 잠금을 풉니다. 지금은 ${who}(${lk.wt ? `worktree ${lk.wt}` : '원본 폴더'})이 ${hmOf(lk.since)}부터 쥐고 있습니다. 그 세션이 아직 마이그레이션을 쓰는 중이면 두 세션의 스키마가 겹칠 수 있습니다. 풀까요?`)) return;
+    if (!confirm(`${label}의 DB 구조 잠금을 풉니다. 지금은 ${who}(${lk.wt ? `작업방 ${lk.wt}` : '원본 폴더'})이 ${hmOf(lk.since)}부터 쥐고 있습니다. 그 세션이 아직 마이그레이션을 쓰는 중이면 두 세션의 스키마가 겹칠 수 있습니다. 풀까요?`)) return;
     try {
       const r = await fetch(`/api/schema-lock/${encodeURIComponent(project)}`, { method: 'DELETE', headers: store.headers() });
       const j = await r.json().catch(() => ({}));

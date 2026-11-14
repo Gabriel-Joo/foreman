@@ -363,7 +363,7 @@ async def merge(repo: str, name: str, squash: bool | None = None, *, title: str 
         squash = bool(SQUASH_OF and await SQUASH_OF(repo))
     st = await status(repo, name)
     if not st["exists"]:
-        raise Refused("worktree가 없습니다")
+        raise Refused("작업방이 없습니다")
     if st["dirty"]:
         raise Refused(f"커밋 안 된 변경이 {len(st['dirty'])}개 있습니다. 그 세션에서 커밋하거나 버린 뒤 합쳐 주세요")
     path, base, branch = st["path"], st["base"], st["branch"]
@@ -375,7 +375,7 @@ async def merge(repo: str, name: str, squash: bool | None = None, *, title: str 
     unused ="" if title is None else " 넘긴 제목은 쓰지 않았습니다(squash로 묶지 않아 원래 커밋이 그대로 들어갔습니다)."
     if st["ahead"] == 0:
         await remove(repo, name, force=False)
-        return {"ok": True, "merged": 0, "note": "합칠 커밋이 없어 worktree만 지웠습니다."}
+        return {"ok": True, "merged": 0, "note": "합칠 커밋이 없어 작업방만 지웠습니다."}
     if st["behind"]:
         rc, out = await git(path, "rebase", base, check=False)
         if rc:

@@ -114,7 +114,7 @@ class Previews:
             raise Refused(f"이 프로젝트({project})는 미리보기 명령이 없습니다(config/worktree.toml [preview.{project}])")
         repo, name = wt.split(wt_path)
         if not name or not Path(wt_path).is_dir():
-            raise Refused("따로 작업(worktree) 폴더가 없습니다")
+            raise Refused("작업방 폴더가 없습니다")
         port = free_port()
         tname = f"fm-pv-{name}"
         line = cmd.format(py=shlex.quote(f"{repo}/.venv/bin/python"), repo=shlex.quote(repo), wt=shlex.quote(wt_path),

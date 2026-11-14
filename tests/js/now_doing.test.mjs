@@ -53,8 +53,8 @@ test('다른 도구는 전처럼 도구 + 대상, 호버 없음', () => {
 
 test('따로 작업 호버는 worktree 이름과 브랜치만', () => {
   const s = { cwd: '/home/u/AI_programming/foreman/.worktrees/foreman-2', short: 'abc123', tmux_pane: '%12' };
-  assert.equal(worktreeTip(s), '따로 작업 — foreman-2(브랜치 cc/foreman-2)에서 일합니다.');
-  assert.equal(worktreeTip({ ...s, merge_wait: { since: 'x' } }), '따로 작업 — foreman-2(브랜치 cc/foreman-2)에서 일합니다. 합치기를 기다립니다.');
+  assert.equal(worktreeTip(s), '작업방 — foreman-2(브랜치 cc/foreman-2)에서 일합니다.');
+  assert.equal(worktreeTip({ ...s, merge_wait: { since: 'x' } }), '작업방 — foreman-2(브랜치 cc/foreman-2)에서 일합니다. 합치기를 기다립니다.');
   assert.equal(worktreeTip({ cwd: '/home/u/AI_programming/foreman' }), '');
   assert.ok(!/abc123|%12|\/home/.test(worktreeTip(s)));
 });

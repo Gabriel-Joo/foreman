@@ -84,7 +84,7 @@ class SchemaLock:
             return None
         h = self.state.get(project)
         if h and h["cc"] != cc and self._held(h):
-            where = f"worktree {h['wt']}" if h.get("wt") else "원본 폴더"
+            where = f"작업방 {h['wt']}" if h.get("wt") else "원본 폴더"
             # 11-09 — 막힌 세션을 남긴다(화면 띠 · 텔레그램 한 번). 메시지를 보내지 않으면 아무도 몰랐다(세션 233)
             b = h.get("blocked") or {}
             if b.get("cc") != cc:

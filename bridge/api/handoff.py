@@ -377,7 +377,7 @@ async def worktree_act(sid: int, body: WorktreeIn, request: Request) -> JSONResp
         if body.action == "discard":
             name = m._wt_of(row)[1]
             if body.confirm != name:
-                raise Refused(f"버리려면 worktree 이름({name})을 그대로 적어 주세요")
+                raise Refused(f"버리려면 작업방 이름({name})을 그대로 적어 주세요")
         mp = getattr(m, "mergeprep", None)
         card = mp.cards.get(sid) if mp is not None else None
         if (body.action == "merge" and card is not None and getattr(request.state, "token_scope", None) is not None

@@ -20,8 +20,8 @@ const OLD_FLOW_TIP = '새 세션으로 옮기기 — 지금까지를 요약해 �
 // 「세션」 칸 [끝내기 ▾] 메뉴(11-14 사용자) — 작업방(worktree)이 살아 있는 세션. [data-act, 이름, 켜짐 열쇠(can), 줄 아래 설명]. 누르면 전과 같은 확인 창 · 흐름.
 // 「끝내고 버리기」는 화면에서 뺐다(저장한 것까지 되돌릴 수 없이 사라짐). API(worktree discard)는 그대로
 export const END_ITEMS = [
-  ['wt-end-merge', '합치고 끝내기', 'exit', '고친 것을 main에 붙이고 끝냅니다'],
-  ['rest', '커밋만 하고 끝내기', 'rest', '작업방에 저장만 해두고 끝냅니다'],
+  ['wt-end-merge', '합치고 끝내기', 'exit', '고친 것을 main에 합치고 끝냅니다'],
+  ['rest', '커밋만 하고 끝내기', 'rest', '작업방에 커밋만 해두고 끝냅니다'],
   ['exit', '그냥 끝내기', 'exit', '아무것도 안 하고 세션만 끕니다'],
 ];
 // 메뉴 칸 — 할 수 없는 항목은 꺼진 버튼 + 까닭 호버(전 버튼과 같은 방식). 순수 함수(시험)
@@ -280,16 +280,16 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       <div class="small">${esc(w.base)}보다 커밋 <b>${w.ahead}</b>개 앞${w.behind ? ` · <span title="${esc(w.base)}가 ${w.behind}개 앞서감(합칠 때 rebase) — 이 브랜치를 만든 뒤 ${esc(w.base)}에 들어온 커밋입니다. 합칠 때 그 위로 다시 얹습니다.">${esc(w.base)}에 새 변경 ${w.behind}개</span>` : ''}${w.dirty.length ? ` · <span class="warn">커밋 안 됨 ${w.dirty.length}</span>` : ''}${w.schema_lock ? ' · <span class="warn" title="스키마 잠금 보유 — 이 세션이 DB 구조(migrations)를 바꾸는 중이라 다른 세션은 바꿀 수 없습니다.">DB 구조 바꾸는 중</span>' : ''}</div>
       ${w.commits.length ? `<details${keep(`hand:${sid}:wt-commits`)}><summary class="small muted">커밋 · 바뀐 파일</summary><pre class="hand-body">${esc(w.commits.join('\n'))}\n\n${esc(w.diffstat.join('\n'))}</pre></details>` : ''}
       ${why ? `<div class="small muted">${esc(why)}</div>` : ''}
-      ${w.stale ? `<div class="small ok" title="이미 원본에 들어 있음 — 밖에서 git merge로 합쳤거나 합칠 커밋이 없습니다. [합치기]는 worktree와 브랜치만 지웁니다.">${esc(w.stale)}</div>` : ''}
-      ${w.rested_at ? `<div class="small warn wt-rest" title="쉬는 중 — [커밋만 하고 끝내기]로 지금까지를 작업방에 저장하고 세션만 끝냈습니다. 같은 일을 이어 하려면 [이어서], 끝났으면 [합치기]입니다.">쉬는 중 — 합치기 기다림 · ${esc(ago(w.rested_at))}부터${restDays(w.rested_at) >= 1 ? ` · ${restDays(w.rested_at)}일째` : ''}</div>` : ''}
+      ${w.stale ? `<div class="small ok" title="이미 원본에 들어 있음 — 밖에서 git merge로 합쳤거나 합칠 커밋이 없습니다. [합치기]는 작업방과 브랜치만 지웁니다.">${esc(w.stale)}</div>` : ''}
+      ${w.rested_at ? `<div class="small warn wt-rest" title="쉬는 중 — [커밋만 하고 끝내기]로 지금까지를 작업방에 커밋하고 세션만 끝냈습니다. 같은 일을 이어 하려면 [이어서], 끝났으면 [합치기]입니다.">쉬는 중 — 합치기 기다림 · ${esc(ago(w.rested_at))}부터${restDays(w.rested_at) >= 1 ? ` · ${restDays(w.rested_at)}일째` : ''}</div>` : ''}
       ${reviewBlock(w.review)}
       ${w.preview ? `<div class="small ok">미리보기가 :${w.preview.port}에서 돌고 있습니다.</div>` : ''}
       <div class="hand-btns">
         ${w.preview_ok ? b('wt-preview', '미리보기 열기', true, '', '미리보기 열기 — 이 브랜치의 화면 파일로 새 탭을 엽니다. 데이터와 버튼은 실제 브리지입니다. 없으면 빈 포트로 띄웁니다.') : ''}
         ${w.preview ? b('wt-preview-off', '미리보기 닫기', true, 'ghost', '미리보기 닫기 — 미리보기 서버를 끕니다.') : ''}
-        ${w.resume_ok ? b('rest-resume', '이어서', true, '', '이어서 — 같은 worktree에서 이 CC 세션을 다시 붙입니다(--resume). 같은 일의 맥락을 그대로 잇습니다. 새 일이면 새 세션으로 띄웁니다.') : ''}
-        ${w.live ? '' : `${b('wt-merge', '합치기', !w.dirty.length, 'primary', `합치기 — ${w.branch}를 ${w.base} 위로 rebase한 뒤 fast-forward로 합치고 worktree를 지웁니다. 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다.`)}
-        ${b('wt-discard', '버리기', true, 'danger', '버리기 — worktree와 브랜치를 지웁니다. 합치지 않은 커밋도 사라집니다.')}`}
+        ${w.resume_ok ? b('rest-resume', '이어서', true, '', '이어서 — 같은 작업방에서 이 CC 세션을 다시 붙입니다(--resume). 같은 일의 맥락을 그대로 잇습니다. 새 일이면 새 세션으로 띄웁니다.') : ''}
+        ${w.live ? '' : `${b('wt-merge', '합치기', !w.dirty.length, 'primary', `합치기 — ${w.branch}를 ${w.base} 위로 rebase한 뒤 fast-forward로 합치고 작업방을 지웁니다. 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다.`)}
+        ${b('wt-discard', '버리기', true, 'danger', '버리기 — 작업방과 브랜치를 지웁니다. 합치지 않은 커밋도 사라집니다.')}`}
       </div></div></div>`;
   }
 
@@ -311,8 +311,8 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
   // 11-11 아홉 — 관리자는 늘 원본 폴더에서 뜬다. 원본에 관리자가 이미 살아 있으면 띄우기가 거절된다(manager_block)
   const wtNext = (p) => (p && p.role === 'manager' ? (p.manager_block
     ? `<div class="small bad" title="띄울 수 없습니다 — 관리자는 원본 폴더에 하나입니다.">✗ ${esc(p.manager_block)}</div>`
-    : '<div class="small ok" title="원본 폴더 — 관리자는 따로 작업(worktree)이 아니라 저장소 맨 위 폴더에서 뜹니다.">관리자라 원본 폴더에서 뜹니다.</div>')
-    : p && p.worktree_next ? `<div class="small warn" title="따로 작업에서 뜹니다 — 이 프로젝트에 살아 있는 세션이 있어(옮기기는 이 세션을 빼고 셉니다) 새 세션은 .worktrees/ 아래 자기 브랜치에서 뜹니다. 받은 세션은 push · 브리지 재시작을 하지 않고, 끝낸 뒤 [합치기]로 합칩니다.">⑂ 새 세션은 따로 작업(worktree)에서 뜹니다 — 넣을 때 그 사실을 글 맨 앞에 덧붙입니다.</div>` : '');
+    : '<div class="small ok" title="원본 폴더 — 관리자는 작업방이 아니라 저장소 맨 위 폴더에서 뜹니다.">관리자라 원본 폴더에서 뜹니다.</div>')
+    : p && p.worktree_next ? `<div class="small warn" title="작업방에서 뜹니다 — 이 프로젝트에 살아 있는 세션이 있어(옮기기는 이 세션을 빼고 셉니다) 새 세션은 .worktrees/ 아래 자기 브랜치에서 뜹니다. 받은 세션은 push · 브리지 재시작을 하지 않고, 끝낸 뒤 [합치기]로 합칩니다.">⑂ 새 세션은 작업방에서 뜹니다 — 넣을 때 그 사실을 글 맨 앞에 덧붙입니다.</div>` : '');
   // 인계 검증(11-06) — 만들 때 상태와 지금이 다르면 넣는 글 앞에 붙는 "인계 뒤 바뀐 것"
   function driftList(d, head) {
     if (!d || !d.length) return `<div class="small ok">✓ ${esc(head)} — 요약을 쓴 뒤 바뀐 것이 없습니다(git · 스키마 잠금).</div>`;
@@ -617,7 +617,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     // 쉬게 하기 · 이어서(11-09) — 실패하면 까닭(커밋 실패 · 뒤에서 도는 일 · 끝내기 확인 창 · resume 실패)을 그대로 띄운다
     if (act === 'rest') {
       const w = data.controls.worktree;
-      if (!confirm(`지금까지를 ${w.branch}에 커밋하고(커밋 안 한 변경 ${w.dirty.length}개${w.dirty.length ? ' — .env · .venv 링크는 넣지 않습니다' : ''}) 세션만 끝냅니다. worktree는 남습니다. 나중에 [이어서] · [합치기] · [버리기]를 고릅니다. 쉬게 할까요?`)) return;
+      if (!confirm(`지금까지를 ${w.branch}에 커밋하고(커밋 안 한 변경 ${w.dirty.length}개${w.dirty.length ? ' — .env · .venv 링크는 넣지 않습니다' : ''}) 세션만 끝냅니다. 작업방은 남습니다. 나중에 [이어서] · [합치기] · [버리기]를 고릅니다. 쉬게 할까요?`)) return;
       return run('커밋만 하고 끝내기', () => post(`/api/sessions/${id}/rest`).then((r) => ({ ok: !!r.ok, bad: !r.ok, msg: r.note || (r.ok ? '쉬게 했습니다.' : '쉬게 하지 못했습니다.') })));
     }
     if (act === 'rest-resume') {
@@ -651,7 +651,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       if (act === 'wt-merge') {
         if (!confirm(`${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다. 합칠까요?${rvWarn}`)) return;
       } else {
-        confirmName = prompt(`${end ? '세션을 끝내고 ' : ''}worktree와 브랜치 ${w.branch}를 지웁니다. 합치지 않은 커밋 ${w.ahead}개${w.dirty.length ? `와 커밋 안 된 변경 ${w.dirty.length}개` : ''}도 사라집니다. 지우려면 이름 "${w.name}"을 적어 주세요.`) || '';
+        confirmName = prompt(`${end ? '세션을 끝내고 ' : ''}작업방과 브랜치 ${w.branch}를 지웁니다. 합치지 않은 커밋 ${w.ahead}개${w.dirty.length ? `와 커밋 안 된 변경 ${w.dirty.length}개` : ''}도 사라집니다. 지우려면 이름 "${w.name}"을 적어 주세요.`) || '';
         if (!confirmName) return;
       }
       return run(kind === 'merge' ? '합치기' : end ? '끝내고 버리기' : '버리기', () => post(`/api/sessions/${id}/worktree`, { action: kind, confirm: confirmName, end })

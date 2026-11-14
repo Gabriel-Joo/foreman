@@ -39,9 +39,9 @@ async def rest_stale(engine: Any, sid: int, cwd: str | None) -> str | None:
     async with engine.connect() as c:
         later = await reused_by(c, sid, path)
     if later:
-        return f"같은 worktree 이름({name})을 뒤에 세션 {later}이 다시 썼습니다 — 이 세션의 worktree는 이미 지워졌습니다"
+        return f"같은 작업방 이름({name})을 뒤에 세션 {later}이 다시 썼습니다 — 이 세션의 작업방은 이미 지워졌습니다"
     if not Path(path).is_dir():
-        return f"worktree {name}가 없습니다 — 이미 합쳤거나 버렸습니다"
+        return f"작업방 {name}가 없습니다 — 이미 합쳤거나 버렸습니다"
     try:
         merged = await wt.in_base(repo, name)
     except Exception:  # noqa: BLE001 — git을 못 읽으면 실제와 다르다고 말하지 않는다
@@ -52,7 +52,7 @@ async def rest_stale(engine: Any, sid: int, cwd: str | None) -> str | None:
         _, dirty = await wt.git(path, "status", "--porcelain", check=False)
         if not dirty.strip():
             return (f"브랜치 {wt.BRANCH_PREFIX}{name}의 커밋이 모두 원본에 들어 있습니다(밖에서 합쳤거나 합칠 커밋이 없음)"
-                    " — worktree만 남았습니다")
+                    " — 작업방만 남았습니다")
     return None
 
 

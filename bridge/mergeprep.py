@@ -614,7 +614,7 @@ class MergePrep:
                 self._saved[int(sid)] = card_json(c)   # DB에 있는 그대로 — 바뀌면 다시 쓴다
                 if c.status == "merging":
                     c.status = "failed"
-                    c.error = "합치는 중에 브리지가 다시 떴습니다 — 결과를 모릅니다. git log · worktree를 확인해 주세요"
+                    c.error = "합치는 중에 브리지가 다시 떴습니다 — 결과를 모릅니다. git log · 작업방을 확인해 주세요"
                     c.updated_at = _iso(_now())
                 cur = self.cards.get(int(sid))
                 if cur is not None:                    # 되살리기 전에 턴 끝이 먼저 만든 카드 — 같은 커밋이면 처음 시각을 잇는다
@@ -1254,7 +1254,7 @@ class MergePrep:
             st = await self._git_facts(c.repo, c.name)
             if not st.get("exists"):
                 del self.cards[sid]
-                raise Refused("worktree가 없습니다 — 이미 합쳤거나 버렸습니다")
+                raise Refused("작업방이 없습니다 — 이미 합쳤거나 버렸습니다")
             if st["dirty"]:
                 raise Refused(f"커밋 안 된 변경이 {len(st['dirty'])}개 생겼습니다 — 그 세션이 커밋한 뒤 카드가 다시 뜹니다. 아무것도 하지 않았습니다")
             if st["head"] != c.head:

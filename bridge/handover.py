@@ -58,7 +58,7 @@ def plan_text(did: int, plan: dict[str, Any], request: str | None, base_url: str
     for i, s in enumerate(on, 1):
         files = s.get("files") or []
         lines.append(f"  {i}「{s.get('title') or s.get('role')}」 {s.get('role')} · {s.get('model') or '기본 모델'}"
-                     + (" · 따로 작업" if s.get("worktree") else " · 원본 폴더")
+                     + (" · 작업방" if s.get("worktree") else " · 원본 폴더")
                      + (f" · 맡을 파일 {', '.join(files[:8])}" + (f" 외 {len(files) - 8}" if len(files) > 8 else "") if files else ""))
     lines += [
         "",

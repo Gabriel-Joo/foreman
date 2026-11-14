@@ -240,7 +240,7 @@ class ApprovalManager:
             who = lambda cc: f"세션 {ids[cc]}" if cc in ids else f"세션 {cc[:8]}"   # noqa: E731
             rule_ = self.notifier.rules.for_project(project)
             prefix = rule_.prefix if rule_ else "[미분류]"
-            where = f"worktree {b['wt']}" if b.get("wt") else "원본 폴더"
+            where = f"작업방 {b['wt']}" if b.get("wt") else "원본 폴더"
             since = (b.get("since") or "")[11:16]
             self.notifier.send_direct(project, "schlock", ids.get(b["cc"]),
                                       f"{prefix} 🔒 {who(b['cc'])}이 스키마 잠금에 막혔습니다 — 쥔 세션 {who(b['holder'])}"

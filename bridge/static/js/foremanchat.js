@@ -202,7 +202,7 @@ function mount(dlg) {
   // "자세히"가 접혀 있어도 지금 값이 보이게 — 접힌 줄에 한 줄 요약
   function moreLine() {
     const sel = (id) => { const e = $(id); return e && e.selectedOptions && e.selectedOptions[0] ? e.selectedOptions[0].textContent : ''; };
-    const bits = [sel('fmRole'), sel('fmModel'), $('fmWT').checked ? '따로 작업(worktree)' : '원본 폴더', $('fmRO').checked ? '읽기 전용' : ''];
+    const bits = [sel('fmRole'), sel('fmModel'), $('fmWT').checked ? '작업방' : '원본 폴더', $('fmRO').checked ? '읽기 전용' : ''];
     if ($('fmMode').value === 'attach') bits.unshift($('fmAttach').value ? `세션 ${$('fmAttach').value}에 보냄` : '보낼 세션을 골라 주세요');
     $('fmMoreSum').textContent = bits.filter(Boolean).join(' · ');
   }
@@ -240,7 +240,7 @@ function mount(dlg) {
       </div>
       <label class="muted" for="fmFirst">넣을 첫 글${p.summary_id ? ' (고른 요약은 이 뒤에 붙습니다)' : ''}</label>
       <textarea id="fmFirst" rows="12" class="fm-first">${esc(p.first_prompt || '')}</textarea>
-      <details class="fm-fold" id="fmMore"><summary title="자세히 — 역할 · 모델 · 보낼 세션 · 읽기 전용 · 따로 작업(worktree)입니다. 접혀 있어도 오른쪽에 지금 값이 보입니다.">자세히 <span id="fmMoreSum" class="muted"></span></summary>
+      <details class="fm-fold" id="fmMore"><summary title="자세히 — 역할 · 모델 · 보낼 세션 · 읽기 전용 · 작업방입니다. 접혀 있어도 오른쪽에 지금 값이 보입니다.">자세히 <span id="fmMoreSum" class="muted"></span></summary>
         <div class="fm-grid">
           <label class="muted" for="fmRole">역할</label>
           <select id="fmRole">${Object.entries(ROLE).map(([k, v]) => opt(k, p.role, v)).join('')}</select>
@@ -254,7 +254,7 @@ function mount(dlg) {
           <input id="fmOrder" type="number" min="1" max="99" value="${esc(s0.merge_order ?? 1)}">` : ''}
         </div>
         <label class="fm-check"><input id="fmRO" type="checkbox"${p.read_only ? ' checked' : ''}> 읽기 전용으로 시작 <span class="muted">— 살펴보기만, 고치기 전에 승인</span></label>
-        <label class="fm-check" title="따로 작업 — 저장소 안 .worktrees/에 이 세션만의 폴더 · 브랜치(cc/…)를 만들어 띄웁니다. 끝낸 뒤 [합치기]로 main에 합칩니다."><input id="fmWT" type="checkbox"${p.worktree ? ' checked' : ''}> 따로 작업(worktree)
+        <label class="fm-check" title="작업방 — 저장소 안 .worktrees/에 이 세션만의 폴더 · 브랜치(cc/…)를 만들어 띄웁니다. 끝낸 뒤 [합치기]로 main에 합칩니다."><input id="fmWT" type="checkbox"${p.worktree ? ' checked' : ''}> 작업방
           <span class="muted">${p.live_here ? `— 이 프로젝트에 살아 있는 세션 ${p.live_here}개와 파일이 겹치지 않습니다` : '— 지금 이 프로젝트에 다른 세션이 없습니다'}</span></label>
       </details>
       ${many ? sessionsHtml(ss, opt) : ''}
@@ -329,7 +329,7 @@ function mount(dlg) {
           <label class="muted">넣을 첫 글</label>
           <textarea data-k="first_prompt" rows="8" class="fm-first">${esc(s.first_prompt || '')}</textarea>
           <label class="fm-check"><input type="checkbox" data-k="read_only"${s.read_only ? ' checked' : ''}> 읽기 전용으로 시작 <span class="muted">— 살펴보기만, 고치기 전에 승인</span></label>
-          <label class="fm-check" title="따로 작업 — 이 세션만의 폴더 · 브랜치(cc/…)에서 띄웁니다. 둘째 세션부터는 기본으로 켭니다."><input type="checkbox" data-k="worktree"${s.worktree !== false ? ' checked' : ''}> 따로 작업(worktree)</label>
+          <label class="fm-check" title="작업방 — 이 세션만의 폴더 · 브랜치(cc/…)에서 띄웁니다. 둘째 세션부터는 기본으로 켭니다."><input type="checkbox" data-k="worktree"${s.worktree !== false ? ' checked' : ''}> 작업방</label>
         </details></div>`; }).join('')}
     </div>`;
   }
@@ -368,7 +368,7 @@ function mount(dlg) {
     try {
       const r = await api('POST', '/api/foreman/start', { dispatch_id: disp.dispatch_id, plan, ...(inboxIds.length ? { inbox_ids: inboxIds } : {}) });
       const ok = r.mode === 'attach' ? (r.injected ? '보냈습니다.' : '보냈지만 제출을 확인하지 못했습니다.')
-        : `새 세션을 띄웠습니다${r.tmux ? `(tmux ${r.tmux}${r.model ? ' · ' + r.model : ''})` : ''}.${r.worktree ? ` 따로 작업 ${r.worktree.branch}에서 합니다.` : ''}${r.injected ? ' 첫 글을 넣었습니다.' : ''}${startedLine(r)}`;
+        : `새 세션을 띄웠습니다${r.tmux ? `(tmux ${r.tmux}${r.model ? ' · ' + r.model : ''})` : ''}.${r.worktree ? ` 작업방 ${r.worktree.branch}에서 합니다.` : ''}${r.injected ? ' 첫 글을 넣었습니다.' : ''}${startedLine(r)}`;
       $('fmStartMsg').className = `small ${r.note ? 'warn' : 'ok'}`;
       $('fmStartMsg').textContent = ok + (r.notes ? ` 진행 중인 일 ${r.notes}줄을 고쳤습니다.` : '') + (r.note ? ' ' + r.note : '');
       $('fmDrop').disabled = true;

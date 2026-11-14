@@ -603,7 +603,7 @@ class ForemanDispatcher:
         # [시작]이 무엇을 띄우는지 경고 줄 맨 위에 한 줄로 — 세션 칸이 접혀 있어도 · 옛 카드(첫 세션만 보임)여도 보이게
         if many and plan["mode"] != "attach":
             on_ = [f"{i + 1}「{s['title'] or s['role']}」({ROLE_KO.get(s['role'], s['role'])} · {s['model'] or '기본'}"
-                   f"{' · 따로 작업' if s['worktree'] else ''})" for i, s in enumerate(ss) if s["on"]]
+                   f"{' · 작업방' if s['worktree'] else ''})" for i, s in enumerate(ss) if s["on"]]
             warn.append(f"이 계획은 세션 {len(on_)}개를 띄웁니다: {', '.join(on_)}")
         # 맡을 파일 겹침(11-11 일곱) — 계획 안 · 살아 있는 세션 · 아직 시작 안 한 다른 계획
         plan["file_overlaps"] = []
@@ -840,7 +840,7 @@ class ForemanDispatcher:
             raise Refused("모르는 프로젝트입니다")
         lines = await git_lines(repo, "worktree", "list", "--porcelain")
         if lines is None:
-            raise Refused("worktree 목록을 git으로 읽지 못했습니다")
+            raise Refused("작업방 목록을 git으로 읽지 못했습니다")
         wts, path = [], None
         for ln in lines:
             if ln.startswith("worktree "):

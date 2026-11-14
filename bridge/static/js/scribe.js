@@ -119,7 +119,7 @@ export function createScribe(store) {
     // 동시에 시키기(11-06) — 같은 일 · 같은 파일 · 둘 넘게는 막는다. 막힌 버튼은 끄고 까닭을 호버로(서버도 같은 판단)
     const go = (k, label = '시키기', pri = false) => {
       const why = blocked[k];
-      return `<button type="button" class="small${pri && !why ? ' primary' : ''}" data-sc-task="${esc(k)}"${busy || why ? ' disabled' : ''} title="${esc(why ? `${(tasks[k] || {}).title || k} — 지금은 시킬 수 없습니다. ${why}` : `${(tasks[k] || {}).title || k} — 서기 세션을 따로 작업(worktree)으로 띄워 맡깁니다. 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다.`)}">${label}</button>`;
+      return `<button type="button" class="small${pri && !why ? ' primary' : ''}" data-sc-task="${esc(k)}"${busy || why ? ' disabled' : ''} title="${esc(why ? `${(tasks[k] || {}).title || k} — 지금은 시킬 수 없습니다. ${why}` : `${(tasks[k] || {}).title || k} — 서기 세션을 작업방으로 띄워 맡깁니다. 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다.`)}">${label}</button>`;
     };
     // 사람 수정으로 멈춘 파일 — 눈에 띄게 맨 위(조용히 멈춰 있지 않게)
     const alerts = items.filter((x) => x.kind === 'publish' && x.act === 'force').map((x) => `<div class="sc-row"><div class="small bad"><b>${esc(x.title)}</b> <span class="muted">— ${esc(x.why)}</span></div>
@@ -160,7 +160,7 @@ export function createScribe(store) {
       <div class="hand-btns"><button type="button" class="small primary" data-sc-ask="1"${asking ? ' disabled' : ''} title="물어보기 — 답만 받습니다. 답에서 찾은 어긋남은 아래 [이 답대로 문서 고치기]로 시킵니다.">${asking ? '묻는 중…' : '물어보기'}</button></div>
       ${asking ? '<div class="small muted">서기가 문서를 읽고 있습니다… 보통 20초쯤 걸립니다.</div>' : ''}
       ${answer ? `<div class="small ${answer.bad ? 'bad' : ''} sc-answer" style="white-space:pre-wrap">${esc(answer.text)}</div>` : ''}${fixBtn}</details>`;
-    return `<div class="small muted">${esc(label)} · 서기 — 문서 담당. 시킨 일은 따로 작업(worktree) 세션으로 돌고, 끝나면 사람이 diff를 보고 합칩니다.</div>
+    return `<div class="small muted">${esc(label)} · 서기 — 문서 담당. 시킨 일은 작업방 세션으로 돌고, 끝나면 사람이 diff를 보고 합칩니다.</div>
       ${askHtml}
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}"${note.tip ? ` title="${esc(note.tip)}"` : ''}>${esc(note.msg)}</div>` : ''}
       <details class="hand"${pick ? ' open' : keep(`scribe:${room}:list`, true)}><summary title="할 일 — 서기에게 시킬 일 한 목록입니다. 이름 옆 숫자는 밀린 정도이고, 숫자가 없으면 지금 밀린 것이 없습니다."><b>할 일</b> ${sumCount}${bad}</summary>${listBody}</details>
@@ -194,7 +194,7 @@ export function createScribe(store) {
   async function start(room, label, k, topic, nameExtra, noteText) {
     const title = ((todo && todo.tasks) || {})[k]?.title || k;
     const name = title + (nameExtra ? ` — ${nameExtra}` : '');
-    if (!confirm(`${label}의 서기에게 「${name}」을 맡깁니다. 서기 세션이 따로 작업(worktree)으로 뜨고(Opus), 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다. 진행할까요?`)) return;
+    if (!confirm(`${label}의 서기에게 「${name}」을 맡깁니다. 서기 세션이 작업방으로 뜨고(Opus), 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다. 진행할까요?`)) return;
     busy = true; note = { msg: `「${name}」 — 서기 세션을 띄우는 중입니다…` }; store.touch('panel');
     const body = { project: room, task: k, topic: topic || null };
     if (noteText) body.note = noteText;

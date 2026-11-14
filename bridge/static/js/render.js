@@ -169,7 +169,7 @@ export function sessionIds(s) {
 export function worktreeTip(s) {
   const m = /\/\.worktrees\/([^/]+)/.exec(s.cwd || '');
   if (!m) return '';
-  return `따로 작업 — ${m[1]}(브랜치 cc/${m[1]})에서 일합니다.${s.merge_wait ? ' 합치기를 기다립니다.' : ''}`;
+  return `작업방 — ${m[1]}(브랜치 cc/${m[1]})에서 일합니다.${s.merge_wait ? ' 합치기를 기다립니다.' : ''}`;
 }
 
 // 지금 하는 일(11-14 사용자 — 머리줄에 「Bash echo "credit(…": $(grep …」처럼 명령이 그대로 떠 읽을 수 없었다).
