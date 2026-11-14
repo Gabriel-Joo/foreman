@@ -1,0 +1,191 @@
+# 시험 고정물(11-14) — 이 날의 config/approval.toml을 그대로 옮긴 것. tests/test_approval_now.py · test_roleguard.py ·
+# test_stage2_db.py가 실제 설정 대신 이것을 읽는다(설정을 켜고 끌 때마다 시험이 깨지지 않게). 실제 설정의 모양은
+# tests/test_live_config_shape.py가 본다. 아래는 옮긴 원문 그대로다.
+#
+# FOREMAN 승인 정책 (로드맵 5단계, 2026-11-02 사용자 결정으로 좁힘). 바꾸면 브리지를 다시 띄운다.
+#
+# 원칙(2026-11-05 다시 좁힘 — log/stage5_approval_result.md "다시 좁히기"):
+#   **사용자가 실제로 거부할 만한 것만 ask.** 이론적 위험이 아니라. 목적은 auto mode에서 흐름이 안 끊기는 것.
+#   그 전 20일 ask 45건 중 실제 작업에서 거부는 0건(유일한 거부 1건은 승인 창 시험).
+#   남긴 것: 홈 · 프로젝트 · 데이터 폴더 통째로 지우기 / 운영 DB 날리기 / 재부팅 · 종료 · VM 파괴 /
+#            작업 이력 날리기(push --force · reset --hard · clean -f · filter-branch) / 비밀 파일을 밖으로 보내기 /
+#            데이터 볼륨 · 네임스페이스 · PVC 지우기 / CC · tmux 대량 종료
+#   뺀 것: /tmp 아래 · mktemp로 만든 것 · 작업 트리 밖 평범한 삭제 · 변수 경로 · 해석기 heredoc 안의 글자 ·
+#          비밀 파일 읽기 · 쓰기 · 규칙 파일 편집(🛡 알림만) · kubectl delete pod 등 복구되는 것 · docker rm · 환경 덤프
+#   ask   되돌릴 수 없는 것 — 승인 창(auto mode의 자동 통과보다 앞선다). 브라우저 · 텔레그램 · 터미널 중 먼저 답한 쪽
+#   allow 되돌릴 수 있는 것 · 읽기 — 승인 창 없이 통과
+#   pass  그 밖 — 브리지는 정하지 않는다. CC가 지금처럼 정한다(auto mode 분류기 · 사용자 설정)
+# 순서: ask 규칙이 하나라도 걸리면 ask → 명령의 모든 조각이 allow 규칙이면 allow → 나머지는 unmatched
+# ask 정규식은 따옴표 안까지 명령 전체에서 찾는다(bash -c '…', vagrant ssh -c '…' 안의 것도).
+# allow는 조각마다 증명한다 — vagrant ssh … -c '…' · bash -c '…'는 안쪽 명령으로 판정
+#
+# 모든 판정(allow · pass 포함)은 event(type=approval_req)로 남는다 — "무엇이 자동으로 통과됐나"를 볼 수 있게.
+# ask와 승인 결과는 로그에도 이유와 함께 남는다.
+
+[defaults]
+mode = "enforce"        # enforce: 판정을 CC에 돌려준다 / observe: 기록만 하고 CC에는 아무것도 돌려주지 않는다
+                        # 11-10 인프라 묶음 1 동안 임시 observe였다가, 인프라가 프로젝트로 등록돼(0029) 세션 265를 옮긴 뒤 되돌림 —
+                        # 인프라의 임시 observe는 아래 [projects.ronanlab-infra]
+# 규칙에 없는 도구 호출. "ask"로 하면 auto mode가 자동 통과시키던 평범한 작업(실측 20일 약 9,700건)이 모두 승인 창이 된다
+unmatched = "pass"
+remote_approval = true  # 승인 창이 뜨면(우리 ask든 CC 자체든) 텔레그램으로 알리고 브라우저에서 승인 · 거부를 받는다
+wait_s = 3600           # 브라우저 결정을 기다리는 최대 시간. 그동안에도 터미널 승인 창은 그대로 쓸 수 있다.
+                        # 11-06 600 → 3600(사용자: 화면을 계속 보지 않는다). 지나면 텔레그램으로 알린다.
+                        # 바꾸면 scripts/foreman-decide.sh의 permission max와 ~/.claude/settings.json PermissionRequest timeout도 그보다 길게
+
+# ── 되돌릴 수 있는 것 · 읽기 — allow ──────────────────────────
+[allow]
+tools = ["Read", "Grep", "Glob"]
+# 편집 · 쓰기 — 작업 트리 안이든 밖이든 allow(덮어쓴 파일은 되돌릴 수 있다는 판단 — 사용자 결정).
+# 비밀 파일 · 보호 설정 파일([sensitive])과 .git/ 안은 ask
+edit = ["Edit", "MultiEdit", "NotebookEdit", "Write"]
+# Bash — &&, ||, ;, | 로 나눈 모든 조각이 아래 중 하나여야 allow. 명령 치환 · 리다이렉트(/dev/null 제외) ·
+# 환경변수 앞붙임이 있으면 allow하지 않는다(무엇을 할지 확실하지 않다)
+bash_git_readonly = ["status", "log", "diff"]
+bash_filters = ["head", "tail", "wc", "grep", "sort", "uniq", "cut"]   # 파이프 뒤에서만
+bash_cd = true
+# CC가 자기 일로 쓰는 곳 — 작업 트리 안으로 친다(계획 · 메모리 파일). 세션 scratchpad는 hook이 알려 준다
+cc_own_paths = ['^~/\.claude/plans/', '^~/\.claude/projects/[^/]+/memory/']
+
+[allow.bash_ops]   # 이름 = 조각 전체에 맞는 정규식 — 되돌릴 수 있는 운영 명령
+"kubectl-적용" = '''^kubectl(\s+(-n|--namespace|--context|-f|--filename|-l|--selector)\s+\S+|\s+--?[\w-]+(=\S+)?)*\s+(apply|create|replace|patch|scale|rollout|set|label|annotate|edit|cordon|uncordon|drain|taint|autoscale)\b'''
+"helm-적용" = '''^helm\s+(install|upgrade|rollback)\b'''
+"argocd-동기화" = '''^argocd\s+app\s+(sync|rollback|set|wait|get|list)\b'''
+"git-push" = '''^git(\s+(-C\s+\S+|--no-pager))*\s+push\b(?!.*(\s-f\b|--force|--delete|\s-d\b|--mirror|\s\+\S|\s:[\w./-]|\s-\w*f\w*\b|--prune\b))'''
+"docker-재시작" = '''^docker(\s+compose(\s+(-f|--file|-p|--project-name)\s+\S+)*)?\s+(stop|restart|start|kill|up|pause|unpause)\b'''
+"docker-compose-down" = '''^docker\s+compose(\s+(-f|--file|-p|--project-name)\s+\S+)*\s+down\b(?!.*(\s-v\b|--volumes|--rmi))'''
+"systemctl-변경" = '''^systemctl(\s+--user)?\s+(start|stop|restart|reload|enable|disable|daemon-reload|status|is-active|is-enabled)\b'''
+
+# ── 되돌릴 수 없는 것 — ask ──────────────────────────────────
+[ask]
+# 11-05: 작업 트리 밖 삭제 · 변수 경로 삭제는 묻지 않는다(지난 ask의 절반 — /tmp · mktemp · scratchpad, 전부 Yes).
+delete_outside_worktree = false
+# 대신 "통째로" 지우기만 — / · 시스템 최상위(/etc …) · 홈과 그 조상 · 아래 폴더 자체와 바로 아래(프로젝트 하나 · 볼륨 하나 · 백업 하나).
+# X/* (내용 전부)도 같다. 변수 경로는 변수 앞의 고정 부분으로 본다(~/AI_programming/$x는 프로젝트 통째). rm -rf $X/ 처럼
+# 비면 / 가 되는 것도(${X:?}로 막았으면 통과). 프로젝트 안의 하위 폴더(.venv · build · node_modules)는 통과
+delete_whole = true
+delete_containers = ["~", "~/AI_programming", "~/volumes", "~/backups", "~/mysql-data", "~/k8s-cluster",
+                     "~/k8s-cluster/backup", "~/ronanlab-infra", "~/.claude", "~/.claude/projects", "~/.ssh", "~/.kube"]
+# 해석기(python · node …) heredoc 본문의 글자로는 묻지 않는다 — 승인 정책을 시험하는 코드의 문자열이 9번 걸려 9번 다 Yes.
+# 셸(bash <<EOF) · SQL(mysql <<EOF) 본문과 실행하는 셸 스크립트 파일은 그대로 본다
+scan_interpreter_heredocs = false
+
+[ask.bash]   # 이름 = 정규식(명령 전체에서 찾는다). 이름이 로그 · 이벤트 · 텔레그램에 이유로 나간다
+# 작업 이력 날리기 — 커밋 안 한 변경 · 원격 이력이 사라진다. checkout -- · restore · stash drop · branch -D는 뺐다(작은 범위, 0번 거부)
+"git-이력파괴" = '''\bgit\b[^|;&\n]*?\s(reset\s+--hard|clean\s+-\w*f\w*|filter-branch|filter-repo|reflog\s+expire|gc\b[^|;&\n]*--prune=(now|all))\b'''
+"git-강제push" = '''\bgit\b[^|;&\n]*?\spush\b[^|;&\n]*?(\s-f\b|--force|--delete|\s-d\b|--mirror|\s\+\S|\s:[\w./-]|\s-\w*f\w*\b|--prune\b)'''
+# 운영 DB만 — 운영 쪽으로 가는 명령(FOREMAN의 foreman-mysql · 3308, 클러스터 안: kubectl · vagrant ssh · 런슈즈의 mk 래퍼)에서
+# DROP DATABASE · SCHEMA · TABLE, TRUNCATE, WHERE 없는 DELETE FROM, dropdb, FLUSHALL. 로컬 개발 · 시험 DB(runshoes-mysql-dev,
+# v3_probe 같은 것)는 통과 — 21일에 29번, 전부 런슈즈가 개발 DB를 다시 만드는 것이었다
+# 운영 쪽 표시와 파괴 SQL이 **같은 줄**에 있거나, 운영 쪽 줄의 heredoc 본문에 있을 때(운영 덤프를 받아 개발 DB에 넣는 명령은 줄이 다르다)
+"DB-파괴" = '''(?im)(foreman-mysql|-P\s*3308\b|:3308\b|\bkubectl\b|vagrant\s+ssh|\$MK\b|(^|[\s;&|(])mk\b)([^\n]*?|[^\n]*<<[\s\S]*?)(\bdrop\s+(database|schema|table)\b|\btruncate\s+(table\s+)?[`\w]|\bdelete\s+from\s+[\w.`"]+\s*(;|"|'|$)|\bdropdb\b|\bflushall\b)|(\bdrop\s+(database|schema|table)\b|\btruncate\s+table\b|\bdelete\s+from\s+[\w.`"]+\s*(;|"|'|$)|\bflushall\b)[^\n]*(foreman-mysql|-P\s*3308\b|:3308\b|\bkubectl\b|vagrant\s+ssh|\$MK\b|(^|[\s;&|(])mk\b)'''
+"재부팅-종료" = '''(^|[;&|(\n'"]|\bsudo)\s*(reboot|shutdown|poweroff|halt)(\s|$|;)|\bsystemctl\s+(reboot|poweroff|halt|kexec)\b|\binit\s+[06](\s|$)'''
+"디스크·VM-파괴" = '''(^|[\s;&|(`])mkfs|\bdd\b[^|;&\n]*\sof=/dev/(sd|nvme|vd|hd)|>\s*/dev/(sd|nvme|vd)[a-z]|\bvirsh\s+undefine\b|\bvagrant\s+destroy\b'''
+# 데이터가 사라지는 삭제만 — 볼륨 · 네임스페이스 · PVC · PV, helm 릴리스, ArgoCD 앱(cascade). pod · deployment 삭제는 다시 생긴다
+# docker compose down -v는 런슈즈 개발 스택이면 뺀다 — 개발 DB(이름 있는 볼륨 runshoes_runshoes-mysql-dev)를 비우고 다시 띄우는
+# 일상 작업(21일 10번 이상). 그 밖(openwebui_data · ollama_data도 이름 있는 볼륨이다)은 묻는다. FOREMAN · 밀버스 · mysql은 bind mount
+"데이터-삭제" = '''\bdocker\b[^|;&\n]*?\s(volume\s+(rm|prune)|system\s+prune\b[^|;&\n]*--volumes)\b|^(?![\s\S]*runshoes)[\s\S]*\bdocker\s+compose\b[^|;&\n]*?\sdown\b[^|;&\n]*?(\s-v\b|--volumes)|\bkubectl\b[^|;&\n]*?\sdelete\s+(-\S+\s+)*(ns|namespaces?|pvc|persistentvolumeclaims?|pv|persistentvolumes?)\b|\bkubectl\b[^|;&\n]*?\sdelete\b[^|;&\n]*\s--all\b|\bhelm\s+(uninstall|delete)\b|\bargocd\s+(app\s+delete|repo\s+rm|cluster\s+rm)\b'''
+# CC 세션 · tmux · 인프라를 한꺼번에 끄는 것(자기가 띄운 스크립트 끄기는 아니다)
+"프로세스-대량종료" = '''\bkill\s+(-\w+\s+)*-1(\s|$)|(^|[;&|(\n'"]\s*)(sudo\s+)?(killall|pkill)\b[^;&|\n]*((?<![/\w-])claude(?![\w-])|\btmux\b|\bttyd\b|\bsshd?\b|containerd|kubelet|qemu|libvirt|mysqld|vagrant|\s-u\s|\s-U\s|\s--uid\b)|\btmux\s+kill-server\b'''
+"권한-대량변경" = '''\b(chmod|chown)\s+(-\w+\s+)*-\w*R\w*\b[^|;&\n]*\s(/|~|\$HOME)/?(\s|$|;)'''
+"원격스크립트-실행" = '''(curl|wget)\b[^|;\n]*\|\s*(sudo\s+)?(ba|z)?sh\b'''
+"크론-삭제" = '''\bcrontab\s+-r\b'''
+
+# 11-05: 동사 자리가 변수인 운영 명령은 묻지 않는다(1번, Yes). 비우면 꺼진다
+[ask.ambiguous]
+verb_re = ""
+
+# ── 민감한 경로 ────────────────────────────────────────────
+# secret: 읽기 · 쓰기 모두 ask — 비밀이 트랜스크립트에 한번 찍히면 되돌릴 수 없다
+# protect: 쓰기 · 편집만 ask — 이 안전장치(hook)를 끌 수 있는 설정 파일
+# Bash는 heredoc 본문을 빼고, 경로처럼 생긴 토큰(/ · . · ~ 로 시작하거나 / 가 든 것)만 본다.
+# 그리고 그 토큰이 내용을 찍거나 옮기는 명령의 인자일 때만 묻는다 — source ./.env 처럼 환경을 불러오는 것은
+# 비밀을 화면 · 트랜스크립트에 내지 않는다(과거 데이터: 펫퍼민트 76건 중 대부분)
+[sensitive]
+# 11-05: mode = "send" — 비밀 파일을 **밖으로 보낼 때만** 묻는다(같은 명령에 비밀 파일과 curl · wget(이 PC · VM 망 밖 URL) ·
+# scp · rsync host: · ssh · nc 등이 같이 있을 때). 찍기 · 옮기기 · 로컬 서비스에 넘기기는 묻지 않는다(13번, 전부 토큰 교체 때 Yes).
+# 화면에 비밀을 내지 않는 것은 승인 창이 아니라 작업 규칙(CLAUDE.md · 메모리)으로 지킨다. "read"로 돌리면 전처럼 찍기도 묻는다
+mode = "send"
+tool_ask = false            # Read · Edit 도구로 비밀 파일 — 묻지 않는다(send 모드와 같은 판단)
+bash_secret_senders = ["curl", "wget", "scp", "rsync", "sftp", "ftp", "ssh", "nc", "ncat", "netcat", "socat", "telnet",
+                       "gh", "http", "https", "aws", "gsutil", "rclone"]
+# protect(아래) 쓰기 — notify: 묻지 않고 텔레그램 🛡 알림(10분에 한 번). 11번 전부 Yes. "ask"로 돌리면 전처럼 묻는다
+protect_mode = "notify"
+bash_secret_readers = ["cat", "head", "tail", "less", "more", "grep", "egrep", "rg", "awk", "sed", "cut", "sort",
+                       "cp", "mv", "scp", "rsync", "base64", "xxd", "od", "strings", "tar", "zip", "curl", "wget",
+                       "diff", "vim", "nano", "jq", "tee", "echo", "printf", "python", "python3", "node"]
+secret = [
+  '(^|/)\.env(?![\w.-]*\.(example|sample|template|dist)$)(\.[\w.-]+)?$',
+  '(^|/)\.claude/\.credentials\.json$',
+  '(^|/)\.claude/sessions/[^/]+\.key$',
+  '(^|/)\.ssh/',
+  '\.(pem|p12|pfx)$',
+  '(^|/)[^/]*\.key$',
+  '(^|/)(credentials|secrets?)(\.\w+)?$',
+  '(^|/)\.kube/config$',
+  # 11-03 보강 — 다른 구현(protect-secrets · damage-control · PolicyApprovalGate)의 비밀 파일 목록에서
+  '(^|/)\.(netrc|npmrc|pypirc|git-credentials|pgpass|my\.cnf|vault-token)$',
+  '(^|/)\.docker/config\.json$',
+  '(^|/)\.aws/(credentials|config)$',
+  '(^|/)\.gnupg/',
+  '\.(jks|keystore|tfstate)$',
+  '(^|/)[^/]*service-?account[^/]*\.json$',
+]
+# 그중 Edit · Write 도구로 고치는 것은 통과(바뀐 내용이 터미널 · 기록에 보인다) — 대신 텔레그램 "🛡 안전 규칙 파일 수정"(10분에 한 번).
+# Bash로 덮어쓰기(> · tee · sed -i · cp)는 계속 묻는다. 11-03 "늘 Yes": 7일 10번 모두 Edit 도구로 approval.toml
+protect_tool_edit_ok = [
+  '(^|/)AI_programming/foreman/config/(approval|notify)\.toml$',
+]
+protect = [
+  '(^|/)AI_programming/foreman/config/(approval|notify)\.toml$',   # FOREMAN 안전 규칙 · 알림 규칙 자체
+  '(^|/)AI_programming/foreman/scripts/foreman-(hook|decide)\.sh$', # 11-03 — 게이트 자신(hook 스크립트)을 고쳐 끄는 길(PolicyApprovalGate 자기 보호)
+  '(^|/)\.claude\.json$',                                           # CC 전역 설정(MCP 서버 등)
+  '(^|/)\.mcp\.json$',
+  '(^|/)\.claude/settings(\.local)?\.json$',
+  '(^|/)\.gitconfig$',
+  '(^|/)\.(bash|zsh)rc$',
+]
+
+# ── 프로젝트별 ─────────────────────────────────────────────
+# 실행 중인 세션에 곧바로 걸린다(hook은 다음 도구 호출부터 반영 — 3단계 실측).
+# 런슈즈 · 펫퍼민트는 관찰로 시작한다: 기록만 하고 판정을 돌려주지 않는다. 결과를 보고 enforce로 바꾼다
+[projects.runshoes]
+mode = "observe"
+
+[projects.petmint-rag-chatbot]
+mode = "observe"
+
+[projects.foreman]
+mode = "enforce"
+
+# 인프라(11-10 프로젝트 등록) — 사용자가 인프라 묶음 1(노드 증설 · 가용성) 동안 승인 카드를 풀었다(세션 265가 클러스터 작업 중).
+# 그동안 관리자가 위 [defaults] mode도 임시로 observe로 해 두었다 — 합친 뒤 관리자가 defaults를 enforce로 되돌리고,
+# 묶음 1이 끝나면 이 줄도 enforce로 바꾼다(사용자 확인 뒤). log/coder_infra_project_20261110.md
+[projects.ronanlab-infra]
+mode = "observe"
+
+# ── 다른 저장소는 읽기만(11-09 사용자, bridge/reposcope.py) ───────────
+# 여기 적은 프로젝트의 세션은 자기 저장소(+ 그 worktree) 밖의 git 저장소를 고치지 않는다 — 승인 모드와 상관없이 거부.
+#   Edit · Write · MultiEdit · NotebookEdit: 대상 파일이 다른 git 저장소 안이면 거부
+#   git: -C · cd · --git-dir · --work-tree · GIT_DIR로 다른 저장소를 가리키며 읽기 명령(아래 read) 밖을 쓰면 거부
+#        (fetch도 그 저장소 .git에 쓴다 → 상태는 git ls-remote, 손볼 일은 /tmp · 스크래치 복제본에서)
+#   /tmp 아래(스크래치 복제본)와 git 저장소가 아닌 곳(~/.claude 등)은 막지 않는다
+#   Bash의 그 밖 쓰기(sed -i · > 리디렉션 등)는 보지 않는다 — CC 샌드박스로 막을지는 일상 명령을 시험한 뒤(사용자)
+[repo_scope]
+read_only_elsewhere = ["foreman", "ronanlab-infra"]   # 11-10 인프라도(사용자)
+read = ["status", "log", "show", "diff", "ls-files", "ls-tree", "ls-remote", "rev-parse", "rev-list", "blame",
+        "grep", "cat-file", "describe", "shortlog", "whatchanged", "for-each-ref", "show-ref", "name-rev",
+        "merge-base", "count-objects", "check-ignore", "help", "version"]
+
+# 예외 — 이 프로젝트 세션이 다른 저장소에서 Edit · Write로 고쳐도 되는 곳 "<프로젝트>/<경로>/"(그 프로젝트 원본 저장소만, worktree 아님).
+# git은 그 경로 안의 add · commit만(11-10 사용자 — 다른 변경이 섞이지 않게, bridge/reposcope.py):
+#   add는 경로를 적은 것만(git add -A · . 막음), commit은 -a · --amend 막고 스테이지가 그 경로 밖을 담으면 막음, push는 막음
+# 11-10 사용자: 인프라 묶음 1에서 펫퍼민트 · 런슈즈 문서를 고친다
+[repo_scope.writable]
+ronanlab-infra = ["runshoes/docs/", "petmint-rag-chatbot/docs/"]
+
+# 예외 2 — 이 프로젝트의 관리자 세션(role manager, 원본 폴더 — worktree 아님)만 그 저장소 원본에서 git push [origin] [main]을 한다.
+# origin/main보다 앞선 커밋이 전부 그 경로만 건드렸을 때만(하나라도 밖 · 머지 커밋 · 뒤처짐 · 갈라짐 · 원격 못 읽음이면 거부).
+# 11-10 사용자: 인프라 세션의 docs 커밋은 FOREMAN 관리자가 확인하고 push한다. 강제 · 삭제 · 태그 · 다른 원격 · 브랜치는 막는다
+[repo_scope.manager_push]
+foreman = ["runshoes/docs/", "petmint-rag-chatbot/docs/"]

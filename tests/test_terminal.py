@@ -513,7 +513,9 @@ async def test_prefill_refuses_when_shell_busy(shell):
 
 # ── 브리지를 거친 ttyd(실제 ttyd, 시험 소켓) ─────────────────────
 @pytest.mark.db
-def test_proxy_cookie_origin_ws(shell, tmp_path):
+def test_proxy_cookie_origin_ws(shell, tmp_path, migrated_db):
+    # migrated_db — 브리지 시작(create_app)이 시험 DB의 project 표를 읽는다. 전에는 앞서 돈 시험이 올린 표에 기대어
+    # 이 시험만 혼자 돌리면 깨졌다(11-14)
     from fastapi.testclient import TestClient
     from starlette.websockets import WebSocketDisconnect
 
@@ -527,7 +529,8 @@ def test_proxy_cookie_origin_ws(shell, tmp_path):
     conn = pymysql.connect(host=s.mysql_host, port=s.mysql_port, user=s.mysql_user,
                            password=s.mysql_password.get_secret_value(), database=s.mysql_database, autocommit=True)
     conn.close()
-    tok = s.foreman_api_token.get_secret_value()
+    # 토큰 문자열을 지역 변수로 두지 않는다 — pytest -l이 실패한 시험의 지역 변수를 찍는다(11-14). h는 repr이 가린 헤더
+    h = _bearer(s.foreman_api_token.get_secret_value())
     with TestClient(create_app(s)) as c:
         for _ in range(50):
             if s.terminal_socket.exists():
@@ -536,7 +539,7 @@ def test_proxy_cookie_origin_ws(shell, tmp_path):
         assert (s.terminal_socket.parent.stat().st_mode & 0o777) == 0o700
         assert c.get("/terminal/").status_code == 401
         assert c.post("/api/terminal/session").status_code == 401
-        r = c.post("/api/terminal/session", headers=_bearer(tok))
+        r = c.post("/api/terminal/session", headers=h)
         assert r.status_code == 200
         sc = r.headers["set-cookie"].lower()
         assert "httponly" in sc and "samesite=strict" in sc and "path=/terminal" in sc
@@ -560,10 +563,9 @@ def test_proxy_cookie_origin_ws(shell, tmp_path):
                 if b"via-ttyd-42" in seen:
                     break
             assert b"via-ttyd-42" in seen
-        st = c.get("/api/terminal", headers=_bearer(tok)).json()
+        st = c.get("/api/terminal", headers=h).json()
         assert st["enabled"] and st["running"]
         # 11-10 보이는 창 읽기 — 창을 바꾸지 않고, 밖에서(다른 탭 · tmux 키) 바뀐 것을 따라간다
-        h = _bearer(tok)
         assert c.get("/api/terminal/window").status_code == 401
         w0 = c.post("/api/terminal/open", headers=h, json={"project": "runshoes"}).json()
         assert w0["project"] == "runshoes"

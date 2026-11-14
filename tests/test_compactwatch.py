@@ -1,10 +1,6 @@
-from pathlib import Path
-
 from bridge.compactwatch import (CompactRules, context_level, context_message, context_pct, context_rule, level, load_rules,
                                  message, short_streak, window_over_message)
 from bridge.model_choice import window_of
-
-REPO = Path(__file__).resolve().parent.parent
 
 
 def test_level_thresholds():
@@ -19,8 +15,23 @@ def test_short_streak_needs_two_short_gaps():
     assert short_streak([9, 3, 1], r)
 
 
-def test_repo_config_and_missing_file(tmp_path):
-    r = load_rules(REPO / "config" / "notify.toml")
+COMPACT_TOML = ("[compact]\ndue_at = 2\nlate_at = 4\nnotify_at = [2, 4]\nshort_turns = 3\ncontext_at = [300000, 500000]\n"
+                "context_pct = [50, 75]\nswitch_min_pct = 40\n")
+
+
+def _cfg(tmp_path):
+    """실제 config/notify.toml 대신 [compact] 칸만 쓴 시험용 파일(11-14 — 문턱을 바꿀 때마다 시험이 깨지지 않게).
+    창 크기는 load_rules가 같은 폴더의 models.toml [windows]에서 읽으니 그것도 옆에 둔다."""
+    d = tmp_path / "config"   # 없는 파일 시험(tmp_path/없음.toml)이 이 models.toml을 보지 않게 따로 둔다
+    d.mkdir(exist_ok=True)
+    p = d / "notify.toml"
+    p.write_text(COMPACT_TOML, encoding="utf-8")
+    (d / "models.toml").write_text("[windows]\nopus = 1000000\nsonnet = 200000\nhaiku = 200000\n", encoding="utf-8")
+    return p
+
+
+def test_config_and_missing_file(tmp_path):
+    r = load_rules(_cfg(tmp_path))
     assert (r.due_at, r.late_at, r.notify_at) == (2, 4, (2, 4))
     assert r.context_at == (300_000, 500_000)
     assert load_rules(tmp_path / "없음.toml") == CompactRules()
@@ -41,8 +52,8 @@ def test_context_level_and_rule_once_per_threshold():
 OPUS, SMALL = 1_000_000, 200_000
 
 
-def test_repo_windows_and_pct_config():
-    r = load_rules(REPO / "config" / "notify.toml")
+def test_windows_and_pct_config(tmp_path):
+    r = load_rules(_cfg(tmp_path))
     assert r.context_pct == (50, 75) and r.switch_min_pct == 40
     assert r.windows["opus"] == 1_000_000 and r.windows["sonnet"] == 200_000 and r.windows["haiku"] == 200_000
     assert window_of(r.windows, "claude-opus-5-5") == 1_000_000 and window_of(r.windows, "claude-haiku-5-5") == 200_000

@@ -10,7 +10,7 @@ from bridge.approval import load_policy
 from bridge.approvals import ApprovalManager
 from bridge.roleguard import RoleGuard, RolesConfig
 
-REPO_CFG = Path(__file__).resolve().parent.parent / "config"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"   # 실제 config/ 대신(11-14)
 
 
 @pytest.fixture
@@ -104,7 +104,11 @@ def test_off_project_and_rule_switch(repo):
 
 
 def test_config_load(tmp_path):
-    real = RolesConfig.load(REPO_CFG / "roles.toml")
+    # 실제 config/roles.toml 대신 시험용 파일(11-14 — 막기로 켜도 시험이 깨지지 않게. 실제 설정의 모양은 test_live_config_shape)
+    ok = tmp_path / "roles.toml"
+    ok.write_text('[roles]\nmode = "observe"\nprojects = ["foreman"]\n\n[roles.rules]\nworktree-push = true\n'
+                  'bash-file-edit = true\nmanager-code = true\nscribe-code = true\n')
+    real = RolesConfig.load(ok)
     assert real.mode == "observe" and real.error is None and all(real.rules.values())    # 처음엔 관찰(막지 않음)
     p = tmp_path / "r.toml"
     p.write_text('[roles]\nmode = "막기"\n')
@@ -124,7 +128,7 @@ def test_check_error_is_reported_not_raised(repo, monkeypatch):
 
 def _mgr(repo, mode):
     asm = SimpleNamespace(_project_for=lambda cwd, d: ("foreman", None), ids_for=None)
-    m = ApprovalManager(None, load_policy(REPO_CFG / "approval.toml"), asm, SimpleNamespace(submit=lambda e: None), None)
+    m = ApprovalManager(None, load_policy(FIXTURES / "approval_now.toml"), asm, SimpleNamespace(submit=lambda e: None), None)
     m.roles = RoleGuard(RolesConfig(mode=mode, projects=["foreman"]), free=())
     recs = []
 

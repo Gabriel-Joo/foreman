@@ -555,7 +555,7 @@ async def _mgr(s, wait_s=5.0):
     from bridge.approval import load_policy
     from bridge.approvals import ApprovalManager
     asm = await run(s)
-    pol = load_policy("config/approval.toml")
+    pol = load_policy(Path(__file__).resolve().parent / "fixtures" / "approval_now.toml")   # 실제 설정 대신 11-14 고정물
     for pp in [pol.defaults, *pol.projects.values()]:
         pp.wait_s = wait_s
     pipe, notif = FakePipe(), FakeNotifier()

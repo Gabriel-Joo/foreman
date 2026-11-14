@@ -5,13 +5,16 @@
 장치는 그대로 남아 있고 설정으로 다시 켤 수 있다([sensitive] mode = "read", protect_mode = "ask" 등)."""
 
 import os
+from pathlib import Path
 
 import pytest
 
 from bridge.approval import load_policy
 
+# REPO는 판정에 넘기는 작업 폴더 이름일 뿐이다(규칙이 AI_programming/foreman/… 경로를 본다). 고정물은 이 시험 파일 옆에서
+# 읽는다 — 전에는 REPO(원본 폴더)의 것을 읽어 worktree에서 고친 고정물이 시험되지 않았다(11-14)
 REPO = "/home/kopo17/AI_programming/foreman"
-POL = load_policy(os.path.join(REPO, "tests/fixtures/approval_strict.toml"))
+POL = load_policy(Path(__file__).resolve().parent / "fixtures" / "approval_strict.toml")
 
 
 def d(tool, project="foreman", cwd=REPO, scratch=None, **inp):

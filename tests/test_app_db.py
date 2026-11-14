@@ -15,14 +15,24 @@ pytestmark = pytest.mark.db
 
 
 class _Masked(dict):
-    """repr에 토큰을 내지 않는 헤더 — pytest가 실패한 assert의 호출 인자를 풀어 쓸 때 값이 찍혔다(11-11)."""
+    """repr에 값을 내지 않는 사전(헤더 · ws 인증 글) — pytest가 실패한 assert의 호출 인자를 풀어 쓸 때 값이 찍혔다(11-11).
+    보내는 값(json · 헤더)은 그대로다. 시험은 토큰 문자열을 지역 변수로 두지 않고 이것만 든다 — pytest -l이 실패한 시험의
+    지역 변수를 찍는다(11-14)."""
 
     def __repr__(self) -> str:
-        return "{'Authorization': 'Bearer ***'}"
+        return "{" + ", ".join(f"{k!r}: '***'" for k in self) + "}"
 
 
 def _bearer(token: str) -> dict:
     return _Masked(Authorization=f"Bearer {token}")
+
+
+def _hook_auth() -> dict:
+    return _bearer(get_settings().foreman_hook_token.get_secret_value())
+
+
+def _ws_auth() -> dict:
+    return _Masked(type="auth", token=get_settings().foreman_api_token.get_secret_value())
 
 
 @pytest.fixture
@@ -67,9 +77,8 @@ def test_ws_non_json_closed_1008(client):
 
 
 def test_ws_auth_hello(client):
-    token = get_settings().foreman_api_token.get_secret_value()
     with client.websocket_connect("/ws") as ws:
-        ws.send_json({"type": "auth", "token": token})
+        ws.send_json(_ws_auth())
         assert ws.receive_json()["type"] == "hello"
 
 
@@ -83,10 +92,9 @@ def test_emit_requires_token(client):
 
 
 def test_emit_reaches_ws_and_db(client):
-    token = get_settings().foreman_api_token.get_secret_value()
     long_target = "echo " + "a" * 2000
     with client.websocket_connect("/ws") as ws:
-        ws.send_json({"type": "auth", "token": token})
+        ws.send_json(_ws_auth())
         assert ws.receive_json()["type"] == "hello"
         r = client.post("/api/debug/emit", json={"target": long_target, "character_id": 1}, headers=_auth())
         assert r.status_code == 201, r.text
@@ -126,14 +134,13 @@ def test_ws_wrong_token_reason_has_length_only(client):
 
 
 def test_hooks_reject_paths(client):
-    hook = get_settings().foreman_hook_token.get_secret_value()
-    api = get_settings().foreman_api_token.get_secret_value()
+    hook = _hook_auth()   # 토큰 문자열 대신 가린 헤더만 든다(11-14, pytest -l)
     body = {"hook_event_name": "Stop", "session_id": "x"}
     assert client.post("/hooks", json=body).status_code == 401
-    assert client.post("/hooks", json=body, headers=_bearer(api)).status_code == 401  # API 토큰으론 안 된다
-    assert client.post("/hooks", content=b"nope", headers=_bearer(hook)).status_code == 400
-    assert client.post("/hooks", json={"x": 1}, headers=_bearer(hook)).status_code == 400
-    assert client.post("/hooks", json=body, headers=_bearer(hook)).status_code == 503  # 와처 꺼짐
+    assert client.post("/hooks", json=body, headers=_auth()).status_code == 401  # API 토큰으론 안 된다
+    assert client.post("/hooks", content=b"nope", headers=hook).status_code == 400
+    assert client.post("/hooks", json={"x": 1}, headers=hook).status_code == 400
+    assert client.post("/hooks", json=body, headers=hook).status_code == 503  # 와처 꺼짐
 
 
 def test_dashboard_snapshot_and_pages(client):

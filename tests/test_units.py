@@ -66,7 +66,11 @@ def test_mask_patterns():
 
 def test_notify_rules_and_format(tmp_path):
     from bridge.notify import compose_batch, first_line, fmt_duration, load_rules
-    r = load_rules("config/notify.toml")
+    p = tmp_path / "notify.toml"   # 실제 config/notify.toml 대신(11-14 — 알림을 켜고 끌 때마다 시험이 깨지지 않게)
+    p.write_text('[defaults]\nend_reasons = ["stop", "stop_failure", "interrupted", "session_end", "process_lost"]\n'
+                 '[projects.runshoes]\nprefix = "[런슈즈]"\n[projects.petmint-rag-chatbot]\nprefix = "[펫퍼민트]"\nmin_turn_s = 300\n',
+                 encoding="utf-8")
+    r = load_rules(p)
     assert r.for_project("runshoes").prefix == "[런슈즈]"
     assert r.for_project("petmint-rag-chatbot").min_turn_s == 300
     assert r.for_project(None) is None and "merged" not in r.defaults.end_reasons

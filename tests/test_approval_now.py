@@ -3,13 +3,17 @@
 데이터 볼륨 · PVC · 네임스페이스 · CC/tmux 대량 종료."""
 
 import os
+from pathlib import Path
 
 import pytest
 
 from bridge.approval import load_policy
 
+# REPO는 판정에 넘기는 작업 폴더 이름일 뿐이다(규칙이 AI_programming/foreman/… 경로를 본다) — 파일을 거기서 읽지 않는다.
+# 규칙은 실제 config/approval.toml 대신 11-14에 옮겨 둔 고정물을 읽는다(설정을 켜고 끌 때마다 시험이 깨지지 않게,
+# 실제 설정의 모양은 tests/test_live_config_shape.py)
 REPO = "/home/kopo17/AI_programming/foreman"
-POL = load_policy(os.path.join(REPO, "config/approval.toml"))
+POL = load_policy(Path(__file__).resolve().parent / "fixtures" / "approval_now.toml")
 HOME = os.path.expanduser("~")
 
 

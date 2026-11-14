@@ -4,6 +4,7 @@
 
 import os
 import subprocess
+import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,7 +20,64 @@ from bridge.mask import Masker
 from bridge.pipeline import (PipelineManager, argocd_live, argocd_status, build_cause, harbor_items, image_tag, infra_alert,
                              jenkins_status, live_verdict, load_pipeline, commit_match, other_repo, watch_state, webhook_broken)
 
-REPO = Path(__file__).resolve().parent.parent
+# 실제 config/pipeline.toml 대신 시험용 설정(11-14 — 설정을 바꿀 때마다 시험이 깨지지 않게). 값은 11-14 실제 설정 그대로
+PIPELINE_TOML = """\
+[git]
+poll_s = 20
+attribute_window_s = 300
+
+[watch]
+started_warn_s = 180
+started_alert_s = 1020
+completed_alert_s = 2100
+webhook_break_after = 2
+
+[infra]
+poll_s = 60
+stale_after = 3
+alert_after = 5
+retire_after_h = 24
+ingress = "http://192.168.122.240"
+
+[argocd_read]
+vagrant_dir = "~/k8s-cluster"
+vm = "m-k8s"
+namespace = "argocd"
+
+[infra.jenkins]
+name = "Jenkins"
+host = "jenkins.ronanlab.dev"
+health = "/login"
+
+[infra.harbor]
+name = "Harbor"
+host = "harbor.ronanlab.dev"
+health = "/api/v2.0/ping"
+
+[infra.argocd]
+name = "ArgoCD"
+host = "argocd.ronanlab.dev"
+health = "/api/version"
+
+[projects.runshoes]
+branch = "main"
+jenkins_job = "runshoes-app"
+harbor_project = "runshoes"
+argocd_app = "runshoes"
+
+[projects.petmint-rag-chatbot]
+branch = "main"
+jenkins_job = "petmint-app"
+harbor_project = "petmint"
+argocd_app = "petmint"
+"""
+
+
+def _rules():
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "pipeline.toml"
+        p.write_text(PIPELINE_TOML, encoding="utf-8")
+        return load_pipeline(p)
 
 
 # ── 판정 ──────────────────────────────────────────────────
@@ -60,7 +118,7 @@ def test_infra_alert():
 def test_infra_down_alerts_once_per_kind():
     """11-06 정전: Jenkins가 죽어 있는데 화면 STALE뿐이었다 — 종류마다 한 번 알리고(두 프로젝트가 같은 Jenkins), 돌아오면 한 번."""
     notifier = FakeNotifier()
-    pm = PipelineManager(None, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+    pm = PipelineManager(None, _rules(), FakePipeline(), Masker(env_paths=[]),
                          notifier)
     chars = [(1, "jenkins", "IDLE", None, None, "runshoes"), (2, "jenkins", "IDLE", None, None, "petmint-rag-chatbot"),
              (3, "harbor", "IDLE", None, None, "runshoes")]
@@ -146,7 +204,7 @@ def test_allowed_sources():
 
 
 def test_config_loads():
-    r = load_pipeline(REPO / "config" / "pipeline.toml")
+    r = _rules()
     assert r.by("jenkins_job", "runshoes-app").name == "runshoes"
     assert r.by("harbor_project", "petmint").name == "petmint-rag-chatbot"
     assert set(r.infra) == {"jenkins", "harbor", "argocd"}
@@ -235,7 +293,7 @@ async def test_chain_end_to_end(env):
         ev = c.lastrowid
     engine = make_engine(s)
     notifier = FakeNotifier()
-    pm = PipelineManager(engine, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+    pm = PipelineManager(engine, _rules(), FakePipeline(), Masker(env_paths=[]),
                          notifier)
     try:
         await pm.start(loops=False)
@@ -320,7 +378,7 @@ async def test_watch_missing_and_webhook_break(env):
     _git(repo, "update-ref", "refs/remotes/origin/main", c1)
     engine = make_engine(s)
     notifier = FakeNotifier()
-    pm = PipelineManager(engine, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+    pm = PipelineManager(engine, _rules(), FakePipeline(), Masker(env_paths=[]),
                          notifier)
     try:
         await pm.start(loops=False)
@@ -392,7 +450,7 @@ async def test_argocd_sync_waiting_attaches_to_undeployed_build(env):
     _git(repo, "update-ref", "refs/remotes/origin/main", new)
     engine = make_engine(s)
     notifier = FakeNotifier()
-    pm = PipelineManager(engine, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+    pm = PipelineManager(engine, _rules(), FakePipeline(), Masker(env_paths=[]),
                          notifier)
     try:
         await pm.start(loops=False)
@@ -445,7 +503,7 @@ async def test_argocd_running_without_revision_closed_by_later_result(env):
     sha = _commit(repo, "a.txt", t0)
     _git(repo, "update-ref", "refs/remotes/origin/main", sha)
     engine = make_engine(s)
-    pm = PipelineManager(engine, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+    pm = PipelineManager(engine, _rules(), FakePipeline(), Masker(env_paths=[]),
                          FakeNotifier())
     try:
         await pm.start(loops=False)
@@ -494,7 +552,7 @@ async def test_argocd_running_read_closes_or_alerts(env):
     _git(repo, "update-ref", "refs/remotes/origin/main", sha)
     engine = make_engine(s)
     notifier = FakeNotifier()
-    pm = PipelineManager(engine, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+    pm = PipelineManager(engine, _rules(), FakePipeline(), Masker(env_paths=[]),
                          notifier)
     reads = []
 
@@ -566,7 +624,7 @@ async def test_watch_with_running_build_does_not_raise(env):
     _git(repo, "update-ref", "refs/remotes/origin/main", c1)
     engine = make_engine(s)
     notifier = FakeNotifier()
-    pm = PipelineManager(engine, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+    pm = PipelineManager(engine, _rules(), FakePipeline(), Masker(env_paths=[]),
                          notifier)
     try:
         await pm.start(loops=False)
@@ -597,7 +655,7 @@ async def test_watch_failure_isolated_alerted_once_and_recovery(env):
     s, repo, conn = env
     engine = make_engine(s)
     notifier = FakeNotifier()
-    pm = PipelineManager(engine, load_pipeline(REPO / "config" / "pipeline.toml"), FakePipeline(), Masker(env_paths=[]),
+    pm = PipelineManager(engine, _rules(), FakePipeline(), Masker(env_paths=[]),
                          notifier)
     try:
         await pm.start(loops=False)

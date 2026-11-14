@@ -26,9 +26,9 @@ def test_cli_rows_model_usage_and_fallback():
     assert cli_rows(None) == [] and cli_rows({"result": "글만"}) == []
 
 
-def test_record_cli_writes_rows():
+def test_record_cli_writes_rows(migrated_db):
     async def go():
-        eng = make_engine(Settings())
+        eng = make_engine(migrated_db)   # 11-14 — 전에는 Settings()(운영 DB foreman)에 썼다 지웠다. 시험 DB로
         src = "zz" + uuid.uuid4().hex[:6]
         try:
             assert await record_cli(eng, src, 7, "foreman", REAL) == 1
@@ -45,12 +45,84 @@ def test_record_cli_writes_rows():
 
 # ── 2단계: 환산 · /usage 글 풀이 · 창 · 하한 · 주기 읽기 ──────────────
 
+import tempfile  # noqa: E402
 from datetime import datetime, timedelta  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 from bridge.usage import (Limit, UsageConfig, UsageMonitor, chain_windows, floors, limit_status, load_config,  # noqa: E402
                           next_weekly, parse_reset, parse_usage)
 
-CFG = load_config("config/usage.toml")
+# 실제 config/usage.toml 대신 시험용 설정(11-14 — 값 · 한도 줄을 바꿀 때마다 시험이 깨지지 않게). 값은 11-14 실제 설정 그대로.
+# 실제 설정의 모양(칸이 있는지)은 tests/test_live_config_shape.py
+USAGE_TOML = """\
+poll_s = 600
+fail_alert = 3
+tz = "Asia/Seoul"
+
+[credits]
+balance_usd = 0.0
+monthly_cap_usd = 50.0
+monthly_used_usd = 51.30
+auto_reload = false
+as_of = "2026-11-09"
+
+[prices.opus]
+input = 4.0
+output = 20.0
+cache_read = 0.20
+cache_write = 8.0
+
+[prices.sonnet]
+input = 2.0
+output = 10.0
+cache_read = 0.20
+cache_write = 4.0
+
+[prices.haiku]
+input = 0.10
+output = 0.50
+cache_read = 0.01
+cache_write = 0.20
+
+[prices.fable]
+input = 10.0
+output = 50.0
+cache_read = 0.25
+cache_write = 20.0
+
+[[limits]]
+key = "session_5h"
+label = "5시간 세션"
+match = "Current session"
+window_h = 5
+models = []
+
+[[limits]]
+key = "weekly_all"
+label = "주간 · 전체"
+match = "Current week (all models)"
+window_h = 168
+models = []
+reset = "일요일 22:00"
+
+[[limits]]
+key = "weekly_fable"
+label = "주간 · Fable"
+match = "Current week (Fable)"
+window_h = 168
+models = ["fable"]
+reset = "일요일 22:00"
+"""
+
+
+def _load_cfg():
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "usage.toml"
+        p.write_text(USAGE_TOML, encoding="utf-8")
+        return load_config(p)
+
+
+CFG = _load_cfg()
 # 11-08 09:30 KST 실제 `claude -p "/usage"`의 result(앞부분)
 CLI_BODY = """You are currently using your subscription to power your Claude Code usage
 
@@ -122,7 +194,7 @@ def test_head_keys_tells_missing_line_from_changed_shape():
     assert "session_5h" not in found and "session_5h" in head_keys(shaped, CFG.limits)    # 머리는 있는데 % 없음 = 글 모양이 바뀜
 
 
-def test_monitor_absent_session_line_is_not_a_failure():
+def test_monitor_absent_session_line_is_not_a_failure(migrated_db):
     """5시간 줄이 없어도 읽기는 성공(주간은 기록) · 옛 5시간 값을 안 내고 · 6시간 넘게 없으면 한 번만 알린다 · 줄이 돌아오면 평소대로.
     한도 줄이 하나도 없거나 머리만 있고 %가 없으면 지금처럼 실패."""
     tag = "zz" + uuid.uuid4().hex[:6]
@@ -224,7 +296,7 @@ class _Notifier:
         self.rules_sent = getattr(self, "rules_sent", []) + [rule]
 
 
-def test_monitor_observe_fail_alert_recover_and_status():
+def test_monitor_observe_fail_alert_recover_and_status(migrated_db):
     """2001년 시각 · 이 시험만의 한도 key로 — 다른 행과 섞이지 않게(foreman_test)."""
     tag = "zz" + uuid.uuid4().hex[:6]
     lim5 = Limit(key=f"{tag}_5h", label="5시간", match="Current session", window_h=5)
@@ -277,7 +349,7 @@ def test_monitor_observe_fail_alert_recover_and_status():
     asyncio.run(go())
 
 
-def test_alerts_thresholds_eta_once_and_after_restart():
+def test_alerts_thresholds_eta_once_and_after_restart(migrated_db):
     """5시간 85% + 최근 1시간 $20 → 80% · 1시간 안에 100%. 주간 96% → 95%만(80%는 따로 안 보냄). 다시 판정 · 다시 띄워도 한 번."""
     tag = "zz" + uuid.uuid4().hex[:6]
     lim5 = Limit(key=f"{tag}_5h", label="5시간", match="Current session", window_h=5)
@@ -349,7 +421,7 @@ def test_credit_status():
     assert not s["blocked"] and s["available_usd"] == 20               # 잔액 20, 한도 여유 40 → 20
     assert credit_status({**ok, "auto_reload": True}, date(2026, 11, 10))["available_usd"] == 40
     assert credit_status(None, date(2026, 11, 20)) is None
-    assert CFG.credits and CFG.credits["as_of"]                        # config/usage.toml에 칸이 있다
+    assert CFG.credits and CFG.credits["as_of"] == "2026-11-09"        # [credits] 칸을 읽는다(실제 설정에 칸이 있는지는 test_live_config_shape)
     # 판정은 CC 한도 글이 먼저 — 넣은 값은 근거가 없을 때만(그것도 3일 안)
     fresh = credit_status(now_c, date(2026, 11, 10))
     assert credit_view({"state": "flowing"}, fresh)["blocked"] is False
@@ -374,7 +446,7 @@ def test_parse_contrib():
     assert parse_contrib(None) == []
 
 
-def test_credit_signal_from_cc_limit_messages():
+def test_credit_signal_from_cc_limit_messages(migrated_db):
     """11-09 실측 모양 — 13:10 5시간 한도 → 13:13부터 응답이 이어짐(추가 사용) → 13:32 월 지출 한도(막힘). 2001-02월 시각 · 이 시험만의 세션"""
     from bridge.usage import credit_signal
     cfg = UsageConfig(poll_s=600, fail_alert=3, tz="Asia/Seoul", prices=CFG.prices, limits=[])
@@ -428,7 +500,7 @@ def test_credit_signal_from_cc_limit_messages():
     asyncio.run(go())
 
 
-def test_alerts_90_when_credits_blocked():
+def test_alerts_90_when_credits_blocked(migrated_db):
     """추가 사용이 막혀 있으면 90%에 한 번 더(100%가 곧 멈춤) — 글에 막힌 까닭과 '마무리'."""
     tag = "zz" + uuid.uuid4().hex[:6]
     lim5 = Limit(key=f"{tag}_5h", label="5시간", match="Current session", window_h=5)

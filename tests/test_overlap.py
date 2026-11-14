@@ -1,10 +1,7 @@
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 from bridge.overlap import (Corpus, OverlapRules, OverlapWatch, cross_message, file_word, files_message, is_ident, load_rules, match,
                             message, named_edits, rel_path, same_files, same_text, score, skip, words)
-
-REPO = Path(__file__).resolve().parent.parent
 
 # 11-06 실제 사례(log/infra_20261106_jenkins-harbor-after-outage.md) — 198이 먼저 받고, 197에 같은 조사가 함께 들어갔다
 A = "jenkins-0 Unknown · harbor-jobservice CrashLoopBackOff 원인 조사해줘. 정전 뒤 노드는 Ready"
@@ -124,8 +121,10 @@ def test_message_wording():
     assert "막지 않았습니다" in m and "jenkins-0, harbor-jobservice" in m
 
 
-def test_repo_config_and_missing_file(tmp_path):
-    r = load_rules(REPO / "config" / "notify.toml")
+def test_config_and_missing_file(tmp_path):
+    p = tmp_path / "notify.toml"   # 실제 config/notify.toml 대신(11-14 — 겹침 알림을 켜고 끌 때마다 시험이 깨지지 않게)
+    p.write_text("[overlap]\nenabled = true\nwindow_min = 180\nmin_score = 3\n", encoding="utf-8")
+    r = load_rules(p)
     assert r.enabled and r.min_score == 3 and r.window_min == 180
     assert load_rules(tmp_path / "없음.toml") == OverlapRules()
 

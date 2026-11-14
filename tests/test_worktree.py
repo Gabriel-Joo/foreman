@@ -147,10 +147,23 @@ def test_schema_lock_blocked_notice_and_early_release(tmp_path):
     assert sl.try_release_early("foreman", {"0001_a", "0002_b", "0003_c"}) is None and sl.state["foreman"]["cc"] == "C"
 
 
+SCHEMA_LOCK_TOML = r"""
+[schema_lock.foreman]
+paths = ["migrations/"]
+commands = ['-m\s+bridge\.db\.migrate\b(?![^\n;&|]*--status)', '\bpython[\w.]*\s+(\S*/)?bridge/db/migrate\.py\b(?![^\n;&|]*--status)']
+
+[schema_lock.runshoes]
+paths = ["backend/src/main/resources/db/migration/"]
+commands = ['\bflyway(Migrate|Clean|Repair|Baseline|Undo)\b', '\bflyway\s+(migrate|clean|repair|baseline|undo)\b']
+"""
+
+
 def test_schema_lock_commands_only_running_migrations(tmp_path):
-    """11-09 — 실제 config/worktree.toml: 마이그레이션을 돌리는 명령만 스키마 시도다. 가져오기만 하는 읽기 조회 · --status ·
-    flyway_schema_history 읽기는 잠금을 잡지도 막히지도 않는다(메인의 읽기 조회가 잠금을 쥐고, 또 막혔다)."""
-    cfg = Path(__file__).resolve().parent.parent / "config" / "worktree.toml"
+    """11-09 — config/worktree.toml의 명령 규칙: 마이그레이션을 돌리는 명령만 스키마 시도다. 가져오기만 하는 읽기 조회 · --status ·
+    flyway_schema_history 읽기는 잠금을 잡지도 막히지도 않는다(메인의 읽기 조회가 잠금을 쥐고, 또 막혔다).
+    11-14 — 실제 설정 대신 그 규칙(11-14 실제 값 그대로)을 쓴 시험용 파일을 읽는다(설정을 바꿀 때마다 시험이 깨지지 않게)."""
+    cfg = tmp_path / "worktree.toml"
+    cfg.write_text(SCHEMA_LOCK_TOML, encoding="utf-8")
     sl = SchemaLock(cfg, alive=lambda cc: True, state=tmp_path / "lock.json")
     repo = tmp_path / "foreman"
     (repo / ".git").mkdir(parents=True)
