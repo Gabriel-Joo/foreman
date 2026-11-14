@@ -1,6 +1,34 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { flowStep, FLOW_STEPS, autoNote } from '../../bridge/static/js/handoff.js';
+import { flowStep, FLOW_STEPS, autoNote, endMenu, END_ITEMS, showMove, FLOW_TIP } from '../../bridge/static/js/handoff.js';
+import { MOVE_TIP } from '../../bridge/static/js/moveflow.js';
+
+// 11-14 사용자 — 「세션」 [끝내기 ▾] 셋, 「끝내고 버리기」 없음, 설명은 줄 아래, 할 수 없는 것은 꺼진 버튼 + 까닭 호버
+test('끝내기 메뉴: 셋 · 버리기 없음 · 같은 동작 · 꺼진 항목 까닭', () => {
+  assert.deepEqual(END_ITEMS.map((x) => x[1]), ['합치고 끝내기', '커밋만 하고 끝내기', '그냥 끝내기']);
+  assert.deepEqual(END_ITEMS.map((x) => x[0]), ['wt-end-merge', 'rest', 'exit']);     // 전 버튼과 같은 data-act → 같은 확인 창
+  const all = endMenu({ exit: true, rest: true }, null);
+  assert.ok(!all.includes('wt-end-discard') && !all.includes('버리기'));
+  assert.ok(all.includes('<span class="small muted">작업방에 저장만 해두고 끝냅니다</span>'));
+  assert.ok(!all.includes('disabled') && !all.includes('title='));                    // 켜진 항목은 호버 없이 설명 줄로
+  const dim = endMenu({ exit: true, rest: false }, '작업 중입니다');
+  assert.match(dim, /data-act="rest" class="end-item" role="menuitem" disabled title="커밋만 하고 끝내기 — 지금은 할 수 없습니다. 작업 중입니다\."/);
+  assert.match(dim, /data-act="exit" class="end-item" role="menuitem"><b>/);
+});
+
+// 11-14 사용자 — 작업방(worktree)이 있는 세션은 「새 세션으로 옮기기」 묶음을 뺀다. 관리자(worktree 없음)는 그대로
+test('옮기기 묶음: 작업방 있으면 뺌, 도는 흐름이면 보임', () => {
+  assert.equal(showMove({ worktree: null }, null), true);
+  assert.equal(showMove({ worktree: { exists: true, live: true, branch: 'cc/x' } }, null), false);
+  assert.equal(showMove({ worktree: { exists: false, branch: 'cc/x' } }, null), false);
+  assert.equal(showMove({ worktree: { error: '못 읽음' } }, null), true);
+  assert.equal(showMove({ worktree: { exists: true } }, { i: 1 }), true);
+});
+
+test('옮기기 호버: 무엇을 하는지 먼저, 패널 머리와 같은 글', () => {
+  assert.equal(MOVE_TIP, '새 세션으로 옮기기 — 지금 세션을 끝내고 같은 자리에 새 세션을 띄웁니다. 잊은 것을 찾아 문서에 넣을 후보를 보여드리니 고르기만 하면 됩니다.');
+  assert.equal(FLOW_TIP, MOVE_TIP);
+});
 
 // 11-14 사용자 — 「(자동: CLAUDE.md, CLAUDE.md, CLAUDE.md)」. 같은 이름은 하나로, 셋을 넘으면 「첫 것 외 N개」
 test('읽을 곳 자동 목록: 중복을 빼고 넷부터 줄인다', () => {

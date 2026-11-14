@@ -13,7 +13,27 @@ const SOURCE = { self: '세션이 씀', self_headless: '끝난 세션을 잠깐 
 const STATUS = { requested: '기다리는 중…', ok: '저장됨', failed: '실패', timeout: '시간 초과' };
 // 11-09 화면 말 통일 — "인계"는 "새 세션으로 옮기기"(문서 · log · 세션에 넣는 글은 그대로 "인계")
 const KIND = { snapshot: '지금 요약', handoff: '옮기기용 요약' };
-export const FLOW_TIP = '새 세션으로 옮기기 — 지금까지를 요약해 보여 드리고, 확인하면 같은 폴더에 새 세션을 띄워 요약을 넣은 뒤 이 세션을 끝냅니다. 어느 단계에서나 멈출 수 있습니다.';
+// 패널 머리 · 대화 탭의 [새 세션으로 옮기기](opanel.js)는 살아 있는 세션에만 보이고 startFlow는 한 흐름을 탄다 — 그래서 같은 호버(MOVE_TIP, 11-14)
+export const FLOW_TIP = MOVE_TIP;
+// 옛 흐름(한 흐름을 껐거나 끝난 세션) — 이 탭의 버튼에서만
+const OLD_FLOW_TIP = '새 세션으로 옮기기 — 지금까지를 요약해 보여 드리고, 확인하면 같은 폴더에 새 세션을 띄워 요약을 넣은 뒤 이 세션을 끝냅니다. 어느 단계에서나 멈출 수 있습니다.';
+// 「세션」 칸 [끝내기 ▾] 메뉴(11-14 사용자) — 작업방(worktree)이 살아 있는 세션. [data-act, 이름, 켜짐 열쇠(can), 줄 아래 설명]. 누르면 전과 같은 확인 창 · 흐름.
+// 「끝내고 버리기」는 화면에서 뺐다(저장한 것까지 되돌릴 수 없이 사라짐). API(worktree discard)는 그대로
+export const END_ITEMS = [
+  ['wt-end-merge', '합치고 끝내기', 'exit', '고친 것을 main에 붙이고 끝냅니다'],
+  ['rest', '커밋만 하고 끝내기', 'rest', '작업방에 저장만 해두고 끝냅니다'],
+  ['exit', '그냥 끝내기', 'exit', '아무것도 안 하고 세션만 끕니다'],
+];
+// 메뉴 칸 — 할 수 없는 항목은 꺼진 버튼 + 까닭 호버(전 버튼과 같은 방식). 순수 함수(시험)
+export function endMenu(can, why) {
+  const off = why ? `지금은 할 수 없습니다. ${/\.$/.test(why) ? why : why + '.'}` : '지금은 할 수 없습니다.';
+  return `<div class="end-menu" role="menu">${END_ITEMS.map(([act, label, key, desc]) => {
+    const on = !!(can && can[key]);
+    return `<button type="button" data-act="${act}" class="end-item" role="menuitem"${on ? '' : ` disabled title="${esc(`${label} — ${off}`)}"`}><b>${esc(label)}</b><span class="small muted">${esc(desc)}</span></button>`;
+  }).join('')}</div>`;
+}
+// 「새 세션으로 옮기기」 묶음을 보일까(11-14 사용자) — 작업방(worktree)이 있는 세션은 뺀다(한 번도 쓴 적 없음). 이미 도는 흐름이 있으면 보인다
+export const showMove = (c, inFlow) => !!inFlow || !(c && c.worktree && !c.worktree.error);
 
 // 넘기고 새로 시작(11-08 사용자 — 흩어진 [요약하고 끝내기] · [지금 요약] · [새로 띄우기] · 압축 요약을 버튼 하나로).
 // ① 요약 → ② 확인(넣을 글을 보여 줌) → ③ 새 세션 → ④ 옛 세션 끝내기. 어디까지 왔는지는 이 브라우저에 세션마다 기억한다
@@ -151,7 +171,11 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
   let noteOpen = false, noteDraft = '';          // ② 확인의 [덧붙여서 보내기](11-09) — 인계 글 끝에 붙일 한 줄
   let lastHtml = '';                             // 같은 글이면 다시 그리지 않는다(11-09 — 3초마다 다시 그려 글 상자 스크롤이 맨 위로 돌아갔다)
   // 접는 칸을 사람이 열고 닫은 것 — 다시 그려도 그대로(null이면 저절로: 문서 정리는 할 일이 있을 때만 연다)
-  let docsOpen = null, moreOpen = false;
+  let docsOpen = null, moreOpen = false, endOpen = false;   // endOpen — 「세션」 [끝내기 ▾] 메뉴(11-14)
+  // 메뉴 밖을 누르거나 Esc면 닫는다
+  const endClose = () => { if (endOpen) { endOpen = false; draw(); } };
+  document.addEventListener('click', (ev) => { if (endOpen && !(ev.target.closest && ev.target.closest('[data-act="end-menu"], .end-menu'))) endClose(); });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') endClose(); });
   // 고치던 값 — 15초마다 새로 그려도 날아가지 않게 따로 든다(요약 고치기 글 · 옮기기 목록 칸)
   let editDraft = null, promDraft = {}, promId = null, promIn = null;
   const promField = (t) => {
@@ -244,17 +268,20 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
   function wtGroup(w, b) {
     if (!w) return '';
     if (w.error) return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div class="small bad">${esc(w.error)}</div></div>`;
-    if (!w.exists) return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div class="small muted">${esc(w.branch)} — 합쳤거나 버려서 지금은 없습니다.</div></div>`;
+    // 11-14 사용자 — 칸에 든 것은 worktree 이름이 아니라 브랜치 이름이다(칸 이름 「따로 작업」 → 「브랜치 이름」, 오류 줄만 그대로).
+    // 처음엔 지시대로 「branch 이름」으로 했다가 같은 날 사용자가 「브랜치 이름」으로, 호버 안 글도 같이
+    if (!w.exists) return `<div class="hand-group"><span class="hand-lbl hand-lbl-br small muted">브랜치 이름</span><div class="small muted">${esc(w.branch)} — 합쳤거나 버려서 지금은 없습니다.</div></div>`;
     // 11-11(받은 할 일 #17) — 같은 이름을 뒤 세션이 다시 씀: 지금 폴더는 그 세션 것이라 여기서는 합치기 · 버리기를 보이지 않는다
-    if (w.reused_by) return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div class="small muted" title="이름 다시 씀 — worktree 이름은 다시 쓰입니다. 이 세션의 worktree는 이미 합쳤거나 버렸습니다.">${esc(w.branch)} — 이 세션의 일은 끝났습니다. 지금 이 이름은 세션 ${w.reused_by}이 씁니다.</div></div>`;
-    const why = w.live ? '세션을 끝내면서 합치거나 버립니다 — 위 「세션」의 [끝내고 합치기] · [끝내고 버리기].'
-      : w.dirty.length ? `커밋 안 된 변경 ${w.dirty.length}개 — 그 세션에서 커밋하거나 버려야 합칠 수 있습니다.` : '';
-    return `<div class="hand-group"><span class="hand-lbl small muted">따로 작업</span><div>
-      <div class="small"><code>${esc(w.branch)}</code> · ${esc(w.base)}보다 커밋 <b>${w.ahead}</b>개 앞${w.behind ? ` · <span title="${esc(w.base)}가 ${w.behind}개 앞서감(합칠 때 rebase) — 이 브랜치를 만든 뒤 ${esc(w.base)}에 들어온 커밋입니다. 합칠 때 그 위로 다시 얹습니다.">${esc(w.base)}에 새 변경 ${w.behind}개</span>` : ''}${w.dirty.length ? ` · <span class="warn">커밋 안 됨 ${w.dirty.length}</span>` : ''}${w.schema_lock ? ' · <span class="warn" title="스키마 잠금 보유 — 이 세션이 DB 구조(migrations)를 바꾸는 중이라 다른 세션은 바꿀 수 없습니다.">DB 구조 바꾸는 중</span>' : ''}</div>
+    if (w.reused_by) return `<div class="hand-group"><span class="hand-lbl hand-lbl-br small muted">브랜치 이름</span><div class="small muted" title="이름 다시 씀 — 작업방 이름은 다시 쓰입니다. 이 세션의 작업방은 이미 합쳤거나 버렸습니다.">${esc(w.branch)} — 이 세션의 일은 끝났습니다. 지금 이 이름은 세션 ${w.reused_by}이 씁니다.</div></div>`;
+    // 살아 있으면 설명 줄 없음(11-14 사용자 — 바로 위 [끝내기 ▾]를 다시 설명하는 말이었다)
+    const why = !w.live && w.dirty.length ? `커밋 안 된 변경 ${w.dirty.length}개 — 그 세션에서 커밋하거나 버려야 합칠 수 있습니다.` : '';
+    return `<div class="hand-group"><span class="hand-lbl hand-lbl-br small muted">브랜치 이름</span><div>
+      <div class="small"><code>${esc(w.branch)}</code></div>
+      <div class="small">${esc(w.base)}보다 커밋 <b>${w.ahead}</b>개 앞${w.behind ? ` · <span title="${esc(w.base)}가 ${w.behind}개 앞서감(합칠 때 rebase) — 이 브랜치를 만든 뒤 ${esc(w.base)}에 들어온 커밋입니다. 합칠 때 그 위로 다시 얹습니다.">${esc(w.base)}에 새 변경 ${w.behind}개</span>` : ''}${w.dirty.length ? ` · <span class="warn">커밋 안 됨 ${w.dirty.length}</span>` : ''}${w.schema_lock ? ' · <span class="warn" title="스키마 잠금 보유 — 이 세션이 DB 구조(migrations)를 바꾸는 중이라 다른 세션은 바꿀 수 없습니다.">DB 구조 바꾸는 중</span>' : ''}</div>
       ${w.commits.length ? `<details${keep(`hand:${sid}:wt-commits`)}><summary class="small muted">커밋 · 바뀐 파일</summary><pre class="hand-body">${esc(w.commits.join('\n'))}\n\n${esc(w.diffstat.join('\n'))}</pre></details>` : ''}
       ${why ? `<div class="small muted">${esc(why)}</div>` : ''}
       ${w.stale ? `<div class="small ok" title="이미 원본에 들어 있음 — 밖에서 git merge로 합쳤거나 합칠 커밋이 없습니다. [합치기]는 worktree와 브랜치만 지웁니다.">${esc(w.stale)}</div>` : ''}
-      ${w.rested_at ? `<div class="small warn wt-rest" title="쉬는 중 — [쉬게 하기]로 지금까지를 커밋하고 세션만 끝냈습니다. 같은 일을 이어 하려면 [이어서], 끝났으면 [합치기]입니다.">쉬는 중 — 합치기 기다림 · ${esc(ago(w.rested_at))}부터${restDays(w.rested_at) >= 1 ? ` · ${restDays(w.rested_at)}일째` : ''}</div>` : ''}
+      ${w.rested_at ? `<div class="small warn wt-rest" title="쉬는 중 — [커밋만 하고 끝내기]로 지금까지를 작업방에 저장하고 세션만 끝냈습니다. 같은 일을 이어 하려면 [이어서], 끝났으면 [합치기]입니다.">쉬는 중 — 합치기 기다림 · ${esc(ago(w.rested_at))}부터${restDays(w.rested_at) >= 1 ? ` · ${restDays(w.rested_at)}일째` : ''}</div>` : ''}
       ${reviewBlock(w.review)}
       ${w.preview ? `<div class="small ok">미리보기가 :${w.preview.port}에서 돌고 있습니다.</div>` : ''}
       <div class="hand-btns">
@@ -429,11 +456,16 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     const wtLive = !!(c.worktree && c.worktree.exists && c.worktree.live);   // 살아 있는 따로 작업 — 끝내기를 세 갈래로
     // 요약 카드 머리의 작은 [고치기] — 자주 안 쓰므로 버튼 줄에서 뺐다(11-06, 이력 1번)
     const editLink = ok && mode == null && !st ? b('edit', '고치기', true, 'ghost', '요약 고치기 — 저장된 요약을 직접 고칩니다. 원본은 두고 새 판으로 저장합니다.') : '';
+    // 11-14 사용자 — 작업방(worktree)이 있는 세션은 「새 세션으로 옮기기」 묶음(제목 · 버튼 · 더보기 · 까닭 · 요약 카드)을 뺀다.
+    // 넘겨받은 글 · 읽을 곳은 받은 세션이 볼 것이라 남긴다(머리 없는 칸). 서버 기능은 그대로
+    const moveOn = showMove(c, st || mst);
+    // 누른 뒤 결과 글(note — 「쉬게 하기 — 마쳤습니다」 등)은 이 칸에 그려 왔다. 묶음을 빼도 결과 글은 보인다
+    const moveSec = moveOn ? '' : (note || c.received || c.reads ? `<section class="hand">${note ? `<div class="small ${note.bad ? 'bad' : note.ok ? 'ok' : 'muted'}">${esc(note.msg)}</div>` : ''}${receivedLine(c.received)}${readsLine(c.reads, can.exit)}</section>` : '');
     const html = `${mpSectionOf(data.merge_prep, b)}
-      <section class="hand">
+      ${moveOn ? `<section class="hand">
         <div class="hand-h"><b>새 세션으로 옮기기</b>${s0 ? ` <span class="small muted" title="마지막 요약 — ${esc(KIND[s0.kind] || s0.kind)}, ${esc(STATUS[s0.status] || s0.status)}">· 요약 ${esc(STATUS[s0.status] || s0.status)} ${ago(s0.created_at)}</span>` : ''}</div>
         <div class="hand-btns">
-          ${st || mst ? '' : b('flow-start', '새 세션으로 옮기기', can.summary || (!c.live && can.headless), 'primary', c.move_flow && c.live ? MOVE_TIP : FLOW_TIP)}
+          ${st || mst ? '' : b('flow-start', '새 세션으로 옮기기', can.summary || (!c.live && can.headless), 'primary', c.move_flow && c.live ? MOVE_TIP : OLD_FLOW_TIP)}
           ${b('hand-more', handMore ? '접기 ◀' : '더보기 ▶', true, 'ghost', handMore ? '접기 — 요약 관련 버튼을 다시 숨깁니다.' : `더보기 — 요약 관련 기능입니다(지금 요약, 새 세션만 띄우기${c.live ? '' : ', 압축 요약으로 만들기'}).`)}
           ${handMore ? `${b('summary', '지금 요약(계속 돎)', can.summary, 'ghost', '지금 요약 — 세션이 지금까지 한 일을 정리합니다. 세션은 끝내지 않고 계속 돕니다.')}
           ${b('spawn', '새 세션만 띄우기', can.spawn, 'ghost', '새 세션만 띄우기 — 이 세션은 두고, 같은 폴더에 새 세션을 띄워 마지막 요약(또는 빈 채로)을 넣습니다.')}
@@ -445,20 +477,18 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
         ${main}${hist}
         ${receivedLine(c.received)}
         ${readsLine(c.reads, can.exit)}
-      </section>
+      </section>` : moveSec}
       <section class="hand">
         <div class="hand-h"><b>세션</b></div>
         <div class="hand-btns">
-          ${wtLive ? `${b('rest', '쉬게 하기', can.rest, '', '쉬게 하기 — 지금까지를 이 브랜치에 커밋하고 세션만 끝냅니다. worktree는 남고 코더는 자리로 돌아가 「합치기 기다림」으로 보입니다. 나중에 [이어서] · [합치기] · [버리기]를 고릅니다.')}
-          ${b('wt-end-merge', '끝내고 합치기', can.exit, '', `끝내고 합치기 — 커밋 안 된 변경이 없으면 세션을 끝내고 ${c.worktree.branch}를 ${c.worktree.base}에 합칩니다. 있으면 끝내지 않고 알립니다.`)}
-          ${b('wt-end-discard', '끝내고 버리기', can.exit, 'danger', '끝내고 버리기 — 세션을 끝내고 worktree와 브랜치를 지웁니다. 합치지 않은 커밋도 사라집니다.')}
-          ${b('exit', '그냥 끝내기(나중에 정함)', can.exit, 'ghost', '그냥 끝내기 — 세션만 끝냅니다. worktree는 남고, 이 세션의 [세션 정리] 탭 「따로 작업」에서 나중에 합치거나 버립니다.')}`
-    : b('exit', '세션 끝내기', can.exit, 'danger', '세션 끝내기 — /exit로 세션을 완전히 끝냅니다. FOREMAN이 띄운 tmux 창도 닫습니다.')}
+          ${wtLive ? b('end-menu', endOpen ? '끝내기 ▴' : '끝내기 ▾', true, 'danger', endOpen ? '접기 — 끝내기 고르는 줄을 닫습니다.' : '끝내기 — 세션을 끝내는 방법 셋 중에서 고릅니다.')
+    : b('exit', '세션 끝내기', can.exit, 'danger', '세션 끝내기 — 세션을 완전히 끝내고 창도 닫습니다.')}
           ${b('more', moreOpen ? '접기 ◀' : '더보기 ▶', true, 'ghost', moreOpen ? '접기 — 세션 조작 버튼을 다시 숨깁니다.' : '더보기 — 세션 조작입니다(작업 중단, 일시정지, 다시 시작).')}
           ${moreOpen ? `${b('interrupt', '작업 중단(Esc)', can.interrupt, 'ghost', '작업 중단 — 지금 하는 작업만 멈춥니다(Esc). 세션은 살아 있습니다.')}
             ${b('stop', '일시정지', can.stop, 'ghost', '일시정지 — 세션을 잠시 멈춥니다(Ctrl+Z). 맥락은 그대로이고 [다시 시작]으로 이어 갑니다.')}
             ${b('resume', '다시 시작', can.resume, 'ghost', '다시 시작 — FOREMAN이 일시정지한 세션을 이어서 돌립니다.')}` : ''}
         </div>
+        ${wtLive && endOpen ? endMenu(can, c.why) : ''}
         ${wtGroup(c.worktree, b)}
       </section>
       <details class="hand hand-docs"${docsOn ? ' open' : ''}><summary title="옮기기 전 정리 — 새 세션으로 옮기기 전에, 압축으로 잊은 것과 대화에서만 정한 것을 찾아 문서에 적습니다. 문서 정리 · 포트폴리오는 서기실에서 합니다."><b>옮기기 전 정리</b>${docsHint ? ` <span class="small muted"><span class="warn">${esc(docsHint)}</span></span>` : ''}</summary>
@@ -486,6 +516,9 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (act === 'cancel') { mode = null; preview = null; editDraft = null; draw(); return; }
     // 더보기 — <details>에 display를 주면 브라우저에 따라 접힌 채로도 펼쳐져 보였다(11-06). 눌렀을 때만 그린다(기본 접힘)
     if (act === 'more') { moreOpen = !moreOpen; draw(); return; }
+    if (act === 'end-menu') { endOpen = !endOpen; draw(); return; }
+    // 메뉴 항목은 고르면 메뉴를 닫고 전 버튼과 같은 흐름(확인 창)으로 간다 — 아래 rest · wt-end-merge · exit
+    if (btn.closest('.end-menu')) { endOpen = false; draw(); }
     if (act === 'prom-req') {
       const pick = el.querySelector('#promIn'), v = pick ? pick.value : 'none';
       if (v === '') { note = { bad: true, msg: '같이 넣을 것을 골라 주세요 — 넣지 않으려면 「넣지 않음」을 고릅니다.' }; draw(); return; }
@@ -585,7 +618,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (act === 'rest') {
       const w = data.controls.worktree;
       if (!confirm(`지금까지를 ${w.branch}에 커밋하고(커밋 안 한 변경 ${w.dirty.length}개${w.dirty.length ? ' — .env · .venv 링크는 넣지 않습니다' : ''}) 세션만 끝냅니다. worktree는 남습니다. 나중에 [이어서] · [합치기] · [버리기]를 고릅니다. 쉬게 할까요?`)) return;
-      return run('쉬게 하기', () => post(`/api/sessions/${id}/rest`).then((r) => ({ ok: !!r.ok, bad: !r.ok, msg: r.note || (r.ok ? '쉬게 했습니다.' : '쉬게 하지 못했습니다.') })));
+      return run('커밋만 하고 끝내기', () => post(`/api/sessions/${id}/rest`).then((r) => ({ ok: !!r.ok, bad: !r.ok, msg: r.note || (r.ok ? '쉬게 했습니다.' : '쉬게 하지 못했습니다.') })));
     }
     if (act === 'rest-resume') {
       return run('이어서', () => post(`/api/sessions/${id}/rest-resume`).then((r) => ({ ok: !!r.ok, bad: !r.ok, msg: r.note || (r.ok ? '이어서 붙였습니다.' : '이어 붙이지 못했습니다.') })));
@@ -611,9 +644,9 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       const rvWarn = w.review && w.review.bad ? `\n\n주의: 근거 표시 ${w.review.bad}개가 틀렸습니다(없는 커밋 · 파일 · 턴). 「따로 작업」의 「자세히」에서 봅니다. 그래도 합칠까요?` : '';
       if (end && kind === 'merge') {
         if (!confirm(`세션을 끝내고 ${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 커밋 안 된 변경이 있으면 끝내지 않고 알립니다. 충돌이 나면 되돌리고 멈춥니다(세션은 이미 끝난 뒤입니다). push는 하지 않습니다. 진행할까요?${rvWarn}`)) return;
-        return run('끝내고 합치기', () => post(`/api/sessions/${id}/worktree`, { action: 'merge', end: true })
+        return run('합치고 끝내기', () => post(`/api/sessions/${id}/worktree`, { action: 'merge', end: true })
           .then((r) => (r.ok ? { ok: true, msg: '세션을 끝내고 ' + r.note + (r.schema_unlocked ? ' 스키마 잠금도 풀었습니다.' : '') }
-            : { bad: true, msg: '세션은 끝냈습니다. ' + r.note + (r.conflict && r.conflict.length ? ` 충돌 파일: ${r.conflict.join(', ')}` : '') + ' — 「따로 작업」에서 다시 합치거나 버립니다.' })));
+            : { bad: true, msg: '세션은 끝냈습니다. ' + r.note + (r.conflict && r.conflict.length ? ` 충돌 파일: ${r.conflict.join(', ')}` : '') + ' — 아래 「브랜치 이름」 칸에서 다시 합치거나 버립니다.' })));
       }
       if (act === 'wt-merge') {
         if (!confirm(`${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다. 합칠까요?${rvWarn}`)) return;
@@ -764,7 +797,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     setSession(id) {
       if (id === sid) return;
       sid = id; data = null; mode = null; preview = null; note = null; editDraft = null; promDraft = {}; promId = null; promIn = null;
-      flow = id != null ? flowGet(id) : null; flowPrev = null; handMore = false; noteOpen = false; noteDraft = ''; lastHtml = '';
+      flow = id != null ? flowGet(id) : null; flowPrev = null; handMore = false; endOpen = false; noteOpen = false; noteDraft = ''; lastHtml = '';
       if (flow && flow.phase && flow.phase !== 'done') flow = { ...flow, phase: null };   // 띄우는 · 끝내는 중에 새로 고침 — 서버 데이터로 다시 판단
       el.innerHTML = '';
       clearTimeout(timer);

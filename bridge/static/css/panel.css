@@ -176,6 +176,12 @@ body { --term-h:0px; }
 .sc-row > button { flex:none; width:auto; padding:2px 10px; }
 /* 11-09 서기 "정리할까요?"로 연 창 — 고른 일 줄을 밝힌다(누르는 것은 사람) */
 .sc-row.sc-pick { outline:2px solid var(--warn); outline-offset:2px; border-radius:4px; }
+/* 11-14 「세션」 [끝내기 ▾] — 버튼 줄 바로 아래로 펼치는 고르기 줄(이름 위, 설명 아래). 꺼진 항목은 흐리게 */
+.end-menu { display:flex; flex-direction:column; gap:4px; max-width:24em; margin:0 0 6px; padding:5px;
+            border:1px solid var(--line); border-radius:8px; background:var(--card); box-shadow:0 4px 14px #0004; }
+.end-menu .end-item { display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; padding:4px 8px; font:inherit; }
+.end-menu .end-item .small { word-break:keep-all; }
+.end-menu .end-item:disabled { opacity:.45; }
 /* 11-09 [쉬게 하기] 결과 · 쉬는 중 줄 */
 .wt-rest { margin:4px 0; }
 /* 11-14 합치기 승인 카드 — 제목 옆 상태 배지, 브랜치는 오른쪽 끝, 걸린 파일은 이름만 한 줄씩 */
@@ -334,6 +340,7 @@ button.rolebadge.fixed:hover { background:color-mix(in srgb, var(--rc) 16%, tran
 /* 11-05 세션 조작 — 인계 · 일시정지 · 끝내기를 줄로 나누고, 끝내기는 빨강(되돌릴 수 없다) */
 .hand-group { display:flex; gap:8px; align-items:flex-start; margin:4px 0; }
 .hand-lbl { flex:none; width:68px; padding-top:5px; }
+.hand-lbl.hand-lbl-br { width:auto; min-width:68px; white-space:nowrap; }   /* 11-14 「브랜치 이름」 — 두 줄로 꺾이지 않게 */
 .hand-group .hand-btns { margin:2px 0; min-width:0; }
 .hand-btns > span { min-width:0; overflow-wrap:anywhere; }
 .hand-drift { border-left:3px solid var(--warn); padding:2px 0 2px 8px; margin:4px 0; overflow-wrap:anywhere; }   /* 11-06 인계 뒤 바뀐 것 */   /* 11-06 긴 파일 경로가 좁은 패널 밖으로 밀려 나갔다 */
