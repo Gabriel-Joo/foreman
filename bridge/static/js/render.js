@@ -475,7 +475,7 @@ export function sessionKv(s, pend) {
       <span>상태</span><span title="${esc(procTip(s))}">${procLabel(s)}</span>
       <span>지금</span><span>${s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target, 120))} (${ago(s.activity.ts)})` : (s.state === 'ACTIVE' ? '생각 중' : STATE_LABEL[s.state])}</span>
       <span>서브에이전트</span><span>${s.subagents_running ? `${s.subagents_running}개 — ${esc((s.subagent_descs || []).join(', '))}` : '없음'}</span>
-      <span>모델</span><span>${modelChip(s, pend) || '<span class="muted">아직 응답 없음</span>'}${s.model_req ? ` <span class="muted">· 띄울 때 고른 것 ${esc(s.model_req)}</span>` : ''}</span>
+      <span>모델</span><span>${modelChip(s, pend) || '<span class="muted">아직 응답 없음</span>'}${s.model_req ? ` <span class="muted">· 고른 것 ${esc(s.model_req)}</span>` : ''}</span>
       <span>토큰</span><span><span title="입력(캐시 포함) — 대화가 이어질 때마다 앞 대화를 다시 읽는 몫(캐시)까지 더한 양입니다. 캐시는 싸게 매겨집니다.">입력(캐시 포함) ${tok(t.input)}</span> · 출력 ${tok(t.output)} · 오늘 입력 ${tok(t.today_input)} · 출력 ${tok(t.today_output)}<br><span class="muted" title="서브에이전트 토큰(추정) — 서브에이전트 기록에서 셈한 값이라 실제와 조금 다를 수 있습니다.">서브에이전트 입력 ${tok(t.subagent_input)} · 출력 ${tok(t.subagent_output)}(추정)</span></span>
       ${(t.by_model || []).length ? `<span>모델별</span><span>${byModelTable(t.by_model)}</span>` : ''}
     </div>`;
@@ -499,7 +499,7 @@ export function modelChip(s, pend, button) {
   const now = s.model ? esc(s.model_label) : '모델';
   const to = pend ? ` → <b>${esc(pend.label)}</b>${pend.queued ? ' <span class="muted">(대기열)</span>' : ''}` : '';
   const tip = button
-    ? `모델 — 눌러서 이 세션의 모델을 바꿉니다(/model). 지금 ${s.model ? esc(s.model) : '응답 없음'}${pend ? `, ${esc(pend.label)}(으)로 바꾸는 중` : ''}.`
+    ? `모델 — 눌러서 이 세션의 모델을 바꿉니다. 지금 ${s.model ? esc(s.model) : '응답 없음'}${pend ? `, ${esc(pend.label)}(으)로 바꾸는 중` : ''}.`
     : `모델 — 이 세션이 마지막 응답에 쓴 모델입니다(${esc(s.model || '')}).`;
   return button
     ? `<button type="button" class="mdl mdl-btn f-${esc(s.model_family || '')}" data-mdl="1" data-tip="${tip}">${now}${to} ▾</button>`

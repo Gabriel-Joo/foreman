@@ -228,7 +228,7 @@ CC 세션들 ─hook·트랜스크립트→ 브리지 ─→ DB(턴 · 커밋 ·
 1. 역할 이름 `scribe` / 서기, 색 잉크 갈색 — **확정**
 2. 첫 일감은 FOREMAN 11-05 회고. 그 전에 이 세션(161b8e7a)의 압축 손실 점검을 먼저 한다 — **확정**
 3. Notion 부모 페이지 — **사용자가 만들어 알려 준다(대기)**
-4. 모델 — 서기만이 아니라 **모든 세션이 모델을 고르게** 먼저 넣었다([결과](../log/stage12_model_choice_result.md)). 서기의 기본값은 `config/models.toml`의 `scribe = "opus"`이고, 일감마다 바꿀 수 있다(`sync` · `polish`는 Sonnet 권장)
+4. 모델 — 서기만이 아니라 **모든 세션이 모델을 고르게** 먼저 넣었다([결과](../log/stage12_model_choice_result.md)). 서기의 기본값은 `config/models.toml`의 `scribe = "claude-opus-5-5"`(11-14 전 `"opus"`)이고, 일감마다 바꿀 수 있다(`sync` · `polish`는 Sonnet 권장)
 
 ## 11. 받는 함 [＋ 할 일] (11-09) [log:todo_inbox_20261109.md] [log:coder_resident_20261109.md]
 

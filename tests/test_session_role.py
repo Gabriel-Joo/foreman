@@ -60,8 +60,8 @@ def test_role_lists_agree():
     assert set(h.ROLE_KO) == set(foreman.ROLES) == set(api.SessionRole.__args__) == set(wake.ROLE_KO)
     assert h.ROLE_KO["manager"] == "관리자" and "foreman" not in h.ROLE_KO     # foreman은 감독실 캐릭터 몫
     assert h.ROLE_KO["designer"] == "디자이너"                                 # 11-10 화면 담당
-    assert Models().pick(None, "manager") == "opus"
-    assert Models().pick(None, "designer") == "opus"
+    assert Models().pick(None, "manager") == "claude-opus-5-5"
+    assert Models().pick(None, "designer") == "claude-opus-5-5"
     assert "designer" in foreman.INSTRUCTIONS                                  # 교장이 화면 일 · 코더 일을 나누는 기준
 
 

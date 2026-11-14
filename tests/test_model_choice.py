@@ -43,6 +43,36 @@ def test_switch_screen_counts():
 def test_repo_config_covers_dispatcher_roles():
     m = Models(DEFAULT_PATH)
     ids = {c["id"] for c in m.choices}
-    assert {"opus", "sonnet", "haiku"} <= ids
+    # 11-14 사용자 — 버전까지 보이게, Fable도. CC 2.1.325가 이 id들을 받는 것을 실제로 확인했다(log/foreman-3_model_menu_20261114.md)
+    assert {"claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-2"} <= ids
+    assert all("·" not in (c["label"] + c.get("note", "")) for c in m.choices)   # 창 글에 가운뎃점을 쓰지 않는다
     for r in ROLES:
         assert m.default_for(r) in ids, r
+    assert m.task("losscheck") in ids
+
+
+def test_aliases_map_to_versioned_ids(tmp_path):
+    """11-14 전 DB 값 · 계획 카드 값(opus 등 별칭)은 목록의 id로 바꿔 받는다 — [이어서] · 옮기기가 깨지지 않게."""
+    p = tmp_path / "m.toml"
+    p.write_text('choices = [{id="claude-opus-5-5", label="Opus 5.5"}, {id="claude-sonnet-5-5", label="Sonnet 5.5"}]\n'
+                 '[aliases]\nopus = "claude-opus-5-5"\nsonnet = "claude-sonnet-5-5"\nhaiku = "claude-haiku-5-5"\n'
+                 '[defaults]\ncoder = "opus"\ninspector = "claude-sonnet-5-5"\n[tasks]\nlosscheck = "sonnet"\n', encoding="utf-8")
+    m = Models(p)
+    assert m.aliases == {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5"}   # 목록에 없는 id를 가리키는 별칭은 버린다
+    assert m.resolve("opus") == "claude-opus-5-5" and m.resolve("claude-sonnet-5-5") == "claude-sonnet-5-5"
+    assert m.resolve("haiku") is None and m.resolve(None) is None and not m.valid("haiku")
+    assert m.defaults == {"coder": "claude-opus-5-5", "inspector": "claude-sonnet-5-5"}   # 기본값의 별칭도 id로
+    assert m.task("losscheck") == "claude-sonnet-5-5"
+    assert m.pick("sonnet", "coder") == "claude-sonnet-5-5" and m.pick("haiku", "coder") == "claude-opus-5-5"
+    assert m.view()["aliases"]["opus"] == "claude-opus-5-5"
+
+
+def test_windows_by_id_before_family():
+    from bridge.model_choice import load_windows, window_of
+    w = {"claude-opus-5-5": 1_000_000, "opus": 300_000}
+    assert window_of(w, "claude-opus-5-5") == 1_000_000      # id로 적은 값이 먼저
+    assert window_of(w, "claude-opus-5") == 300_000          # 없으면 family
+    assert window_of({"claude-haiku-4-5": 200_000}, "claude-haiku-4-5-20251001") == 200_000   # 날짜 꼬리를 떼고도
+    real = load_windows(DEFAULT_PATH)
+    assert window_of(real, "claude-opus-5-5") == 1_000_000
+    assert window_of(real, "claude-fable-5-2") is None and window_of(real, "claude-opus-5") is None   # 모르면 모름(토큰만)

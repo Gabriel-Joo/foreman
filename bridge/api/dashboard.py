@@ -661,7 +661,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
                        "today_output": int(tk[4] or 0), "today_input": int(tk[5] or 0),
                        "subagent_input": int(st_[0] or 0), "subagent_output": int(st_[1] or 0),
                        "by_model": by_model.get(sid, [])},
-            # 모델 — model: 지금 쓰는 것(마지막 응답), model_req: 띄울 때 고른 것(입양한 세션 · CC 설정이면 null)
+            # 모델 — model: 지금 쓰는 것(마지막 응답), model_req: 띄울 때 또는 패널 모델 창에서 고른 것(입양한 세션 · CC 설정이면 null)
             "model": cur_model.get(sid), "model_label": model_label(cur_model.get(sid)),
             "model_family": model_family(cur_model.get(sid)), "model_req": model_req,
             "compact": cmp.get(sid),

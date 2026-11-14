@@ -1362,8 +1362,7 @@ class HandoffManager:
             raise Refused("이 세션의 대화 기록 파일을 찾지 못해 이어 붙일 수 없습니다 — 새 세션으로 띄워 주세요")
         async with self.engine.connect() as c:
             model = (await c.execute(text("SELECT model FROM character_session WHERE id = :i"), {"i": row.id})).scalar()
-        if model and not self.models.valid(model):
-            model = None
+        model = self.models.resolve(model)          # 11-14 전 값(opus 등 별칭)은 목록의 id로, 모르는 값은 None(CC 설정)
         base = "cc-" + (re.sub(r"[^a-z0-9]+", "-", (row.project or "session").lower()).strip("-") or "session")
         existing = set((await tmux(self.socket, "list-sessions", "-F", "#{session_name}")).split())
         tname, n = base, 2

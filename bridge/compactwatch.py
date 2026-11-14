@@ -34,7 +34,7 @@ class CompactRules:
     # 창이 작은 모델은 300k가 도달 불가라 이게 없으면 띠가 영영 안 뜬다(notify.toml에 근거)
     context_pct: tuple[int, ...] = (50, 75)
     switch_min_pct: int = 40   # 작업 전환 권유는 이 비율 이상 찬 세션에만
-    windows: dict[str, int] = field(default_factory=dict)   # family → 창(토큰). models.toml [windows]에서 읽는다
+    windows: dict[str, int] = field(default_factory=dict)   # 모델 id 또는 family → 창(토큰). models.toml [windows]에서 읽는다(찾기는 model_choice.window_of)
 
 
 def load_rules(path: str | Path) -> CompactRules:

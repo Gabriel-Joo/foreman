@@ -113,19 +113,21 @@ async def switch_model(session_id: int, body: ModelIn, request: Request) -> JSON
     id는 config/models.toml 목록에 있는 것만(셸 · 입력에 그대로 들어간다). 작업 중이면 대기열에 들어가 지금 일이 끝난 뒤 바뀐다.
     주의: CC의 /model은 그 세션만이 아니라 CC의 새 세션 기본값까지 저장한다 — 브리지가 띄우는 세션은 --model을 넘겨 영향이 없다."""
     hm = request.app.state.handoff
-    if not hm.models.valid(body.model):
+    model = hm.models.resolve(body.model)          # 별칭(opus 등)이 오면 목록의 id로(11-14)
+    if not model:
         return JSONResponse({"refused": f"고를 수 없는 모델입니다: {body.model}"}, status_code=409)
     before = _model_setting()
     # 화면에 앞서 바꾼 기록("Set model to …")이 남아 있을 수 있다 — 보내기 전 수를 세 두고 늘어났을 때만 바뀐 것으로 본다
     # (11-05: 옛 줄을 새 결과로 잘못 읽어 기본값을 너무 일찍 "되돌렸고", 그 뒤 CC가 저장한 값이 남았다)
     pane0 = await _pane_of(request, session_id)
     seen0 = _counts(await _screen(hm.socket, pane0)) if pane0 else (0, 0)
-    resp = await inject_input(session_id, InputIn(text=f"/model {body.model}", command=True), request)
+    resp = await inject_input(session_id, InputIn(text=f"/model {model}", command=True), request)
     if resp.status_code not in (202, 504):
         return resp
     res = json.loads(resp.body)
+    # 고른 모델을 세션 행에 남긴다 — [이어서](--resume) · 새 세션으로 옮기기가 이 값으로 띄운다. 브리지를 다시 띄워도 그대로다
     async with request.app.state.store.engine.begin() as c:
-        await c.execute(text("UPDATE character_session SET model = :m WHERE id = :i"), {"m": body.model, "i": session_id})
+        await c.execute(text("UPDATE character_session SET model = :m WHERE id = :i"), {"m": model, "i": session_id})
     # 바로 실행됐으면 몇 초 안에 끝난다. 대기열이면 지금 일이 끝난 뒤 실행되므로 뒤에서(최대 30분) 따라간다
     if res.get("pane"):
         if res["pane"] != pane0:

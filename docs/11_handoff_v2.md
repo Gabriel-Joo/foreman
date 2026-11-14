@@ -110,7 +110,7 @@
 
 브리지 쪽 판정만 적는다. 패널 표시(머리줄 "쌓인 대화 N%", 🧠 띠의 %, 🔀 띠)는 `log/foreman-2_screen_ctx_switch_overlap_20261109.md`, 이름 나누기는 `docs/style_guide.md` 「4-1. 화면 글」. [log:foreman_context_pct_20261109.md]
 
-- **창 크기 `config/models.toml [windows]`** — 모델 family별. opus 1,000,000(실측 — 응답 하나의 맥락이 971,510까지 갔다), sonnet · haiku 200,000(**추정** — 지금까지 본 최대 90k · 114k). DB `message.model`에 `[1m]` 같은 접미사가 없어 모델 id로는 창을 알 수 없어 설정으로 둔다(`model_choice.window_of`). 목록에 없는 모델은 %를 보이지 않고 토큰(k)만
+- **창 크기 `config/models.toml [windows]`** — 모델 id별(11-14부터, 없으면 family로도 찾는다). claude-opus-5-5 1,000,000(실측 — 응답 하나의 맥락이 971,510까지 갔다), claude-haiku-5-5 200,000(**추정** — 지금까지 본 최대 114k). claude-sonnet-5-5는 200,000으로 추정했다가 본 대화 맥락 223,147(11-13)이 보여 11-14에 뺐다(모름), claude-opus-5 · claude-fable-5-2도 모름 [log:foreman-3_model_menu_20261114.md]. DB `message.model`에 `[1m]` 같은 접미사가 없어 모델 id로는 창을 알 수 없어 설정으로 둔다(`model_choice.window_of`). 목록에 없는 모델은 %를 보이지 않고 토큰(k)만
 - **비율 = 마지막 응답 맥락(입력 + 캐시 읽기 + 캐시 쓰기) ÷ 창**(`compactwatch.context_status` → `window` · `pct` · `window_over`, `/api/dashboard`의 세션 `context`에 그대로)
 - **문턱 `config/notify.toml [compact]`** — `context_at = [300000, 500000]`(토큰) · `context_pct = [50, 75]`(비율). 둘 중 **먼저 닿는 쪽**이 단계(첫 값 "넘어갈 때", 끝 값 "늦었음")를 정한다
   - 토큰 문턱은 비용(응답마다 맥락 전체를 다시 읽는다)에서, 비율 문턱은 창이 작은 모델에서 토큰 문턱이 영영 닿지 않는 틈(200k 창이면 300k는 도달 불가)을 메우려고. 75%는 자동 요약(창 80~90%) 직전 마지막 경고, 50%는 요약 전에 손실 없이 옮기기 좋은 때

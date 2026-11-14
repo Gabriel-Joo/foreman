@@ -12,6 +12,7 @@ import { approvalCard, handleApprovalClick, handleApprovalInput, restoreNotes, a
 import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
 import { hideTip } from './tip.js';
+import { modelMenuHtml, sameModel } from './modelpick.js';
 import { mountHandoff, FLOW_TIP } from './handoff.js';
 import { createScribe } from './scribe.js';
 import { createCoder } from './coder.js';
@@ -296,7 +297,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     }
     store.touch('panel');
   });
-  // 모델 바꾸기(11-05) — 머리줄의 모델 표시를 누르면 목록, 고르면 그 세션에 /model <id>
+  // 모델 바꾸기(11-05) — 머리줄의 모델 표시를 누르면 목록, 고르면 그 세션에 /model <id>(창 글은 modelpick.js modelMenuHtml)
   const mdlMenu = document.createElement('div');
   mdlMenu.className = 'mdl-menu'; mdlMenu.hidden = true;
   document.body.appendChild(mdlMenu);
@@ -317,17 +318,11 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const s = store.state.sessions.get(store.state.selected);
     const m = await store.modelChoices();
     if (!s || !m) return;
-    const busy = s.state === 'ACTIVE';
-    mdlMenu.innerHTML = `<div class="small muted">이 세션의 모델 — /model을 보냅니다</div>`
-      + m.choices.map((c) => `<button type="button" data-id="${esc(c.id)}" data-label="${esc(c.label)}"${s.model_family === c.id ? ' class="cur"' : ''}>
-          ${esc(c.label)}${s.model_family === c.id ? ' · 지금' : ''}<span class="muted small">${c.note ? ' — ' + esc(c.note) : ''}</span></button>`).join('')
-      + (busy ? '<div class="small warn">작업 중입니다 — 대기열에 들어가 지금 작업이 끝난 뒤 바뀝니다.</div>' : '')
-      + '<div class="small muted">대화가 쌓인 세션은 바꾼 뒤 첫 응답이 전체 대화를 다시 읽느라 느리고 토큰이 더 듭니다(CC가 묻는 확인은 브리지가 대신 답합니다).</div>'
-      + '<div class="small muted">이 세션만 바뀝니다. CC가 /model을 새 세션 기본값으로도 저장하는데, 브리지가 바로 원래대로 되돌립니다.</div>';
+    mdlMenu.innerHTML = modelMenuHtml(m, s.model, s.state === 'ACTIVE');
     const r = b.getBoundingClientRect();
-    mdlMenu.style.left = `${Math.max(8, Math.min(r.left, innerWidth - 300))}px`;
+    mdlMenu.hidden = false;                  // 폭(글씨 배율을 따른다)을 잰 뒤 자리를 잡는다
+    mdlMenu.style.left = `${Math.max(8, Math.min(r.left, innerWidth - mdlMenu.offsetWidth - 8))}px`;
     mdlMenu.style.top = `${r.bottom + 4}px`;
-    mdlMenu.hidden = false;
   });
   mdlMenu.addEventListener('click', async (ev) => {
     const c = ev.target.closest('button[data-id]');
@@ -527,7 +522,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   // 바꾸는 중 표시 — 응답 모델이 고른 것과 같아지면(또는 30분이 지나면) 지운다
   function pendModel(st, s) {
     const p = st.pendingModel.get(s.id);
-    if (p && (s.model_family === p.model || Date.now() - p.ts > 30 * 60 * 1000)) { st.pendingModel.delete(s.id); return null; }
+    if (p && (sameModel(s.model, p.model) || Date.now() - p.ts > 30 * 60 * 1000)) { st.pendingModel.delete(s.id); return null; }
     return p || null;
   }
 
