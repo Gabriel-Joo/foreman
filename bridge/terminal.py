@@ -8,9 +8,10 @@
   브리지 /terminal/*       ← 쿠키 인증을 거쳐 ttyd 소켓으로 그대로 넘긴다(xterm.js 화면 그대로 — 파싱하지 않는다)
   화면 이름은 「셸」(11-14 — 「터미널」에서 바꿈). [셸 비우기]는 셸을 새로 띄우지 않고 화면 · 스크롤백만 비운다(clear)
 
-「CC 화면」(11-14, 세션 패널 탭) — 세션 CC 창(권한 · 계획 승인 · 고르기 창 포함)을 브라우저에서 보고 키를 보낸다
+「CC 화면」(11-14, 세션 패널 [CC 화면] 단추 → 띄우는 창) — 세션 CC 창(권한 · 계획 승인 · 고르기 창 포함)을 브라우저에서 보고 키를 보낸다
   ttyd를 하나 더(.run/ttyd-cc.sock, -b /ccscreen) — 같은 _supervise 틀. 연결마다 deploy/shell/foreman-cc-view가 그 CC 세션의
-  tmux 세션에 그룹 세션 ccv-<탭>을 만들어 붙는다(attach -f ignore-size — CC 창 크기를 바꾸지 않는다). 브라우저는 세션 번호만 주고,
+  tmux 세션에 그룹 세션 ccv-<탭>을 만들어 붙는다. 보는 동안 CC 창을 띄운 창 크기에 맞추고, 마지막 보기가 나가면
+  CC_REST_SIZE(80×24)로 되돌린다(11-14 사용자). 브라우저는 세션 번호만 주고,
   붙을 tmux 창은 cc_target이 DB · 살아 있는 프로세스로 정한다. 열고 닫은 것만 session_action(ccview-open · ccview-close)
 
 기록 — 셸의 PROMPT_COMMAND가 명령마다 /hooks/shell로 보낸다. 마스킹해서 event(source=shell, type=shell_cmd)로.
@@ -57,7 +58,9 @@ TERM_PROJECTS = ("runshoes", "petmint-rag-chatbot", "foreman", "ronanlab-infra")
 TAB_RE = re.compile(r"^[A-Za-z0-9_-]{6,40}$")
 # 「CC 화면」(11-14) — 탭 그룹 세션 이름 머리(deploy/shell/foreman-cc-view와 같다) · tmux 창 모양 · 기록 이름(session_action.action은 12자까지)
 CC_VIEW_PREFIX = "ccv-"
-CC_MARK = "@foreman_ccview"        # 보는 동안 창 크기를 묶었다는 표시(foreman-cc-view hold · release)
+CC_MARK = "@foreman_ccview"        # 보는 동안 창 크기를 띄우는 창에 맞춰 묶었다는 표시(foreman-cc-view hold · release)
+# 마지막 CC 화면이 나갈 때 CC 창을 되돌리는 크기(11-14 사용자) — 이 한 곳. 보기 스크립트에는 ttyd 고정 인자로 넘긴다
+CC_REST_SIZE = (80, 24)
 PANE_RE = re.compile(r"^%[0-9]{1,7}$")
 CC_OPEN, CC_CLOSE = "ccview-open", "ccview-close"
 
@@ -452,8 +455,9 @@ class TerminalManager:
         return gone
 
     async def release_cc_windows(self) -> list[str]:
-        """「CC 화면」이 보는 동안 묶은 창 크기(window-size manual, 표시 @foreman_ccview)를 보는 CC 화면 세션이 없는데 남아 있으면 푼다.
-        보통은 foreman-cc-view가 연결이 끝날 때 풀지만, 죽거나(kill -9) 함께 끝나 서로 남겨 둔 경우가 있다."""
+        """「CC 화면」이 보는 동안 묶은 창 크기(window-size manual, 표시 @foreman_ccview)를 보는 CC 화면 세션이 없는데 남아 있으면
+        쉴 때 크기(CC_REST_SIZE, 80×24)로 되돌리고 푼다 — 보기 스크립트가 마지막에 하는 것과 같다.
+        보통은 foreman-cc-view가 연결이 끝날 때 하지만, 죽거나(kill -9) 함께 끝나 서로 남겨 둔 경우가 있다."""
         try:
             rows = [ln.split("\t") for ln in (await tmux(self.socket, "list-windows", "-a", "-F",
                                                          f"#{{window_id}}\t#{{{CC_MARK}}}\t#{{session_name}}")).splitlines()]
@@ -464,13 +468,14 @@ class TerminalManager:
         freed = []
         for w in sorted(marked - viewed):
             try:
+                await tmux(self.socket, "resize-window", "-t", w, "-x", str(CC_REST_SIZE[0]), "-y", str(CC_REST_SIZE[1]))
                 await tmux(self.socket, "set-option", "-wu", "-t", w, "window-size")
                 await tmux(self.socket, "set-option", "-wu", "-t", w, CC_MARK)
                 freed.append(w)
             except Refused:
                 pass
         if freed:
-            log.info("CC 화면이 묶고 남긴 창 크기 풂: %s", ", ".join(freed))
+            log.info("CC 화면이 묶고 남긴 창 크기를 %dx%d로 되돌리고 풂: %s", *CC_REST_SIZE, ", ".join(freed))
         return freed
 
     async def open_project(self, project: str | None, tab: str | None = None) -> dict[str, Any]:
@@ -677,7 +682,7 @@ class TerminalManager:
         return [str(self.s.ttyd_bin), "-i", str(self.s.ccscreen_socket), "-W", "-a", "-b", "/ccscreen", "-m", "8", "-d", "3",
                 "-t", "disableLeaveAlert=true", "-t", "disableResizeOverlay=true", "-t", "titleFixed=CC 화면",
                 "-t", "fontSize=13",
-                str(self.s.ccscreen_view_script), self.socket]
+                str(self.s.ccscreen_view_script), self.socket, "%dx%d" % CC_REST_SIZE]
 
     async def _supervise(self, key: str, args: list[str], sock: Path) -> None:
         """ttyd 하나를 띄우고 죽으면 다시 띄운다(1초부터 30초까지 늘려 가며). 셸 · CC 화면이 같은 틀을 쓴다."""

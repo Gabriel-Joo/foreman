@@ -118,15 +118,26 @@
   .ptab[hidden] { display:none; }
   .oside.tab-convo .oside-body { overflow:hidden; padding:0; }
   .ptab-convo { flex:1; min-height:0; display:flex; flex-direction:column; position:relative; }
-  /* 「CC 화면」 탭(11-14, ccscreen.js) — CC 창(ttyd iframe)이 탭 칸을 채운다. 까닭 줄은 화면 위에 */
-  .oside.tab-cc .oside-body { overflow:hidden; padding:0; }
-  .ptab-cc { flex:1; min-height:0; display:flex; flex-direction:column; }
-  .pcc-bar { display:flex; align-items:center; gap:8px; padding:4px 10px; flex:none; }
-  .pcc-msg { padding:6px 12px; flex:none; }
-  .pcc-msg:empty { display:none; }
-  .pcc-body { flex:1; min-height:200px; background:#000; }
-  .pcc-body iframe { border:0; width:100%; height:100%; display:block; }
-  .pcc-body iframe[hidden] { display:none; }
+  /* 「CC 화면」 띄우는 창(11-14, ccscreen.js) — 탭 줄 끝 단추가 연다. 패널 위에 떠 있고(모달 아님) 머리줄로 옮기고 모서리로 크기 */
+  .ptabs .ptab-cc { margin-left:auto; font-size:15px; color:var(--fg); }
+  .ccwin { position:fixed; z-index:40; display:flex; flex-direction:column; background:var(--bg); color:var(--fg);
+           border:1px solid var(--line); border-radius:8px; box-shadow:0 10px 32px rgba(0,0,0,.45); overflow:hidden; }
+  .ccwin[hidden] { display:none; }
+  .ccwin-head { display:flex; align-items:center; gap:8px; padding:4px 6px 4px 12px; flex:none; cursor:move; user-select:none;
+                touch-action:none; border-bottom:1px solid var(--line); background:var(--card, var(--bg)); }
+  .ccwin-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ccwin-name { font-weight:400; color:var(--muted); margin-left:6px; }
+  .ccwin-info { white-space:nowrap; margin-left:auto; }
+  .ccwin-head button { cursor:pointer; flex:none; }
+  .ccwin-msg { padding:6px 12px; flex:none; }
+  .ccwin-msg:empty { display:none; }
+  .ccwin-body { flex:1; min-height:0; background:#000; }
+  .ccwin-body iframe { border:0; width:100%; height:100%; display:block; }
+  .ccwin-body iframe[hidden] { display:none; }
+  .ccwin-grip { position:absolute; right:0; bottom:0; width:16px; height:16px; cursor:nwse-resize; touch-action:none;
+                background:linear-gradient(135deg, transparent 50%, var(--muted) 50% 58%, transparent 58% 70%, var(--muted) 70% 78%, transparent 78%); }
+  .ccwin-ghost { position:fixed; z-index:41; border:2px dashed var(--act); border-radius:8px; pointer-events:none; }
+  .ccwin-ghost[hidden] { display:none; }
   .oside .convo { flex:1 1 0; max-height:none; min-height:0; overflow:auto; padding:10px 12px 14px; gap:10px; scroll-behavior:auto; }
   .oside .msg { font-size:15.5px; }
   .oside.wide .msg { font-size:16px; }
