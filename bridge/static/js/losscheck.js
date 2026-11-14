@@ -2,11 +2,13 @@
 // 압축으로 사라지거나 약해진 지시 · 결정을 `claude -p`(설정: config/models.toml [tasks] losscheck)가 판정한다.
 // 화면에는 사라짐 · 약해짐만 보인다. [옮길 것 뽑기에 넣기]로 문서로 옮기기(c)의 입력이 된다 — 되살리기 전 사람이 마지막 관문이다.
 
-import { esc, ago, keep } from './render.js';
+import { esc, ago, keep, pickedLabel, pickedFamily } from './render.js';
 import { lossOutcome } from './moveflow.js';
 
 const STATUS = { running: '도는 중…', done: '끝', failed: '실패', nothing: '찾을 것 없음' };
-const OUT = { found: '끝', clean: '끝 — 잊은 것 없음', nothing: '찾을 것 없음', partial: '일부만 끝', failed: '실패' };
+const OUT = { found: '끝', clean: '끝, 잊은 것 없음', nothing: '찾을 것 없음', partial: '일부만 끝', failed: '실패' };
+// 11-14 사용자 — 「찾을 것 없음」 밑에 따로 있던 설명 줄을 그 글의 호버로 옮겼다
+const OUT_TIP = { nothing: '찾을 것 없음 — 이 세션은 압축된 적이 없어 잊은 것이 생기지 않았습니다.' };
 
 // 결과 수 한 줄(11-13 사용자 — 숫자 여섯이 한 줄에 붙어 한눈에 안 들어왔다). 사람이 볼 사라짐 · 약해짐만 크게,
 // 살아 있음 · 뒤집힘 · 끝남 · 내가 보낸 말은 「그 밖 N개」 호버로
@@ -43,10 +45,13 @@ export function lossGroup(lc, can, err) {
     '압축으로 잊은 것 찾기 — 자동 압축 때마다 앞에서 정한 것이 빠집니다. 사람이 한 말을 다시 읽어 지금 세션이 아직 기억하는지 판정합니다. 내가 보낸 말 20개당 약 0.4달러, 1.5분이 듭니다.',
     '', 'docs-run');
   if (lc) {
-    const prog = lc.status === 'running' ? ` · ${lc.groups_done || 0}/${lc.groups_total || '?'} 진행` : '';
-    const cost = lc.cost_usd != null ? ` · ${lc.cost_usd.toFixed(2)}달러` : '';
-    const o = lossOutcome(lc);
-    head += `<span class="small${o === 'failed' ? ' bad' : o === 'partial' ? ' warn' : ''}">${esc(OUT[o] || STATUS[lc.status] || lc.status)}${prog}${cost} · ${ago(lc.updated_at || lc.created_at)}${lc.model ? ` · ${esc(lc.model)}` : ''}</span>`;
+    // 11-14 사용자 — 가운뎃점으로 잇지 않고 칸마다 따로(빈칸으로 띄움). 모델은 날 이름(claude-sonnet-5-5) 대신 패널 모델 칩과 같은 배지
+    const o = lossOutcome(lc), tip = OUT_TIP[o];
+    head += `<span class="small${o === 'failed' ? ' bad' : o === 'partial' ? ' warn' : ''}"${tip ? ` title="${esc(tip)}"` : ''}>${esc(OUT[o] || STATUS[lc.status] || lc.status)}</span>`;
+    if (lc.status === 'running') head += `<span class="small">${lc.groups_done || 0}/${lc.groups_total || '?'} 진행</span>`;
+    if (lc.cost_usd != null) head += `<span class="small">${lc.cost_usd.toFixed(2)}달러</span>`;
+    head += `<span class="small">${ago(lc.updated_at || lc.created_at)}</span>`;
+    if (lc.model) head += `<span class="mdl f-${esc(pickedFamily(lc.model))}" title="모델 — 이 찾기에 쓴 모델입니다.">${esc(pickedLabel(lc.model))}</span>`;
   } else {
     head += '<span class="small muted">아직 없습니다</span>';
   }
@@ -55,7 +60,6 @@ export function lossGroup(lc, can, err) {
   const out = lossOutcome(lc);
   // 11-13 사용자 — 「없음」과 「실패」를 가른다. 실패가 조용히 「없음」으로 보이면 안 된다(bridge/losscheck.py outcome)
   if (out === 'failed') body += `<div class="small bad">✗ 찾기 실패 — 잊은 것이 없는 것이 아니라 찾지 못했습니다.${lc.error ? ` ${esc(lc.error)}${/[.다]$/.test(lc.error) ? '' : '.'}` : ''} [다시 찾기]로 다시 돌릴 수 있습니다.</div>`;
-  else if (out === 'nothing') body += '<div class="small muted">찾을 것 없음 — 이 세션은 압축된 적이 없어 잊은 것이 생기지 않았습니다.</div>';
   else if (out === 'partial') body += `<div class="small warn">⚠ 일부만 찾았습니다 — ${esc(lc.error || '묶음 일부가 실패했습니다')}. 아래 수는 찾은 데까지이고, 0이어도 「없음」이 아닙니다.</div>`;
   if (lc && lc.status === 'done') {
     body += sumLine(lc, out);

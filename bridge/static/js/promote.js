@@ -4,7 +4,9 @@
 
 import { esc, ago, keep } from './render.js';
 
-const STATUS = { requested: '목록 기다리는 중…', listed: '고치고 승인해 주세요', failed: '실패', timeout: '시간 초과',
+// 11-14 사용자 — listed의 「고치고 승인해 주세요」는 줄에서 빼고 펼친 칸 맨 위 설명 줄(DOCS_GUIDE)로 올렸다
+export const DOCS_GUIDE = '고치고 싶은 곳을 고쳐주세요. 고치지 않아도 위에서 고른 대로 들어갑니다.';
+const STATUS = { requested: '목록 기다리는 중…', listed: '', failed: '실패', timeout: '시간 초과',
   writing: '쓰는 중…', written: '썼습니다', write_failed: '확인 실패' };
 const STATE = { pending: '대기', approved: '승인', dropped: '빼기' };
 const EDITABLE = ['what', 'dest', 'section', 'state'];
@@ -35,18 +37,23 @@ export function counts(items, draft) {
   return c;
 }
 
-function itemRow(it, m, editable) {
+// 11-14 사용자 — 항목마다 글 칸 · 원문 · 왜 거기가 다 펼쳐져 하나가 화면 반을 먹었다. 평소 한 줄(상태 고르기 · 번호 · 종류 · 갈 문서 · 절 ▶),
+// 누르면 펼친다. 상태 고르기는 접힌 줄에 그대로 둬 펼치지 않고도 바꾼다(고르기는 접기 단추 밖이라 눌러도 펼쳐지지 않는다).
+// 펼침은 handoff.js가 들고 있다가(open) 넘긴다 — 다시 그려도(15초 · 상태 바뀜) 풀리지 않는다. 입력 칸 · 보내는 값은 전과 같다
+function itemRow(it, m, editable, isOpen) {
   const ck = it.check || {};
   const dis = editable ? '' : ' disabled';
   const mark = !ck.ok ? `<span class="bad">✗ ${esc(ck.problem || '')}</span>` : ck.note ? `<span class="warn">${esc(ck.note)}</span>` : '';
   const changed = m.dest !== it.dest || m.section !== it.section ? ' <span class="muted">(고친 목적지는 저장하면 다시 확인합니다)</span>' : '';
-  return `<div class="prom-item prom-${esc(m.state)}" data-pid="${it.id}">
-    <div class="small"><select data-f="state"${dis} title="상태 — 승인한 것만 씁니다. 빼기는 쓰지 않습니다.">${
+  const dest = m.dest === 'memory' ? '메모리' : m.dest === 'drop' ? '버림' : m.dest;
+  const head = `<div class="small prom-head"><select data-f="state"${dis} title="상태 — 승인한 것만 씁니다. 빼기는 쓰지 않습니다.">${
       Object.entries(STATE).map(([k, v]) => `<option value="${k}"${m.state === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
-      <b>#${it.id}</b> <span class="muted">${esc(it.kind)}</span>
-      어디로 <input data-f="dest" class="prom-dest" value="${esc(m.dest)}"${dis} title="어디로 — 저장소 기준 .md 경로, memory(사람 선호), drop(버림)">
-      ${m.dest === 'memory' || m.dest === 'drop' ? '' : `「<input data-f="section" class="prom-sec" value="${esc(m.section || '')}"${dis} title="절 — 그 문서의 절 제목. 없으면 새로 만듭니다.">」`}
-      ${mark}${changed}</div>
+      <button type="button" class="prom-fold" data-act="prom-fold" data-pid="${it.id}" title="${isOpen ? '접기 — 이 항목을 한 줄로 접습니다.' : '펼치기 — 글 칸, 원문, 왜 거기를 봅니다.'}"><b>#${it.id}</b> <span class="muted">${esc(it.kind)}</span><code>${esc(dest)}</code>${m.section && m.dest !== 'memory' && m.dest !== 'drop' ? `<span>「${esc(m.section)}」</span>` : ''}<span class="prom-arrow">${isOpen ? '▼' : '▶'}</span></button>
+      ${mark}</div>`;
+  if (!isOpen) return `<div class="prom-item prom-${esc(m.state)}" data-pid="${it.id}">${head}</div>`;
+  return `<div class="prom-item prom-${esc(m.state)} open" data-pid="${it.id}">${head}
+    <div class="small prom-where">어디로 <input data-f="dest" class="prom-dest" value="${esc(m.dest)}"${dis} title="어디로 — 저장소 기준 .md 경로, memory(사람 선호), drop(버림)">
+      ${m.dest === 'memory' || m.dest === 'drop' ? '' : `「<input data-f="section" class="prom-sec" value="${esc(m.section || '')}"${dis} title="절 — 그 문서의 절 제목. 없으면 새로 만듭니다.">」`}${changed}</div>
     <textarea data-f="what" rows="2" class="prom-what"${dis}>${esc(m.what)}</textarea>
     ${it.quote ? `<div class="small muted">원문: “${esc(it.quote)}”</div>` : ''}
     ${it.why ? `<div class="small muted">왜 거기: ${esc(it.why)}</div>` : ''}
@@ -64,19 +71,20 @@ export function inputPick(inputs, chosen) {
     inputs.map((x) => opt(x.id, x.kind === 'loss' ? `${x.title} — ${x.why}` : `#${x.id} ${x.title || x.cc} — ${x.why}`, x.diff)).join('')}${opt('none', '넣지 않음')}</select>`;
 }
 
-// 이 목록에 무엇을 같이 넣었나 — 쓰는 사람이 어느 인계로 뽑았는지 바로 보이게
+// 이 목록에 무엇을 같이 넣었나 — 11-14 사용자: 줄에 세 가지를 몰아넣지 않는다. 줄에서 빼고 시각 호버로
 function inputUsed(p) {
-  if (p.summary_id) return ` · 요약 #${esc(String(p.summary_id))} 같이 넣음`;
-  if (p.loss_check_id) return ` · 잃은 것 점검 #${esc(String(p.loss_check_id))} 같이 넣음`;
-  return ' · 같이 넣은 것 없음';
+  if (p.summary_id) return `같이 넣은 것은 요약 #${p.summary_id}입니다.`;
+  if (p.loss_check_id) return `같이 넣은 것은 잃은 것 점검 #${p.loss_check_id}입니다.`;
+  return '같이 넣은 것은 없습니다.';
 }
 
-// p = 마지막 옮기기(없으면 null), can = 목록 요청 가능, draft = {id: {칸: 값}}, err = 표를 못 읽은 사유
-export function promoteGroup(p, can, draft, err, inputs = [], chosen = null) {
+// p = 마지막 옮기기(없으면 null), can = 목록 요청 가능, draft = {id: {칸: 값}}, err = 표를 못 읽은 사유,
+// open = 펼친 항목 id 모음(Set, 없으면 모두 접힘)
+export function promoteGroup(p, can, draft, err, inputs = [], chosen = null, open = null) {
   const b = (act, label, on, cls = '', tip = '') => `<button type="button" data-act="${act}" class="small ${cls}"${tip ? ` title="${esc(tip)}"` : ''}${on ? '' : ' disabled'}>${label}</button>`;
   // 11-14 사용자 — 소제목 · 설명문을 빼고 한 줄(버튼 + 상태 + 같이 넣을 것). 설명은 버튼 호버로. 누르면 하는 일(문서 후보 묻기)은 그대로
   const head = `<div class="hand-btns">${b('prom-req', '대화에서만 정한 것 문서에 적기', can, 'docs-run', '대화에서만 정한 것 문서에 적기 — 대화에서만 정한 결정, 금지, 기준을 README, docs, CLAUDE.md에 적어 다음 세션이 읽게 합니다. 누르면 세션이 문서 후보를 내고(이때는 파일을 고치지 않습니다), 사람이 고치고 승인한 것만 [고른 것을 문서에 쓰기]로 커밋합니다.')}
-    ${p ? `<span class="small">${esc(STATUS[p.status] || p.status)} · ${ago(p.updated_at || p.created_at)}${inputUsed(p)}</span>` : '<span class="small muted">아직 없습니다</span>'}
+    ${p ? `${(STATUS[p.status] ?? p.status) ? `<span class="small">${esc(STATUS[p.status] ?? p.status)}</span>` : ''}<span class="small" title="${esc(`목록 받은 때 — ${inputUsed(p)}`)}">${ago(p.updated_at || p.created_at)}</span>` : '<span class="small muted">아직 없습니다</span>'}
     ${can ? inputPick(inputs, chosen) : ''}</div>`;
   if (err) return wrap(head + `<div class="small bad">${esc(err)}</div>`);
   if (!p) return wrap(head);
@@ -88,7 +96,7 @@ export function promoteGroup(p, can, draft, err, inputs = [], chosen = null) {
   if (items.length) {
     // 버튼은 글칸을 고칠 때 다시 그리지 않으므로 고친 수로 켜고 끄지 않는다 — 쓰기를 누를 때 저장 안 된 고침이 있으면 막는다
     const c = counts(items, draft), saved = counts(items, {});
-    body += items.map((it) => itemRow(it, merged(it, draft), editable)).join('');
+    body += items.map((it) => itemRow(it, merged(it, draft), editable, !!(open && open.has(it.id)))).join('');
     if (editable) {
       body += `<div class="hand-btns"><span class="small">승인 ${c.approved} · 대기 ${c.pending} · 빼기 ${c.dropped}${c.approved !== saved.approved ? ' <span class="warn">(저장 전)</span>' : ''}</span>
         ${b('prom-save', '고친 것 저장', true, c.approved !== saved.approved ? 'primary' : '', '고친 것 저장 — 문장 · 목적지 · 상태를 저장합니다. 쓰기 전에 저장해야 합니다.')}

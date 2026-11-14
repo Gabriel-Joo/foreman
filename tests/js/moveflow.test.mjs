@@ -7,6 +7,7 @@ import { edits } from '../../bridge/static/js/promote.js';
 test('11-13 잊은 것 찾기 — 없음 · 볼 것 없음 · 일부 · 실패를 다른 줄로', () => {
   assert.equal(lossNote({ status: 'done', outcome: 'clean', lost_total: 0 }).tone, 'ok');
   assert.equal(lossNote({ status: 'nothing', outcome: 'nothing' }).tone, 'muted');
+  assert.equal(lossNote({ status: 'nothing', outcome: 'nothing' }).msg, '잊은 것 없음');   // 11-14 사용자 — 줄은 남기고 짧게
   const p = lossNote({ status: 'done', outcome: 'partial', error: '묶음 1개 실패', lost_total: 0 });
   assert.equal(p.tone, 'warn'); assert.match(p.msg, /「없음」은 아닙니다/);
   const f = lossNote({ status: 'failed', outcome: 'failed', error: 'TimeoutError' });

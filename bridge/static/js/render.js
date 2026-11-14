@@ -578,11 +578,12 @@ export function modelChip(s, pend, button) {
     : `<span class="mdl${pre} f-${esc(family || '')}" title="${tip}">${now}${to}</span>`;
 }
 // 서버 model_choice.label · family와 같은 꼴(claude-sonnet-5-5 → Sonnet 5.5). 별칭(opus 등) · 모르는 꼴은 그대로
-function pickedLabel(id) {
+// 11-14 「옮기기 전 정리」 잊은 것 찾기 줄의 모델 배지도 이 둘을 쓴다(losscheck.js)
+export function pickedLabel(id) {
   const m = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
   return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? '.' + m[3] : ''}` : (/^[a-z]+$/.test(id) ? id[0].toUpperCase() + id.slice(1) : id);   // 옛 별칭(opus · sonnet)은 「Opus」
 }
-function pickedFamily(id) {
+export function pickedFamily(id) {
   const m = /^claude-([a-z]+)-/.exec(id);
   return m ? m[1] : (/^[a-z]+$/.test(id) ? id : 'other');
 }

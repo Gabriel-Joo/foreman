@@ -5,7 +5,7 @@
 // 자기 데이터(/api/sessions/{id}/handoff)를 따로 받아 따로 그린다 — 세션 칸이 다시 그려져도 고치던 글이 날아가지 않게.
 
 import { esc, ago, keep, clock } from './render.js';
-import { promoteGroup, edits as promoteEdits } from './promote.js';
+import { promoteGroup, edits as promoteEdits, counts as promoteCounts, DOCS_GUIDE } from './promote.js';
 import { lossGroup } from './losscheck.js';
 import { moveStep, MOVE_STEPS, MOVE_TIP, chooseCount, writeLabel, chosen, selectable, chooseAll, chooseFinal, lossOutcome } from './moveflow.js';
 
@@ -178,6 +178,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') endClose(); });
   // 고치던 값 — 15초마다 새로 그려도 날아가지 않게 따로 든다(요약 고치기 글 · 옮기기 목록 칸)
   let editDraft = null, promDraft = {}, promId = null, promIn = null;
+  const promOpen = new Set();   // 11-14 「옮기기 전 정리」 문서 후보 중 펼친 항목 id — 다시 그려도 접히지 않게 여기 둔다
   const promField = (t) => {
     const f = t.dataset && t.dataset.f, row = t.closest && t.closest('.prom-item');
     if (!f || !row) return false;
@@ -346,7 +347,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     const stop = b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 옮기기를 그만둡니다. 이미 쓴 문서와 받은 요약은 남습니다.');
     const skip = (label) => b('mv-skip-find', label, true, 'ghost', `${label} — 잊은 것 찾기를 기다리지 않고 세션에게 바로 문서 후보를 묻습니다.`);
     let body;
-    if (m.done) body = `<div class="small ok">새 세션으로 옮겼습니다 — 넘어간 글은 새 세션 패널 「넘겨받은 글」에서 봅니다.</div><div class="row">${b('flow-close', '닫기', true, 'ghost', '닫기 — 이 안내를 치웁니다.')}</div>`;
+    if (m.done) body = `<div class="small ok">새 세션으로 옮겼습니다. 새 캐릭터를 확인해주세요.</div><div class="row">${b('flow-close', '닫기', true, 'ghost', '닫기 — 이 안내를 치웁니다.')}</div>`;
     else if (m.bad) body = `<div class="small bad">${esc(m.msg)}</div><div class="row flow-act">${b('mv-retry', '다시 시도', true, 'primary', '다시 시도 — 이 단계부터 다시 합니다.')}${m.i <= 1 ? skip('문서 후보 없이 묻기') : ''}${m.i === 6 ? b('flow-end', '옛 세션 다시 끝내기', c.can.exit, 'danger', '옛 세션 다시 끝내기 — 새 세션은 이미 이어받았습니다. 옛 세션만 /exit로 끝냅니다.') : ''}${stop}</div>`;
     else if (m.wait) body = chooseHtml(m, b) + stop + '</div>';
     else if (m.i === 0) body = `<div class="small muted">${esc(m.msg)}… 끝나면 문서에 넣을 후보를 보여 드립니다.</div><div class="row">${skip('잊은 것 찾기 건너뛰기')}${stop}</div>`;
@@ -377,7 +378,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     const tip = n ? `${writeLabel(n)} — 고른 ${n}개를 세션이 문서에 쓰고 커밋합니다. 브리지가 커밋을 확인하면 요약 · 새 세션 · 옛 세션 끝내기까지 이어서 합니다.`
       : '문서에 넣지 않고 옮기기 — 아무것도 쓰지 않고 요약 · 새 세션 · 옛 세션 끝내기로 갑니다.';
     return `${m.msg ? `<div class="small bad">${esc(m.msg)}</div>` : ''}
-      <div class="small"><b>문서에 넣을 것을 고르십시오</b> — 사람이 고르는 곳은 여기 하나입니다. 고른 것만 세션이 문서에 쓰고 커밋한 뒤 이어서 옮깁니다.</div>
+      <div class="small"><b>문서에 넣을 것을 골라주세요.</b> 사용자가 고르는 곳은 여기 하나입니다.<br>고른 것만 세션이 문서에 쓰고 커밋한 뒤 이어서 옮깁니다.</div>
       <div class="mv-bar"><span class="small"><b>후보 ${items.length}개 중 ${n}개 고름</b>${can < items.length ? ` <span class="muted">(고를 수 없는 것 ${items.length - can}개)</span>` : ''}</span>
         ${b('mv-all', '전부 고르기', can > 0 && n < can, 'ghost', '전부 고르기 — 고를 수 있는 후보를 모두 고릅니다.')}${b('mv-none', '전부 풀기', n > 0, 'ghost', '전부 풀기 — 고른 것을 모두 풉니다.')}</div>
       <div class="mv-items">${rows}</div><div class="row flow-act mv-act">${b('mv-write', writeLabel(n), true, 'primary', tip)}`;
@@ -446,13 +447,18 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (mst && mode == null) main = moveBody(mst, b, c);
     const hist = data.summaries.length > 1 ? `<details class="hand-hist"${keep(`hand:${sid}:hist`)}><summary class="small muted" title="지난 요약 — 이 세션에서 받은 요약 목록입니다. 맨 위가 지금 쓰는 것입니다.">지난 요약 ${data.summaries.length}</summary>${
       data.summaries.map((x) => `<div class="small">#${x.id} ${esc(KIND[x.kind] || x.kind)} · ${esc(SOURCE[x.source] || x.source)} · ${esc(STATUS[x.status] || x.status)} · ${ago(x.created_at)}${x.chars ? ` · ${x.chars}자` : ''}</div>`).join('')}</details>` : '';
-    // 문서 정리 — 평소엔 접고, 사람이 할 일(목록 승인 · 쓰기 확인)이나 도는 점검이 있으면 연다(사람이 닫으면 그대로)
+    // 문서 정리 — 11-14 사용자: 위(③ 고르기)에서 고르면 그대로 들어가고 여기는 글을 고칠 때만 쓰므로 늘 접은 채로 시작한다
+    // (전에는 목록 승인 · 쓰기 확인 · 도는 점검이 있으면 저절로 펼쳤다). 사람이 펼치거나 닫으면 그대로. 머리 줄에 승인 수 · 고칠 수 있음 · 경고
     const p0 = prom(), lc0 = (data.losschecks || [])[0] || null;
-    const docsBusy = (p0 && ['requested', 'listed', 'writing', 'write_failed'].includes(p0.status)) || (lc0 && lc0.status === 'running');
-    const docsHint = p0 && p0.status === 'listed' ? '승인할 목록이 있습니다' : p0 && p0.status === 'write_failed' ? '확인 실패 — 봐 주세요'
+    const docsBusy = (p0 && ['requested', 'writing'].includes(p0.status)) || (lc0 && lc0.status === 'running');
+    const docsItems = (p0 && p0.items) || [];
+    const docsEditable = !!p0 && ['listed', 'write_failed'].includes(p0.status) && docsItems.length > 0;
+    const docsHint = p0 && p0.status === 'write_failed' ? '확인 실패, 봐 주세요'
       : docsBusy ? '도는 중…' : lossOutcome(lc0) === 'failed' ? '잊은 것 찾기 실패' : lossOutcome(lc0) === 'partial' ? '잊은 것 찾기 일부만 끝'
       : lc0 && lc0.status === 'done' && lc0.lost_total ? `잃은 것 ${lc0.lost_total}` : '';
-    const docsOn = docsOpen ?? !!docsBusy;
+    const docsHead = `${docsItems.length ? `<span class="small docs-sum">승인 ${promoteCounts(docsItems, promDraft).approved}개</span>` : ''}${
+      docsEditable ? '<span class="small docs-sum">고칠 수 있음</span>' : ''}${docsHint ? `<span class="small docs-sum warn">${esc(docsHint)}</span>` : ''}`;
+    const docsOn = docsOpen ?? false;
     const wtLive = !!(c.worktree && c.worktree.exists && c.worktree.live);   // 살아 있는 따로 작업 — 끝내기를 세 갈래로
     // 요약 카드 머리의 작은 [고치기] — 자주 안 쓰므로 버튼 줄에서 뺐다(11-06, 이력 1번)
     const editLink = ok && mode == null && !st ? b('edit', '고치기', true, 'ghost', '요약 고치기 — 저장된 요약을 직접 고칩니다. 원본은 두고 새 판으로 저장합니다.') : '';
@@ -491,9 +497,10 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
         ${wtLive && endOpen ? endMenu(can, c.why) : ''}
         ${wtGroup(c.worktree, b)}
       </section>
-      <details class="hand hand-docs"${docsOn ? ' open' : ''}><summary title="옮기기 전 정리 — 새 세션으로 옮기기 전에, 압축으로 잊은 것과 대화에서만 정한 것을 찾아 문서에 적습니다. 문서 정리 · 포트폴리오는 서기실에서 합니다."><b>옮기기 전 정리</b>${docsHint ? ` <span class="small muted"><span class="warn">${esc(docsHint)}</span></span>` : ''}</summary>
+      <details class="hand hand-docs"${docsOn ? ' open' : ''}><summary title="옮기기 전 정리 — 새 세션으로 옮기기 전에, 압축으로 잊은 것과 대화에서만 정한 것을 찾아 문서에 적습니다. 문서 정리 · 포트폴리오는 서기실에서 합니다."><b>옮기기 전 정리</b>${docsHead}</summary>
+        <div class="small muted docs-guide">${esc(DOCS_GUIDE)}</div>
         ${lossGroup(lc0, can.losscheck !== false && !!data.losschecks && !data.losschecks_error, data.losschecks_error)}
-        ${promoteGroup(p0, !!can.promote, promDraft, data.promotions_error, data.promote_inputs, promIn)}
+        ${promoteGroup(p0, !!can.promote, promDraft, data.promotions_error, data.promote_inputs, promIn, promOpen)}
       </details>`;
     if (html === lastHtml) return;
     // 11-09 사용자 — "스크롤이 자동으로 맨 위로 되돌아가 끝까지 볼 수 없다". 다시 그려도 글 상자(.hand-body)와 패널 스크롤을 지킨다
@@ -517,6 +524,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     // 더보기 — <details>에 display를 주면 브라우저에 따라 접힌 채로도 펼쳐져 보였다(11-06). 눌렀을 때만 그린다(기본 접힘)
     if (act === 'more') { moreOpen = !moreOpen; draw(); return; }
     if (act === 'end-menu') { endOpen = !endOpen; draw(); return; }
+    if (act === 'prom-fold') { const k = Number(btn.dataset.pid); if (!promOpen.delete(k)) promOpen.add(k); draw(); return; }
     // 메뉴 항목은 고르면 메뉴를 닫고 전 버튼과 같은 흐름(확인 창)으로 간다 — 아래 rest · wt-end-merge · exit
     if (btn.closest('.end-menu')) { endOpen = false; draw(); }
     if (act === 'prom-req') {

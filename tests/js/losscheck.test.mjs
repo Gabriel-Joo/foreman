@@ -40,6 +40,18 @@ test('잃은 것 — 「없음」과 「실패」를 다른 글 · 다른 색으
   assert.ok(part.includes('일부만') && part.includes('「없음」이 아닙니다') && !part.includes('잊은 것이 없습니다'));
   const none = lossGroup({ id: 9, status: 'nothing', outcome: 'nothing', error: '압축된 적이 없습니다 — 볼 것이 없습니다', created_at: NOW }, true, null);
   assert.ok(none.includes('찾을 것 없음') && !none.includes('찾기 실패'));
+  // 11-14 사용자 — 밑의 설명 줄은 「찾을 것 없음」 호버로
+  assert.match(none, /title="찾을 것 없음 — 이 세션은 압축된 적이 없어 잊은 것이 생기지 않았습니다\."[^>]*>찾을 것 없음</);
+  assert.ok(!/<div[^>]*>찾을 것 없음 —/.test(none));
   // 서버가 outcome을 주지 않던 11-13 전 기록 — 압축 없음은 실패가 아니다
   assert.ok(!lossGroup({ id: 5, status: 'failed', error: '압축된 적이 없습니다 — 볼 것이 없습니다', created_at: NOW }, true, null).includes('찾기 실패'));
+});
+
+// 11-14 사용자 — 「찾을 것 없음 · 1분 전 · claude-sonnet-5-5」 → 칸마다 띄우고, 모델은 패널 모델 칩과 같은 배지
+test('잃은 것 줄 — 가운뎃점 없이 칸마다, 모델은 이름 배지', () => {
+  const h = lossGroup({ id: 9, status: 'nothing', outcome: 'nothing', model: 'claude-sonnet-5-5', created_at: NOW }, true, null);
+  assert.match(h, /<span class="mdl f-sonnet"[^>]*>Sonnet 5\.5<\/span>/);
+  assert.ok(!h.includes('claude-sonnet-5-5'));
+  const head = h.slice(0, h.indexOf('</div>'));
+  assert.ok(!head.includes(' · '));
 });

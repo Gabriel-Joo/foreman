@@ -19,7 +19,7 @@ test('사람이 고친 값만 얹고, 버림은 승인될 수 없다', () => {
 
 test('목록 그리기 — 글은 이스케이프, 틀린 목적지 표시, 저장 전 승인은 쓰기에 세지 않는다', () => {
   const p = { id: 7, status: 'listed', items: ITEMS, updated_at: new Date().toISOString() };
-  const h = promoteGroup(p, true, { 1: { state: 'approved' } }, null);
+  const h = promoteGroup(p, true, { 1: { state: 'approved' } }, null, [], null, new Set([3]));   // 11-14 글 칸은 펼친 항목에만
   assert.ok(h.includes('&lt;b&gt;범위') && !h.includes('<b>범위'));
   assert.ok(h.includes('✗ 저장소 맨 위 기준 경로만 됩니다'));
   assert.ok(h.includes('승인 1') && h.includes('(저장 전)'));
@@ -32,7 +32,7 @@ test('쓴 뒤에는 고칠 수 없고 확인 결과를 보인다', () => {
   const p = { id: 7, status: 'write_failed', items: [], result: { ok: false, commit: 'abcdef1234', files: ['CLAUDE.md', 'other.md'], problems: ['승인하지 않은 파일도 바뀌었습니다: other.md'] } };
   const h = promoteGroup(p, false, {}, null);
   assert.ok(h.includes('✗ 확인 실패') && h.includes('abcdef12') && h.includes('other.md'));
-  const w = promoteGroup({ ...p, status: 'written', items: ITEMS, result: { ok: true, commit: 'abcdef1234', files: ['CLAUDE.md'] } }, false, {}, null);
+  const w = promoteGroup({ ...p, status: 'written', items: ITEMS, result: { ok: true, commit: 'abcdef1234', files: ['CLAUDE.md'] } }, false, {}, null, [], null, new Set([1]));
   assert.ok(w.includes('✓ 확인했습니다') && !w.includes('prom-save'));
   assert.match(w, /<textarea data-f="what"[^>]* disabled/);
   assert.ok(promoteGroup(null, true, {}, '읽지 못했습니다').includes('읽지 못했습니다'));
@@ -46,9 +46,11 @@ test('같이 넣을 인계 — 여럿이면 말없이 첫째를 고르지 않고
   assert.equal(sel(inputPick(two, '6')), '6');
   assert.equal(sel(inputPick([two[0]], null)), '7');                   // 하나뿐이면 그것
   const p = { id: 9, status: 'listed', items: [], summary_id: 7, updated_at: new Date().toISOString() };
-  assert.ok(promoteGroup(p, false, {}, null).includes('요약 #7 같이 넣음'))   // 11-09 화면 말 통일(인계 → 요약);
-  assert.ok(promoteGroup({ ...p, summary_id: null }, false, {}, null).includes('같이 넣은 것 없음'));
-  assert.ok(promoteGroup({ ...p, summary_id: null, loss_check_id: 3 }, false, {}, null).includes('잃은 것 점검 #3 같이 넣음'));
+  // 11-14 사용자 — 무엇을 같이 넣었는지는 줄에서 빼고 시각 호버로
+  assert.match(promoteGroup(p, false, {}, null), /title="목록 받은 때 — 같이 넣은 것은 요약 #7입니다\."/);   // 11-09 화면 말 통일(인계 → 요약)
+  assert.match(promoteGroup({ ...p, summary_id: null }, false, {}, null), /title="[^"]*같이 넣은 것은 없습니다\."/);
+  assert.match(promoteGroup({ ...p, summary_id: null, loss_check_id: 3 }, false, {}, null), /title="[^"]*같이 넣은 것은 잃은 것 점검 #3입니다\."/);
+  assert.ok(!promoteGroup(p, false, {}, null).includes('>같이 넣은'));
   const withLoss = inputPick([{ id: 'lc:3', kind: 'loss', title: '잃은 것 점검 #3', why: '사라짐 2 · 약해짐 1' }, two[0]], 'lc:3');
   assert.equal(sel(withLoss), 'lc:3');
   assert.ok(withLoss.includes('잃은 것 점검 #3 — 사라짐 2 · 약해짐 1'));
@@ -62,4 +64,27 @@ test('문서 적기 한 줄: 버튼 이름 그대로, 설명은 호버, 온점 �
   assert.ok(h.includes('>아직 없습니다<') && !h.includes('아직 없습니다.'));
   assert.ok(!h.includes('hand-item-h'));
   assert.ok(h.indexOf('아직 없습니다') < h.indexOf('같이 넣을 것(2개)'));          // 버튼 · 상태 · 같이 넣을 것 차례
+});
+
+// 11-14 사용자 — 「고치고 승인해 주세요」는 펼친 칸 맨 위 설명 줄로 올라갔다. 줄에는 시각만(가운뎃점 없이)
+test('목록 받음 줄: 상태 글 없이 시각만, 가운뎃점 없음', () => {
+  const p = { id: 7, status: 'listed', items: ITEMS, updated_at: new Date().toISOString() };
+  const h = promoteGroup(p, true, {}, null, [{ id: 7, title: 'a', why: 'x' }, { id: 6, title: 'b', why: 'y' }], null);
+  assert.ok(!h.includes('고치고 승인해 주세요'));
+  const head = h.slice(0, h.indexOf('<select id="promIn"'));
+  assert.ok(!head.includes(' · '));
+});
+
+// 11-14 사용자 — 항목마다 한 줄로 접고 누르면 펼친다. 상태 고르기는 접힌 줄에 그대로, 펼침은 넘겨받은 Set을 따른다
+test('문서 후보 항목: 기본 접힘, 상태 고르기는 접힌 줄에, 펼치면 글 칸 · 원문 · 왜 거기', () => {
+  const p = { id: 7, status: 'listed', items: ITEMS, updated_at: new Date().toISOString() };
+  const shut = promoteGroup(p, true, {}, null);
+  assert.ok(!shut.includes('<textarea') && !shut.includes('왜 거기:') && !shut.includes('data-f="dest"'));
+  assert.equal((shut.match(/<select data-f="state"/g) || []).length, 3);                    // 접혀도 셋 다 고를 수 있다
+  assert.match(shut, /data-act="prom-fold" data-pid="1"[^>]*><b>#1<\/b> <span class="muted">기준<\/span><code>CLAUDE\.md<\/code><span>「작업 규칙」<\/span><span class="prom-arrow">▶</);
+  assert.ok(!/<select data-f="state"[^]*?<\/select>[^<]*<\/button>/.test(shut));             // 고르기는 접기 단추 밖
+  const one = promoteGroup(p, true, {}, null, [], null, new Set([1]));
+  assert.equal((one.match(/<textarea/g) || []).length, 1);
+  assert.ok(one.includes('왜 거기: w') && one.includes('data-f="dest"') && one.includes('▼'));
+  assert.ok(one.includes('✗ 저장소 맨 위 기준 경로만 됩니다'));                              // 틀린 목적지는 접힌 줄에서도 보인다
 });
