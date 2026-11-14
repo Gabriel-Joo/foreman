@@ -10,7 +10,8 @@ import pytest
 from bridge.config import Settings
 from bridge.db.engine import make_engine
 from bridge.db.migrate import main as migrate_main
-from bridge.stallwatch import LOOP_SAME, Sample, StallWatch, judge, most_repeated, same_key
+from bridge.stallwatch import LOOP_SAME, Sample, StallWatch, dialog_key, judge, judge_dialog, most_repeated, same_key
+from test_inject_screen import HEAD, MODEL, PERMISSION, PROMPT, UNKNOWN
 
 NOW = datetime(2026, 11, 11, 3, 0)
 EXIT_SCREEN = "Background work is running\n 1. Exit and stop tasks\n 2. Move to background and exit\n 3. Stay"
@@ -40,6 +41,74 @@ def test_judge_each_kind():
     assert kinds(judge(Sample(sid=1, live=True, turn_started=NOW - timedelta(minutes=20), last_event=NOW, errors=8), NOW)) == ["loop"]
     assert kinds(judge(Sample(sid=1, live=True, screen=EXIT_SCREEN), NOW)) == ["exit_confirm"]
     assert kinds(judge(Sample(sid=1, live=True, busy=True, turn_started=NOW - timedelta(hours=3), last_event=NOW), NOW)) == ["long"]
+
+
+# 계획 승인 창 — CC 2.1.325 실측(11-14 362 시험, 120×40). 패널이 updatedInput 없이 허용하면 이 창이 그대로 남았다(359)
+PLAN = HEAD + f"""
+● Updated plan
+  ⎿  /plan to preview
+  {"─" * 116}
+   Ready to code?
+   Here is Claude's plan:
+  {"╌" * 116}
+   Plan
+   Run ls.
+  {"╌" * 116}
+  {"─" * 116}
+   Claude has written up a plan and is ready to execute. Would you like to proceed?
+   ❯ 1. Yes, and use auto mode
+     2. Yes, manually approve edits
+     3. Tell Claude what to change
+        shift+tab to approve with this feedback
+   ctrl+g to edit in Vim · ~/.claude/plans/test-only-plan-1-peppy-cosmos.md
+"""
+
+
+def test_judge_dialog_kinds():
+    """11-14 362 — 쉬는 세션에 뜬 창: 결정 창 · 모르는 창(+ waiting) · 안내 창 · 브리지 카드가 있으면 뺌."""
+    idle = dict(sid=1, live=True, cc_status="waiting")
+    f = judge_dialog(Sample(**idle, screen=PLAN), NOW)
+    assert kinds(f) == ["dialog"] and "「계획 승인」 창" in f[0]["detail"] and f[0]["notify"]
+    assert kinds(judge_dialog(Sample(**idle, screen=PERMISSION), NOW)) == ["dialog"]
+    assert kinds(judge(Sample(**idle, screen=PLAN), NOW)) == ["dialog"]                   # judge에도 실린다
+    # 브리지가 기다리는 승인이 있으면 카드가 이미 보인다 — 겹치지 않는다
+    assert judge_dialog(Sample(**idle, screen=PLAN, pending=1), NOW) == []
+    # 입력 칸만 — 아무것도 없다(CC가 waiting을 적었어도)
+    assert judge_dialog(Sample(**idle, screen=PROMPT), NOW) == []
+    # 모르는 창은 CC도 기다린다고 적었을 때만
+    assert kinds(judge_dialog(Sample(**idle, screen=UNKNOWN), NOW)) == ["dialog"]
+    assert judge_dialog(Sample(sid=1, live=True, cc_status="idle", screen=UNKNOWN), NOW) == []
+    # 안내 창(/model) — 화면에만
+    f = judge_dialog(Sample(sid=1, live=True, cc_status="idle", screen=MODEL), NOW)
+    assert kinds(f) == ["notice"] and f[0]["notify"] is False
+    # 끝내기 확인 창은 예전 kind 그대로
+    assert kinds(judge_dialog(Sample(sid=1, live=True, screen=EXIT_SCREEN), NOW)) == ["exit_confirm"]
+    # 화면을 못 읽음(tmux 밖) — status waiting + 승인 없음이면
+    assert kinds(judge_dialog(Sample(**idle), NOW)) == ["dialog"]
+    assert judge_dialog(Sample(**idle, pending=2), NOW) == []
+    assert judge_dialog(Sample(sid=1, live=True, cc_status="idle"), NOW) == []
+    # 일하는 중 · 끝난 세션은 보지 않는다
+    assert judge_dialog(Sample(sid=1, live=True, busy=True, screen=PLAN), NOW) == []
+    assert judge_dialog(Sample(sid=1, live=False, screen=PLAN), NOW) == []
+
+
+def test_judge_dialog_after_timeout_is_quiet():
+    """승인 대기 시간이 지나 브리지가 이미 「대화창에서만」을 알렸으면 30분 동안은 화면에만."""
+    s = Sample(sid=1, live=True, cc_status="waiting", screen=PERMISSION, last_appr=("timeout", NOW - timedelta(minutes=5)))
+    f = judge_dialog(s, NOW)
+    assert kinds(f) == ["dialog"] and f[0]["notify"] is False and "대기 시간이 지나" in f[0]["detail"]
+    s.last_appr = ("timeout", NOW - timedelta(minutes=31))
+    assert judge_dialog(s, NOW)[0]["notify"] is True
+    s.last_appr = ("allowed", NOW - timedelta(minutes=1))       # 359 — 허용을 보냈는데 창이 남음 → 알린다
+    assert judge_dialog(s, NOW)[0]["notify"] is True
+
+
+def test_dialog_key_changes_with_window():
+    assert dialog_key(Sample(sid=1, live=True, screen=PROMPT)) is None
+    assert dialog_key(Sample(sid=1, live=True, screen=PLAN)) == "decision:계획 승인"
+    assert dialog_key(Sample(sid=1, live=True, screen=PERMISSION)) == "decision:도구 권한 묻기"
+    assert dialog_key(Sample(sid=1, live=True, cc_status="waiting")) == "waiting"
+    assert dialog_key(Sample(sid=1, live=True, busy=True, screen=PLAN)) is None
 
 
 SCR = "/tmp/claude-1000/-home-kopo17-AI-programming-foreman--worktrees-foreman/650c0556-d474-4162-a78f-0d9bba82f90a/scratchpad"
@@ -183,6 +252,24 @@ async def test_alerts_fire_once_per_condition(env):
         # 창이 닫히면 화면에서 사라진다
         screens[2] = "> "
         await w.check(now + timedelta(minutes=5))
+        assert b not in w.snapshot
+
+        # B: 계획 승인 창(11-14 359 꼴) — 브리지 카드가 기다리는 동안은 조용하고, 패널이 허용했는데 창이 남으면 2분 뒤 한 번
+        status[2] = "waiting"
+        screens[2] = PLAN
+        with conn.cursor() as c:
+            c.execute("INSERT INTO approval (session_id, tool, rule, status) VALUES (%s, 'ExitPlanMode', 'cc', 'pending')", (b,))
+            appr = c.lastrowid
+        assert await w.check(now + timedelta(minutes=5, seconds=10)) == [] and b not in w.snapshot
+        with conn.cursor() as c:
+            c.execute("UPDATE approval SET status = 'allowed', decided_by = 'browser', decided_at = %s WHERE id = %s",
+                      (now + timedelta(minutes=5, seconds=20), appr))
+        assert await w.check(now + timedelta(minutes=6)) == [] and w.snapshot[b][0]["kind"] == "dialog"
+        keys = await w.check(now + timedelta(minutes=7, seconds=11))     # 처음 본 때(5분 10초)에서 2분
+        assert [k.split(":")[1] for k in keys] == ["dialog"] and notifier.sent[-1][2] == b
+        assert "「계획 승인」 창" in notifier.sent[-1][3] and "대화창에서 답합니다" in notifier.sent[-1][3]
+        status[2], screens[2] = "idle", "> "
+        await w.check(now + timedelta(minutes=7, seconds=30))
         assert b not in w.snapshot
 
         # A: 프로세스가 사라짐(열린 턴은 그대로) → 작업 중 끊김

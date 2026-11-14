@@ -620,6 +620,23 @@ async def test_permission_browser_allow_and_deny(env):
     assert out["hookSpecificOutput"]["decision"] == {"behavior": "deny", "message": "운영 배포는 내가 직접 한다"}
 
 
+async def test_permission_browser_allow_exit_plan_mode(env):
+    """11-14 — 패널에서 계획 승인을 허용하면 원래 입력(updatedInput) + setMode auto를 돌려준다.
+    updatedInput이 없으면 CC가 계획 승인 창을 그대로 두고(359), setMode가 없으면 plan으로 띄운 세션이 manual로 떨어진다(362)."""
+    s, _ = env
+    mgr, _, _ = await _mgr(s)
+    inp = {"planFilePath": "/home/kopo17/.claude/plans/x.md"}
+    p = {**_p("x", event="PermissionRequest"), "tool_name": "ExitPlanMode", "tool_input": inp, "permission_mode": "plan"}
+    task = asyncio.create_task(mgr.permission_request(p))
+    while not mgr.waiting:
+        await asyncio.sleep(0.01)
+    assert mgr.decide(next(iter(mgr.waiting)), "allow", None) == "ok"
+    out = await task
+    assert out["hookSpecificOutput"]["decision"] == {
+        "behavior": "allow", "updatedInput": inp,
+        "updatedPermissions": [{"type": "setMode", "mode": "auto", "destination": "session"}]}
+
+
 async def test_permission_terminal_first_and_timeout(env):
     s, _ = env
     mgr, pipe, _ = await _mgr(s, wait_s=0.5)

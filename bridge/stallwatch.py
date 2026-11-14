@@ -12,6 +12,11 @@ CC는 스스로 심장박동을 보내지 않는다 — sessions/<pid>.json의 u
               timeout · env)를 뺀 명령 전체로, 서브에이전트마다 따로, 그 사이에 고친 것(Edit · Write · MCP 쓰기)이 있으면 다시 0부터
 - exit_confirm CC 끝내기 확인 창("Background work is running … Exit and stop tasks")이 떠 있다 — 사람 답을 기다리며 멈춤
               (README 「세션이 끝나지 않고 CC 끝내기 확인 창에 걸린 것」)
+- dialog      쉬는(busy 아닌) 세션에 결정 창(계획 승인 · 도구 권한 · 폴더 신뢰 …, `inject.screen_state`)이나 모르는 창이 떠 있는데
+              브리지가 기다리는 승인(approval `pending`)이 없다 — 패널에는 답할 카드가 없고 대화창에서만 풀린다(11-14 362,
+              `log/silent_finish_20261114.md` 1 · 4절). 모르는 창은 CC가 status `waiting`을 적었을 때만. 화면을 못 읽는 세션(tmux 밖)은
+              status `waiting`만으로. 승인 대기 시간이 지나 브리지가 이미 알린 창(마지막 승인이 30분 안의 timeout)은 화면에만
+- notice      안내 창(자동 압축 권유 · /model · /config …, screen_state `dismiss`)이 떠 있다 — 화면에만(알리지 않는다, 일부러 연 창일 수 있다)
 - long        한 작업이 LONG 넘게 — 화면에만(알리지 않는다, 긴 일은 정상일 수 있다)
 - bg_long     뒤에서 도는 일(백그라운드 Bash)이 BG_LONG 넘게 끝 알림 없이 돈다(11-14, 11-13 330의 pytest가 2시간 10분 멈춘 채 돌았다).
               세션이 턴을 닫고 쉬어도 잰다. 출력이 나온 적 있고 BG_QUIET 안에 바뀌었으면 정상(계속 일하는 중), 나오다 안 바뀌었으면 「멈췄을 수 있음」.
@@ -19,7 +24,8 @@ CC는 스스로 심장박동을 보내지 않는다 — sessions/<pid>.json의 u
               Monitor는 일부러 오래 도는 것이라 뺀다. 알림 열쇠 `stall:bg_long:<세션>:<task>`
 
 알림: kind마다 ALERT_AFTER를 넘으면 텔레그램 한 번(notification.rule 키 `stall:<kind>:<세션>:<시작 시각>` — 브리지를 다시 띄워도 한 번).
-exit_confirm의 시작 시각은 브리지 메모리(처음 본 때)라, 다시 띄우면 한 번 더 갈 수 있다.
+창(exit_confirm · dialog · notice)의 시작 시각은 브리지 메모리(그 창을 처음 본 때)라, 다시 띄우면 한 번 더 갈 수 있다.
+멈춤 항목의 `notify`가 False면 알리지 않는 것이다(화면 툴팁이 「텔레그램으로도 알립니다」를 붙일지 가를 때 쓴다).
 """
 
 from __future__ import annotations
@@ -36,7 +42,7 @@ from typing import Any
 from sqlalchemy import bindparam, text
 
 from bridge.approval import _seg_spans      # 승인 판정과 같은 쪼개기(따옴표 · $( ) 안의 구분자는 무시)
-from bridge.inject import Refused, _status, _tmux_env, tmux
+from bridge.inject import Refused, _status, _tmux_env, screen_state, tmux
 from bridge.liveness import live_sessions
 
 log = logging.getLogger("foreman.stallwatch")
@@ -57,13 +63,17 @@ BG_LONG = timedelta(minutes=30)      # 뒤에서 도는 일이 이만큼 지나�
 BG_QUIET = timedelta(minutes=15)     # 출력 파일이 이만큼 안 바뀌면 멈췄을 수 있다(점 하나씩 찍는 시험도 15분 비는 일은 드물다)
 BG_SKIP_TOOLS = {"Monitor"}          # 일부러 오래 도는 것
 ALERT_AFTER = {"died": timedelta(0), "silent": timedelta(0), "loop": timedelta(0), "exit_confirm": timedelta(minutes=2),
-               "bg_long": timedelta(0)}
+               "bg_long": timedelta(0), "dialog": timedelta(minutes=2)}
+# 승인 대기 시간이 지나 브리지가 「이제 대화창에서만 답할 수 있습니다」를 이미 보낸 뒤 이만큼은 dialog를 다시 알리지 않는다
+TIMEOUT_QUIET = timedelta(minutes=30)
 
 LABEL = {
     "died": "작업 중에 끊김",
     "silent": "응답 없음",
     "loop": "같은 자리에서 맴돎",
     "exit_confirm": "끝내기 확인 창에서 멈춤",
+    "dialog": "창에서 답을 기다림",
+    "notice": "안내 창이 떠 있음",
     "long": "긴 작업",
     "bg_long": "뒤에서 도는 일이 오래 걸림",
 }
@@ -84,6 +94,10 @@ class Sample:
     extra: dict[str, Any] = field(default_factory=dict)
     # 끝 알림 없는 뒤에서 도는 일 — [{task, tool, description, since, out_mtime, out_size}] (judge_bg가 본다)
     bg: list[dict[str, Any]] = field(default_factory=list)
+    # 쉬는 세션에 뜬 창(11-14 362, judge_dialog)
+    cc_status: str | None = None                  # CC가 sessions/<pid>.json에 적은 status(busy · idle · waiting)
+    pending: int = 0                              # 브리지가 기다리는 승인(approval pending) 수
+    last_appr: tuple[str, datetime | None] | None = None   # 마지막 승인의 (status, decided_at)
 
 
 def bg_output_stat(cc_session_id: str | None, task: str | None) -> tuple[datetime, int] | None:
@@ -153,8 +167,52 @@ def fmt_elapsed(d: timedelta) -> str:
     return f"{dd}일" + (f" {hh}시간" if hh else "")
 
 
+def dialog_key(s: Sample) -> str | None:
+    """쉬는 세션에 뜬 창을 가르는 열쇠 — 바뀌면 「처음 본 때」를 다시 잰다. 창이 없으면 None."""
+    if not s.live or s.busy:
+        return None
+    if s.screen:
+        kind, name = screen_state(s.screen)
+        # 모르는 창은 CC status도 열쇠에 — 늘 「모름」으로 보이던 화면이 waiting으로 바뀌면 그때부터 다시 잰다
+        return None if kind == "prompt" else f"{kind}:{name or s.cc_status or ''}"
+    return "waiting" if s.cc_status == "waiting" else None
+
+
+def judge_dialog(s: Sample, now: datetime, since: datetime | None = None) -> list[dict[str, Any]]:
+    """쉬는 세션에 뜬 CC 창 — exit_confirm · dialog · notice 중 하나(없으면 []). since = 그 창을 처음 본 때."""
+    if not s.live or s.busy:
+        return []
+    since = since or now
+
+    def item(kind: str, detail: str, notify: bool = True) -> list[dict[str, Any]]:
+        return [{"kind": kind, "label": LABEL[kind], "since": since, "detail": detail, "notify": notify}]
+
+    if not s.screen:
+        if s.cc_status == "waiting" and not s.pending:
+            return item("dialog", "CC가 사람을 기다린다고 적었는데 브리지가 기다리는 승인이 없습니다(화면은 못 읽었습니다) — "
+                                  "그 세션의 대화창에 창이 떠 있을 수 있습니다")
+        return []
+    kind, name = screen_state(s.screen)
+    if kind == "prompt":
+        return []
+    if name == "끝내기 확인" or EXIT_RE.search(s.screen):
+        return item("exit_confirm", "CC가 뒤에서 도는 일을 멈출지 묻고 기다립니다(1 멈추고 끝내기 · 2 뒤로 보내고 끝내기 · 3 남기)")
+    if kind == "dismiss":
+        return item("notice", f"「{name}」 창이 떠 있습니다 — 일부러 연 창이면 그대로 두어도 됩니다", notify=False)
+    if s.pending:
+        return []                                  # 패널에 카드가 이미 있다
+    if kind == "unknown" and s.cc_status != "waiting":
+        return []                                  # 화면을 잘못 가른 것일 수 있다 — CC도 기다린다고 적었을 때만
+    what = f"「{name}」 창" if name else "알 수 없는 창"
+    st, at = s.last_appr or (None, None)
+    quiet = kind == "decision" and st == "timeout" and at is not None and now - at < TIMEOUT_QUIET
+    return item("dialog", f"{what}이 떠 있는데 패널에는 기다리는 승인이 없습니다 — 그 세션의 대화창에서 답해야 이어집니다"
+                + (" (화면 승인은 대기 시간이 지나 닫혔습니다)" if quiet else ""), notify=not quiet)
+
+
 def judge(s: Sample, now: datetime, exit_since: datetime | None = None) -> list[dict[str, Any]]:
-    """멈춤 목록 — [{kind, label, since, detail}]. since는 그 상태가 시작된 때(알림 키에 쓴다)."""
+    """멈춤 목록 — [{kind, label, since, detail[, notify]}]. since는 그 상태가 시작된 때(알림 키에 쓴다).
+    exit_since = 지금 떠 있는 창을 처음 본 때(judge_dialog의 since)."""
     out: list[dict[str, Any]] = []
 
     def add(kind: str, since: datetime | None, detail: str) -> None:
@@ -164,8 +222,7 @@ def judge(s: Sample, now: datetime, exit_since: datetime | None = None) -> list[
         if s.turn_started:
             add("died", s.last_event or s.turn_started, "작업이 끝났다는 신호 없이 세션 프로세스가 사라졌습니다")
         return out
-    if s.screen and EXIT_RE.search(s.screen):
-        add("exit_confirm", exit_since or now, "CC가 뒤에서 도는 일을 멈출지 묻고 기다립니다(1 멈추고 끝내기 · 2 뒤로 보내고 끝내기 · 3 남기)")
+    out.extend(judge_dialog(s, now, exit_since))
     if s.busy and s.last_event and now - s.last_event >= SILENT:
         tool, target = s.last_tool or (None, None)
         mins = int((now - s.last_event).total_seconds() // 60)
@@ -258,7 +315,7 @@ class StallWatch:
         self.live: Any = live_sessions          # 시험이 바꿔 끼운다
         self.status: Any = _status
         self.screen: Any = self._screen
-        self.exit_seen: dict[int, datetime] = {}   # 끝내기 확인 창을 처음 본 때(세션별, 메모리)
+        self.dialog_seen: dict[int, tuple[str, datetime]] = {}   # 쉬는 세션에 뜬 창(dialog_key)을 처음 본 때(세션별, 메모리)
         self.snapshot: dict[int, list[dict[str, Any]]] = {}   # 대시보드가 읽는다
 
     async def _screen(self, pid: int) -> str | None:
@@ -266,7 +323,8 @@ class StallWatch:
         if not te:
             return None
         try:
-            return await tmux(te[0], "capture-pane", "-p", "-t", te[1])
+            # -J(줄 이음)는 inject._capture와 같게 — screen_state의 표 · 테두리 꼴이 그 옵션으로 잰 것이다(11-13 351)
+            return await tmux(te[0], "capture-pane", "-p", "-J", "-t", te[1])
         except Refused:
             return None
 
@@ -313,14 +371,22 @@ class StallWatch:
                     f"(SELECT 1 FROM event e WHERE e.session_id = s.session_id AND e.type = 'bg_end' AND e.target = s.target) "
                     f"ORDER BY s.ts"), {"cut": now - timedelta(hours=24)})).all():
                 bgs.setdefault(bsid, []).append((task, tool, None if desc in (None, "null") else desc, bts))
+            # 쉬는 세션에 뜬 창(judge_dialog) — 브리지가 기다리는 승인 수 · 마지막 승인
+            pending = {r[0]: int(r[1]) for r in (await c.execute(text(
+                f"SELECT session_id, COUNT(*) FROM approval WHERE session_id IN {in_ids} AND status = 'pending' "
+                f"GROUP BY session_id"))).all()}
+            last_appr = {r[0]: (r[1], r[2]) for r in (await c.execute(text(
+                f"SELECT a.session_id, a.status, a.decided_at FROM approval a JOIN (SELECT session_id, MAX(id) mid FROM approval "
+                f"WHERE session_id IN {in_ids} GROUP BY session_id) x ON x.mid = a.id"))).all()}
         out: list[Sample] = []
         meta: dict[int, tuple[Any, ...]] = {}
         for sid, cc, title, project, last_ts in rows:
             if cc in live and cc not in live_ok:      # 멈춰 둔(T) 세션 — 끊긴 것도 멈춘 것도 아니다(사용자가 남겨 둠)
                 continue
             ls = live_ok.get(cc)
-            busy = bool(ls and self.status(self.dir, ls.pid) == "busy")
-            screen = await self.screen(ls.pid) if ls and not busy else None    # 끝내기 확인 창은 일하지 않을 때 뜬다
+            cc_st = self.status(self.dir, ls.pid) if ls else None     # 아래 bg 반복의 st(출력 파일)와 다른 이름으로
+            busy = cc_st == "busy"
+            screen = await self.screen(ls.pid) if ls and not busy else None    # 창은 일하지 않을 때(idle · waiting) 뜬다
             t = turns.get(sid)
             started = _proc_started(self.dir, ls.pid) if ls and bgs.get(sid) else None
             bg = []
@@ -333,7 +399,8 @@ class StallWatch:
                 bg.append({"task": task, "tool": tool, "description": desc, "since": bts,
                            "out_mtime": st[0] if st else None, "out_size": st[1] if st else None})
             out.append(Sample(sid=sid, live=bool(ls), busy=busy, turn_started=t[1] if t else None, last_event=last_ts,
-                              last_tool=last_tool.get(sid), same=same.get(sid), errors=errs.get(sid, 0), screen=screen, bg=bg))
+                              last_tool=last_tool.get(sid), same=same.get(sid), errors=errs.get(sid, 0), screen=screen, bg=bg,
+                              cc_status=cc_st, pending=pending.get(sid, 0), last_appr=last_appr.get(sid)))
             meta[sid] = (title, project)
         return out, meta
 
@@ -343,23 +410,24 @@ class StallWatch:
         samples, meta = await self.samples(now)
         snap: dict[int, list[dict[str, Any]]] = {}
         sent: list[str] = []
-        seen_exit: set[int] = set()
+        seen_dialog: set[int] = set()
         for s in samples:
-            if s.screen and EXIT_RE.search(s.screen):
-                seen_exit.add(s.sid)
-                self.exit_seen.setdefault(s.sid, now)
-            found = judge(s, now, self.exit_seen.get(s.sid))
+            if (dk := dialog_key(s)) is not None:
+                seen_dialog.add(s.sid)
+                if (prev := self.dialog_seen.get(s.sid)) is None or prev[0] != dk:
+                    self.dialog_seen[s.sid] = (dk, now)
+            found = judge(s, now, self.dialog_seen[s.sid][1] if s.sid in seen_dialog else None)
             if found:
                 snap[s.sid] = [{**f, "since": _iso(f["since"])} for f in found]
             for f in found:
-                if f["kind"] not in ALERT_AFTER or now - (f["since"] or now) < ALERT_AFTER[f["kind"]]:
+                if f["kind"] not in ALERT_AFTER or not f.get("notify", True) or now - (f["since"] or now) < ALERT_AFTER[f["kind"]]:
                     continue
                 key = f.get("key") or f"stall:{f['kind']}:{s.sid}:{(f['since'] or now):%Y%m%d%H%M}"
                 if await self._send(key, s.sid, meta.get(s.sid, (None, None)), f):
                     sent.append(key)
-        for sid in list(self.exit_seen):
-            if sid not in seen_exit:
-                del self.exit_seen[sid]
+        for sid in list(self.dialog_seen):
+            if sid not in seen_dialog:
+                del self.dialog_seen[sid]
         self.snapshot = snap
         return sent
 
@@ -376,7 +444,8 @@ class StallWatch:
                 "silent": "대화창에서 무엇이 도는지 보고, 필요하면 [작업 중단]을 누릅니다",
                 "loop": "그 세션에 다른 방법을 지시하거나 [작업 중단]을 누릅니다",
                 "exit_confirm": "대화창에서 고릅니다 — 뒤에서 도는 일이 끝나도 되면 1, 남기려면 3",
-                "bg_long": "대화창에서 그 일을 보고, 멈췄으면 세션에 멈추라고 지시합니다"}.get(f["kind"], "")
+                "bg_long": "대화창에서 그 일을 보고, 멈췄으면 세션에 멈추라고 지시합니다",
+                "dialog": "그 세션의 대화창에서 답합니다 — 패널에는 답할 카드가 없습니다"}.get(f["kind"], "")
         msg = "\n".join([f"{prefix} ⏸ {f['label']} — 「{title or sid}」(세션 {sid})", f"▶ {f['detail']}", what])
         log.warning("멈춤 알림: 세션 %s %s — %s", sid, f["kind"], f["detail"][:120])
         self.notifier.send_direct(project, "stall", sid, msg, rule=key)

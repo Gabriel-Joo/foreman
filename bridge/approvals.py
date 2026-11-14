@@ -31,6 +31,12 @@ from bridge.models import EventIn, EventSource, EventStatus, EventType
 
 log = logging.getLogger("foreman.approval")
 NOTES_ONLY = "(notes only)"   # CC가 "고르지 않고 글만"에 쓰는 답 값(CC 코드 oAn) — 결과에는 "(no option selected) notes: …"
+# CC가 사람 창을 띄우는 도구 — updatedInput 없는 훅 allow를 결정으로 받지 않고 창을 그대로 둔다(11-14 359 · 362 시험,
+# CC 2.1.325). AskUserQuestion은 answers를 붙이는 갈래가 따로 있다
+NEEDS_INPUT = {"ExitPlanMode"}
+# 계획 승인 뒤 모드 — 터미널 창의 기본 선택 「1. Yes, and use auto mode」와 같게. updatedInput만 주면 CC는 「계획 전 모드」로
+# 돌아가는데, `--permission-mode plan`으로 띄운 세션(읽기 전용 · handoff)은 그것이 manual이라 그 뒤 편집 · Bash마다 묻는다(362 시험)
+PLAN_EXIT_MODE = "auto"
 
 
 def _questions_text(inp: dict[str, Any]) -> str:
@@ -46,6 +52,18 @@ def _questions_text(inp: dict[str, Any]) -> str:
             if isinstance(o, dict):
                 out.append(f"   {j}) {o.get('label') or ''}" + (f" — {o['description']}" if o.get("description") else ""))
     return "\n".join(out)
+
+
+def allow_decision(tool: str, inp: dict[str, Any]) -> dict[str, Any]:
+    """패널 「허용」을 CC에 돌려줄 모양. 사람 창 도구(NEEDS_INPUT)는 원래 입력을 updatedInput으로 붙여야 CC가 창을 닫고 잇는다.
+    ExitPlanMode는 모드도 함께(setMode) — 터미널에서 1번을 고른 것과 같은 결과(11-14 362 시험: 계획 진행 · auto 유지 ·
+    그 뒤 Write · Bash가 훅에 다시 묻지 않음)."""
+    if tool not in NEEDS_INPUT:
+        return {"behavior": "allow"}
+    out: dict[str, Any] = {"behavior": "allow", "updatedInput": dict(inp)}
+    if tool == "ExitPlanMode":
+        out["updatedPermissions"] = [{"type": "setMode", "mode": PLAN_EXIT_MODE, "destination": "session"}]
+    return out
 
 
 def _target(tool: str, inp: dict[str, Any]) -> str:
@@ -331,7 +349,7 @@ class ApprovalManager:
             return {"hookSpecificOutput": {"hookEventName": "PermissionRequest",
                                            "decision": {"behavior": "allow", "updatedInput": upd}}}
         if outcome == "allow":
-            return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}
+            return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": allow_decision(tool, inp)}}
         if outcome == "deny":
             return {"hookSpecificOutput": {"hookEventName": "PermissionRequest",
                                            "decision": {"behavior": "deny", "message": message or "브라우저에서 거부"}}}
