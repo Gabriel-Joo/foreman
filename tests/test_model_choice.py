@@ -14,14 +14,14 @@ def test_label_and_family():
 def test_pick_valid_or_role_default(tmp_path):
     p = tmp_path / "m.toml"
     p.write_text('choices = [{id="opus", label="Opus"}, {id="sonnet", label="Sonnet"}, {id="bad id; rm", label="x"}]\n'
-                 '[defaults]\ncoder = "opus"\ninspector = "sonnet"\ncicd = "nope"\n', encoding="utf-8")
+                 '[defaults]\ncoder = "opus"\ninspector = "sonnet"\nscribe = "nope"\n', encoding="utf-8")
     m = Models(p)
     assert [c["id"] for c in m.choices] == ["opus", "sonnet"]     # 셸에 들어갈 수 없는 id는 버린다
     assert m.defaults == {"coder": "opus", "inspector": "sonnet"}  # 목록에 없는 기본값은 버린다
     assert m.pick("sonnet", "coder") == "sonnet"
     assert m.pick("haiku", "inspector") == "sonnet"                # 목록에 없으면 역할 기본값
     assert m.pick(None, None) == "opus"                            # 역할이 없으면 coder
-    assert m.pick(None, "cicd") is None                            # 기본값도 없으면 CC 설정(--model 없이)
+    assert m.pick(None, "scribe") is None                           # 기본값도 없으면 CC 설정(--model 없이)
 
 
 def test_missing_file_means_cc_default(tmp_path):

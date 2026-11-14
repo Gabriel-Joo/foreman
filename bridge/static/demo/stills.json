@@ -677,7 +677,6 @@
     "defaults": {
      "coder": "opus",
      "inspector": "sonnet",
-     "cicd": "sonnet",
      "scribe": "opus"
     }
    },

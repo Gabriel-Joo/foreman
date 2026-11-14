@@ -45,7 +45,7 @@ test('말풍선 — 쉬게 한 일만이면 "맡은 일 N — 합치기 기다�
 
 test('코더 세션 — 역할 없음 · coder만', () => {
   assert.ok(isCoder({}) && isCoder({ role: 'coder' }));
-  assert.ok(!isCoder({ role: 'scribe' }) && !isCoder({ role: 'inspector' }) && !isCoder({ role: 'cicd' }));
+  assert.ok(!isCoder({ role: 'scribe' }) && !isCoder({ role: 'inspector' }) && !isCoder({ role: 'helper' }));
 });
 
 test('받은 할 일 상태 호버 — 받는 사람마다', () => {

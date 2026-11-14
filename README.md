@@ -83,6 +83,8 @@ SUSPENDED는 트랜스크립트로는 판별할 수 없다. 정지된 프로세�
 
 Jenkins 캐릭터에게 "왜 터졌어?"라고 물으면 inspector 세션이 붙고, "고쳐줘"라고 하면 같은 캐릭터에 coder 세션이 붙는다. 캐릭터는 그대로이고 세션 이력이 쌓인다.
 
+11-14 cicd 역할을 뺐다(한 번도 쓰지 않음, 빌드 · 배포는 브리지 파이프라인 구역). 세션 역할은 coder · inspector · scribe · manager · designer이다.
+
 ### 2.4 포먼만이 채용한다
 
 새 캐릭터를 만들 수 있는 것은 포먼뿐이다. 프로젝트마다 하나씩 상주한다.
@@ -484,7 +486,7 @@ AI 인프라 관점의 핵심 축. 프로젝트마다 호스트에 LLM이 떠 �
 
 데이터 모델과 렌더링을 분리한다. 서브에이전트는 캐릭터가 아니라 `subagent_run` 행이지만(3.11), **렌더러는 이것을 실제 일꾼으로 그린다.** "에이전트들이 돌아다니면서 일하는" 장면이 이 화면의 목표이고, 서브에이전트 10개가 동시에 도는 것이 그 장면의 핵심이다.
 
-- **외형은 부모 캐릭터의 축소판이다.** 부모 스프라이트를 작게 줄이고 색조만 살짝 바꾼다. 별도 에셋이 필요 없고, 누가 띄웠는지 선이나 색으로 설명하지 않아도 생김새로 보인다. 한 방에서 코더와 CI/CD 캐릭터가 각각 서브에이전트를 띄워도 구분되고, 역할별 외형도 그대로 상속된다 — CI/CD 캐릭터가 띄우면 작은 CI/CD 일꾼이 나온다.
+- **외형은 부모 캐릭터의 축소판이다.** 부모 스프라이트를 작게 줄이고 색조만 살짝 바꾼다. 별도 에셋이 필요 없고, 누가 띄웠는지 선이나 색으로 설명하지 않아도 생김새로 보인다. 한 방에서 코더와 점검 캐릭터가 각각 서브에이전트를 띄워도 구분되고, 역할별 외형도 그대로 상속된다 — 점검 캐릭터가 띄우면 작은 점검 일꾼이 나온다.
 - **위치는 부모 옆이다.** 그러므로 자동으로 부모와 같은 방 안이다(2.5).
 - **움직임은 부모와 같은 매핑 테이블을 쓴다.** 서브에이전트 안의 도구 사용도 `status`·`tool` 이벤트이므로 테마 매핑을 그대로 탄다.
 - **부모가 IDLE이어도 일꾼은 돈다.** 부모는 자리에 앉아 있고 작은 일꾼들이 돌아다니며, 부모 위에 "백그라운드 n개" 배지가 붙는다(3.11).
@@ -681,7 +683,7 @@ CC에는 `/remote-control` 모드가 이미 존재한다. 세션 뷰어 구간�
 | parent_id | FK nullable | 누가 낳았나. null이면 포먼이거나 독립 |
 | name | varchar | 표시 이름 |
 | sprite | varchar | 외형 키 |
-| current_role | enum | foreman coder cicd inspector helper infra |
+| current_role | enum | foreman coder inspector scribe manager designer helper infra (cicd는 11-14에 뺐다, 칸은 VARCHAR) |
 | status | enum | ACTIVE IDLE DORMANT SUSPENDED STALE |
 | kind | enum | agent 세션 가능 / infra 실체 대응 |
 | infra_type | varchar nullable | jenkins harbor argocd prometheus llm |
@@ -689,7 +691,7 @@ CC에는 `/remote-control` 모드가 이미 존재한다. 세션 뷰어 구간�
 | infra_endpoint | varchar nullable | 헬스체크·조회 대상 |
 | home_position | json | 화면상 자기 자리 |
 | watch_targets | json nullable | 상태를 이 캐릭터에 반영할 systemd 유닛·docker 컨테이너 이름(2.2). 어디에도 없는 유닛은 포먼 경고 목록 |
-| spawned_by | enum | user foreman cicd auto |
+| spawned_by | enum | user foreman auto (cicd는 11-14에 뺐다) |
 | created_at / retired_at | datetime | |
 
 ### character_session

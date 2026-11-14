@@ -34,7 +34,7 @@ from bridge.usage import record_cli
 log = logging.getLogger("foreman.dispatch")
 
 MODES = ("new", "handoff", "attach", "ask")
-ROLES = ("coder", "inspector", "cicd", "scribe", "manager", "designer")
+ROLES = ("coder", "inspector","scribe", "manager", "designer")
 PLAN_TIMEOUT_S = 180.0
 _cache: dict[str, tuple[float, str]] = {}
 
@@ -119,7 +119,7 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
    - "handoff": 끝났거나 오래된 세션의 일을 이어 가야 하면 그 세션의 인계 요약(summary_id)을 쓴다. 요약이 없으면 "new"로 하고 이유에 적는다
    - "new": 새 일
    - "ask": 모호하거나 위험해서 사람이 정해야 할 것이 있을 때(questions에 물을 것)
-3. role — "coder"(고치기 · 만들기) · "inspector"(살펴보기 · 원인 찾기) · "cicd"(빌드 · 배포) · "scribe"(서기 — 문서 일) ·
+3. role — "coder"(고치기 · 만들기) · "inspector"(살펴보기 · 원인 찾기) · "scribe"(서기 — 문서 일) ·
    "designer"(디자이너 — 화면 일) · "manager"(관리자 — 거두는 일)
    - scribe 일감(docs/12_scribe.md): 회고(retro) · 문서 맞추기(sync) · CLAUDE.md 정리(trim) · 압축 손실 반영(loss) · 포트폴리오
    - 회고 · 문서 정리 요청이면 scribe. 서기는 따로 작업(worktree)으로 띄우고, 합치기가 사람의 검토다
@@ -176,7 +176,7 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
 # 위쪽 칸(role · title · first_prompt …)은 sessions[0]과 같게 둔다(check가 맞춘다) — 옛 계획(세션 하나 모양) · 옛 계획 카드가 그대로 돈다:
 # 옛 카드는 위쪽 칸만 고쳐 보내므로, sessions_edit가 없으면 위쪽 칸이 sessions[0]을 이긴다. 세션별로 고치는 카드는 sessions_edit: true를 보낸다
 MAX_SESSIONS = 6
-ROLE_KO = {"coder": "코더", "inspector": "점검", "cicd": "CI/CD", "scribe": "서기", "manager": "관리자", "designer": "디자이너"}
+ROLE_KO = {"coder": "코더", "inspector": "점검", "scribe": "서기", "manager": "관리자", "designer": "디자이너"}
 S_FIELDS = ("role", "model", "title", "first_prompt", "read_only", "worktree", "files", "merge_order")
 
 

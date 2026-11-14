@@ -21,8 +21,8 @@ test('패널 배지 — 세션 없는 캐릭터는 자기 역할, 세션이 있�
 });
 import { ROLE_PICK } from '../../bridge/static/js/modelpick.js';
 
-test('세션 역할 여섯은 모두 화면 이름이 있다 — 서기 · 관리자 · 디자이너 포함', () => {
-  assert.deepEqual(SESSION_ROLES, ['coder', 'designer', 'manager', 'scribe', 'inspector', 'cicd']);
+test('세션 역할 다섯은 모두 화면 이름이 있다 — 서기 · 관리자 · 디자이너 포함', () => {
+  assert.deepEqual(SESSION_ROLES, ['coder', 'designer', 'manager', 'scribe', 'inspector']);
   for (const r of SESSION_ROLES) assert.ok(ROLE_LABEL[r], r);
   for (const r of SESSION_ROLES) assert.ok(ROLE_PICK[r], `[＋ 세션] · 계획 카드 역할 칸에 ${r}`);
   assert.equal(roleLabel('scribe'), '서기');

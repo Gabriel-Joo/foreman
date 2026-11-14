@@ -142,7 +142,7 @@ test('잘못된 target 정규식은 안 맞는 것으로', () => {
 
 test('역할 색 이름은 DB · 디스패처와 같다(11-05 — 전에는 lead · builder …라 실제 세션 색이 한 번도 안 맞았다)', () => {
   // scribe = 12a 서기, manager = 11-09 관리자, designer = 11-10 디자이너(bridge/foreman.py ROLES)
-  const ROLES = ['foreman', 'coder', 'inspector', 'cicd', 'scribe', 'manager', 'designer', 'helper'];
+  const ROLES = ['foreman', 'coder', 'inspector', 'scribe', 'manager', 'designer', 'helper'];
   for (const name of ['office', 'magic', 'site', 'plain']) {
     const t = JSON.parse(readFileSync(new URL(`../../bridge/static/themes/${name}/theme.json`, import.meta.url)));
     assert.deepEqual(Object.keys(t.roles.colors).sort(), [...ROLES].sort(), name);

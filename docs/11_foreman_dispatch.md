@@ -42,7 +42,7 @@
 { "project": "runshoes", "mode": "handoff | new | attach | ask",
   "base_session": 156, "summary_id": 12,           // handoff일 때 — 어느 세션의 어느 요약
   "attach_session": null,                          // 이미 같은 일을 하는 살아 있는 세션이 있으면 새로 띄우지 말고 그쪽으로
-  "role": "coder | inspector | cicd", "read_only": false,
+  "role": "coder | inspector | scribe | manager | designer", "read_only": false,
   "title": "발볼 120켤레 검증 이어서",
   "first_prompt": "…새 세션에 넣을 글 — 목표 · 읽을 docs 경로 · 인계 요약 · 잃었던 결정 · 하지 말 것…",
   "reasons": ["…왜 이 프로젝트 · 이 요약인지…"], "confidence": 0.8,

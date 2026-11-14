@@ -718,7 +718,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (store.state.selected == null && sa && (sa.kind === 'session' || sa.kind === 'mini')) selected = null;   // 패널에서 ✕
   }
 
-  // 역할(로브 · 사원증 끈 · 안전모 색) — 세션의 role(DB character_session.role: foreman coder inspector cicd helper).
+  // 역할(로브 · 사원증 끈 · 안전모 색) — 세션의 role(DB character_session.role: foreman coder inspector helper).
   // 11-05 전에는 테마 이름(lead builder …)이 DB와 달라 실제 세션 색이 한 번도 맞지 않았다. 미리 보기: /office?roles=demo
   const ROLES = (theme.roles && theme.roles.colors) || {};
   const ROLE_MODE = (theme.roles && theme.roles.mode) || 'robe';   // robe(옷 색) · lanyard(사원증 끈) · helmet(안전모)

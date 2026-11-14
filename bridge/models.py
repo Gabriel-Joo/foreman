@@ -18,7 +18,6 @@ class CharacterStatus(StrEnum):
 class Role(StrEnum):
     FOREMAN = "foreman"
     CODER = "coder"
-    CICD = "cicd"
     INSPECTOR = "inspector"
     HELPER = "helper"
     INFRA = "infra"

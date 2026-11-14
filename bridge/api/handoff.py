@@ -39,7 +39,7 @@ class TitleIn(BaseModel):
     title: str | None = Field(default=None, max_length=255)   # 빈 글 · null이면 자동 제목(CC가 붙인 것)으로
 
 
-SessionRole = Literal["coder", "inspector", "cicd", "scribe", "manager", "designer"]   # bridge.handoff.ROLE_KO와 같다(foreman은 감독실 캐릭터 몫)
+SessionRole = Literal["coder", "inspector", "scribe", "manager", "designer"]   # bridge.handoff.ROLE_KO와 같다(foreman은 감독실 캐릭터 몫)
 
 
 class RoleIn(BaseModel):
