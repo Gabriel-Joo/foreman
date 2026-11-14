@@ -98,7 +98,7 @@ function mount(dlg) {
     if (room) $('fmRoomX').onclick = () => setRoom(null);
     drawHand();
   }
-  // 이 방의 살아 있는 세션 — [세션] 탭 · 맥락 띠와 같은 [넘기고 새로 시작](11-08 사용자 — 이름이 흩어지지 않게 한 버튼)
+  // 이 방의 살아 있는 세션 — [세션 정리] 탭 · 맥락 띠와 같은 [넘기고 새로 시작](11-08 사용자 — 이름이 흩어지지 않게 한 버튼)
   function drawHand() {
     const st = window.foreman && window.foreman.state;
     const ss = !room || !st ? [] : [...st.sessions.values()].filter((s) => s.project === room && s.state !== 'DORMANT' && s.injectable);

@@ -692,7 +692,7 @@ class MergePrep:
         why = "; ".join(c.human_why) if c.human_why else (c.note or "이 프로젝트의 합치기 승인자는 사람입니다")
         cf = f" 충돌 파일 {len(c.conflict)}개." if c.conflict else ""
         return (f"세션 {c.sid} 「{c.title or ''}」 합치기 카드 — 사람 승인이 필요합니다(사유: {why}).{cf} "
-                f"패널 [합치기]를 눌러 주십시오(세션 {c.sid} 패널 「세션」 탭)")
+                f"패널 [합치기]를 눌러 주십시오(세션 {c.sid} 패널 「세션 정리」 탭)")
 
     async def _esc_manager(self, c: Card) -> int | None:
         """그 저장소 원본 폴더에 살아 있는 관리자 세션 id — 없으면 None."""

@@ -492,7 +492,7 @@ def merge_waits(mp: Any) -> dict[int, dict[str, Any]]:
     관리자가 없거나 올리지 못했으면 None → 지금처럼 작업 세션 머리 위(조용히 묻히지 않게).
     11-13(사용자 — 「답 안 해도 됨은 답을 안 하겠다는 뜻이다. 숫자로 남아 있으면 그것도 보게 된다」): 사람이 관리자 머리 위 그 물음을
     [답 안 해도 됨]으로 끈 카드(esc_off_at)는 뺀다 — 승인 막대 숫자 · 작업 세션 머리 위 · 말풍선에서 함께 빠진다. 카드 자체는
-    GET /api/merge-prep · 세션 패널 「세션」 탭에 남는다(handoff.js가 끈 시각을 보인다)."""
+    GET /api/merge-prep · 세션 패널 「세션 정리」 탭에 남는다(handoff.js가 끈 시각을 보인다)."""
     if mp is None or not getattr(mp.cfg, "enabled", False):
         return {}
     return {c["sid"]: {"since": c["made_at"], "head8": c["head8"], "files": len(c["files"]), "asks": bool(c.get("asks")),

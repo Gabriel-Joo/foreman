@@ -467,7 +467,7 @@ class LossChecker:
             self.m._notify(row, f"압축으로 잊은 것 찾기 실패 — {err}")
         else:
             self.m._notify(row, f"압축으로 잊은 것 찾기 끝 — 사라짐 {cnt.get('사라짐', 0)} · 약해짐 {cnt.get('약해짐', 0)}"
-                                f"{' (' + err + ')' if err else ''} — 패널 [세션] 탭 「넘기기 전 정리」에서 보고 「대화 결정 문서에 적기」로 넘길 수 있습니다")
+                                f"{' (' + err + ')' if err else ''} — 패널 [세션 정리] 탭 「넘기기 전 정리」에서 보고 「대화 결정 문서에 적기」로 넘길 수 있습니다")
 
     async def list(self, sid: int, limit: int = 3) -> list[dict[str, Any]]:
         from sqlalchemy import text

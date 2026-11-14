@@ -102,7 +102,7 @@ export function apiStopTip(a) {
 const ESC_TIP = {
   // 11-13 사람 승인 합치기 카드는 브리지가 관리자 머리 위로 올린다(merge_sid) — 답이 아니라 [합치기]를 눌러야 풀린다
   question: (e) => (e && e.merge_sid != null
-    ? `사용자 답 기다림 — 세션 ${e.merge_sid}의 합치기 카드가 사람 승인을 기다립니다. 말풍선을 누르면 그 세션 패널의 「세션」 탭에서 합치거나 나중으로 미룹니다. 합치거나 미루면 사라집니다.${e.text ? `\n${e.text}` : ''}`
+    ? `사용자 답 기다림 — 세션 ${e.merge_sid}의 합치기 카드가 사람 승인을 기다립니다. 말풍선을 누르면 그 세션 패널의 「세션 정리」 탭에서 합치거나 나중으로 미룹니다. 합치거나 미루면 사라집니다.${e.text ? `\n${e.text}` : ''}`
     : `사용자 답 기다림 — 관리자가 사람에게 물었습니다. 패널 입력 칸에 답하면 풀립니다.${e && e.text ? `\n${e.text}` : ''}`),
   report: (e) => `사용자에게 보고함 —관리자가 사람에게 보고했습니다. 누르면 대화가 열리고, 읽으면 사라집니다.${e && e.text ? `\n${e.text}` : ''}`,
 };
@@ -120,7 +120,7 @@ export function needMark(s) {
   // 겹치면(11-11): 권한 거부 > 답 기다림 > 합치기 기다림 > 보고 옴. 앞의 둘은 세션이 막혀 있어 지금 사람 손이 먼저 필요하고,
   // 합치기는 사람이 눌러야 끝나는 일이라 읽기만 하면 되는 보고보다 위다(합치기 카드가 떠 있으면 그 응답은 보고이기도 하다)
   // 11-13(사용자): 관리자 머리 위로 올렸으면(to_manager) 여기에는 안 띄운다 — 관리자가 없거나 못 올렸을 때만 남는다
-  if (s.merge_wait && !s.merge_wait.to_manager) return { text: '합치기 기다림', tone: 'merge', tip: '합치기 기다림 — 일을 마친 따로 작업의 합치기 카드가 승인을 기다립니다. 누르면 그 세션 패널의 「세션」 탭에서 합치거나 나중으로 미룹니다.' + (s.merge_wait.esc_error ? ` 관리자 머리 위로 올리지 못해 여기 띄웠습니다(${s.merge_wait.esc_error}).` : ''), mergeSid: s.id };
+  if (s.merge_wait && !s.merge_wait.to_manager) return { text: '합치기 기다림', tone: 'merge', tip: '합치기 기다림 — 일을 마친 따로 작업의 합치기 카드가 승인을 기다립니다. 누르면 그 세션 패널의 「세션 정리」 탭에서 합치거나 나중으로 미룹니다.' + (s.merge_wait.esc_error ? ` 관리자 머리 위로 올리지 못해 여기 띄웠습니다(${s.merge_wait.esc_error}).` : ''), mergeSid: s.id };
   if (e.report) return { text: '사용자에게 보고함', tone: 'ok', tip: ESC_TIP.report(e.report) };
   if (s.report) return { text: '보고 옴', tone: 'ok', tip: '보고 옴 — 묻지 않고 일을 마친 응답이 왔습니다. 누르면 대화가 열리고, 읽으면 사라집니다.' };
   return workerMark(s);
@@ -352,7 +352,7 @@ export function apprFoldLine(a, st) {
   return `<div class="appr-fold${open ? ' open' : ''}">
     <button class="appr-fold-b" data-aid="${a.id}" data-act="fold" aria-expanded="${open}"
       data-tip="${esc(`${q ? '답한 질문' : '처리한 승인'} — 누르면 ${open ? '접습니다' : '펼쳐 전체를 봅니다'}. ${apprWho(a, st)}`)}"><span class="${cls}">${mark} ${esc(verb)}</span> — ${esc(what)}${ans ? ` → <b>${esc(oneLine(ans, 80))}</b>` : ''}</button>
-    <button class="ghost small appr-x" data-aid="${a.id}" data-act="dismiss" data-tip="치우기 — 이 줄을 지웁니다. 답은 [세션] 탭 승인 기록에 남습니다." aria-label="치우기">×</button>
+    <button class="ghost small appr-x" data-aid="${a.id}" data-act="dismiss" data-tip="치우기 — 이 줄을 지웁니다. 답은 [세션 정리] 탭 승인 기록에 남습니다." aria-label="치우기">×</button>
   </div>${open ? approvalCard(a, st) : ''}`;
 }
 // 다른 세션 것 — 보이기만(답 버튼 없음). [세션 열기]로 그 세션 패널에 가서 답한다

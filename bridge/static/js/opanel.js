@@ -16,6 +16,7 @@ import { mountHandoff, FLOW_TIP } from './handoff.js';
 import { createScribe } from './scribe.js';
 import { createCoder } from './coder.js';
 import { createForemanPanel } from './fmpanel.js';
+import { createCcScreen } from './ccscreen.js';
 
 const KEY_OPEN = 'foremanPanelOpen', KEY_TAB = 'foremanPanelTab', KEY_MODE = 'foremanPanelMode';
 const KEY_W = { narrow: 'foremanPanelW', wide: 'foremanPanelWideW' };      // 11-10 전 끌어서 기억한 너비 — 읽지 않고 지운다
@@ -28,7 +29,13 @@ const WIDTH = {                                   // 기본 너비 · 창에 대
   wide: { def: () => Math.round(Math.min(window.innerWidth * 0.6, window.innerWidth - STAGE_MIN)), max: 0.6 },
 };
 const MIN_W = 280;
-const TABS = [['convo', '대화'], ['act', '활동'], ['sess', '세션']];
+// 「세션」 → 「세션 정리」(11-14 사용자). 「CC 화면」(11-14) — 세션 CC 창을 그대로 본다(ccscreen.js). 열 때만 붙고, 기억하지 않는다
+// (다시 불러올 때 저절로 CC 창에 붙지 않게)
+const TABS = [['convo', '대화'], ['act', '활동'], ['cc', 'CC 화면'], ['sess', '세션 정리']];
+const TAB_TIP = {
+  cc: 'CC 화면 — 이 세션의 CC 창을 그대로 봅니다. 권한 · 계획 승인 · 고르기 창도 보이고, 여기서 친 키(Esc · 숫자 · Enter)는 CC에 바로 갑니다.',
+  sess: '세션 정리 — 세션 정보 · 넘기기 · 합치기 · 끝내기 · 승인 기록입니다.',
+};
 const ls = { get(k) { try { return localStorage.getItem(k); } catch { return null; } },
              set(k, v) { try { localStorage.setItem(k, v); } catch { /* 저장 못 해도 이 탭에서는 된다 */ } },
              del(k) { try { localStorage.removeItem(k); } catch { /* 없어도 된다 */ } } };
@@ -55,7 +62,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       <div id="pCmp" class="pcmp small" hidden></div>
       <div id="pOvl" class="pcmp small" hidden></div>
       <section id="pAppr" class="papprs" aria-label="승인 대기"></section>
-      <nav id="pTabs" class="ptabs" hidden>${TABS.map(([k, l]) => `<button data-tab="${k}">${l}<span data-n="${k}"></span></button>`).join('')}</nav>
+      <nav id="pTabs" class="ptabs" hidden>${TABS.map(([k, l]) => `<button data-tab="${k}"${TAB_TIP[k] ? ` data-tip="${TAB_TIP[k]}"` : ''}>${l}<span data-n="${k}"></span></button>`).join('')}</nav>
       <div id="pBody" class="oside-body">
         <section id="pSel"></section>
         <div id="pTabConvo" class="ptab ptab-convo" hidden>
@@ -63,6 +70,12 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
           <button id="pNew" class="pnew" hidden>새 답 ↓</button>
         </div>
         <div id="pTabAct" class="ptab" hidden><div id="pFeed" class="feed"></div></div>
+        <div id="pTabCc" class="ptab ptab-cc" hidden>
+          <div class="pcc-bar small"><span id="pCcInfo" class="muted"></span>
+            <button type="button" id="pCcReload" class="ghost small right" data-tip="다시 붙기 — CC 화면에 다시 붙습니다. 끊김 표시가 남았을 때 누릅니다.">다시 붙기</button></div>
+          <div id="pCcMsg" class="pcc-msg small"></div>
+          <div class="pcc-body"><iframe id="pCcFrame" aria-label="CC 화면" hidden></iframe></div>
+        </div>
         <div id="pTabSess" class="ptab" hidden>
           <div id="pInfo"></div>
           <section id="pHand"></section>
@@ -88,6 +101,12 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   const scribe = createScribe(store);
   const fmp = createForemanPanel(store);       // 감독실 캐릭터(11-08) — 노트 · 지난 디스패치 · 자동 제안
   const coder = createCoder(store);           // 코더 상주(11-09) — 맡길 일 · 지금 일
+  const ccs = createCcScreen(store, { frame: $('pCcFrame'), msg: $('pCcMsg'), info: $('pCcInfo'), reload: $('pCcReload') });   // 11-14
+  // CC 화면은 「CC 화면」 탭이 보이고(패널 펼침 · 세션을 고름) 있을 때만 붙는다 — 아니면 끊는다
+  function syncCc() {
+    const sid = target && target.kind === 'session' ? store.state.selected : null;
+    if (open && tab === 'cc' && sid != null && !$('pTabs').hidden) ccs.open(sid); else ccs.close();
+  }
   $('pSel').addEventListener('click', (ev) => {
     if (target && target.kind === 'scribe') scribe.onClick(ev, target.room, projectLabel(store.state, target.room),
       (sid) => { onSelectSession(sid); setTab('sess'); });     // 열린 서기 일 → 그 세션의 「따로 작업」(11-06)
@@ -104,7 +123,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   let reportSent = null;           // 「보고 옴」 읽음을 보낸 응답 이벤트 id(같은 것을 두 번 보내지 않게)
   let escSent = null;              // 「사용자에게 보고함」 읽음을 보낸 escalate id(11-13)
   let open = ls.get(KEY_OPEN) !== '0';
-  let tab = TABS.some(([k]) => k === ls.get(KEY_TAB)) ? ls.get(KEY_TAB) : 'convo';
+  let tab = TABS.some(([k]) => k === ls.get(KEY_TAB) && k !== 'cc') ? ls.get(KEY_TAB) : 'convo';
   let mode = ls.get(KEY_MODE) === 'wide' ? 'wide' : 'narrow';
   const seen = { approvals: -1, panel: -1, pipe: -1, grid: -1 };
   const knownPending = new Set();
@@ -125,6 +144,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     el.classList.toggle('folded', !v);
     if (remember) ls.set(KEY_OPEN, v ? '1' : '0');
     if (onToggle) onToggle(v);
+    syncCc();                         // 접으면 CC 화면을 끊고, 펴면(그 탭이면) 다시 붙는다
   }
   // 세션 역할(11-09) — 머리줄 역할 배지를 누르면 그 자리에서 고른다. 제목 고치기와 따로(제목을 고쳐도 역할은 남는다)
   let pickingRole = false;
@@ -210,11 +230,14 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
 
   // ── 탭 ──────────────────────────────────────────────
   function setTab(k, remember = true) {
-    tab = k; if (remember) ls.set(KEY_TAB, k);
+    tab = k; if (remember && k !== 'cc') ls.set(KEY_TAB, k);
     for (const b of $('pTabs').querySelectorAll('[data-tab]')) b.classList.toggle('on', b.dataset.tab === k);
     $('pTabConvo').hidden = k !== 'convo'; $('pTabAct').hidden = k !== 'act'; $('pTabSess').hidden = k !== 'sess';
+    $('pTabCc').hidden = k !== 'cc';
     el.classList.toggle('tab-convo', k === 'convo');
+    el.classList.toggle('tab-cc', k === 'cc');
     if (k === 'convo') { const c = $('pConvo'); c.scrollTop = c.scrollHeight; $('pNew').hidden = true; }
+    syncCc();
   }
   $('pTabs').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-tab]');
@@ -340,7 +363,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         ? '늦었습니다. 앞에서 정한 결정 · 금지가 이미 많이 빠졌을 수 있습니다.'
         : '넘어갈 때입니다. 처음에 정한 것이 빠지기 시작합니다.'}${c.short ? ' 요약 간격도 짧습니다.' : ''}</span>
       ${s.injectable ? `<button type="button" data-cmp="handoff" class="small primary" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
-      <button type="button" data-cmp="loss" class="small" title="압축으로 잊은 것 찾기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. 내가 보낸 말 20개당 약 0.4달러 · 1.5분이 들고, 결과는 [세션] 탭 「넘기기 전 정리」에 나옵니다.">압축으로 잊은 것 찾기</button>
+      <button type="button" data-cmp="loss" class="small" title="압축으로 잊은 것 찾기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. 내가 보낸 말 20개당 약 0.4달러 · 1.5분이 들고, 결과는 [세션 정리] 탭 「넘기기 전 정리」에 나옵니다.">압축으로 잊은 것 찾기</button>
       <button type="button" data-cmp="later" class="ghost small" title="나중에 — 다음 압축까지 이 띠를 숨깁니다.">나중에</button>`;
     put('pCmp', 'cmp', html);
     $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;
@@ -442,7 +465,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       const r = await fetch(`/api/sessions/${s.id}/losscheck`, { method: 'POST', headers: store.headers(true), body: '{}' });
       const j = await r.json().catch(() => ({}));
       store.state.lastInput = { sessionId: s.id, ts: Date.now(), ok: r.ok,
-        msg: r.ok ? `압축으로 잊은 것 찾기를 시작했습니다(#${j.loss_check_id}). 진행과 결과는 [세션] 탭 「옮기기 전 정리」에 나옵니다.` : `시작하지 못했습니다 — ${j.refused || j.detail || r.status}` };
+        msg: r.ok ? `압축으로 잊은 것 찾기를 시작했습니다(#${j.loss_check_id}). 진행과 결과는 [세션 정리] 탭 「옮기기 전 정리」에 나옵니다.` : `시작하지 못했습니다 — ${j.refused || j.detail || r.status}` };
       if (r.ok) setTab('sess');
       b.disabled = false;
       store.touch('panel');
@@ -451,7 +474,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (b.dataset.cmp === 'handoff') startHandoff(s.id);
   });
   window.foremanCompactSnoozed = compactSnoozed;     // 픽셀 화면의 📦 표시도 같은 기준으로 숨긴다
-  // 넘기고 새로 시작(11-08) — 띠 · 교장실 창 · [세션] 탭이 모두 이것 하나를 부른다: 그 세션을 열고 [세션] 탭에서 흐름을 시작
+  // 넘기고 새로 시작(11-08) — 띠 · 교장실 창 · [세션 정리] 탭이 모두 이것 하나를 부른다: 그 세션을 열고 [세션 정리] 탭에서 흐름을 시작
   function startHandoff(id) {
     if (onSelectSession) onSelectSession(id); else store.select(id);
     setOpen(true);
@@ -635,7 +658,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (on && !inputHRestored) { inputHRestored = true; requestAnimationFrame(restoreInputH); }   // 처음 보일 때 한 번 — 기억한 높이로
     if (!on) $('pCmp').hidden = $('pOvl').hidden = $('pSw').hidden = true;
     if (on) setTab(tab);
-    else { $('pTabConvo').hidden = $('pTabAct').hidden = $('pTabSess').hidden = true; el.classList.remove('tab-convo'); }
+    else { $('pTabConvo').hidden = $('pTabAct').hidden = $('pTabSess').hidden = $('pTabCc').hidden = true; el.classList.remove('tab-convo', 'tab-cc'); syncCc(); }
   }
   const put = (id, key, html) => { if (last[key] !== html) { last[key] = html; $(id).innerHTML = html; return true; } return false; };
 
@@ -643,7 +666,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const s = st.selected != null ? st.sessions.get(st.selected) : null;
     if (!s) { hand.setSession(null); sessionMode(false); drawHint(st); return; }
     const switched = lastSel !== s.id;
-    if (switched) { sessionMode(true); last.convo = last.feed = last.meta = last.info = ''; }
+    if (switched) { sessionMode(true); last.convo = last.feed = last.meta = last.info = ''; syncCc(); }   // 다른 세션 — CC 화면도 그 세션으로
     hand.setSession(s.id);
     // 머리줄 = 첫 줄 [역할] 세션 번호 + 버튼, 둘째 줄 제목(11-09 사용자 — 역할 + 지금 하는 일). 한 줄에 두면 좁은 패널에서 제목이 한 글자로 줄었다
     if (!pickingRole) drawRole({ kind: 'session' }, s);
@@ -656,7 +679,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       $('pTitle').dataset.tip = `제목 — 이 세션이 지금 하는 일입니다. 눌러서 고칩니다. 역할은 바뀌지 않습니다.${s.custom_title ? ` 자동 제목은 "${s.title || s.cc_name || s.short}"입니다.` : ''}\n${sessionName(s)}`;
       $('pTitle').classList.add('editable');
     }
-    // 제목 아래 한 줄 — 세션 정보 · 토큰은 여기 작게, 자세한 것은 [세션] 탭
+    // 제목 아래 한 줄 — 세션 정보 · 토큰은 여기 작게, 자세한 것은 [세션 정리] 탭
     const t = s.tokens || {}, stuck = stuckTurn(s);
     const now = s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target || '', 60))}` : (s.state === 'ACTIVE' ? '생각 중' : '');
     // "쌓인 대화 N%"는 상태 바로 뒤 — 머리줄은 한 줄이라 좁은 패널에서 뒤쪽이 말줄임으로 잘린다(11-09 1366 사진)
@@ -814,7 +837,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     }
   });
 
-  // 11-11 합치기 막대 — 합치기 카드는 「세션」 탭 안에만 있다. 이번만 그 탭으로 열고 다음에 열 탭(기억)은 바꾸지 않는다
+  // 11-11 합치기 막대 — 합치기 카드는 「세션 정리」 탭 안에만 있다. 이번만 그 탭으로 열고 다음에 열 탭(기억)은 바꾸지 않는다
   function showTab(k) { setTab(k, false); store.touch('panel'); }
 
   return { show, showTab, setOpen, get open() { return open; }, el };

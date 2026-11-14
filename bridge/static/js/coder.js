@@ -90,7 +90,7 @@ export function createCoder(store) {
       const btn = j.kind === 'inbox'
         ? `<button type="button" class="small" data-cd-plan="${j.id}" title="계획으로 — 이 글을 감독실 말하기 칸에 채워 계획 창을 엽니다. 바로 띄우지 않습니다.">계획으로</button>
            <button type="button" class="small ghost" data-cd-drop="${j.id}" title="버리기 — 이 할 일을 맡기지 않습니다. 받은 할 일 목록에 「버림」으로 남습니다.">버리기</button>`
-        : j.sid ? `<button type="button" class="small" data-cd-open="${j.sid}" title="세션 열기 — 이 세션의 [세션] 탭을 엽니다.">세션 열기</button>` : '';
+        : j.sid ? `<button type="button" class="small" data-cd-open="${j.sid}" title="세션 열기 — 이 세션의 [세션 정리] 탭을 엽니다.">세션 열기</button>` : '';
       const head = j.kind === 'rested' ? `합치기 기다림 — ${esc(j.title)}${j.days >= REST_DAYS ? ` <span class="warn">${j.days}일째</span>` : ''} <span class="muted">· <code>${esc(j.branch)}</code></span>`
         : j.kind === 'inbox' ? `${esc(j.title)} <span class="muted">· ${ago(j.at)}</span>`
         : j.kind === 'drift' ? `<span class="warn">어긋남</span> — ${esc(j.title)}` : esc(j.title);
@@ -98,12 +98,12 @@ export function createCoder(store) {
     };
     const jobsHtml = jobs.length ? jobs.map(row).join('') : '<p class="small muted">맡길 일이 없습니다.</p>';
     const liveHtml = live.length ? live.map((s) => `<div class="sc-row"><div class="small">코더 · ${esc(name(s))} <span class="muted">— ${s.state === 'ACTIVE' ? '작업 중' : '쉼'}</span></div>
-        <button type="button" class="small" data-cd-open="${s.id}" title="세션 열기 — 이 세션의 [세션] 탭을 엽니다.">세션 열기</button></div>`).join('')
+        <button type="button" class="small" data-cd-open="${s.id}" title="세션 열기 — 이 세션의 [세션 정리] 탭을 엽니다.">세션 열기</button></div>`).join('')
       : '<p class="small muted">지금 도는 코더 세션이 없습니다. 코더는 자리에서 쉽니다.</p>';
     const empties = emptyWorktrees(roomData(room));
     const emptyHtml = empties.length ? `<details class="hand"${keep(`coder:${room}:empty`, true)}><summary title="치울 것 — 빈 worktree입니다. 커밋이 모두 원본에 들어 있고 변경이 없으며 세션도 끝났습니다. 누구에게 맡길 일이 아니라 치우기만 하면 됩니다."><b>치울 것 — 빈 worktree ${empties.length}</b></summary>${empties.map((e) =>
       `<div class="sc-row" data-tip="${esc(WHY.empty)}"><div class="small"><b>${esc(e.title)}</b></div><div class="hand-btns">
-        <button type="button" class="small" data-cd-open="${e.sid}" title="세션 열기 — 이 세션의 [세션] 탭을 엽니다.">세션 열기</button>
+        <button type="button" class="small" data-cd-open="${e.sid}" title="세션 열기 — 이 세션의 [세션 정리] 탭을 엽니다.">세션 열기</button>
         <button type="button" class="small ghost" data-cd-clean="${e.sid}" data-cd-name="${esc(e.name)}" title="버리기 — 빈 worktree ${esc(e.name)}를 지웁니다. 잃는 커밋 · 변경은 없습니다.">버리기</button></div></div>`).join('')}</details>` : '';
     return `<div class="small muted">${esc(label)} · 코더 — 이 방의 코딩 담당입니다. 새 일은 새 세션으로, 같은 일을 이어 할 때만 그 세션으로 합니다. 세션이 뜬 수만큼 코더가 자리에서 책상으로 가고, 끝나면 자리로 돌아갑니다.</div>
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}">${esc(note.msg)}</div>` : ''}

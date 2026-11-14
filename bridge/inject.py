@@ -287,9 +287,12 @@ async def clear_screen(t: Target, busy: bool, tries: int = ESC_TRIES) -> tuple[i
       - Esc가 결정이 되는 창(DECISION — 폴더 신뢰 · 도구 권한 · 보류 메시지 승인 · 끝내기 확인)과 모르는 창:
         Esc도 글도 보내지 않고 Refused(조용히 실패하지 않게 까닭을 돌려준다)
     **작업 중이면 Esc를 보내지 않는다** — Esc는 작업을 끊고, 승인 · 질문 창에서는 거부 · 취소가 된다.
+    입력 칸에 이미 글이 있으면(사람이 CC 화면 · VNC에서 치던 글, 11-14) 넣지 않는다 — 붙여넣기가 그 글과 섞여 함께 제출된다.
     (보낸 Esc 수, 닫은 창 이름)을 돌려준다."""
-    kind, name = screen_state(await _capture(t))
+    raw = await _capture(t, color=True)
+    kind, name = screen_state(plain(raw))
     if kind == "prompt":
+        _refuse_if_typed(t, raw)
         return 0, None
     if busy:
         raise Refused(f"CC에 {name or '알 수 없는'} 창이 떠 있습니다. 작업 중이라 Esc를 보내지 않았습니다"
@@ -312,14 +315,107 @@ async def clear_screen(t: Target, busy: bool, tries: int = ESC_TRIES) -> tuple[i
         await tmux(t.socket, "send-keys", "-t", t.pane, "Escape")
         sent += 1
         await asyncio.sleep(ESC_WAIT_S)
-        kind, name = screen_state(await _capture(t))
+        raw = await _capture(t, color=True)
+        kind, name = screen_state(plain(raw))
         if kind == "prompt":
             log.warning("%s 창이 떠 있어 Esc %d번으로 닫음 %s", first, sent, t.pane)
+            _refuse_if_typed(t, raw)
             return sent, first
 
 
-async def _capture(t: Target) -> str:
-    return await tmux(t.socket, "capture-pane", "-p", "-J", "-t", t.pane)
+TYPED_REFUSED = "입력 칸에 사람이 치던 글이 있어 넣지 않았습니다 — 그 세션 대화창(CC 화면)을 확인해 주세요"
+
+
+def _refuse_if_typed(t: Target, raw: str) -> None:
+    typed = typed_in_box(raw)
+    if typed:
+        log.warning("입력 칸에 글이 있어 넣지 않음 %s (%d자)", t.pane, len(typed))   # 글은 남기지 않는다(비밀번호일 수 있다)
+        raise Refused(TYPED_REFUSED)
+
+
+async def _capture(t: Target, color: bool = False) -> str:
+    """화면 글. color=True면 색(SGR)까지(-e) — 입력 칸의 흐린 안내 글과 사람이 친 글을 가르는 데 쓴다(typed_in_box)."""
+    return await tmux(t.socket, "capture-pane", "-p", "-J", *(["-e"] if color else []), "-t", t.pane)
+
+
+# ── 입력 칸에 친 글(11-14) ─────────────────────────────────────────────────────────────────────────────
+# 빈 입력 칸은 `❯` 뒤에 NBSP(커서 칸) 하나다(11-14 실측, CC 2.1.3xx). CC가 빈 칸에 띄우는 안내 · 제안 글은 흐리게(SGR 2)나
+# 회색(256색 232~250 · 8 · 90)으로 그린다 — 그런 글과 커서(반전, SGR 7) 칸은 친 글로 보지 않는다. 색을 못 받은 화면이면 글 그대로 본다
+_ANSI = re.compile(r"\x1b\[[0-9;:?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]")
+_SGR = re.compile(r"\x1b\[([0-9;:]*)m")
+
+
+def plain(screen: str) -> str:
+    """색 · 커서 같은 제어 글(ESC[…)을 뺀 화면 글."""
+    return _ANSI.sub("", screen)
+
+
+def _faint_color(params: list[int], i: int) -> tuple[bool | None, int]:
+    """SGR 38 뒤 색이 회색인가 — (회색?, 다음 칸). 모르는 꼴이면 None."""
+    if i + 1 < len(params) and params[i + 1] == 5 and i + 2 < len(params):
+        n = params[i + 2]
+        return (n == 8 or 232 <= n <= 250), i + 3
+    if i + 1 < len(params) and params[i + 1] == 2 and i + 4 < len(params):
+        r, g, b = params[i + 2:i + 5]
+        return (max(r, g, b) - min(r, g, b) < 12 and max(r, g, b) < 200), i + 5
+    return None, i + 1
+
+
+def _solid_text(line: str) -> str:
+    """색 포함 줄에서 흐린 · 회색 · 반전(커서) 글을 뺀 나머지."""
+    out, pos = [], 0
+    dim = grey = inv = False
+    for m in _SGR.finditer(line):
+        seg = plain(line[pos:m.start()])
+        if not (dim or grey or inv):
+            out.append(seg)
+        pos = m.end()
+        ps = [int(x) if x.isdigit() else 0 for x in re.split(r"[;:]", m.group(1))] if m.group(1) else [0]
+        i = 0
+        while i < len(ps):
+            p = ps[i]
+            if p == 0:
+                dim = grey = inv = False
+            elif p == 2:
+                dim = True
+            elif p == 22:
+                dim = False
+            elif p == 7:
+                inv = True
+            elif p == 27:
+                inv = False
+            elif p == 90:
+                grey = True
+            elif p == 39 or 30 <= p <= 37 or 91 <= p <= 97:
+                grey = False
+            elif p == 38:
+                g, i = _faint_color(ps, i)
+                grey = bool(g)
+                continue
+            elif p == 48 and i + 1 < len(ps):
+                i += 3 if ps[i + 1] == 5 else 5 if ps[i + 1] == 2 else 1
+                continue
+            i += 1
+    if not (dim or grey or inv):
+        out.append(plain(line[pos:]))
+    return "".join(out)
+
+
+def typed_in_box(screen: str) -> str:
+    """화면 맨 아래 입력 칸에 이미 들어 있는 글(앞뒤 공백 · 흐린 안내 글 · 커서 칸 뺌). 비었거나 입력 칸이 없으면 ""."""
+    raw_lines = screen.rstrip("\n").splitlines()
+    lines = [plain(ln) for ln in raw_lines]
+    box = _prompt_box(lines)
+    if box is None:
+        return ""
+    top, bottom = box
+    parts = []
+    for k in range(top + 1, bottom):
+        s = _solid_text(raw_lines[k])
+        if k == top + 1:
+            s = s.lstrip().removeprefix("❯")
+        parts.append(s.strip())
+    return "\n".join(p for p in parts if p).strip()
 
 
 # ── 화면 가르기(11-13) ────────────────────────────────────────────────────────────────────────────────

@@ -259,3 +259,58 @@ async def test_left_in_box_reads_only_the_box(monkeypatch):
         return HEAD + f"\n❯ 이미 들어가 있던 발볼 120켤레를 검증해라.\n\n{R}\n❯ \n{R}\n  ⏵⏵ auto mode on\n"
     monkeypatch.setattr(inj, "tmux", fake_tmux)
     assert await inj.left_in_box(t, "이미 들어가 있던 발볼 120켤레를 검증해라.") is False
+
+
+# ── 입력 칸에 사람이 치던 글(11-14) — CC 화면 탭에서 사람이 반쯤 친 사이 브리지가 넣으면 두 글이 섞여 함께 제출된다 ──
+G, E, DIM, INV = "\x1b[38;5;244m", "\x1b[39m", "\x1b[2m", "\x1b[7m"
+NB = " "
+# 실측 꼴(11-14 capture-pane -e): 가로줄은 회색, 빈 입력 칸은 「❯」 + NBSP(커서 칸)
+PROMPT_EMPTY_COLOR = HEAD + f"\n{G}{R}\n{E}❯{NB}\n{G}{R}\n{E}  ⏵⏵ auto mode on\n"
+PROMPT_TYPED_COLOR = HEAD + f"\n{G}{R}\n{E}❯ 이거 고쳐 줘 반쯤{INV} \x1b[27m\n{G}{R}\n{E}  ⏵⏵ auto mode on\n"
+PROMPT_HINT_COLOR = HEAD + f'\n{G}{R}\n{E}❯ {INV}T\x1b[27m{DIM}ry "fix lint errors"\x1b[22m\n{G}{R}\n{E}  ⏵⏵ auto mode on\n'
+PROMPT_GREY_HINT = HEAD + f"\n{G}{R}\n{E}❯ {G}press up to edit queued messages{E}\n{G}{R}\n{E}  ⏵⏵ auto mode on\n"
+
+
+@pytest.mark.parametrize("screen,want", [
+    (PROMPT, ""), (PROMPT_EMPTY_COLOR, ""), (PROMPT_HINT_COLOR, ""), (PROMPT_GREY_HINT, ""),
+    (PROMPT_DRAFT, "첫 줄\n둘째 줄"), (PROMPT_TYPED_COLOR, "이거 고쳐 줘 반쯤"),
+    (MODEL, ""), (HEAD, ""),
+])
+def test_typed_in_box(screen, want):
+    assert inj.typed_in_box(screen) == want
+
+
+def test_color_screen_still_reads_as_prompt():
+    """색 포함 화면도 색을 벗기면 같은 판정(screen_state는 색 없는 글로 잰다)."""
+    for s in (PROMPT_EMPTY_COLOR, PROMPT_TYPED_COLOR, PROMPT_HINT_COLOR):
+        assert inj.screen_state(inj.plain(s)) == ("prompt", None)
+
+
+@pytest.mark.parametrize("busy", [False, True])
+async def test_typed_box_refused_nothing_sent(monkeypatch, busy):
+    """입력 칸에 사람이 치던 글 — 일하는 중이든 아니든 붙여넣기 · Enter · Esc 어느 것도 보내지 않고 까닭을 돌려준다.
+    11-14 전에는 거르지 않았다: screen_state가 「prompt」면 바로 붙여넣었다(PROMPT_DRAFT도 prompt)."""
+    sent = _screens(monkeypatch, [PROMPT_TYPED_COLOR], busy=busy)
+    with pytest.raises(inj.Refused, match="입력 칸에 사람이 치던 글이 있어 넣지 않았습니다 — .*대화창"):
+        await inj.deliver(SID, "관리자 중계 글", sessions_dir="/s", transcript=None)
+    assert sent == []
+    sent = _screens(monkeypatch, [PROMPT_DRAFT], busy=busy)
+    with pytest.raises(inj.Refused, match="사람이 치던 글"):
+        await inj.deliver(SID, "합치기 결과", sessions_dir="/s", transcript=None)
+    assert sent == []
+
+
+async def test_hint_text_is_not_typed(monkeypatch):
+    """흐린 안내 · 제안 글만 있는 빈 칸에는 넣는다(거절하면 아무 때나 못 넣는다)."""
+    for scr in (PROMPT_EMPTY_COLOR, PROMPT_HINT_COLOR, PROMPT_GREY_HINT):
+        sent = _screens(monkeypatch, [scr])
+        await inj.deliver(SID, "글", sessions_dir="/s", transcript=None)
+        assert _kinds(sent) == ["load-buffer", "paste-buffer", "Enter"]
+
+
+async def test_esc_closed_dialog_then_typed_box_refused(monkeypatch):
+    """Esc로 안내 창을 닫았더니 입력 칸에 친 글이 있었다 — 넣지 않는다(닫은 Esc만 갔다)."""
+    sent = _screens(monkeypatch, [MODEL, PROMPT_TYPED_COLOR])
+    with pytest.raises(inj.Refused, match="사람이 치던 글"):
+        await inj.deliver(SID, "글", sessions_dir="/s", transcript=None)
+    assert _kinds(sent) == ["Escape"]

@@ -1,4 +1,4 @@
-// 터미널 패널(7단계) — 대시보드 아래 접이식. ttyd 화면(xterm.js)을 iframe으로 그대로 띄운다(파싱하지 않는다).
+// 셸 패널(7단계, 11-14에 「터미널」에서 이름을 바꿈) — 대시보드 아래 접이식. ttyd 화면(xterm.js)을 iframe으로 그대로 띄운다(파싱하지 않는다).
 // CC가 "이 명령을 실행해 주세요"라고 하면 브리지가 셸 입력 줄에 미리 채우고 terminal_request를 보낸다 → 패널을 올린다.
 // 사람이 Enter를 치고 암호를 넣는다. 결과는 브리지가 부탁한 세션에 돌려준다(terminal_result).
 
@@ -30,9 +30,9 @@ export function createTerminal(store, { getProject } = {}) {
   el.className = 'term';
   el.innerHTML = `
     <div class="term-bar">
-      <button id="termToggle" class="ghost" aria-expanded="false">▲ 터미널</button>
-      <select id="termPick" class="term-pick" hidden data-tip="터미널 프로젝트 — 지금 보이는 셸 창입니다. 바꾸면 그 프로젝트 폴더의 셸 창으로 갑니다(프로젝트마다 셸이 따로 있습니다)." aria-label="터미널 프로젝트"></select>
-      <button id="termRespawn" class="ghost" hidden data-tip="새 셸 — 이 창의 셸을 새로 띄워 바뀐 설정을 읽습니다. 돌고 있는 명령이나 친 글이 있으면 먼저 묻습니다.">새 셸</button>
+      <button id="termToggle" class="ghost" aria-expanded="false">▲ 셸</button>
+      <select id="termPick" class="term-pick" hidden data-tip="셸 프로젝트 — 지금 보이는 셸 창입니다. 바꾸면 그 프로젝트 폴더의 셸 창으로 갑니다(프로젝트마다 셸이 따로 있습니다)." aria-label="셸 프로젝트"></select>
+      <button id="termClear" class="ghost" hidden data-tip="셸 비우기 — 이 창의 화면과 지난 출력(스크롤백)을 지웁니다. 셸은 그대로입니다. 돌고 있는 명령이나 친 글이 있으면 먼저 묻습니다.">셸 비우기</button>
       <button id="termUp" class="ghost" hidden data-tip="위로 — 지난 출력을 한 쪽 위로 올려 봅니다(마우스 휠도 됩니다).">▲ 위로</button>
       <button id="termDown" class="ghost" hidden data-tip="아래로 — 한 쪽 아래로 내립니다. 맨 아래에 닿으면 스크롤이 저절로 끝납니다.">▼ 아래로</button>
       <button id="termExit" class="primary" hidden data-tip="입력으로 — 스크롤을 끝내고 셸 입력으로 돌아갑니다. 스크롤 중에 친 글은 셸에 들어가지 않습니다.">입력으로</button>
@@ -41,7 +41,7 @@ export function createTerminal(store, { getProject } = {}) {
       <span id="termLast" class="small muted term-last"></span>
     </div>
     <div id="termReqs" class="term-reqs"></div>
-    <div class="term-body"><iframe id="termFrame" aria-label="FOREMAN 터미널"></iframe><div id="termMsg" class="term-msg"></div></div>`;
+    <div class="term-body"><iframe id="termFrame" aria-label="FOREMAN 셸"></iframe><div id="termMsg" class="term-msg"></div></div>`;
   document.body.appendChild(el);
   const $ = (id) => el.querySelector('#' + id);
   const frame = $('termFrame');
@@ -58,10 +58,10 @@ export function createTerminal(store, { getProject } = {}) {
     try {
       // 쿠키는 대시보드가 연결될 때 이미 받았다(store.js hello). 패널을 열 때 한 번 더 받아 만료 · 재시작에 대비한다
       const j = await store.terminalSession();
-      $('termMsg').textContent = j.running ? '' : '터미널 서버가 꺼져 있습니다 — 브리지 로그를 봅니다';
+      $('termMsg').textContent = j.running ? '' : '셸 서버(ttyd)가 꺼져 있습니다 — 브리지 로그(.run/ttyd.log)를 확인해 주세요';
       if (!loaded || force) { frame.src = termSrc(); loaded = true; }
     } catch (err) {
-      $('termMsg').textContent = `터미널을 열지 못했습니다 — ${err.message || err}`;
+      $('termMsg').textContent = `셸을 열지 못했습니다 — ${err.message || err}`;
     }
   }
   function focusShell() {
@@ -75,29 +75,28 @@ export function createTerminal(store, { getProject } = {}) {
   function drawProj(err) {
     const pick = $('termPick'), names = store.state.projects.map((x) => x.name).filter((n) => n && PROJ[n]);
     const cur = shown && shown.project;
-    const opts = names.map((n) => `<option value="${esc(n)}"${n === cur ? ' selected' : ''}>${esc(plabel(n))} 터미널</option>`).join('')
-      + (cur ? '' : `<option value="" selected>${esc(shown ? shown.window || '터미널' : '터미널')}</option>`);
+    const opts = names.map((n) => `<option value="${esc(n)}"${n === cur ? ' selected' : ''}>${esc(plabel(n))} 셸</option>`).join('')
+      + (cur ? '' : `<option value="" selected>${esc(shown ? shown.window || '셸' : '셸')}</option>`);
     if (pick.innerHTML !== opts) pick.innerHTML = opts;
     pick.hidden = !shown;
-    if (shown && shown.cwd) pick.dataset.tip = `터미널 프로젝트 — 지금 보이는 셸 창입니다. 바꾸면 그 프로젝트 폴더의 셸 창으로 갑니다.\n지금 폴더 ${shown.cwd.replace(/^\/home\/[^/]+/, '~')}`;
-    // title이 아니라 aria-label(11-10) — title은 tip.js가 툴팁으로 바꿔, 마우스가 터미널에 들어가면 「런슈즈 터미널」이 프롬프트 줄 위에 떠 남았다
-    frame.setAttribute('aria-label', cur ? `${plabel(cur)} 터미널` : 'FOREMAN 터미널');
+    if (shown && shown.cwd) pick.dataset.tip = `셸 프로젝트 — 지금 보이는 셸 창입니다. 바꾸면 그 프로젝트 폴더의 셸 창으로 갑니다.\n지금 폴더 ${shown.cwd.replace(/^\/home\/[^/]+/, '~')}`;
+    // title이 아니라 aria-label(11-10) — title은 tip.js가 툴팁으로 바꿔, 마우스가 셸에 들어가면 「런슈즈 셸」이 프롬프트 줄 위에 떠 남았다
+    frame.setAttribute('aria-label', cur ? `${plabel(cur)} 셸` : 'FOREMAN 셸');
     const w = $('termProjWarn');
-    const now = cur ? `${plabel(cur)} 터미널` : (shown && shown.window) || '알 수 없는 창';
+    const now = cur ? `${plabel(cur)} 셸` : (shown && shown.window) || '알 수 없는 창';
     // 창 이름은 맞아도 셸이 다른 프로젝트 폴더로 옮겨 가 있을 수 있다(11-10 — FOREMAN 창에서 cd로 petmint 폴더에 들어가 있었다)
     const inDir = shown && shown.cwd ? shown.cwd.split('/').find((seg) => PROJ[seg]) : null;
-    // 셸이 뜬 뒤 셸 설정 파일이 바뀌었다(11-10) — 열린 창은 옛 설정 그대로라 알린다. [새 셸]을 눌러야 할 버튼(primary)으로
+    // 셸이 뜬 뒤 셸 설정 파일이 바뀌었다(11-10) — 열린 창은 옛 설정 그대로라 알린다.
+    // [새 셸] 단추는 11-14에 [셸 비우기]로 바꿨다(사용자 — 눌러도 셸이 쌓인다고 느꼈다). 새 셸을 여는 단추는 없다 — exit로 닫으면 다음에 열 때 새 설정으로 뜬다
     const old = !err && shown && shown.shell_old;
     const bad = err ? err
-      : want && cur !== want ? `고른 것(${plabel(want)})과 다른 터미널입니다 — 지금 보이는 것은 ${now}입니다`
-      : cur && inDir && inDir !== cur ? `${plabel(cur)} 터미널인데 셸은 ${plabel(inDir)} 폴더에 들어가 있습니다`
-      : old ? '셸 설정이 바뀌었습니다 — 이 창은 옛 설정입니다. [새 셸]을 누르면 새 설정을 읽습니다' : '';
+      : want && cur !== want ? `고른 것(${plabel(want)})과 다른 셸입니다 — 지금 보이는 것은 ${now}입니다`
+      : cur && inDir && inDir !== cur ? `${plabel(cur)} 셸인데 ${plabel(inDir)} 폴더에 들어가 있습니다`
+      : old ? '셸 설정이 바뀌었습니다 — 이 창은 옛 설정입니다. 셸에서 exit를 친 뒤 셸을 다시 열면 새 설정을 읽습니다' : '';
     w.textContent = bad; w.hidden = !bad;
     if (old) w.dataset.tip = `옛 셸 — 셸이 뜬 뒤 셸 설정 파일이 바뀌었습니다.\n바뀐 파일 ${old.files.join(' · ')} · ${hm(old.changed_at)}\n셸이 뜬 시각 ${hm(old.started_at)}`;
     else delete w.dataset.tip;
-    const rb = $('termRespawn');
-    rb.hidden = !cur;
-    rb.className = old ? 'primary' : 'ghost';
+    $('termClear').hidden = !cur;
     // 스크롤(11-11) — 열려 있고 이 탭 세션에 붙었을 때만. 복사 모드 중이면 [입력으로]를 앞에 세운다(친 글은 셸이 아니라 복사 모드로 간다)
     const sc = !!(open && shown && shown.view), inScroll = sc && !!shown.scrolling;
     $('termUp').hidden = !sc; $('termDown').hidden = !inScroll; $('termExit').hidden = !inScroll;
@@ -112,27 +111,27 @@ export function createTerminal(store, { getProject } = {}) {
   $('termDown').addEventListener('click', () => scrollTo('down'));
   $('termExit').addEventListener('click', () => scrollTo('exit'));
   const hm = (iso) => { const d = new Date(iso); return isNaN(d) ? '?' : `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-  // [새 셸](11-10) — 명령이 돌고 있거나 친 글이 남아 있으면 확인 창 먼저(사람의 sudo · ssh가 돌 수 있는 셸이다)
-  async function respawnShell() {
+  // [셸 비우기](11-14, 전 [새 셸]) — 셸을 새로 띄우지 않고 화면 · 스크롤백만 비운다. 명령이 돌고 있거나 친 글이 있으면 확인 창 먼저
+  async function clearShell() {
     const p = shown && shown.project;
     if (!p) return;
-    const rb = $('termRespawn');
-    rb.disabled = true;
+    const cb = $('termClear');
+    cb.disabled = true;
     try {
-      let j = await store.terminalRespawn(p, false);
-      if (!j.respawned) {
+      let j = await store.terminalClear(p, false);
+      if (!j.cleared) {
         const b = j.busy || {};
-        const what = b.cmd ? `돌고 있는 명령(${b.cmd})이 끝납니다.` : `입력 줄에 친 글(${b.typed})이 지워집니다.`;
-        if (!confirm(`${plabel(p)} 터미널의 셸을 새로 띄웁니다. ${what} 계속할까요?`)) return;
-        j = await store.terminalRespawn(p, true);
+        const what = b.cmd ? `돌고 있는 명령(${b.cmd})의 지난 출력이 지워집니다. 명령은 그대로 돕니다.` : `입력 줄에 친 글(${b.typed})이 지워집니다.`;
+        if (!confirm(`${plabel(p)} 셸을 비웁니다. ${what} 계속할까요?`)) return;
+        j = await store.terminalClear(p, true);
       }
       shown = j; drawProj();
       setTimeout(focusShell, 200);
     } catch (e) {
-      drawProj(`셸을 새로 띄우지 못했습니다 — ${e.message || e}`);
-    } finally { rb.disabled = false; }
+      drawProj(`셸을 비우지 못했습니다 — ${e.message || e}`);
+    } finally { cb.disabled = false; }
   }
-  $('termRespawn').addEventListener('click', respawnShell);
+  $('termClear').addEventListener('click', clearShell);
   // 열려 있는 동안 실제 보이는 창을 3초마다 확인한다(11-10) — tmux의 보이는 창은 세션에 하나라 다른 탭 · CC 부탁 · tmux 키가 바꿀 수 있고,
   // 열 때 받은 값만 쥐고 있으면 이름표가 거짓이 된다("런슈즈 터미널"인데 petmint 셸). 못 읽으면 이름표를 못 믿는다고 경고한다
   // 탭 세션(view)을 두 번 연달아 못 찾으면 알린다 — 이 탭이 다른 탭과 보이는 창을 함께 쓰는 옛 방식으로 붙었다(첫 연결 중에는 잠깐 없을 수 있다)
@@ -145,7 +144,7 @@ export function createTerminal(store, { getProject } = {}) {
       if (my !== seq) return;                 // 그 사이 창을 골랐다 — 옛 답으로 덮지 않는다
       noView = j.view === false && loaded ? noView + 1 : 0;
       const was = winErr; winErr = false;
-      if (noView >= 2) { drawProj('이 탭의 터미널 연결을 찾지 못했습니다 — 다른 탭과 보이는 창을 함께 씁니다. 터미널을 닫았다 열면 다시 붙습니다'); return; }
+      if (noView >= 2) { drawProj('이 탭의 셸 연결을 찾지 못했습니다 — 다른 탭과 보이는 창을 함께 씁니다. 셸을 닫았다 열면 다시 붙습니다'); return; }
       if (was || noView === 0 && shown && shown.view === false && j.view
         || !shown || shown.window !== j.window || shown.cwd !== j.cwd || !shown.shell_old !== !j.shell_old
         || !shown.scrolling !== !j.scrolling) { shown = j; drawProj(); }
@@ -158,7 +157,7 @@ export function createTerminal(store, { getProject } = {}) {
     want = p || null;
     const my = ++seq;                         // 방을 빨리 옮기면 늦게 온 앞 답이 뒤 답을 덮지 않게
     try { const j = await store.terminalOpen(want, TAB); if (my === seq) { shown = j; drawProj(); } }
-    catch (e) { if (my === seq) drawProj(`터미널 창을 고르지 못했습니다 — ${e.message || e}`); }
+    catch (e) { if (my === seq) drawProj(`셸 창을 고르지 못했습니다 — ${e.message || e}`); }
   }
   $('termPick').addEventListener('change', (ev) => { pickProject(ev.target.value || null).then(() => setTimeout(focusShell, 100)); });
 
@@ -181,7 +180,7 @@ export function createTerminal(store, { getProject } = {}) {
     open = v;
     el.classList.toggle('open', v);
     document.body.classList.toggle('term-open', v);
-    $('termToggle').textContent = v ? '▼ 터미널' : '▲ 터미널';
+    $('termToggle').textContent = v ? '▼ 셸' : '▲ 셸';
     $('termToggle').setAttribute('aria-expanded', String(v));
     if (v) {
       followed = followProject(getProject);

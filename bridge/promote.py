@@ -445,7 +445,7 @@ class Promoter:
             self.m._notify(row, f"대화 결정 문서에 적기 — 목록 실패: {e}")
             return
         await self._save(pid, status="listed", items=items, raw=texts)
-        self.m._notify(row, f"문서에 적을 대화 결정 {len(items)}개 — 패널 [세션] 탭 「넘기기 전 정리」에서 고치고 승인해 주세요")
+        self.m._notify(row, f"문서에 적을 대화 결정 {len(items)}개 — 패널 [세션 정리] 탭 「넘기기 전 정리」에서 고치고 승인해 주세요")
 
     # ── 사람 ────────────────────────────────────────────
     async def edit(self, pid: int, edits: list[dict[str, Any]]) -> dict[str, Any]:

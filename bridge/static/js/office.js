@@ -74,7 +74,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         <!-- 11-08 도형 · 클래식은 머리말에서 뺐다(사용자 — 안 쓴다). 주소 /?theme=plain · /classic으로는 그대로 열린다 -->
         <span class="otheme" role="group" aria-label="테마">${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장']].map(([k, v]) => k === theme.name
           ? `<span class="oproj-b on" aria-current="true" title="${v} — 지금 테마입니다.">${v}</span>` : `<a class="oproj-b" href="/?theme=${k}" title="${v} — 이 테마로 바꿉니다.">${v}</a>`).join('')}</span>
-        <span class="ofont" role="group" aria-label="글씨 크기"><button id="oFontDn" class="ghost" title="글씨 작게 — 머리말 · 옆 패널 · 터미널 글씨를 한 단계 줄입니다.">가−</button><span id="oFontV" class="muted"></span><button id="oFontUp" class="ghost" title="글씨 크게 — 머리말 · 옆 패널 · 터미널 글씨를 한 단계 키웁니다.">가+</button></span>
+        <span class="ofont" role="group" aria-label="글씨 크기"><button id="oFontDn" class="ghost" title="글씨 작게 — 머리말 · 옆 패널 · 셸 · CC 화면 글씨를 한 단계 줄입니다.">가−</button><span id="oFontV" class="muted"></span><button id="oFontUp" class="ghost" title="글씨 크게 — 머리말 · 옆 패널 · 셸 · CC 화면 글씨를 한 단계 키웁니다.">가+</button></span>
         <span id="oConn" class="conn"></span>
         <button id="oTok" class="ghost" title="접속 키 — 이 화면이 브리지에 접속할 때 쓰는 열쇠(API 토큰)를 다시 넣습니다.">접속 키</button>
       </div>
@@ -2972,7 +2972,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 11-09 FOREMAN 승인 카드로 오지 않는 것 — 무엇을 어디서 해야 풀리는지 글에 넣는다
     if (st.denied) lines.push([`✋ 권한 거부 ${st.denied} — CC 자체 검사가 막았습니다. 그 세션에 허용하거나 다른 방법을 지시합니다`, P.warn, 'bold 16px', true]);
     if (st.apiStops) lines.push([`⚠ API 오류로 멈춤 ${st.apiStops} — 그 세션에 다시 보내면 풀립니다(까닭은 머리 위 호버)`, P.bad, 'bold 16px', true]);
-    if (st.asks) lines.push([`💬 답 기다림 ${st.asks} — 묻고 끝났습니다. 패널 입력 칸이나 터미널에서 답합니다`, P.warn, 'bold 16px', true]);
+    if (st.asks) lines.push([`💬 답 기다림 ${st.asks} — 묻고 끝났습니다. 패널 입력 칸이나 CC 화면에서 답합니다`, P.warn, 'bold 16px', true]);
     // 11-13 사람 승인 합치기 카드도 관리자 머리 위 물음으로 센다 — 답은 관리자 패널, 합치기 카드는 말풍선을 눌러 [합치기]
     if (st.userAsks) lines.push([`💬 사용자 답 기다림 ${st.userAsks} — 관리자 패널에서 답하거나, 합치기 카드면 말풍선을 누릅니다`, P.warn, 'bold 16px', true]);
     if (r.name) lines.push(...schemaLines(r.name));                // 스키마 잠금(11-09)
@@ -3078,7 +3078,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       ...(st.pending || st.question ? [`승인 대기 ${st.pending || 0} · 질문 ${st.question || 0} — 패널 카드에서 답합니다`] : []),
       ...(st.denied ? [`권한 거부 ${st.denied} — CC 자체 검사, 그 세션에 허용 · 다른 방법 지시`] : []),
       ...(st.apiStops ? [`API 오류로 멈춤 ${st.apiStops} — 마지막 턴이 API 오류로 끝남, 그 세션에 다시 보내면 풀림`] : []),
-      ...(st.asks ? [`답 기다림 ${st.asks} — 패널 입력 칸이나 터미널에서 답합니다`] : []),
+      ...(st.asks ? [`답 기다림 ${st.asks} — 패널 입력 칸이나 CC 화면에서 답합니다`] : []),
       ...(st.userAsks ? [`사용자 답 기다림 ${st.userAsks} — 관리자 패널에서 답하거나, 합치기 카드면 말풍선을 누릅니다`] : []),
       ...(r.st_argocd === 'waiting' ? ['배포 대기 — ArgoCD에서 Sync를 눌러야 올라갑니다'] : []),
       ...(pp && pp.webhook_broken ? ['빌드 알림 끊김 의심'] : []),
@@ -3620,7 +3620,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       if (room) go(room.name || '_lounge');
       return;
     }
-    // 11-13 합치기 카드 말풍선(관리자 머리 위 「사용자 답 기다림」 · 남은 「합치기 기다림」)을 누르면 그 카드의 세션 패널 「세션」 탭.
+    // 11-13 합치기 카드 말풍선(관리자 머리 위 「사용자 답 기다림」 · 남은 「합치기 기다림」)을 누르면 그 카드의 세션 패널 「세션 정리」 탭.
     // 캐릭터를 누르면 지금처럼 그 세션(관리자) 대화가 열린다
     for (const [k, b] of BUBBLES) {
       const a = actors.get(k), mk = a && markOf(a);
@@ -3785,11 +3785,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   $('oAlerts').addEventListener('click', (ev) => {
     const b = ev.target.closest('#oPend, #oAsk, #oMerge');
     if (!b) return;
-    if (b.id === 'oMerge') {                                  // 합치기 카드는 세션 패널 「세션」 탭 — 가장 오래된 대기부터
+    if (b.id === 'oMerge') {                                  // 합치기 카드는 세션 패널 「세션 정리」 탭 — 가장 오래된 대기부터
       const m = mergeWaits(store.state.sessions.values())[0];
       if (m) openSession(m.id);
       panel.setOpen(true);
-      if (m) panel.showTab('sess');                           // 카드는 「세션」 탭에만 있다 — 막대로 열 때만(캐릭터는 마지막 탭 그대로)
+      if (m) panel.showTab('sess');                           // 카드는 「세션 정리」 탭에만 있다 — 막대로 열 때만(캐릭터는 마지막 탭 그대로)
       return;
     }
     const ask = b.id === 'oAsk';

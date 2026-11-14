@@ -118,6 +118,15 @@
   .ptab[hidden] { display:none; }
   .oside.tab-convo .oside-body { overflow:hidden; padding:0; }
   .ptab-convo { flex:1; min-height:0; display:flex; flex-direction:column; position:relative; }
+  /* 「CC 화면」 탭(11-14, ccscreen.js) — CC 창(ttyd iframe)이 탭 칸을 채운다. 까닭 줄은 화면 위에 */
+  .oside.tab-cc .oside-body { overflow:hidden; padding:0; }
+  .ptab-cc { flex:1; min-height:0; display:flex; flex-direction:column; }
+  .pcc-bar { display:flex; align-items:center; gap:8px; padding:4px 10px; flex:none; }
+  .pcc-msg { padding:6px 12px; flex:none; }
+  .pcc-msg:empty { display:none; }
+  .pcc-body { flex:1; min-height:200px; background:#000; }
+  .pcc-body iframe { border:0; width:100%; height:100%; display:block; }
+  .pcc-body iframe[hidden] { display:none; }
   .oside .convo { flex:1 1 0; max-height:none; min-height:0; overflow:auto; padding:10px 12px 14px; gap:10px; scroll-behavior:auto; }
   .oside .msg { font-size:15.5px; }
   .oside.wide .msg { font-size:16px; }

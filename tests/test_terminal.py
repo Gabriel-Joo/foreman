@@ -166,7 +166,7 @@ def shell(tmp_path: Path):
     rc.write_text("PS1='[foreman] $ '\nHISTFILE=\n", encoding="utf-8")
     s = get_settings().model_copy(update={
         "terminal_tmux_session": name, "terminal_rcfile": rc, "ttyd_bin": tmp_path / "no-ttyd",
-        "terminal_socket": tmp_path / "run" / "ttyd.sock"})
+        "terminal_socket": tmp_path / "run" / "ttyd.sock", "ccscreen_socket": tmp_path / "run" / "ttyd-cc.sock"})
     yield s
     subprocess.run(["tmux", "-S", default_tmux_socket(), "kill-session", "-t", f"={name}"], capture_output=True)
 

@@ -4,10 +4,14 @@
   GET  /api/terminal             상태 + 기다리는 부탁(CC가 "이 명령을 실행해 주세요"라고 한 것)
   POST /api/terminal/open        {project, tab} — 그 탭이 그 프로젝트의 셸 창을 보게 한다(없으면 그 저장소 폴더에서 만든다, 11-10)
   GET  /api/terminal/window?tab= 그 탭이 지금 보는 창(바꾸지 않는다)
-  POST /api/terminal/respawn     {project, force} — 그 창의 셸을 새로 띄운다(바뀐 셸 설정을 읽게, 11-10)
+  POST /api/terminal/respawn     {project, force} — 그 창의 셸을 새로 띄운다(바뀐 셸 설정을 읽게, 11-10). 화면 단추는 11-14에 뺐다
+  POST /api/terminal/clear       {project, force} — [셸 비우기](11-14) 그 창의 셸 화면 · 스크롤백을 비운다
   DELETE /api/terminal/requests/{id}   부탁을 닫는다(결과를 전달하지 않는다)
   POST /api/terminal/requests/{id}/prefill   셸 입력 줄에 다시 채운다
   GET  /terminal/…  · WS /terminal/ws       쿠키를 확인하고 ttyd(UNIX 소켓)로 그대로 넘긴다
+  GET  /api/terminal/cc/{sid}    「CC 화면」 탭(11-14) — 그 세션 CC 창에 붙을 수 있나(안 되면 까닭)
+  GET  /ccscreen/…  · WS /ccscreen/ws?arg=<세션 번호>&arg=<탭>   CC 화면 ttyd. 브라우저가 준 세션 번호를 브리지가 확인된
+                                 tmux 창으로 바꿔 넘긴다(브라우저가 붙을 곳을 정하지 않는다). 열고 닫은 것만 session_action에
   POST /hooks/shell              셸 PROMPT_COMMAND(hook 토큰) — 친 명령 · 종료 코드 · 위치
 
 ttyd는 TCP 포트를 열지 않는다. 브라우저는 이 브리지(127.0.0.1)를 거쳐서만 닿고, 쿠키는 API 토큰을 가진 사람만 받는다.
@@ -17,6 +21,8 @@ WS는 Origin이 Host와 같아야 한다(다른 사이트가 브라우저 쿠키
 import asyncio
 import logging
 import re
+import time
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode, urlsplit
 
@@ -29,7 +35,7 @@ from websockets.asyncio.client import unix_connect
 from bridge.api.auth import require_api_token
 from bridge.api.hooks import _authed_body
 from bridge.inject import Refused
-from bridge.terminal import COOKIE, TAB_RE, TERM_PROJECTS
+from bridge.terminal import CC_CLOSE, CC_OPEN, CC_VIEW_PREFIX, COOKIE, PANE_RE, TAB_RE, TERM_PROJECTS
 
 log = logging.getLogger("foreman.terminal")
 api = APIRouter(prefix="/api/terminal", dependencies=[Depends(require_api_token)])
@@ -42,16 +48,19 @@ _FWD_RES = ("content-type", "content-encoding", "etag", "last-modified", "cache-
 def _mgr(request: Request) -> Any:
     m = getattr(request.app.state, "terminal", None)
     if m is None:
-        raise HTTPException(503, "터미널 패널이 꺼져 있다")
+        raise HTTPException(503, "셸 · CC 화면이 꺼져 있습니다")
     return m
 
 
 @api.post("/session")
 async def open_session(request: Request) -> JSONResponse:
     m = _mgr(request)
-    resp = JSONResponse({"ok": True, "running": m.running})
-    resp.set_cookie(COOKIE, m.new_cookie(), max_age=int(m.s.terminal_cookie_ttl_s), path="/terminal",
-                    httponly=True, samesite="strict", secure=request.url.scheme == "https")
+    resp = JSONResponse({"ok": True, "running": m.running, "cc_running": m.cc_running})
+    # 같은 쿠키를 「CC 화면」(/ccscreen, 11-14)에도 — 경로마다 하나씩 붙인다(Path가 다르면 브라우저가 따로 보낸다)
+    tok = m.new_cookie()
+    for path in ("/terminal", "/ccscreen"):
+        resp.set_cookie(COOKIE, tok, max_age=int(m.s.terminal_cookie_ttl_s), path=path,
+                        httponly=True, samesite="strict", secure=request.url.scheme == "https")
     return resp
 
 
@@ -67,7 +76,7 @@ async def window(request: Request, tab: str | None = None) -> dict[str, Any]:
     try:
         return await _mgr(request).current_view(tab)
     except Refused as e:
-        raise HTTPException(503, f"터미널 창을 읽지 못했습니다 — {e}") from e
+        raise HTTPException(503, f"셸 창을 읽지 못했습니다 — {e}") from e
 
 
 class OpenIn(BaseModel):
@@ -84,7 +93,7 @@ async def open_project(body: OpenIn, request: Request) -> dict[str, Any]:
     try:
         return await m.open_project(body.project, body.tab)
     except Refused as e:
-        raise HTTPException(503, f"터미널 창을 고르지 못했습니다 — {e}") from e
+        raise HTTPException(503, f"셸 창을 고르지 못했습니다 — {e}") from e
 
 
 class ScrollIn(BaseModel):
@@ -120,6 +129,39 @@ async def respawn(body: RespawnIn, request: Request) -> dict[str, Any]:
         return await m.respawn(body.project, body.force)
     except Refused as e:
         raise HTTPException(503, f"셸을 새로 띄우지 못했습니다 — {e}") from e
+
+
+class ClearIn(BaseModel):
+    project: str
+    force: bool = False            # 돌고 있는 명령 · 친 글이 있어도(사람이 확인 창에서 [확인]을 눌렀다)
+
+
+@api.post("/clear")
+async def clear(body: ClearIn, request: Request) -> dict[str, Any]:
+    """[셸 비우기](11-14) — 그 프로젝트 창의 셸 화면 · 스크롤백을 비운다(셸은 그대로). 명령이 돌고 있거나 친 글이 있으면
+    force 없이는 비우지 않고 {cleared:false, busy}를 돌려준다(화면이 확인 창을 띄운다)."""
+    m = _mgr(request)
+    if body.project not in TERM_PROJECTS:
+        raise HTTPException(422, "모르는 프로젝트입니다")
+    try:
+        return await m.clear(body.project, body.force)
+    except Refused as e:
+        raise HTTPException(503, f"셸을 비우지 못했습니다 — {e}") from e
+
+
+@api.get("/cc/{sid}")
+async def cc_state(sid: int, request: Request) -> dict[str, Any]:
+    """「CC 화면」 탭(11-14) — 그 세션 CC 창에 붙을 수 있나. {ok, tmux_session, size, running} 또는 {ok:false, reason, running}.
+    탭이 열려 있는 동안 화면이 다시 물어 끝남 · ttyd 꺼짐을 까닭으로 띄운다(조용히 빈 화면이 되지 않게)."""
+    m = _mgr(request)
+    try:
+        r = await m.cc_target(sid)
+    except Refused as e:
+        r = {"ok": False, "reason": f"CC 창을 확인하지 못했습니다 — {e}", "running": m.cc_running}
+    if r.get("ok") and not r.get("running"):
+        r = {**r, "ok": False, "reason": "CC 화면 서버(ttyd)가 떠 있지 않습니다 — 브리지 로그(.run/ttyd-cc.log)를 확인해 주세요"}
+    r.pop("pane", None)            # 화면은 tmux 창 대상을 몰라도 된다(붙을 곳은 브리지가 정한다)
+    return r
 
 
 @api.delete("/requests/{rid}")
@@ -163,20 +205,41 @@ async def terminal_root() -> RedirectResponse:
 async def terminal_http(path: str, request: Request) -> Response:
     m = getattr(request.app.state, "terminal", None)
     if not _cookie_ok(m, request.cookies):
-        return Response("터미널 패널은 대시보드에서 연다(인증 쿠키 없음)", status_code=401, media_type="text/plain; charset=utf-8")
+        return Response("셸은 대시보드에서 엽니다(인증 쿠키가 없습니다)", status_code=401, media_type="text/plain; charset=utf-8")
     if not m.running:
-        return Response("ttyd가 떠 있지 않다", status_code=503, media_type="text/plain; charset=utf-8")
+        return Response("셸 서버(ttyd)가 떠 있지 않습니다", status_code=503, media_type="text/plain; charset=utf-8")
+    return await _proxy_http(m.s.terminal_socket, "/terminal/", path, request)
+
+
+@router.get("/ccscreen", include_in_schema=False)
+async def ccscreen_root() -> RedirectResponse:
+    return RedirectResponse("/ccscreen/", status_code=307)
+
+
+@router.get("/ccscreen/{path:path}", include_in_schema=False)
+async def ccscreen_http(path: str, request: Request) -> Response:
+    """「CC 화면」 ttyd의 화면 파일(11-14). 주소의 ?arg=<세션 번호>는 ttyd 화면이 WS 주소에 그대로 붙인다 — WS에서 확인한다."""
+    m = getattr(request.app.state, "terminal", None)
+    if not _cookie_ok(m, request.cookies):
+        return Response("CC 화면은 대시보드 세션 패널에서 엽니다(인증 쿠키가 없습니다)", status_code=401,
+                        media_type="text/plain; charset=utf-8")
+    if not m.cc_running:
+        return Response("CC 화면 서버(ttyd)가 떠 있지 않습니다", status_code=503, media_type="text/plain; charset=utf-8")
+    return await _proxy_http(m.s.ccscreen_socket, "/ccscreen/", path, request)
+
+
+async def _proxy_http(sock: Path, base: str, path: str, request: Request) -> Response:
     hdrs = {k: v for k, v in request.headers.items() if k.lower() in _FWD_REQ}
-    url = "http://localhost/terminal/" + path + (f"?{request.url.query}" if request.url.query else "")
+    url = "http://localhost" + base + path + (f"?{request.url.query}" if request.url.query else "")
     try:
-        async with httpx.AsyncClient(transport=httpx.AsyncHTTPTransport(uds=str(m.s.terminal_socket)),
+        async with httpx.AsyncClient(transport=httpx.AsyncHTTPTransport(uds=str(sock)),
                                      timeout=10.0) as c:
             # 받은 그대로(압축된 채) 넘긴다 — httpx가 풀면 Content-Encoding과 본문이 어긋난다
             async with c.stream("GET", url, headers=hdrs) as r:
                 content = b"".join([chunk async for chunk in r.aiter_raw()])
     except httpx.HTTPError as e:
-        log.warning("ttyd HTTP 실패 %s: %s", path, type(e).__name__)
-        return Response("ttyd에 닿지 못했다", status_code=502, media_type="text/plain; charset=utf-8")
+        log.warning("ttyd HTTP 실패 %s%s: %s", base, path, type(e).__name__)
+        return Response("ttyd에 닿지 못했습니다", status_code=502, media_type="text/plain; charset=utf-8")
     out = {k: v for k, v in r.headers.items() if k.lower() in _FWD_RES}
     # 이 화면은 대시보드 안(같은 출처)에서만 — 다른 사이트가 틀(iframe)에 넣어 클릭을 훔치지 못하게
     out["X-Frame-Options"] = "SAMEORIGIN"
@@ -228,7 +291,75 @@ async def terminal_ws(ws: WebSocket) -> None:
         return
     await ws.accept(subprotocol="tty")
     m.clients += 1
+    try:
+        await _pump(ws, up)
+    finally:
+        m.clients -= 1
 
+
+def _cc_args(ws: WebSocket) -> tuple[int, str] | None:
+    """「CC 화면」 WS 주소의 ?arg=<세션 번호>&arg=<탭> — 모양이 맞을 때만. 브라우저가 tmux 대상을 줄 길은 없다(세션 번호뿐)."""
+    a = ws.query_params.getlist("arg")
+    if len(a) != 2 or not re.fullmatch(r"[0-9]{1,12}", a[0]) or not TAB_RE.match(a[1]):
+        return None
+    return int(a[0]), a[1]
+
+
+@router.websocket("/ccscreen/ws")
+async def ccscreen_ws(ws: WebSocket) -> None:
+    """「CC 화면」(11-14) — 쿠키 · 같은 출처 → 세션 번호를 DB · 살아 있는 프로세스로 확인한 tmux 창으로 바꿔 ttyd에 넘긴다.
+    열고 닫은 것만 session_action(ccview-open · ccview-close)에 남긴다. 키 하나하나는 남기지 않는다(사람이 CC 창에 직접 치는 길이다)."""
+    m = getattr(ws.app.state, "terminal", None)
+    client = ws.client.host if ws.client else "?"
+    if not _cookie_ok(m, ws.cookies):
+        log.warning("CC 화면 WS 거절 %s: 쿠키 없음 · 만료", client)
+        await ws.close(1008)
+        return
+    if not _same_origin(ws.headers):
+        log.warning("CC 화면 WS 거절 %s: Origin이 Host와 다르다", client)
+        await ws.close(1008)
+        return
+    args = _cc_args(ws)
+    if args is None:
+        log.warning("CC 화면 WS 거절 %s: 세션 번호 · 탭 모양이 틀렸다", client)
+        await ws.close(1008)
+        return
+    sid, tab = args
+    try:
+        t = await m.cc_target(sid)
+    except Refused as e:
+        t = {"ok": False, "reason": str(e)}
+    if not t.get("ok") or not PANE_RE.match(t.get("pane") or ""):
+        log.warning("CC 화면 WS 거절 session=%d: %s", sid, t.get("reason"))
+        await ws.close(1008)
+        return
+    q = urlencode([("arg", t["pane"]), ("arg", tab)])
+    try:
+        await m.sweep_views(prefix=CC_VIEW_PREFIX)      # 붙기 전에 끊겨 남은 탭 세션(창은 CC 세션 쪽에 그대로)
+    except Exception as e:  # noqa: BLE001 — 치우기 실패가 화면을 막지 않는다
+        log.warning("CC 화면 남은 탭 세션 치우기 실패: %s", type(e).__name__)
+    try:
+        up = await unix_connect(str(m.s.ccscreen_socket), "ws://localhost/ccscreen/ws?" + q, subprotocols=["tty"],
+                                max_size=None, open_timeout=5, ping_interval=None)
+    except Exception as e:  # noqa: BLE001
+        log.warning("CC 화면 WS: ttyd에 닿지 못했다: %s", type(e).__name__)
+        await ws.close(1011)
+        return
+    await ws.accept(subprotocol="tty")
+    started = time.monotonic()
+    where = f"tmux {t['tmux_session']} {t['pane']} 크기 {t['size']} 탭 {tab}"
+    await m.record_action(sid, CC_OPEN, True, where)
+    log.info("CC 화면 열림 session=%d %s", sid, where)
+    try:
+        await _pump(ws, up)
+    finally:
+        secs = round(time.monotonic() - started)
+        await m.record_action(sid, CC_CLOSE, True, f"{where} · {secs}초")
+        log.info("CC 화면 닫힘 session=%d (%d초)", sid, secs)
+
+
+async def _pump(ws: WebSocket, up: Any) -> None:
+    """브라우저 WS ↔ ttyd WS를 그대로 잇는다(한쪽이 끝나면 둘 다 닫는다)."""
     async def c2u() -> None:
         while True:
             msg = await ws.receive()
@@ -250,7 +381,6 @@ async def terminal_ws(ws: WebSocket) -> None:
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:
-        m.clients -= 1
         for t in tasks:
             t.cancel()
         await up.close()

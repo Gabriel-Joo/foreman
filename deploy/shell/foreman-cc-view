@@ -1,0 +1,61 @@
+#!/bin/bash
+# 「CC 화면」 탭 — ttyd(-b /ccscreen)가 브라우저 연결마다 띄운다(11-14, bridge/terminal.py _supervise).
+#   foreman-cc-view <tmux 소켓> <창 %N> <탭>
+# 창 · 탭은 브라우저가 정하지 않는다. 브라우저는 세션 번호만 보내고, 브리지 WS 프록시(/ccscreen/ws)가 쿠키 · 같은 출처 ·
+# DB(살아 있는 FOREMAN CC 세션) · 그 프로세스의 tmux 창을 확인한 뒤 ?arg=<창>&arg=<탭>으로 바꿔 ttyd에 넘긴다.
+# 여기서도 모양과 그 창이 실제로 있는지 다시 본다 — 아무 tmux 세션에나 붙지 않게.
+#
+# 그 CC 세션의 tmux 세션에 그룹 세션 ccv-<탭>을 만들어 붙는다. 창(CC)은 함께 쓰고 연결이 끝나면 그룹 세션만 사라진다(destroy-unattached).
+# CC 창 크기를 바꾸지 않는다(사용자 결정 11-14) — tmux가 window-size latest라 그냥 붙으면 세션이 도는 중에 CC 창이 브라우저 크기로 바뀐다.
+# attach -f ignore-size만으로는 모자랐다(11-14 시험): tmux는 크기 무시 손님을 「다른 보통 손님이 서버에 붙어 있을 때만」 무시하는데,
+# CC 세션에는 붙은 손님이 없다. 그래서 보는 동안 그 창을 window-size manual로 묶고(표시 @foreman_ccview), 이 창을 보는 마지막
+# CC 화면이 나갈 때 푼다(그 뒤 VNC 등 보통 손님이 붙으면 전처럼 크기가 따라간다). 죽어서 못 푼 것은 브리지가 치운다(sweep_views).
+# 탭에는 CC 창이 제 크기(80×24 등)로 작게 보인다.
+sock=$1 pane=${2:-} tab=${3:-}
+T() { tmux -S "$sock" "$@"; }
+MARK=@foreman_ccview
+fail() {                          # 까닭을 화면에 띄우고 잠깐 둔다(곧바로 끝나면 ttyd가 다시 붙기만 되풀이한다)
+  printf '\r\n  %s\r\n  탭을 닫았다 열면 다시 확인합니다.\r\n' "$1"
+  read -r -t 600 -n 1 _ 2>/dev/null
+  exit 1
+}
+
+[[ $pane =~ ^%[0-9]{1,7}$ ]] || fail "CC 창 대상이 올바르지 않습니다."
+[[ $tab =~ ^[A-Za-z0-9_-]{6,40}$ ]] || fail "탭 표시가 올바르지 않습니다."
+info=$(T display-message -p -t "$pane" '#{session_name}	#{window_id}' 2>/dev/null) \
+  || fail "CC 창을 찾지 못했습니다 — 세션이 끝났을 수 있습니다."
+base=${info%%$'\t'*} win=${info#*$'\t'}
+[[ -n $base && $win =~ ^@[0-9]+$ ]] || fail "CC 창을 찾지 못했습니다."
+view="ccv-$tab-$$"                # 연결마다 다른 이름 — 같은 탭이 곧바로 다시 붙어도 옛 연결의 뒷정리가 새 연결을 건드리지 않게
+
+hold() {                          # 창에 따로 정한 window-size가 없을 때만 묶는다(다른 CC 화면이 이미 묶었으면 그대로 함께 쓴다)
+  [[ -z $(T show-options -wqv -t "$win" window-size) ]] || return 0
+  T set-option -w -t "$win" window-size manual && T set-option -w -t "$win" "$MARK" 1
+}
+released=
+release() {                       # 우리가 묶은 것이고, 이 창을 가진 다른 CC 화면 세션이 없으면 푼다(막 만들어져 붙는 중인 것도 센다)
+  [[ -n $released ]] && return 0
+  released=1
+  [[ $(T show-options -wqv -t "$win" "$MARK" 2>/dev/null) == 1 ]] || return 0
+  if T list-windows -a -F '#{window_id} #{session_name}' 2>/dev/null \
+      | awk -v w="$win" -v me="$view" '$1 == w && $2 ~ /^ccv-/ && $2 != me { f = 1 } END { exit !f }'; then
+    return 0
+  fi
+  T set-option -wu -t "$win" window-size 2>/dev/null
+  T set-option -wu -t "$win" "$MARK" 2>/dev/null
+}
+
+# 같은 탭의 앞 연결(다른 세션을 보던 것일 수 있다)은 치우고 새로 만든다 — 창(CC)은 그대로 남는다
+for old in $(T list-sessions -F '#{session_name}' 2>/dev/null | grep -E "^ccv-$tab-[0-9]+\$"); do
+  T kill-session -t "=$old" 2>/dev/null
+done
+trap 'release; exit 0' HUP TERM INT
+T new-session -d -t "=$base" -s "$view" || fail "CC 창에 붙지 못했습니다."
+hold                              # 그룹 세션을 만든 뒤에 — 그 사이 끝나는 앞 연결의 release가 이 세션을 보고 풀지 않는다
+T set-option -t "=$view:" mouse off 2>/dev/null || true            # 셸과 같다 — 끌기는 브라우저 글 고르기가 받는다
+T select-window -t "=$view:$win" 2>/dev/null                      # 보이는 창은 그룹 세션마다 따로 — CC 세션 쪽은 그대로
+# destroy-unattached는 붙은 뒤에 건다(붙기 전에 걸면 그 자리에서 사라진다). 붙기 전에 끊겨 남은 것은 브리지가 치운다.
+# exec하지 않는다 — 연결이 끝난 뒤 묶은 크기를 풀어야 한다
+tmux -S "$sock" attach-session -f ignore-size -t "=$view" \; set-option -t "=$view:" destroy-unattached on
+T kill-session -t "=$view" 2>/dev/null                             # 붙기 전에 끝났으면 남아 있다(이름이 연결마다라 남의 것은 아니다)
+release

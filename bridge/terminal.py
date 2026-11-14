@@ -6,6 +6,12 @@
     "보이는 창"만 따로 갖는다(11-10, deploy/shell/foreman-term-view — 연결이 끝나면 사라진다)
   ttyd(.tools/ttyd)        ← 연결마다 foreman-term-view를 띄워 붙는다. TCP 포트를 열지 않고 UNIX 소켓(.run/ttyd.sock, 디렉토리 0700)에만
   브리지 /terminal/*       ← 쿠키 인증을 거쳐 ttyd 소켓으로 그대로 넘긴다(xterm.js 화면 그대로 — 파싱하지 않는다)
+  화면 이름은 「셸」(11-14 — 「터미널」에서 바꿈). [셸 비우기]는 셸을 새로 띄우지 않고 화면 · 스크롤백만 비운다(clear)
+
+「CC 화면」(11-14, 세션 패널 탭) — 세션 CC 창(권한 · 계획 승인 · 고르기 창 포함)을 브라우저에서 보고 키를 보낸다
+  ttyd를 하나 더(.run/ttyd-cc.sock, -b /ccscreen) — 같은 _supervise 틀. 연결마다 deploy/shell/foreman-cc-view가 그 CC 세션의
+  tmux 세션에 그룹 세션 ccv-<탭>을 만들어 붙는다(attach -f ignore-size — CC 창 크기를 바꾸지 않는다). 브라우저는 세션 번호만 주고,
+  붙을 tmux 창은 cc_target이 DB · 살아 있는 프로세스로 정한다. 열고 닫은 것만 session_action(ccview-open · ccview-close)
 
 기록 — 셸의 PROMPT_COMMAND가 명령마다 /hooks/shell로 보낸다. 마스킹해서 event(source=shell, type=shell_cmd)로.
   승인 정책은 걸리지 않는다(사람이 직접 친다). 셸 세션은 character_session.type='shell' — 캐릭터 카드로 보이지 않는다
@@ -30,7 +36,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from bridge.config import Settings
-from bridge.inject import Refused, deliver, tmux
+from bridge.inject import Refused, _ancestors, _tmux_env, deliver, tmux
+from bridge.liveness import live_sessions
 from bridge.mask import Masker
 from bridge.models import EventIn, EventSource, EventStatus, EventType
 
@@ -48,6 +55,11 @@ COOKIE = "foreman_term"
 TERM_PROJECTS = ("runshoes", "petmint-rag-chatbot", "foreman", "ronanlab-infra")
 # 브라우저 탭 id(11-10) — iframe 주소 · API로 온다. 이 모양만 tmux 세션 이름 · ttyd 인자로 쓴다(deploy/shell/foreman-term-view와 같은 규칙)
 TAB_RE = re.compile(r"^[A-Za-z0-9_-]{6,40}$")
+# 「CC 화면」(11-14) — 탭 그룹 세션 이름 머리(deploy/shell/foreman-cc-view와 같다) · tmux 창 모양 · 기록 이름(session_action.action은 12자까지)
+CC_VIEW_PREFIX = "ccv-"
+CC_MARK = "@foreman_ccview"        # 보는 동안 창 크기를 묶었다는 표시(foreman-cc-view hold · release)
+PANE_RE = re.compile(r"^%[0-9]{1,7}$")
+CC_OPEN, CC_CLOSE = "ccview-open", "ccview-close"
 
 # ── 마스킹(셸 명령 · 출력) ─────────────────────────────────────────
 # Masker(정확한 값 · 토큰 모양 · KEY=값)에 더해 명령줄에서 비밀이 오는 자리
@@ -281,8 +293,9 @@ class TerminalManager:
         self._seen_turns: set[int] = set()
         self._cookies: dict[str, float] = {}
         self._tasks: set[asyncio.Task[Any]] = set()
-        self._proc: asyncio.subprocess.Process | None = None
-        self._sup: asyncio.Task[None] | None = None
+        # ttyd 둘(11-14) — "shell"(화면 아래 셸, /terminal) · "cc"(세션 패널 「CC 화면」, /ccscreen). 따로 두어 서로 자리(-m)를 나누지 않는다
+        self._procs: dict[str, asyncio.subprocess.Process] = {}
+        self._sups: list[asyncio.Task[None]] = []
         self._stopping = False
         self.shell_session_id: int | None = None
         self.shell_char_id: int | None = None
@@ -293,36 +306,54 @@ class TerminalManager:
         d = self.s.terminal_socket.parent
         d.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(d, 0o700)
+        for sock in (self.s.terminal_socket, self.s.ccscreen_socket):
+            if sock.parent != d:
+                sock.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                os.chmod(sock.parent, 0o700)
         await self.ensure_shell()
         await self.sweep_views(min_age=0)       # 브리지가 내려가 있던 동안 남은 탭 세션(ttyd가 다시 뜨면 탭은 새로 붙는다)
+        await self.sweep_views(prefix=CC_VIEW_PREFIX)      # ccv-는 서버 전체에 하나라 막 붙는 중인 것(30초 안)은 둔다
         if self.engine is not None:
             await self._shell_session()
         if not os.access(self.s.ttyd_bin, os.X_OK):
-            log.warning("ttyd 없음(%s) — 터미널 패널 화면은 꺼진다. 기록 · 감지는 그대로", self.s.ttyd_bin)
+            log.warning("ttyd 없음(%s) — 터미널 패널 화면 · CC 화면은 꺼진다. 기록 · 감지는 그대로", self.s.ttyd_bin)
             return
-        self._sup = asyncio.create_task(self._supervise(), name="foreman-ttyd")
+        self._sups = [
+            asyncio.create_task(self._supervise("shell", self._shell_ttyd_args(), self.s.terminal_socket), name="foreman-ttyd"),
+            asyncio.create_task(self._supervise("cc", self._cc_ttyd_args(), self.s.ccscreen_socket), name="foreman-ttyd-cc"),
+        ]
 
     async def stop(self) -> None:
         self._stopping = True
-        if self._proc and self._proc.returncode is None:
-            self._proc.terminate()
+        for p in list(self._procs.values()):
+            if p.returncode is None:
+                p.terminate()
+                try:
+                    async with asyncio.timeout(3):
+                        await p.wait()
+                except TimeoutError:
+                    p.kill()
+        for sup in self._sups:
+            sup.cancel()
             try:
-                async with asyncio.timeout(3):
-                    await self._proc.wait()
-            except TimeoutError:
-                self._proc.kill()
-        if self._sup:
-            self._sup.cancel()
-            try:
-                await self._sup
+                await sup
             except asyncio.CancelledError:
                 pass
         for t in list(self._tasks):
             t.cancel()
 
+    def _alive(self, key: str, sock: Path) -> bool:
+        p = self._procs.get(key)
+        return bool(p and p.returncode is None and sock.exists())
+
     @property
     def running(self) -> bool:
-        return bool(self._proc and self._proc.returncode is None and self.s.terminal_socket.exists())
+        return self._alive("shell", self.s.terminal_socket)
+
+    @property
+    def cc_running(self) -> bool:
+        """「CC 화면」 ttyd가 떠 있나(11-14) — 꺼져 있으면 탭이 까닭을 띄운다."""
+        return self._alive("cc", self.s.ccscreen_socket)
 
     def _shell_cmd(self) -> str:
         return f"bash --rcfile {self.s.terminal_rcfile} -i"
@@ -394,10 +425,11 @@ class TerminalManager:
                 await asyncio.sleep(0.1)
         return None
 
-    async def sweep_views(self, min_age: float = 30.0) -> list[str]:
+    async def sweep_views(self, min_age: float = 30.0, prefix: str | None = None) -> list[str]:
         """붙은 사람 없이 남은 그룹 세션을 치운다 — 보통은 destroy-unattached로 사라지지만, 붙기 전에 끊기면 남는다.
-        막 만들어져 아직 붙는 중인 것(min_age초 안)은 두고 본다. 창 · 셸은 기준 세션에 그대로 남는다."""
-        pre = f"{self.s.terminal_tmux_session}-v-"
+        막 만들어져 아직 붙는 중인 것(min_age초 안)은 두고 본다. 창 · 셸은 기준 세션에 그대로 남는다.
+        prefix=CC_VIEW_PREFIX면 「CC 화면」 탭 세션(ccv-<탭>) — 창(CC)은 CC 세션 쪽에 그대로 남는다."""
+        pre = prefix or f"{self.s.terminal_tmux_session}-v-"
         try:
             rows = (await tmux(self.socket, "list-sessions", "-F",
                                "#{session_name}\t#{session_attached}\t#{session_created}")).splitlines()
@@ -415,7 +447,31 @@ class TerminalManager:
                     pass
         if gone:
             log.info("터미널 남은 탭 세션 치움: %s", ", ".join(gone))
+        if prefix == CC_VIEW_PREFIX:
+            await self.release_cc_windows()
         return gone
+
+    async def release_cc_windows(self) -> list[str]:
+        """「CC 화면」이 보는 동안 묶은 창 크기(window-size manual, 표시 @foreman_ccview)를 보는 CC 화면 세션이 없는데 남아 있으면 푼다.
+        보통은 foreman-cc-view가 연결이 끝날 때 풀지만, 죽거나(kill -9) 함께 끝나 서로 남겨 둔 경우가 있다."""
+        try:
+            rows = [ln.split("\t") for ln in (await tmux(self.socket, "list-windows", "-a", "-F",
+                                                         f"#{{window_id}}\t#{{{CC_MARK}}}\t#{{session_name}}")).splitlines()]
+        except Refused:
+            return []
+        marked = {r[0] for r in rows if len(r) == 3 and r[1] == "1"}
+        viewed = {r[0] for r in rows if len(r) == 3 and r[2].startswith(CC_VIEW_PREFIX)}
+        freed = []
+        for w in sorted(marked - viewed):
+            try:
+                await tmux(self.socket, "set-option", "-wu", "-t", w, "window-size")
+                await tmux(self.socket, "set-option", "-wu", "-t", w, CC_MARK)
+                freed.append(w)
+            except Refused:
+                pass
+        if freed:
+            log.info("CC 화면이 묶고 남긴 창 크기 풂: %s", ", ".join(freed))
+        return freed
 
     async def open_project(self, project: str | None, tab: str | None = None) -> dict[str, Any]:
         """화면이 [터미널]을 열 때 · 방을 옮길 때 — 그 탭이 그 프로젝트 창을 보게 하고, 실제로 보이는 창 이름 · 폴더를 돌려준다
@@ -441,7 +497,7 @@ class TerminalManager:
             raise Refused("모르는 스크롤 동작입니다")
         vt = await self._view(tab)
         if not vt:
-            raise Refused("이 탭의 터미널 연결을 찾지 못했습니다")
+            raise Refused("이 탭의 셸 연결을 찾지 못했습니다")
         inmode = (await tmux(self.socket, "display-message", "-p", "-t", vt, "#{pane_in_mode}")).strip() == "1"
         if action == "up":
             await tmux(self.socket, "copy-mode", "-eu", "-t", vt)
@@ -526,33 +582,126 @@ class TerminalManager:
         log.info("터미널 창 새 셸: %s%s", project, f" (끝낸 것: {b})" if b else "")
         return {"respawned": True, "busy": b, **await self.current(t)}
 
-    async def _supervise(self) -> None:
-        delay = 1.0
-        env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "TMUX_PANE")}
+    # ── 셸 비우기(11-14 사용자 — [새 셸]은 눌러도 셸이 쌓인다고 느꼈다) ──
+    # 셸을 새로 띄우지 않고 지금 셸의 화면과 스크롤백만 비운다. 셸이 입력을 기다리면 readline 화면 지우기(C-l — 기록에 `clear`가 남지 않는다),
+    # 명령이 돌고 있으면 그 명령에 글을 넣지 않고 tmux 쪽 화면만 지운다(send-keys -R). 끝에 tmux 스크롤백(clear-history)
+    CLEAR_SETTLE_S = 0.2
+
+    async def clear(self, project: str, force: bool = False) -> dict[str, Any]:
+        """그 프로젝트 창의 셸 화면 · 스크롤백을 비운다. 돌고 있는 명령이나 친 글이 있으면 force 없이는 비우지 않고 까닭을 돌려준다
+        (친 글은 지워진다 · 돌고 있는 명령은 그대로 돌고 지난 출력만 지워진다)."""
+        t = await self.window_for(project)
+        b = await self.busy(t)
+        if b and not force:
+            return {"cleared": False, "busy": b}
+        if (await tmux(self.socket, "display-message", "-p", "-t", t, "#{pane_in_mode}")).strip() == "1":
+            await tmux(self.socket, "send-keys", "-t", t, "-X", "cancel")       # 스크롤(복사 모드) 중이면 먼저 나온다
+        if b.get("cmd"):
+            await tmux(self.socket, "send-keys", "-R", "-t", t)                # 명령의 입력으로는 아무것도 보내지 않는다
+        else:
+            if b.get("typed"):
+                await tmux(self.socket, "send-keys", "-t", t, "C-e", "C-u")    # 친 글 지우기
+            await tmux(self.socket, "send-keys", "-t", t, "C-l")
+            await asyncio.sleep(self.CLEAR_SETTLE_S)                           # 지운 화면이 스크롤백으로 밀려난 뒤 지운다
+        await tmux(self.socket, "clear-history", "-t", t)
+        log.info("터미널 창 비움: %s%s", project, f" (지운 것: {b})" if b else "")
+        return {"cleared": True, "busy": b, **await self.current(t)}
+
+    # ── 「CC 화면」 탭(11-14 — 세션에 CC 창이 떠 있으면 FOREMAN에서 볼 수 없어 사용자가 VNC로 들어가 Esc로 닫았다) ──
+    # 브라우저는 세션 번호만 보낸다. 붙을 tmux 창은 여기서 정한다: DB의 FOREMAN CC 세션 → 살아 있는 claude 프로세스 → 그 프로세스의
+    # TMUX · TMUX_PANE(같은 tmux 서버) → 그 창이 실제로 있고 그 프로세스의 창인지. 그렇게 확인한 창만 ttyd 인자로 넘긴다
+    async def cc_target(self, session_id: int) -> dict[str, Any]:
+        """{ok, pane, tmux_session, size, running} — 안 되면 {ok: False, reason(「~습니다」), running}."""
+        def no(reason: str) -> dict[str, Any]:
+            return {"ok": False, "reason": reason, "running": self.cc_running}
+        if self.engine is None:
+            return no("DB가 없어 세션을 확인하지 못했습니다")
+        async with self.engine.connect() as c:
+            row = (await c.execute(text("SELECT cc_session_id, type FROM character_session WHERE id = :s"),
+                                   {"s": session_id})).first()
+        if row is None:
+            return no("그런 세션이 없습니다")
+        if row[1] != "agent" or not row[0]:
+            return no("CC 세션이 아니라 CC 화면이 없습니다")
+        ls = live_sessions(self.s.sessions_dir).get(row[0])
+        if ls is None:
+            return no("세션이 끝나 CC 화면이 없습니다(살아 있는 CC 프로세스가 없습니다)")
+        if ls.state == "T":
+            return no("멈춰 둔(Ctrl+Z) 세션이라 열지 않습니다 — 사용자가 일부러 멈춰 둔 세션입니다")
+        te = _tmux_env(ls.pid)
+        if te is None:
+            return no("tmux 밖에서 도는 세션이라 CC 화면을 볼 수 없습니다")
+        sock, pane = te
+        if os.path.realpath(sock) != os.path.realpath(self.socket):
+            return no("FOREMAN이 쓰는 tmux 서버가 아닌 곳에서 도는 세션이라 CC 화면을 볼 수 없습니다")
+        if not PANE_RE.match(pane):
+            return no("tmux 창 표시가 올바르지 않습니다")
+        try:
+            info = (await tmux(self.socket, "display-message", "-p", "-t", pane,
+                               "#{session_name}\t#{pane_pid}\t#{window_width}x#{window_height}\t#{pane_dead}")).strip().split("\t")
+        except Refused:
+            return no("그 세션의 tmux 창을 찾지 못했습니다")
+        if len(info) != 4 or not info[0]:                 # 없는 창이면 tmux가 오류 없이 빈 값을 돌려준다
+            return no("그 세션의 tmux 창을 찾지 못했습니다")
+        if info[3] == "1":
+            return no("그 세션의 tmux 창이 닫혀 있습니다")
+        try:
+            ppid = int(info[1])
+        except ValueError:
+            return no("그 세션의 tmux 창을 읽지 못했습니다")
+        if ppid != ls.pid and ppid not in _ancestors(ls.pid):
+            return no("그 tmux 창의 CC가 이 세션이 아닙니다")
+        return {"ok": True, "pane": pane, "tmux_session": info[0], "size": info[2], "running": self.cc_running}
+
+    async def record_action(self, session_id: int, action: str, ok: bool, detail: str) -> None:
+        """session_action 한 줄(「CC 화면」을 열고 닫은 것 — 키 하나하나는 남기지 않는다)."""
+        if self.engine is None:
+            return
+        try:
+            async with self.engine.begin() as c:
+                await c.execute(text("INSERT INTO session_action (session_id, action, pid, ok, detail) "
+                                     "VALUES (:s, :a, NULL, :o, :d)"),
+                                {"s": session_id, "a": action, "o": ok, "d": detail[:512]})
+        except Exception as e:  # noqa: BLE001 — 기록 실패가 화면을 막지 않는다
+            log.warning("CC 화면 기록 실패 %s: %s", action, type(e).__name__)
+
+    def _shell_ttyd_args(self) -> list[str]:
         # -a: iframe 주소의 ?arg=<탭>&arg=<프로젝트>가 명령 뒤에 붙는다(WS 프록시가 모양을 거른다) → 탭마다 그룹 세션(11-10)
-        args = [str(self.s.ttyd_bin), "-i", str(self.s.terminal_socket), "-W", "-a", "-b", "/terminal", "-m", "4", "-d", "3",
-                "-t", "disableLeaveAlert=true", "-t", "disableResizeOverlay=true", "-t", "titleFixed=FOREMAN 터미널",
+        return [str(self.s.ttyd_bin), "-i", str(self.s.terminal_socket), "-W", "-a", "-b", "/terminal", "-m", "4", "-d", "3",
+                "-t", "disableLeaveAlert=true", "-t", "disableResizeOverlay=true", "-t", "titleFixed=FOREMAN 셸",
                 "-t", "fontSize=13",
                 str(self.s.terminal_view_script), self.socket, self.s.terminal_tmux_session, str(self.s.terminal_rcfile)]
-        logf = self.s.terminal_socket.parent / "ttyd.log"
+
+    def _cc_ttyd_args(self) -> list[str]:
+        # 「CC 화면」(11-14) — -a 인자는 브라우저가 아니라 브리지 WS 프록시가 정한다(확인된 tmux 창 · 탭, api/terminal.py cc_ws)
+        return [str(self.s.ttyd_bin), "-i", str(self.s.ccscreen_socket), "-W", "-a", "-b", "/ccscreen", "-m", "8", "-d", "3",
+                "-t", "disableLeaveAlert=true", "-t", "disableResizeOverlay=true", "-t", "titleFixed=CC 화면",
+                "-t", "fontSize=13",
+                str(self.s.ccscreen_view_script), self.socket]
+
+    async def _supervise(self, key: str, args: list[str], sock: Path) -> None:
+        """ttyd 하나를 띄우고 죽으면 다시 띄운다(1초부터 30초까지 늘려 가며). 셸 · CC 화면이 같은 틀을 쓴다."""
+        delay = 1.0
+        env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "TMUX_PANE")}
+        logf = sock.parent / ("ttyd.log" if key == "shell" else f"ttyd-{key}.log")
         while not self._stopping:
             try:
-                self.s.terminal_socket.unlink(missing_ok=True)
+                sock.unlink(missing_ok=True)
                 with open(logf, "ab") as lf:
-                    self._proc = await asyncio.create_subprocess_exec(
+                    proc = self._procs[key] = await asyncio.create_subprocess_exec(
                         *args, stdin=asyncio.subprocess.DEVNULL, stdout=lf, stderr=lf, env=env)
-                log.info("ttyd 시작 pid=%d (소켓 %s)", self._proc.pid, self.s.terminal_socket)
+                log.info("ttyd(%s) 시작 pid=%d (소켓 %s)", key, proc.pid, sock)
                 started = time.monotonic()
-                rc = await self._proc.wait()
+                rc = await proc.wait()
                 if self._stopping:
                     break
-                log.warning("ttyd 종료 rc=%s — %.0f초 뒤 다시 띄운다(로그 %s)", rc, delay, logf)
+                log.warning("ttyd(%s) 종료 rc=%s — %.0f초 뒤 다시 띄운다(로그 %s)", key, rc, delay, logf)
                 if time.monotonic() - started > 60:
                     delay = 1.0
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # noqa: BLE001
-                log.warning("ttyd 띄우기 실패: %s: %s", type(e).__name__, str(e)[:200])
+                log.warning("ttyd(%s) 띄우기 실패: %s: %s", key, type(e).__name__, str(e)[:200])
             await asyncio.sleep(delay)
             delay = min(delay * 2, 30.0)
 

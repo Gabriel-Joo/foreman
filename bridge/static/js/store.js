@@ -383,11 +383,11 @@ export class Store {
         break;
       }
       case 'error': this.pushFeed(s, e.ts, 'error', `오류: ${e.summary || ''}`); break;
-      case 'term_request': this.pushFeed(s, e.ts, 'ask', `터미널 부탁: ${e.target || ''}`); break;
+      case 'term_request': this.pushFeed(s, e.ts, 'ask', `셸 부탁: ${e.target || ''}`); break;
       case 'term_result': {
         const pl = e.payload || {};
         this.pushFeed(s, e.ts, pl.delivered ? 'input' : 'error',
-          `터미널 결과(종료 ${pl.exit}) ${pl.delivered ? '전달' : `전달 못 함 — ${pl.refused || ''}`}: ${e.target || ''}`);
+          `셸 결과(종료 ${pl.exit}) ${pl.delivered ? '전달' : `전달 못 함 — ${pl.refused || ''}`}: ${e.target || ''}`);
         break;
       }
       default: return;
@@ -542,9 +542,9 @@ export class Store {
     return this._models;
   }
   // ── 터미널 패널 ───────────────────────────────────────
-  async terminalSession() {          // 쿠키(Path=/terminal)를 받는다 — iframe이 이걸로 ttyd에 붙는다
+  async terminalSession() {          // 쿠키(Path=/terminal · /ccscreen)를 받는다 — iframe이 이걸로 ttyd에 붙는다
     const r = await fetch('/api/terminal/session', { method: 'POST', headers: this.headers() });
-    if (!r.ok) throw new Error(r.status === 503 ? '터미널 패널이 꺼져 있습니다' : `HTTP ${r.status}`);
+    if (!r.ok) throw new Error(r.status === 503 ? '셸 · CC 화면이 꺼져 있습니다' : `HTTP ${r.status}`);
     return r.json();
   }
   // 프로젝트마다 터미널 창(11-10) — project의 셸 창을 보인다(null이면 지금 창 그대로). 돌려받은 것 = 실제로 보이는 창
@@ -567,6 +567,22 @@ export class Store {
   async terminalScroll(tab, action) {
     const r = await fetch('/api/terminal/scroll', { method: 'POST', headers: this.headers(true), body: JSON.stringify({ tab, action }) });
     const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+    return j;
+  }
+  // [셸 비우기](11-14) — 그 프로젝트 창의 셸 화면 · 스크롤백을 비운다. 명령이 돌거나 친 글이 있으면 force 없이는 {cleared:false, busy}
+  async terminalClear(project, force) {
+    const r = await fetch('/api/terminal/clear', { method: 'POST', headers: this.headers(true), body: JSON.stringify({ project, force: !!force }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+    return j;
+  }
+  // 「CC 화면」 탭(11-14) — 그 세션 CC 창에 붙을 수 있나. {ok, tmux_session, size} 또는 {ok:false, reason}
+  async ccState(sid) {
+    const r = await fetch(`/api/terminal/cc/${sid}`, { headers: this.headers() });
+    const j = await r.json().catch(() => ({}));
+    // 404 — 도는 브리지가 CC 화면을 모른다(옛 코드 · worktree 미리보기). 세션이 없을 때는 200 + 까닭이다
+    if (r.status === 404) throw new Error('도는 브리지에 CC 화면 길이 없습니다 — 브리지를 새 코드로 다시 띄워야 합니다');
     if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
     return j;
   }

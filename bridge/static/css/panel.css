@@ -248,7 +248,7 @@ button.rolebadge.fixed:hover { background:color-mix(in srgb, var(--rc) 16%, tran
 .ns-two { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
 .ns-two label { display:flex; flex-direction:column; gap:2px; }
 @media (max-width:480px) { .ns-two { grid-template-columns:1fr; } }
-/* 모델 표시 — 패널 머리줄 · [세션] 탭. Opus는 비싸서 눈에 띄게 */
+/* 모델 표시 — 패널 머리줄 · [세션 정리] 탭. Opus는 비싸서 눈에 띄게 */
 .mdl { display:inline-block; padding:0 5px; border-radius:4px; border:1px solid var(--line); font-size:15px; line-height:20px; }
 .mdl.f-opus { border-color:#c08a2a; color:#c08a2a; }
 .mdl.f-sonnet { border-color:#3f7fd0; color:#3f7fd0; }
