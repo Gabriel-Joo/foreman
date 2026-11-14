@@ -240,12 +240,17 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const d = new Date(iso), now = new Date(), hh = String(d.getHours()).padStart(2, '0');
       return d.toDateString() === now.toDateString() ? `오늘 ${hh}:${String(d.getMinutes()).padStart(2, '0')}` : `${'일월화수목금토'[d.getDay()]} ${hh}시`;
     };
-    const parts = ls.filter((l) => usagePct(l) != null && (l.key !== 'weekly_fable' || usagePct(l) >= 1))
-      .map((l) => `${short[l.key] || l.label} ${(l.est_pct != null && l.measured_pct != null && Math.abs(l.est_pct - l.measured_pct) >= 0.5) ? '약 ' : ''}${Math.round(usagePct(l))}%`
+    // 11-14 — CC가 /usage에서 한도 줄을 빼면(서버가 그 한도 값을 주지 않을 때) 옛 값을 지금 값처럼 보이지 않고 "CC가 보이지 않음"으로.
+    // 모델별 한도(Fable 등)는 요금제 · 서버에 따라 나타나고 사라지는 줄이라 칩에서는 뺀다(호버에만)
+    const gone = (l) => !!l.absent;
+    const goneLong = ls.some((l) => gone(l) && !l.scoped && l.absent_since && Date.now() - new Date(l.absent_since).getTime() >= 6 * 36e5);
+    const parts = ls.filter((l) => gone(l) ? !l.scoped : (usagePct(l) != null && (l.key !== 'weekly_fable' || usagePct(l) >= 1)))
+      .map((l) => gone(l) ? `${short[l.key] || l.label}: CC가 보이지 않음`
+        : `${short[l.key] || l.label} ${(l.est_pct != null && l.measured_pct != null && Math.abs(l.est_pct - l.measured_pct) >= 0.5) ? '약 ' : ''}${Math.round(usagePct(l))}%`
         + (l.eta_before_reset && l.eta_100 ? ` · ${etaKo(l.eta_100)} 소진 예상` : ''));
     const bad = usage.failed || !rd.ok;
     const max = usageMax();
-    el.className = 'ghost ousage' + (bad ? ' bad' : max >= 95 ? ' bad' : max >= 80 ? ' warn' : '');
+    el.className = 'ghost ousage' + (bad ? ' bad' : max >= 95 ? ' bad' : (max >= 80 || goneLong) ? ' warn' : '');
     // 11-09 이름 나누기 — 계정 사용 한도는 "한도", 세션 대화가 창을 채운 비율은 패널 머리줄 "쌓인 대화 N%"(같은 %라 헷갈렸다)
     el.textContent = usage.failed ? '⚠ 한도' : (bad ? '⚠ ' : '') + (parts.length ? `한도: ${parts.join(' · ')}` : '한도');
     // 11-09 숫자 줄: "5시간 51% — 02:10 리셋" · "주간 5% — 11월 15일 22:00 리셋"(오늘이면 시각만)
@@ -254,8 +259,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const d = new Date(iso), now = new Date(), hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       return d.toDateString() === now.toDateString() ? hm : `${d.getMonth() + 1}월 ${d.getDate()}일 ${hm}`;
     };
-    const lines = ls.filter((l) => l.key !== 'weekly_fable' || (usagePct(l) || 0) >= 1).map((l) =>
-      `${short[l.key] || l.label} ${usagePct(l) == null ? '—' : Math.round(usagePct(l)) + '%'}${l.reset_at ? ` — ${resetKo(l.reset_at)} 리셋` : ''}${l.eta_before_reset ? ` (이 속도면 ${l.eta_100 ? resetKo(l.eta_100) + '에 ' : '리셋 전에 '}100%)` : ''}`);
+    const lines = ls.filter((l) => gone(l) || l.key !== 'weekly_fable' || (usagePct(l) || 0) >= 1).map((l) => gone(l)
+      ? `${short[l.key] || l.label} CC가 보이지 않음 — /usage에 ${short[l.key] || l.label} 줄이 없습니다. 서버가 ${short[l.key] || l.label} 한도 값을 주지 않을 때 CC가 줄을 뺍니다.`
+        + `${l.last_pct != null ? ` 마지막으로 본 값은 ${Math.round(l.last_pct)}%(${resetKo(l.last_at)})이고 지금 값이 아닙니다.` : ''} 이 한도의 80 · 95% 알림은 줄이 다시 나올 때까지 멈춥니다.`
+      : `${short[l.key] || l.label} ${usagePct(l) == null ? '—' : Math.round(usagePct(l)) + '%'}${l.reset_at ? ` — ${resetKo(l.reset_at)} 리셋` : ''}${l.eta_before_reset ? ` (이 속도면 ${l.eta_100 ? resetKo(l.eta_100) + '에 ' : '리셋 전에 '}100%)` : ''}`);
     const why = usage.failed ? ` 지금은 불러오지 못했습니다(${usage.failed}).` : !rd.ok ? ` 지금은 /usage를 읽지 못하고 있습니다(${rd.error || '오래됐습니다'}).` : '';
     // 11-09 사용자 — /usage "What's contributing"(CC 추정: 대략 · 이 기기 세션만 · 비중끼리 겹침). 서브에이전트 · MCP 비중, 제안 줄
     const span = { '24h': '24시간', '7d': '7일' };

@@ -99,6 +99,86 @@ def test_parse_cli_and_screen_forms():
     assert parse_usage("", CFG.limits, NOW, CFG.tz)[1] == [x.label for x in CFG.limits]
 
 
+# 11-14 14:23 실제 `claude -p "/usage"`(CC 2.1.325) — 5시간 줄(Current session)이 없다. 서버가 5시간 값을 안 주면 CC가 줄을 뺀다
+NO_SESSION_BODY = """You are currently using your subscription to power your Claude Code usage
+
+Current week (all models): 10% used · resets Nov 15, 10pm (Asia/Seoul)
+Current week (Fable): 0% used · resets Nov 15, 10pm (Asia/Seoul)
+
+What's contributing to your usage?
+Approximate · sessions on this machine only · shares overlap
+
+Last 24h · 363 requests · 5 sessions
+  91%  Start fresh when you switch tasks · run /clear"""
+
+
+def test_head_keys_tells_missing_line_from_changed_shape():
+    from bridge.usage import head_keys
+    found, missing = parse_usage(NO_SESSION_BODY, CFG.limits, NOW, CFG.tz)
+    assert missing == ["5시간 세션"] and set(found) == {"weekly_all", "weekly_fable"}
+    assert head_keys(NO_SESSION_BODY, CFG.limits) == {"weekly_all", "weekly_fable"}       # 머리가 없다 = CC가 줄을 뺐다
+    shaped = CLI_BODY.replace("Current session: 46% used", "Current session: 46 percent")
+    found, _ = parse_usage(shaped, CFG.limits, NOW, CFG.tz)
+    assert "session_5h" not in found and "session_5h" in head_keys(shaped, CFG.limits)    # 머리는 있는데 % 없음 = 글 모양이 바뀜
+
+
+def test_monitor_absent_session_line_is_not_a_failure():
+    """5시간 줄이 없어도 읽기는 성공(주간은 기록) · 옛 5시간 값을 안 내고 · 6시간 넘게 없으면 한 번만 알린다 · 줄이 돌아오면 평소대로.
+    한도 줄이 하나도 없거나 머리만 있고 %가 없으면 지금처럼 실패."""
+    tag = "zz" + uuid.uuid4().hex[:6]
+    lim5 = Limit(key=f"{tag}_5h", label="5시간", match="Current session", window_h=5)
+    limw = Limit(key=f"{tag}_wk", label="주간", match="Current week (all models)", window_h=168)
+    limf = Limit(key=f"{tag}_fb", label="주간 · Fable", match="Current week (Fable)", window_h=168, models=["fable"])
+    cfg = UsageConfig(poll_s=600, fail_alert=3, tz="UTC", prices=CFG.prices, limits=[lim5, limw, limf])
+    now = datetime(2001, 1, 1, 12, 0)
+    full = ("Current session: 85% used · resets Jan 1, 3pm (UTC)\n"
+            "Current week (all models): 25% used · resets Jan 3, 3pm (UTC)\n"
+            "Current week (Fable): 5% used · resets Jan 3, 3pm (UTC)")
+    gone = ("Current week (all models): 26% used · resets Jan 3, 3pm (UTC)\n"
+            "\nWhat's contributing to your usage?\nLast 24h · 3 requests · 1 sessions")
+    replies: list = []
+
+    async def reader():
+        return {"result": replies.pop(0)}
+
+    async def go():
+        eng = make_engine(Settings(mysql_database="foreman_test"))
+        n = _Notifier()
+        mon = UsageMonitor(eng, cfg, n, reader=reader)
+        try:
+            replies.extend([full, gone])
+            assert await mon.poll(now)
+            t1 = now + timedelta(minutes=10)
+            assert await mon.poll(t1) and mon.error is None and mon.fails == 0 and mon.stale(t1) is False
+            assert set(mon.absent) == {lim5.key, limf.key}                      # 5시간 · Fable 줄이 빠졌다(실패가 아님)
+            st = {x["key"]: x for x in await limit_status(eng, cfg, t1, mon.latest, history_days=10**5, absent=mon.absent)}
+            s5 = st[lim5.key]
+            assert s5["absent"] and s5["measured_pct"] is None and s5["est_pct"] is None and s5["eta_100"] is None
+            assert s5["last_pct"] == 85.0                                       # 옛 값은 따로 — 지금 값으로 나가지 않는다
+            assert st[limw.key]["measured_pct"] == 26.0 and not st[limw.key]["absent"]
+            assert await mon.check_alerts(t1) == [] and not n.sent                # 옛 85%로 80% 알림을 내지 않는다
+            assert await mon.check_alerts(now + timedelta(hours=5)) == []           # 6시간 전 — 아직
+            late = now + timedelta(hours=6, minutes=1)
+            assert await mon.check_alerts(late) == [f"usage:{lim5.key}:absent"]     # 모델별(Fable)은 알리지 않는다
+            assert len(n.sent) == 1 and "5시간 줄이 /usage에" in n.sent[0][1]
+            assert await mon.check_alerts(late + timedelta(minutes=1)) == []        # 한 번만
+            # 줄이 돌아오면 평소대로
+            replies.append(full)
+            assert await mon.poll(late) and mon.absent == {}
+            assert (await limit_status(eng, cfg, late, mon.latest, history_days=10**5, absent=mon.absent))[0]["absent"] is False
+            # 실패로 남는 것: 한도 줄이 하나도 없음 · 머리만 있고 %가 없음
+            replies.extend(["You are currently using your subscription\n\nWhat's contributing to your usage?",
+                            "Current session\nCurrent week (all models): 25% used"])
+            assert not await mon.poll(late + timedelta(minutes=10)) and "하나도" in mon.error
+            assert not await mon.poll(late + timedelta(minutes=20)) and "5시간" in mon.error and mon.fails == 2
+        finally:
+            async with eng.begin() as c:
+                await c.execute(text("DELETE FROM usage_observation WHERE limit_key LIKE :k"), {"k": tag + "%"})
+                await c.execute(text("DELETE FROM notification WHERE rule LIKE :k"), {"k": f"usage:{tag}%"})
+            await eng.dispose()
+    asyncio.run(go())
+
+
 def test_parse_reset_rollovers():
     # 날짜 없는 시각이 이미 지났으면 다음 날
     assert parse_reset("Resets 9am (Asia/Seoul)", NOW, "Asia/Seoul") == datetime(2026, 11, 9, 0, 0)
@@ -181,7 +261,7 @@ def test_monitor_observe_fail_alert_recover_and_status():
             assert st[lim5.key]["est_pct"] == 40.0 and st[lim5.key]["reset_at"] == datetime(2001, 1, 1, 15, 0)
             # 못 읽음 셋 — 셋째에 한 번만 알림, 화면 오류 칸. 그다음 돌아오면 한 번
             n.sent.clear()
-            replies.extend([RuntimeError("시간 초과"), {"result": "Current session: 40% used"}, RuntimeError("x"),
+            replies.extend([RuntimeError("시간 초과"), {"result": "Current session: 40 percent"}, RuntimeError("x"),
                             RuntimeError("y"), {"result": body}])
             for i in range(4):
                 assert not await mon.poll(now + timedelta(minutes=20 + i))

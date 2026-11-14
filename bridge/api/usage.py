@@ -58,7 +58,7 @@ async def usage(request: Request, hours: float | None = None) -> dict[str, Any]:
     engine = request.app.state.store.engine
     mon = getattr(request.app.state, "usage", None)
     now = datetime.now(UTC).replace(tzinfo=None)
-    limits = await limit_status(engine, cfg, now, mon.latest if mon else None)
+    limits = await limit_status(engine, cfg, now, mon.latest if mon else None, absent=mon.absent if mon else None)
     if hours:
         start = now - timedelta(hours=max(1.0, min(hours, 24 * 31)))
     else:
@@ -94,12 +94,13 @@ async def brief(request: Request) -> dict[str, Any]:
     engine = request.app.state.store.engine
     mon = getattr(request.app.state, "usage", None)
     now = datetime.now(UTC).replace(tzinfo=None)
-    limits = await limit_status(engine, cfg, now, mon.latest if mon else None)
+    limits = await limit_status(engine, cfg, now, mon.latest if mon else None, absent=mon.absent if mon else None)
     hot = await breakdown(engine, cfg, now - timedelta(minutes=30), now)
     reading = mon.snapshot() if mon else {"ok": False, "error": "사용량 읽기가 꺼져 있습니다(usage_enabled)", "stale": True}
     data = _j({"reading": {k: reading.get(k) for k in ("ok", "error", "last_ok_at", "stale", "credential_expires_at")},
                "limits": [{k: x[k] for k in ("key", "label", "window_h", "measured_pct", "est_pct", "reset_at", "eta_100",
-                                             "eta_before_reset")} for x in limits],
+                                             "eta_before_reset", "absent", "absent_since", "last_pct", "last_at",
+                                             "scoped")} for x in limits],
                "hot": [{"session_id": s["key"], "usd_h": round(s["usd"] * 2, 2)} for s in hot["by_session"]
                        if isinstance(s["key"], int) and s["usd"] > 0][:3],
                # 11-09 /usage "What's contributing"(CC 추정 — 대략 · 이 기기 세션만 · 겹침 있음) — 사용량 호버에

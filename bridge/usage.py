@@ -314,6 +314,22 @@ def parse_usage(body: str, limits: list[Limit], now: datetime, tz: str) -> tuple
     return found, missing
 
 
+def head_keys(body: str, limits: list[Limit]) -> set[str]:
+    """/usage 글에 줄 머리가 있는 한도 key(% 를 읽었는지와 상관없이). 머리는 있는데 %가 없으면 글 모양이 바뀐 것이고,
+    머리 자체가 없으면 CC가 그 줄을 뺀 것이다(11-14 — 서버가 5시간 한도 값을 주지 않으면 CC가 「Current session」 줄을 뺀다)."""
+    out: set[str] = set()
+    for ln in (body or "").splitlines():
+        s = ln.strip().lower()
+        for lim in limits:
+            if s.startswith(lim.match.lower()):
+                out.add(lim.key)
+    return out
+
+
+# 줄이 이만큼 오래 계속 없으면 한 번 알린다(11-14 정함 — 5시간 창이 한 번 지나가고도 없으면 일시적이 아니다)
+ABSENT_ALERT_H = 6.0
+
+
 # ── 2. 집계 · 환산 · 창 ───────────────────────────────
 
 _SUMS = ("SUM(token_input) ti, SUM(token_output) tout, SUM(token_cache_read) tcr, SUM(token_cache_creation) tcw, COUNT(*) n")
@@ -416,9 +432,12 @@ def floors(obs: list[dict[str, Any]], min_pct: float = 20.0) -> dict[str, Any] |
 
 
 async def limit_status(engine: Any, cfg: UsageConfig, now: datetime, latest: dict[str, dict[str, Any]] | None = None,
-                       history_days: int = 14) -> list[dict[str, Any]]:
-    """한도마다: 측정 %(마지막 읽기) · 리셋 · 지금 창 환산 · 하한 · 읽기 사이 추정 % · 최근 1시간 속도 · 이 속도면 언제 100%."""
+                       history_days: int = 14, absent: dict[str, datetime] | None = None) -> list[dict[str, Any]]:
+    """한도마다: 측정 %(마지막 읽기) · 리셋 · 지금 창 환산 · 하한 · 읽기 사이 추정 % · 최근 1시간 속도 · 이 속도면 언제 100%.
+    absent(한도 key → 마지막으로 본 때): CC가 /usage에서 그 줄을 뺀 한도 — 옛 값을 지금 값처럼 내지 않는다(측정 · 추정 · 예상을 비우고
+    absent_since만 싣는다. 옛 값은 last_pct · last_at에 따로)."""
     out = []
+    absent = absent or {}
     async with engine.connect() as c:
         rows = (await c.execute(text(
             "SELECT limit_key, pct, observed_at, reset_at, source, seen_usd FROM usage_observation "
@@ -433,6 +452,10 @@ async def limit_status(engine: Any, cfg: UsageConfig, now: datetime, latest: dic
         if last is None and obs:
             o = obs[-1]
             last = {"pct": float(o["pct"]), "reset_at": o["reset_at"], "observed_at": o["observed_at"], "seen_usd": o["seen_usd"]}
+        gone = lim.key in absent
+        last_seen = last                                    # 줄이 빠지기 전 마지막 값(화면 호버용)
+        if gone:
+            last = None
         reset_at = (last or {}).get("reset_at") or next_weekly(lim.reset, now, cfg.tz)
         w = await current_window(engine, lim, reset_at, now)
         u_now = window_usd(cfg, lim, await spend_by_model(engine, w["start"], now)) if w else 0.0
@@ -440,7 +463,9 @@ async def limit_status(engine: Any, cfg: UsageConfig, now: datetime, latest: dic
         measured = last["pct"] if last else None
         same_window = bool(last and w and last.get("observed_at") and last["observed_at"] >= w["start"])
         est = None
-        if fl and fl["usd"] > 0:
+        if gone:
+            pass                                            # 값이 없는데 옛 값으로 셈하면 틀린 % 로 경고를 낸다
+        elif fl and fl["usd"] > 0:
             if same_window and last.get("seen_usd") is not None:
                 est = measured + (u_now - float(last["seen_usd"])) / fl["usd"] * 100
             else:
@@ -459,7 +484,11 @@ async def limit_status(engine: Any, cfg: UsageConfig, now: datetime, latest: dic
                     "window_anchored": bool(w and w["anchored"]),
                     "window_usd": round(u_now, 2), "floor": fl,
                     "est_pct": round(est, 1) if est is not None else None, "rate_usd_h": round(rate, 2),
-                    "eta_100": eta, "eta_before_reset": bool(eta and w and eta < w["end"]), "observations": len(obs)})
+                    "eta_100": eta, "eta_before_reset": bool(eta and w and eta < w["end"]), "observations": len(obs),
+                    "absent": gone, "absent_since": absent.get(lim.key),
+                    "last_pct": last_seen["pct"] if gone and last_seen else None,
+                    "last_at": last_seen.get("observed_at") if gone and last_seen else None,
+                    "scoped": bool(lim.models)})
     return out
 
 
@@ -552,7 +581,9 @@ async def run_usage_cli(claude_bin: str, workdir: Path, timeout_s: float = 60.0)
 
 class UsageMonitor:
     """poll_s마다 /usage를 읽어 한도 %를 안다. 조용히 망가지지 않게:
-    - 못 읽음(실행 실패 · 시간 초과 · 오류 답 · 줄 머리를 못 찾음)이 연달아 fail_alert번 → 텔레그램 한 번, 돌아오면 한 번
+    - 못 읽음(실행 실패 · 시간 초과 · 오류 답 · 한도 줄이 하나도 없음 · 머리만 있고 %가 없음)이 연달아 fail_alert번 → 텔레그램 한 번, 돌아오면 한 번
+    - 어떤 한도의 줄만 /usage에 없는 것은 실패가 아니다(11-14 — CC가 서버 값이 없으면 줄을 뺀다): absent로 두고 값을 비우며,
+      모델별이 아닌 한도가 ABSENT_ALERT_H 넘게 없으면 한 번 알린다
     - 화면(snapshot)에 마지막으로 읽은 시각 · 오류 · 낡음(stale)
     - CC 로그인 만료(credential_expires_at)가 24시간 안이면 텔레그램 한 번 — 만료되면 모든 세션 · 디스패처가 멈춘다"""
 
@@ -566,6 +597,7 @@ class UsageMonitor:
         self.fails = 0
         self.alerted = False
         self.latest: dict[str, dict[str, Any]] = {}
+        self.absent: dict[str, datetime] = {}      # /usage에 줄이 없는 한도 → 마지막으로 본 때(없으면 처음 빠진 것을 안 때)
         self.last_ok_at: datetime | None = None
         self.last_try_at: datetime | None = None
         self.error: str | None = None
@@ -600,7 +632,17 @@ class UsageMonitor:
         cv = credit_view(sig, credit_status(self.cfg.credits, now.replace(tzinfo=UTC).astimezone(self.cfg.zone).date()))
         blocked = cv["blocked"]
         thrs = (95, 90, 80) if blocked else (95, 80)
-        for x in await limit_status(self.engine, self.cfg, now, self.latest):
+        for x in await limit_status(self.engine, self.cfg, now, self.latest, absent=self.absent):
+            if x["absent"]:
+                # 줄이 6시간 넘게 없으면 한 번(조용한 고장 — 80 · 95% 알림이 그 한도에서는 멈춰 있다). 모델별 한도(Fable 등)는 요금제 ·
+                # 서버에 따라 나타나고 사라지는 줄이라 알리지 않고 화면에만 둔다
+                if (not x["scoped"] and x["absent_since"] and now - x["absent_since"] >= timedelta(hours=ABSENT_ALERT_H)
+                        and await self._once(f"usage:{x['key']}:absent:{x['absent_since']:%m%d%H%M}",
+                                             f"⚠ {x['label']} 줄이 /usage에 {self._local(x['absent_since'])}부터 없다 — CC가 그 줄을 뺀 것이다"
+                                             f"(서버가 한도 값을 주지 않을 때). 그동안 {x['label']} 80/95% 알림이 멈춰 있다. "
+                                             "줄이 다시 나오면 평소대로 돌아온다")):
+                    sent.append(f"usage:{x['key']}:absent")
+                continue
             pct = x["est_pct"] if x["est_pct"] is not None else x["measured_pct"]
             if pct is None:
                 continue
@@ -674,14 +716,28 @@ class UsageMonitor:
             try:
                 j = await self.reader()
                 body = str(j.get("result") or "")
-                found, missing = parse_usage(body, self.cfg.limits, now, self.cfg.tz)
-                if missing:
-                    raise RuntimeError("/usage 글에서 " + " · ".join(missing) + " 줄을 찾지 못했습니다(글 모양이 바뀌었을 수 있습니다)")
+                found, _ = parse_usage(body, self.cfg.limits, now, self.cfg.tz)
+                heads = head_keys(body, self.cfg.limits)
+                # 줄 머리는 있는데 %를 못 읽은 한도 = 글 모양이 바뀐 것(실패). 머리가 아예 없는 한도 = CC가 그 줄을 뺀 것(실패 아님, 11-14)
+                broken = [lim.label for lim in self.cfg.limits if lim.key in heads and lim.key not in found]
+                if broken:
+                    raise RuntimeError("/usage 글에서 " + " · ".join(broken) + " 줄의 %를 읽지 못했습니다(글 모양이 바뀌었을 수 있습니다)")
+                if not found:
+                    raise RuntimeError("/usage 글에서 한도 줄을 하나도 찾지 못했습니다(글 모양이 바뀌었을 수 있습니다)")
             except Exception as e:  # noqa: BLE001
                 self._failed(str(e) if isinstance(e, RuntimeError) else f"{type(e).__name__}: {str(e)[:200]}")
                 return False
             for lim in self.cfg.limits:
-                f = found[lim.key]
+                if lim.key in found:
+                    self.absent.pop(lim.key, None)
+                    continue
+                if lim.key not in self.absent:                       # 처음 빠진 때 — 마지막으로 본 때부터 센다(없으면 지금)
+                    self.absent[lim.key] = (self.latest.get(lim.key) or {}).get("observed_at") or now
+                    log.warning("/usage에 %s 줄이 없음 — CC가 줄을 뺐다(서버가 그 한도 값을 주지 않을 때)", lim.label)
+            for lim in self.cfg.limits:
+                f = found.get(lim.key)
+                if f is None:
+                    continue
                 seen = None
                 try:
                     seen = (await observe(self.engine, self.cfg, lim, f["pct"], f["reset_at"], now, "cli", f["line"]))[1]
@@ -692,7 +748,8 @@ class UsageMonitor:
             self.contrib = body.split("What's contributing", 1)[1].strip()[:1500] if "What's contributing" in body else None
             await self._credential(j.get("credential_expires_at"), now)
             if self.alerted:
-                self._send("✅ 사용량 읽기 돌아왔다 — " + " · ".join(f"{lim.label} {found[lim.key]['pct']:g}%" for lim in self.cfg.limits))
+                self._send("✅ 사용량 읽기 돌아왔다 — " + " · ".join(f"{lim.label} {found[lim.key]['pct']:g}%" for lim in self.cfg.limits
+                                                                  if lim.key in found))
             self.fails, self.alerted, self.error, self.last_ok_at = 0, False, None, now
             self.on_change()
             return True
