@@ -450,7 +450,7 @@ def test_alerts_no_90_threshold(migrated_db):
             sent = await mon.check_alerts(now)
             assert sent == [f"usage:{lim5.key}:80:01011500"]
             msg = next(m for _, m in n.sent if "5시간 사용량" in m)
-            assert msg.startswith("[FOREMAN] ⚠") and "추가 사용" not in msg and "한도에 닿으면 세션이 말없이 멈춘다" in msg
+            assert msg.startswith("[FOREMAN] ⚠") and "추가 사용이 막혀" not in msg and "한도에 닿으면 추가 요금으로 넘어가거나, 추가 사용이 꺼져 있으면 멈춥니다." in msg
         finally:
             async with eng.begin() as c:
                 await c.execute(text("DELETE FROM usage_observation WHERE limit_key LIKE :k"), {"k": tag + "%"})

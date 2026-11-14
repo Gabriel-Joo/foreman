@@ -593,7 +593,7 @@ class UsageMonitor:
                 if pct >= thr:
                     rules = [f"usage:{x['key']}:{t}:{tag}" for t in thrs if t <= thr]   # 95%를 보냈으면 80%는 따로 안 보낸다
                     if await self._once(rules[0], f"{'🛑' if thr >= 90 else '⚠'} {x['label']} 사용량 약 {pct:.0f}% — {src}, {reset}.{eta}"
-                                                  f"{stale} 한도에 닿으면 세션이 말없이 멈춘다. 화면 머리의 사용량 칩 → /usage", also=rules[1:],
+                                                  f"{stale} 한도에 닿으면 추가 요금으로 넘어가거나, 추가 사용이 꺼져 있으면 멈춥니다. 화면 머리의 사용량 칩 → /usage", also=rules[1:],
                                         same=[f"usage:{x['key']}:{thr}:{t}" for t in near]):
                         sent.append(rules[0])
                     break
