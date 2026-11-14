@@ -3645,8 +3645,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     try {
       const r = await fetch(`/api/schema-lock/${encodeURIComponent(project)}`, { method: 'DELETE', headers: store.headers() });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok || !j.released) alert(`잠금을 풀지 못했습니다 — ${j.refused || j.detail || (r.ok ? '이미 풀려 있습니다' : `HTTP ${r.status}`)}`);
-    } catch (e) { alert(`잠금을 풀지 못했습니다 — ${e.message}`); }
+      if (!r.ok || !j.released) alert(`잠금을 풀지 못했습니다.\n${j.refused || j.detail || (r.ok ? '이미 풀려 있습니다' : `HTTP ${r.status}`)}`);
+    } catch (e) { alert(`잠금을 풀지 못했습니다.\n${e.message}`); }
     await loadSchemaBoard();
   }
 

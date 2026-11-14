@@ -441,7 +441,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       return;
     }
     if (b.dataset.cmp === 'loss') {
-      if (!confirm('압축으로 잊은 것 찾기 — 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 내가 보낸 말 20개당 약 0.4달러 · 1.5분이 들고, 끝나면 알림이 갑니다. 진행할까요?')) return;
+      if (!confirm('압축으로 잊은 것을 찾습니다.\n압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다.\n내가 보낸 말 20개당 약 0.4달러, 1.5분이 듭니다.\n끝나면 알림이 갑니다.\n진행할까요?')) return;
       b.disabled = true;
       const r = await fetch(`/api/sessions/${s.id}/losscheck`, { method: 'POST', headers: store.headers(true), body: '{}' });
       const j = await r.json().catch(() => ({}));
@@ -537,7 +537,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       if (!confirm(`/${si.name}을(를) 실행할까요? 이 세션의 대화 맥락이 사라지거나 세션이 끝날 수 있습니다.`)) return;
       command = true;
     } else if (si.kind === 'ask') {
-      command = confirm(`/${si.name}은(는) 모르는 명령입니다. CC 명령으로 실행할까요?\n[확인] 명령으로 실행 · [취소] 글자 그대로 보내기`);
+      command = confirm(`/${si.name}은(는) 모르는 명령입니다. CC 명령으로 실행할까요?\n[확인] 명령으로 실행\n[취소] 글자 그대로 보내기`);
     }
     $('pSend').disabled = true;
     const r = await store.sendInput(id, text, command);

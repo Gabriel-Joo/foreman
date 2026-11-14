@@ -527,7 +527,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
         r.summary_id ? `(요약 #${r.summary_id}의 「문서와 다른 지금」도 같이 넣었습니다)` : r.loss_check_id ? `(잃은 것 점검 #${r.loss_check_id}의 사라짐 · 약해짐도 같이 넣었습니다)` : ''}.` })));
     }
     if (act === 'loss-run') {
-      if (!confirm('압축으로 잊은 것 찾기 — 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 프롬프트 20개당 약 0.4달러 · 1.5분이 들고, 끝나면 알림이 갑니다. 진행할까요?')) return;
+      if (!confirm('압축으로 잊은 것을 찾습니다.\n압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다.\n내가 보낸 말 20개당 약 0.4달러, 1.5분이 듭니다.\n끝나면 알림이 갑니다.\n진행할까요?')) return;
       return run('압축으로 잊은 것 찾기', () => post(`/api/sessions/${id}/losscheck`).then((r) => ({ msg: `점검을 시작했습니다(#${r.loss_check_id}, ${r.model}). 끝나면 알림이 갑니다.` })));
     }
     if (act === 'loss-use') {
@@ -617,7 +617,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     // 쉬게 하기 · 이어서(11-09) — 실패하면 까닭(커밋 실패 · 뒤에서 도는 일 · 끝내기 확인 창 · resume 실패)을 그대로 띄운다
     if (act === 'rest') {
       const w = data.controls.worktree;
-      if (!confirm(`지금까지를 ${w.branch}에 커밋하고(커밋 안 한 변경 ${w.dirty.length}개${w.dirty.length ? ' — .env · .venv 링크는 넣지 않습니다' : ''}) 세션만 끝냅니다. 작업방은 남습니다. 나중에 [이어서] · [합치기] · [버리기]를 고릅니다. 쉬게 할까요?`)) return;
+      if (!confirm(`지금까지를 ${w.branch}에 커밋하고 세션만 끝냅니다.\n커밋 안 한 변경은 ${w.dirty.length}개입니다.${w.dirty.length ? ' .env와 .venv 링크는 넣지 않습니다.' : ''}\n작업방은 남습니다. 나중에 [이어서], [합치기], [버리기] 중에서 고릅니다.\n쉬게 할까요?`)) return;
       return run('커밋만 하고 끝내기', () => post(`/api/sessions/${id}/rest`).then((r) => ({ ok: !!r.ok, bad: !r.ok, msg: r.note || (r.ok ? '쉬게 했습니다.' : '쉬게 하지 못했습니다.') })));
     }
     if (act === 'rest-resume') {
@@ -630,7 +630,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       if (act === 'mp-skip') return run('나중에', () => post(`/api/sessions/${id}/merge-prep`, { action: 'skip' }).then((r) => ({ ok: true, msg: r.note })));
       const ask = card.conflict && card.conflict.length
         ? `${card.branch}가 ${card.base}와 충돌합니다(${card.conflict.join(', ')}). 합치지 않고 ${card.live ? '그 세션에 main을 가져와 풀라고 보냅니다' : '관리자에게 풀라고 넘깁니다'}. 진행할까요?`
-        : `${card.live ? '세션을 끝내고 ' : ''}${card.branch}의 커밋 ${card.ahead}개를 ${card.base}에 합칩니다${card.ff ? '' : '(rebase 뒤)'}. push는 하지 않습니다 — 시험 · push는 관리자가 합니다. 합칠까요?`;
+        : `${card.live ? '세션을 끝내고 ' : ''}${card.branch}의 커밋 ${card.ahead}개를 ${card.base}에 합칩니다${card.ff ? '' : '(rebase 뒤)'}. push는 하지 않습니다.\n시험과 push는 관리자가 합니다.\n합칠까요?`;
       if (!confirm(ask)) return;
       return run('합치기 승인', () => post(`/api/sessions/${id}/merge-prep`, { action: 'merge' })
         .then((r) => ({ ok: !!r.ok, bad: !r.ok && r.status === 'failed', msg: r.note || (r.ok ? '합쳤습니다.' : '합치지 않았습니다.') })));
@@ -681,8 +681,11 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
   // ── 한 흐름(11-11, moveflow.js) — 잊은 것 찾기 → 문서 후보 → 고르기 → 쓰기 → 요약 → 새 세션 → 옛 세션 끝내기 ──
   let moveBusy = false;
   async function startMove() {
-    if (!confirm('새 세션으로 옮기기 — 압축으로 잊은 것 찾기(내가 보낸 말 20개당 약 0.4달러 · 1.5분)부터 시작해, 문서에 넣을 후보를 보여 드립니다. '
-      + '고르시면 문서에 쓰고 요약 · 새 세션 · 옛 세션 끝내기까지 이어서 합니다. 진행할까요?')) return;
+    if (!confirm('지금 세션을 끝내고 같은 자리에 새 세션을 띄웁니다.\n'
+      + '먼저 압축으로 잊은 것을 찾아 문서에 넣을 후보를 보여드리니\n'
+      + '고르기만 하면 됩니다. 나머지는 알아서 이어서 합니다.\n'
+      + '찾는 데 내가 보낸 말 20개당 약 0.4달러, 1.5분 걸립니다.\n'
+      + '진행할까요?')) return;
     note = null; promDraft = {};
     try {
       const r = await api('POST', `/api/sessions/${sid}/losscheck`);
@@ -752,7 +755,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (!c) return;
     if (c.move_flow && c.live && c.can.summary) return startMove();     // 11-11 한 흐름(끝난 세션은 옛 흐름 — 문서에 쓸 세션이 없다)
     const live = c.live && c.can.summary;
-    if (!live && !(c.can.headless && confirm('끝난 세션입니다. 잠깐 불러 요약을 받습니다 — 그 세션의 맥락을 다시 읽느라 토큰을 씁니다(식은 맥락은 비쌉니다). 진행할까요?'))) {
+    if (!live && !(c.can.headless && confirm('끝난 세션입니다. 잠깐 불러 요약을 받습니다.\n그 세션의 맥락을 다시 읽느라 토큰을 씁니다(식은 맥락은 비쌉니다).\n진행할까요?'))) {
       if (!live && !c.can.headless) { note = { bad: true, msg: `옮기기를 시작할 수 없습니다 —${c.why || '지금은 요약을 받을 수 없습니다'}` }; draw(); }
       return;
     }
