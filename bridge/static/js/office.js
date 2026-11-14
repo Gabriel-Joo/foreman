@@ -8,7 +8,7 @@ import { createSidePanel } from './opanel.js';
 import { mountNewSession } from './newsession.js';
 import { mountTodoInbox } from './todoinbox.js';
 import { coderJobs, coderBubble, isCoder, REST_DAYS } from './coder.js';
-import { roleTag, sessionName, needMark, mergeWaits, roleNameInk } from './render.js';
+import { roleTag, sessionName, needMark, mergeWaits, roleNameInk, bgLine, bgTip } from './render.js';
 import { PROBE } from './store.js';
 import { showTip, hideTip, themeTips, attachDomTips, textTip, softEsc, tipAudit as tipAuditOf } from './tip.js';
 import { buildGrid, findPath, footprint, nearestFree, RES } from './walk.js';
@@ -2714,7 +2714,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (n) lines.push([`서브에이전트 ${n}`, P.act]);
     // 백그라운드 Bash · Monitor — "IDLE + 백그라운드 n개"(README 3.11). 일꾼 줄이 있으면 그 아래
     const bg = a.kind === 'session' && a.s ? a.s.background || [] : [];
-    if (bg.length) lines.push([`뒤에서 도는 일 ${bg.length}`, P.act]);
+    if (bg.length) { const bl = bgLine(bg); lines.push([bl.text, bl.stalled ? P.warn : P.act]); }   // 11-14 오래 되면 「· 2시간째 · 출력 멈춤」
     // 구역 이름표 · 앞서 그린 이름과 겹치면 비켜 그린다(11-06 — 글씨를 키우자 오피스 1024에서 서버룸 사람 이름이 「서버룸」을 덮었다).
     // 후보: 발밑(기본) → 겹친 칸의 아래 · 왼쪽 · 오른쪽. 사람에게서 멀어지지 않게 두 줄 높이 · 이름 폭 안에서만.
     // 그래도 겹치면 이름을 앞 10자로 줄여 한 번 더(나란히 앉은 서기 둘의 긴 이름)
@@ -3704,7 +3704,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       return `<div class="tip-h">${esc(roleTag(roleOf(s)))} 세션 ${s.id}</div><div class="tip-b">${esc(a.name)}</div>${who}<div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', WAITING: '기다리는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[vs] || vs)}${
         a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
         s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎${vs === 'WAITING' ? ' — 둘레의 작은 캐릭터' : ''}${(s.subagent_descs || []).map((d) => `<div class="tip-s">· ${esc(short(d, 50))}</div>`).join('')}</div>` : ''}${
-        bg.length ? `<div>뒤에서 도는 일 ${bg.length}개(백그라운드 명령)${vs === 'WAITING' ? ' — 머리 위 어두운 상자의 도는 막대 「|」' : ''}${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}</div>`).join('')}</div>` : ''}${
+        bg.length ? `<div>뒤에서 도는 일 ${bg.length}개(백그라운드 명령)${vs === 'WAITING' ? ' — 머리 위 어두운 상자의 도는 막대 「|」' : ''}${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}<br>&nbsp;&nbsp;${esc(bgTip(x))}</div>`).join('')}</div>` : ''}${
         a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝났는지 모름(빨간 「…」) — 끝 신호가 오지 않았습니다. 대화창을 확인하거나 [작업 중단]을 누릅니다.' }[a.act.flag] || a.act.flag)}</div>` : ''}${
         needMark(s) ? `<div class="tip-s">${esc(needMark(s).tip)}</div>` : ''}${
         a.subHidden ? `<div class="tip-s">+${a.subHidden} — 서브에이전트가 많아 화면에 다 그리지 않고 접은 수입니다.</div>` : ''}${

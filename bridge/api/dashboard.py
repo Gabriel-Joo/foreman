@@ -61,13 +61,17 @@ def _started(sessions_dir: Any, pid: int) -> datetime | None:
     return datetime.fromtimestamp(ms / 1000, UTC).replace(tzinfo=None) if isinstance(ms, (int, float)) else None
 
 
-def background_running(rows: list[tuple[Any, ...]], started: datetime | None) -> list[dict[str, Any]]:
-    """bg_start(끝 알림 없는 것) 중 지금 프로세스가 뜬 뒤에 시작한 것만 — [{task, tool, description, since}]."""
+def background_running(rows: list[tuple[Any, ...]], started: datetime | None, cc_session_id: str | None = None) -> list[dict[str, Any]]:
+    """bg_start(끝 알림 없는 것) 중 지금 프로세스가 뜬 뒤에 시작한 것만 — [{task, tool, description, since, out_changed}].
+    out_changed = 출력 파일(tasks/<task>.output)이 마지막으로 바뀐 때(11-14 — 오래 도는 일이 멈췄는지 보이려고, 못 찾으면 None).
+    경과는 화면이 since로 계산한다(서버는 매번 다시 안 만들어도 되게)."""
+    from bridge.stallwatch import BG_SKIP_TOOLS, bg_output_mtime
     out = []
     for task, tool, desc, ts in rows:
         if started is not None and ts is not None and ts < started:
             continue
-        out.append({"task": task, "tool": tool, "description": desc, "since": _iso(ts)})
+        mt = bg_output_mtime(cc_session_id, task) if cc_session_id and tool not in BG_SKIP_TOOLS else None
+        out.append({"task": task, "tool": tool, "description": desc, "since": _iso(ts), "out_changed": _iso(mt)})
     return out
 
 
@@ -650,7 +654,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "subagents_running": len(subs.get(sid, [])),
             "subagent_descs": [d for d in subs.get(sid, []) if d][:10],
             # 턴이 끝나도 도는 일 — 백그라운드 Bash · Monitor. 상태 값은 늘리지 않고(README 3.11) 화면이 "기다림"으로 그린다
-            "background": background_running(bgs.get(sid, []), _started(s.sessions_dir, ls.pid) if ls else None)[:10],
+            "background": background_running(bgs.get(sid, []), _started(s.sessions_dir, ls.pid) if ls else None, cc)[:10],
             "tokens": {"input": int(tk[0] or 0) + int(tk[2] or 0) + int(tk[3] or 0), "output": int(tk[1] or 0),
                        "today_output": int(tk[4] or 0), "today_input": int(tk[5] or 0),
                        "subagent_input": int(st_[0] or 0), "subagent_output": int(st_[1] or 0),

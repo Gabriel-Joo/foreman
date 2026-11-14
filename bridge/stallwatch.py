@@ -13,6 +13,9 @@ CC는 스스로 심장박동을 보내지 않는다 — sessions/<pid>.json의 u
 - exit_confirm CC 끝내기 확인 창("Background work is running … Exit and stop tasks")이 떠 있다 — 사람 답을 기다리며 멈춤
               (README 「세션이 끝나지 않고 CC 끝내기 확인 창에 걸린 것」)
 - long        한 작업이 LONG 넘게 — 화면에만(알리지 않는다, 긴 일은 정상일 수 있다)
+- bg_long     뒤에서 도는 일(백그라운드 Bash)이 BG_LONG 넘게 끝 알림 없이 돈다(11-14, 11-13 330의 pytest가 2시간 10분 멈춘 채 돌았다).
+              세션이 턴을 닫고 쉬어도 잰다. 출력 파일이 BG_QUIET 안에 바뀌었으면 정상(계속 일하는 중), 안 바뀌었으면 「멈췄을 수 있음」.
+              Monitor는 일부러 오래 도는 것이라 뺀다. 알림 열쇠 `stall:bg_long:<세션>:<task>`
 
 알림: kind마다 ALERT_AFTER를 넘으면 텔레그램 한 번(notification.rule 키 `stall:<kind>:<세션>:<시작 시각>` — 브리지를 다시 띄워도 한 번).
 exit_confirm의 시작 시각은 브리지 메모리(처음 본 때)라, 다시 띄우면 한 번 더 갈 수 있다.
@@ -21,7 +24,9 @@ exit_confirm의 시작 시각은 브리지 메모리(처음 본 때)라, 다시 
 from __future__ import annotations
 
 import asyncio
+import glob
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -47,7 +52,11 @@ LOOP_PROGRESS = {"Edit", "MultiEdit", "Write", "NotebookEdit"}
 LOOP_PROGRESS_MCP = re.compile(r"^mcp__.*(update|create|edit|write|append|insert|replace|move|delete)", re.I)
 LONG = timedelta(hours=2)
 EXIT_RE = re.compile(r"Background work is running|will stop when you exit|Exit and stop tasks")
-ALERT_AFTER = {"died": timedelta(0), "silent": timedelta(0), "loop": timedelta(0), "exit_confirm": timedelta(minutes=2)}
+BG_LONG = timedelta(minutes=30)      # 뒤에서 도는 일이 이만큼 지나야 본다(11-14 — pytest 전체는 2~3분, 길어야 10분)
+BG_QUIET = timedelta(minutes=15)     # 출력 파일이 이만큼 안 바뀌면 멈췄을 수 있다(점 하나씩 찍는 시험도 15분 비는 일은 드물다)
+BG_SKIP_TOOLS = {"Monitor"}          # 일부러 오래 도는 것
+ALERT_AFTER = {"died": timedelta(0), "silent": timedelta(0), "loop": timedelta(0), "exit_confirm": timedelta(minutes=2),
+               "bg_long": timedelta(0)}
 
 LABEL = {
     "died": "작업 중에 끊김",
@@ -55,6 +64,7 @@ LABEL = {
     "loop": "같은 자리에서 맴돎",
     "exit_confirm": "끝내기 확인 창에서 멈춤",
     "long": "긴 작업",
+    "bg_long": "뒤에서 도는 일이 오래 걸림",
 }
 
 
@@ -71,6 +81,59 @@ class Sample:
     errors: int = 0
     screen: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+    # 끝 알림 없는 뒤에서 도는 일 — [{task, tool, description, since, out_mtime}] (judge_bg가 본다)
+    bg: list[dict[str, Any]] = field(default_factory=list)
+
+
+def bg_output_mtime(cc_session_id: str | None, task: str | None) -> datetime | None:
+    """뒤에서 도는 일의 출력 파일(/tmp/claude-<uid>/<폴더>/<CC 세션>/tasks/<task>.output)이 마지막으로 바뀐 때(UTC, 없으면 None).
+    task · 세션 id는 DB 값이라 글자를 가려 받고, 찾는 곳은 내 /tmp/claude-<uid> 아래뿐이다."""
+    if not cc_session_id or not task or not re.fullmatch(r"[\w-]+", cc_session_id) or not re.fullmatch(r"[\w-]+", task):
+        return None
+    for p in glob.glob(f"/tmp/claude-{os.getuid()}/*/{cc_session_id}/tasks/{task}.output"):
+        try:
+            return datetime.fromtimestamp(os.stat(p).st_mtime, UTC).replace(tzinfo=None)
+        except OSError:
+            continue
+    return None
+
+
+def judge_bg(s: Sample, now: datetime) -> list[dict[str, Any]]:
+    """뒤에서 도는 일이 오래 걸리는지 — 일마다 [{kind: bg_long, label, since, detail, key, task, stalled}]. 살아 있는 세션만.
+    - BG_LONG 안이면 아무것도 없다 · Monitor는 뺀다
+    - 출력 파일이 BG_QUIET 안에 바뀌었으면 계속 일하는 중이라 정상(오래 걸리는 시험도 점은 찍는다)
+    - 안 바뀌었으면 「멈췄을 수 있음」(stalled). 출력 파일을 못 찾으면 오래 걸린다는 것만 말한다"""
+    out: list[dict[str, Any]] = []
+    if not s.live:
+        return out
+    for b in s.bg:
+        since = b.get("since")
+        if not since or b.get("tool") in BG_SKIP_TOOLS or now - since < BG_LONG:
+            continue
+        mt = b.get("out_mtime")
+        if mt is not None and now - mt < BG_QUIET:
+            continue
+        name = (b.get("description") or b.get("task") or "").strip()[:60]
+        run = fmt_elapsed(now - since)
+        if mt is None:
+            detail = f"「{name}」이 {run}째 끝 알림 없이 돕니다 — 출력 파일을 찾지 못했습니다"
+        else:
+            detail = f"「{name}」이 {run}째 돌고 출력이 {fmt_elapsed(now - mt)}째 그대로입니다 — 멈췄을 수 있습니다"
+        out.append({"kind": "bg_long", "label": LABEL["bg_long"], "since": since, "detail": detail,
+                    "key": f"stall:bg_long:{s.sid}:{b.get('task')}", "task": b.get("task"), "stalled": mt is not None})
+    return out
+
+
+def fmt_elapsed(d: timedelta) -> str:
+    """경과를 사람 말로 — 45분 · 2시간 10분 · 1일 3시간"""
+    m = max(int(d.total_seconds() // 60), 0)
+    if m < 60:
+        return f"{m}분"
+    h, mm = divmod(m, 60)
+    if h < 24:
+        return f"{h}시간" + (f" {mm}분" if mm else "")
+    dd, hh = divmod(h, 24)
+    return f"{dd}일" + (f" {hh}시간" if hh else "")
 
 
 def judge(s: Sample, now: datetime, exit_since: datetime | None = None) -> list[dict[str, Any]]:
@@ -98,6 +161,7 @@ def judge(s: Sample, now: datetime, exit_since: datetime | None = None) -> list[
             add("loop", s.turn_started, f"30분 안에 도구가 {s.errors}번 실패했습니다")
         if now - s.turn_started >= LONG:
             add("long", s.turn_started, f"한 작업이 {int((now - s.turn_started).total_seconds() // 60)}분째입니다")
+    out += judge_bg(s, now)
     return out
 
 
@@ -165,6 +229,12 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat(timespec="seconds") + "Z" if dt else None
 
 
+def _proc_started(sessions_dir: Any, pid: int) -> datetime | None:
+    """sessions/<pid>.json의 startedAt(UTC) — 대시보드 background_running의 「지금 프로세스가 뜬 뒤」 거르기와 같다."""
+    from bridge.api.dashboard import _started
+    return _started(sessions_dir, pid)
+
+
 class StallWatch:
     def __init__(self, engine: Any, notifier: Any, sessions_dir: Any, every_s: float = 60.0) -> None:
         self.engine, self.notifier, self.dir, self.every = engine, notifier, sessions_dir, every_s
@@ -218,6 +288,14 @@ class StallWatch:
                     "SELECT COUNT(*) n FROM event WHERE session_id = :s AND turn_id = :t AND type = 'tool_result' "
                     "AND status = 'error' AND ts > :w GROUP BY subagent_id ORDER BY n DESC LIMIT 1"),
                     {"s": sid, "t": tid, "w": now - LOOP_WINDOW})).scalar() or 0)
+            # 끝 알림 없는 뒤에서 도는 일(bg_start에 bg_end가 없는 것) — 대시보드 「뒤에서 도는 일」과 같은 기준(24시간 안)
+            bgs: dict[int, list[tuple[Any, ...]]] = {}
+            for bsid, task, tool, desc, bts in (await c.execute(text(
+                    f"SELECT s.session_id, s.target, s.tool, JSON_UNQUOTE(JSON_EXTRACT(s.payload, '$.description')), s.ts "
+                    f"FROM event s WHERE s.session_id IN {in_ids} AND s.type = 'bg_start' AND s.ts > :cut AND NOT EXISTS "
+                    f"(SELECT 1 FROM event e WHERE e.session_id = s.session_id AND e.type = 'bg_end' AND e.target = s.target) "
+                    f"ORDER BY s.ts"), {"cut": now - timedelta(hours=24)})).all():
+                bgs.setdefault(bsid, []).append((task, tool, None if desc in (None, "null") else desc, bts))
         out: list[Sample] = []
         meta: dict[int, tuple[Any, ...]] = {}
         for sid, cc, title, project, last_ts in rows:
@@ -227,8 +305,17 @@ class StallWatch:
             busy = bool(ls and self.status(self.dir, ls.pid) == "busy")
             screen = await self.screen(ls.pid) if ls and not busy else None    # 끝내기 확인 창은 일하지 않을 때 뜬다
             t = turns.get(sid)
+            started = _proc_started(self.dir, ls.pid) if ls and bgs.get(sid) else None
+            bg = []
+            for task, tool, desc, bts in bgs.get(sid, []) if ls else []:
+                if started is not None and bts is not None and bts < started:
+                    continue                              # 지금 프로세스가 뜨기 전 것은 죽었다(대시보드와 같은 거르기)
+                if tool in BG_SKIP_TOOLS or now - bts < BG_LONG:
+                    continue                              # 짧은 것은 출력 파일을 볼 필요가 없다
+                bg.append({"task": task, "tool": tool, "description": desc, "since": bts,
+                           "out_mtime": await asyncio.to_thread(bg_output_mtime, cc, task)})
             out.append(Sample(sid=sid, live=bool(ls), busy=busy, turn_started=t[1] if t else None, last_event=last_ts,
-                              last_tool=last_tool.get(sid), same=same.get(sid), errors=errs.get(sid, 0), screen=screen))
+                              last_tool=last_tool.get(sid), same=same.get(sid), errors=errs.get(sid, 0), screen=screen, bg=bg))
             meta[sid] = (title, project)
         return out, meta
 
@@ -249,7 +336,7 @@ class StallWatch:
             for f in found:
                 if f["kind"] not in ALERT_AFTER or now - (f["since"] or now) < ALERT_AFTER[f["kind"]]:
                     continue
-                key = f"stall:{f['kind']}:{s.sid}:{(f['since'] or now):%Y%m%d%H%M}"
+                key = f.get("key") or f"stall:{f['kind']}:{s.sid}:{(f['since'] or now):%Y%m%d%H%M}"
                 if await self._send(key, s.sid, meta.get(s.sid, (None, None)), f):
                     sent.append(key)
         for sid in list(self.exit_seen):
@@ -270,7 +357,8 @@ class StallWatch:
         what = {"died": "다시 띄우거나 [새로 띄우기]로 이어 갑니다",
                 "silent": "대화창에서 무엇이 도는지 보고, 필요하면 [작업 중단]을 누릅니다",
                 "loop": "그 세션에 다른 방법을 지시하거나 [작업 중단]을 누릅니다",
-                "exit_confirm": "대화창에서 고릅니다 — 뒤에서 도는 일이 끝나도 되면 1, 남기려면 3"}.get(f["kind"], "")
+                "exit_confirm": "대화창에서 고릅니다 — 뒤에서 도는 일이 끝나도 되면 1, 남기려면 3",
+                "bg_long": "대화창에서 그 일을 보고, 멈췄으면 세션에 멈추라고 지시합니다"}.get(f["kind"], "")
         msg = "\n".join([f"{prefix} ⏸ {f['label']} — 「{title or sid}」(세션 {sid})", f"▶ {f['detail']}", what])
         log.warning("멈춤 알림: 세션 %s %s — %s", sid, f["kind"], f["detail"][:120])
         self.notifier.send_direct(project, "stall", sid, msg, rule=key)

@@ -176,6 +176,35 @@ export function ago(ts) {
   if (s < 86400) return `${Math.floor(s / 3600)}시간 전`;
   return `${Math.floor(s / 86400)}일 전`;
 }
+// 뒤에서 도는 일의 경과(11-14, 서버 bridge/stallwatch.py BG_LONG · BG_QUIET와 같은 기준) — 45분 · 2시간 10분 · 1일 3시간
+export const BG_LONG_MIN = 30, BG_QUIET_MIN = 15;
+export function elapsedText(ms) {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  if (m < 60) return `${m}분`;
+  const h = Math.floor(m / 60), r = m % 60;
+  if (h < 24) return `${h}시간${r ? ` ${r}분` : ''}`;
+  return `${Math.floor(h / 24)}일${h % 24 ? ` ${h % 24}시간` : ''}`;
+}
+// 일 하나 — {run: 경과 글, long: 오래 됨, quiet: 출력이 멈춤(마지막 변경이 BG_QUIET 넘게 전), changed: 마지막 변경 글(모르면 '')}
+// Monitor는 일부러 오래 도는 것이라 long · quiet을 켜지 않는다
+export function bgItem(x, now = Date.now()) {
+  const run = now - Date.parse(x.since), mt = x.out_changed ? Date.parse(x.out_changed) : null;
+  const watched = x.tool !== 'Monitor';
+  return { run: elapsedText(run), long: watched && run >= BG_LONG_MIN * 60000,
+    quiet: watched && mt != null && now - mt >= BG_QUIET_MIN * 60000, changed: mt != null ? `${elapsedText(now - mt)} 전` : '' };
+}
+// 이름표 아래 줄 「뒤에서 도는 일 N」 — 오래 된 일이 있으면 가장 오래된 것의 경과를 붙인다(「2시간째 · 출력 멈춤」). 없으면 수만
+export function bgLine(bg, now = Date.now()) {
+  const items = bg.map((x) => bgItem(x, now)), old = bg.findIndex((_, i) => items[i].long);
+  if (old < 0) return { text: `뒤에서 도는 일 ${bg.length}`, stalled: false };
+  const stalled = items.some((i) => i.long && i.quiet);
+  return { text: `뒤에서 도는 일 ${bg.length} · ${items[old].run}째${stalled ? ' · 출력 멈춤' : ''}`, stalled };
+}
+// 호버 — 일마다 한 줄: 시작 시각 · 경과 · 출력 마지막 변경
+export function bgTip(x, now = Date.now()) {
+  const i = bgItem(x, now);
+  return `시작 ${clock(x.since)} · ${i.run}째 · ${x.tool === 'Monitor' ? '감시라 오래 돌아도 정상입니다' : i.changed ? `출력 마지막 변경 ${i.changed}` : '출력 파일을 찾지 못했습니다'}`;
+}
 // 대화의 시각은 "n분 전"이 아니라 시계 — 10초마다 글이 바뀌면 대화를 다시 그려야 해서 읽던 자리 · 고른 글자가 날아간다
 export function clock(ts) {
   if (!ts) return '';
