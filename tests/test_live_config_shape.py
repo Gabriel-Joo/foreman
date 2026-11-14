@@ -54,7 +54,6 @@ def test_usage_shape():
     u = usage_config(CFG / "usage.toml")
     assert u.prices and all({"input", "output"} <= set(p) for p in u.prices.values())
     assert u.limits and all(x.key and x.match and x.window_h > 0 for x in u.limits)
-    assert u.credits and u.credits["as_of"]               # 사람이 넣는 칸(11-09) — 화면이 이 칸으로 「갱신 필요」를 판단한다
 
 
 def test_pipeline_shape():

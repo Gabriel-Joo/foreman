@@ -14,8 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import text
 
 from bridge.api.auth import require_api_token
-from bridge.usage import (UsageConfig, breakdown, credit_signal, credit_status, credit_view, limit_status, load_config,
-                          parse_contrib)
+from bridge.usage import UsageConfig, breakdown, limit_status, load_config, over_limits, parse_contrib
 
 router = APIRouter(prefix="/api/usage", dependencies=[Depends(require_api_token)])
 _cache: dict[str, Any] = {"at": 0.0, "key": None, "data": None}
@@ -87,7 +86,8 @@ _brief: dict[str, Any] = {"at": 0.0, "data": None}
 
 @router.get("/brief")
 async def brief(request: Request) -> dict[str, Any]:
-    """머리 칩 · 캐릭터 열기용(가볍게, 15초 캐시) — 한도별 % · 읽기 상태 · 지난 30분 환산액 상위 세션 셋(달러/시간)."""
+    """머리 칩 · 캐릭터 열기용(가볍게, 15초 캐시) — 한도별 % · 읽기 상태 · 지난 30분 환산액 상위 세션 셋(달러/시간) ·
+    100%를 넘은 한도(over — 「추가 요금으로 쓰는 중」 배지)."""
     if _brief["data"] is not None and time.monotonic() - _brief["at"] < 15.0:
         return _brief["data"]
     cfg = _cfg(request)
@@ -105,9 +105,8 @@ async def brief(request: Request) -> dict[str, Any]:
                        if isinstance(s["key"], int) and s["usd"] > 0][:3],
                # 11-09 /usage "What's contributing"(CC 추정 — 대략 · 이 기기 세션만 · 겹침 있음) — 사용량 호버에
                "contributing": parse_contrib(reading.get("contributing")),
-               # 11-09 추가 사용(크레딧) — CC가 한도에 닿을 때 남긴 글이 먼저(credit_signal), 사람이 넣은 값은 3일 안일 때만 참고
-               "credits": credit_view(await credit_signal(engine, cfg, now),
-                                      credit_status(cfg.credits, now.replace(tzinfo=UTC).astimezone(cfg.zone).date()))})
+               # 11-14 쓴 비율이 100%를 넘은 한도(머리 「추가 요금으로 쓰는 중」 배지) — 숫자만 본다. 없으면 빈 목록(배지 없음)
+               "over": over_limits(limits)})
     _brief.update(at=time.monotonic(), data=data)
     return data
 

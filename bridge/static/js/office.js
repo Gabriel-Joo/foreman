@@ -70,7 +70,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       <div class="otop-row otop-sub">
         <span id="oStat" class="ostat"></span>
         <a id="oUsage" class="ghost ousage" href="/usage" data-tip="한도 — 구독 사용 한도입니다. 누르면 사용량 화면에서 어디서 나가는지 봅니다.">한도</a>
-        <a id="oCredit" class="ghost ousage" href="/usage" hidden></a>
+        <a id="oOver" class="ghost ousage" href="/usage" hidden></a>
         <!-- 11-08 도형 · 클래식은 머리말에서 뺐다(사용자 — 안 쓴다). 주소 /?theme=plain · /classic으로는 그대로 열린다 -->
         <span class="otheme" role="group" aria-label="테마">${[['office', '오피스'], ['magic', '마법학교'], ['site', '현장']].map(([k, v]) => k === theme.name
           ? `<span class="oproj-b on" aria-current="true" title="${v} — 지금 테마입니다.">${v}</span>` : `<a class="oproj-b" href="/?theme=${k}" title="${v} — 이 테마로 바꿉니다.">${v}</a>`).join('')}</span>
@@ -192,40 +192,18 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     usageChip();
   }
   let usageTipRows = { lines: [], why: '' };
-  // 추가 사용(크레딧) 칩(11-09 사용자) — 판정은 CC가 한도에 닿을 때 남긴 글(서버 credit_signal): 막힘 · 이어 씀 · 모름.
-  // 사람이 넣은 값(config/usage.toml [credits])은 넣은 지 3일 안일 때만 호버에 금액으로 — 지나면 숫자를 감추고 "확인 필요"
-  function creditChip(cv) {
-    const el = document.getElementById('oCredit');
+  // 추가 요금 배지(11-14 사용자) — 쓴 비율이 100%를 넘은 한도(서버 over_limits)가 있을 때만 보인다. 숫자만 보고 정하니
+  // 지난 글을 붙잡지 않는다(전엔 CC가 한도에 닿을 때 남긴 글로 「막힘」을 판정해 결제로 풀린 뒤에도 며칠씩 남았다)
+  function overChip(over) {
+    const el = document.getElementById('oOver');
     if (!el) return;
-    el.hidden = !cv;
-    if (!cv) return;
-    const sig = cv.signal || {}, m = cv.manual;
-    const usd = (v) => `US$${Number(v).toFixed(2).replace(/\.00$/, '')}`;
-    const when = (iso) => {
-      const d = new Date(iso), now = new Date(), hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-      return d.toDateString() === now.toDateString() ? `오늘 ${hm}` : `${d.getMonth() + 1}월 ${d.getDate()}일 ${hm}`;
-    };
-    const money = m && cv.manual_fresh
-      ? [`크레딧 ${usd(m.balance_usd)} · 월간 한도 ${m.monthly_cap_usd != null ? usd(m.monthly_cap_usd) : '없음'} 중 ${usd(m.monthly_used_usd)} 사용`,
-        `자동 충전 ${m.auto_reload ? '켜짐' : '꺼짐'} — ${m.as_of} 직접 넣은 값(3일 지나면 감춤)`]
-      : [m ? `직접 넣은 금액은 ${m.as_of || '날짜 없음'} 값이라 감췄습니다 — 설정 > 사용량에서 보고 고치면 3일 보입니다` : '금액은 FOREMAN이 읽을 수 없습니다(설정 > 사용량에만 있음)'];
-    const seen = sig.at ? [`근거: ${when(sig.at)} CC가 남긴 글 — ${sig.text || ''}`] : [];
-    let cls = 'ghost ousage', label, tip;
-    if (sig.state === 'blocked') {
-      cls += ' bad'; label = `⛔ 추가 사용 막힘 · ${when(sig.at)}`;
-      tip = `추가 사용 막힘 — ${sig.why === 'spend' ? '월 지출 한도에 닿아 한도를 넘겨 이어 쓰지 못했습니다.' : '한도에 닿은 뒤 리셋까지 이어 쓴 응답이 없었습니다.'} 5시간 · 주간 한도에 닿으면 리셋까지 세션이 멈춥니다. 한도를 올렸다면 다음에 한도에 닿을 때 다시 판정합니다.`;
-    } else if (sig.state === 'flowing') {
-      cls += ' warn'; label = `추가 사용으로 이어 씀 · ${when(sig.since)}`;
-      tip = '추가 사용으로 이어 씀 — 한도에 닿은 뒤에도 응답이 이어졌습니다. 크레딧이 나가고 있을 수 있습니다.';
-    } else if (cv.blocked) {
-      cls += ' bad'; label = '⛔ 추가 사용 막힘(넣은 값)';
-      tip = '추가 사용 막힘 — 이번 달 한도에 닿은 적이 없어 직접 넣은 값으로 판정했습니다. 5시간 · 주간 한도에 닿으면 리셋까지 세션이 멈춥니다.';
-    } else {
-      label = '추가 사용 확인 필요';
-      tip = '추가 사용 확인 필요 — 이번 달 한도에 닿은 적이 없어 크레딧으로 이어 쓸 수 있는지 아직 모릅니다. 처음 한도에 닿을 때 FOREMAN이 판정합니다.';
-    }
-    el.className = cls; el.textContent = label;
-    el.dataset.tip = [tip, ...seen, ...money].join('\n');
+    const ls = Array.isArray(over) ? over : [];
+    el.hidden = !ls.length;
+    if (!ls.length) return;
+    el.className = 'ghost ousage warn';
+    el.textContent = '추가 요금으로 쓰는 중';
+    el.dataset.tip = '추가 요금으로 쓰는 중 — 한도를 100% 넘게 썼습니다. 넘은 만큼은 구독이 아니라 추가 사용 요금으로 나갑니다.\n'
+      + ls.map((l) => `${l.label} ${Math.round(l.pct)}%`).join('\n');
   }
   const usagePct = (l) => (l.est_pct ?? l.measured_pct);
   const usageMax = () => Math.max(0, ...((usage && usage.limits) || []).map((l) => usagePct(l) ?? 0));
@@ -290,11 +268,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     });
     if (contrib.length) lines.push('Claude Code가 어림한 값이고 이 컴퓨터의 세션만 셉니다. 한 요청이 서브에이전트이면서 MCP 서버를 쓰는 것처럼 여러 갈래에 함께 들어가므로 합이 100%가 되지 않습니다', ...contrib);
     usageTipRows = { lines, why };                     // 감독실 경고등 호버도 같은 줄을 쓴다(11-09)
-    creditChip(usage.credits);
+    overChip(usage.over);
     el.dataset.tip =`한도 — 구독 사용 한도를 몇 % 썼는지입니다. 세션마다 쌓인 대화 %(패널 머리줄)와는 다릅니다. "약"은 마지막으로 읽은 뒤 FOREMAN이 더해 본 추정입니다. 누르면 어디서 나가는지 봅니다.${why}\n${lines.join('\n')}`;
   }
   if (new URLSearchParams(location.search).get('demo')) {   // 시연 재생은 /api를 막는다 — 칩을 숨긴다(⚠로 찍히지 않게)
-    setTimeout(() => { for (const id of ['oUsage', 'oCredit']) { const el = document.getElementById(id); if (el) el.hidden = true; } }, 0);
+    setTimeout(() => { for (const id of ['oUsage', 'oOver']) { const el = document.getElementById(id); if (el) el.hidden = true; } }, 0);
   } else {
     setTimeout(loadUsage, 800);
     setInterval(loadUsage, 60000);                  // 읽기 사이 추정 %가 오르는 것 · 이벤트를 놓친 때

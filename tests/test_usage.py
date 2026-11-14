@@ -59,13 +59,6 @@ poll_s = 600
 fail_alert = 3
 tz = "Asia/Seoul"
 
-[credits]
-balance_usd = 0.0
-monthly_cap_usd = 50.0
-monthly_used_usd = 51.30
-auto_reload = false
-as_of = "2026-11-09"
-
 [prices.opus]
 input = 4.0
 output = 20.0
@@ -404,30 +397,22 @@ def test_alerts_thresholds_eta_once_and_after_restart(migrated_db):
     asyncio.run(go())
 
 
-def test_credit_status():
-    """11-09 사람이 넣은 크레딧 값 — 크레딧 0 · 월 한도 초과 · 자동 충전 꺼짐(지금 값)이면 막힘. 넣은 지 3일이 지나거나 달이 바뀌면
-    숫자를 믿지 않는다(stale — 화면은 숫자를 감추고 '확인 필요')."""
-    from datetime import date
+def test_over_limits():
+    """11-14 사용자 — 「추가 요금으로 쓰는 중」 배지는 쓴 비율이 100%를 넘은 한도가 있을 때만. 칩과 같은 수(추정, 없으면 측정)만 보고,
+    줄이 빠진 한도(absent)는 값이 없으니 셈에서 뺀다. 100%는 넘은 것이 아니다."""
+    from bridge.usage import over_limits
 
-    from bridge.usage import credit_status, credit_view
-    now_c = {"balance_usd": 0, "monthly_cap_usd": 50, "monthly_used_usd": 51.3, "auto_reload": False, "as_of": "2026-11-09"}
-    s = credit_status(now_c, date(2026, 11, 11))
-    assert s["blocked"] and not s["stale"] and s["room_usd"] == 0
-    s = credit_status(now_c, date(2026, 11, 12))                      # 3일 — 사람은 날짜를 안 본다
-    assert s["stale"] and not s["blocked"]
-    assert credit_status(now_c, date(2026, 12, 1))["stale"]           # 달이 바뀜
-    ok = {**now_c, "balance_usd": 20, "monthly_used_usd": 10}
-    s = credit_status(ok, date(2026, 11, 10))
-    assert not s["blocked"] and s["available_usd"] == 20               # 잔액 20, 한도 여유 40 → 20
-    assert credit_status({**ok, "auto_reload": True}, date(2026, 11, 10))["available_usd"] == 40
-    assert credit_status(None, date(2026, 11, 20)) is None
-    assert CFG.credits and CFG.credits["as_of"] == "2026-11-09"        # [credits] 칸을 읽는다(실제 설정에 칸이 있는지는 test_live_config_shape)
-    # 판정은 CC 한도 글이 먼저 — 넣은 값은 근거가 없을 때만(그것도 3일 안)
-    fresh = credit_status(now_c, date(2026, 11, 10))
-    assert credit_view({"state": "flowing"}, fresh)["blocked"] is False
-    assert credit_view({"state": "blocked"}, None)["blocked"] is True
-    assert credit_view({"state": "unknown"}, fresh)["blocked"] is True
-    assert credit_view({"state": "unknown"}, credit_status(now_c, date(2026, 11, 20)))["blocked"] is False
+    def lim(key, est, measured, absent=False, label=None):
+        return {"key": key, "label": label or key, "est_pct": est, "measured_pct": measured, "absent": absent}
+
+    assert over_limits([]) == []
+    assert over_limits([lim("a", 100.0, 100.0), lim("b", 42.0, 40.0)]) == []          # 100% 이하면 배지 없음
+    assert over_limits([lim("a", 104.36, 100.0, label="5시간 세션"), lim("b", 91.0, 90.0)]) == [
+        {"key": "a", "label": "5시간 세션", "pct": 104.4}]                             # 측정은 100에서 멈추고 추정이 넘는다
+    assert over_limits([lim("a", None, 101.0)]) == [{"key": "a", "label": "a", "pct": 101.0}]   # 추정이 없으면 측정
+    assert over_limits([lim("a", None, None)]) == []
+    # 줄 없는 한도 — limit_status가 값을 비우지만, 남은 값이 있어도 세지 않는다
+    assert over_limits([lim("a", 130.0, 130.0, absent=True), lim("b", 120.0, 100.0)]) == [{"key": "b", "label": "b", "pct": 120.0}]
 
 
 def test_parse_contrib():
@@ -446,66 +431,11 @@ def test_parse_contrib():
     assert parse_contrib(None) == []
 
 
-def test_credit_signal_from_cc_limit_messages(migrated_db):
-    """11-09 실측 모양 — 13:10 5시간 한도 → 13:13부터 응답이 이어짐(추가 사용) → 13:32 월 지출 한도(막힘). 2001-02월 시각 · 이 시험만의 세션"""
-    from bridge.usage import credit_signal
-    cfg = UsageConfig(poll_s=600, fail_alert=3, tz="Asia/Seoul", prices=CFG.prices, limits=[])
-    t0 = datetime(2001, 2, 5, 4, 10)                                   # UTC — KST 13:10
-
-    async def go():
-        eng = make_engine(Settings(mysql_database="foreman_test"))
-        try:
-            async with eng.begin() as c:
-                ch = (await c.execute(text("SELECT id FROM `character` LIMIT 1"))).scalar()
-                sid = (await c.execute(text(
-                    "INSERT INTO character_session (character_id, type, role, cc_session_id, title, wake_reason) "
-                    "VALUES (:c, 'agent', 'coder', :cc, '한도 시험', 'user')"), {"c": ch, "cc": str(uuid.uuid4())})).lastrowid
-
-            async def err(at, msg):
-                async with eng.begin() as c:
-                    await c.execute(text("INSERT INTO event (session_id, character_id, source, ts, type, status, payload) VALUES "
-                                         "(:s, :c, 'transcript', :t, 'error', 'error', :p)"),
-                                    {"s": sid, "c": ch, "t": at, "p": f'{{"text": "{msg}", "error": "rate_limit"}}'})
-
-            async def reply(at, model="claude-opus-5-5"):
-                async with eng.begin() as c:
-                    await c.execute(text("INSERT INTO message (id, model, token_input, token_output, created_at) VALUES "
-                                         "(:i, :m, 1, 1, :t)"), {"i": "zzmsg-" + uuid.uuid4().hex, "m": model, "t": at})
-
-            assert (await credit_signal(eng, cfg, t0 - timedelta(minutes=1)))["state"] == "unknown"     # 이번 달 근거 없음
-            await err(t0, "You've hit your 5-hour limit · resets 2:10pm (Asia/Seoul)")
-            await reply(t0, "<synthetic>")
-            s = await credit_signal(eng, cfg, t0 + timedelta(minutes=2))
-            assert s["state"] == "blocked" and s["why"] == "limit"                              # 아직 이어 쓴 응답 없음
-            await reply(t0 + timedelta(minutes=3))
-            s = await credit_signal(eng, cfg, t0 + timedelta(minutes=5))
-            assert s["state"] == "flowing" and s["since"] == t0 + timedelta(minutes=3)          # 한도 뒤에도 응답 — 추가 사용
-            await err(t0 + timedelta(minutes=22), "You've hit your monthly spend limit · raise it at https://claude.ai/settings/usage"
-                                                  "?from=cc_cli_limit_message · your 5-hour limit resets 2:10pm (Asia/Seoul)")
-            async with eng.begin() as c:                                   # 같은 때 StopFailure 훅(글 없음)도 error로 — 이것을 고르면 안 된다
-                await c.execute(text("INSERT INTO event (session_id, character_id, source, ts, type, status, payload) VALUES "
-                                     "(:s, :c, 'hook', :t, 'error', 'error', :p)"),
-                                {"s": sid, "c": ch, "t": t0 + timedelta(minutes=22, seconds=1),
-                                 "p": '{"error": "rate_limit", "hook_event_name": "StopFailure"}'})
-            await reply(t0 + timedelta(minutes=61))                          # 리셋(14:10 KST) 뒤 응답 — 추가 사용이 아니다
-            s = await credit_signal(eng, cfg, t0 + timedelta(minutes=70))
-            assert s["state"] == "blocked" and s["why"] == "spend"
-            assert (await credit_signal(eng, cfg, datetime(2001, 3, 2)))["state"] == "unknown"     # 달이 바뀌면 다시 모름
-        finally:
-            async with eng.begin() as c:
-                await c.execute(text("DELETE FROM message WHERE id LIKE 'zzmsg-%'"))
-                await c.execute(text("DELETE FROM event WHERE session_id = :s"), {"s": sid})
-                await c.execute(text("DELETE FROM character_session WHERE id = :s"), {"s": sid})
-            await eng.dispose()
-    asyncio.run(go())
-
-
-def test_alerts_90_when_credits_blocked(migrated_db):
-    """추가 사용이 막혀 있으면 90%에 한 번 더(100%가 곧 멈춤) — 글에 막힌 까닭과 '마무리'."""
+def test_alerts_no_90_threshold(migrated_db):
+    """11-14 — 「추가 사용이 막혀 있으면 90%에 한 번 더」를 뺐다(막힘 판정을 지움). 92%면 80% 알림 하나, 추가 사용 글 없음."""
     tag = "zz" + uuid.uuid4().hex[:6]
     lim5 = Limit(key=f"{tag}_5h", label="5시간", match="Current session", window_h=5)
-    cr = {"balance_usd": 0, "monthly_cap_usd": 50, "monthly_used_usd": 51.3, "auto_reload": False, "as_of": "2001-01-01"}
-    cfg = UsageConfig(poll_s=600, fail_alert=3, tz="UTC", prices=CFG.prices, limits=[lim5], credits=cr)
+    cfg = UsageConfig(poll_s=600, fail_alert=3, tz="UTC", prices=CFG.prices, limits=[lim5])
     now = datetime(2001, 1, 1, 12, 0)
 
     async def reader():
@@ -518,9 +448,9 @@ def test_alerts_90_when_credits_blocked(migrated_db):
             mon = UsageMonitor(eng, cfg, n, reader=reader)
             assert await mon.poll(now)
             sent = await mon.check_alerts(now)
-            assert f"usage:{lim5.key}:90:01011500" in sent
+            assert sent == [f"usage:{lim5.key}:80:01011500"]
             msg = next(m for _, m in n.sent if "5시간 사용량" in m)
-            assert msg.startswith("[FOREMAN] 🛑") and "추가 사용이 막혀 있습니다" in msg and "마무리할 일을 먼저 하세요" in msg
+            assert msg.startswith("[FOREMAN] ⚠") and "추가 사용" not in msg and "한도에 닿으면 세션이 말없이 멈춘다" in msg
         finally:
             async with eng.begin() as c:
                 await c.execute(text("DELETE FROM usage_observation WHERE limit_key LIKE :k"), {"k": tag + "%"})
