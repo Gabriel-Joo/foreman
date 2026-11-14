@@ -296,6 +296,7 @@ button.rolebadge.fixed:hover { background:color-mix(in srgb, var(--rc) 16%, tran
 .tip-n { margin-top:6px; padding-top:5px; border-top:1px solid color-mix(in srgb, currentColor 25%, transparent); font-variant-numeric:tabular-nums; }
 /* 숫자 줄 — 전엔 nowrap + …로 잘랐다(11-09 사용량 호버 "11월 10일 …"). 길면 줄을 바꾸고 이어지는 줄은 들여 쓴다 */
 .tip-n > div { padding-left:1em; text-indent:-1em; }
+.tip-n > div.sub { padding-left:2em; }
 .tip-d > div + div { margin-top:2px; }
 .tip-t { opacity:.7; font-size:calc(15px * var(--tz)); font-weight:400; }
 .tip-s { margin-top:3px; font-weight:700; }

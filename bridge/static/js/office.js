@@ -279,13 +279,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     };
     const contrib = (usage.contributing || []).flatMap((b) => {
       const name = span[b.span] || b.span;
+      // 같은 기간은 머리 한 줄 아래에 항목을 나란히(11-14 사용자). 항목 줄은 앞 빈칸 둘 — tip.js가 들여 쓴다
       const row = (what, s) => {
         if (!s) return [];
         const sh = shares(s);
-        return sh ? sh.map((x) => `지난 ${name} 동안 쓴 양 가운데 약 ${x.pct}%에 ${what}(${x.name})가 들어 있습니다`)
-          : [`지난 ${name} 동안 ${what}: ${s}`];
+        return sh ? sh.map((x) => `  ${what}(${x.name})가 약 ${x.pct}%를 썼습니다`) : [`  ${what}: ${s}`];
       };
-      return [...row('서브에이전트', b.subagents), ...row('MCP 서버', b.mcp)];
+      const items = [...row('서브에이전트', b.subagents), ...row('MCP 서버', b.mcp)];
+      return items.length ? [`지난 ${name} 동안 쓴 양 가운데`, ...items] : [];
     });
     if (contrib.length) lines.push('Claude Code가 어림한 값이고 이 컴퓨터의 세션만 셉니다. 한 요청이 서브에이전트이면서 MCP 서버를 쓰는 것처럼 여러 갈래에 함께 들어가므로 합이 100%가 되지 않습니다', ...contrib);
     usageTipRows = { lines, why };                     // 감독실 경고등 호버도 같은 줄을 쓴다(11-09)

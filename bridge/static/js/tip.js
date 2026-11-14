@@ -53,12 +53,14 @@ const esc = softEsc;
 // 글 툴팁 모양 하나(11-09): 첫 줄 "제목 — 설명", 그 아래 줄(\n)은 숫자 — 한 줄에 하나씩, 구분선 아래에.
 //   "사용량 — 구독 한도를 몇 % 썼는지입니다.\n5시간 51% — 02:10 리셋\n주간 5% — 11월 15일 22:00 리셋"
 export function textTip(t) {
-  const [head, ...nums] = String(t).split('\n').map((x) => x.trim());
+  const raw = String(t).split('\n');
+  const [head, ...nums] = raw.map((x) => x.trim());
+  const sub = raw.slice(1).filter((x) => x.trim()).map((x) => /^ {2}\S/.test(x));   // 앞 빈칸 둘로 시작하는 숫자 줄은 한 칸 들여 쓴다(11-14 — 같은 기간 아래 항목)
   const i = head.indexOf(' — ');
   const top = i > 0 ? `<div class="tip-b">${esc(head.slice(0, i))}</div><div class="tip-d">${sentences(head.slice(i + 3))}</div>`
     : `<div class="tip-d">${sentences(head)}</div>`;
   const rows = nums.filter(Boolean);
-  return top + (rows.length ? `<div class="tip-n">${rows.map((x) => `<div>${esc(x)}</div>`).join('')}</div>` : '');
+  return top + (rows.length ? `<div class="tip-n">${rows.map((x, k) => `<div${sub[k] ? ' class="sub"' : ''}>${esc(x)}</div>`).join('')}</div>` : '');
 }
 // 설명은 문장마다 줄(11-09 — 긴 한 문단이 "넘쳐 쓸 / 크레딧이"처럼 뜻 가운데서 끊겼다). "…습니다." · "…다." · "?" 뒤 공백에서 나눈다
 export function splitSentences(t) {
