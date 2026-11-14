@@ -34,7 +34,7 @@ const TABS = [['convo', '대화'], ['act', '활동'], ['sess', '세션 정리']]
 const TAB_TIP = {
   sess: '세션 정리 — 세션 정보 · 넘기기 · 합치기 · 끝내기 · 승인 기록입니다.',
 };
-const CC_TIP = '세션 화면 — 이 세션의 세션 창을 띄우는 창으로 봅니다. 권한 · 계획 승인 · 고르기 창도 보이고, 여기서 친 키(화살표 · Esc · 숫자 · Enter)는 CC에 바로 갑니다.';
+const CC_TIP = '세션 화면 — 이 세션의 Claude Code 창을 띄우는 창으로 봅니다. 권한 · 계획 승인 · 고르기 창도 보이고, 여기서 친 키(화살표 · Esc · 숫자 · Enter)는 CC에 바로 갑니다.';
 const ls = { get(k) { try { return localStorage.getItem(k); } catch { return null; } },
              set(k, v) { try { localStorage.setItem(k, v); } catch { /* 저장 못 해도 이 탭에서는 된다 */ } },
              del(k) { try { localStorage.removeItem(k); } catch { /* 없어도 된다 */ } } };

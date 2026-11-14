@@ -157,7 +157,7 @@ async def cc_state(sid: int, request: Request) -> dict[str, Any]:
     try:
         r = await m.cc_target(sid)
     except Refused as e:
-        r = {"ok": False, "reason": f"세션 창을 확인하지 못했습니다 — {e}", "running": m.cc_running}
+        r = {"ok": False, "reason": f"Claude Code 창을 확인하지 못했습니다 — {e}", "running": m.cc_running}
     if r.get("ok") and not r.get("running"):
         r = {**r, "ok": False, "reason": "세션 화면 서버(ttyd)가 떠 있지 않습니다 — 브리지 로그(.run/ttyd-cc.log)를 확인해 주세요"}
     r.pop("pane", None)            # 화면은 tmux 창 대상을 몰라도 된다(붙을 곳은 브리지가 정한다)

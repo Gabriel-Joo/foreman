@@ -29,13 +29,13 @@ export function createCcWindow(store) {
   box.hidden = true;
   box.setAttribute('role', 'dialog');
   box.setAttribute('aria-label', '세션 화면');
-  const GRIP_TIP = '크기 — 끌어 바꿉니다. 놓을 때 세션 창도 이 크기로 맞추고, 다음에 열 때 같은 크기로 엽니다.';
+  const GRIP_TIP = '크기 — 끌어 바꿉니다. 놓을 때 Claude Code 창도 이 크기로 맞추고, 다음에 열 때 같은 크기로 엽니다.';
   box.innerHTML = `
     <header class="ccwin-head" data-tip="세션 화면 — 머리줄을 끌어 옮깁니다. 크기는 네 모서리를 끌어 바꿉니다.">
       <b class="ccwin-title"></b><span class="ccwin-info small muted"></span>
       <button type="button" class="ghost small ccwin-sync" hidden></button>
       <button type="button" class="ghost small ccwin-reload" data-tip="다시 붙기 — 세션 화면에 다시 붙습니다. 끊김 표시가 남았을 때 누릅니다.">다시 붙기</button>
-      <button type="button" class="ghost small ccwin-x" aria-label="닫기" data-tip="닫기 — 세션 화면을 닫습니다. 세션 창은 80×24로 돌아갑니다.">✕</button>
+      <button type="button" class="ghost small ccwin-x" aria-label="닫기" data-tip="닫기 — 세션 화면을 닫습니다. Claude Code 창은 80×24로 돌아갑니다.">✕</button>
     </header>
     <div class="ccwin-msg small"></div>
     <div class="ccwin-body"><iframe aria-label="세션 화면" hidden></iframe></div>
@@ -95,7 +95,7 @@ export function createCcWindow(store) {
     show({ x, y, w, h });
     ghost.hidden = false;
     drag(ev, (dx, dy) => show(g(dx, dy)),
-         (dx, dy) => { ghost.hidden = true; Object.assign(geo, g(dx, dy)); place(true); });   // 놓을 때 한 번 → 세션 창도 한 번
+         (dx, dy) => { ghost.hidden = true; Object.assign(geo, g(dx, dy)); place(true); });   // 놓을 때 한 번 → Claude Code 창도 한 번
   }));
   window.addEventListener('resize', () => { if (!box.hidden) place(false); });
 
@@ -132,8 +132,8 @@ export function createCcWindow(store) {
       return;
     }
     say('');
-    info.textContent = `세션 창 ${String(j.size).replace('x', '×')}`;
-    info.dataset.tip = `세션 창 크기 — 이 창 크기에 맞춥니다. 닫으면 80×24로 돌아갑니다.\n여기서 친 키는 CC에 바로 갑니다. 브리지가 글을 넣을 때 입력 칸에 친 글이 있으면 넣지 않고 알립니다.`;
+    info.textContent = `Claude Code 창 ${String(j.size).replace('x', '×')}`;
+    info.dataset.tip = `Claude Code 창 크기 — 이 창(세션 화면) 크기에 맞춥니다. 닫으면 80×24로 돌아갑니다.\n여기서 친 키는 CC에 바로 갑니다. 브리지가 글을 넣을 때 입력 칸에 친 글이 있으면 넣지 않고 알립니다.`;
     if (!attached) {
       frame.hidden = false;
       frame.src = `/ccscreen/?arg=${encodeURIComponent(id)}&arg=${TAB}`;
