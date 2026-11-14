@@ -16,7 +16,8 @@ CC는 스스로 심장박동을 보내지 않는다 — sessions/<pid>.json의 u
               브리지가 기다리는 승인(approval `pending`)이 없다 — 패널에는 답할 카드가 없고 대화창에서만 풀린다(11-14 362,
               `log/silent_finish_20261114.md` 1 · 4절). 모르는 창은 CC가 status `waiting`을 적었을 때만. 화면을 못 읽는 세션(tmux 밖)은
               status `waiting`만으로. 승인 대기 시간이 지나 브리지가 이미 알린 창(마지막 승인이 30분 안의 timeout)은 화면에만
-- notice      안내 창(자동 압축 권유 · /model · /config …, screen_state `dismiss`)이 떠 있다 — 화면에만(알리지 않는다, 일부러 연 창일 수 있다)
+- notice      안내 창(자동 압축 권유 · /model · /config …, screen_state `dismiss`)이 떠 있다 — dialog와 같게 2분 넘으면 알림 한 번
+              (11-14 사용자 결정, 11-13 서기 339가 자동 압축 권유 창에 걸려 합치기가 멈췄다. 일부러 연 창도 2분이면 걸린다)
 - long        한 작업이 LONG 넘게 — 화면에만(알리지 않는다, 긴 일은 정상일 수 있다)
 - bg_long     뒤에서 도는 일(백그라운드 Bash)이 BG_LONG 넘게 끝 알림 없이 돈다(11-14, 11-13 330의 pytest가 2시간 10분 멈춘 채 돌았다).
               세션이 턴을 닫고 쉬어도 잰다. 출력이 나온 적 있고 BG_QUIET 안에 바뀌었으면 정상(계속 일하는 중), 나오다 안 바뀌었으면 「멈췄을 수 있음」.
@@ -63,7 +64,7 @@ BG_LONG = timedelta(minutes=30)      # 뒤에서 도는 일이 이만큼 지나�
 BG_QUIET = timedelta(minutes=15)     # 출력 파일이 이만큼 안 바뀌면 멈췄을 수 있다(점 하나씩 찍는 시험도 15분 비는 일은 드물다)
 BG_SKIP_TOOLS = {"Monitor"}          # 일부러 오래 도는 것
 ALERT_AFTER = {"died": timedelta(0), "silent": timedelta(0), "loop": timedelta(0), "exit_confirm": timedelta(minutes=2),
-               "bg_long": timedelta(0), "dialog": timedelta(minutes=2)}
+               "bg_long": timedelta(0), "dialog": timedelta(minutes=2), "notice": timedelta(minutes=2)}
 # 승인 대기 시간이 지나 브리지가 「이제 대화창에서만 답할 수 있습니다」를 이미 보낸 뒤 이만큼은 dialog를 다시 알리지 않는다
 TIMEOUT_QUIET = timedelta(minutes=30)
 
@@ -198,7 +199,7 @@ def judge_dialog(s: Sample, now: datetime, since: datetime | None = None) -> lis
     if name == "끝내기 확인" or EXIT_RE.search(s.screen):
         return item("exit_confirm", "CC가 뒤에서 도는 일을 멈출지 묻고 기다립니다(1 멈추고 끝내기 · 2 뒤로 보내고 끝내기 · 3 남기)")
     if kind == "dismiss":
-        return item("notice", f"「{name}」 창이 떠 있습니다 — 일부러 연 창이면 그대로 두어도 됩니다", notify=False)
+        return item("notice", (f"「{name}」 " if name else "") + "안내 창이 떠 있어 세션이 입력을 못 받습니다 — 대화창을 확인해 주세요")
     if s.pending:
         return []                                  # 패널에 카드가 이미 있다
     if kind == "unknown" and s.cc_status != "waiting":

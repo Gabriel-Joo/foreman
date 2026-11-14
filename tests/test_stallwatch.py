@@ -80,7 +80,8 @@ def test_judge_dialog_kinds():
     assert judge_dialog(Sample(sid=1, live=True, cc_status="idle", screen=UNKNOWN), NOW) == []
     # 안내 창(/model) — 화면에만
     f = judge_dialog(Sample(sid=1, live=True, cc_status="idle", screen=MODEL), NOW)
-    assert kinds(f) == ["notice"] and f[0]["notify"] is False
+    assert kinds(f) == ["notice"] and f[0]["notify"] is True       # 11-14 — 안내 창도 오래 떠 있으면 알린다(2분)
+    assert "안내 창이 떠 있어 세션이 입력을 못 받습니다 — 대화창을 확인해 주세요" in f[0]["detail"]
     # 끝내기 확인 창은 예전 kind 그대로
     assert kinds(judge_dialog(Sample(sid=1, live=True, screen=EXIT_SCREEN), NOW)) == ["exit_confirm"]
     # 화면을 못 읽음(tmux 밖) — status waiting + 승인 없음이면
@@ -271,6 +272,20 @@ async def test_alerts_fire_once_per_condition(env):
         status[2], screens[2] = "idle", "> "
         await w.check(now + timedelta(minutes=7, seconds=30))
         assert b not in w.snapshot
+
+        # B: 안내 창(/model 꼴, 11-14) — 결정 창과 같게 처음 본 뒤 2분이 지나야 한 번 알린다
+        screens[2] = MODEL
+        assert await w.check(now + timedelta(minutes=8)) == [] and w.snapshot[b][0]["kind"] == "notice"
+        assert await w.check(now + timedelta(minutes=9, seconds=50)) == []       # 1분 50초 — 아직
+        keys = await w.check(now + timedelta(minutes=10, seconds=1))
+        assert [k.split(":")[1] for k in keys] == ["notice"] and notifier.sent[-1][2] == b
+        assert "안내 창이 떠 있어 세션이 입력을 못 받습니다" in notifier.sent[-1][3]
+        with conn.cursor() as c:
+            c.execute("INSERT INTO notification (kind, decision, rule, text) VALUES ('stall', 'sent', %s, 'x')", (keys[0],))
+        assert await w.check(now + timedelta(minutes=11)) == []                  # 같은 창은 한 번
+        screens[2] = "> "
+        await w.check(now + timedelta(minutes=12))
+        assert b not in w.snapshot                                               # 창이 닫히면 사라진다
 
         # A: 프로세스가 사라짐(열린 턴은 그대로) → 작업 중 끊김
         del live[CC_A]
