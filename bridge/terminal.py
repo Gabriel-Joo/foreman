@@ -635,10 +635,10 @@ class TerminalManager:
             return no("멈춰 둔(Ctrl+Z) 세션이라 열지 않습니다 — 사용자가 일부러 멈춰 둔 세션입니다")
         te = _tmux_env(ls.pid)
         if te is None:
-            return no("tmux 밖에서 도는 세션이라 CC 화면을 볼 수 없습니다")
+            return no("tmux 밖에서 도는 세션이라 세션 화면을 볼 수 없습니다")
         sock, pane = te
         if os.path.realpath(sock) != os.path.realpath(self.socket):
-            return no("FOREMAN이 쓰는 tmux 서버가 아닌 곳에서 도는 세션이라 CC 화면을 볼 수 없습니다")
+            return no("FOREMAN이 쓰는 tmux 서버가 아닌 곳에서 도는 세션이라 세션 화면을 볼 수 없습니다")
         if not PANE_RE.match(pane):
             return no("tmux 창 표시가 올바르지 않습니다")
         try:
@@ -680,7 +680,7 @@ class TerminalManager:
     def _cc_ttyd_args(self) -> list[str]:
         # 「CC 화면」(11-14) — -a 인자는 브라우저가 아니라 브리지 WS 프록시가 정한다(확인된 tmux 창 · 탭, api/terminal.py cc_ws)
         return [str(self.s.ttyd_bin), "-i", str(self.s.ccscreen_socket), "-W", "-a", "-b", "/ccscreen", "-m", "8", "-d", "3",
-                "-t", "disableLeaveAlert=true", "-t", "disableResizeOverlay=true", "-t", "titleFixed=CC 화면",
+                "-t", "disableLeaveAlert=true", "-t", "disableResizeOverlay=true", "-t", "titleFixed=세션 화면",
                 "-t", "fontSize=13",
                 str(self.s.ccscreen_view_script), self.socket, "%dx%d" % CC_REST_SIZE]
 

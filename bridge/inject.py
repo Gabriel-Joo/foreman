@@ -323,7 +323,7 @@ async def clear_screen(t: Target, busy: bool, tries: int = ESC_TRIES) -> tuple[i
             return sent, first
 
 
-TYPED_REFUSED = "입력 칸에 사람이 치던 글이 있어 넣지 않았습니다 — 그 세션 대화창(CC 화면)을 확인해 주세요"
+TYPED_REFUSED = "입력 칸에 사람이 치던 글이 있어 넣지 않았습니다 — 그 세션 대화창(세션 화면)을 확인해 주세요"
 
 
 def _refuse_if_typed(t: Target, raw: str) -> None:

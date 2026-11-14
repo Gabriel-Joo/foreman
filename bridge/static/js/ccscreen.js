@@ -13,6 +13,7 @@
 import { termTabId } from './terminal.js';
 import { applyTermFont } from './uiscale.js';
 import { sessionName } from './render.js';
+import { hideTip } from './tip.js';
 
 const CHECK_MS = 5000;
 const KEY_GEO = 'foreman.ccwin.geo';          // {x, y, w, h} px — 이 브라우저만(서버에 남기지 않음)
@@ -27,16 +28,18 @@ export function createCcWindow(store) {
   box.className = 'ccwin';
   box.hidden = true;
   box.setAttribute('role', 'dialog');
-  box.setAttribute('aria-label', 'CC 화면');
+  box.setAttribute('aria-label', '세션 화면');
+  const GRIP_TIP = '크기 — 끌어 바꿉니다. 놓을 때 세션 창도 이 크기로 맞추고, 다음에 열 때 같은 크기로 엽니다.';
   box.innerHTML = `
-    <header class="ccwin-head" data-tip="CC 화면 — 머리줄을 끌어 옮깁니다. 크기는 오른쪽 아래 모서리를 끌어 바꿉니다.">
+    <header class="ccwin-head" data-tip="세션 화면 — 머리줄을 끌어 옮깁니다. 크기는 네 모서리를 끌어 바꿉니다.">
       <b class="ccwin-title"></b><span class="ccwin-info small muted"></span>
-      <button type="button" class="ghost small ccwin-reload" data-tip="다시 붙기 — CC 화면에 다시 붙습니다. 끊김 표시가 남았을 때 누릅니다.">다시 붙기</button>
-      <button type="button" class="ghost small ccwin-x" aria-label="닫기" data-tip="닫기 — CC 화면을 닫습니다. CC 창은 80×24로 돌아갑니다.">✕</button>
+      <button type="button" class="ghost small ccwin-sync" hidden></button>
+      <button type="button" class="ghost small ccwin-reload" data-tip="다시 붙기 — 세션 화면에 다시 붙습니다. 끊김 표시가 남았을 때 누릅니다.">다시 붙기</button>
+      <button type="button" class="ghost small ccwin-x" aria-label="닫기" data-tip="닫기 — 세션 화면을 닫습니다. 세션 창은 80×24로 돌아갑니다.">✕</button>
     </header>
     <div class="ccwin-msg small"></div>
-    <div class="ccwin-body"><iframe aria-label="CC 화면" hidden></iframe></div>
-    <div class="ccwin-grip" data-tip="크기 — 끌어 바꿉니다. 놓을 때 CC 창도 이 크기로 맞추고, 다음에 열 때 같은 크기로 엽니다."></div>`;
+    <div class="ccwin-body"><iframe aria-label="세션 화면" hidden></iframe></div>
+    ${['nw', 'ne', 'sw', 'se'].map((c) => `<div class="ccwin-grip" data-c="${c}" data-tip="${GRIP_TIP}"></div>`).join('')}`;
   document.body.appendChild(box);
   const ghost = document.createElement('div');
   ghost.className = 'ccwin-ghost';
@@ -63,6 +66,7 @@ export function createCcWindow(store) {
   }
   function drag(ev, onMove, onUp) {          // 포인터를 잡아 iframe이 움직임을 가로채지 않게
     const t = ev.currentTarget;
+    hideTip();       // 움직이기 시작하면 호버를 끈다 — preventDefault가 mousedown을 막아 tip.js의 끄는 길이 안 불린다
     t.setPointerCapture(ev.pointerId);
     const x0 = ev.clientX, y0 = ev.clientY;
     const mv = (e) => onMove(e.clientX - x0, e.clientY - y0);
@@ -76,16 +80,23 @@ export function createCcWindow(store) {
     const { x, y } = geo;
     drag(ev, (dx, dy) => { geo.x = x + dx; geo.y = y + dy; place(false); }, () => place(true));
   });
-  q('.ccwin-grip').addEventListener('pointerdown', (ev) => {
+  // 네 모서리 모두(11-14 사용자) — data-c: nw · ne · sw · se. 서(w) · 북(n) 모서리는 반대쪽 모서리를 붙들고 크기와 자리가 함께 바뀐다
+  box.querySelectorAll('.ccwin-grip').forEach((grip) => grip.addEventListener('pointerdown', (ev) => {
     if (ev.button !== 0) return;
-    const { w, h } = geo;
-    const g = (dx, dy) => ({ w: Math.max(MIN_W, Math.min(w + dx, window.innerWidth - geo.x - 8)),      // 모서리가 화면 밖으로 가지 않게
-                             h: Math.max(MIN_H, Math.min(h + dy, window.innerHeight - geo.y - 8)) });
-    Object.assign(ghost.style, { left: geo.x + 'px', top: geo.y + 'px', width: w + 'px', height: h + 'px' });
+    const c = grip.dataset.c, west = c.includes('w'), north = c.includes('n');
+    const { x, y, w, h } = geo;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const g = (dx, dy) => {                    // 모서리가 화면 밖으로 가지 않게, 가장 작게 MIN_W × MIN_H
+      const nw = Math.max(MIN_W, west ? Math.min(w - dx, x + w - 8) : Math.min(w + dx, vw - x - 8));
+      const nh = Math.max(MIN_H, north ? Math.min(h - dy, y + h) : Math.min(h + dy, vh - y - 8));
+      return { w: nw, h: nh, x: west ? x + w - nw : x, y: north ? y + h - nh : y };
+    };
+    const show = (s) => Object.assign(ghost.style, { left: s.x + 'px', top: s.y + 'px', width: s.w + 'px', height: s.h + 'px' });
+    show({ x, y, w, h });
     ghost.hidden = false;
-    drag(ev, (dx, dy) => { const s = g(dx, dy); ghost.style.width = s.w + 'px'; ghost.style.height = s.h + 'px'; },
-         (dx, dy) => { ghost.hidden = true; Object.assign(geo, g(dx, dy)); place(true); });   // 놓을 때 한 번 → CC 창도 한 번
-  });
+    drag(ev, (dx, dy) => show(g(dx, dy)),
+         (dx, dy) => { ghost.hidden = true; Object.assign(geo, g(dx, dy)); place(true); });   // 놓을 때 한 번 → 세션 창도 한 번
+  }));
   window.addEventListener('resize', () => { if (!box.hidden) place(false); });
 
   // ── 붙기 ───────────────────────────────────────────
@@ -111,31 +122,46 @@ export function createCcWindow(store) {
     } catch (e) {
       if (my !== seq) return;
       detach(); info.textContent = '';
-      say(`CC 화면을 확인하지 못했습니다 — ${e.message || e}`, 'bad');
+      say(`세션 화면을 확인하지 못했습니다 — ${e.message || e}`, 'bad');
       return;
     }
     if (my !== seq) return;                                   // 그 사이 닫았거나 다른 세션으로 바꿨다
     if (!j.ok) {
       detach(); info.textContent = '';
-      say(j.reason || 'CC 화면을 열 수 없습니다', j.running === false ? 'bad' : 'muted');
+      say(j.reason || '세션 화면을 열 수 없습니다', j.running === false ? 'bad' : 'muted');
       return;
     }
     say('');
-    info.textContent = `CC 창 ${j.size}`;
-    info.dataset.tip = `CC 창 크기 — 이 창 크기에 맞춥니다. 닫으면 80×24로 돌아갑니다.\n여기서 친 키는 CC에 바로 갑니다. 브리지가 글을 넣을 때 입력 칸에 친 글이 있으면 넣지 않고 알립니다.`;
+    info.textContent = `세션 창 ${String(j.size).replace('x', '×')}`;
+    info.dataset.tip = `세션 창 크기 — 이 창 크기에 맞춥니다. 닫으면 80×24로 돌아갑니다.\n여기서 친 키는 CC에 바로 갑니다. 브리지가 글을 넣을 때 입력 칸에 친 글이 있으면 넣지 않고 알립니다.`;
     if (!attached) {
       frame.hidden = false;
       frame.src = `/ccscreen/?arg=${encodeURIComponent(id)}&arg=${TAB}`;
       attached = true;
     }
   }
+  // 패널에서 고른 세션이 띄운 세션과 다르면 머리줄에 「N번으로」 단추 — 띄운 창이 패널 탭 줄의 [세션 화면] 단추를 덮어도 바꿀 수 있게
+  // (11-14 사용자가 다른 세션 패널에서 단추를 눌러도 안 바뀐다고 했다 — 단추가 창에 가려 클릭이 창 안으로 갔다)
+  const syncBtn = q('.ccwin-sync');
+  let picked = null;
+  function drawSync() {
+    const show = !box.hidden && picked != null && picked !== sid;
+    syncBtn.hidden = !show;
+    if (!show) return;
+    syncBtn.textContent = `세션 ${picked}로`;
+    syncBtn.dataset.tip = `세션 ${picked}로 — 패널에서 고른 세션 ${picked}의 세션 화면으로 바꿉니다. 패널의 [세션 화면] 단추가 이 창에 가려져도 누를 수 있습니다.`;
+  }
+  syncBtn.addEventListener('click', () => { if (picked != null) open(picked); });
+  function sync(id) { picked = id ?? null; drawSync(); }
   function open(id) {
     place(false);
     box.hidden = false;
-    if (sid === id) return;              // 이미 이 세션을 보고 있다(못 붙었으면 5초 확인이 다시 붙인다)
+    picked = id;
+    if (sid === id) { drawSync(); return; }   // 이미 이 세션을 보고 있다(못 붙었으면 5초 확인이 다시 붙인다)
     stop();
     sid = id;
-    say('CC 화면을 확인하는 중입니다…', 'muted');
+    say('세션 화면을 확인하는 중입니다…', 'muted');
+    drawSync();
     check(true);
     timer = setInterval(() => check(false), CHECK_MS);
   }
@@ -145,12 +171,12 @@ export function createCcWindow(store) {
     detach();
     sid = null;
   }
-  function close() { stop(); box.hidden = true; ghost.hidden = true; }
+  function close() { stop(); box.hidden = true; ghost.hidden = true; drawSync(); }
   q('.ccwin-x').addEventListener('click', close);
   // [다시 붙기] — ttyd 화면이 끊김 표시로 남았을 때(브리지를 다시 띄움 등)
   q('.ccwin-reload').addEventListener('click', () => { const id = sid; if (id == null) return; stop(); open(id); });
   function fitFont(tries = 20) { if (!applyTermFont(frame) && tries > 0) setTimeout(() => fitFont(tries - 1), 250); }
   frame.addEventListener('load', () => { if (attached) fitFont(); });
   window.addEventListener('foreman-uiscale', () => { if (attached) fitFont(0); });
-  return { open, close, get sid() { return sid; } };
+  return { open, close, sync, get sid() { return sid; } };
 }

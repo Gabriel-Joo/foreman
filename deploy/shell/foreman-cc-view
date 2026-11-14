@@ -26,12 +26,12 @@ fail() {                          # 까닭을 화면에 띄우고 잠깐 둔다(
 
 [[ $rest =~ ^([0-9]{2,3})x([0-9]{2,3})$ ]] || fail "쉴 때 크기 설정이 올바르지 않습니다."
 rest_w=${BASH_REMATCH[1]} rest_h=${BASH_REMATCH[2]}
-[[ $pane =~ ^%[0-9]{1,7}$ ]] || fail "CC 창 대상이 올바르지 않습니다."
+[[ $pane =~ ^%[0-9]{1,7}$ ]] || fail "세션 창 대상이 올바르지 않습니다."
 [[ $tab =~ ^[A-Za-z0-9_-]{6,40}$ ]] || fail "탭 표시가 올바르지 않습니다."
 info=$(T display-message -p -t "$pane" '#{session_name}	#{window_id}' 2>/dev/null) \
-  || fail "CC 창을 찾지 못했습니다 — 세션이 끝났을 수 있습니다."
+  || fail "세션 창을 찾지 못했습니다 — 세션이 끝났을 수 있습니다."
 base=${info%%$'\t'*} win=${info#*$'\t'}
-[[ -n $base && $win =~ ^@[0-9]+$ ]] || fail "CC 창을 찾지 못했습니다."
+[[ -n $base && $win =~ ^@[0-9]+$ ]] || fail "세션 창을 찾지 못했습니다."
 view="ccv-$tab-$$"                # 연결마다 다른 이름 — 같은 탭이 곧바로 다시 붙어도 옛 연결의 뒷정리가 새 연결을 건드리지 않게
 
 hold() {                          # 우리가 묶은 창(표시 있음)이거나 아무도 정하지 않은 창만 맞춘다
@@ -68,7 +68,7 @@ for old in $(T list-sessions -F '#{session_name}' 2>/dev/null | grep -E "^ccv-$t
   T kill-session -t "=$old" 2>/dev/null
 done
 trap 'release; exit 0' HUP TERM INT
-T new-session -d -t "=$base" -s "$view" || fail "CC 창에 붙지 못했습니다."
+T new-session -d -t "=$base" -s "$view" || fail "세션 창에 붙지 못했습니다."
 T set-option -t "=$view:" status off 2>/dev/null || true          # 상태줄 없이 — 띄우는 창 크기 = CC 창 크기
 T set-option -t "=$view:" mouse off 2>/dev/null || true           # 셸과 같다 — 끌기는 브라우저 글 고르기가 받는다
 T select-window -t "=$view:$win" 2>/dev/null                      # 보이는 창은 그룹 세션마다 따로 — CC 세션 쪽은 그대로

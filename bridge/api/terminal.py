@@ -48,7 +48,7 @@ _FWD_RES = ("content-type", "content-encoding", "etag", "last-modified", "cache-
 def _mgr(request: Request) -> Any:
     m = getattr(request.app.state, "terminal", None)
     if m is None:
-        raise HTTPException(503, "셸 · CC 화면이 꺼져 있습니다")
+        raise HTTPException(503, "셸 · 세션 화면이 꺼져 있습니다")
     return m
 
 
@@ -157,9 +157,9 @@ async def cc_state(sid: int, request: Request) -> dict[str, Any]:
     try:
         r = await m.cc_target(sid)
     except Refused as e:
-        r = {"ok": False, "reason": f"CC 창을 확인하지 못했습니다 — {e}", "running": m.cc_running}
+        r = {"ok": False, "reason": f"세션 창을 확인하지 못했습니다 — {e}", "running": m.cc_running}
     if r.get("ok") and not r.get("running"):
-        r = {**r, "ok": False, "reason": "CC 화면 서버(ttyd)가 떠 있지 않습니다 — 브리지 로그(.run/ttyd-cc.log)를 확인해 주세요"}
+        r = {**r, "ok": False, "reason": "세션 화면 서버(ttyd)가 떠 있지 않습니다 — 브리지 로그(.run/ttyd-cc.log)를 확인해 주세요"}
     r.pop("pane", None)            # 화면은 tmux 창 대상을 몰라도 된다(붙을 곳은 브리지가 정한다)
     return r
 
@@ -221,10 +221,10 @@ async def ccscreen_http(path: str, request: Request) -> Response:
     """「CC 화면」 ttyd의 화면 파일(11-14). 주소의 ?arg=<세션 번호>는 ttyd 화면이 WS 주소에 그대로 붙인다 — WS에서 확인한다."""
     m = getattr(request.app.state, "terminal", None)
     if not _cookie_ok(m, request.cookies):
-        return Response("CC 화면은 대시보드 세션 패널에서 엽니다(인증 쿠키가 없습니다)", status_code=401,
+        return Response("세션 화면은 대시보드 세션 패널에서 엽니다(인증 쿠키가 없습니다)", status_code=401,
                         media_type="text/plain; charset=utf-8")
     if not m.cc_running:
-        return Response("CC 화면 서버(ttyd)가 떠 있지 않습니다", status_code=503, media_type="text/plain; charset=utf-8")
+        return Response("세션 화면 서버(ttyd)가 떠 있지 않습니다", status_code=503, media_type="text/plain; charset=utf-8")
     return await _proxy_http(m.s.ccscreen_socket, "/ccscreen/", path, request)
 
 

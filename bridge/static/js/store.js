@@ -544,7 +544,7 @@ export class Store {
   // ── 터미널 패널 ───────────────────────────────────────
   async terminalSession() {          // 쿠키(Path=/terminal · /ccscreen)를 받는다 — iframe이 이걸로 ttyd에 붙는다
     const r = await fetch('/api/terminal/session', { method: 'POST', headers: this.headers() });
-    if (!r.ok) throw new Error(r.status === 503 ? '셸 · CC 화면이 꺼져 있습니다' : `HTTP ${r.status}`);
+    if (!r.ok) throw new Error(r.status === 503 ? '셸 · 세션 화면이 꺼져 있습니다' : `HTTP ${r.status}`);
     return r.json();
   }
   // 프로젝트마다 터미널 창(11-10) — project의 셸 창을 보인다(null이면 지금 창 그대로). 돌려받은 것 = 실제로 보이는 창
@@ -582,7 +582,7 @@ export class Store {
     const r = await fetch(`/api/terminal/cc/${sid}`, { headers: this.headers() });
     const j = await r.json().catch(() => ({}));
     // 404 — 도는 브리지가 CC 화면을 모른다(옛 코드 · worktree 미리보기). 세션이 없을 때는 200 + 까닭이다
-    if (r.status === 404) throw new Error('도는 브리지에 CC 화면 길이 없습니다 — 브리지를 새 코드로 다시 띄워야 합니다');
+    if (r.status === 404) throw new Error('도는 브리지에 세션 화면 길이 없습니다 — 브리지를 새 코드로 다시 띄워야 합니다');
     if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
     return j;
   }
