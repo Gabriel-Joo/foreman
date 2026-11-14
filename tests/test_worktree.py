@@ -35,6 +35,24 @@ def repo(tmp_path, monkeypatch):
     return r
 
 
+async def test_tools_link_follows_and_is_never_committed(repo):
+    """.tools(ttyd 등)도 .venv처럼 원본을 가리키는 링크로 따라온다. 커밋 후보에서 빠진다."""
+    (repo / ".tools").mkdir(); (repo / ".tools" / "ttyd").write_text("bin\n")
+    p = Path((await wt.create(str(repo), "tl"))["path"])
+    assert (p / ".tools").is_symlink() and (p / ".tools").resolve() == (repo / ".tools").resolve()
+    assert sh(repo, "status", "--porcelain") == ""
+    (repo / ".git" / "info" / "exclude").write_text("/.worktrees/\n")   # 무방비 저장소 - 제외 목록이 없어도 막는다
+    (p / "new.txt").write_text("x\n")
+    r = await wt.save_progress(str(p), "쉬게 하기: 진행 중 저장 - 시험")
+    assert ".tools" in r["skipped"]
+    assert not any(t.startswith(".tools") for t in sh(p, "ls-tree", "-r", "--name-only", "HEAD").split())
+
+
+async def test_no_tools_link_when_origin_has_none(repo):
+    p = Path((await wt.create(str(repo), "nt"))["path"])
+    assert not (p / ".tools").exists() and not (p / ".tools").is_symlink()
+
+
 async def test_create_links_and_status(repo):
     info = await wt.create(str(repo), "foreman-2")
     p = Path(info["path"])

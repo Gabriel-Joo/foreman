@@ -27,6 +27,7 @@ packages = ["bridge", "bridge.db", "bridge.api", "bridge.transcript"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-rs"   # 건너뛴 시험의 까닭을 요약에 찍는다(.tools/ttyd 없어 조용히 건너뛰는 것을 막는다). -l은 넣지 않는다(토큰이 찍힐 수 있다)
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = ["db: 실행 중인 foreman-mysql(127.0.0.1:3308)이 필요하다"]

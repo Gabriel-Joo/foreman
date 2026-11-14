@@ -6,7 +6,7 @@
 
 - 폴더를 저장소 안에 두는 까닭: 조립기가 cwd 접두어로 프로젝트를 정하므로(`_project_for`) 그대로 같은 프로젝트의 캐릭터가 된다.
   CC 폴더 신뢰도 상위 폴더를 따른다
-- 커밋 안 하는 것(.venv · .env* · node_modules)은 원본을 가리키는 링크로 둔다. `.git/info/exclude`(로컬 전용, 저장소 파일 아님)에
+- 커밋 안 하는 것(.venv · .tools · .env*· node_modules)은 원본을 가리키는 링크로 둔다. `.git/info/exclude`(로컬 전용, 저장소 파일 아님)에
   `.worktrees/`와 링크 이름을 넣어 git이 보지 않게 한다
 - CC 메모리 폴더는 작업 폴더 경로마다 따로 생긴다 — worktree 쪽 `memory`를 원본 메모리 폴더 링크로 만든다
 """
@@ -23,8 +23,8 @@ from bridge.inject import Refused
 
 WT_DIR = ".worktrees"
 BRANCH_PREFIX = "cc/"
-EXCLUDE = [f"/{WT_DIR}/", "/.venv", "/.env*", "node_modules"]   # 링크는 파일이라 `.venv/` 패턴에 안 걸린다
-LINK_TOP = re.compile(r"^(\.venv|\.env.*)$")                     # 저장소 맨 위에서 링크할 것(추적 안 되는 것만)
+EXCLUDE = [f"/{WT_DIR}/", "/.venv", "/.tools", "/.env*", "node_modules"]   # 링크는 파일이라 `.venv/` 패턴에 안 걸린다
+LINK_TOP = re.compile(r"^(\.venv|\.tools|\.env.*)$")                    # 저장소 맨 위에서 링크할 것(추적 안 되는 것만)
 LINK_SUB = ("node_modules",)                                     # 한 단계 아래(frontend/node_modules 등)
 
 
@@ -163,12 +163,12 @@ async def in_base(repo: str, name: str) -> bool | None:
 
 
 def _forbidden(wt_path: str, rel: str) -> bool:
-    """쉬게 하기 커밋에 넣으면 안 되는 것 — 원본을 가리키는 링크(.venv · .env* · node_modules)와 worktree 밖을 가리키는 링크.
+    """쉬게 하기 커밋에 넣으면 안 되는 것 — 원본을 가리키는 링크(.venv · .tools · .env* · node_modules)와 worktree 밖을 가리키는 링크.
     .gitignore가 없는 저장소에서도 막는다(`.venv/` 패턴은 링크(파일)에 안 걸린다 — EXCLUDE 주석). 견본(.env*.example)은 넣는다."""
     top = rel.split("/", 1)[0]
     if "node_modules" in rel.split("/"):
         return True
-    if top == ".venv" or (top.startswith(".env") and not top.endswith(".example")):
+    if top in (".venv", ".tools") or (top.startswith(".env") and not top.endswith(".example")):
         return True
     p = Path(wt_path) / rel
     if p.is_symlink():
