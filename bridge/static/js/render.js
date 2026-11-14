@@ -165,6 +165,72 @@ export function sessionSub(s) {
 export function sessionIds(s) {
   return [s.short ? `세션 ${s.short}` : '', s.tmux_pane ? `tmux 창 ${s.tmux_pane}` : ''].filter(Boolean).join(' · ');
 }
+// 「따로 작업 foreman-2」 호버(11-14 사용자 「설명이 과하다」) — 어느 worktree인지와 합치기 기다림만. 세션 해시 · tmux 창 · 경로는 빼고
+export function worktreeTip(s) {
+  const m = /\/\.worktrees\/([^/]+)/.exec(s.cwd || '');
+  if (!m) return '';
+  return `따로 작업 — ${m[1]}(브랜치 cc/${m[1]})에서 일합니다.${s.merge_wait ? ' 합치기를 기다립니다.' : ''}`;
+}
+
+// 지금 하는 일(11-14 사용자 — 머리줄에 「Bash echo "credit(…": $(grep …」처럼 명령이 그대로 떠 읽을 수 없었다).
+// Bash는 명령 머리로 흔한 일을 가르고, 명령 글은 호버로. 서버가 Bash description을 내주면(a.description) 그것이 먼저.
+// 다른 도구는 전처럼 「도구 대상」(파일 이름 · 찾는 말이라 읽힌다)
+const BASH_DOING = [
+  [/^(?:\S*\/)?(?:pytest|py\.test)\b|^(?:\S*\/)?python3?\s+-m\s+pytest\b|^node\s+--test\b|^npm\s+(?:run\s+)?test\b/, '시험 돌리는 중'],
+  [/^git\s+commit\b/, '커밋하는 중'],
+  [/^git\s+push\b/, 'push하는 중'],
+  [/^git\s+merge-tree\b/, '합칠 수 있는지 보는 중'],
+  [/^git\s+(?:merge|rebase|cherry-pick)\b/, '합치는 중'],
+  [/^git\s+(?:fetch|pull)\b/, '가져오는 중'],
+  [/^git\s+(?:add|restore|reset|stash|checkout|switch|branch|worktree|rm|mv)\b/, '변경 정리하는 중'],
+  [/^git\b/, '변경 기록 보는 중'],
+  [/^(?:\S*\/)?python3?\s+(?:\S*\/)?tools\/screen\.py\b/, '화면 점검하는 중'],
+  [/^(?:grep|rg|egrep|find|fd)\b/, '찾는 중'],
+  [/^(?:cat|head|tail|sed\s+-n|ls|wc|less|tree|stat|du|diff)\b/, '파일 보는 중'],
+  [/^curl\b/, 'API 부르는 중'],
+  [/^(?:systemctl|journalctl)\b/, '서비스 보는 중'],
+  [/^(?:tmux)\b/, '세션 창 다루는 중'],
+  [/^(?:docker|kubectl|helm)\b/, '컨테이너 다루는 중'],
+  [/^(?:npm|pip|uv|apt)\s+(?:install|i|add|sync)\b/, '설치하는 중'],
+  [/^(?:sleep|until|while)\b/, '기다리는 중'],
+  [/^(?:\S*\/)?(?:python3?|node)\b/, '스크립트 돌리는 중'],
+];
+// 앞의 `cd … &&` · `VAR=값` · `timeout N` · `PYTHONPATH=. ` 따위를 벗긴 첫 명령
+export function bashHead(cmd) {
+  let c = String(cmd || '').trim();
+  for (let i = 0; i < 8; i++) {
+    const before = c;
+    c = c.replace(/^cd\s+\S+\s*(?:&&|;)\s*/, '')
+      .replace(/^[A-Za-z_][A-Za-z0-9_]*=(?:"[^"$`]*"|'[^']*'|[^\s"'$`()]*)\s+/, '')
+      .replace(/^(?:timeout\s+\S+|env|nice|time|command|exec)\s+/, '');
+    if (c === before) break;
+  }
+  return c;
+}
+// `mkdir -p x; PYTHONPATH=. … screen.py`처럼 준비 명령이 앞에 붙는 일이 많아 && ; | 로 나눠 처음 걸리는 일을 쓴다(따옴표 안도 나뉘지만 어림이라 괜찮다)
+const BASH_PREP = /^(?:mkdir|echo|printf|export|set|source|true|cd)\b|^$/;
+export function bashDoing(cmd) {
+  for (const seg of String(cmd || '').split(/\s*(?:&&|\|\||;|\|)\s*/)) {
+    const h = bashHead(seg);
+    if (BASH_PREP.test(h) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(h)) continue;
+    for (const [re, label] of BASH_DOING) if (re.test(h)) return label;
+  }
+  return '명령 실행 중';
+}
+// {text: 머리줄 · 카드에 보일 말, tip: 호버(명령 글), tool}. a = s.activity
+export function nowDoing(a) {
+  if (!a) return { text: '', tip: '', tool: '' };
+  if (a.tool === 'Bash') {
+    const text = (a.description && oneLine(a.description, 40)) || bashDoing(a.target);
+    return { text, tip: a.target ? `명령 — 지금 돌리는 명령입니다.\n${oneLine(a.target, 200)}` : '', tool: 'Bash' };
+  }
+  return { text: `${a.tool} ${oneLine(a.target || '', 60)}`.trim(), tip: '', tool: a.tool };
+}
+// 화면에 넣는 꼴 — 명령이 있으면 호버(data-tip)로
+export function doingHtml(a) {
+  const d = nowDoing(a);
+  return d.tip ? `<span data-tip="${esc(d.tip)}">${esc(d.text)}</span>` : esc(d.text);
+}
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -473,7 +539,7 @@ export function sessionKv(s, pend) {
   const t = s.tokens || {};
   return `<div class="small kv">
       <span>상태</span><span title="${esc(procTip(s))}">${procLabel(s)}</span>
-      <span>지금</span><span>${s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target, 120))} (${ago(s.activity.ts)})` : (s.state === 'ACTIVE' ? '생각 중' : STATE_LABEL[s.state])}</span>
+      <span>지금</span><span>${s.activity && s.state === 'ACTIVE' ? doingHtml(s.activity) + ` (${ago(s.activity.ts)})` : (s.state === 'ACTIVE' ? '생각 중' : STATE_LABEL[s.state])}</span>
       <span>서브에이전트</span><span>${s.subagents_running ? `${s.subagents_running}개 — ${esc((s.subagent_descs || []).join(', '))}` : '없음'}</span>
       <span>모델</span><span>${modelChip(s, pend) || '<span class="muted">아직 응답 없음</span>'}${s.model_req ? ` <span class="muted">· 고른 것 ${esc(s.model_req)}</span>` : ''}</span>
       <span>토큰</span><span><span title="입력(캐시 포함) — 대화가 이어질 때마다 앞 대화를 다시 읽는 몫(캐시)까지 더한 양입니다. 캐시는 싸게 매겨집니다.">입력(캐시 포함) ${tok(t.input)}</span> · 출력 ${tok(t.output)} · 오늘 입력 ${tok(t.today_input)} · 출력 ${tok(t.today_output)}<br><span class="muted" title="서브에이전트 토큰(추정) — 서브에이전트 기록에서 셈한 값이라 실제와 조금 다를 수 있습니다.">서브에이전트 입력 ${tok(t.subagent_input)} · 출력 ${tok(t.subagent_output)}(추정)</span></span>
@@ -499,8 +565,8 @@ export function modelChip(s, pend, button) {
   const now = s.model ? esc(s.model_label) : '모델';
   const to = pend ? ` → <b>${esc(pend.label)}</b>${pend.queued ? ' <span class="muted">(대기열)</span>' : ''}` : '';
   const tip = button
-    ? `모델 — 눌러서 이 세션의 모델을 바꿉니다. 지금 ${s.model ? esc(s.model) : '응답 없음'}${pend ? `, ${esc(pend.label)}(으)로 바꾸는 중` : ''}.`
-    : `모델 — 이 세션이 마지막 응답에 쓴 모델입니다(${esc(s.model || '')}).`;
+    ? `모델 — 눌러서 이 세션의 모델을 바꿉니다. 지금 ${s.model ? esc(s.model_label || s.model) : '응답 없음'}${pend ? `, ${esc(pend.label)}(으)로 바꾸는 중` : ''}.`
+    : `모델 — 이 세션이 마지막 응답에 쓴 모델입니다(${esc(s.model_label || s.model || '')}).`;
   return button
     ? `<button type="button" class="mdl mdl-btn f-${esc(s.model_family || '')}" data-mdl="1" data-tip="${tip}">${now}${to} ▾</button>`
     : `<span class="mdl f-${esc(s.model_family)}" title="${tip}">${now}${to}</span>`;
@@ -789,7 +855,7 @@ export function createRenderer(root, store) {
   function card(s, st) {
     const a = s.activity;
     const pend = [...st.approvals.values()].filter((x) => x.session_id === s.id && x.status === 'pending').length;
-    const doing = s.state === 'ACTIVE' && a ? `<div class="doing"><b>${esc(a.tool)}</b>${a.subagent ? ' <span class="muted">(서브)</span>' : ''} ${esc(oneLine(a.target, 90))} <span class="muted small">${ago(a.ts)}</span></div>` : '';
+    const doing = s.state === 'ACTIVE' && a ? `<div class="doing">${doingHtml(a)}${a.subagent ? ' <span class="muted">(서브)</span>' : ''} <span class="muted small">${ago(a.ts)}</span></div>` : '';
     const stuck = stuckTurn(s);
     const turn = s.open_turn ? `<div class="turn small${stuck ? ' warn' : ''}">${stuck ? '⚠ 끝났는지 모름' : '▶'} ${esc(ORIGIN_LABEL[s.open_turn.origin] || '')} ${esc(oneLine(s.open_turn.prompt || '', 80))} <span class="muted">${since(s.open_turn.started_at)}</span></div>` : '';
     const reply = s.replyPreview && s.state === 'ACTIVE' ? `<div class="reply small">${esc(oneLine(s.replyPreview, 100))}</div>` : '';

@@ -8,7 +8,7 @@
 // 달라져 이름표 자리 고르기가 복잡해졌다. 끌기를 막고 두 값만). 손잡이는 두 번 누르면 오간다.
 
 import { approvalCard, handleApprovalClick, handleApprovalInput, restoreNotes, apprPlace, apprFoldLine, apprPeekLine, keep, sessionKv, modelChip, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
-         sessionName, sessionSub, sessionIds, projectLabel, roleBadge, panelRole, ROLE_LABEL, SESSION_ROLES, ROLE_UNKNOWN_TIP, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed, stallChip } from './render.js';
+         sessionName, sessionSub, sessionIds, worktreeTip, doingHtml, projectLabel, roleBadge, panelRole, ROLE_LABEL, SESSION_ROLES, ROLE_UNKNOWN_TIP, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed, stallChip } from './render.js';
 import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
 import { hideTip } from './tip.js';
@@ -382,7 +382,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     return `${['', '한', '두', '세', '네', '다섯', '여섯', '일곱', '여덟', '아홉', '열'][n] || n} 권`;
   }
   // 머리줄 "쌓인 대화 N%"(11-09) — 세션의 대화가 모델 창을 얼마나 채웠나. 계정의 사용 한도(머리 칩 "한도")와 같은 %라
-  // 헷갈리지 않게 이름을 나눈다. 창을 모르는 모델은 k로, 설정한 창보다 크면 ⚠(창 크기 값이 틀렸다)
+  // 헷갈리지 않게 이름을 나눈다(호버에 「한도와는 다릅니다」는 11-14 사용자 「군더더기」로 뺐다). 창을 모르는 모델은 k로, 설정한 창보다 크면 ⚠(창 크기 값이 틀렸다)
   function ctxChip(s) {
     const x = s.context;
     if (!x || !x.tokens) return '';
@@ -391,7 +391,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const label = x.window_over ? `쌓인 대화 ${k} ⚠` : x.pct != null ? `쌓인 대화 ${x.pct}%` : `쌓인 대화 ${k}`;
     const tip = x.window_over
       ? `쌓인 대화 — 설정한 창보다 커서 %를 낼 수 없습니다. 창 크기 값이 틀렸습니다(config/models.toml [windows]).\n토큰 ${koNum(x.tokens)}\n설정한 창 ${koNum(x.window)}`
-      : `쌓인 대화 — 이 세션의 대화가 모델이 한 번에 읽을 수 있는 양(창)을 얼마나 채웠는지입니다. 계정 사용 한도(머리의 한도 칩)와는 다릅니다.${x.window ? '' : ' 창 크기를 모르는 모델이라 %는 내지 않습니다.'}`
+      : `쌓인 대화 — 이 세션의 대화가 모델이 한 번에 읽을 수 있는 양(창)을 얼마나 채웠는지입니다.${x.window ? '' : ' 창 크기를 모르는 모델이라 %는 내지 않습니다.'}`
         + `\n토큰 ${koNum(x.tokens)}${x.window ? `\n창 ${koNum(x.window)}` : ''}`;
     return `<span class="${cls}" data-tip="${esc(tip)}">${label}</span> · `;
   }
@@ -662,7 +662,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     }
     // 제목 아래 한 줄 — 세션 정보 · 토큰은 여기 작게, 자세한 것은 [세션 정리] 탭
     const t = s.tokens || {}, stuck = stuckTurn(s);
-    const now = s.activity && s.state === 'ACTIVE' ? `${esc(s.activity.tool)} ${esc(oneLine(s.activity.target || '', 60))}` : (s.state === 'ACTIVE' ? '생각 중' : '');
+    const now = s.activity && s.state === 'ACTIVE' ? doingHtml(s.activity) : (s.state === 'ACTIVE' ? '생각 중' : '');   // Bash는 하는 일, 명령은 호버(11-14)
     // "쌓인 대화 N%"는 상태 바로 뒤 — 머리줄은 한 줄이라 좁은 패널에서 뒤쪽이 말줄임으로 잘린다(11-09 1366 사진)
     // 답 기다림 끄기(11-11, 받은 할 일 #13) — 판정이 묻지 않는 끝맺음을 잡았을 때 사람이 끈다. 다음 응답이 오면 다시 판정
     const asksOff = ['답 기다림', '사용자 답 기다림'].includes(humanNeed(s)?.label)
@@ -670,9 +670,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     // 끝난 세션(11-11, UI 불만 (나)) — 옛 보고가 새 일처럼 읽히지 않게 어떻게 · 언제 끝났는지를 맨 앞에
     const ended = s.state === 'DORMANT' && s.ended
       ? `<span class="muted" title="끝난 세션 — 이 세션은 ${esc(s.ended.at ? ago(s.ended.at) : '')} ${esc(s.ended.label)}. 아래 대화는 지난 일입니다.">끝난 세션 · ${esc(s.ended.label)}${s.ended.at ? ` · ${esc(ago(s.ended.at))}` : ''}</span> · ` : '';
-    put('pMeta', 'meta', `${ended}${stateBadge(s)} ${asksOff}${stallChip(s)}${ctxChip(s)}<span class="muted">${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
+    put('pMeta', 'meta', `${ended}${stateBadge(s)} ${asksOff}${stallChip(s)}${ctxChip(s)}<span class="muted"${worktreeTip(s) ? ` data-tip="${esc(worktreeTip(s))}"` : ''}>${esc(sessionSub(s))}</span> ${modelChip(s, pendModel(st, s), !!s.injectable)}${now ? ` · <b>${now}</b>` : ''}${s.subagents_running ? ` · 서브 ${s.subagents_running}` : ''}
       · <span class="muted" title="오늘 출력 토큰 — 이 세션이 오늘 쓴 글의 양입니다.">오늘 출력 토큰 ${tok(t.today_output)}</span>${stuck ? ' · <span class="warn" title="끝났는지 모름 — 작업이 끝났다는 신호가 오지 않았습니다. 대화창을 확인하거나 [작업 중단]을 누릅니다.">⚠ 끝났는지 모름</span>' : ''}`);
-    $('pMeta').title = [sessionSub(s), sessionIds(s), projectLabel(st, s.project), s.cwd || ''].filter(Boolean).join(' · ');
     // 보고 옴(11-11) — 이 세션 패널에 대화가 떠 있으면 읽은 것으로 본다(창이 가려져 있으면 아직). 캐릭터 위 「보고 옴」이 사라진다
     if (s.report && !document.hidden && reportSent !== s.report.event_id) {
       reportSent = s.report.event_id;

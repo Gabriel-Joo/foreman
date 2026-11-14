@@ -8,7 +8,7 @@ import { createSidePanel } from './opanel.js';
 import { mountNewSession } from './newsession.js';
 import { mountTodoInbox } from './todoinbox.js';
 import { coderJobs, coderBubble, isCoder, REST_DAYS } from './coder.js';
-import { roleTag, sessionName, needMark, mergeWaits, roleNameInk, bgLine, bgTip } from './render.js';
+import { roleTag, sessionName, needMark, mergeWaits, roleNameInk, bgLine, bgTip, nowDoing } from './render.js';
 import { PROBE } from './store.js';
 import { showTip, hideTip, themeTips, attachDomTips, textTip, softEsc, tipAudit as tipAuditOf } from './tip.js';
 import { buildGrid, findPath, footprint, nearestFree, RES } from './walk.js';
@@ -269,7 +269,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (contrib.length) lines.push('Claude Code가 어림한 값이고 이 컴퓨터의 세션만 셉니다. 한 요청이 서브에이전트이면서 MCP 서버를 쓰는 것처럼 여러 갈래에 함께 들어가므로 합이 100%가 되지 않습니다', ...contrib);
     usageTipRows = { lines, why };                     // 감독실 경고등 호버도 같은 줄을 쓴다(11-09)
     overChip(usage.over);
-    el.dataset.tip =`한도 — 구독 사용 한도를 몇 % 썼는지입니다. 세션마다 쌓인 대화 %(패널 머리줄)와는 다릅니다. "약"은 마지막으로 읽은 뒤 FOREMAN이 더해 본 추정입니다. 누르면 어디서 나가는지 봅니다.${why}\n${lines.join('\n')}`;
+    el.dataset.tip =`한도 — 구독 사용 한도를 몇 % 썼는지입니다. "약"은 마지막으로 읽은 뒤 FOREMAN이 더해 본 추정입니다. 누르면 어디서 나가는지 봅니다.${why}\n${lines.join('\n')}`;
   }
   if (new URLSearchParams(location.search).get('demo')) {   // 시연 재생은 /api를 막는다 — 칩을 숨긴다(⚠로 찍히지 않게)
     setTimeout(() => { for (const id of ['oUsage', 'oOver']) { const el = document.getElementById(id); if (el) el.hidden = true; } }, 0);
@@ -3737,7 +3737,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     };
     if (a.kind === 'session' && a.s) {
       const s = a.s;
-      const now = s.state === 'ACTIVE' ? (s.activity ? `${esc(s.activity.tool)} ${softEsc(short(s.activity.target || '', 70))}` : '생각 중') : '';
+      // 11-14 — Bash는 하는 일(「시험 돌리는 중」), 명령은 그 아래 작은 줄. 다른 도구는 전처럼 「도구 대상」
+      const nd = s.state === 'ACTIVE' && s.activity ? nowDoing(s.activity) : null;
+      const now = s.state === 'ACTIVE' ? (nd ? (nd.tool === 'Bash'
+        ? `${esc(nd.text)}${s.activity.target ? `<div class="tip-s">${softEsc(short(s.activity.target, 70))}</div>` : ''}`
+        : `${esc(s.activity.tool)} ${softEsc(short(s.activity.target || '', 70))}`) : '생각 중') : '';
       const vs = viewState(s), bg = s.background || [];
       // 코더(11-13 — 상주 · 임시 구분 없음): 이 방에서 일하는 코더 수 · 끝나면 자리로. 맡길 일은 코더 자리 말풍선에
       const who = a.coder ? `<div class="tip-s">코더 · 일 ${a.coders || 1} — 이 방에서 일하는 코더 세션입니다. 끝나면 코더 자리로 걸어 돌아갑니다. 맡길 일은 코더 자리 말풍선에 있습니다.</div>` : '';
