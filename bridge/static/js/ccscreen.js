@@ -95,7 +95,7 @@ export function createCcWindow(store) {
     show({ x, y, w, h });
     ghost.hidden = false;
     drag(ev, (dx, dy) => show(g(dx, dy)),
-         (dx, dy) => { ghost.hidden = true; Object.assign(geo, g(dx, dy)); place(true); });   // 놓을 때 한 번 → Claude Code 창도 한 번
+         (dx, dy) => { ghost.hidden = true; Object.assign(geo, g(dx, dy)); place(true); sizeSoon(); });   // 놓을 때 한 번 → Claude Code 창도 한 번
   }));
   window.addEventListener('resize', () => { if (!box.hidden) place(false); });
 
@@ -110,6 +110,24 @@ export function createCcWindow(store) {
   function detach() {
     if (attached) { frame.src = 'about:blank'; attached = false; }      // 끊으면 브리지가 「닫음」을 남기고 CC 창이 80×24로
     frame.hidden = true;
+  }
+  // 머리줄 「Claude Code 창 WxH」 — 서버 확인(5초마다)을 기다리지 않게 iframe 안 xterm의 열 · 줄 수를 바로 읽는다(11-14 사용자 — 숫자가 5초 늦었다).
+  // 그룹 세션 상태줄을 꺼 두어 손님 크기 = Claude Code 창 크기이고, xterm 열 · 줄 = 손님 크기라 같은 값이다(서버 값과 대조해 같음을 봤다).
+  // 5초 확인은 그대로(죽음 · 까닭 확인, 그리고 xterm 값이 서버 값과 어긋나면 서버 값으로 고친다)
+  function showSize(s) { info.textContent = s ? `Claude Code 창 ${String(s).replace('x', '×')}` : ''; }
+  let hooked = null;                                  // 크기 변화를 듣고 있는 xterm — 같은 것에 두 번 걸지 않는다
+  function readTerm() {
+    try { const t = frame.contentWindow && frame.contentWindow.term; return t && Number.isFinite(t.cols) ? t : null; } catch { return null; }
+  }
+  function readSize() { const t = readTerm(); if (t) showSize(`${t.cols}x${t.rows}`); return !!t; }
+  function hookTerm(tries = 20) {
+    const t = readTerm();
+    if (!t) { if (tries > 0 && attached) setTimeout(() => hookTerm(tries - 1), 100); return; }
+    readSize();
+    if (hooked !== t && typeof t.onResize === 'function') {
+      hooked = t;
+      t.onResize(() => { if (attached && hooked === t) readSize(); });   // 모서리를 놓은 뒤 · 글씨 맞춤 · 보기 스크립트가 크기를 맞출 때마다
+    }
   }
   async function check(first) {
     const my = seq, id = sid;
@@ -132,7 +150,8 @@ export function createCcWindow(store) {
       return;
     }
     say('');
-    info.textContent = `Claude Code 창 ${String(j.size).replace('x', '×')}`;
+    // 붙기 전 크기는 아직 80×24(맞추기 전) — 보이면 5초쯤 그 숫자로 남아 보인다. 붙기 전에는 비워 두고 붙은 뒤 xterm 크기가 채운다
+    if (attached || !info.textContent) showSize(attached ? j.size : null);
     info.dataset.tip = `Claude Code 창 크기 — 이 창(세션 화면) 크기에 맞춥니다. 닫으면 80×24로 돌아갑니다.\n여기서 친 키는 CC에 바로 갑니다. 브리지가 글을 넣을 때 입력 칸에 친 글이 있으면 넣지 않고 알립니다.`;
     if (!attached) {
       frame.hidden = false;
@@ -170,13 +189,22 @@ export function createCcWindow(store) {
     if (timer) { clearInterval(timer); timer = null; }
     detach();
     sid = null;
+    hooked = null; info.textContent = ''; clearTimeout(confirmT);
   }
   function close() { stop(); box.hidden = true; ghost.hidden = true; drawSync(); }
   q('.ccwin-x').addEventListener('click', close);
   // [다시 붙기] — ttyd 화면이 끊김 표시로 남았을 때(브리지를 다시 띄움 등)
   q('.ccwin-reload').addEventListener('click', () => { const id = sid; if (id == null) return; stop(); open(id); });
   function fitFont(tries = 20) { if (!applyTermFont(frame) && tries > 0) setTimeout(() => fitFont(tries - 1), 250); }
-  frame.addEventListener('load', () => { if (attached) fitFont(); });
+  // 붙은 뒤 · 모서리를 놓은 뒤: xterm 크기를 바로 읽고, 보기 스크립트가 크기를 맞출 틈(~1초) 뒤 서버 값으로 한 번 확인한다
+  let confirmT = null;
+  function sizeSoon() {
+    if (!attached) return;
+    readSize();
+    clearTimeout(confirmT);
+    confirmT = setTimeout(() => { if (attached) check(false); }, 1200);
+  }
+  frame.addEventListener('load', () => { if (attached) { hooked = null; hookTerm(); sizeSoon(); fitFont(); } });
   window.addEventListener('foreman-uiscale', () => { if (attached) fitFont(0); });
   return { open, close, sync, get sid() { return sid; } };
 }
