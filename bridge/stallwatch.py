@@ -14,7 +14,8 @@ CC는 스스로 심장박동을 보내지 않는다 — sessions/<pid>.json의 u
               (README 「세션이 끝나지 않고 CC 끝내기 확인 창에 걸린 것」)
 - long        한 작업이 LONG 넘게 — 화면에만(알리지 않는다, 긴 일은 정상일 수 있다)
 - bg_long     뒤에서 도는 일(백그라운드 Bash)이 BG_LONG 넘게 끝 알림 없이 돈다(11-14, 11-13 330의 pytest가 2시간 10분 멈춘 채 돌았다).
-              세션이 턴을 닫고 쉬어도 잰다. 출력 파일이 BG_QUIET 안에 바뀌었으면 정상(계속 일하는 중), 안 바뀌었으면 「멈췄을 수 있음」.
+              세션이 턴을 닫고 쉬어도 잰다. 출력이 나온 적 있고 BG_QUIET 안에 바뀌었으면 정상(계속 일하는 중), 나오다 안 바뀌었으면 「멈췄을 수 있음」.
+              출력이 한 번도 안 나왔으면(파일 크기 0 — `| tail`처럼 끝에서만 찍는 명령) 멈춤 여부를 모르니 「오래 돕니다」만(11-14 헛경보 고침).
               Monitor는 일부러 오래 도는 것이라 뺀다. 알림 열쇠 `stall:bg_long:<세션>:<task>`
 
 알림: kind마다 ALERT_AFTER를 넘으면 텔레그램 한 번(notification.rule 키 `stall:<kind>:<세션>:<시작 시각>` — 브리지를 다시 띄워도 한 번).
@@ -81,28 +82,39 @@ class Sample:
     errors: int = 0
     screen: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
-    # 끝 알림 없는 뒤에서 도는 일 — [{task, tool, description, since, out_mtime}] (judge_bg가 본다)
+    # 끝 알림 없는 뒤에서 도는 일 — [{task, tool, description, since, out_mtime, out_size}] (judge_bg가 본다)
     bg: list[dict[str, Any]] = field(default_factory=list)
 
 
-def bg_output_mtime(cc_session_id: str | None, task: str | None) -> datetime | None:
-    """뒤에서 도는 일의 출력 파일(/tmp/claude-<uid>/<폴더>/<CC 세션>/tasks/<task>.output)이 마지막으로 바뀐 때(UTC, 없으면 None).
-    task · 세션 id는 DB 값이라 글자를 가려 받고, 찾는 곳은 내 /tmp/claude-<uid> 아래뿐이다."""
+def bg_output_stat(cc_session_id: str | None, task: str | None) -> tuple[datetime, int] | None:
+    """뒤에서 도는 일의 출력 파일(/tmp/claude-<uid>/<폴더>/<CC 세션>/tasks/<task>.output)의 (마지막으로 바뀐 때(UTC), 크기) — 못 찾으면 None.
+    task · 세션 id는 DB 값이라 글자를 가려 받고, 찾는 곳은 내 /tmp/claude-<uid> 아래뿐이다.
+    크기 0 = 한 번도 출력이 안 나왔다(11-14: `pytest | tail`처럼 끝에서만 찍는 명령은 처음부터 끝까지 비어 있다.
+    파일이 만들어질 때 시각이 찍히므로 빈 파일의 마지막 변경 시각은 「출력이 멈춘 때」가 아니다)."""
     if not cc_session_id or not task or not re.fullmatch(r"[\w-]+", cc_session_id) or not re.fullmatch(r"[\w-]+", task):
         return None
     for p in glob.glob(f"/tmp/claude-{os.getuid()}/*/{cc_session_id}/tasks/{task}.output"):
         try:
-            return datetime.fromtimestamp(os.stat(p).st_mtime, UTC).replace(tzinfo=None)
+            st = os.stat(p)
         except OSError:
             continue
+        return datetime.fromtimestamp(st.st_mtime, UTC).replace(tzinfo=None), st.st_size
     return None
+
+
+def bg_output_mtime(cc_session_id: str | None, task: str | None) -> datetime | None:
+    """출력 파일이 마지막으로 바뀐 때(UTC, 못 찾으면 None) — bg_output_stat의 앞 값."""
+    st = bg_output_stat(cc_session_id, task)
+    return st[0] if st else None
 
 
 def judge_bg(s: Sample, now: datetime) -> list[dict[str, Any]]:
     """뒤에서 도는 일이 오래 걸리는지 — 일마다 [{kind: bg_long, label, since, detail, key, task, stalled}]. 살아 있는 세션만.
     - BG_LONG 안이면 아무것도 없다 · Monitor는 뺀다
-    - 출력 파일이 BG_QUIET 안에 바뀌었으면 계속 일하는 중이라 정상(오래 걸리는 시험도 점은 찍는다)
-    - 안 바뀌었으면 「멈췄을 수 있음」(stalled). 출력 파일을 못 찾으면 오래 걸린다는 것만 말한다"""
+    - 출력이 한 번도 안 나왔으면(파일 크기 0) 멈췄는지 알 수 없다 — 오래 돈다는 것만 말한다(끝에서만 찍는 명령일 수 있다)
+    - 출력이 나온 적 있고 BG_QUIET 안에 바뀌었으면 계속 일하는 중이라 정상(오래 걸리는 시험도 점은 찍는다)
+    - 나온 적 있는데 안 바뀌었으면 「멈췄을 수 있음」(stalled). 출력 파일을 못 찾으면 오래 걸린다는 것만 말한다
+    - out_size가 없는 값(옛 꼴)은 출력이 나온 것으로 본다"""
     out: list[dict[str, Any]] = []
     if not s.live:
         return out
@@ -111,11 +123,16 @@ def judge_bg(s: Sample, now: datetime) -> list[dict[str, Any]]:
         if not since or b.get("tool") in BG_SKIP_TOOLS or now - since < BG_LONG:
             continue
         mt = b.get("out_mtime")
-        if mt is not None and now - mt < BG_QUIET:
+        never = mt is not None and b.get("out_size") == 0      # 한 번도 안 나옴 — mtime은 파일이 만들어진 때라 쓰지 않는다
+        if never:
+            mt = None
+        elif mt is not None and now - mt < BG_QUIET:
             continue
         name = (b.get("description") or b.get("task") or "").strip()[:60]
         run = fmt_elapsed(now - since)
-        if mt is None:
+        if never:
+            detail = f"「{name}」이 {run}째 돌고 있습니다 — 아직 출력이 한 번도 없습니다(끝에서만 출력하는 명령일 수 있습니다)"
+        elif mt is None:
             detail = f"「{name}」이 {run}째 끝 알림 없이 돕니다 — 출력 파일을 찾지 못했습니다"
         else:
             detail = f"「{name}」이 {run}째 돌고 출력이 {fmt_elapsed(now - mt)}째 그대로입니다 — 멈췄을 수 있습니다"
@@ -312,8 +329,9 @@ class StallWatch:
                     continue                              # 지금 프로세스가 뜨기 전 것은 죽었다(대시보드와 같은 거르기)
                 if tool in BG_SKIP_TOOLS or now - bts < BG_LONG:
                     continue                              # 짧은 것은 출력 파일을 볼 필요가 없다
+                st = await asyncio.to_thread(bg_output_stat, cc, task)
                 bg.append({"task": task, "tool": tool, "description": desc, "since": bts,
-                           "out_mtime": await asyncio.to_thread(bg_output_mtime, cc, task)})
+                           "out_mtime": st[0] if st else None, "out_size": st[1] if st else None})
             out.append(Sample(sid=sid, live=bool(ls), busy=busy, turn_started=t[1] if t else None, last_event=last_ts,
                               last_tool=last_tool.get(sid), same=same.get(sid), errors=errs.get(sid, 0), screen=screen, bg=bg))
             meta[sid] = (title, project)

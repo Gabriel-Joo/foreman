@@ -62,16 +62,18 @@ def _started(sessions_dir: Any, pid: int) -> datetime | None:
 
 
 def background_running(rows: list[tuple[Any, ...]], started: datetime | None, cc_session_id: str | None = None) -> list[dict[str, Any]]:
-    """bg_start(끝 알림 없는 것) 중 지금 프로세스가 뜬 뒤에 시작한 것만 — [{task, tool, description, since, out_changed}].
+    """bg_start(끝 알림 없는 것) 중 지금 프로세스가 뜬 뒤에 시작한 것만 — [{task, tool, description, since, out_changed, out_size}].
     out_changed = 출력 파일(tasks/<task>.output)이 마지막으로 바뀐 때(11-14 — 오래 도는 일이 멈췄는지 보이려고, 못 찾으면 None).
+    out_size = 그 파일 크기(바이트, 못 찾으면 None). 0이면 한 번도 출력이 안 나온 것 — 화면이 「출력 멈춤」을 붙이지 않는다.
     경과는 화면이 since로 계산한다(서버는 매번 다시 안 만들어도 되게)."""
-    from bridge.stallwatch import BG_SKIP_TOOLS, bg_output_mtime
+    from bridge.stallwatch import BG_SKIP_TOOLS, bg_output_stat
     out = []
     for task, tool, desc, ts in rows:
         if started is not None and ts is not None and ts < started:
             continue
-        mt = bg_output_mtime(cc_session_id, task) if cc_session_id and tool not in BG_SKIP_TOOLS else None
-        out.append({"task": task, "tool": tool, "description": desc, "since": _iso(ts), "out_changed": _iso(mt)})
+        st = bg_output_stat(cc_session_id, task) if cc_session_id and tool not in BG_SKIP_TOOLS else None
+        out.append({"task": task, "tool": tool, "description": desc, "since": _iso(ts),
+                    "out_changed": _iso(st[0]) if st else None, "out_size": st[1] if st else None})
     return out
 
 

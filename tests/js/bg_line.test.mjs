@@ -5,7 +5,17 @@ import { elapsedText, bgItem, bgLine, bgTip } from '../../bridge/static/js/rende
 
 const NOW = Date.parse('2026-11-14T08:00:00Z');
 const ago = (min) => new Date(NOW - min * 60000).toISOString();
-const x = (since, changed, tool = 'Bash') => ({ task: 't', tool, description: 'pytest', since: ago(since), out_changed: changed == null ? null : ago(changed) });
+const x = (since, changed, tool = 'Bash', size = 100) => ({ task: 't', tool, description: 'pytest', since: ago(since), out_changed: changed == null ? null : ago(changed), out_size: changed == null ? null : size });
+
+test('출력이 한 번도 안 나온 일은 「출력 멈춤」 없이 경과만(`| tail` 헛경보)', () => {
+  assert.deepEqual(bgLine([x(130, 130, 'Bash', 0)], NOW), { text: '뒤에서 도는 일 1 · 2시간 10분째', stalled: false });
+  assert.equal(bgItem(x(130, 130, 'Bash', 0), NOW).never, true);
+  assert.equal(bgItem(x(130, 130, 'Bash', 0), NOW).quiet, false);
+  assert.ok(bgTip(x(130, 130, 'Bash', 0), NOW).includes('아직 출력이 없습니다'));
+  // 나오다 멈춘 것만 멈춤, 계속 나오면 경과만
+  assert.equal(bgLine([x(130, 130, 'Bash', 7)], NOW).stalled, true);
+  assert.equal(bgLine([x(130, 2, 'Bash', 7)], NOW).stalled, false);
+});
 
 test('경과 글', () => {
   assert.deepEqual([5, 60, 130, 25 * 60].map((m) => elapsedText(m * 60000)), ['5분', '1시간', '2시간 10분', '1일 1시간']);

@@ -185,12 +185,13 @@ export function elapsedText(ms) {
   if (h < 24) return `${h}시간${r ? ` ${r}분` : ''}`;
   return `${Math.floor(h / 24)}일${h % 24 ? ` ${h % 24}시간` : ''}`;
 }
-// 일 하나 — {run: 경과 글, long: 오래 됨, quiet: 출력이 멈춤(마지막 변경이 BG_QUIET 넘게 전), changed: 마지막 변경 글(모르면 '')}
-// Monitor는 일부러 오래 도는 것이라 long · quiet을 켜지 않는다
+// 일 하나 — {run: 경과 글, long: 오래 됨, quiet: 출력이 나오다 멈춤(마지막 변경이 BG_QUIET 넘게 전), never: 출력이 한 번도 안 나옴(파일 크기 0), changed: 마지막 변경 글(모르면 '')}
+// Monitor는 일부러 오래 도는 것이라 long · quiet을 켜지 않는다. never는 mtime이 파일 만든 때라 quiet로 세지 않는다(`| tail` 헛경보, 11-14)
 export function bgItem(x, now = Date.now()) {
-  const run = now - Date.parse(x.since), mt = x.out_changed ? Date.parse(x.out_changed) : null;
-  const watched = x.tool !== 'Monitor';
-  return { run: elapsedText(run), long: watched && run >= BG_LONG_MIN * 60000,
+  const run = now - Date.parse(x.since), watched = x.tool !== 'Monitor';
+  const never = watched && x.out_changed != null && x.out_size === 0;
+  const mt = x.out_changed && !never ? Date.parse(x.out_changed) : null;
+  return { run: elapsedText(run), long: watched && run >= BG_LONG_MIN * 60000, never,
     quiet: watched && mt != null && now - mt >= BG_QUIET_MIN * 60000, changed: mt != null ? `${elapsedText(now - mt)} 전` : '' };
 }
 // 이름표 아래 줄 「뒤에서 도는 일 N」 — 오래 된 일이 있으면 가장 오래된 것의 경과를 붙인다(「2시간째 · 출력 멈춤」). 없으면 수만
@@ -203,7 +204,7 @@ export function bgLine(bg, now = Date.now()) {
 // 호버 — 일마다 한 줄: 시작 시각 · 경과 · 출력 마지막 변경
 export function bgTip(x, now = Date.now()) {
   const i = bgItem(x, now);
-  return `시작 ${clock(x.since)} · ${i.run}째 · ${x.tool === 'Monitor' ? '감시라 오래 돌아도 정상입니다' : i.changed ? `출력 마지막 변경 ${i.changed}` : '출력 파일을 찾지 못했습니다'}`;
+  return `시작 ${clock(x.since)} · ${i.run}째 · ${x.tool === 'Monitor' ? '감시라 오래 돌아도 정상입니다' : i.never ? '아직 출력이 없습니다(끝에서만 출력하는 명령일 수 있습니다)' : i.changed ? `출력 마지막 변경 ${i.changed}` : '출력 파일을 찾지 못했습니다'}`;
 }
 // 대화의 시각은 "n분 전"이 아니라 시계 — 10초마다 글이 바뀌면 대화를 다시 그려야 해서 읽던 자리 · 고른 글자가 날아간다
 export function clock(ts) {

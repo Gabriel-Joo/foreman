@@ -11,14 +11,32 @@ import pytest
 from bridge.config import Settings
 from bridge.db.engine import make_engine
 from bridge.db.migrate import main as migrate_main
-from bridge.stallwatch import BG_LONG, BG_QUIET, Sample, StallWatch, bg_output_mtime, fmt_elapsed, judge, judge_bg
+from bridge.stallwatch import BG_LONG, BG_QUIET, Sample, StallWatch, bg_output_mtime, bg_output_stat, fmt_elapsed, judge, judge_bg
 
 NOW = datetime(2026, 11, 14, 8, 0)
 
 
-def bg(task="bT", tool="Bash", mins=60, quiet_mins=None, desc="pytest 전체"):
+def bg(task="bT", tool="Bash", mins=60, quiet_mins=None, desc="pytest 전체", size=100):
     return {"task": task, "tool": tool, "description": desc, "since": NOW - timedelta(minutes=mins),
-            "out_mtime": None if quiet_mins is None else NOW - timedelta(minutes=quiet_mins)}
+            "out_mtime": None if quiet_mins is None else NOW - timedelta(minutes=quiet_mins),
+            "out_size": None if quiet_mins is None else size}
+
+
+def test_never_output_is_plain_notice_not_stalled():
+    # 끝에서만 출력하는 명령(`| tail`) — 파일이 비어 있다. 만든 때가 오래돼도 「멈춤」이 아니다
+    f = judge_bg(Sample(sid=1, live=True, bg=[bg(mins=130, quiet_mins=130, size=0)]), NOW)
+    assert len(f) == 1 and f[0]["stalled"] is False and "한 번도 없습니다" in f[0]["detail"]
+    assert "멈췄을 수" not in f[0]["detail"] and "2시간 10분째" in f[0]["detail"]
+    # 빈 파일이 방금 만들어졌어도(30분 넘게 돌았다면) 오래 돈다는 알림은 한 번 간다
+    assert len(judge_bg(Sample(sid=1, live=True, bg=[bg(mins=40, quiet_mins=1, size=0)]), NOW)) == 1
+    # 30분 안이면 조용
+    assert judge_bg(Sample(sid=1, live=True, bg=[bg(mins=20, quiet_mins=20, size=0)]), NOW) == []
+
+
+def test_output_then_stopped_is_stalled_and_growing_is_normal():
+    f = judge_bg(Sample(sid=1, live=True, bg=[bg(mins=130, quiet_mins=60, size=5)]), NOW)
+    assert len(f) == 1 and f[0]["stalled"] is True and "멈췄을 수 있습니다" in f[0]["detail"]
+    assert judge_bg(Sample(sid=1, live=True, bg=[bg(mins=130, quiet_mins=3, size=5)]), NOW) == []
 
 
 def test_short_background_is_quiet():
@@ -71,6 +89,12 @@ def test_output_mtime_reads_task_file_and_rejects_odd_ids(tmp_path, monkeypatch)
     os.utime(f, (t, t))
     monkeypatch.setattr("bridge.stallwatch.glob.glob", lambda pat: [str(f)] if "cc-1/tasks/bx.output" in pat else [])
     assert bg_output_mtime("cc-1", "bx") == datetime(2026, 11, 14, 1, 2, 3)
+    assert bg_output_stat("cc-1", "bx") == (datetime(2026, 11, 14, 1, 2, 3), 2)
+    empty = root / "be.output"
+    empty.write_text("")
+    monkeypatch.setattr("bridge.stallwatch.glob.glob", lambda pat: [str(empty)] if "tasks/be.output" in pat else [str(f)])
+    assert bg_output_stat("cc-1", "be")[1] == 0               # 크기 0 = 한 번도 출력이 안 나옴
+    monkeypatch.setattr("bridge.stallwatch.glob.glob", lambda pat: [str(f)] if "cc-1/tasks/bx.output" in pat else [])
     assert bg_output_mtime("cc-2", "bx") is None
     assert bg_output_mtime("../x", "bx") is None and bg_output_mtime("cc-1", "a/b") is None and bg_output_mtime(None, "bx") is None
 
