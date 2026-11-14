@@ -2369,12 +2369,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const toW = (r) => [(r[0] - W / 2) / cam.s + cam.x, (r[1] - H / 2) / cam.s + cam.y, r[2] / cam.s, r[3] / cam.s];
     const boxes = [...tagBoxesW(), ...VIS_BODIES.values(),
                    // 11-11 먼저 놓인 다른 표시도 — 패널 넓게(화면 4 : 6)의 작은 [전체]에서 이웃 방 서기 둘의 「문서 할 일」이 겹쳤다
-                   ...[...BUBBLES.entries()].filter(([k]) => k !== a.key).flatMap(([, b]) => cardRects(b))];
+                   ...[...BUBBLES.entries()].filter(([k, b]) => k !== a.key && !b.moving).flatMap(([, b]) => cardRects(b))];   // 걷는 사람 것은 피하지 않는다(11-14)
     // 뒤에 놓일 이웃 덩어리의 제자리(prepareStacks) · 다른 캐릭터 이름표(지난 프레임) — 비켜 줄 수 있으면 비켜 주되 덮음보다 가볍게.
     // 이름표는 덩어리를 그린 뒤 그 덩어리를 피해 다시 자리 잡는다(drawName). 덩어리는 머리 위로만 갈 수 있어 이름표 때문에 이웃 몸을 덮지 않게
     // (11-13 — 오피스 워크스테이션에서 위 줄 코더의 발밑 이름표가 아래 줄 코더 머리 위를 막아 「/」가 위 줄 코더 발치를 덮었다)
     const spots = [...[...STACK_REQ.entries()].filter(([k]) => k !== a.key && !BUBBLES.has(k)).flatMap(([, q]) => q.spot),
-                   ...NAMES.filter((m) => m.key !== a.key).map((m) => toW(m.rect))];
+                   ...NAMES.filter((m) => m.key !== a.key && !m.moving).map((m) => toW(m.rect))];
     // 11-13 보이는 칸 밖도 덮음으로(잘림) — 캔버스 ∩ 방 화면 자르기(focusRect, 방 밖은 그리지 않는다 — 현장 1366 넓게에서 방 왼쪽 끝 코더의
     // 「API 오류로 멈춤」이 캔버스 안인데 방 밖이라 잘렸다). 캐릭터 자신이 보일 때만(방 화면에서 다른 방은 어디에 두든 밖이다)
     let vw = toW([0, 0, W, H]);
@@ -2406,26 +2406,35 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       spot: (rects) => stackCover(rects, { boxes: ns }),
       soft: (rects) => overTop(rects, zl.top),
     };
-    const best = pickStack(cands, tiers);
+    // 11-14 걷는 동안은 이름표(drawName)와 같이 걷기 시작할 때 고른 꼴(모양 · 크기 · 캐릭터 기준 dx · dy)을 그대로 따라간다.
+    // 그 후보가 이번 프레임 후보에 없으면(들어 올림 높이가 이번 이웃에서 안 나옴) 그 높이를 넣어 한 번 더 만든다. 멈추면 다시 고른다
+    const sig = `${a.room}|${texts.length}|${acts.length}`;
+    const pin = a.moving && a.stackPin && a.stackPin.sig === sig ? a.stackPin : null;
+    const same = (c) => c.shape === pin.shape && c.k === pin.k && c.dx === pin.dx && c.dy === pin.dy;
+    const pinC = pin && (cands.find(same) || stackCandidates(sized, x, base, { shrinks: [pin.k], reach: Math.abs(pin.dx) + 3 + reach, raise: pin.dy, lifts: [pin.dy] }).find(same));
+    const best = pinC ? pickStack([pinC], tiers) : pickStack(cands, tiers);
+    a.stackPin = a.moving && a.kind !== 'seat' ? { sig, shape: best.shape, k: best.k, dx: best.dx, dy: best.dy } : null;
     // 제자리(머리 바로 위 한 줄 · 원래 크기)를 어느 층이 막았는지 — 왜 옆 · 위로 갔는지 볼 때(window.office.stacks())
     const why = best === cands[0] || (!best.dx && !best.dy && best.k === 1 && best.shape === 'column') ? null
       : Object.fromEntries(Object.entries(tiers).map(([n, f]) => [n, Math.round(f(cands[0].rects))]).filter(([, v]) => v > 0));
-    // 옆 붙이기를 골랐는데 위에 자리가 있었나(11-13 사용자 「위에 자리가 있어 보이는데」) — stackAudit ⑥
-    const upFree = isSide(best.shape) && best.k !== 'dot' ? freeColumn(cands, tiers, best.k) : null;
+    // 옆 붙이기를 골랐는데 위에 자리가 있었나(11-13 사용자 「위에 자리가 있어 보이는데」) — stackAudit ⑥. 붙잡은 꼴(걷는 중)은 재지 않는다
+    const upFree = !pinC && isSide(best.shape) && best.k !== 'dot' ? freeColumn(cands, tiers, best.k) : null;
     const { texts: ts, acts: as } = sized(best.k), all = [...ts, ...as];
     all.forEach((c, i) => drawStackCard(c, best.rects[i], now));
     const cards = all.map((c, i) => ({ text: c.text, kind: c.kind, layer: i < ts.length ? 'text' : 'act', rect: best.rects[i].map((v) => Math.round(v * 100) / 100),
                                        ...(c.seat ? { seat: c.seat } : {}) }));   // seat = 자리 말풍선(coder · scribe — 누르기 · 호버)
     const main = cards.find((c) => c.layer === 'text') || cards[0];
+    noteJump('stack', a, `${Math.round(best.dx)},${best.dy},${best.shape},${best.k}`);
     BUBBLES.set(a.key, { room: a.room, text: main.text, rect: main.rect, cards, shape: best.shape, k: best.k, dx: Math.round(best.dx), dy: best.dy, why,
                          cover: Math.round(best.cover), corridor: Math.round(best.soft), over: Math.round(best.room), head: Math.round(head),
                          ...(upFree ? { upFree: { dx: Math.round(upFree.dx), dy: upFree.dy } } : {}),
+                         ...(a.moving ? { moving: true } : {}),               // moving = 걷는 중(붙잡은 꼴) — 점검은 빼고, 다른 표시는 피하지 않는다(11-14)
                          ...(a.kind === 'seat' ? { virtual: true } : {}) });   // virtual = 자리에 아무도 없어 보이지 않는 몸 위에 놓은 자리 말풍선
   }
   // 이번 프레임에 살아 있는 덩어리 — 캐릭터 것과 자리 말풍선(보이지 않는 몸, 11-13)
   const liveBubble = (k, b) => actors.has(k) || !!(b && b.virtual);
   function bubbleAudit() {                       // 이름표 · 몸 · 다른 표시 · 화면 밖 · 위 칸을 덮은 덩어리 — tools/screen.py --eval 'window.office.bubbleAudit()'
-    return [...BUBBLES.entries()].filter(([k, b]) => b.cover > 0 && liveBubble(k, b)).map(([key, b]) => ({ key, ...b }));
+    return [...BUBBLES.entries()].filter(([k, b]) => b.cover > 0 && liveBubble(k, b) && !b.moving).map(([key, b]) => ({ key, ...b }));
   }
   // 머리 위 표시 점검(11-13 사용자 — 「캐릭터 몸과 표시 겹침」). 지금 그린 그대로(월드 px):
   // ① 카드가 사람 몸(자기 몸 · 다른 사람)을 덮음 ② 카드 아래 끝이 자기 머리 위 끝보다 아래(= 머리 위가 아님)
@@ -2435,7 +2444,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 몸 칸은 보이는 부분(앞 탁자에 가려진 다리는 뺌 — visibleBodies)
     const bodies = [...BODIES.entries()].filter(([k]) => actors.has(k)).map(([k, { a, box }]) => ({ key: k, name: a.name || k, r: VIS_BODIES.get(k) || bodyBoxW(box) }));
     for (const [key, s] of BUBBLES) {
-      if (!liveBubble(key, s) || !s.cards) continue;
+      if (!liveBubble(key, s) || !s.cards || s.moving) continue;   // 걷는 중(붙잡은 꼴)은 세지 않는다(11-14 사용자)
       const own = BODIES.get(key);
       // 자리 말풍선(보이지 않는 몸)은 그 몸의 머리 위 끝(s.head) 기준
       const headTop = own ? own.box[1] : s.virtual ? s.head : null;
@@ -2722,12 +2731,20 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 머리를 덮고(머리 위 자리를 1.9칸으로 잡았는데 1.5배 캐릭터는 그보다 크다), 「[코더]」가 아래에 앉은 사람을 덮었다
     const bodyList = bodyRects(), bodies = bodyList.map((b) => b.r);
     const ownR = (bodyList.find((b) => b.key === a.key) || {}).r || null;
-    const others = [...HITS.filter((h) => !h.soft).map((h) => [h.x, h.y, h.w, h.h]), ...NAMES.map((m) => m.rect), ...bodies,
-                    ...[...BUBBLES.entries()].filter(([k, b]) => liveBubble(k, b)).flatMap(([, b]) => cardRects(b).map(toScr))];   // soft = 호버만(그림 위 넓은 칸)
+    // 걷는 사람의 이름표 · 머리 위 덩어리는 피하지 않는다(11-14 사용자 — 지나가며 잠깐 덮는 것은 괜찮다). 피하면 멈춰 선 사람 이름표가
+    // 지나가는 사람을 따라 자리를 바꿨다
+    const others = [...HITS.filter((h) => !h.soft).map((h) => [h.x, h.y, h.w, h.h]), ...NAMES.filter((m) => !m.moving).map((m) => m.rect), ...bodies,
+                    ...[...BUBBLES.entries()].filter(([k, b]) => liveBubble(k, b) && !b.moving).flatMap(([, b]) => cardRects(b).map(toScr))];   // soft = 호버만(그림 위 넓은 칸)
+    const measure = (ls) => {
+      const ws = ls.map(([t]) => ctx.measureText(t).width + 6);
+      return { ws, mw: Math.max(...ws), bh: ls.length * (NH + 1) - 1, ls };
+    };
+    const coverAt = (m, cx, top) => others.reduce((s, o) => s + areaOf([cx - m.mw / 2, top, m.mw, m.bh], o), 0);
+    const tailLines = () => [[short(nameTail(a.name), 10) + suffix, lines[0][1]], ...lines.slice(1)];
     const place = (ls) => {
-      const ws = ls.map(([t]) => ctx.measureText(t).width + 6), mw = Math.max(...ws), bh = ls.length * (NH + 1) - 1;
-      const cover = (cx, top) => others.reduce((s, o) => s + areaOf([cx - mw / 2, top, mw, bh], o), 0);
-      let best = { cx: sx, top: sy + 2, c: cover(sx, sy + 2), ws, mw, bh, ls };
+      const m = measure(ls), { mw, bh } = m;
+      const cover = (cx, top) => coverAt(m, cx, top);
+      let best = { cx: sx, top: sy + 2, c: cover(sx, sy + 2), ...m };
       if (!best.c) return best;
       // 좌우 한 이름 폭 · 아래 두 줄 · 머리 위 · 몸 양옆을 8px 격자로 훑는다. 안 겹치는 자리가 있으면 그중 가장 가까운 곳,
       // 없으면 겹친 넓이×2 + 거리가 가장 작은 곳(넓이만 보면 조금 덜 겹치려고 머리 위 왼쪽 끝까지 갔다)
@@ -2754,11 +2771,23 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       }
       return best;
     };
-    let best = place(lines);
-    if (best.c && text.length > 11 && !roleNamed(a)) {
-      const alt = place([[short(nameTail(a.name), 10) + suffix, lines[0][1]], ...lines.slice(1)]);
-      if (alt.c < best.c) best = alt;
+    // 11-14 사용자 — 걷는 동안은 걷기 시작할 때 고른 자리(캐릭터 기준 dx · top 차이, 줄인 이름인지)를 그대로 따라간다.
+    // 전에는 매 프레임 그 순간 자리에서 후보를 다시 훑어, 방 이름표 · 이웃과의 겹침이 프레임마다 달라 띄웠다 합쳤다 했다
+    // (시연 crew_walk 세 테마 × 세 크기에서 걷는 프레임의 7~20%가 자리를 바꿨다 [log:name_pin_20261114.md]). 멈춘 첫 프레임부터 다시 잰다.
+    // 방이 바뀌거나 줄 수(서브에이전트 · 뒤에서 도는 일)가 바뀌면 그때 한 번 다시 잰다
+    const pin = a.moving && a.namePin && a.namePin.room === a.room && a.namePin.n === lines.length ? a.namePin : null;
+    let best;
+    if (pin) {
+      const m = measure(pin.tail ? tailLines() : lines);
+      best = { ...m, cx: sx + pin.dx, top: sy + pin.dt, c: coverAt(m, sx + pin.dx, sy + pin.dt) };
+    } else {
+      best = place(lines);
+      if (best.c && text.length > 11 && !roleNamed(a)) {
+        const alt = place(tailLines());
+        if (alt.c < best.c) best = { ...alt, tail: true };
+      }
     }
+    a.namePin = a.moving ? pin || { dx: best.cx - sx, dt: best.top - sy, tail: !!best.tail, room: a.room, n: lines.length } : null;
     const { ws, mw, bh } = best;
     best.cx = Math.max(mw / 2 + 2, Math.min(W - mw / 2 - 2, best.cx));   // 화면 밖으로 잘리지 않게(11-09 — 1024에서 방 밖 「출하 반장」)
     best.ls.forEach(([t, col], i) => {
@@ -2766,11 +2795,27 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       ctx.fillStyle = INK_BG; ctx.fillRect(best.cx - ws[i] / 2, y, ws[i], NH);
       ctx.fillStyle = col; ctx.fillText(t, best.cx, y + 1);
     });
-    NAMES.push({ key: a.key, name: best.ls[0][0], rect: [best.cx - mw / 2, best.top, mw, bh].map(Math.round), cover: Math.round(best.c) });
+    noteJump('name', a, `${Math.round(best.cx - sx)},${Math.round(best.top - sy)},${best.ls[0][0]}`);
+    NAMES.push({ key: a.key, name: best.ls[0][0], rect: [best.cx - mw / 2, best.top, mw, bh].map(Math.round), cover: Math.round(best.c),
+                 ...(a.moving ? { moving: true } : {}) });   // moving = 걷는 중(붙잡은 자리) — 점검은 따로 센다(nameAudit · labelAudit)
   }
   // 이름이 구역 이름표 · 다른 이름과 겹친 것(비켜도 남은 것) — tools/screen.py가 세 테마 × 세 크기로 센다(11-06)
   let NAMES = [];
-  function nameAudit() { return NAMES.filter((m) => m.cover > 0); }
+  // 걷는 중인 이름표는 빼고 센다(11-14 사용자 — 지나가며 잠깐 덮는 것은 괜찮다). 걷는 중 덮음은 walkNameAudit
+  function nameAudit() { return NAMES.filter((m) => m.cover > 0 && !m.moving); }
+  function walkNameAudit() { return NAMES.filter((m) => m.cover > 0 && m.moving); }
+  // 걷는 동안 이름표 · 머리 위 덩어리의 캐릭터 기준 자리가 바뀐 프레임 수(11-14 사용자 「걸으면 이름표가 자리를 계속 바꾼다」).
+  // window.office.jumpWatch()로 시작, jumpLog()로 읽는다 — 걷는 프레임 수(walk) · 자리가 앞 프레임과 달라진 프레임 수(jump)
+  let JUMP_LOG = null;
+  function noteJump(kind, a, sig) {
+    if (!JUMP_LOG) return;
+    const k = `${kind}:${a.key}`, last = JUMP_LOG.last.get(k);
+    if (!a.moving) { JUMP_LOG.last.delete(k); return; }   // 멈추면 새로 — 다시 걷기 시작한 첫 프레임은 바뀜으로 세지 않는다
+    const e = JUMP_LOG[kind];
+    e.walk += 1;
+    if (last != null && last !== sig) { e.jump += 1; e.who[a.key] = (e.who[a.key] || 0) + 1; }
+    JUMP_LOG.last.set(k, sig);
+  }
   // ── 이름표 점검(11-10 사용자 — "구역 이름표가 가구 위에, 캐릭터 이름표가 캐릭터를 덮는다. 점검은 0건인데 실제로는 겹친다") ──
   // layoutAudit은 좌석(자리 점)의 윗몸을 가구 · 소품 · 구역 이름표가 덮나만, nameAudit은 캐릭터 이름 ↔ 구역 이름표 · 앞 이름만 쟀다.
   // 이름표 ↔ 가구, 이름표 ↔ 실제로 그린 사람 몸, 이름표끼리(구역 이름표 · 출하 라인 · 말풍선 포함)는 아무도 재지 않았다.
@@ -2914,10 +2959,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function labelAudit() {
     const out = [];
     // 11-13 머리 위 덩어리의 카드 하나하나(글씨 · 동작) — 전에는 글씨 말풍선 하나만 재서 동작 카드가 깔려도 몰랐다
-    const bub = [...BUBBLES.entries()].filter(([k, b]) => liveBubble(k, b))
+    // 11-14 걷는 사람의 이름표 · 덩어리(붙잡은 자리 — 지나가며 잠깐 덮는 것은 괜찮다, 사용자)는 세지 않는다. 걷는 중 덮음은 walkNameAudit
+    const bub = [...BUBBLES.entries()].filter(([k, b]) => liveBubble(k, b) && !b.moving)
       .flatMap(([, b]) => (b.cards || [{ text: b.text, rect: b.rect }]).map((c) => ({ kind: '말풍선', text: c.text || c.kind, r: toScr(c.rect) })));
     const labels = [...LABELS.map((l) => ({ kind: l.zone ? '구역 이름표' : '이름표', text: l.text, r: l.rect })),
-                    ...NAMES.map((m) => ({ kind: '캐릭터 이름표', text: m.name, r: m.rect })), ...bub];
+                    ...NAMES.filter((m) => !m.moving).map((m) => ({ kind: '캐릭터 이름표', text: m.name, r: m.rect })), ...bub];
     // ① 이름표 ↔ 사람 몸. 머리 위 덩어리 카드(말풍선)는 보이는 몸 칸으로(앞 가구에 가려진 다리는 뺌 — stackAudit와 같은 기준, 11-13)
     for (const b of bodyRects()) for (const l of labels) {
       const vis = l.kind === '말풍선' && VIS_BODIES.get(b.key), br = vis ? toScr(vis) : b.r;
@@ -3826,12 +3872,14 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
              const [x0, y0] = toScreen(q.x * T, q.y * T), [x1, y1] = toScreen((q.x + q.w) * T, (q.y + q.h) * T); return [x0, y0, x1, y1].map(Math.round); }, openSession, panel, actors, newSession: (p) => newSession.open(p), openTodo: (p, to) => todoInbox.open(p, to), foremanName: FM_NAME,
            probeMode: () => PROBE,       // 점검 화면인가(?probe=1, 11-11) — screen.py가 확인한다. 아니면 읽음 같은 사람 흔적이 남는다
            audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: (o) => layoutAudit(o), labelAudit: () => labelAudit(), gridAudit: () => gridAudit(), camScale: () => ({ cam: cam.s, room: roomViewScale() }), roomLabels: (name) => roomLabels(world.rooms.find((r) => r.name === name) || null).map((l) => ({ ...l, box: labelBox(l) })),furnRects: (w) => furnRects(w), standSpots: () => standSpots(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), stackAudit: () => stackAudit(), walkAudit: () => walkAudit(),
+           jumpWatch: () => { JUMP_LOG = { last: new Map(), name: { walk: 0, jump: 0, who: {} }, stack: { walk: 0, jump: 0, who: {} } }; return true; },
+           jumpLog: () => (JUMP_LOG ? { name: JUMP_LOG.name, stack: JUMP_LOG.stack } : null),
            walkWatch: () => { WALK_LOG = { frames: 0, moving: 0, issues: [], seen: new Set() }; return true; },
            walkLog: () => (WALK_LOG ? { frames: WALK_LOG.frames, moving: WALK_LOG.moving, issues: WALK_LOG.issues.slice() } : null),
            // 고르기(11-14) — select(key)로 캐릭터를 고르고 sel()로 그린 네모 · 몸(불투명 범위) · 이름표 칸(화면 px). bodies()는 그린 사람마다 불투명 범위
            select: (key) => { if (!actors.has(key)) return false; selected = key; info(); return true; }, sel: () => (SEL ? { ...SEL } : null),
            bodies: () => [...SILS.entries()].map(([key, s]) => { const a = actors.get(key) || {}; return { key, kind: a.kind, role: a.role || null, room: a.room, anim: a.moving ? 'walk' : (a.act && a.act.anim) || 'stand', lie: !!s.rot, foot: toScreen(a.x * T, a.y * T).map(Math.round), body: toScr(silBox(s)).map(Math.round) }; }),
-           seats: () => seatCards(), auras: () => ({ style: AURA_STYLE, list: AURAS.slice() }), stacks:() => [...BUBBLES.entries()].filter(([k, b]) => liveBubble(k, b)).map(([key, b]) => ({ key, ...b, scr: (b.cards || []).map((c) => toScr(c.rect).map(Math.round)) })), nameAudit: () => nameAudit(), names: () => NAMES.slice(),
+           seats: () => seatCards(), auras: () => ({ style: AURA_STYLE, list: AURAS.slice() }), stacks:() => [...BUBBLES.entries()].filter(([k, b]) => liveBubble(k, b)).map(([key, b]) => ({ key, ...b, scr: (b.cards || []).map((c) => toScr(c.rect).map(Math.round)) })), nameAudit: () => nameAudit(), walkNameAudit: () => walkNameAudit(), names: () => NAMES.slice(),
            // 터미널을 열 때 고를 프로젝트(11-10) — 보고 있는 현장, 없으면(감독실 · 지도 · 라운지) 고른 세션의 프로젝트, 그것도 없으면 null
            currentProject: () => (world.rooms.some((r) => r.name === view) ? view
              : ((store.state.sessions.get(store.state.selected) || {}).project || null)),
