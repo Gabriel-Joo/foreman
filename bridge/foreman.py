@@ -291,7 +291,10 @@ class ForemanDispatcher:
         self.claude_bin, self.model = claude_bin, model
         self.workdir = Path(workdir or Path.home() / ".foreman" / "dispatch")
         self.running: dict[int, str | None] = {}    # 지금 claude -p가 도는 디스패치 → 프로젝트(캐릭터가 일하는 모습)
-        self.on_change: Any = None                  # 상태가 바뀌면(계획 시작 · 끝 · 시작 · 버림) 화면에 알린다
+        self._origin: dict[int, str] = {}           # 도는 디스패치 → human · wake (다시 받기는 사람 것만 끊는다)
+        self._procs: dict[int, Any] = {}            # 도는 디스패치 → claude -p 프로세스(PID로 끊기 위해)
+        self._cut: set[int] = set()                 # 다시 받기로 끊긴 디스패치 — 늦게 온 결과를 버린다
+        self.on_change: Any = None               # 상태가 바뀌면(계획 시작 · 끝 · 시작 · 버림) 화면에 알린다
         # 11-13 끝난 「진행 중인 일」 줄 내리기 · 낡음 문턱(bridge/foreman_note.py NoteRules). 설정 파일([note])은 main이 읽어 넣는다
         self.note_rules = notes.NoteRules()
         self._note_task: asyncio.Task[Any] | None = None
@@ -452,13 +455,38 @@ class ForemanDispatcher:
         ctx = await self.context(request, project, wake)
         prompt = INSTRUCTIONS + (WAKE_HINT if wake else "") + "\n\n# 상황 묶음\n" + ctx
         did = await self._record(request, len(ctx), origin, project, wake_key, wake_text)
+        if origin == "human":                    # 11-14 다시 받기 — 같은 방에서 아직 도는 앞 계획은 끊고 이것만 남긴다
+            self._cut_earlier(did, project)
         self.running[did] = project
+        self._origin[did] = origin
         self._changed()
         try:
             return await self._plan(did, prompt, len(ctx), t0)
         finally:
             self.running.pop(did, None)
+            self._origin.pop(did, None)
+            self._procs.pop(did, None)
+            self._cut.discard(did)
             self._changed()
+
+    def _cut_earlier(self, new_did: int, project: str | None) -> list[int]:
+        """같은 프로젝트(방)에서 도는 앞 사람 계획을 끊는다. 그 `claude -p` 프로세스만 PID로 죽이고(패턴 찾기 아님),
+        디스패치 번호를 _cut에 적어 늦게 온 결과를 _plan이 버리게 한다."""
+        cut = [d for d, pj in self.running.items() if d < new_did and pj == project and self._origin.get(d) == "human"]
+        for d in cut:
+            self._cut.add(d)
+            p = self._procs.get(d)
+            if p is not None and p.returncode is None:
+                try:
+                    p.kill()
+                except ProcessLookupError:
+                    pass
+            log.info("다시 받기: 앞 계획 dispatch=%s을 끊음(새 dispatch=%s)", d, new_did)
+        return cut
+
+    async def _drop_cut(self, did: int, t0: float) -> None:
+        await self._finish(did, None, "replaced", "다시 받기로 끊었습니다", t0)
+        raise Refused("다시 받기로 이 계획을 끊었습니다")
 
     async def _plan(self, did: int, prompt: str, ctx_chars: int, t0: float) -> dict[str, Any]:
         self.workdir.mkdir(parents=True, exist_ok=True)
@@ -472,6 +500,9 @@ class ForemanDispatcher:
                 *dirs,                                   # --add-dir는 값을 여러 개 받아 뒤의 인자를 삼킨다 — 프롬프트는 stdin으로
                 cwd=str(self.workdir), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE, env=env)
+            self._procs[did] = p
+            if did in self._cut:                 # 띄우는 사이에 끊겼다
+                p.kill()
             out, err = await asyncio.wait_for(p.communicate(prompt.encode()), PLAN_TIMEOUT_S)
         except TimeoutError:
             p.kill()
@@ -483,6 +514,8 @@ class ForemanDispatcher:
                                                        if isinstance(e, FileNotFoundError) else "")
             await self._finish(did, None, "failed", why, t0)
             raise Refused(why) from None
+        if did in self._cut:                     # 앞 계획의 결과는 화면 · 기록에 섞지 않는다
+            await self._drop_cut(did, t0)
         raw = out.decode(errors="replace")
         try:
             j = json.loads(raw)
@@ -671,7 +704,8 @@ class ForemanDispatcher:
         async with self.engine.connect() as c:
             st = (await c.execute(text("SELECT status FROM dispatch WHERE id = :i"), {"i": dispatch_id})).scalar()
         if st != "planned":
-            raise Refused({"started": "이미 시작한 계획입니다", "discarded": "버린 계획입니다", "failed": "실패한 계획입니다"}.get(
+            raise Refused({"started": "이미 시작한 계획입니다", "discarded": "버린 계획입니다", "failed": "실패한 계획입니다",
+                                                                       "replaced": "다시 받기로 끊긴 계획입니다"}.get(
                 st or "", "없는 계획입니다"))
         plan = await self.check(dict(plan), dispatch_id)
         if plan["mode"] == "ask":
