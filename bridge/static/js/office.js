@@ -264,14 +264,30 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         + `${l.last_pct != null ? ` 마지막으로 본 값은 ${Math.round(l.last_pct)}%(${resetKo(l.last_at)})이고 지금 값이 아닙니다.` : ''} 이 한도의 80 · 95% 알림은 줄이 다시 나올 때까지 멈춥니다.`
       : `${short[l.key] || l.label} ${usagePct(l) == null ? '—' : Math.round(usagePct(l)) + '%'}${l.reset_at ? ` — ${resetKo(l.reset_at)} 리셋` : ''}${l.eta_before_reset ? ` (이 속도면 ${l.eta_100 ? resetKo(l.eta_100) + '에 ' : '리셋 전에 '}100%)` : ''}`);
     const why = usage.failed ? ` 지금은 불러오지 못했습니다(${usage.failed}).` : !rd.ok ? ` 지금은 /usage를 읽지 못하고 있습니다(${rd.error || '오래됐습니다'}).` : '';
-    // 11-09 사용자 — /usage "What's contributing"(CC 추정: 대략 · 이 기기 세션만 · 비중끼리 겹침). 서브에이전트 · MCP 비중, 제안 줄
+    // 11-09 사용자 — /usage "What's contributing"(CC 추정: 대략 · 이 기기 세션만 · 비중끼리 겹침). 서브에이전트 · MCP 비중
+    // 11-14 사용자 — 읽으면 알게 한국말로(무엇의 몇 %인지 · 왜 합이 100%가 아닌지). 가운뎃점 없이. CC 제안 줄은 뺐다(영어 · 조언이 맞지 않음)
     const span = { '24h': '24시간', '7d': '7일' };
+    // "general-purpose 21%" 또는 "a 12%, b 3%" → [{name, pct}]. 모양이 다르면 null(원문 그대로 보인다)
+    const shares = (s) => {
+      const out = [];
+      for (const part of String(s || '').split(/,\s*/)) {
+        const m = /^(.*\S)\s+(\d+)%$/.exec(part.trim());
+        if (!m) return null;
+        out.push({ name: m[1], pct: m[2] });
+      }
+      return out;
+    };
     const contrib = (usage.contributing || []).flatMap((b) => {
       const name = span[b.span] || b.span;
-      const top = [b.subagents && `서브에이전트 ${b.subagents}`, b.mcp && `MCP ${b.mcp}`].filter(Boolean).join(' · ');
-      return [top && `지난 ${name} — ${top}`, ...(b.span === '24h' ? b.tips.map((t) => `CC 제안 ${t.pct}% — ${t.text}`) : [])].filter(Boolean);
+      const row = (what, s) => {
+        if (!s) return [];
+        const sh = shares(s);
+        return sh ? sh.map((x) => `지난 ${name} 동안 쓴 양 가운데 약 ${x.pct}%에 ${what}(${x.name})가 들어 있습니다`)
+          : [`지난 ${name} 동안 ${what}: ${s}`];
+      };
+      return [...row('서브에이전트', b.subagents), ...row('MCP 서버', b.mcp)];
     });
-    if (contrib.length) lines.push('CC가 본 비중 — 대략 · 이 기기 세션만 · 비중끼리 겹침(합이 100%가 아님)', ...contrib);
+    if (contrib.length) lines.push('Claude Code가 어림한 값이고 이 컴퓨터의 세션만 셉니다. 한 요청이 서브에이전트이면서 MCP 서버를 쓰는 것처럼 여러 갈래에 함께 들어가므로 합이 100%가 되지 않습니다', ...contrib);
     usageTipRows = { lines, why };                     // 감독실 경고등 호버도 같은 줄을 쓴다(11-09)
     creditChip(usage.credits);
     el.dataset.tip =`한도 — 구독 사용 한도를 몇 % 썼는지입니다. 세션마다 쌓인 대화 %(패널 머리줄)와는 다릅니다. "약"은 마지막으로 읽은 뒤 FOREMAN이 더해 본 추정입니다. 누르면 어디서 나가는지 봅니다.${why}\n${lines.join('\n')}`;
