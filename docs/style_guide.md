@@ -112,6 +112,7 @@
   | 화면 | 코드 · 문서 |
   |---|---|
   | 새 세션으로 옮기기 | 인계(`[FOREMAN 인계 …]`) |
+  | 작업방(11-14 사용자 — 커밋 · 합치기 · 브랜치는 화면에도 그대로 쓰고 worktree만 바꾼다) | worktree(`.worktrees/<이름>`) |
   | 테마 이름(팀장 · 교장 · 소장, 기본 테마 감독), 그 기능은 "계획 세우기" | 디스패처 · 디스패치 |
   | 패널 머리줄 "쌓인 대화 N%"(세션 대화가 모델 창을 채운 비율) | 맥락 비율 `context.pct`(`bridge/compactwatch.py`, 창은 `config/models.toml [windows]`) |
   | 머리 칩 "한도: 5시간 … · 주간 …"(계정 사용 한도) | 사용 한도 `usage` limits(`bridge/usage.py`). /usage 화면 이름은 "사용량" 그대로 |
