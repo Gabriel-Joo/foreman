@@ -177,7 +177,7 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
             items.append({"kind": "later", "title": f"알려진 한계 쓰기: 쓸 줄 {lim}, 뺄 줄 {drop}",
                           "why": "포스트잇 [→]로 보낸 것과 [갱신]에서 끝났다고 닫은 줄입니다. README에 쓰는 것은 서기 세션입니다"})
         if pst["check"] and pst["check"]["state"] == "failed":
-            items.append({"kind": "postit", "title": f"포스트잇 [갱신] 실패: 조사 세션{pst['check']['session_id']}",
+            items.append({"kind": "postit", "title": f"포스트잇 [갱신] 실패: 조사 세션 {pst['check']['session_id']}",
                           "why": pst["check"]["detail"] or "결과 없이 끝났습니다"})
         port_pub: dict[str, Any] | None = None
         docs_pub: dict[str, Any] | None = None
