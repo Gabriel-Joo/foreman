@@ -23,6 +23,9 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # 손으로 돌릴 때도 bridge를 가져온다
+from bridge.evidence import MARK  # noqa: E402
+
 DATA = "tests/data/screen_words.toml"
 SCRIBE_DOCS = ("docs/operations.md", "docs/style_guide.md")   # 코더가 건드리지 않는 문서(사람 승인 카드)
 MANUSCRIPT_DIRS = ("notion/", "portfolio/")                    # 원고(11-15) — 서기가 쓴다. 코더는 고치지 않고 서기 몫에 적는다
@@ -274,7 +277,8 @@ def buttons_in(line: str) -> list[str]:
     out = []
     for m in _BUTTON.finditer(line):
         q = m.group(1).strip()
-        if not q or re.match(r"^(?:log|c|docs|t):", q) or q in ("x", "X", " "):
+        # 근거 표시 이름(c · t · log · docs · code)은 bridge/evidence.py의 MARK 한 곳에서 가져온다
+        if not q or MARK.match(f"[{q}]") or q in ("x", "X", " "):
             continue
         out.append(q)
     return out

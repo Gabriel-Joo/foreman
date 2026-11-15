@@ -109,6 +109,11 @@ def test_doc_button_must_exist(tmp_path):
     assert "[[button_exception]]" in sw.explain(r)
 
 
+def test_evidence_marks_are_not_buttons():
+    line = "근거 [code:bridge/x.py:1-3] [c:ab12] [t:7] [log:a.md] [docs:b.md] 그리고 [Notion에 올리기]"
+    assert sw.buttons_in(line) == ["Notion에 올리기"]
+
+
 def test_button_exception_and_stale(tmp_path):
     data = DATA + ('\n[[button_exception]]\ndoc = "docs/a.md"\nquote = "계획만"\nkind = "계획 표"\nwhy = "x"\n'
                    '\n[[button_exception]]\ndoc = "docs/a.md"\nquote = "사라진 줄"\nkind = "계획 표"\nwhy = "x"\n')
