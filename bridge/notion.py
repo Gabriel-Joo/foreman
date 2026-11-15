@@ -97,9 +97,11 @@ class Ctx:
 EVIDENCE_STRIP = r"\s*\[(?:c|t|log|docs|code):[^\]\s]+\]"     # 원고의 노션 판에서 떼는 근거 표시(이웃 공백까지)
 SOURCES = ("log/", "docs/", "portfolio/", "notion/")         # 게시할 수 있는 원본 폴더(notion/ = 노션 기술문서 원고, 11-15)
 
+# 굵게 안쪽(11-15): 코드 구간은 통째로, 혼자 있는 `*`(config/*.toml)는 글자로 받는다. 굵게 안쪽은 inline이 다시 해석한다
 _INLINE = re.compile(
-    r"(?P<code>`[^`\n]+`)"
-    r"|(?P<bold>\*\*(?P<btext>[^*\n]+)\*\*)"
+    r"(?P<code2>(?<!`)``(?!`)(?P<c2>[^\n]+?)(?<!`)``(?!`))"      # 이중 백틱 — `` ` `` 처럼 안에 백틱을 담는다(양쪽 공백 하나는 뗀다)
+    r"|(?P<code>`[^`\n]+`)"
+    r"|(?P<bold>\*\*(?P<btext>(?:`[^`\n]+`|[^*\n]|\*(?!\*))+?)\*\*)"
     r"|(?P<ev>\[(?P<evk>c|log|docs|code|t):(?P<evv>[^\]\s]+)\])"
     r"|(?P<link>\[(?P<ltext>[^\]\n]+)\]\((?P<lhref>[^)\s]+)\))")
 
@@ -123,33 +125,42 @@ def _rt(content: str, *, bold: bool = False, code: bool = False, link: str | Non
 def inline(text: str, ctx: Ctx) -> list[dict[str, Any]]:
     """한 줄 글 → rich_text. 근거 표시 [t:…]는 빼고 이웃 공백을 하나로. 원고(ctx.manuscript)는 근거 표시를 모두 뗀다."""
     text = re.sub(EVIDENCE_STRIP if ctx.manuscript else r"\s*\[t:[^\]\s]+\]", "", text)
+    return _runs(text, ctx, False)
+
+
+def _runs(text: str, ctx: Ctx, bold: bool) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     pos = 0
     for m in _INLINE.finditer(text):
         if m.start() > pos:
-            out += _rt(text[pos:m.start()])
-        if m["code"]:
-            out += _rt(m["code"][1:-1], code=True)
+            out += _rt(text[pos:m.start()], bold=bold)
+        if m["code2"]:
+            c = m["c2"]
+            if len(c) > 2 and c[0] == " " and c[-1] == " ":
+                c = c[1:-1]
+            out += _rt(c, code=True, bold=bold)
+        elif m["code"]:
+            out += _rt(m["code"][1:-1], code=True, bold=bold)
         elif m["bold"]:
-            out += _rt(m["btext"], bold=True)
+            out += _runs(m["btext"], ctx, True)      # 굵게 안쪽의 코드 · 링크를 다시 해석하고 그 위에 굵게를 덧씌운다(11-15)
         elif m["ev"]:
             k, v = m["evk"], m["evv"]
             if k == "c":
-                out += _rt(v, code=True, link=f"{ctx.gh}/commit/{v}" if ctx.links else None)
+                out += _rt(v, code=True, bold=bold, link=f"{ctx.gh}/commit/{v}" if ctx.links else None)
             elif k == "code":                       # 코드 경로(11-15) — 파일 · 폴더 그대로(줄 범위는 떼고)
                 f = re.split(r"[:#]", v)[0]
-                out += _rt(f, code=True, link=ctx.blob(f) if ctx.links else None)
+                out += _rt(f, code=True, bold=bold, link=ctx.blob(f) if ctx.links else None)
             else:                                 # log · docs — 파일(줄 범위 · 절은 떼고 파일만 잇는다)
                 f = re.split(r"[:#]", v)[0]
-                out += _rt(f"{k}/{f}", code=True, link=ctx.blob(f"{k}/{f}") if ctx.links else None)
+                out += _rt(f"{k}/{f}", code=True, bold=bold, link=ctx.blob(f"{k}/{f}") if ctx.links else None)
         elif m["link"]:
             href = ctx.resolve(m["lhref"])
             if href and not ctx.links and href.startswith(ctx.gh):
                 href = None                         # 저장소 안 파일 링크 — 포트폴리오에서는 글자만(게시된 원고는 Notion 페이지로 걸린다)
-            out += _rt(m["ltext"], link=href)
+            out += _rt(m["ltext"], bold=bold, link=href)
         pos = m.end()
     if pos < len(text):
-        out += _rt(text[pos:])
+        out += _rt(text[pos:], bold=bold)
     return out
 
 
@@ -167,7 +178,20 @@ def _cells(line: str) -> list[str]:
         s = s[1:]
     if s.endswith("|") and not s.endswith("\\|"):
         s = s[:-1]
-    return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", s)]
+    # 코드 구간 안의 `|`는 칸 나눔이 아니다(11-15). GitHub 마크다운은 코드 안 `|`도 가르므로 거기서는 원고가 `\|`로 써야 하는 것을
+    # 노션 판은 그대로 한 칸으로 읽는다 — 짝이 맞는 백틱만 코드로 본다(짝 없는 백틱이 뒤 칸을 삼키지 않게)
+    spans = [(m.start(), m.end()) for m in re.finditer(r"``[^\n]+?``|`[^`\n]+`", s)]
+    cuts, i = [], 0
+    for m in re.finditer(r"(?<!\\)\|", s):
+        i = m.start()
+        if not any(a <= i < b for a, b in spans):
+            cuts.append(i)
+    parts, prev = [], 0
+    for c in cuts:
+        parts.append(s[prev:c])
+        prev = c + 1
+    parts.append(s[prev:])
+    return [c.strip().replace("\\|", "|") for c in parts]
 
 
 def first_h1(md: str) -> tuple[int | None, str | None]:
@@ -224,7 +248,9 @@ def md_to_blocks(md: str, ctx: Ctx | None = None) -> tuple[str | None, list[dict
 
     def flush_para() -> None:
         if para:
-            blocks.append(_block("paragraph", inline("\n".join(para), ctx)))
+            rich = inline("\n".join(para), ctx)
+            if plain(rich).strip():                 # 근거 표시만 있던 줄은 표시를 뗀 뒤 비면 문단을 만들지 않는다(11-15)
+                blocks.append(_block("paragraph", rich))
             para.clear()
 
     while i < len(lines):
