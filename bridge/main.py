@@ -346,6 +346,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if app.state.notifier:
                 rule = app.state.notifier.rules.for_project("foreman")
                 app.state.notifier.send_direct("foreman", "direct", None, f"{(rule and rule.prefix) or '[FOREMAN]'} ⚠ {why}")
+        # 11-15(사용자) 조사 세션 스스로 끝내기(bridge/inspector_close.py). 합치기 준비 뒤에 띄운다(mergeprep.auto를 잇는다).
+        # config/handoff.toml [inspector_close]가 없으면 켜짐(foreman만). 안 떠도 브리지는 뜨고, 텔레그램으로 알린다
+        insp_task = None
+        try:
+            from bridge.inspector_close import InspectorClose, load as load_insp
+            icfg = load_insp(Path(__file__).resolve().parent.parent / "config" / "handoff.toml")
+            if icfg.enabled:
+                ic_ = InspectorClose(app.state.handoff, icfg, app.state.notifier, on_change=dashboard_api.invalidate)
+                app.state.inspector_close = ic_
+                insp_task = ic_.start()
+                asm_ic = app.state.assembler
+                if asm_ic is not None:
+                    prev_ic = asm_ic.on_turn_closed
+
+                    def on_turn_closed_ic(*a: object) -> None:
+                        if prev_ic:
+                            prev_ic(*a)
+                        try:
+                            ic_.on_turn_closed(*a)
+                        except Exception as e:  # noqa: BLE001 , 예약 실패가 적재를 막지 않는다(그물이 줍는다)
+                            log.warning("턴 끝 조사 세션 끝내기 예약 실패: %s", type(e).__name__)
+                    asm_ic.on_turn_closed = on_turn_closed_ic
+                log.info("조사 세션 스스로 끝내기 켬: 프로젝트 %s, 턴 끝 %g초 뒤 + %g초마다 그물", icfg.projects or "전부",
+                         icfg.settle_s, icfg.every_s)
+        except Exception as e:  # noqa: BLE001
+            why = f"조사 세션 스스로 끝내기를 켜지 못했다(config/handoff.toml): {type(e).__name__}: {str(e)[:200]}"
+            log.error(why)
+            if app.state.notifier:
+                rule = app.state.notifier.rules.for_project("foreman")
+                app.state.notifier.send_direct("foreman", "direct", None, f"{(rule and rule.prefix) or '[FOREMAN]'} ⚠ {why}")
         if app.state.approvals:
             app.state.approvals.schema = app.state.schema_lock
             # 11-09 — 다른 저장소는 읽기만(config/approval.toml [repo_scope])
@@ -469,7 +499,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await app.state.terminal.stop()   # ttyd만 내린다 — tmux 셸은 남는다
             recon_task = app.state.reconciler._task if app.state.reconciler else None
             for t in (watch_task, state_task, health_task, usage_task, docsync_task, denied_task, schema_task, stall_task, recon_task,
-                      mprep_task, handover_task, note_task, postit_task, app.state.foreman._note_task):
+                      mprep_task, insp_task, handover_task, note_task, postit_task, app.state.foreman._note_task):
                 if t:
                     t.cancel()
                     try:

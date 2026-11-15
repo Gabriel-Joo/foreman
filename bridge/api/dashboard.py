@@ -511,8 +511,9 @@ def merge_waits(mp: Any) -> dict[int, dict[str, Any]]:
 
 
 def manager_card(c: dict[str, Any]) -> bool:
-    """관리자가 승인하는 카드인가 — 사람 화면에서 숨긴다(handoff.js managerCard와 같은 기준)."""
-    return c.get("approver") == "manager" and not c.get("human_why")
+    """관리자가 승인하는 카드인가 — 사람 화면에서 숨긴다(handoff.js managerCard와 같은 기준).
+    11-15 브리지가 스스로 합치는 조사 log 카드(approver auto, bridge/inspector_close.py)도 사람이 누를 것이 없어 같이 뺀다."""
+    return c.get("approver") in ("manager", "auto") and not c.get("human_why")
 
 
 def ended_info(done: tuple[str, datetime] | None, detached: datetime | None) -> dict[str, Any]:

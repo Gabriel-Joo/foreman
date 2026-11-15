@@ -89,6 +89,16 @@ test('관리자가 승인하는 카드는 [합치기]를 숨긴다 — 늘-사�
   assert.match(mpSection({ card: card({ approver: 'manager', human_why: [], status: 'failed' }) }, b, 7), /data-act="mp-merge"/);
 });
 
+test('조사 log 카드(승인자 auto)는 브리지가 스스로 합친다. 사람이 누를 것이 없다(11-15)', () => {
+  assert.ok(managerCard(card({ approver: 'auto', human_why: [] })));
+  const a = mpSection({ card: card({ approver: 'auto', human_why: [] }) }, b, 7);
+  assert.doesNotMatch(a, /data-act="mp-merge"/);
+  assert.match(a, /브리지가 스스로 합치고 조사 세션을 끝냅니다\. 사람이 누를 것은 없습니다\./);
+  assert.doesNotMatch(a, /관리자 세션이 승인합니다/);
+  // 스스로 합치다 멈추면 단추가 다시 보인다
+  assert.match(mpSection({ card: card({ approver: 'auto', human_why: [], status: 'failed' }) }, b, 7), /data-act="mp-merge"/);
+});
+
 test('main이 앞섬 · 충돌 · 합친 뒤', () => {
   const rb = mpSection({ card: card({ ff: false, behind: 3 }) }, b, 7);
   assert.match(rb, /<div class="small"><span class="ok"[^>]*>main에 새 커밋 3개\(rebase\)<\/span><\/div>/);

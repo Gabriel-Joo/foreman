@@ -72,7 +72,8 @@ export function autoNote(auto) {
   return ` <span class="muted" title="${esc(tip)}">(자동: ${esc(shown)})</span>`;
 }
 
-export const managerCard =(c) => !!c && c.approver === 'manager' && !(c.human_why && c.human_why.length);
+// 11-15 approver auto = 조사 세션이 log 새 파일만 커밋해 브리지가 스스로 합치는 카드(bridge/inspector_close.py). 사람이 누를 것이 없다
+export const managerCard =(c) => !!c && (c.approver === 'manager' || c.approver === 'auto') && !(c.human_why && c.human_why.length);
 const MP_STATUS = { ready: '승인 기다림', merging: '합치는 중…', merged: '합쳤습니다', conflict_sent: '충돌: 세션에 풀라고 보냈습니다',
   conflict_manager: '충돌: 관리자에게 넘겼습니다', failed: '멈췄습니다' };
 // 「승인해야 할 파일」(11-14 사용자) — 서버 human_why는 「늘 사람 경로(*db/migration/*): a/V19.sql, a/V20.sql」꼴 글이다(bridge/mergeprep.py
@@ -176,7 +177,8 @@ export function mpSection(mp, b, sid) {
     ${c.error ? `<div class="small bad">${esc(c.error)}</div>` : ''}
     ${c.esc_off_at && c.status === 'ready' ? `<div class="small muted mp-off" title="답 안 해도 됨 — 사람이 관리자 머리 위의 이 카드 물음을 껐습니다. 머리 위 · 승인 막대 숫자에서 뺐고 카드는 남습니다. 이 세션이 새로 커밋하면 다시 올립니다.">사람이 답 안 해도 됨으로 둠(${esc(clock(c.esc_off_at))}). 관리자 머리 위 · 승인 막대에서 뺐습니다(합치려면 [합치기]).</div>` : ''}
     ${c.status === 'merged' && !merged ? '<div class="small muted">합치기까지 했습니다. 시험 · push · 브리지 다시 띄우기는 관리자가 합니다.</div>' : ''}
-    ${open && managerCard(c) && c.status === 'ready' ? '<div class="small muted mp-by-manager" title="관리자 승인 — 이 프로젝트는 합치기 승인을 관리자 세션이 합니다. 사람이 누를 것은 없습니다.">관리자 세션이 승인합니다. 사람이 누를 것은 없습니다.</div>'
+    ${open && managerCard(c) && c.status === 'ready' && c.approver === 'auto' ? '<div class="small muted mp-by-auto" title="스스로 합치기 — 조사 세션이 log 새 파일만 커밋했습니다. 브리지가 승인 없이 합치고 세션을 끝냅니다. 사람이 누를 것은 없습니다.">브리지가 스스로 합치고 조사 세션을 끝냅니다. 사람이 누를 것은 없습니다.</div>'
+      : open && managerCard(c) && c.status === 'ready' ? '<div class="small muted mp-by-manager" title="관리자 승인 — 이 프로젝트는 합치기 승인을 관리자 세션이 합니다. 사람이 누를 것은 없습니다.">관리자 세션이 승인합니다. 사람이 누를 것은 없습니다.</div>'
       : open ? `<div class="hand-btns">${b('mp-merge', '합치기', !!c.head && c.status !== 'merging', 'primary', tip)}${b('mp-skip', '나중에', true, 'ghost', '나중에 — 이 카드를 치웁니다. 이 세션이 새로 커밋하면 다시 뜹니다.')}</div>` : ''}
   </section>`;
 }
