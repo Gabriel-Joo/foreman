@@ -29,6 +29,8 @@ log = logging.getLogger(__name__)
 
 MAX = 8000
 SOURCES = ("note", "todo", "said", "chat", "promote")
+ONE_PER_REF = ("chat", "promote")      # 근거 하나에 한 장인 출처. said · note는 글이 다르면 여러 장
+DUP_REASON = "같은 근거에 같은 글이 이미 있어 새로 만들지 않았습니다"
 SOURCE_KO = {"note": "포스트잇에 적음", "todo": "포스트잇에 적음", "said": "대화에서 올림", "chat": "대화에서 찾음", "promote": "옮기기 미완"}
 CLOSE = ("drop", "limit", "done")
 README_LIMIT = "알려진 한계"        # README 절 제목(이 글이 든 머리줄) — 아직 없을 수 있다(관리자가 「나중에 할 일」 표를 옮기기 전)
@@ -139,7 +141,9 @@ async def _turn_of(c: Any, session_id: int) -> int | None:
 
 async def add(engine: Any, project: str, body: str, source: str = "note", source_ref: str | None = None,
               confirmed: bool = True, session: int | None = None, assignee: str = "scribe") -> dict[str, Any]:
-    """포스트잇 하나 — {id, created}. 같은 근거(source_ref)가 이미 있으면 새로 만들지 않는다.
+    """포스트잇 하나 — {id, created}. 11-15 고침(p:51): 같은 근거(source_ref)에 글이 다른 여러 장은 모두 넣는다.
+    같은 근거에 같은 글만 새로 만들지 않고, 그때 응답은 {created: False, duplicate: True, reason}으로 겹침을 말한다.
+    그물(chat)과 옮기기(promote)는 근거 하나에 한 장이다(같은 턴을 여러 번 줍지 않게).
     그물이 먼저 올린 확인 전 줄에 관리자가 같은 턴으로 올리면 그 줄을 확인된 것으로 바꾼다(두 줄이 생기지 않게)."""
     from bridge.inject import Refused
     body = (body or "").strip()
@@ -156,13 +160,21 @@ async def add(engine: Any, project: str, body: str, source: str = "note", source
             tid = await _turn_of(c, session)
             source_ref = f"t:{tid}" if tid else f"s:{session}"
         if source_ref:
-            old = (await c.execute(text("SELECT id, source, confirmed, closed_reason FROM todo_inbox WHERE source_ref = :r "
-                                        "ORDER BY id LIMIT 1"), {"r": source_ref})).first()
-            if old:
-                if old[1] == "chat" and not old[2] and old[3] is None and source != "chat":
-                    await c.execute(text("UPDATE todo_inbox SET body = :b, source = :s, confirmed = TRUE WHERE id = :i"),
-                                    {"b": body, "s": source, "i": old[0]})
-                return {"id": int(old[0]), "created": False}
+            rows = (await c.execute(text("SELECT id, source, confirmed, closed_reason, body FROM todo_inbox WHERE source_ref = :r "
+                                         "ORDER BY id"), {"r": source_ref})).all()
+            if rows and source in ONE_PER_REF:
+                # 그물 · 옮기기는 근거 하나에 한 장 — 같은 턴을 여러 번 주워도 한 장
+                return {"id": int(rows[0][0]), "created": False, "duplicate": True, "reason": DUP_REASON}
+            same = next((r for r in rows if (r[4] or "").strip() == body), None)
+            if same:
+                # 같은 근거에 같은 글 — 정말로 겹친 것만 하나로 두고, 부른 쪽이 알아보게 말한다
+                return {"id": int(same[0]), "created": False, "duplicate": True, "reason": DUP_REASON}
+            pending = next((r for r in rows if r[1] == "chat" and not r[2] and r[3] is None), None)
+            if pending and source != "chat":
+                # 그물이 먼저 올린 확인 전 줄은 같은 근거의 첫 글이 확인된 줄로 바꾼다. 글이 다른 다음 것은 새 장이다
+                await c.execute(text("UPDATE todo_inbox SET body = :b, source = :s, confirmed = TRUE WHERE id = :i"),
+                                {"b": body, "s": source, "i": pending[0]})
+                return {"id": int(pending[0]), "created": True, "upgraded": True}
         r = await c.execute(text("INSERT INTO todo_inbox (project, body, assignee, source, source_ref, confirmed) "
                                  "VALUES (:p, :b, :a, :s, :r, :c)"),
                             {"p": project, "b": body, "a": assignee, "s": source, "r": source_ref, "c": bool(confirmed)})

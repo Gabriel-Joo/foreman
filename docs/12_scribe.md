@@ -210,7 +210,7 @@
 
 - 칸: id, project, body(8,000자까지), assignee, source, source_ref, confirmed, created_at, edited_at, taken_by, taken_at, closed_reason, closed_at, closed_note(옛 dropped_at도 남는다)
 - source(어디서 왔나): `note` 포스트잇에 바로 적음, `todo` 옛 머리줄 단추 [＋ 할 일](11-15 뺐다. 이미 든 줄과 옛 길에 남고 화면 출처 글은 `note`와 같은 「포스트잇에 적음」), `said` 대화에서 사람이 말해 관리자가 올림, `chat` 브리지 그물(확인 전), `promote` 옮기기 「문서에 넣을 것 고르기」의 미완
-- source_ref(근거): `t:<턴>`(said, chat), `pr:<promotion>:<항목>`(promote). 같은 근거는 두 번 들어가지 않는다. 그물이 먼저 올린 확인 전 줄에 관리자가 같은 턴으로 올리면 그 줄이 확인된 줄(said)이 된다
+- source_ref(근거): `t:<턴>`(said, chat), `pr:<promotion>:<항목>`(promote). 그물(chat)과 옮기기(promote)는 근거 하나에 한 장이다(같은 턴을 여러 번 주워도 한 장). 관리자(said)와 사람(note)은 같은 근거에 글이 다른 여러 장을 모두 넣을 수 있고, 같은 근거에 같은 글만 겹침으로 본다(11-15 고침, 전에는 같은 근거면 첫 장 하나만 남고 나머지가 성공처럼 같은 id를 받았다). 그물이 먼저 올린 확인 전 줄에 관리자가 같은 턴으로 올리면 그 줄이 확인된 줄(said)이 된다(첫 글만, 글이 다른 다음 것은 새 장)
 - confirmed: 그물에서 온 것만 0. 화면에 흐리게 뜨고 사람이 [저장]으로 받거나 [x]로 지운다
 - 0033이 지난 줄을 맞췄다: 버린 것은 drop, 서기가 README로 옮긴 것(옛 「옮김」)과 코더가 끝낸 것은 done(closed_note에 「포스트잇 전」). 11-15 FOREMAN 23줄은 열린 것 4, 끝남 17, 삭제 2가 된다
 
@@ -263,7 +263,7 @@
 ### 11-7. API
 
 - `GET /api/postit?project=` 열린 것, 판정, 최근 닫은 것 20, 요약. `GET /api/postit/summary` 프로젝트마다 요약
-- `POST /api/postit {project, body, session?}` 201(새로) 또는 200(같은 근거가 이미 있음). 프로젝트 토큰은 자기 프로젝트만(`bridge/scopetoken.py`)
+- `POST /api/postit {project, body, session?}` 201(새로 만듦) 또는 200(같은 근거에 같은 글이 이미 있어 만들지 않음 — 응답에 `created: false`, `duplicate: true`, 까닭 글 `reason`). 글이 다른 여러 장은 같은 세션이어도 모두 201이다. 프로젝트 토큰은 자기 프로젝트만(`bridge/scopetoken.py`)
 - `POST /api/postit/save {project, body?, confirm?}`, `POST /api/postit/{id}/close {reason: drop|limit|done, note?}`, `POST /api/postit/refresh {project}`, `POST /api/postit/check/{cid} {action: close|keep}`
 - 옛 길은 그대로 돈다: `POST /api/scribe/inbox`(= source todo), `GET /api/scribe/inbox`, `POST /api/scribe/inbox/{id}/drop`(= [x]), `PUT /api/todo/{id}`(열린 것 고치기)
 - 남은 것: 텔레그램으로 적기는 하지 않았다. 노션 「이것도 써라」는 포스트잇에 넣지 않는다(관리자에게 말한다, 사용자 답 11)

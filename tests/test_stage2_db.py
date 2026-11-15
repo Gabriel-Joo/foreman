@@ -1366,9 +1366,18 @@ async def test_postit_states_close_and_limit(env):
     r2 = await pi.add(engine, proj, "그물이 또 찾음", "chat", "t:999999", confirmed=False)
     assert r1["created"] and not r2["created"] and r2["id"] == r1["id"]
     r3 = await pi.add(engine, proj, "관리자가 올림", "said", "t:999999")
-    assert r3 == {"id": r1["id"], "created": False}
+    assert r3["id"] == r1["id"] and r3["created"] and r3["upgraded"]       # 확인 전 줄이 확인된 줄로
     row = q(s, "SELECT source, confirmed, body FROM todo_inbox WHERE id = %s", r1["id"])[0]
     assert row == ("said", 1, "관리자가 올림")
+    # 같은 근거에 글이 다른 여러 장은 모두 들어가고(p:51), 같은 글만 겹침으로 말한다
+    r4 = await pi.add(engine, proj, "둘째 글", "said", "t:999999")
+    r5 = await pi.add(engine, proj, "셋째 글", "said", "t:999999")
+    assert r4["created"] and r5["created"] and len({r1["id"], r4["id"], r5["id"]}) == 3
+    r6 = await pi.add(engine, proj, "  둘째 글 ", "said", "t:999999")
+    assert r6["created"] is False and r6["id"] == r4["id"] and r6["duplicate"] and r6["reason"]
+    assert q(s, "SELECT COUNT(*) FROM todo_inbox WHERE source_ref = %s", "t:999999")[0][0] == 3
+    r7 = await pi.add(engine, proj, "그물이 한 번 더", "chat", "t:999999", confirmed=False)   # 그물은 근거 하나에 한 장
+    assert r7["created"] is False and r7["duplicate"]
     c2 = await pi.add(engine, proj, "확인 전 하나", "chat", "t:999998", confirmed=False)
     assert await pi.confirm(engine, [c2["id"]]) == 1 and await pi.confirm(engine, [c2["id"]]) == 0
     # 코더 [띄우기] — 계획으로 띄운 세션이 가져가면 coder가 되고, 그 세션이 합쳐져도 닫히지 않는다(사람 · [갱신]이 닫는다)
@@ -1419,8 +1428,15 @@ async def test_postit_net_sweep(env):
     assert await pi.sweep(engine, since) == 0                                # 이미 올린 턴은 다시 올리지 않는다
     # 관리자가 같은 세션으로 올림 — 근거는 그 세션의 마지막 사람 턴(= real). 확인 전 줄이 확인된 줄이 된다
     r = await pi.add(engine, proj, "포스트잇에 올림", "said", session=sid)
-    assert r["created"] is False
+    assert r["created"] and r["upgraded"]
     assert q(s, "SELECT source, confirmed FROM todo_inbox WHERE source_ref = %s", f"t:{real}")[0] == ("said", 1)
+    # p:51 — 같은 세션(같은 근거)에서 글이 다른 세 장은 세 장, 같은 글을 또 올리면 겹침을 말한다
+    more = [await pi.add(engine, proj, f"다른 글 {n}", "said", session=sid) for n in range(3)]
+    assert all(m["created"] for m in more)
+    dup = await pi.add(engine, proj, "다른 글 1", "said", session=sid)
+    assert dup["created"] is False and dup["duplicate"] and dup["id"] == more[1]["id"] and dup["reason"]
+    assert q(s, "SELECT COUNT(*) FROM todo_inbox WHERE source_ref = %s", f"t:{real}")[0][0] == 4
+    assert await pi.sweep(engine, since) == 0                                # 그물은 이 턴을 다시 올리지 않는다
 
 
 async def test_postit_check_collect_and_resolve(env, tmp_path):
