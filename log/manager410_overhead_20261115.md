@@ -204,4 +204,9 @@
   - 서기 몫(정리 후보): `docs/style_guide.md` 85줄 예시(역할 고르기 글이 이제 `roles.js`, 자르는 줄 `foremanchat.js` 340), `docs/operations.md`, `docs/11_worktree.md`, `docs/14_dispatcher_note_wake.md`, `docs/11_handoff_v2.md`의 옛 역할 상수 이름
 - 사용자 「띄워라」 → 474 코더 sonnet 「포스트잇 여러 장 잃음 고치기」(p:51)
 - 사용자 「넣어라. 적어두지 않으면 다음에 또 흩어진다」 → CLAUDE.md 역할 기준 아래 `docs/roles.md` 한 줄(`a0b4065`). 사용자 「노션 기술문서 지시문에 한 줄」(비개발자도 읽는다, 쉬운 말, 깊이 그대로, 어려운 말은 그 자리에서 한 줄 풀이) → 469에 input으로 전함
+- 474 합침(`db4f3e7`, p:51): 같은 근거라도 글이 다르면 모두 넣고, 같은 근거에 같은 글만 하나로 두되 `duplicate`와 까닭을 답함. 그물(chat)과 옮기기(promote)는 근거 하나에 한 장 그대로. node 207, pytest 1046 → push → 브리지 다시 띄움(1520435 → 1568691, 오류 0) → `docs_done`
+- 469 합침(사람 승인, squash `16dcb3a` 「feat: 노션 기술문서와 포트폴리오 길」): `bridge/manuscript.py`(머리 주석 「다루는 곳」, 「읽은 커밋」), `notion/` 나무 게시(manual, 서기실 [Notion에 올리기]), 노션 판에서 근거 표시와 머리 주석 떼기, 서기 일 `techdoc`, 이틀 할 일, 포트폴리오 고정 주제 없앰(`config/portfolio.toml` 지움), 「코드가 바뀐 편」 셈, 옛 포트폴리오 내리기 길(누르지 않음). 469 진행 글 영어 여섯 번, `python -c` 한 번(스스로 보고). node 209, pytest 1059 → push → 승인 대기 0 → 브리지 다시 띄움(1568691 → 1626315, 오류 0). 정리 카드는 사람 승인 뒤라 치우지 않음
+  - 서기 몫: `docs/style_guide.md` 15줄(주제 목록 `config/portfolio.toml`), 옛 포트폴리오 틀 절, 노션 원고 종류 줄 / `docs/operations.md` 26줄 / `tests/data/screen_words.toml` `[[scribe]]` 원고 일곱 줄(새 포트폴리오가 들어오면 지움)
+- 사용자 「떼어라」: 포트폴리오 노션 판도 근거 표시를 뗀다(469가 이미 그렇게 함)
+- 사용자 세 가지(문단으로 쓴다, 포트폴리오에 사진과 영상을 `docs/13_demo_capture.md` 방식으로, 「비개발자도 읽는다」 두 지시문 다): 확인하니 비개발자 문장은 둘 다 있으나 포트폴리오에는 「어려운 말 한 줄 풀이」가 없고 「짧게」만 있음, 사진 줄은 `tools/screen.py`만. → 475 코더 sonnet 「서기 지시문 손보기」. 끝나면 서기실 길(`/api/scribe/start`, 서기 기본 opus)로 기술문서와 포트폴리오 서기를 띄운다
 - 그 밖에는 관리자 규칙 위반 없음(이 기록의 일). 412 끝내기 확인 창에 Enter를 보낸 것은 합치기 흐름 안에서 그 세션의 남은 예약을 끝낸 것이다(멈춘 CC 프로세스 · 다른 프로젝트 세션 아님)
