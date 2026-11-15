@@ -93,7 +93,7 @@ cmd = "npm --prefix frontend run dev -- --port {port} --strictPort"
 
 - **확인 주소 `/__foreman_preview`** (`bridge/preview.py`): 응답 머리 `X-Foreman-Preview: 1` + `{"foreman_preview": true}`. 프록시보다 먼저 등록해 지금 브리지로 넘어가지 않는다
 - **「있음」** (`bridge/previews.py` `get()`): 기록이 있어도 tmux가 살아 있고 `_probe(port)`(127.0.0.1의 그 포트에 확인 주소를 두드림)가 참일 때만. 포트만 열린 남의 서비스는 거짓이다. 아니면 기록을 치우고 남은 tmux도 끄며 까닭을 `dead[경로]`에 남긴다
-- **죽었으면 치우고 다시 띄운다** (`start()`): 결과에 `restarted` · `was_dead`. 다시 띄우기도 실패하면 「미리보기가 죽어 있습니다 — 까닭. 다시 띄우지 못했습니다: …」로 거부한다(패널이 보여 주는 서버 거부 사유). `_ready()`도 단순 연결이 아니라 `_probe`로 본다
+- **죽었으면 치우고 다시 띄운다** (`start()`): 결과에 `restarted` · `was_dead`. 다시 띄우기도 실패하면 「미리보기가 죽어 있습니다(까닭). 다시 띄우지 못했습니다: …」로 거부한다(패널이 보여 주는 서버 거부 사유). `_ready()`도 단순 연결이 아니라 `_probe`로 본다
 - **세션 상태 `preview_dead`** (`bridge/handoff.py`): 죽어서 기록을 치운 까닭, 없으면 `None`. 패널 JS는 아직 이 칸을 띄우지 않는다(후속)
 - **텔레그램은 보내지 않는다** (11-13 사용자 결정 — 사람이 버튼으로 연 것이고 거부 사유가 그 자리에 바로 뜬다)
 - 옛 코드로 띄운 미리보기는 확인 주소가 없어 한 번 「죽음」으로 보고 다시 띄워진다. 합친 뒤 브리지를 다시 띄워야 서버 쪽이 돈다
@@ -144,7 +144,7 @@ worktree 세션을 **끝내지 않고 잠깐 내려놓는** 길. 끝내면 합�
 |---|---|
 | ① 배너 + [풀기] | 방 배너 줄 "🔒 DB 구조 잠금: 세션 N(원본 폴더\|worktree x)이 HH:MM부터 쥐고 있습니다. 눌러서 풉니다". 누르면 확인 창 → `DELETE /api/schema-lock/{project}`. 화면용 `GET /api/schema-lock/board`가 세션 번호를 붙여 준다. 원본 폴더 세션이 쥔 것도 보인다 |
 | ② 막힘 알림 | 다른 세션이 잠금에 막히면 잠금 상태에 `blocked`를 남기고 배너가 "🔒 멈춤: 세션 M이 스키마 잠금에 막혔습니다(쥔 세션 N). 눌러서 풉니다"로 바뀐다. 텔레그램은 막힌 세션마다 한 번(`notification.kind = schlock`) |
-| ③ 일찍 풀기 | 원본 폴더 세션이 쥔 FOREMAN 잠금은 1분마다 본다 — 그 작업 트리 `migrations/NNNN_*.sql`이 모두 `schema_migrations`에 있고 `git status -- migrations/`가 비면 푼다(`SchemaLock.try_release_early`). 로그 "스키마 잠금을 일찍 풀었다 — …", 배너가 10분 "🔓 잠금을 풀었습니다 — 적용 · 커밋 끝 — …". worktree 세션이 쥔 것은 합치기 전까지 그대로(그 스키마가 main에 없다). **FOREMAN 저장소만** — 런슈즈(flyway)의 적용 기록은 다른 DB라 브리지가 모른다 |
+| ③ 일찍 풀기 | 원본 폴더 세션이 쥔 FOREMAN 잠금은 1분마다 본다 — 그 작업 트리 `migrations/NNNN_*.sql`이 모두 `schema_migrations`에 있고 `git status -- migrations/`가 비면 푼다(`SchemaLock.try_release_early`). 로그 "스키마 잠금을 일찍 풀었다 — …", 배너가 10분 "🔓 잠금을 풀었습니다: 적용 · 커밋 끝. …". worktree 세션이 쥔 것은 합치기 전까지 그대로(그 스키마가 main에 없다). **FOREMAN 저장소만** — 런슈즈(flyway)의 적용 기록은 다른 DB라 브리지가 모른다 |
 | ④ 잠그는 명령만 | `config/worktree.toml`의 `commands`를 마이그레이션을 **돌리는** 명령으로 좁혔다 |
 
 **④ 명령 패턴** (11-09 사용자 확인 "config 고침")
