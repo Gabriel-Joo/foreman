@@ -119,7 +119,7 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
    - "handoff": 끝났거나 오래된 세션의 일을 이어 가야 하면 그 세션의 인계 요약(summary_id)을 쓴다. 요약이 없으면 "new"로 하고 이유에 적는다
    - "new": 새 일
    - "ask": 모호하거나 위험해서 사람이 정해야 할 것이 있을 때(questions에 물을 것)
-3. role — "coder"(고치기 · 만들기) · "inspector"(살펴보기 · 원인 찾기) · "scribe"(서기 — 문서 일) ·
+3. role — "coder"(코더, 코드를 고치거나 만든다) · "inspector"(조사, 읽고 알아본다. 고치지 않는다. 조사와 제안은 모두 여기) · "scribe"(서기 — 문서 일) ·
    "designer"(디자이너 — 화면 일) · "manager"(관리자 — 거두는 일)
    - scribe 일감(docs/12_scribe.md): 문서 맞추기(sync) · CLAUDE.md 정리(trim) · 압축 손실 반영(loss) · 포트폴리오
    - 문서 정리 요청이면 scribe. 서기는 따로 작업(worktree)으로 띄우고, 합치기가 사람의 검토다
@@ -129,7 +129,9 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
      파이썬 · 브리지 · API · DB(마이그레이션)는 coder. 둘이 걸치면(새 API + 그 화면) 화면이 API에 기대니 coder를 먼저 낸다 —
      first_prompt에 "화면은 다음 디자이너 세션 몫 — API 응답 모양을 log에 적고 끝낸다"를, reasons에 나눈 까닭을 쓴다.
      화면 쪽이 몇 줄뿐이면 나누지 않고 coder 하나로 끝낸다
-4. read_only — 원인 분석 · 조사만이면 true(CC 읽기 전용 모드로 띄운다). 고치는 일이면 false
+   - "inspector"(조사): 원인 찾기, 살펴보기, 비교, 제안처럼 고치지 않는 일. 결과 log 하나는 쓰고 커밋한다(브리지가 log 밖 쓰기를 막는다).
+     고칠 것이 나오면 그 log에 적고 끝낸다. 고치기는 사람이 결과를 보고 코더로. 모델이 더 필요하다고 코더로 고르지 마라(모델은 사람이 카드에서 고른다)
+4. read_only — 보통 false. 조사는 브리지가 정한다(log만 쓰게 막는 프로젝트면 보통 모드, 아니면 CC 읽기 전용 모드). 고치는 일이면 false
 5. title — 세션 이름(한국어, 짧게)
 6. first_prompt — 새 세션(또는 attach 세션)에 넣을 첫 글. 한국어로:
    - 무엇을 하려는지(사람의 요청을 구체적으로)
@@ -177,7 +179,7 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
 # 위쪽 칸(role · title · first_prompt …)은 sessions[0]과 같게 둔다(check가 맞춘다) — 옛 계획(세션 하나 모양) · 옛 계획 카드가 그대로 돈다:
 # 옛 카드는 위쪽 칸만 고쳐 보내므로, sessions_edit가 없으면 위쪽 칸이 sessions[0]을 이긴다. 세션별로 고치는 카드는 sessions_edit: true를 보낸다
 MAX_SESSIONS = 6
-ROLE_KO = {"coder": "코더", "inspector": "점검", "scribe": "서기", "manager": "관리자", "designer": "디자이너"}
+ROLE_KO = {"coder": "코더", "inspector": "조사", "scribe": "서기", "manager": "관리자", "designer": "디자이너"}
 S_FIELDS = ("role", "model", "title", "first_prompt", "read_only", "worktree", "files", "merge_order", "task")
 TASK_RE = re.compile(r"[a-z][a-z0-9_-]{0,19}")   # 서기 일 종류(11-15) — scribe_room.TASKS의 키 꼴. 띄울 때 session_action scribe-task로 남는다
 
@@ -248,6 +250,7 @@ def _mirror(plan: dict[str, Any]) -> dict[str, Any]:
     first = plan["sessions"][0]
     for k in S_FIELDS:
         plan[k] = first[k]
+    plan["log_only"] = bool(first.get("log_only"))     # 조사 세션을 브리지가 log만 쓰게 막는다(11-15) — 계획 카드 글
     plan.pop("sessions_edit", None)
     return plan
 
@@ -291,7 +294,7 @@ def still_open(worktree_path: str | None, detached: bool) -> bool:
 WAKE_HINT = """
 # 이번 요청은 사람이 아니라 실패 이벤트가 불렀다(자동 기상 2단계)
 - 계획은 사람이 텔레그램 · 화면에서 보고 [시작]을 눌러야 시작한다. 사람은 지금 자리에 없을 수 있다 — first_prompt만 읽어도 무엇을 할지 알 수 있게
-- 원인을 살펴보는 일이다: role "inspector", read_only true. 고치기는 사람이 결과를 보고 정한다
+- 원인을 살펴보는 일이다: role "inspector"(조사). 고치기는 사람이 결과를 보고 정한다
 - 같은 실패를 이미 살펴보는 살아 있는 세션이 있으면 "attach"
 - 실패 알림 글에 프로젝트가 없으면(인프라 전체) 서버 공통 경로를 보고 가장 가까운 프로젝트를 고르고 이유에 적는다"""
 
@@ -310,6 +313,9 @@ class ForemanDispatcher:
         self._procs: dict[int, Any] = {}            # 도는 디스패치 → claude -p 프로세스(PID로 끊기 위해)
         self._cut: set[int] = set()                 # 다시 받기로 끊긴 디스패치 — 늦게 온 결과를 버린다
         self.on_change: Any = None               # 상태가 바뀌면(계획 시작 · 끝 · 시작 · 버림) 화면에 알린다
+        # 조사 세션을 브리지가 log만 쓰게 막는가(프로젝트 → bool, 11-15). main.py가 역할 권한(roleguard)을 켠 뒤 넣는다.
+        # 막으면 조사는 보통 모드로, 아니면(다른 프로젝트 · 역할 권한이 꺼짐) 예전처럼 읽기 전용(plan 모드)으로 띄운다
+        self.inspector_log_only: Any = lambda project: False
         # 11-13 끝난 「진행 중인 일」 줄 내리기 · 낡음 문턱(bridge/foreman_note.py NoteRules). 설정 파일([note])은 main이 읽어 넣는다
         self.note_rules = notes.NoteRules()
         self._note_task: asyncio.Task[Any] | None = None
@@ -549,6 +555,8 @@ class ForemanDispatcher:
             log.warning("계획 받기 실패 dispatch=%s [%s] %s", did, kind, (m.text(detail) or "")[:300])
             await self._finish(did, None, "failed", rec, t0)
             raise Refused(f"{why}. 다시 물어보거나 직접 골라 주세요")
+        if self._origin.get(did) == "wake":
+            plan["wake"] = True      # 자동 기상 계획 — 조사도 읽기 전용 그대로(README 「자는 사이에 커밋이 쌓이면 안 된다」, check)
         plan = await self.check(adopt_sessions(plan), did)
         await self._finish(did, plan, "planned", None, t0)
         return {"dispatch_id": did, "plan": plan, "ms": round((time.monotonic() - t0) * 1000), "context_chars": ctx_chars}
@@ -564,11 +572,22 @@ class ForemanDispatcher:
             log.info("계획 다듬기: 모르는 방식 %r → new", plan.get("mode")); plan["mode"] = "new"
         ss = sessions_of(plan)
         many = len(ss) > 1
+        try:
+            log_only = bool(self.inspector_log_only(plan.get("project")))
+        except Exception:  # noqa: BLE001 — 모르면 예전처럼 읽기 전용
+            log_only = False
         for i, s in enumerate(ss):
             who = f"세션 {i + 1}: " if many else ""
-            if s["role"] == "inspector" and not s["read_only"] and not s["read_only_set"]:
-                s["read_only"] = True      # 점검은 살펴보기 — 고치기 전에 승인(카드에서 끌 수 있다, 끄면 read_only_set)
-                warn.append(f"{who}역할이 점검이라 읽기 전용으로 시작합니다")
+            s["log_only"] = s["role"] == "inspector" and log_only
+            if s["role"] == "inspector" and not s["read_only_set"]:
+                # 조사는 읽고 알아보는 일(11-15). 브리지가 log만 쓰게 막는 프로젝트면 보통 모드로 — 결과 log를 승인 없이 쓰고 커밋한다.
+                # 막지 못하는 프로젝트면 예전처럼 읽기 전용(plan 모드, 고치기 전에 승인). 카드에서 바꾸면 read_only_set.
+                # 자동 기상 계획(plan["wake"])은 막는 프로젝트여도 읽기 전용 — 사람이 없는 사이에 log 커밋도 쌓이지 않게(README 「자동 기상」)
+                if log_only and not plan.get("wake") and s["read_only"]:
+                    s["read_only"] = False
+                elif (not log_only or plan.get("wake")) and not s["read_only"]:
+                    s["read_only"] = True
+                    warn.append(f"{who}역할이 조사라 읽기 전용으로 시작합니다")
             s.pop("read_only_set", None)
             # 모델(11-05) — 포먼(LLM)은 고르지 않는다. 사람이 카드에서 고른 값이 목록에 있으면 그것, 아니면 역할 기본값
             s["model"] = self.handoff.models.pick(s.get("model"), s["role"])

@@ -12,9 +12,14 @@ mode = "observe"
 projects = ["foreman"]     # 이 프로젝트 세션만 본다. 다른 저장소는 그 저장소 CLAUDE.md 규칙과 함께 넓힌다
 manager_allow = ["config/*.toml", "log/*", "README.md"]       # 관리자(원본 폴더)가 Edit · Write로 고쳐도 되는 곳
 scribe_deny = ["bridge/*", "tests/*", "migrations/*", "tools/*"]   # 서기가 고치지 않는 곳
+inspector_allow = ["log/*"]   # 조사가 Edit, Write로 쓸 수 있는 곳(새 파일과 그 세션이 만든 파일만, 11-15)
+# mode가 observe여도 막는 규칙(11-15 사용자 「조사가 log를 쓸 수 있게」). 조사는 이제 읽기 전용(plan 모드)이 아니라 보통 모드로 뜨고
+# 이 규칙이 log 밖 쓰기를 막는다. 여기서 빼면 교장 계획이 조사를 다시 읽기 전용으로 띄운다(막는 것이 없으니)
+enforce = ["inspector-write"]
 
 [roles.rules]              # 하나씩 끌 수 있다
 worktree-push = true       # worktree 세션의 git push
 bash-file-edit = true      # Bash(sed -i · 리디렉션 · tee · 해석기 open)로 저장소 파일 고치기 — /tmp · 스크래치는 빼고
 manager-code = true        # 관리자가 manager_allow 밖을 Edit · Write
 scribe-code = true         # 서기가 scribe_deny 안을 Edit · Write
+inspector-write = true     # 조사가 log 밖을 쓰기, log 밖 git add와 commit, push, 저장소를 바꾸는 git(11-15)

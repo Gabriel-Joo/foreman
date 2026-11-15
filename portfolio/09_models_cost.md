@@ -137,7 +137,7 @@ DB 모델별 토큰 — 10-12 ~ 11-06(KST), 서브에이전트 포함, `<synthet
 | 무엇 | 숫자 | 근거 |
 |---|---|---|
 | 모델을 골라 띄운 세션 | 코딩 Opus 8 · 서기 Opus 12, 점검 Sonnet 1(시험, 숨김). 모델 칸이 빈 코딩 세션 42개는 모델 고르기 전에 띄웠거나 터미널에서 띄워 붙인 것(Claude Code 기본값) — DB 집계 | — |
-| 실제로 띄워 확인 | 점검 역할 → `claude --model sonnet`, 화면 "Sonnet 5.5", 세션 행 role inspector · model sonnet. 끝낸 뒤 숨김(시험) | [log:stage12_model_choice_result.md] |
+| 실제로 띄워 확인 | 조사 역할(당시 이름 점검) → `claude --model sonnet`, 화면 "Sonnet 5.5", 세션 행 role inspector · model sonnet. 끝낸 뒤 숨김(시험) | [log:stage12_model_choice_result.md] |
 | 디스패처 | 5건 모두 Sonnet. 계획이 나온 건 평균 약 20초, 넣은 상황 약 1만 자 — DB 집계. 설계 어림은 요청당 입력 10~25k · 출력 1~2k 토큰 | [docs:11_foreman_dispatch.md] [docs:12_scribe.md] |
 | 압축 손실 판정 | Opus 손 점검 35.4만 토큰 · 13.5분 → Sonnet 1.99달러 · 7.2분, 재현율 0.71 · 정밀도 0.91 | [log:foreman_compaction_loss_20261105.md] [log:handoff_v2_d_result.md] |
 | 시험 | 모델 고르기 때 Python 376(+4) · JS 32 | [log:stage12_model_choice_result.md] |

@@ -13,7 +13,7 @@ import { renderMarkdown } from './md.js';
 
 // 역할 화면 이름(11-09 — scribe · manager 보탬). foreman은 감독실 캐릭터 몫(테마 이름 팀장 · 교장 · 소장)이라 세션 역할로 고를 수 없다
 // 11-10 designer(디자이너 — 화면 담당) 보탬
-export const ROLE_LABEL = { coder: '코더', designer: '디자이너', manager: '관리자', scribe: '서기', inspector: '점검', foreman: '감독', helper: '도우미', infra: '인프라' };
+export const ROLE_LABEL = { coder: '코더', designer: '디자이너', manager: '관리자', scribe: '서기', inspector: '조사', foreman: '감독', helper: '도우미', infra: '인프라' };
 // 세션 역할로 고를 수 있는 것 — bridge/api/handoff.py SessionRole과 같다
 export const SESSION_ROLES = ['coder', 'designer', 'manager', 'scribe', 'inspector'];
 export const roleLabel = (r) => ROLE_LABEL[r] || null;

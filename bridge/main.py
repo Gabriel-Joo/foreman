@@ -395,8 +395,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if rcfg.error:
                 _c2_alert(f"역할 권한을 켜지 못했다(config/roles.toml): {rcfg.error}")
             if app.state.approvals and rcfg.mode != "off":
-                app.state.approvals.roles = RoleGuard(rcfg, on_error=_c2_alert)
-                log.info("역할 권한 %s: %s", rcfg.mode, ", ".join(k for k, v in rcfg.rules.items() if v))
+                app.state.approvals.roles = rg_ = RoleGuard(rcfg, on_error=_c2_alert)
+                app.state.foreman.inspector_log_only = lambda project: rg_.enforces("inspector-write", project)   # 11-15 조사는 log만
+                log.info("역할 권한 %s: %s (막는 규칙 %s)", rcfg.mode, ", ".join(k for k, v in rcfg.rules.items() if v),
+                         ", ".join(rcfg.enforce) or "없음")
         except Exception as e:  # noqa: BLE001
             _c2_alert(f"역할 권한을 켜지 못했다: {type(e).__name__}: {str(e)[:200]}")
         try:

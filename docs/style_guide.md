@@ -113,6 +113,7 @@
   | 패널 머리줄 "쌓인 대화 N%"(세션 대화가 모델 창을 채운 비율) | 맥락 비율 `context.pct`(`bridge/compactwatch.py`, 창은 `config/models.toml [windows]`) |
   | 머리 칩 "한도: 5시간 … · 주간 …"(계정 사용 한도) | 사용 한도 `usage` limits(`bridge/usage.py`). /usage 화면 이름은 "사용량" 그대로 |
   | 머리 배지 "추가 요금으로 쓰는 중"(어느 한도든 쓴 비율이 100%를 넘을 때만, 11-14) | `usage.over_limits` · `/api/usage/brief`의 `over`. 전 「⛔ 추가 사용 막힘」 · 「추가 사용으로 이어 씀」 칩(CC 한도 글 판정 `credit_signal`)은 지웠다 — 지난 글을 며칠씩 붙잡아 틀린 것을 보였다(`docs/15_usage.md` 「6-2.」) |
+  | 역할 "조사"(11-15 사용자 「점검이면 고치는 일도 포함될 것처럼 들린다」, 전 이름 「점검」. 화면 점검, 문서 점검처럼 다른 뜻의 점검은 그대로) | inspector(`character_session.role`, 설정 키) |
   | "대화창"(사람이 세션 글을 보고 답을 넣는 곳) | 세션 tmux 화면 · CC 터미널 · 패널 「대화」 칸(`bridge/inject.py` · `opanel.js`) · 「세션 화면」 창(11-14, 아래) |
   | "세션 화면"(패널 탭 줄 끝 [세션 화면 ↗]로 여는 띄우는 창 — 그 세션의 Claude Code 창을 그대로 보고 키를 보낸다. 전 이름 「CC 화면」, 11-14 사용자 「영어 약자가 혼자 섞여 있다」, `fcd4b68`) | 그 세션의 Claude Code 창(tmux)에 붙는 그룹 세션 `ccv-…` · `ccscreen.js` · `/ccscreen`(`docs/operations.md` 「3.」, 코드 이름은 그대로). 기능 이름이라 그대로 쓴다. 머리줄 크기 글은 「Claude Code 창 109×37」이다(전에는 「세션 창 109×37」이라 이 크기가 그 세션의 Claude Code 창 크기인데 「세션 창」이 띄우는 창(세션 화면)으로 읽혔다. 사용자가 「Claude Code 창」으로 정했고 `1f08ac5`에서 바뀌었다, `bridge/static/js/ccscreen.js` `showSize`, `log/scribe_windowword_20261114.md`) |
 

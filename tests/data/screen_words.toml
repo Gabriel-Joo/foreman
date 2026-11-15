@@ -98,6 +98,28 @@ new = "(화면에서 뺌) 끝난 세션의 「브랜치 이름」 칸 [버리기
 scope = "화면과 문서 인용"
 commit = "91e090a"
 
+# 11-15 역할 이름(cc/foreman-6, 사용자 「점검이면 고치는 일도 포함될 것처럼 들린다」). 코드 값 inspector는 그대로.
+# 역할 이름일 때만 본다. 화면 점검, 문서 점검(서기 일), 압축 손실 점검처럼 다른 뜻의 「점검」은 그대로라
+# 낱말 하나로는 잡지 않고 역할 이름이 쓰이는 꼴만 적었다. whole = true는 문자열 전체가 그 낱말일 때만(역할 이름표 값)
+[[rename]]
+old = "점검"
+new = "조사"
+scope = "화면"
+whole = true
+commit = "cc/foreman-6 11-15"
+
+[[rename]]
+old = "역할이 점검"
+new = "역할이 조사"
+scope = "화면"
+commit = "cc/foreman-6 11-15"
+
+[[rename]]
+old = "점검 — 살펴보기"
+new = "조사 — 읽고 알아보기"
+scope = "화면"
+commit = "cc/foreman-6 11-15"
+
 # 11-15 합치기 카드 「자세히」 겹침 정리(cc/foreman-4, 410)
 [[rename]]
 old = "합치는 방법"
@@ -187,6 +209,12 @@ file = "bridge/scribe_room.py"
 old = "따로 작업"
 near = "너는 따로 작업(worktree) 세션이다"
 why = "서기실 세션 지시문(COMMON)"
+
+[[code_exception]]
+file = "bridge/handoff.py"
+old = "점검"
+near = "점검"
+why = "ROLE_OLD_KO, 옛 이름 「점검」 캐릭터(DB)를 찾아 「조사」로 바꾸는 데 쓰는 값(화면에 안 나감)"
 
 # ── 안 B. 문서 [버튼] 인용의 예외 ─────────────────────────────
 # kind = "버튼이 아님"(대괄호일 뿐) | "계획 표"(만들지 않은 기능 · 계획 때 이름) | "이력 표"(전 버튼 칸처럼 옛 이름을 적는 표)

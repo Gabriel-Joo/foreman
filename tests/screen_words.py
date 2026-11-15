@@ -350,7 +350,7 @@ def check(root: Path) -> Report:
         old, new = r["old"], r["new"]
         for f, ln, s in code.strings:
             k = s.find(old)
-            if k < 0:
+            if k < 0 or (r.get("whole") and s.strip() != old):    # whole: 문자열 전체가 그 낱말일 때만(11-15 역할 이름 「점검」)
                 continue
             ex = [j for j, e in enumerate(cexc) if e["file"] == f and e["old"] == old and e["near"] in s]
             if ex:

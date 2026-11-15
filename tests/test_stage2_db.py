@@ -916,7 +916,13 @@ async def test_reassign_role_and_worktree_characters(env):
     mgr = h.HandoffManager(asm.engine, s.sessions_dir, project_of=lambda cwd: asm._project_for(cwd, ""))
     assert await mgr._character_for(repo, "coder") == coder                       # 원본 폴더 코더는 하나
     insp = await mgr._character_for(repo, "inspector")
-    assert q(s, "SELECT name, parent_id, spawned_by FROM `character` WHERE id = %s", insp) == (("점검", foreman, "foreman"),)
+    assert q(s, "SELECT name, parent_id, spawned_by FROM `character` WHERE id = %s", insp) == (("조사", foreman, "foreman"),)
+    # 11-15 점검 → 조사: 옛 이름 캐릭터가 있으면 새로 만들지 않고 이름을 바꿔 이어 쓴다
+    from sqlalchemy import text as _t
+    async with asm.engine.begin() as c:
+        await c.execute(_t("UPDATE `character` SET name = '점검' WHERE id = :i"), {"i": insp})
+    assert await mgr._character_for(repo, "inspector") == insp
+    assert q(s, "SELECT name FROM `character` WHERE id = %s", insp) == (("조사",),)
     w = await mgr._character_for(f"{repo}/.worktrees/{name}-2", "coder")
     assert q(s, "SELECT name FROM `character` WHERE id = %s", w) == ((f"코더 {name}-2",),)
     row = h.SessionRow(1, None, w, f"{repo}/.worktrees/{name}-2", None, name, None)

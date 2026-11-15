@@ -95,19 +95,51 @@ def test_check_per_session_role_model_worktree(tmp_path, monkeypatch):
         return await d.check(plan)
     p = asyncio.run(go())
     s0, s1 = p["sessions"]
-    assert s0["read_only"] and "세션 1: 역할이 점검이라 읽기 전용으로 시작합니다" in p["warnings"]
+    assert s0["read_only"] and "세션 1: 역할이 조사라 읽기 전용으로 시작합니다" in p["warnings"]
+    assert not s0["log_only"] and not p["log_only"]                      # 역할 권한이 막지 않는 프로젝트 — 예전처럼 읽기 전용
     assert (s0["model"], s1["model"]) == ("opus", "sonnet")
     assert s0["worktree"] is False and s1["worktree"] is False          # 첫 세션: 살아 있는 세션 없음 · 둘째: 사람이 끔
     assert p["title"] == "봄" and p["role"] == "inspector"              # 위쪽 칸 = 첫 세션(옛 카드가 보인다)
     # 옛 카드는 첫 세션만 보인다 — [시작]이 띄울 것을 경고 줄에 모두
-    assert "이 계획은 세션 2개를 띄웁니다: 1「봄」(점검 · opus), 2「화면」(디자이너 · sonnet)" in p["warnings"]
+    assert "이 계획은 세션 2개를 띄웁니다: 1「봄」(조사 · opus), 2「화면」(디자이너 · sonnet)" in p["warnings"]
     # 관리자는 둘째여도 따로 작업을 기본으로 켜지 않는다(11-11 아홉 — 켜면 spawn_new가 거절)
     pm = asyncio.run(_again(d, {"project": "zz", "mode": "new", "sessions_edit": True,
                                 "sessions": [{"title": "코더", "first_prompt": "a"}, {"role": "manager", "title": "관리", "first_prompt": "b"}]}))
     assert [s["worktree"] for s in pm["sessions"]] == [False, False]
     # 다시 맞춰도 경고가 쌓이지 않는다
     p2 = asyncio.run(_again(d, p))
-    assert p2["warnings"].count("세션 1: 역할이 점검이라 읽기 전용으로 시작합니다") <= 1
+    assert p2["warnings"].count("세션 1: 역할이 조사라 읽기 전용으로 시작합니다") <= 1
+
+
+def test_check_inspector_log_only(tmp_path, monkeypatch):
+    """11-15 — 역할 권한이 조사를 log만 쓰게 막는 프로젝트면 조사는 보통 모드(읽기 전용 끔), 사람이 카드에서 켜면 그대로."""
+    d = _disp(tmp_path, _HM(), monkeypatch)
+    d.inspector_log_only = lambda project: project == "zz"
+
+    class C:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+
+    async def go(plan):
+        from bridge import foreman_note
+        monkeypatch.setattr(foreman_note, "check_ops", lambda c, p, o: _aw(([], [])))
+        d.engine = SimpleNamespace(connect=lambda: C())
+        return await d.check(plan)
+    p = asyncio.run(go({"project": "zz", "mode": "new", "sessions_edit": True,
+                        "sessions": [{"role": "inspector", "title": "봄", "first_prompt": "a", "read_only": True},
+                                     {"role": "coder", "title": "고침", "first_prompt": "b"}]}))
+    s0, s1 = p["sessions"]
+    assert not s0["read_only"] and s0["log_only"] and p["log_only"]       # 교장이 read_only를 켜 보내도 끈다(plan 모드면 log도 승인)
+    assert not s1["log_only"]
+    assert not any("읽기 전용" in w for w in p["warnings"])
+    # 사람이 카드에서 읽기 전용을 켰으면 그대로
+    p = asyncio.run(go({"project": "zz", "mode": "new", "sessions_edit": True,
+                        "sessions": [{"role": "inspector", "title": "봄", "first_prompt": "a", "read_only": True, "read_only_set": True}]}))
+    assert p["sessions"][0]["read_only"] and p["sessions"][0]["log_only"]
+    # 자동 기상 계획은 막는 프로젝트여도 읽기 전용(사람이 없는 사이에 커밋이 쌓이지 않게)
+    p = asyncio.run(go({"project": "zz", "mode": "new", "wake": True, "sessions_edit": True,
+                        "sessions": [{"role": "inspector", "title": "봄", "first_prompt": "a"}]}))
+    assert p["sessions"][0]["read_only"] and "역할이 조사라 읽기 전용으로 시작합니다" in p["warnings"]
 
 
 def test_check_dropped_decision_warns_on_card(tmp_path, monkeypatch):

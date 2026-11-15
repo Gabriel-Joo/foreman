@@ -7,7 +7,7 @@ import { esc, keep } from './render.js';
 
 export const REST_DAYS = 1;          // 쉬게 한 지 이만큼(일) 지나면 "N일째"를 붙인다 — 잊히지 않게
 
-// 코더 세션 — 서기 · 점검 · CI/CD가 아닌 것(역할 없음 = 코더, 0017)
+// 코더 세션 — 서기 · 조사 · 디자이너 · 관리자가 아닌 것(역할 없음 = 코더, 0017)
 export const isCoder = (s) => !s.role || s.role === 'coder';
 
 // 맡길 일 목록(순수) — room 이름, data = /api/coder/todo의 그 방 값, st = store.state 모양({sessions, approvals, pipeline}: Map)

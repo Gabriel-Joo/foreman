@@ -43,8 +43,9 @@ KEEP_FULL = ("진행", "미완", "다음", "주의")      # 분량을 줄일 때
 # 역할 캐릭터 이름(0017 재배치와 같다, 서기는 12a, 관리자는 11-09 — 합치기 · 시험 · push · 브리지 다시 띄우기 · 기록, 상주 아님).
 # 디자이너는 11-10 — 화면(office.js · panel.css · 테마 · 캐릭터 · 이름표 · 카드), 상주 아님.
 # 세션이 가질 수 있는 역할이 이것뿐이다 — foreman은 감독실 캐릭터(세션 없음) 몫이라 넣지 않는다
-ROLE_KO = {"coder": "코더", "inspector": "점검", "scribe": "서기", "manager": "관리자", "designer": "디자이너"}
-ROLE_ACT = "role"                 # session_action — 역할 바꾸기(11-09). detail "옛 → 새"
+ROLE_KO = {"coder": "코더", "inspector": "조사", "scribe": "서기", "manager": "관리자", "designer": "디자이너"}   # inspector 화면 이름 11-15 점검 → 조사
+ROLE_OLD_KO = {"inspector": "점검"}   # 바꾸기 전 화면 이름 — 그 이름의 캐릭터(DB)를 쓸 때 새 이름으로 바꾼다(_character_for)
+ROLE_ACT = "role"               # session_action — 역할 바꾸기(11-09). detail "옛 → 새"
 SCRIBE_TASK_ACT = "scribe-task"   # session_action — 서기 세션이 무슨 일인지(detail "일 [토픽]", 11-15부터 spawn_new 한 곳에서). scribe_room.TASK_ACT
 REST_ACT = "rest"                 # session_action — [쉬게 하기](11-09). 합치기 · 버리기 전까지 그 worktree는 "합치기 기다림"
 REST_RESUME_ACT = "rest-resume"   # session_action — [이어서]. 'resume'(일시정지 되살리기)과 섞이지 않게 따로
@@ -999,7 +1000,7 @@ class HandoffManager:
 
     async def _character_for(self, cwd: str, role: str) -> int | None:
         """이 세션을 붙일 캐릭터(11-05 재배치, README 2.3 · 2.4 · 3.4) — 포먼이 채용한다(부모 = 그 프로젝트의 포먼).
-        원본 폴더면 역할 캐릭터("코더" · "점검" · "CI/CD"), worktree면 그 자리의 일꾼("코더 foreman-2" — 합치기 · 버리기 때 퇴장).
+        원본 폴더면 역할 캐릭터("코더" · "조사" · "서기"), worktree면 그 자리의 일꾼("코더 foreman-2" — 합치기 · 버리기 때 퇴장).
         같은 이름이 퇴장해 있으면 되살린다(이름은 프로젝트 안에서 고유). 프로젝트 밖(떠돌이)은 그대로 둔다."""
         name0 = ROLE_KO.get(role)
         if not name0 or not self.project_of:
@@ -1016,6 +1017,13 @@ class HandoffManager:
                 return None
             r = (await c.execute(text("SELECT id FROM `character` WHERE project_id = :pid AND name = :n"),
                                  {"pid": f[1], "n": name})).first()
+            if not r and role in ROLE_OLD_KO:
+                # 화면 이름을 바꾼 역할(11-15 점검 → 조사) — 옛 이름 캐릭터가 있으면 새 이름으로 바꿔 이어 쓴다(마이그레이션 없이, 쓸 때)
+                old = f"{ROLE_OLD_KO[role]} {wt_name}" if wt_name else ROLE_OLD_KO[role]
+                r = (await c.execute(text("SELECT id FROM `character` WHERE project_id = :pid AND name = :n"),
+                                     {"pid": f[1], "n": old})).first()
+                if r:
+                    await c.execute(text("UPDATE `character` SET name = :n WHERE id = :i"), {"n": name, "i": r[0]})
             if r:
                 await c.execute(text("UPDATE `character` SET retired_at = NULL, current_role = :r WHERE id = :i"), {"r": role, "i": r[0]})
                 return r[0]

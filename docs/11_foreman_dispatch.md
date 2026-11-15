@@ -113,7 +113,7 @@
 
 ### 9-2. 관리자를 상주로 두지 않는 까닭
 
-- 하는 일을 나눠 보면 세션이 꼭 들고 있어야만 하는 것이 없다 — 띄우기 · 지시문은 교장 + 버튼, 합친 뒤 시험 · push · 다시 띄우기 · 확인 목록은 브리지가 할 수 있고, 조사 · 설계 답 · 코드 · 기록은 그때 띄우는 점검 · 코더 · 서기 세션으로
+- 하는 일을 나눠 보면 세션이 꼭 들고 있어야만 하는 것이 없다 — 띄우기 · 지시문은 교장 + 버튼, 합친 뒤 시험 · push · 다시 띄우기 · 확인 목록은 브리지가 할 수 있고, 조사 · 설계 답 · 코드 · 기록은 그때 띄우는 조사 · 코더 · 서기 세션으로
 - 상주면 맥락이 쌓여 압축된다 — 교장을 "부를 때만"으로 둔 까닭(1절)과 같다. 11-09 관리자 세션은 두 번 인계했고, 주된 까닭은 띄우기가 아니라 "할 일에 넣어라"(≈ 10) · 질문(≈ 5)이었다 → 할 일은 받는 함으로(`docs/12_scribe.md` 「11.」)
 - 잃는 것(대신할 곳을 정해야 함): 하루의 결정을 한곳에 드는 것(→ 서기 · log), CLAUDE.md의 "원본 세션 몫"(README 로드맵 표 · push · 브리지 다시 띄우기 → 브리지 · 서기), 세션 간 메시지를 받는 "메인"(→ 사람 패널 · 브리지)
 - 안 가는 것: "지시는 관리자에게, 띄우기만 기록" — 맥락이 쌓이는 문제를 그대로 남긴다
@@ -145,6 +145,19 @@
 - 교장 계획 프롬프트: 화면 일은 designer, 파이썬 · 브리지 · DB는 coder. **둘이 걸치면**(새 API + 그 화면) 화면이 API에 기대니 coder를 먼저 내고 first_prompt에 "화면은 다음 디자이너 세션 몫 — API 응답 모양을 log에 적고 끝낸다", reasons에 나눈 까닭. 화면 쪽이 몇 줄뿐이면 coder 하나로. 계획은 한 번에 하나라 둘을 같이 내지는 못한다
 - 자리 · 이름표는 `docs/10_office_design.md` 「관리자 자리 · 이름표 · 머리줄」의 디자이너 줄
 
+### 10-2. 역할 조사(inspector) (11-15 사용자) [log:foreman-6_inspector_rename_20261115.md]
+
+- 값 `inspector`, 화면 이름 「조사」(전 이름 「점검」). 사용자: 「점검이면 고치는 일도 포함될 것처럼 들린다. 조사가 맞다」. 읽고 알아보고 고치지 않는다. 조사와 제안은 모두 여기다
+- 코드 값은 그대로 두었다(DB `character_session.role`, 설정 키, 함수 이름). 화면 이름만 `ROLE_KO`(`bridge/handoff.py`, `bridge/foreman.py`, `bridge/wake.py`), `ROLE_PICK`, `render.js` `ROLE_LABEL`에서 바꿨다. 이미 있는 「점검」 캐릭터(DB)는 마이그레이션 없이, 그 프로젝트에서 다음 조사 세션이 뜰 때 「조사」로 이름을 바꿔 이어 쓴다(`ROLE_OLD_KO`, `_character_for`)
+- **조사는 자기 결과 log를 승인 없이 쓰고 커밋한다.** 전에는 CC plan 모드(읽기 전용)로 떠서 log 하나에도 계획 승인이 한 번 필요했고, 그래서 관리자가 조사를 피하고 코더로 띄웠다. 이제 보통 모드로 뜨고 브리지(PreToolUse, `bridge/roleguard.py` `inspector-write`)가 막는다
+  - 허용: `log/` 아래 새 파일 Write, 이 세션이 만든 log(또는 git이 아직 모르는 log) Edit, `git add log/<파일>`, 스테이지가 log 파일뿐인 `git commit`, `git restore --staged`, 읽기 명령, 저장소 밖(스크래치, /tmp) 쓰기
+  - 거부: log 밖 Edit, Write, NotebookEdit. 다른 세션이 커밋한 log 고치기. Bash로 저장소 파일 쓰기(리디렉션, `sed -i`, `tee`, `rm`, `mv`, `cp`, `touch`, `mkdir` 등). `git push`. 저장소를 바꾸는 git(checkout, reset, rebase, merge, stash, 브랜치나 태그 만들기 등). log 밖 `git add`(`-A`, `.` 포함). `git commit -a`, 경로를 준 커밋, 스테이지에 log 밖 파일이 있는 커밋
+  - 거부 글은 「조사 세션은 log 파일만 쓸 수 있습니다. …」로 세션에 돌아가고, 승인 기록(`approval_req` 이벤트, 브리지 로그 warning)에 남는다
+  - 이 규칙만 `config/roles.toml [roles] enforce = ["inspector-write"]`로 막는다. 다른 역할 규칙은 사용자 결정대로 관찰 그대로(11-12 「켜지 마라」)
+  - 못 막는 것: 해석기 안 쓰기(`python -c "open(…,'w')"`), `cd $X` 뒤처럼 폴더를 모르는 명령. 다른 역할 규칙과 같은 한계다
+- **교장 계획**: 조사 세션은 그 프로젝트에서 이 규칙이 막고 있으면(`RoleGuard.enforces`, 지금 foreman만) 읽기 전용을 끄고 띄운다. 막지 않는 프로젝트(런슈즈, 펫퍼민트, 인프라)는 예전처럼 읽기 전용으로 켜고 「역할이 조사라 읽기 전용으로 시작합니다」 경고를 붙인다. **자동 기상 계획은 막는 프로젝트여도 읽기 전용**(README 「자는 사이에 커밋이 쌓이면 안 된다」). 사람이 계획 카드에서 바꾼 값은 그대로. 계획 카드의 읽기 전용 칸 아래에 「조사 세션은 읽기 전용이 아니어도 log 파일만 쓰고 커밋할 수 있습니다」가 뜬다(계획의 `log_only`)
+- [+ 세션] 창으로 바로 띄운 조사도 같은 규칙에 걸린다(역할은 DB에서 읽는다)
+
 ## 11. 11-11에 더한 것 — 여러 세션 · 관리자에게 넘기기 · 프로젝트별 관리자 · 토큰 범위 · 역할 권한
 
 **켜져 있는 것** [log:coder_foreman_multi_20261111.md]
@@ -162,7 +175,7 @@
 | 프로젝트 토큰 범위 | `config/tokens.toml [project_tokens] enabled = true`(**켜짐**, 첫 토큰 ronanlab-infra) | 관리 토큰(`FOREMAN_API_TOKEN`)은 그대로 모든 API. 프로젝트 토큰(`.env.project_tokens`의 `FOREMAN_TOKEN_<프로젝트>`)은 그 프로젝트 세션 · 방 API와, **11-12부터 자기 프로젝트의 Notion 게시**(`POST /api/publish` · `GET /api/publish?project=` · `POST /api/publish/pair` — 본문 · 쿼리의 project가 자기 프로젝트일 때)만 열고 나머지는 403 + 사유. **force 덮기 · `action=docsync`(한꺼번에 맞추기)는 관리 토큰만**(사람에게 묻는 일이라서). 같은 유닉스 사용자 세션은 `.env.bridge`도 읽을 수 있어 **벽이 아니라 잘못 부르는 것을 막는 칸막이**다(`bridge/scopetoken.py` · `bridge/api/auth.py`) |
 | 프로젝트별 관리자 | `config/managers.toml [managers] enabled = true`(**켜짐**, `projects = []` — 비면 DB의 모든 프로젝트) | `GET /api/managers`(프로젝트마다 관리자 또는 「관리자가 없습니다」 — 꺼져 있어도 읽힘), `POST /api/managers/{project}/ask`(그 관리자 입력 칸에 부탁 — 꺼져 있으면 503). 관리자가 없거나 못 넣으면 텔레그램 한 번 + `delivered:false, reason`(`bridge/managers.py`) |
 | 계획을 관리자에게 | `config/managers.toml [handover] enabled = true`(**켜짐**, `wait_min = 15`) | 계획 카드 [관리자에게 보내기] — 고친 계획을 저장(`dispatch.handed_to · handed_at`, 0031)하고 그 프로젝트 관리자 입력 칸에 계획 요약 + 시작 명령(`POST /api/foreman/start {"dispatch_id": N, "use_saved": true}`)을 넣는다. 못 넣으면 되돌리고 카드에 사유 + 텔레그램. 넘기고 15분 안에 안 띄우면 텔레그램 한 번(`bridge/handover.py`). 꺼져 있으면 단추가 없고 [이대로 시작]은 그대로 |
-| 역할 권한 | `config/roles.toml [roles] mode = "observe"` | **관찰이 켜져 있다 — 막지 않고 기록만.** PreToolUse에서 `worktree-push` · `bash-file-edit` · `manager-code` · `scribe-code`를 판정해 `approval_req` 이벤트 payload에 `role_rule` · `role_reason`을 남긴다. `enforce`면 거부 + 사유, `off`면 보지 않음. 기본 `projects = ["foreman"]`(`bridge/roleguard.py`). 해석기 안 쓰기(`python -c "open(…,'w')"`)는 못 막는다 |
+| 역할 권한 | `config/roles.toml [roles] mode = "observe"` | **관찰이 켜져 있다 — 막지 않고 기록만.** PreToolUse에서 `worktree-push` · `bash-file-edit` · `manager-code` · `scribe-code` · `inspector-write`(11-15)를 판정해 `approval_req` 이벤트 payload에 `role_rule` · `role_reason`을 남긴다. `enforce`면 거부 + 사유, `off`면 보지 않음. **예외: `[roles] enforce`에 적은 조사 규칙(`inspector-write`)은 관찰 모드에서도 막는다**(11-15, 「10-2.」). 기본 `projects = ["foreman"]`(`bridge/roleguard.py`). 해석기 안 쓰기(`python -c "open(…,'w')"`)는 못 막는다 |
 | 새 세션으로 옮기기 한 흐름 | `config/handoff.toml [move] one_flow = true`(**켜짐**) | 잊은 것 찾기 → 문서 후보 → (사람이 문서에 넣을 것 고르기) → 문서에 쓰기 → 요약 → 새 세션 → 옛 세션 끝내기를 단추 하나로(`bridge/static/js/moveflow.js`). 요약 확인 창 없음, 넘어간 글은 새 세션 패널 「넘겨받은 글」에 보인다. 끄면 옛 흐름(요약 → 확인 → 새 세션 → 옛 세션 끝내기). 화면이 다음에 그릴 때 읽어 브리지 재시작이 필요 없다 |
 
 - **켜는 법**(기록 `log/coder_c_wave2_20261111.md`에 있는 것만): 토큰 · 관리자 — ① `python -m bridge.scopetoken new <프로젝트>`(값은 화면에 안 찍히고 파일에만) ② `tokens.toml enabled = true` · `managers.toml [managers] enabled = true` ③ 그 저장소 CLAUDE.md에 관리자 규칙 줄(초안은 같은 log, 그 저장소 세션에 부탁) ④ 관리자 세션을 원본 폴더에 띄움(역할 manager) ⑤ 필요하면 `roles.toml projects` · `handoff.toml [merge_prep] projects`에 그 프로젝트를 더함. 계획 넘기기 · 옮기기 한 흐름은 `[handover] enabled = true` · `[move] one_flow = true`로 켜 보고 시험 계획 · 시험 세션 하나로 15분 알림 · ①~⑦을 확인한다(끝나면 시험 세션은 `hidden_reason='test'`). 역할 권한은 하루 관찰 뒤 규칙별 걸린 수를 보고 사용자가 `enforce`로 올린다(그 쿼리는 같은 log 「합친 뒤 관리자가 할 일」 2). 바꾼 뒤에는 모두 브리지를 다시 띄운다(`[move]`만 제외). 이 문단은 켜기 전에 정한 순서이고, 토큰 · 관리자 · 넘기기 · 옮기기 한 흐름은 11-11 저녁 사용자 지시로 켜졌다 — 켠 경위 · 시험은 [log:enable_c_wave2_20261111.md]

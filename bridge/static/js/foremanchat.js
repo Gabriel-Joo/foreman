@@ -254,6 +254,7 @@ function mount(dlg) {
           <input id="fmOrder" type="number" min="1" max="99" value="${esc(s0.merge_order ?? 1)}">` : ''}
         </div>
         <label class="fm-check"><input id="fmRO" type="checkbox"${p.read_only ? ' checked' : ''}> 읽기 전용으로 시작 <span class="muted">(살펴보기만, 고치기 전에 승인)</span></label>
+        ${p.log_only ? '<div class="small muted">조사 세션은 읽기 전용이 아니어도 log 파일만 쓰고 커밋할 수 있습니다. 다른 파일은 브리지가 막습니다.</div>' : ''}
         <label class="fm-check" title="작업방 — 저장소 안 .worktrees/에 이 세션만의 폴더 · 브랜치(cc/…)를 만들어 띄웁니다. 끝낸 뒤 [합치기]로 main에 합칩니다."><input id="fmWT" type="checkbox"${p.worktree ? ' checked' : ''}> 작업방
           <span class="muted">${p.live_here ? `(이 프로젝트에 살아 있는 세션 ${p.live_here}개와 파일이 겹치지 않습니다)` : '(지금 이 프로젝트에 다른 세션이 없습니다)'}</span></label>
       </details>
@@ -329,6 +330,7 @@ function mount(dlg) {
           <label class="muted">넣을 첫 글</label>
           <textarea data-k="first_prompt" rows="8" class="fm-first">${esc(s.first_prompt || '')}</textarea>
           <label class="fm-check"><input type="checkbox" data-k="read_only"${s.read_only ? ' checked' : ''}> 읽기 전용으로 시작 <span class="muted">(살펴보기만, 고치기 전에 승인)</span></label>
+          ${s.log_only ? '<div class="small muted">조사 세션은 읽기 전용이 아니어도 log 파일만 쓰고 커밋할 수 있습니다. 다른 파일은 브리지가 막습니다.</div>' : ''}
           <label class="fm-check" title="작업방 — 이 세션만의 폴더 · 브랜치(cc/…)에서 띄웁니다. 둘째 세션부터는 기본으로 켭니다."><input type="checkbox" data-k="worktree"${s.worktree !== false ? ' checked' : ''}> 작업방</label>
         </details></div>`; }).join('')}
     </div>`;

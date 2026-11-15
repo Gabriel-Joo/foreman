@@ -128,7 +128,7 @@ def test_waker_plans_once_and_caps():
         await asyncio.gather(*w._tasks)
         assert len(d.calls) == 1 and n.sent[-1][1] == "wake"
         msg = n.sent[-1][2]
-        assert msg.startswith("[시험] 🧭 파이프라인 실패 — 이렇게 살펴보자는 계획을") and "빌드 #9 실패 원인 — 점검 · 읽기 전용 · 새 세션" in msg and "https://f.dev/?dispatch=" in msg
+        assert msg.startswith("[시험] 🧭 파이프라인 실패 — 이렇게 살펴보자는 계획을") and "빌드 #9 실패 원인 — 조사 · 읽기 전용 · 새 세션" in msg and "https://f.dev/?dispatch=" in msg
         w.failure(proj, "build_failed", f"build:{proj}:1", "같은 실패")             # 같은 실패 — 다시 계획하지 않는다
         w.failure(proj, "모르는종류", f"x:{proj}", "무시")
         await asyncio.gather(*w._tasks)

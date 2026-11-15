@@ -156,7 +156,8 @@ class ApprovalManager:
         role_hit = None                            # 역할 권한(11-11) — observe면 기록만, enforce면 아래 잠금과 같이 거부
         if self.roles is not None:
             try:
-                role_hit = self.roles.check(project, session_role, p.get("cwd"), tool, inp, p.get("scratchpad_dir") or _scratchpad(p))
+                role_hit = self.roles.check(project, session_role, p.get("cwd"), tool, inp, p.get("scratchpad_dir") or _scratchpad(p),
+                                            session=p.get("session_id"))
             except Exception as e:  # noqa: BLE001 — 판정 실패가 PreToolUse를 막지 않게(roleguard가 알림)
                 log.error("역할 권한 판정 실패: %s: %s", type(e).__name__, str(e)[:200])
         pp = self.policy.for_project(project)
@@ -171,7 +172,8 @@ class ApprovalManager:
             # pgrep -f · pkill -f가 자기 셸에 걸림(11-11, bridge/pgrep_guard.py) — 역시 승인 모드와 상관없이
             why_lock = pgrep_guard.check(tool, inp)
             rule = "pgrep-자기걸림"
-        if not why_lock and role_hit and self.roles.cfg.mode == "enforce":
+        # 막는 역할 규칙 — mode enforce거나 [roles] enforce에 든 규칙(11-15 조사 규칙은 mode가 observe여도 막는다)
+        if not why_lock and role_hit and (self.roles.cfg.mode == "enforce" or getattr(role_hit, "enforce", False)):
             why_lock, rule = role_hit.reason, role_hit.rule
         if why_lock:
             dec = Decision("deny", rule, why_lock)
