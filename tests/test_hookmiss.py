@@ -5,6 +5,7 @@ import http.server
 import json
 import os
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -160,6 +161,98 @@ def test_script_concurrent_lines_not_mixed(script, miss_log):
         list(ex.map(lambda _: _run(script, "http://127.0.0.1:1", miss_log), range(32)))
     lines = _lines(miss_log)
     assert len(lines) == 32 and all(ln.endswith(f"session={SID} tool=Bash") for ln in lines)
+
+
+# ── 입력 바이트를 하나도 바꾸지 않는다(11-15 400 사고) ─────────
+# 489 판은 입력을 `$(</dev/stdin)`으로 셸 변수에 담았다가 넘겼다. stdin이 소켓이면(Node가 자식에게 주는 꼴) 열지 못해
+# 빈 본문이 나가 브리지가 400을 냈고, 파이프여도 끝 줄바꿈과 NUL이 사라졌다.
+
+class _Capture(http.server.BaseHTTPRequestHandler):
+    got: list[bytes] = []
+
+    def do_POST(self):  # noqa: N802
+        _Capture.got.append(self.rfile.read(int(self.headers.get("Content-Length") or 0)))
+        self.send_response(204)
+        self.end_headers()
+
+    def log_message(self, *a):
+        pass
+
+
+@pytest.fixture(scope="module")
+def capture_server():
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Capture)
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{srv.server_address[1]}"
+    srv.shutdown()
+
+
+def _cmd(text: str) -> bytes:
+    return json.dumps({"session_id": SID, "hook_event_name": "PreToolUse", "tool_name": "Bash",
+                       "tool_input": {"command": text}}, ensure_ascii=False).encode()
+
+
+_RAW = _cmd("x")[:-3]       # 값 따옴표 앞까지 — 날 바이트를 끼워 넣는 꼴
+BYTE_CASES = {
+    "끝줄바꿈": _cmd("ls") + b"\n",
+    "줄바꿈여럿": _cmd("a\nb\n\n") + b"\n\n\n",
+    "날줄바꿈과CR": b'{\n  "session_id": "s",\r\n  "tool_name": "Bash"\n}\n',
+    "역슬래시": _cmd("a\\b \\n \\\\ \\"),
+    "따옴표": _cmd("echo \"x\" 'y'"),
+    "탭": _cmd("a\tb") + b"\t",
+    "한글": _cmd("한글 명령"),
+    "이모지": _cmd("😀 🧪"),
+    "잘못된UTF8": _RAW + b"\xff\xfe\xc3\x28\xed\xa0\x80" + b'"}}',
+    "NUL": _RAW + b"\x00" + b'"}}',
+    "셸글자": _cmd("$HOME `id` $(x) ${y} !! %s %n \\$ \\` -- -e"),
+    "큰입력": _cmd("가" * 50_000 + "x" * 100_000),       # 128KB 넘음
+    "빈입력": b"",
+}
+
+
+def _run_bytes(script, base, miss_log, data: bytes, stdin: str, mode="pre"):
+    env = {**os.environ, "FOREMAN_HOOK_BASE": base, "FOREMAN_HOOK_MISS_LOG": str(miss_log)}
+    if stdin == "pipe":
+        return subprocess.run([str(script), mode], input=data, capture_output=True, env=env, timeout=20)
+    a, b = socket.socketpair()               # CC(Node)가 훅에 주는 stdin 꼴
+    try:
+        p = subprocess.Popen([str(script), mode], stdin=b, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        b.close()
+        a.sendall(data)
+        a.shutdown(socket.SHUT_WR)
+        out, err = p.communicate(timeout=20)
+        return subprocess.CompletedProcess(p.args, p.returncode, out, err)
+    finally:
+        a.close()
+
+
+@pytest.mark.parametrize("stdin", ["pipe", "socket"])
+@pytest.mark.parametrize("name", list(BYTE_CASES))
+def test_script_forwards_input_bytes_unchanged(script, capture_server, miss_log, name, stdin):
+    data = BYTE_CASES[name]
+    _Capture.got.clear()
+    r = _run_bytes(script, capture_server, miss_log, data, stdin)
+    assert r.returncode == 0 and r.stdout == b""
+    (got,) = _Capture.got
+    assert got == data, f"{name}/{stdin}: 길이 {len(data)} → {len(got)}"   # 내용은 찍지 않는다
+    assert not miss_log.exists()                                          # 204 = 정상 길, 기록 없음
+
+
+@pytest.mark.parametrize("stdin", ["pipe", "socket"])
+def test_script_miss_reads_ids_from_socket_and_big_input(script, miss_log, stdin):
+    data = _cmd("x" * 300_000 + '"tool_name":"Evil"')
+    r = _run_bytes(script, "http://127.0.0.1:1", miss_log, data, stdin)
+    assert r.returncode == 0 and r.stdout == b""
+    (line,) = _lines(miss_log)
+    assert line.endswith(f" 연결거부 curl=7 session={SID} tool=Bash")
+
+
+def test_script_no_token_from_socket_keeps_ids(script, miss_log):
+    (script.parent.parent / ".env.bridge").unlink()
+    r = _run_bytes(script, "http://127.0.0.1:1", miss_log, BODY.encode(), "socket")
+    assert r.returncode == 0
+    assert _lines(miss_log)[0].endswith(f" 토큰없음 - session={SID} tool=Bash")
 
 
 # ── 브리지 쪽 ────────────────────────────────────────────
