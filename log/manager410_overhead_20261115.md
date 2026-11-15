@@ -200,4 +200,8 @@
 - 472는 일을 다 커밋한 뒤 API 안전 분류기 거부(reasoning_extraction)로 멈췄다. 커밋에 코드, 설정, docs, log, 시험이 다 있어 다시 보내지 않았다. `config/wake.toml` 때문에 사람 승인 카드 → 사람이 승인해 합침(`10e1e5b`) → node 207, pytest 1043 → push 전 확인 따로 → push → 승인 대기 0 → 브리지 다시 띄움(1100038 → 1464811, 오류 0, 「자동 기상 2단계 켬」, localhost라 링크 경고 없음이 맞음). 정리 후보(`docs/operations.md`, `docs/11_foreman_dispatch.md` 91줄 옛 텔레그램 글 인용)는 서기 몫이라 카드를 치우지 않고 사용자에게 알림
 - 관리자 실수: 472 작업방을 보려고 `cd .worktrees/foreman-5`를 한 것이 다음 명령의 작업 폴더로 남았다. 그 사이 합치기가 작업방을 지워 시험 명령 하나가 돌지 않았다(되살아난 원본 폴더에서 다시 침). 그 뒤로는 `git -C`로 작업방을 본다
 - 473(사용자가 누른 포스트잇 [갱신], 원본 폴더 조사)이 끝났다. 커밋 없음. p:51(같은 근거로 여러 장을 넣으면 첫 장만 남고 성공처럼 답함)이 그대로이고 코더 추천
+- 471 합침(squash `a0982c7`, 「refactor: 역할 이름과 색, 설명을 한 곳으로 모음」): `bridge/roles.py`, `bridge/static/js/roles.js` 한 곳, `docs/roles.md`(권한 표, 새 역할 체크리스트), 역할 셋이 빠졌던 `bridge/models.py`, `tools/demo_from_db.py` 모델 기본값. 보이는 것은 역할 고르기 칸 순서와 설명 글뿐(색은 맞대어 같음, screen.py 세 테마 0건). 471 진행 글 영어 네 번(스스로 보고). 시험 node 207, pytest 1046 → push → 승인 대기 0 → 브리지 다시 띄움(1464811 → 1520435, 오류 0) → `docs_done`
+  - 서기 몫(정리 후보): `docs/style_guide.md` 85줄 예시(역할 고르기 글이 이제 `roles.js`, 자르는 줄 `foremanchat.js` 340), `docs/operations.md`, `docs/11_worktree.md`, `docs/14_dispatcher_note_wake.md`, `docs/11_handoff_v2.md`의 옛 역할 상수 이름
+- 사용자 「띄워라」 → 474 코더 sonnet 「포스트잇 여러 장 잃음 고치기」(p:51)
+- 사용자 「넣어라. 적어두지 않으면 다음에 또 흩어진다」 → CLAUDE.md 역할 기준 아래 `docs/roles.md` 한 줄(`a0b4065`). 사용자 「노션 기술문서 지시문에 한 줄」(비개발자도 읽는다, 쉬운 말, 깊이 그대로, 어려운 말은 그 자리에서 한 줄 풀이) → 469에 input으로 전함
 - 그 밖에는 관리자 규칙 위반 없음(이 기록의 일). 412 끝내기 확인 창에 Enter를 보낸 것은 합치기 흐름 안에서 그 세션의 남은 예약을 끝낸 것이다(멈춘 CC 프로세스 · 다른 프로젝트 세션 아님)
