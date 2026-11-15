@@ -8,11 +8,14 @@ README 3.5 "자동 기상"을 한 번에 자동으로 가지 않는다(docs/11_f
 
 import asyncio
 import logging
+import socket
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
@@ -50,6 +53,33 @@ def load_wake(path: str | Path) -> WakeRules:
     return WakeRules(enabled=bool(raw.get("enabled", True)), daily_max=int(raw.get("daily_max", 5)),
                      dedupe_hours=float(raw.get("dedupe_hours", 12)), public_url=str(raw.get("public_url", "")).rstrip("/"),
                      kinds=[k for k in raw.get("kinds", list(KINDS)) if k in KINDS])
+
+
+LOCAL_URL = "http://localhost:8000"   # 화면은 서버 PC나 ssh -L로만 열린다(README 접속 · 3.13). public_url이 비면 이 주소
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def link_base(rules: WakeRules) -> str:
+    return rules.public_url or LOCAL_URL
+
+
+def is_local_url(url: str) -> bool:
+    return (urlsplit(url).hostname or "") in LOCAL_HOSTS
+
+
+async def check_public_url(rules: WakeRules, resolve: Callable[[str], Any] | None = None) -> str | None:
+    """뜰 때 한 번: 알림 링크의 이름이 풀리는지 본다. 안 풀리면 사람에게 알릴 글을, 괜찮으면 None.
+    11-15 — foreman.ronanlab.dev는 터널을 열지 않기로 한 날부터 풀리지 않는데 링크는 계속 그 이름이었고 아무도 몰랐다."""
+    host = urlsplit(link_base(rules)).hostname or ""
+    if not host or host in LOCAL_HOSTS:
+        return None
+    resolve = resolve or (lambda h: socket.getaddrinfo(h, None))
+    try:
+        await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, resolve, host), timeout=10)
+    except Exception as e:  # noqa: BLE001 — 풀리지 않음 · 시간 초과 모두 같은 뜻
+        return (f"config/wake.toml public_url의 이름 {host}을 찾지 못합니다({type(e).__name__}). 자동 기상 알림의 [시작] 링크가 열리지 않습니다. "
+                f"public_url을 {LOCAL_URL}로 고치거나 비워 주십시오")
+    return None
 
 
 class Waker:
@@ -107,7 +137,8 @@ class Waker:
             self._send(project, f"⚠ {KINDS[kind]} — 살펴볼 계획을 세우지 못했습니다. {e}. 실패 알림을 직접 봐 주세요")
             return
         p = r["plan"]
-        link = f"{self.rules.public_url}/?dispatch={r['dispatch_id']}" if self.rules.public_url else f"/?dispatch={r['dispatch_id']}"
+        base = link_base(self.rules)
+        link = f"{base}/?dispatch={r['dispatch_id']}"
         test = "〔시험〕 " if what.startswith("〔시험〕") else ""
         lines = [f"🧭 {test}{KINDS[kind]} — 이렇게 살펴보자는 계획을 세웠습니다",
                  f"▶ {p.get('title') or '(이름 없음)'} — {ROLE_KO.get(p.get('role'), p.get('role'))}"
@@ -117,7 +148,8 @@ class Waker:
             lines.append(f"이유: {str(p['reasons'][0])[:200]}")
         if p.get("questions"):
             lines.append(f"묻는 것: {str(p['questions'][0])[:200]}")
-        lines.append(f"[시작]? 화면에서 계획을 보고 눌러 주세요 — {link}")
+        how = "서버 PC 화면이나 ssh -L 8000:localhost:8000으로 엽니다" if is_local_url(base) else "화면에서 계획을 보고 눌러 주세요"
+        lines.append(f"[시작]? 계획을 보고 화면에서 눌러 주세요. {how}: {link}")
         self._send(p.get("project") if p.get("repo") else project, "\n".join(lines))
 
     def _send(self, project: str | None, msg: str) -> None:

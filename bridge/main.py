@@ -456,6 +456,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     if src is not None:
                         src.on_failure = app.state.waker.failure
                 log.info("자동 기상 2단계 켬: %s(하루 %d번)", ", ".join(wr.kinds), wr.daily_max)
+                # 11-15 알림 링크 이름이 풀리는지 한 번 본다(안 풀리는 이름이 석 주 넘게 링크로 나갔다). 뜨는 길은 막지 않는다
+                async def _check_wake_url(rules=wr) -> None:
+                    from bridge.wake import check_public_url
+                    why = await check_public_url(rules)
+                    if why:
+                        _c2_alert(why)
+                app.state.wake_url_task = asyncio.create_task(_check_wake_url(), name="foreman-wake-url-check")
         except Exception as e:  # noqa: BLE001 — 자동 기상이 안 떠도 브리지는 뜬다
             log.warning("자동 기상을 켜지 못함: %s", e)
         # 11-08 사용량(docs/15) — `claude -p "/usage"`를 poll_s마다(모델 호출 없음). 못 읽으면 연달아 fail_alert번에 텔레그램
