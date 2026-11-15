@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/handoff.py, bridge/pointers.py, bridge/handoff_state.py, migrations/0014_handoff.sql, migrations/0024_summary_state.sql
-읽은 커밋: e5d584b
+읽은 커밋: 9a7c22d
 -->
 
 # 인계 요약과 읽을 곳

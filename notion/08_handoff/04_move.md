@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/moveflow.js, bridge/static/js/handoff.js, bridge/switchwatch.py, config/handoff.toml
-읽은 커밋: e5d584b
+읽은 커밋: 9a7c22d
 -->
 # 새 세션으로 옮기기
 

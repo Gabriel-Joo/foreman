@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/handoff.py, docs/11_handoff.md, docs/11_handoff_v2.md
-읽은 커밋: e5d584b
+읽은 커밋: 9a7c22d
 -->
 # 08 인계와 압축 손실
 

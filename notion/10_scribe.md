@@ -1,6 +1,6 @@
 <!--
 다루는 곳: docs/12_scribe.md, config/scribe.toml
-읽은 커밋: e5d584b
+읽은 커밋: 9a7c22d
 -->
 # 10 서기와 문서
 
