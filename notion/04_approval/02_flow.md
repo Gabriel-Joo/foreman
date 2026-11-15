@@ -204,7 +204,7 @@ API는 API 토큰을 요구한다. 이 길은 원격에서 명령 실행을 허�
 
 순서가 바뀌면 일이 꼬인다. CC가 먼저 hook을 끊으면 브리지는 연결이 사라진 줄 모르고 계속 기다리다가 나중에 시간 초과를 기록한다. curl이 브리지보다 먼저 끊으면 브리지가 정한 결정이 CC에 닿지 못한다. 브리지가 가장 먼저 포기해야 「시간 초과」가 한 곳에서 깔끔하게 정해진다. 셋 가운데 CC 쪽 값은 저장소 밖 사용자 설정이라 코드가 맞출 수 없다. 그래서 `approval.toml`의 `wait_s` 주석에 「바꾸면 스크립트와 사용자 설정도 그보다 길게」를 적어 두었다 [code:config/approval.toml].
 
-저장소의 hook 견본 `deploy/hooks/foreman-hooks.json`에는 PermissionRequest `timeout`이 아직 900초로 남아 있다 [code:deploy/hooks/foreman-hooks.json]. 실제로 쓰는 사용자 설정은 3660초다. 견본을 그대로 다시 깔면 CC가 15분에 hook을 끊고, 위에서 말한 「브리지만 모르고 기다리는」 꼴이 된다.
+저장소의 hook 견본 `deploy/hooks/foreman-hooks.json`에는 PermissionRequest `timeout`이 한동안 900초로 남아 있었다. 실제로 쓰는 사용자 설정(3660초)보다 짧아, 견본을 그대로 다시 깔면 CC가 15분에 hook을 끊고 위에서 말한 「브리지만 모르고 기다리는」 꼴이 될 뻔했다. 11-15에 견본을 3660초로 맞췄고, 이제 시험이 지킨다. 시험은 브리지 기다림 < 스크립트 curl 기다림 < 견본의 CC 한도 순서가 깨지면 실패한다 [code:deploy/hooks/foreman-hooks.json] [code:tests/test_hook_timeouts.py].
 
 ### 10분에서 60분으로
 

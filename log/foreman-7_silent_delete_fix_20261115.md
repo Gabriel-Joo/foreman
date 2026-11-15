@@ -6,21 +6,23 @@
 
 | 안 | 자리 | 바뀐 것 |
 |---|---|---|
-| A1 | `bridge/approval.py` `_segments`, `_segments_ask`, `_heredoc_shell` | `_segments`가 뺀 heredoc 본문을 모아 두고, 받는 쪽이 셸이면(bash, sh, zsh, dash, `bash -s`, `ssh …`, `vagrant ssh`, `cat <<EOF \| bash`) 그 본문을 `bash -c` 안쪽처럼 `_bash(본문, depth+1)`로 다시 판정한다. ssh는 cwd를 모른다고 둔다. `bash -c '…' <<EOF`, `bash x.sh <<EOF`, `ssh host cat > f <<EOF`는 본문이 데이터라 보지 않는다 |
-| A1s | `_segments_ask` 스크립트 분기 | 실행 스크립트 본문을 정규식만이 아니라 `_bash` 전체로 다시 판정한다. 같은 명령에서 heredoc으로 막 쓴 스크립트(`cat > x.sh <<EOF … EOF` 다음 `bash x.sh`)는 판정 순간 파일이 없으므로 그 heredoc 본문으로 판정한다 |
-| B1 | `_mark_pwd`, `_pwd_env`, `_protected_delete` | `$(pwd)`, `` `pwd` ``, `$PWD`, `${PWD}`, `$(git rev-parse --show-toplevel)`과 그것으로 딱 한 번 정한 변수(`d=$(pwd)`)를 cwd, 저장소 뿌리로 풀어 통째로-삭제를 판정한다 |
-| B2 | `_protected_delete` | 고정 부분 없이 명령 치환으로 시작하는 `rm` 대상은 ask(규칙 이름은 그대로 「통째로-삭제」, 이유 「명령 치환으로 정해지는 경로를 지운다」). 해석기 heredoc 본문은 지금처럼 빼고 본다 |
-| D1 | `config/approval.toml`, `tests/fixtures/approval_now.toml` | `protect`, `protect_tool_edit_ok`에 `AI_programming/foreman/(\.worktrees/[^/]+/)?config/…`, `…/scripts/foreman-(hook\|decide)\.sh`. 묻지 않고 🛡 알림만(원본 경로와 같다) |
+| A1 | `bridge/approval.py` | 셸이 실행하는 여러 줄 본문을 모아 두고, `bash -c` 안쪽처럼 다시 판정한다. 데이터로 넘기는 본문은 보지 않는다 |
+| A1s | `bridge/approval.py` | 실행 스크립트 본문을 정규식만이 아니라 전체 판정으로 다시 판정한다. 같은 명령에서 막 쓴 스크립트는 판정 순간 파일이 없으므로 같은 명령 안의 본문으로 판정한다 |
+| B1 | `bridge/approval.py` | 현재 폴더와 저장소 뿌리를 가리키는 꼴(그것으로 한 번 정한 변수 포함)을 풀어 통째로-삭제를 판정한다 |
+| B2 | `bridge/approval.py` | 고정 부분 없이 명령 치환으로 시작하는 삭제 대상은 ask(규칙 이름은 그대로 「통째로-삭제」, 이유 「명령 치환으로 정해지는 경로를 지운다」). 해석기 본문은 지금처럼 빼고 본다 |
+| D1 | `config/approval.toml`, `tests/fixtures/approval_now.toml` | 보호 목록과 편집 허용 목록에 작업방 안 규칙 파일, 게이트 스크립트 꼴을 더했다. 묻지 않고 🛡 알림만(원본 경로와 같다) |
 | D2 | `bridge/approval.py` `rule_files`, `bridge/worktree.py` `rule_changes`, `merge`, `bridge/handoff.py` `worktree_act`, `bridge/mergeprep.py` 카드, `bridge/static/js/handoff.js` `ruleNote` | 합칠 때 바뀐 파일을 지금 도는 규칙의 `protect`와 맞댄다. 걸리면 합치기 결과 `rule_files`와 `note` 「🛡 규칙 파일이 바뀝니다」, 합친 뒤 텔레그램 🛡(kind `rulefile`), 카드에 `rule_files` 칸과 화면 한 줄, 「합치기 준비됨」 알림과 관리자 카드 글에 한 줄. 막지 않는다. 확인을 못 하면 까닭을 결과와 카드에 적는다(조용히 「없음」으로 두지 않는다) |
 
 docs: `docs/11_worktree.md` 「6.」, 「6-1.」에 D2 한 줄씩.
 
 ## 설계와 달랐던 점
 
-1. **줄바꿈이 명령 구분이 아니었다.** `_segments`의 shlex가 줄바꿈을 빈칸으로 봐서, 여러 줄 본문은 한 조각으로 뭉쳤다(`set -e` 다음 줄의 rm은 머리가 `set`). A1, A1s만 넣어서는 스크립트, heredoc 본문의 rm이 안 잡혔다. 그래서 `_newline_seps`로 줄바꿈을 `;`로 나눴다. 다만 `|`, `&&`, `||`, `\`로 끝난 줄은 이어 본다. `;`는 다음 줄 앞에 붙인다(주석이 줄 끝까지 먹기 때문). 최상위 여러 줄 명령과 여러 줄 `bash -c '…'`도 같이 바르게 나뉜다
-2. **`then`, `do`, `{`, `(` 뒤의 명령을 건너뛰었다.** 조각 머리에서 sudo, nohup, time, env만 한 번 떼던 것을 `_cmd_words`로 바꿔 셸 낱말(then, do, else, if, while, `{`, `(`, command, exec)도 뗀다. 스크립트 본문에 흔한 꼴이다. `rm`은 경로가 붙어도(`/bin/rm`) 본다
-3. **`_segments`가 heredoc 여는 줄의 나머지를 버렸다.** `bash <<EOF && 다음 명령`의 `&& 다음 명령`이 조각에서 사라졌다. 본문을 모으는 판정 경로에서만 남기게 했다(allow 판정 경로는 그대로)
-4. **즉석 스크립트는 A1s만으로 안 잡혔다**(파일이 아직 없다). 같은 명령 안의 heredoc 파일 쓰기를 기억해 두는 것으로 풀었다
+(11-15 공개 전 정리: 아래 넷은 판정기가 명령을 잘못 나누던 성격만 남기고, 꼴과 함수 이름은 뺐다. 넷 모두 이 일감에서 고쳤다)
+
+1. **여러 줄 명령이 한 조각으로 뭉쳤다.** 그래서 A1, A1s만 넣어서는 본문 안 삭제가 안 잡혔다. 줄을 명령 구분으로 보게 고쳤다(이어지는 줄은 이어 본다). 최상위 여러 줄 명령과 여러 줄 `bash -c '…'`도 같이 바르게 나뉜다
+2. **셸 문법 낱말 뒤의 명령 머리를 잘못 읽었다.** 스크립트 본문에 흔한 꼴이다. 명령 머리를 찾을 때 셸 낱말을 떼게 고쳤다
+3. **본문을 여는 줄의 나머지 명령이 조각에서 사라졌다.** 본문을 모으는 판정 경로에서만 남기게 했다(allow 판정 경로는 그대로)
+4. **같은 명령에서 막 만든 스크립트는 A1s만으로 안 잡혔다**(파일이 아직 없다). 같은 명령 안의 파일 쓰기 본문을 기억해 두는 것으로 풀었다
 
 ## 확인 체크리스트
 
@@ -31,28 +33,20 @@ docs: `docs/11_worktree.md` 「6.」, 「6-1.」에 D2 한 줄씩.
 
 ### 16꼴 표
 
-| 꼴 | 옛 판정 | 새 판정 |
-|---|---|---|
-| `bash <<'EOF'` 본문 통째로 지우기 | pass | ask 통째로-삭제 |
-| `sh <<EOF` 본문 | pass | ask |
-| `bash -s <<'EOF'` 본문 | pass | ask |
-| `ssh host bash <<'EOF'` 본문 | pass | ask |
-| 해석기 heredoc, rmtree | pass | pass(범위 밖, C안) |
-| 해석기 heredoc, os.system | pass | pass(범위 밖, C안) |
-| `bash whole.sh` | pass | ask |
-| `/경로/whole.sh` | pass | ask |
-| `source whole.sh` | pass | ask |
-| 즉석 스크립트(같은 명령에서 쓰고 실행) | pass | ask |
-| `rm -rf "$(pwd)"` | pass | ask |
-| `` rm -rf `pwd` `` | pass | ask |
-| `rm -rf "$PWD"` | pass | ask |
-| `rm -rf "$(git rev-parse --show-toplevel)"` | pass | ask |
-| `d=$(pwd)` 다음 `rm -rf "$d"` | pass | ask |
-| `rm -rf "$(dirname "$PWD")"` | pass | ask(B2) |
-| 작업방 `config/approval.toml` Edit, `scripts/foreman-decide.sh` Write | allow 편집 | allow 규칙파일-편집(🛡) |
-| 작업방에서 `sed -i … config/approval.toml` | pass unmatched | pass 규칙파일-편집(🛡) |
+(11-15 공개 전 정리: 꼴마다의 명령은 빼고 성격으로 묶었다. 수는 그대로다)
 
-시험은 `tests/test_approval_silent_delete.py`(42개)에 있다. 더한 꼴: `cat <<EOF | bash`, `sudo zsh <<EOF`, 따옴표 없는 `$(pwd)`, `${PWD}/`, `if …; then rm …; fi`. 대조군(지금도 ask): 최상위 직접 삭제, `bash -c` 안쪽, `rm -rf .`, `"$HOME"`, heredoc 안 `push --force`. 대조군(pass여야 하는 평소 명령): heredoc 안 빌드 폴더 지우기, ssh heredoc 안 평범한 명령, 파일 쓰기 heredoc, 커밋 본문, `${PWD:?}/tmp.x`, `$(pwd)/build`, `.venv` 지우기, 계약 시험의 `rm -rf "$OUT"`, `bash -n`. 합치기 쪽은 `tests/test_worktree.py` 둘(규칙 파일 표시, 확인 실패를 알림), `tests/js/mergeprep.test.mjs` 하나.
+| 꼴(성격) | 수 | 옛 판정 | 새 판정 |
+|---|---|---|---|
+| 셸이 실행하는 여러 줄 본문 안의 통째로 지우기 | 4 | pass | ask 통째로-삭제 |
+| 같은 쪽, 해석기 본문 | 2 | pass | pass(범위 밖, C안, **미해결**) |
+| 실행하는 스크립트 파일 안의 통째로 지우기 | 3 | pass | ask |
+| 같은 명령에서 막 만든 스크립트 | 1 | pass | ask |
+| 현재 폴더, 저장소 뿌리를 가리키는 경로 | 5 | pass | ask |
+| 임의의 명령 치환으로 정해지는 경로 | 1 | pass | ask(B2) |
+| 작업방 안 규칙 파일, 게이트 스크립트 도구 편집 | 2 | allow 편집 | allow 규칙파일-편집(🛡) |
+| 작업방 안 규칙 파일 Bash 편집 | 1 | pass unmatched | pass 규칙파일-편집(🛡) |
+
+시험은 `tests/test_approval_silent_delete.py`(42개)에 있다. 위 꼴에 변형 몇 가지를 더했다. 대조군은 둘이다: 지금도 ask인 꼴 다섯, pass여야 하는 평소 명령(빌드 폴더 지우기, 파일 쓰기 본문, 커밋 본문, 스크래치 폴더 지우기, 계약 시험 등). 합치기 쪽은 `tests/test_worktree.py` 둘(규칙 파일 표시, 확인 실패를 알림), `tests/js/mergeprep.test.mjs` 하나.
 
 ## 17일 기록 다시 돌리기 (DB 읽기만)
 
@@ -60,8 +54,8 @@ docs: `docs/11_worktree.md` 「6.」, 「6-1.」에 D2 한 줄씩.
 
 | 바뀜 | 수 | 무엇 |
 |---|---|---|
-| pass → **ask** 통째로-삭제 | **1** | foreman 작업방, `for … do rm -rf $S/$d` 꼴(스크래치 폴더 아래). 전에는 `do`가 머리 자리라 조각 판정을 건너뛰었다. 지금은 `S` 값을 같은 명령에서 풀지 못해 기존 규칙 「변수가 비면 / 를 통째로」에 걸린다(최상위에서 같은 꼴을 쳐도 전부터 묻던 규칙) |
-| ask → pass | 1 | 인프라, 한 줄 끝 `rm -rf $S/…` 다음 줄 해석기 코드까지 rm 인자로 읽던 오탐. 줄을 나누자 실제 대상(스크래치 폴더)만 본다 |
+| pass → **ask** 통째로-삭제 | **1** | foreman 작업방, 스크래치 폴더 아래를 반복문으로 지우는 꼴. 전에는 반복문 안 명령이 조각 판정을 건너뛰었다. 지금은 변수 값을 같은 명령에서 풀지 못해 기존 규칙 「변수가 비면 / 를 통째로」에 걸린다(최상위에서 같은 꼴을 쳐도 전부터 묻던 규칙) |
+| ask → pass | 1 | 인프라, 다음 줄 해석기 코드까지 삭제 인자로 읽던 오탐. 줄을 나누자 실제 대상(스크래치 폴더)만 본다 |
 | allow 편집 → allow 규칙파일-편집(🛡) | 11 | 작업방의 `config/notify.toml`, `config/approval.toml` Edit 10번, Write 1번(D1) |
 | pass → pass 규칙파일-편집(🛡) | 1 | foreman, 여러 줄 명령의 한 줄이 `sed -i`로 `config/notify.toml`을 고침. 전에는 다른 줄과 뭉쳐 머리가 sed가 아니었다 |
 
@@ -78,13 +72,13 @@ docs: `docs/11_worktree.md` 「6.」, 「6-1.」에 D2 한 줄씩.
 
 ## 남는 구멍(이번에 고치지 않음)
 
-- `find -delete`, `xargs rm`(일감대로. 관리자가 포스트잇에 올린다)
-- 해석기 heredoc 본문의 삭제(C안)
-- 조사 B가 적은 대로, 훅은 글만 보므로 실행 시점에만 정해지는 경로는 어느 안으로도 다 막히지 않는다
+- rm 밖 삭제 꼴 일부(일감대로. 관리자가 포스트잇에 올린다). **미해결**
+- 해석기 본문의 삭제(C안). **미해결**
+- 조사 B가 적은 대로, 훅은 글만 보므로 글 판정으로는 다 막히지 않는 꼴이 남는다. **미해결**
 
 ## 서기 몫
 
-- README 3.3 승인 절: heredoc 본문, 실행 스크립트를 조각 판정까지 다시 본다는 것, 줄바꿈 구분, `$(pwd)` 꼴 풀기, 명령 치환 대상 ask, 작업방 규칙 파일 🛡, 합칠 때 규칙 파일 표시
+- README 3.3 승인 절: 셸이 실행하는 본문과 실행 스크립트를 조각 판정까지 다시 본다는 것, 줄바꿈 구분, 현재 폴더 꼴 풀기, 명령 치환 대상 ask, 작업방 규칙 파일 🛡, 합칠 때 규칙 파일 표시
 - `notion/04_approval/*`의 같은 내용
 - `docs/operations.md`에 승인 규칙 관련 줄이 있으면 같은 내용
 
@@ -102,6 +96,6 @@ docs: `docs/11_worktree.md` 「6.」, 「6-1.」에 D2 한 줄씩.
 
 세 번 어겼다. 모두 파일을 고친 것은 아니고 확인용 명령이었다.
 
-1. **진행 글 한 줄을 영어로 썼다**(작업 중반, `_segments_ask` 고치기 직전 「Now the head-stripping …」). 훅이 알려 바로 한국어로 돌아왔다
+1. **진행 글 한 줄을 영어로 썼다**(작업 중반, 판정 코드 고치기 직전 영어 한 줄). 훅이 알려 바로 한국어로 돌아왔다
 2. **판정 함수 확인에 `python -I -c`를 한 번 썼다**(스크립트 본문이 왜 통과하는지 볼 때). 파일을 고치지 않았지만 일감이 금지한 꼴이다. 그 뒤로는 스크래치 스크립트 파일로만 확인했다
 3. **쓸데없는 heredoc 리디렉션 `cat > /dev/null <<'X'`를 한 번 쳤다**(17일 비교 결과 줄 수를 셀 때 앞에 잘못 붙임). 아무 파일도 쓰지 않았지만 금지한 꼴이라 적는다

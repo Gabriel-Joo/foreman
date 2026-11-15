@@ -87,8 +87,8 @@
 
 - `event` approval_req의 `role_rule` **15건**: 「Bash로 파일 고침」 8 · 「관리자 코드」 7. `[roles] projects = ["foreman"]`이라 런슈즈 · 인프라 세션은 보지 않는다
 - Bash로 파일 고침 8 — 모두 시험 파일에 `cat >> … <<'EOF'`(heredoc): 291 ×1(11-11) · **312 ×3**(test_managers ×2 · test_stage2_db — **312는 보고에서 밝히지 않았다**) · 313 ×3(test_scopetoken은 같은 명령에 `sed -i`도) · 314 ×1(test_pipeline)
-- **안 잡힌 것 1**: 314의 `.venv/bin/python - <<'EOF'`로 `bridge/pipeline.py` 들여쓰기 고침(10:17:11) — 해석기에 표준 입력으로 넘긴 코드 안의 `open(f)`라 검사에 안 걸림. 실제 위반 9 중 8 기록
-- enforce였다면: heredoc 8은 막힘, 파이썬 1은 통과
+- **안 잡힌 것 1**: 314가 해석기로 `bridge/pipeline.py` 들여쓰기를 고침(10:17:11) — 검사가 보지 않는 꼴이라 안 걸림(아래 ①, 미해결). 실제 위반 9 중 8 기록
+- enforce였다면: 8은 막힘, 해석기 1은 통과
 - 관리자 코드 7 — 모두 관리자 276: `CLAUDE.md` Edit ×4(11-11 19:11 ~ 19:18) · `docs/12_scribe.md` ×2 · `docs/operations.md` ×1(11-12 15:21 `2395477` 인계 전 결정 기록). `manager_allow`(config · log · README) 밖이라 enforce면 막힘. 사용자 지시로 한 정당한 일로 보인다(CLAUDE.md는 사용자가 시킨 규칙 고침 — 다만 그 지시가 어디 있었는지는 이번에 확인하지 않음)
 - 「관리자가 합친 뒤 시험 파일 고치기」는 기록 0(11-12 302 때는 코더에게 맡겼다)
 
@@ -103,7 +103,7 @@
 
 ## 역할 권한 — 검사를 지나가는 길 · 런슈즈 · 인프라로 넓히면(확인만)
 
-- 지나가는 길(`bridge/roleguard.py` 읽음): ① 해석기 안의 쓰기(`python -c` · `python - <<EOF` · `node -e` 등 — 일부러 안 봄, 261행) ② 경로에 `$`나 백틱(`sed -i … "$F"` · `> $OUT`) — 판정 안 함(228행) ③ `cd $X` 뒤 — 어디인지 몰라 안 막음 ④ 따옴표가 안 닫혀 나눌 수 없는 명령 ⑤ `>` · `>>` · `tee` · `sed/perl/gsed -i` 말고 쓰는 명령 — `cp` · `mv` · `install` · `dd of=` · `truncate` · `patch` · `git apply` · `git checkout -- 파일` · `awk -i inplace` · `ed` 등 ⑥ 스크래치에 쓴 뒤 `cp`로 저장소에 넣기(②+⑤) ⑦ 역할이 없는(미분류) 세션은 관리자 · 서기 규칙을 안 받음 ⑧ `[roles] projects = ["foreman"]` 밖은 처음부터 안 봄
+- 지나가는 길(`bridge/roleguard.py` 읽음, 여덟 갈래. 11-15 공개 전 정리로 성격만 남기고 명령 꼴과 줄 번호는 뺐다. 모두 **미해결**): ① 해석기 안의 쓰기(일부러 안 봄) ② 경로가 실행 때 정해지는 쓰기 ③ 실행 때 정해지는 폴더로 옮긴 뒤의 조각 ④ 나눌 수 없는 명령 ⑤ 검사 목록 밖의 쓰기 명령(열 가지 남짓) ⑥ ②와 ⑤를 이은 꼴 ⑦ 역할이 없는(미분류) 세션은 관리자 · 서기 규칙을 안 받음 ⑧ 역할 권한 대상 프로젝트 밖은 처음부터 안 봄
 - 런슈즈 · 인프라 지난 7일(approval_req Bash · Edit · Write 3,780건)을 같은 검사기로 다시 돌림 → **290건 걸림**:
   - 런슈즈 코더 Bash 파일 고침 137 — git이 무시하는 작업 폴더(`catalog/local/work` 등) 쪽이 적어도 37, 추적 파일(`DESIGN.md` 12 · `src/` 15 · `backend/src` 7 · `scripts/parity` 8 · 문서 · 시험 등)이 적어도 45 — 경로 가르기가 일부 어긋나 정확한 몫은 못 냄
   - 런슈즈 worktree push 21(11-08 그때는 세션이 push하던 규칙)

@@ -233,7 +233,7 @@ FOREMAN 세션은 다른 저장소(runshoes · petmint-rag-chatbot · ronanlab-i
 - 막는 것
   - Edit · Write · MultiEdit · NotebookEdit: 대상이 자기 저장소(+ `.worktrees/*`) 밖의 git 저장소 안일 때
   - git: `-C` · `cd`(줄을 넘어 이어짐) · `--git-dir` · `--work-tree` · `GIT_DIR=`로 다른 저장소를 가리키며 읽기가 아닌 것. `fetch` · `pull`도 막는다(그 저장소 `.git`에 쓴다)
-- 막지 않는 것: `/tmp` · 스크래치 아래(복제본), git 저장소가 아닌 곳(`~/.claude` · 메모리), heredoc 본문(커밋 메시지 안 글자)
+- 막지 않는 것: `/tmp` · 스크래치 아래(복제본), git 저장소가 아닌 곳(`~/.claude` · 메모리), 명령 안의 여러 줄 글(커밋 메시지 안 글자 때문. 이 때문에 놓치는 꼴은 미해결)
 - 저장소 경로는 DB `project.repo_path`. 프로젝트가 아닌 `ronanlab-infra` · `k8s-cluster`도 git 저장소라 막힌다
 - 거부 사유(화면 글): "다른 저장소 쓰기 막힘 — 이 세션은 다른 저장소(runshoes)를 읽기만 합니다(git push). 고칠 것은 그 저장소의 세션에 맡기거나(세션 간 메시지) 사용자에게 요청하세요. 상태만 볼 때는 git ls-remote, 손볼 시험은 /tmp · 스크래치 복제본에서 합니다."
 - 상태 보기는 `git ls-remote` · 스크래치 복제본으로
@@ -241,7 +241,7 @@ FOREMAN 세션은 다른 저장소(runshoes · petmint-rag-chatbot · ronanlab-i
 
 **시도했던 것** — 지난 7일 FOREMAN 세션 호출(Bash 4,505 · Edit 3,093 · Write 290)에 다시 돌렸다. 첫 판 24건 중 헛거부 4(`git reflog show` · `git remote get-url origin`(`$(…)` 안) · `git apply --check` · `git fetch --dry-run`) → 명령마다 "읽기로 치는 인자"로 고친 뒤 20건, 모두 막으려던 것(다른 저장소 Edit · Write 13, commit · add · pull · fetch 7).
 
-**한계**: Bash의 그 밖 쓰기(`sed -i` · `>` · `cp`)는 보지 않는다(샌드박스 단계). `cd $X`처럼 변수 경로 cd는 따라가지 않고, `git -C $X` 쓰기는 판정할 수 없어 막는다. 브리지가 꺼졌거나 4초 안에 답하지 못하거나 판정 중 예외가 나면(스키마 잠금 · 다른 저장소 · pgrep · 역할 권한 모두) **판정 없이 통과한다** — 통과는 그대로 두고, 11-15부터 그 사실만 저장소 `.run/hook_miss.log`에 한 줄씩 남는다(시각, 갈래, 세션, 도구 이름. 명령 글은 쓰지 않음, 1MB에서 `.1`로 한 벌만) [log:foreman-6_bridge_alert_20261115.md]. 훅 스크립트는 입력을 셸 변수에 담지 않고 한 바이트도 바꾸지 않은 채 브리지에 넘긴다 — 11-15 한때 변수에 담는 판이 stdin 소켓(CC가 훅에 주는 꼴)을 열지 못해 빈 본문을 보내 판정이 꺼졌다. 꼴별 바이트 시험이 지킨다 [log:foreman-4_hook_bytes_20261115.md]. 이제 그 저장소 일은 그 저장소 세션에 맡기므로 왕복이 하나 는다. 2단계(docs 뒤처짐 신호) · 3단계(역할 나누기)는 README 「나중에 할 일」에 있었으나 11-15에 지웠다(옛 교장 체제 때 적은 것, 역할 나누기는 관리자 체제와 `config/roles.toml` 기록으로 상당 부분 됐다).
+**한계**: Bash의 git 밖 쓰기는 보지 않는다(미해결, 샌드박스 단계). 실행 때 정해지는 폴더는 따라가지 않고(미해결), 변수로 가리킨 git 쓰기는 판정할 수 없어 막는다. 브리지가 판정을 내지 못하면(스키마 잠금 · 다른 저장소 · pgrep · 역할 권한 모두) **판정 없이 통과한다**(설계) — 통과는 그대로 두고, 11-15부터 그 사실만 저장소 `.run/hook_miss.log`에 한 줄씩 남는다(시각, 갈래, 세션, 도구 이름. 명령 글은 쓰지 않음, 1MB에서 `.1`로 한 벌만) [log:foreman-6_bridge_alert_20261115.md]. 훅 스크립트는 입력을 셸 변수에 담지 않고 한 바이트도 바꾸지 않은 채 브리지에 넘긴다 — 11-15 한때 변수에 담는 판이 stdin 소켓(CC가 훅에 주는 꼴)을 열지 못해 빈 본문을 보내 판정이 꺼졌다. 꼴별 바이트 시험이 지킨다 [log:foreman-4_hook_bytes_20261115.md]. 이제 그 저장소 일은 그 저장소 세션에 맡기므로 왕복이 하나 는다. 2단계(docs 뒤처짐 신호) · 3단계(역할 나누기)는 README 「나중에 할 일」에 있었으나 11-15에 지웠다(옛 교장 체제 때 적은 것, 역할 나누기는 관리자 체제와 `config/roles.toml` 기록으로 상당 부분 됐다).
 
 ## 8. 화면 말을 바꿀 때 — 화면 말 시험 (11-15, `tests/test_screen_words.py`) [log:foreman-4_screen_words_test_20261115.md]
 
