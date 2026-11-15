@@ -122,7 +122,7 @@
 
 - 11-09 17:10 교장은 알림 셋이 이미 있다는 것을 이유 칸에 적었지만 `warnings` · `questions`가 비어 카드에서 눈에 띄지 않았다. 교장은 문서로 읽었고, 관리자는 코드 · 기록 · 브리지 기동 시각으로 실제로 도는지 확인했다
 - 교장 도구(Read · Grep · Glob)로는 못 보는 것: 프로세스 · tmux 화면(끝내기 확인 창 등), worktree 브랜치 · 커밋 안 한 변경, 브리지를 언제 다시 띄웠는지, 시험 결과, 노트 · log에 적히기 전의 대화 결정
-- 그래서 할 일 넷(README 「나중에 할 일」): ① 교장이 한 번에 여러 세션 계획(먼저) ② 읽기 전용 확인 도구 ③ 교장의 발견을 경고 · 질문 칸에 ④ 모든 띄우기가 dispatch를 남김
+- 그래서 할 일 넷(그때 README 「나중에 할 일」에 적었다. ①과 ④는 됐고 ② ③은 11-15에 표와 함께 지웠다): ① 교장이 한 번에 여러 세션 계획(먼저) ② 읽기 전용 확인 도구 ③ 교장의 발견을 경고 · 질문 칸에 ④ 모든 띄우기가 dispatch를 남김
   - **11-11: ① · ④는 됐다**(아래 「11.」). ② · ③은 README에 남아 있다
 
 ## 10. 역할 관리자(manager) (11-09, 세션 242) [log:manager_role_20261109.md]
@@ -152,7 +152,7 @@
 - **맡을 파일 겹침 경고**: 새로 띄울 세션의 맡을 파일이 이미 도는 세션이 고치는 파일과 겹치면 계획 경고에 뜬다(11-11 282 때 286 계획이 `tests/test_terminal.py`로 처음 잡았다)
   - (11-15 바뀜) 맞대는 상대는 「살아 있는 세션」에 「열려 있는 세션」을 더한다. 열려 있다 = 합치거나 버리기 전. worktree 세션은 폴더가 남아 있는 동안, 원본 폴더 세션은 끝나기 전(`foreman.py` `UNMERGED_SQL`, `still_open`). 서기실 열린 일과 같은 판단이다. CC가 끝나도 합치지 않은 worktree는 합칠 때 충돌하니 겹침에 넣는다. 합치기 기록 없이 지운 worktree(296, 311)는 폴더가 없어 빠진다
   - 서기실 [시키기]로 띄운 서기 세션도 잡힌다. 서기실이 `dispatch`(origin `scribe`)와 `dispatch_session`(맡을 파일 = 그 일의 `TOUCHES`)을 남기고, 그 기록이 없던 11-15 전 서기실 세션은 `scribe_room.open_tasks`로 더한다 → `docs/12_scribe.md` 「2.」
-- **서기 일 종류(`task`, 11-15)**: 계획 세션 칸에 `task`(서기실 일 이름: readme, later, trim, doccheck, docfix, portfolio). 역할 scribe면 `spawn_new`가 `session_action scribe-task`로 남긴다(없으면 `plan`). `POST /api/spawn`도 `task`를 받는다. 계획 카드는 이 칸을 보이지 않고 그대로 넘긴다
+- **서기 일 종류(`task`, 11-15)**: 계획 세션 칸에 `task`(서기실 일 이름: later, trim, doccheck, docfix, portfolio. readme는 11-15에 뺐다). 역할 scribe면 `spawn_new`가 `session_action scribe-task`로 남긴다(없으면 `plan`). `POST /api/spawn`도 `task`를 받는다. 계획 카드는 이 칸을 보이지 않고 그대로 넘긴다
 - **포스트잇에서 바로**(받은 할 일 #8, 11-15 포스트잇으로 옮김): 코더 추천이 붙은 포스트잇의 [띄우기]가 교장 계획 창을 열고 바로 계획을 받는다(`foremanChat.openWith(…, {ask: true})`). 번호는 `inbox_ids`로 [이대로 시작]에 실려 뜬 세션이 가져간다. 11-11의 [＋ 할 일] 창 목록과 [고른 것으로 계획 받기]는 11-15에 뺐다(목록은 포스트잇이 맡는다, `docs/12_scribe.md` 「11.」). 열린 것 고치기는 `PUT /api/todo/{id}` 그대로 [log:coder_c_wave2_20261111.md] [log:foreman-5_postit_20261115.md]
 
 **설정 스위치 뒤에 있던 것 — 합칠 때(11-11 286)는 하나도 켜지 않았고, 같은 날 저녁 사용자 지시로 넷을 켰다(역할 권한만 관찰)** [log:coder_c_wave2_20261111.md] [log:merge_c_wave2_20261111.md] [log:enable_c_wave2_20261111.md]

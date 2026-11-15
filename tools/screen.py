@@ -113,7 +113,7 @@ class Page:
         path.write_bytes(base64.b64decode(r["data"]))
 
 
-# 터미널 · 입력 칸 겹침(11-10 — README 「터미널 — 입력 칸이 터미널 글자를 덮어 오른쪽이 잘린다」). 문제 글 목록을 돌려준다.
+# 터미널 · 입력 칸 겹침(11-10 — log/designer_screen_six_20261110.md). 문제 글 목록을 돌려준다.
 # 패널 입력 칸(pForm)이 패널 밖 · 창 밖으로 넘치나, 터미널 칸과 겹치나, 패널과 터미널이 겹치나, xterm 글자 칸이 iframe보다 넓은가
 TERM_AUDIT_JS = """(()=>{
   const R=(e)=>{if(!e||e.hidden||!e.getClientRects().length)return null;const r=e.getBoundingClientRect();return [r.left,r.top,r.width,r.height]};

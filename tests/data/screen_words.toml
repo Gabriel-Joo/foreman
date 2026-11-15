@@ -141,6 +141,13 @@ new = "알려진 한계 쓰기"
 scope = "화면"
 commit = "cc/foreman-5 11-15"
 
+# 11-15 서기실 「README 갱신」 줄을 없앰(cc/foreman-4, 410 README 정리). README 로드맵 표를 없애 맞출 것이 없다
+[[rename]]
+old = "README 갱신"
+new = "(없앰, 만든 순서는 깃헙 커밋이 맡는다)"
+scope = "화면과 문서 인용"
+commit = "cc/foreman-4 11-15"
+
 # ── 안 A의 코드 예외 ────────────────────────────────────────
 # 화면이 아니라 세션 · claude -p에 넣는 글(문서 말을 쓴다 — docs/style_guide.md 「화면 말 · 문서 말이 다른 것」).
 # near = 그 문자열 안의 한 조각(같은 파일의 다른 화면 글은 계속 걸리게)
@@ -162,12 +169,6 @@ file = "bridge/handoff.py"
 old = "따로 작업"
 near = "이 세션은 원본 폴더가 아니라 **따로 작업(worktree)"
 why = "worktree 세션 첫 글 앞에 붙는 「이 세션이 뜬 자리」 안내(세션에 넣는 글)"
-
-[[code_exception]]
-file = "bridge/mergeprep.py"
-old = "받은 할 일"
-near = "(?:받은 할 일|포스트잇)"
-why = "11-15 전 커밋 글 · 세션 log의 「받은 할 일 #N」도 읽는 정규식(화면에 나가지 않음)"
 
 [[code_exception]]
 file = "bridge/scribe_room.py"

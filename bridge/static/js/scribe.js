@@ -8,10 +8,10 @@ import { esc, ago, keep } from './render.js';
 import { createPostitBlock } from './postit.js';
 
 // 메뉴 순서 — 문서 점검이 앞이다(찾기 → 고치기가 핵심 흐름). 문서 고치기(docfix)는 메뉴에 없고 결과에서만 뜬다
-export const ORDER = ['doccheck', 'readme', 'later', 'trim'];
+export const ORDER = ['doccheck', 'later', 'trim'];
 const UNREAD = '읽지 못했습니다';
 
-// 일마다 옆에 붙는 밀린 수 — 「README 갱신 — 13개 밀림」. 밀린 것이 없으면 이름만(빈 문자열)
+// 일마다 옆에 붙는 밀린 수 — 「알려진 한계 쓰기 — 13개 밀림」. 밀린 것이 없으면 이름만(빈 문자열)
 export function behindText(k, b) {
   if (!b) return { text: '', cls: 'muted', tip: '' };
   if (b.unread) return { text: UNREAD, cls: 'bad', tip: b.unread };

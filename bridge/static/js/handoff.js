@@ -117,13 +117,10 @@ export function mpSection(mp, b, sid) {
   const conf = c.conflict && c.conflict.length;
   const how = conf ? `<span class="bad" title="충돌 — 합치면 ${esc(c.base)}와 같은 줄을 서로 고친 곳이 있습니다. 승인하면 합치지 않고 그 세션(끝났으면 관리자)에게 풀라고 보냅니다.">충돌 ${c.conflict.length}개</span>` : '';
   const d = c.docs || {};
-  // 11-11 2물결 「넷」 — 근거(세션 기록 「README에서 뺄 줄」 · 근거 칸 기록 · 받은 할 일 번호)가 있는 것을 앞에, 낱말만 겹친 것(weak)은 접어 둔다
-  const rLine = (x) => `<div class="small${x.weak ? ' muted' : ''}">README:${x.line} ${esc(x.text)} <span class="muted">(${esc((x.why && x.why.length ? x.why : [...(x.files || []), ...(x.words || [])]).slice(0, 5).join(' · '))})</span></div>`;
-  const strong = (d.readme || []).filter((x) => !x.weak), weak = (d.readme || []).filter((x) => x.weak);
-  const rRows = strong.map(rLine).join('') + (weak.length ? `<details><summary class="small muted" title="낱말만 겹친 후보 — 커밋 글 낱말이 표 줄과 겹치기만 한 것입니다. 헛걸림이 많아 접어 둡니다.">낱말만 겹친 후보 ${weak.length}개</summary>${weak.map(rLine).join('')}</details>` : '');
+  // README 「나중에 할 일」 줄 후보는 11-15에 뺐다(표를 없앰). 옛 카드에 d.readme가 남아 있어도 그리지 않는다
   const dRows = (d.docs || []).map((x) => `<div class="small"><code>${esc(x.where)}</code> ${x.count}줄(${x.lines.join(', ')}${x.count > x.lines.length ? ' …' : ''}) <span class="muted">${esc(x.files.join(', '))}</span>${x.stale ? ' <span class="warn" title="맞출 문서 — 이번에 바뀐 파일을 적고 있는데 이 문서는 고치지 않았습니다. 설계가 바뀌었으면 함께 맞춥니다.">이번에 안 고침</span>' : ''}</div>`).join('');
   const docs = d.error ? `<div class="small warn">${esc(d.error)}</div>`
-    : rRows || dRows ? `<details${keep(`hand:${sid}:mp-docs`)}><summary class="small" title="정리 후보 — 바뀐 파일 · 커밋 글과 README 「나중에 할 일」 줄 · docs 줄을 기계로 맞댄 것입니다. 고르고 지우는 것은 사람 승인 뒤 관리자가 합니다.">정리 후보: README ${(d.readme || []).length} · docs ${(d.docs || []).length}</summary>${rRows}${dRows}</details>` : '';
+    : dRows ? `<details${keep(`hand:${sid}:mp-docs`)}><summary class="small" title="정리 후보 — 이번에 바뀐 파일을 적은 docs 줄을 기계로 맞댄 것입니다. 고르고 고치는 것은 사람 승인 뒤 관리자가 합니다.">정리 후보: docs ${(d.docs || []).length}</summary>${dRows}</details>` : '';
   const open = c.status === 'ready' || c.status === 'failed' || c.status.startsWith('conflict');
   // 11-14 사용자 — 승인하면 세션이 끝난다는 안내는 카드 글에서 [합치기] 호버로 옮겼다
   const tip = conf ? '합치기 — 충돌이 있어 합치지 않습니다. 세션이 살아 있으면 그 세션에 main을 가져와 풀라고 보내고, 끝났으면 관리자에게 넘깁니다.'

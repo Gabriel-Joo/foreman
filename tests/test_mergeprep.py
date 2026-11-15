@@ -122,89 +122,15 @@ def test_parse_merge_tree():
         mp.parse_merge_tree(128, "fatal: bad")
 
 
-def test_doc_candidates_matches_files_and_words():
-    rows = mp.readme_rows(README, "나중에 할 일")
-    assert [no for no, _ in rows] == [9, 10, 11]                         # 표 밖(## 7.) · 머리 · 구분 줄은 뺀다
-    d = mp.doc_candidates(README, "나중에 할 일", {"docs/11_x.md": "설명\n`bridge/mergeprep.py`가 한다\n관계없음\n"},
-                          ["bridge/mergeprep.py", "tests/test_mergeprep.py"], ["모눈 배치로 이름표 겹침 없앰"])
-    by = {x["line"]: x for x in d["readme"]}
-    assert by[9]["files"] == ["bridge/mergeprep.py"]          # 경로가 표 줄에 있다(시험 파일의 줄기 mergeprep은 같은 앞 파일로 묶임)
-    assert 11 in by and {"이름표", "겹침"} <= set(by[11]["words"])               # 커밋 글 낱말이 둘 넘게 겹친다
-    assert 10 not in by                                                          # 상관없는 줄은 후보가 아니다
-    assert d["readme"][0]["line"] == 9                                           # 파일이 걸린 줄이 앞
+def test_doc_candidates_docs_only():
+    """정리 후보는 docs 줄만이다. README 「나중에 할 일」 표 줄 후보는 11-15에 뺐다(사용자가 표를 없앰, readme_section 키도 지움)."""
+    d = mp.doc_candidates({"docs/11_x.md": "설명\n`bridge/mergeprep.py`가 한다\n관계없음\n"},
+                          ["bridge/mergeprep.py", "tests/test_mergeprep.py"])
+    assert d["readme"] == []                                                     # README는 세지 않는다(옛 카드 모양만 맞춤)
     assert d["docs"] == [{"where": "docs/11_x.md", "lines": [2], "count": 1, "files": ["bridge/mergeprep.py"], "stale": True}]
-
-
-README2 = """### 나중에 할 일
-| 무엇 | 언제 | 근거 |
-|---|---|---|
-| **「권한 거부」 표시가 꺼지지 않는다**: 거부 뒤 | 따로 | [기록](log/a.md) |
-| **할 일 목록에서 바로 일을 시작**: 고르기 | 교장 뒤 | 받은 할 일 #8 |
-| **근거 칸 기록**: 무엇 | 따로 | [기록](log/coder_x_20261111.md) |
-| **낱말 둘만**: 카드 승인 | 따로 | x |
-| **낱말 셋**: 카드 승인 화면 | 따로 | x |
-"""
-
-
-def test_doc_candidates_ranks_by_evidence():
-    """11-11 2물결 「넷」 — 세션 기록 「README에서 뺄 줄」 > 근거 칸 기록 > 받은 할 일 번호 > 파일 > 낱말(셋 넘게만)."""
-    logs = {"log/coder_x_20261111.md": "# 결과\n## README에서 뺄 줄(합칠 때)\n- 「「권한 거부」 표시가 꺼지지 않는다」 줄\n"
-                                       "- 「없는 줄」이 있으면 그 줄\n## 다음\n- 「할 일 목록에서 바로 일을 시작」은 아님\n"}
-    d = mp.doc_candidates(README2, "나중에 할 일", {"docs/x.md": "`bridge/a.py`\n"}, ["log/coder_x_20261111.md", "bridge/a.py"],
-                          ["카드 승인 화면 — 받은 할 일 #8"], logs=logs)
-    by = {x["line"]: x for x in d["readme"]}
-    order = [x["line"] for x in d["readme"]]
-    assert order[0] == 4 and by[4]["score"] >= 100 and "README에서 뺄 줄" in by[4]["why"][0]   # 다른 절의 「…」는 세지 않는다
-    assert by[6]["score"] >= 50 and "근거 칸" in by[6]["why"][0]
-    assert by[5]["score"] >= 40 and by[5]["why"] == ["포스트잇 #8"]       # 11-15 같은 번호, 옛 이름 「받은 할 일 #8」도 읽는다
-    assert 7 not in by                                   # 낱말 둘로는 후보가 아니다
-    assert by[8]["weak"] is True and not by[4]["weak"]  # 낱말 셋은 후보지만 약하다
-    assert d["docs"][0]["stale"] is True
-    assert mp.log_drop_lines(logs) == [("log/coder_x_20261111.md", "「권한 거부」 표시가 꺼지지 않는다"),
-                                       ("log/coder_x_20261111.md", "없는 줄")]
-
-
-README3 = """### 나중에 할 일
-| 무엇 | 언제 | 근거 |
-|---|---|---|
-| **나중에 할 일 정리**: 895 줄 | 따로 | x |
-| **합치기 카드 README 정리 후보가 낱말만 보고 헛짚는다**: 943 | 따로 | x |
-| **화면 — 브리지를 다시 띄우면 합치기 카드의 「오래됨」 시각이 다시 잡힌다**: 카드가 메모리에서 | 따로 | x |
-| **docs 어긋남 맞추기**: operations 26 | 따로 | x |
-"""
-
-# 11-13 오늘 네 기록의 「README에서 뺄 줄」 절(줄 그대로) — 헛짚기 0이어야 하고, 진짜 둘은 잡혀야 한다
-LOGS_WRONG = {
-    "log/merge_wait_to_manager_20261113.md": "## README에서 뺄 줄\n- 없음(README 「나중에 할 일」에 이 일감 줄이 있으면: 「합치기 카드 정리 후보를 다 골랐다는 신호가 없다 — 시간이 지나야 치운다」 류)\n",
-    "log/merge_wait_off_remind_20261113.md": "## README에서 뺄 줄\n- README 「나중에 할 일」에 「사람이 끈 합치기 물음이 막대에 남음」 · 「7일 지나면 조용히 사라짐」 류의 줄이 있으면 뺀다(관리자가 확인)\n",
-    "log/docs_sync2_20261113.md": "## README에서 뺄 줄\n\n- 줄 번호로만: 없음(이번 일감에 대응하는 README 「나중에 할 일」 줄은 못 봤다 — 관리자가 확인)\n",
-}
-
-
-def _readme_hits(logs, readme=README3):
-    d = mp.doc_candidates(readme, "나중에 할 일", {}, ["log/x.md"], [], logs=logs)
-    return {x["line"]: x for x in d["readme"] if any("README에서 뺄 줄" in w for w in x["why"])}
-
-
-def test_drop_lines_do_not_match_section_name_or_substring():
-    """11-13 헛짚기 네 번 — 「나중에 할 일」(절 이름)이 「나중에 할 일 정리」 제목의 부분 문자열로 걸렸다."""
-    assert _readme_hits(LOGS_WRONG) == {}
-    assert _readme_hits({"log/a.md": "## README에서 뺄 줄\n- 「나중에 할 일」\n"}) == {}                  # 절 이름만
-    assert _readme_hits({"log/a.md": "## README에서 뺄 줄\n- 「나중에 할 일 정」 줄\n"}) == {}             # 제목의 앞부분도 아니다
-
-
-def test_drop_lines_match_whole_bold_title_or_line_number():
-    real_title = {"log/mergeprep_db_20261113.md": "## README에서 뺄 줄\n\n- 「브리지를 다시 띄우면 합치기 카드의 「오래됨」 시각이 다시 잡힌다」 — 카드가 DB에서 되살아난다\n"}
-    real_no = {"log/docs_sync_20261113.md": "## README에서 뺄 줄\n\n- `README.md` 「나중에 할 일」 941줄 **「docs 어긋남 맞추기」** — 이 기록으로 풀림\n"
-                                         "- 이 줄 밖에 새로 뺄 줄은 없다(321 「오래됨」 줄은 `ab9a286`에서 이미 지움)\n"}
-    assert set(_readme_hits(real_title)) == {6}                                      # 「화면 — 」 앞말 없이 적어도(뒤쪽 제목) 맞다
-    assert set(_readme_hits(real_no)) == {7}                                         # 줄 번호 941이 아니라 이 시험 README의 7줄로 다시 쓴다
-    assert set(_readme_hits({"log/a.md": "## README에서 뺄 줄\n- 「docs 어긋남 맞추기」\n"})) == {7}           # 굵은 제목 전체
-    assert set(_readme_hits({"log/a.md": "## README에서 뺄 줄\n- 「README 5줄」 · 「6」\n"})) == {5, 6}           # 줄 번호만
-    assert set(_readme_hits({"log/a.md": "## README에서 뺄 줄\n- 4줄\n"})) == {4}
-    # 이름이 아닌 것은 log_drop_lines에서 뺀다(줄 번호는 log_drop_numbers)
-    assert mp.log_drop_lines({"log/a.md": "## README에서 뺄 줄\n- 「README 941줄」 「941」\n"}) == []
-    assert mp.log_drop_numbers({"log/a.md": "## README에서 뺄 줄\n- 「README 941줄」 「942」 · 943줄\n"}) == [("log/a.md", 941), ("log/a.md", 942), ("log/a.md", 943)]
+    assert not hasattr(mp, "readme_rows") and not hasattr(mp, "log_drop_lines")
+    assert not hasattr(mp.DocsCfg(), "readme_section")
+    assert mp.Card.has_docs(SimpleNamespace(docs={"readme": [{"line": 9}], "docs": []})) is False   # 옛 카드의 README 후보는 세지 않는다
 
 
 def test_load_config(tmp_path):
@@ -229,7 +155,7 @@ async def test_ended_clean_card_then_merge_tells_manager(repo, monkeypatch):
     m, h, sent, row, _ = _mk(repo, monkeypatch)
     card = await m.prep(row, {})
     assert card and card.conflict is None and card.ff and card.ahead == 1 and card.why == "세션이 끝났습니다"
-    assert card.files == ["bridge/mergeprep.py"] and card.docs["readme"][0]["line"] == 9
+    assert card.files == ["bridge/mergeprep.py"] and card.docs["readme"] == []
     assert h.acts[0][0] == mp.ACT_CARD
     m.cards[7] = card
     assert await m.prep(row, {}) is card                                        # 같은 커밋이면 같은 카드(다시 알리지 않음)
@@ -696,8 +622,9 @@ async def test_merged_msg_docs_pick_follows_approver(repo, monkeypatch):
     m, h, sent, row, _ = _mk(repo, monkeypatch)
     c = mp.Card(sid=7, title="t", project="proj", role="coder", repo=str(repo), name="w", branch="cc/w", base="main", head="h" * 40,
                 base_head="b", live=False, why="", ahead=2, behind=0, commits=[], files=[], conflict=None,
-                docs={"readme": [{"line": 9, "text": "x", "score": 10, "why": []}], "docs": []})
+                docs={"readme": [], "docs": [{"where": "docs/a.md", "lines": [9], "count": 1, "files": ["a.py"], "stale": False}]})
     assert "사람 승인 뒤" in m._merged_msg(c, {"merged": 2})
+    assert "사람 승인 뒤" not in m._merged_msg(mp.Card(**{**c.__dict__, "docs": {"readme": [{"line": 9}], "docs": []}}), {"merged": 2})  # 옛 README 후보는 세지 않는다
     _mgr_mode(m)
     c.approved_by = "manager"
     s = m._merged_msg(c, {"merged": 2, "squash": "abcdef123456"})

@@ -16,7 +16,7 @@ from pathlib import Path
 
 KST = timedelta(hours=9)
 OUT_ROOT = Path.home() / ".foreman" / "scribe"
-# 사람 말은 자르지 않는다(README 「나중에 할 일」 #14, 11-10 — 1500자에서 잘려 t:6360 · t:6383 뒤쪽이 빠졌다).
+# 사람 말은 자르지 않는다(받은 할 일 #14, log/scribe_material_noclip_20261110.md, 11-10 — 1500자에서 잘려 t:6360 · t:6383 뒤쪽이 빠졌다).
 # 11-10 잰 크기: FOREMAN 사람 턴 전체 330개 · 206k자, 가장 긴 턴 9.9k자 — 서기가 Read를 쪽으로 나눠 읽으면 된다.
 # Read는 2000자 넘는 한 줄을 조용히 자르므로, 긴 줄은 글자를 빼지 않고 LINE_WRAP자마다 줄만 나눈다.
 LINE_WRAP = 1500

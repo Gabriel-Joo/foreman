@@ -30,7 +30,7 @@ class _Conn:
     async def __aexit__(self, *a): return False
 
     async def execute(self, q, params=None):
-        return SimpleNamespace(scalar=lambda: "readme 옛것")
+        return SimpleNamespace(scalar=lambda: "later 옛것")
 
 
 def _hm(monkeypatch):
@@ -47,10 +47,10 @@ def _hm(monkeypatch):
 
 
 @pytest.mark.parametrize("role,task,src,want", [
-    ("scribe", "readme", None, "readme"),            # 서기실 [시키기] · 계획 task · 직접 띄우기 task
+    ("scribe", "later", None, "later"),            # 서기실 [시키기] · 계획 task · 직접 띄우기 task
     ("scribe", None, None, "plan"),                  # 계획 길 · 직접 띄우기에 일 종류가 없으면
-    ("scribe", None, 5, "readme 옛것"),              # 옮기기 — 옛 서기 세션의 일을 물려받는다
-    ("coder", "readme", None, None),                 # 서기가 아니면 남기지 않는다
+    ("scribe", None, 5, "later 옛것"),              # 옮기기 — 옛 서기 세션의 일을 물려받는다
+    ("coder", "later", None, None),                 # 서기가 아니면 남기지 않는다
 ])
 def test_finish_spawn_records_scribe_task_once(monkeypatch, role, task, src, want):
     m = _hm(monkeypatch)
@@ -61,8 +61,8 @@ def test_finish_spawn_records_scribe_task_once(monkeypatch, role, task, src, wan
 
 
 def test_plan_start_passes_task_and_sessions_of_keeps_it():
-    ss = fm.sessions_of({"sessions": [{"role": "scribe", "task": "readme"}, {"role": "scribe", "task": "Bad Task"}], "sessions_edit": True})
-    assert [s["task"] for s in ss] == ["readme", None]
+    ss = fm.sessions_of({"sessions": [{"role": "scribe", "task": "later"}, {"role": "scribe", "task": "Bad Task"}], "sessions_edit": True})
+    assert [s["task"] for s in ss] == ["later", None]
     assert "task" in fm.S_FIELDS and 'role "scribe"일 때만' in fm.INSTRUCTIONS
 
 
@@ -75,9 +75,9 @@ def test_plan_start_hands_task_to_spawn_new(tmp_path, monkeypatch):
     monkeypatch.setattr(foreman_note, "check_ops", lambda c, p, o: _aw(([], [])))
     monkeypatch.setattr(foreman_note, "apply", lambda *a, **k: _aw([]))
     asyncio.run(d.start(5, {"project": "zz", "mode": "new", "sessions_edit": True,
-                            "sessions": [{"role": "scribe", "title": "R", "first_prompt": "r", "task": "readme"},
+                            "sessions": [{"role": "scribe", "title": "R", "first_prompt": "r", "task": "later"},
                                          {"role": "scribe", "title": "P", "first_prompt": "p"}]}))
-    assert [c[2]["scribe_task"] for c in hm.calls] == ["readme", None]     # 없으면 spawn_new가 plan으로 남긴다
+    assert [c[2]["scribe_task"] for c in hm.calls] == ["later", None]     # 없으면 spawn_new가 plan으로 남긴다
 
 
 # ── DB (foreman_test) ────────────────────────────────────────
@@ -135,22 +135,22 @@ def test_plan_scribe_counts_in_room_and_room_scribe_in_plan_conflicts(tmp_path, 
         old = await _sess(eng, ch, tmp_path / "wt2", title="옛 계획 서기")
         await fm.record_spawn(eng, "spawn", proj, {"role": "scribe", "title": "옛 계획 서기", "files": ["log/doccheck_20261115.md"]},
                               {"session_id": old})
-        # 3) 서기실 [시키기] — scribe-task readme + _record(dispatch origin scribe)
-        room = await _sess(eng, ch, tmp_path / "wt3", task="readme", title="서기 — README 갱신")
-        await sr._record(eng, proj, "서기 — README 갱신", "readme", None, {"session_id": room})
+        # 3) 서기실 [시키기] — scribe-task later + _record(dispatch origin scribe)
+        room = await _sess(eng, ch, tmp_path / "wt3", task="later", title="서기 — 나중에 할 일 정리")
+        await sr._record(eng, proj, "서기 — 나중에 할 일 정리", "later", None, {"session_id": room})
         # 4) worktree 폴더가 사라진 것(합치기 기록 없이) · 합친 것 — 열려 있지 않다
         gone = await _sess(eng, ch, tmp_path / "없음", task="later")
         done = await _sess(eng, ch, tmp_path / "wt1", task="portfolio 00_a")
         await _merged(eng, done)
 
         opened = await sr.open_tasks(eng, proj)
-        assert [(o["session_id"], o["task"]) for o in opened] == [(plan, "plan"), (old, "plan"), (room, "readme")]
+        assert [(o["session_id"], o["task"]) for o in opened] == [(plan, "plan"), (old, "plan"), (room, "later")]
         assert opened[0]["files"] == ["CLAUDE.md", "docs/style_guide.md"] and opened[2]["files"] == ["README.md"]
         assert gone not in [o["session_id"] for o in opened] and done not in [o["session_id"] for o in opened]
         # 서기실 겹침 막기가 계획 길 서기를 안다
         assert f"세션 {plan}" in sr.blocked("trim", opened) and "CLAUDE.md" in sr.blocked("trim", opened)
         assert f"세션 {old}" in sr.blocked("doccheck", opened)
-        assert "이미 열려" in sr.blocked("readme", opened) and "README.md" in sr.blocked("later", opened)
+        assert "이미 열려" in sr.blocked("later", opened) and "README.md" in sr.blocked("docfix", [opened[2]])
         assert sr.blocked("portfolio", opened, "00_a") is None                    # 셋 열려 있어도 파일이 다르면 막지 않는다
         # 서기실 todo의 열린 일 · 막힘 글도 같은 판단(todo는 저장소가 있어야 돌아 여기서는 open_tasks · blocked만)
 
@@ -185,7 +185,7 @@ def test_room_scribe_without_dispatch_record_still_in_plan_conflicts(tmp_path, m
 def test_many_scribes_not_capped(tmp_path):
     """서기를 셋 넘게 띄워도 막히지 않는다(11-15 사용자 「동시 상한을 두지 마라」) — 파일이 다르면 몇 개든."""
     async def go(eng, proj, ch):
-        for i, task in enumerate(("readme", "trim", "doccheck", "portfolio 00_a", "portfolio 01_b")):
+        for i, task in enumerate(("later", "trim", "doccheck", "portfolio 00_a", "portfolio 01_b")):
             (tmp_path / f"w{i}").mkdir()
             await _sess(eng, ch, tmp_path / f"w{i}", task=task)
         opened = await sr.open_tasks(eng, proj)

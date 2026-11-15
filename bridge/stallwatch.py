@@ -1,4 +1,4 @@
-"""세션이 살아 있는지 · 멈췄는지(11-11, README 「나중에 할 일」 「세션이 살아 있는지 · 멈췄는지 알기」).
+"""세션이 살아 있는지 · 멈췄는지(11-11, log/coder_screen_state_20261111.md. 전에는 README 「나중에 할 일」 줄이었고 그 표는 11-15에 뺐다).
 
 CC는 스스로 심장박동을 보내지 않는다 — sessions/<pid>.json의 updatedAt은 상태(busy · idle)가 바뀔 때만 바뀐다(11-11 확인:
 작업 중 11분째에도 그대로). 그래서 브리지가 1분마다 직접 잰다(심장박동 = 프로세스 · CC 상태 · 대화 기록의 마지막 줄 · tmux 화면).
@@ -11,7 +11,7 @@ CC는 스스로 심장박동을 보내지 않는다 — sessions/<pid>.json의 u
               「같은」은 most_repeated · same_key가 가른다(11-11 디자이너 273 오판 뒤): Bash는 앞머리(S=… · cd … && · export ·
               timeout · env)를 뺀 명령 전체로, 서브에이전트마다 따로, 그 사이에 고친 것(Edit · Write · MCP 쓰기)이 있으면 다시 0부터
 - exit_confirm CC 끝내기 확인 창("Background work is running … Exit and stop tasks")이 떠 있다 — 사람 답을 기다리며 멈춤
-              (README 「세션이 끝나지 않고 CC 끝내기 확인 창에 걸린 것」)
+              (log/old_session_exit_bg_20261109.md, 남은 일은 포스트잇)
 - dialog      쉬는(busy 아닌) 세션에 결정 창(계획 승인 · 도구 권한 · 폴더 신뢰 …, `inject.screen_state`)이나 모르는 창이 떠 있는데
               브리지가 기다리는 승인(approval `pending`)이 없다 — 패널에는 답할 카드가 없고 대화창에서만 풀린다(11-14 362,
               `log/silent_finish_20261114.md` 1 · 4절). 모르는 창은 CC가 status `waiting`을 적었을 때만. 화면을 못 읽는 세션(tmux 밖)은

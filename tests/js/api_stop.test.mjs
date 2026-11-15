@@ -1,4 +1,4 @@
-// API 오류로 멈춘 세션(11-13, README 「API 오류로 멈춘 세션이 화면에서 일하는 것처럼 보인다」) — 서버 api_stop을 머리 위 · 배지로
+// API 오류로 멈춘 세션(11-13, log/screen_api_error_bar_20261113.md) — 서버 api_stop을 머리 위 · 배지로
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { needMark, humanNeed, stateBadge, apiStopTip } from '../../bridge/static/js/render.js';

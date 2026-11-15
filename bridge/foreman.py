@@ -159,7 +159,7 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
    - 여럿은 사람이 개수를 말했거나("둘 띄워"), 큰 일을 맡을 파일이 겹치지 않게 나눠 동시에 하는 것이 분명히 나을 때만
    - files — 그 세션이 맡을 파일(저장소 기준 경로, 폴더는 끝에 /, 글롭 * 가능). 고칠 파일을 알면 하나여도 적는다 —
      띄울 때 브리지가 살아 있는 세션 · 다른 계획과 겹치는지 본다. 모르면 []
-   - task — role "scribe"일 때만, 서기실 일 이름(readme, later, trim, doccheck, docfix, portfolio) 중 맞는 것. 브리지가 서기실과 같은 일이
+   - task — role "scribe"일 때만, 서기실 일 이름(later, trim, doccheck, docfix, portfolio) 중 맞는 것. 브리지가 서기실과 같은 일이
      열려 있는지 함께 센다. 맞는 것이 없으면 쓰지 않는다(plan으로 적힌다)
    - 여럿이면 세션끼리 files가 겹치지 않게 나눈다. 겹칠 수밖에 없으면 merge_order(1부터, 먼저 합칠 것이 작다)로 순서를 정하고 reasons에 까닭을
    - 여럿이면 각 first_prompt에 맡을 파일과 "맡은 파일 밖은 고치기 전에 멈추고 묻는다"를 적는다

@@ -268,7 +268,7 @@ async def test_docs_done_clears_merged_card_and_db(env):
     engine = make_engine(s)
     try:
         m, _ = _mp(engine, None)
-        docs = {"readme": [{"line": 9, "text": "x", "score": 100}], "docs": []}
+        docs = {"readme": [], "docs": [{"where": "docs/a.md", "lines": [9], "count": 1, "files": ["bridge/a.py"], "stale": True}]}
         m.cards[7] = _card(7, status="merged", docs=docs, human_why=[])
         m.cards[8] = _card(8, head="c" * 40)
         await m.sync()
@@ -291,7 +291,8 @@ async def test_docs_done_clears_merged_card_and_db(env):
 
 def test_merged_msg_tells_docs_done():
     m = mp.MergePrep(SimpleNamespace(engine=None, sessions_dir="/x", _tasks=set()), mp.MergePrepCfg(enabled=True))
-    c = _card(7, docs={"readme": [{"line": 9, "text": "x", "score": 10}], "docs": []}, human_why=[], approved_by="human")
+    c = _card(7, docs={"readme": [], "docs": [{"where": "docs/a.md", "lines": [9], "count": 1, "files": ["bridge/a.py"], "stale": True}]},
+              human_why=[], approved_by="human")
     msg = m._merged_msg(c, {"merged": 1})
     assert 'POST /api/sessions/7/merge-prep {"action":"docs_done","by":"manager"}' in msg
     assert f"{m.cfg.keep_docs_h}시간 뒤 치운다" in msg

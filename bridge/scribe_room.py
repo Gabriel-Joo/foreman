@@ -1,6 +1,6 @@
 """서기실(12a, 11-06) — 서기에게 시킬 일 · 할 일 세기(LLM 없음) · 일 시키기(worktree 서기 세션).
 
-시킬 일(사용자 11-06): 문서 점검 · README 갱신 · CLAUDE.md 정리 · 나중에 할 일 정리 · Notion 게시. 회고 쓰기는 11-15에 뺐다(docs/12_scribe.md 「0.」).
+시킬 일(사용자 11-06): 문서 점검 · CLAUDE.md 정리 · 알려진 한계 쓰기(11-15 전 「나중에 할 일 정리」) · Notion 게시. 회고 쓰기와 README 갱신은 11-15에 뺐다(docs/12_scribe.md 「0.」).
 Notion 게시는 세션 없이 [게시] 버튼(bridge/notion.py)이고, 나머지는 서기 세션을 worktree로 띄운다 — 합치기가 사람의 검토 관문이다.
 할 일(docs/12_scribe.md 「2. 언제 일하나」 2): 기계로 센다 — 서기 머리 위 "할 일 N", 누르면 목록. 자동으로 돌리지는 않는다.
 다른 저장소(런슈즈 · 펫퍼민트)는 읽기만 하고, 일은 사람이 그 방 서기를 눌렀을 때만 띄운다(그 저장소의 CLAUDE.md를 따르게 한다).
@@ -21,13 +21,11 @@ from sqlalchemy import text
 log = logging.getLogger("foreman.scribe_room")
 
 KST = timedelta(hours=9)
-README_STALE = 10            # README가 바뀐 뒤 커밋이 이만큼 쌓이면 "README 갱신"
 CLAUDE_MD_MAX = 80           # CLAUDE.md 줄 수 상한(설계 「2.」 예시)
 # 11-15 포스트잇 — 미룬 말은 브리지 그물(bridge/postit.py NET)이 포스트잇에 바로 올린다. 서기가 README 표로 옮기는 단계는 없다
 
 TASKS = {
     "doccheck": {"title": "문서 점검", "desc": "코드와 문서(README · docs · CLAUDE.md)가 안 맞는 곳을 찾아 보고합니다. 고치지는 않습니다."},
-    "readme": {"title": "README 갱신", "desc": "마지막 README 변경 뒤의 커밋 · 결과 문서로 로드맵 표를 맞춥니다."},
     "trim": {"title": "CLAUDE.md 정리", "desc": "꼭 지킬 것만 짧게 남기고 상세는 docs로 옮겨 가리킵니다."},
     # 11-15 포스트잇 — 할 일은 포스트잇에 남고, 서기는 [→]로 보낸 것만 README 「알려진 한계」에 쓴다(키는 later 그대로)
     "later": {"title": "알려진 한계 쓰기", "desc": "포스트잇에서 [→]로 보낸 것을 README 「알려진 한계」에 쓰고, [갱신]에서 끝났다고 닫은 줄을 뺍니다."},
@@ -93,15 +91,6 @@ def _git(repo: str, *a: str) -> str:
         return ""
 
 
-def commits_since_path(repo: str, *paths: str) -> tuple[int, str | None]:
-    """그 경로를 마지막으로 바꾼 커밋 뒤로 쌓인 커밋 수와 그 커밋."""
-    last = _git(repo, "log", "-1", "--format=%h", "HEAD", "--", *paths)
-    if not last:
-        return 0, None
-    n = _git(repo, "rev-list", "--count", f"{last}..HEAD")
-    return (int(n) if n.isdigit() else 0), last
-
-
 def stages_without_result(repo: str) -> list[str]:
     """docs/NN_*.md 중 결과 문서(log/NN_* · log/stage<N>_*)가 하나도 없는 것 — 단계를 했는데 기록이 없는지."""
     root = Path(repo)
@@ -165,15 +154,7 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
             continue
         items: list[dict[str, str]] = []
         git_ok = bool(_git(repo, "rev-parse", "HEAD"))
-        no_git = {"n": None, "unread": f"git 기록을 {UNREAD}"}
         behind: dict[str, dict[str, Any]] = {}
-        n, last = commits_since_path(repo, "README.md")
-        if not git_ok:
-            behind["readme"] = no_git
-        else:
-            behind["readme"] = {"n": n, "stale": n >= README_STALE, "unit": "커밋", "why": f"README가 {last} 뒤로 그대로입니다" if last else ""}
-        if n >= README_STALE:
-            items.append({"kind": "readme", "title": f"README 갱신: 그 뒤 커밋 {n}개", "why": f"README가 {last} 뒤로 그대로입니다"})
         stages = stages_without_result(repo)
         behind["doccheck"] = {"n": len(stages), "stale": bool(stages), "unit": "단계", "why": "결과 문서 없는 단계: " + ", ".join(stages[:5])}
         for d in stages[:5]:
@@ -262,7 +243,7 @@ PLAN_TASK = "plan"             # 계획 [시작] · 직접 띄우기로 일 종�
 # 동시에 시키기(11-06 판단, 11-15 상한을 뺐다) — 막는 것은 둘: 같은 일 · 같은 파일. 개수 상한은 두지 않는다(11-15 사용자).
 # worktree는 서로를 못 봐서 충돌은 합칠 때 난다 — 같은 파일을 고치는 두 일이 열려 있으면 뒤의 합치기가 rebase 충돌.
 # 파일 겹침은 계획 겹침과 같은 판단(foreman.files_overlap — 폴더는 끝에 /, 글롭 *)을 쓴다
-TOUCHES = {"doccheck": ["log/doccheck_*"], "readme": ["README.md"], "later": ["README.md"],
+TOUCHES = {"doccheck": ["log/doccheck_*"], "later": ["README.md"],
            "trim": ["CLAUDE.md", "docs/"], "docfix": ["README.md", "CLAUDE.md", "docs/"]}
 
 
@@ -495,10 +476,6 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
 - 고칠 곳: README.md · docs/ · CLAUDE.md 중 목록이 가리키는 문서만. 코드는 건드리지 않는다(코드가 틀렸다고 보이면 고치지 말고 마지막 응답에 알린다)
 - 문서에 적힌 것이 맞고 저장소가 틀린 것으로 보이는 항목, 확인할 수 없는 항목은 고치지 않고 마지막 응답에 따로 적는다
 - 항목마다 무엇을 어떻게 고쳤는지 근거(파일:줄 · 커밋)와 함께 마지막 응답에 알린다"""
-    elif task == "readme":
-        body = f"""할 일: README를 지금에 맞춘다.
-- 마지막 README 변경({e.get('since') or '?'}) 뒤의 커밋 · `log/` 결과 문서를 읽고 로드맵 표의 상태 · 링크를 고친다
-- 결과 문서를 가리키고 내용을 다시 쓰지 않는다. README.md만 고친다"""
     elif task == "trim":
         body = f"""할 일: CLAUDE.md를 정리한다(docs/12_scribe.md 「trim」).
 - 꼭 지킬 금지 · 결정만 짧게 남기고, 상세는 docs/로 옮겨 가리킨다. 규칙을 없애지 않는다 — 옮길 뿐이다
@@ -607,8 +584,6 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
                          siblings=", ".join(f"「{t['title']}」(`portfolio/{t['slug']}.md`)" for t in tps if t["written"] and t is not tp))
         if task == "docfix":
             extra.update(report=f"log/{topic}" if topic else "", note=note or "")
-        if task == "readme":
-            extra["since"] = commits_since_path(repo, "README.md")[1] or "?"
         if task == "doccheck":
             extra["stages"] = ", ".join(stages_without_result(repo)) or "(없음)"
         prompt = task_prompt(task, project, repo, extra)

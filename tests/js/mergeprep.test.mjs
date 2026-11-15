@@ -6,7 +6,7 @@ import { mpSection, managerCard, humanFiles, mergedNote } from '../../bridge/sta
 const b = (act, label, on, cls = '', tip = '') => `<button data-act="${act}"${on ? '' : ' disabled'} title="${tip}">${label}</button>`;
 const card = (o = {}) => ({ sid: 7, branch: 'cc/w', base: 'main', head: 'abc', ahead: 2, behind: 0, ff: true, live: true,
   why: '보고 옴', commits: ['a1 하나', 'b2 둘'], files: ['bridge/x.py'], conflict: null, status: 'ready',
-  docs: { readme: [{ line: 9, text: '할 일 줄', files: ['bridge/x.py'], words: [] }], docs: [] }, ...o });
+  docs: { readme: [], docs: [{ where: 'docs/11.md', lines: [9], count: 1, files: ['bridge/x.py'], stale: false }] }, ...o });
 
 test('꺼져 있거나 카드가 없으면 그리지 않는다 — 준비가 멈췄으면 사유만', () => {
   assert.equal(mpSection(null, b, 7), '');
@@ -20,7 +20,7 @@ test('깨끗한 카드: ff · 정리 후보 · 승인 단추, 살아 있으면 �
   assert.match(h, /합치기 승인/);
   assert.match(h, /<span class="ok"[^>]*>충돌 없음<\/span><\/div>/);
   assert.ok(!h.includes('ff 가능') && !h.includes('합치는 방법'));                // 11-15 사용자 — 「충돌 없음」은 둘째 줄에 한 번만
-  assert.match(h, /README:9 할 일 줄/);
+  assert.match(h, /정리 후보: docs 1/);
   assert.match(h, /data-act="mp-merge" title="합치기 — 승인하면 세션을 끝내고[^"]*충돌이면 끝내지 않습니다/);   // 11-14 안내는 [합치기] 호버로
   assert.match(h, /data-act="mp-skip"/);
 });
@@ -110,15 +110,15 @@ test('main이 앞섬 · 충돌 · 합친 뒤', () => {
   assert.doesNotMatch(m, /mp-merge/);                         // 합친 카드에는 단추가 없다
 });
 
-test('정리 후보 — 근거 있는 것은 까닭과 함께 앞에, 낱말만 겹친 것은 접고, 안 고친 문서 표시(11-11 2물결 넷)', () => {
+test('정리 후보는 docs 줄만, 안 고친 문서 표시. 옛 카드의 README 줄은 그리지 않는다(11-15 표를 없앰)', () => {
   const docs = { readme: [
-    { line: 4, text: '권한 거부 줄', why: ['세션 기록 「README에서 뺄 줄」(x.md)'], score: 105, weak: false },
-    { line: 9, text: '낱말 줄', words: ['카드', '승인', '화면'], why: ['커밋 글 낱말만 겹침'], score: 3, weak: true }],
+    { line: 4, text: '권한 거부 줄', why: ['세션 기록(x.md)'], score: 105, weak: false }],
   docs: [{ where: 'docs/11.md', lines: [3], count: 1, files: ['bridge/a.py'], stale: true }] };
   const h = mpSection({ card: card({ docs }) }, b, 7);
-  assert.match(h, /README:4 권한 거부 줄 <span class="muted">\(세션 기록 「README에서 뺄 줄」/);
-  assert.match(h, /낱말만 겹친 후보 1개<\/summary><div class="small muted">README:9/);
+  assert.doesNotMatch(h, /README:4|권한 거부 줄/);
+  assert.match(h, /정리 후보: docs 1/);
   assert.match(h, /이번에 안 고침/);
+  assert.equal(mpSection({ card: card({ docs: { readme: docs.readme, docs: [] } }) }, b, 7).includes('정리 후보:'), false);
 });
 
 test('묻는 말이 있어도 카드는 뜬다 — 묻는 말을 함께 보인다(11-11 D2 281)', () => {

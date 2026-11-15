@@ -1,4 +1,4 @@
-"""역할 규칙을 글이 아니라 권한으로(11-11 C 2물결 「다섯」, README 「역할 규칙을 글이 아니라 권한으로 막기」 줄).
+"""역할 규칙을 글이 아니라 권한으로(11-11 C 2물결 「다섯」, log/coder_c_wave2_20261111.md · 기록만으로 두기 log/inspect_roleguard_20261114.md).
 
 「worktree는 커밋만 · push는 관리자」 「파일은 Edit · Write로만」이 CLAUDE.md 글로만 있어 계속 샜다(11-10 worktree 코더에게
 push 지시서, 11-11 세션이 sed · heredoc으로 파일을 두 번 고침). PreToolUse에서 역할마다 막을 것을 본다 —

@@ -48,8 +48,8 @@
    "petmint-rag-chatbot": {"inbox": [{"id": 31, "body": "검색 결과 카드 — 출처 링크가 잘린다. 한 줄로 접고 호버로 전체", "created_at": "@-3600000"}], "rested": []},
    "foreman": {"inbox": [{"id": 41, "body": "자리 말풍선 호버 글 다듬기", "created_at": "@-3600000"}, {"id": 42, "body": "걷는 길 점검을 녹화에도", "created_at": "@-1800000"}], "rested": []}}},
   "/api/scribe/todo": {"tasks": {}, "projects": {
-   "runshoes": {"items": [{"kind": "readme", "title": "README 로드맵 표가 낡음", "why": "마지막 커밋보다 오래됨"}], "open": [], "topics": [], "blocked": {}, "nudge": null},
+   "runshoes": {"items": [{"kind": "doccheck", "title": "결과 문서 없는 단계: docs/12_x.md", "why": "설계 문서는 있는데 log/에 결과가 없습니다"}], "open": [], "topics": [], "blocked": {}, "nudge": null},
    "petmint-rag-chatbot": {"items": [{"kind": "later", "title": "받은 할 일 1개 — 가장 오래된 것 4일째", "why": "머리줄 [＋ 할 일]로 받은 글"}], "open": [], "topics": [], "blocked": {}, "nudge": {"n": 1, "days": 4, "why": "새로 1개 · 가장 오래된 것 4일째"}},
-   "foreman": {"items": [{"kind": "later", "title": "받은 할 일 3개", "why": "머리줄 [＋ 할 일]로 받은 글"}, {"kind": "readme", "title": "README 나중에 할 일 줄 정리", "why": "합친 일이 남아 있음"}], "open": [], "topics": [], "blocked": {}, "nudge": null}}}
+   "foreman": {"items": [{"kind": "later", "title": "받은 할 일 3개", "why": "머리줄 [＋ 할 일]로 받은 글"}, {"kind": "trim", "title": "CLAUDE.md 정리: 96줄", "why": "80줄을 넘었습니다"}], "open": [], "topics": [], "blocked": {}, "nudge": null}}}
  }
 }

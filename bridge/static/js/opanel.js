@@ -548,7 +548,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (r.ok) { $('pText').value = ''; const c = $('pConvo'); c.scrollTop = c.scrollHeight; }   // 보냈으면 내 글이 보이는 곳으로
   };
   // 입력 칸 높이(11-11 사용자) — 위쪽 띠를 끌어 바꾼다. 기억은 localStorage(막혀도 기본 높이로 뜬다).
-  // 낮은 창에서 대화 칸이 사라지지 않게 대화 칸이 MIN_CONVO 아래로 줄지 않는 높이까지만(README 「대화 칸 30px」)
+  // 낮은 창에서 대화 칸이 사라지지 않게 대화 칸이 MIN_CONVO 아래로 줄지 않는 높이까지만(log/d1_terminal_scroll_inputh_20261111.md, 남은 30px 건은 포스트잇)
   const INPUT_H_KEY = 'foremanInputH', MIN_INPUT_H = 40, MIN_CONVO = 80;
   let inputHRestored = false;
   const savedH = () => { try { return localStorage.getItem(INPUT_H_KEY) || ''; } catch { return ''; } };

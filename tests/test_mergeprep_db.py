@@ -151,7 +151,7 @@ async def test_restart_restores_card_docs_and_made_at(env, monkeypatch):
         await m1.restore()                                   # 빈 DB — 아무것도 없다
         assert await m1.check() == 1
         c1 = m1.cards[SID]
-        assert c1.docs["readme"] and c1.docs["docs"]        # 정리 후보가 있다
+        assert c1.docs["readme"] == [] and c1.docs["docs"]  # 정리 후보가 있다(docs만, README는 11-15에 뺐다)
         c1.made_at = ago(3)                                  # 세 시간 기다린 카드
         await m1.sync()
         rows = db_rows(conn)
@@ -251,7 +251,7 @@ async def test_merged_card_without_docs_goes_after_keep_h(env, monkeypatch):
         await m1.check()
         await m1.approve(SID)
         c = m1.cards[SID]
-        c.docs = {"readme": [], "docs": [], "readme_rows": 0}
+        c.docs = {"readme": [], "docs": []}
         c.updated_at = ago(5)
         await m1.sync()
         m2, _ = make(engine, repo, monkeypatch)

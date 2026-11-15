@@ -298,7 +298,7 @@ async def human_needs(c: Any, in_ids: str, relay: dict[str, tuple[bool, bool]] |
 
 
 async def api_stops(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
-    """API 오류로 멈춘 세션(11-13, README 「API 오류로 멈춘 세션이 화면에서 일하는 것처럼 보인다」) — 마지막 턴이 stop_failure로
+    """API 오류로 멈춘 세션(11-13, log/screen_api_error_bar_20261113.md) — 마지막 턴이 stop_failure로
     끝났고 그 뒤 새 턴이 없다. 다음 턴이 시작되면(사람 입력 · 다른 세션 메시지 등 어떤 출처든) 마지막 턴이 바뀌어 저절로 풀린다.
     빨간 「…」(stuck_turn)은 끝 신호가 안 온 **열린** 턴이고, 이것은 **닫힌** 턴이라 서버 상태는 IDLE이다 — 상태 값은 늘리지 않고
     (README 3.11) 이 칸으로 가른다. 까닭은 대화 패널과 같은 bridge/api_error.py로(글이 있는 트랜스크립트 쪽을 먼저).

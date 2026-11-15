@@ -26,13 +26,6 @@ def _repo(tmp_path, result_convention=True):
     return r
 
 
-def test_commits_since_readme(tmp_path):
-    r = _repo(tmp_path)
-    n, last = sr.commits_since_path(str(r), "README.md")
-    assert n == 3 and last
-    assert sr.commits_since_path(str(r), "없는.md") == (0, None)
-
-
 def test_stages_without_result_only_with_convention(tmp_path):
     r = _repo(tmp_path)
     assert sr.stages_without_result(str(r)) == ["docs/12_scribe.md"]       # 11은 stage11_*가 있다, style_guide는 번호 없음
@@ -40,9 +33,9 @@ def test_stages_without_result_only_with_convention(tmp_path):
     assert sr.stages_without_result(str(r2)) == []                          # 결과 문서 관례가 없는 저장소는 세지 않는다(펫퍼민트)
 
 
-@pytest.mark.parametrize("task", ["doccheck", "readme", "trim", "later"])
+@pytest.mark.parametrize("task", ["doccheck", "trim", "later"])
 def test_task_prompts(task):
-    p = sr.task_prompt(task, "foreman", "/repo", {"stages": "docs/12_x.md", "since": "abc", "materials": "/m/later.md"})
+    p = sr.task_prompt(task, "foreman", "/repo", {"stages": "docs/12_x.md", "materials": "/m/later.md"})
     assert p.startswith(f"[FOREMAN 서기 일감 — {sr.TASKS[task]['title']}] foreman")
     assert "push하지 않는다" in p and "CLAUDE.md" in p
     if task == "doccheck":
@@ -59,13 +52,15 @@ def test_blocked_same_task_same_file_no_cap():
     later = {"session_id": 193, "task": "later", "title": "서기 — 나중에 할 일 정리"}
     assert sr.blocked("later", [trim]) is None                                # CLAUDE.md · docs/ ↔ README.md — 겹치지 않는다
     assert "이미 열려" in sr.blocked("trim", [trim])
-    assert "README.md" in sr.blocked("readme", [later])                       # README 갱신 ↔ 나중에 할 일 — 같은 파일
+    assert "README.md" in sr.blocked("docfix", [later])                       # 문서 고치기와 나중에 할 일은 같은 파일
     assert sr.blocked("doccheck", [trim, later]) is None                      # 둘 열려 있어도 파일이 다르면 셋째를 막지 않는다
     many = [trim, later] + [{"session_id": 300 + i, "task": "portfolio", "topic": f"0{i}_x", "title": "서기"} for i in range(4)]
     assert sr.blocked("doccheck", many) is None and sr.blocked("portfolio", many, "09_y") is None
     assert sr.blocked("doccheck", []) is None
     assert not hasattr(sr, "MAX_OPEN")
     assert "retro" not in sr.TASKS and "retro" not in sr.TOUCHES             # 회고 쓰기는 11-15에 뺐다
+    assert "readme" not in sr.TASKS and "readme" not in sr.TOUCHES           # README 갱신도 11-15에 뺐다(로드맵 표를 없앰)
+    assert not hasattr(sr, "README_STALE")
 
 
 def test_blocked_sees_plan_scribe_by_files():
@@ -73,7 +68,7 @@ def test_blocked_sees_plan_scribe_by_files():
     plan = {"session_id": 437, "task": "plan", "title": "CLAUDE.md 정리 서기", "files": ["CLAUDE.md", "docs/operations.md"]}
     assert "CLAUDE.md" in sr.blocked("trim", [plan]) and "CLAUDE.md 정리 서기" in sr.blocked("trim", [plan])
     assert "docs/operations.md" in sr.blocked("docfix", [plan], None)          # docs/ 폴더 ↔ 그 안의 파일
-    assert sr.blocked("readme", [plan]) is None                                # README는 안 맡았다
+    assert sr.blocked("later", [plan]) is None                                 # README는 안 맡았다
     assert sr.blocked("plan", [plan]) is None                                  # plan끼리는 같은 일이 아니다
     dc = {"session_id": 9, "task": "doccheck", "title": "서기", "files": sr.touches("doccheck")}
     assert "이미 열려" in sr.blocked("doccheck", [dc])
@@ -96,7 +91,7 @@ def test_portfolio_topics_and_blocked_per_topic(tmp_path):
     a = {"session_id": 1, "task": "portfolio", "topic": "00_overview", "title": "서기"}
     assert "이미 열려" in sr.blocked("portfolio", [a], "00_overview")
     assert sr.blocked("portfolio", [a], "01_loss") is None                       # 다른 주제 — 다른 파일
-    assert sr.blocked("readme", [a]) is None
+    assert sr.blocked("later", [a]) is None
     p = sr.task_prompt("portfolio", "foreman", "/repo", {"slug": "00_overview", "title": "한눈에", "about": "A",
                                                          "sources": "`README.md`", "screenshots": "1", "siblings": ""})
     assert "portfolio/00_overview.md" in p and "> 이 글은" in p and "tools/screen.py" in p and "[t:턴]" in p

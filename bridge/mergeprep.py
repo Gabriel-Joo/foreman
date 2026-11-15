@@ -56,8 +56,6 @@ TURN_END_DELAYS = (3.0, 10.0)        # 턴 끝 뒤 두 번 본다(초) — 시�
 # ── 설정 ────────────────────────────────────────────────
 @dataclass
 class DocsCfg:
-    readme: str = "README.md"
-    readme_section: str = "나중에 할 일"
     docs_dir: str = "docs"
     max: int = 12
 
@@ -129,8 +127,7 @@ def load(path: str | Path) -> MergePrepCfg:
                        stage=int(raw.get("stage", 1)), projects=[str(x) for x in raw.get("projects") or []],
                        keep_h=int(raw.get("keep_h", 6)), keep_docs_h=int(raw.get("keep_docs_h", 72)),
                        remind_days=int(raw.get("remind_days", 5)),
-                       docs=DocsCfg(readme=str(d.get("readme", "README.md")), readme_section=str(d.get("readme_section", "나중에 할 일")),
-                                    docs_dir=str(d.get("docs_dir", "docs")), max=int(d.get("max", 12))),
+                       docs=DocsCfg(docs_dir=str(d.get("docs_dir", "docs")), max=int(d.get("max", 12))),
                        human_always=HumanAlways(paths=[str(x) for x in ha.get("paths") or []],
                                                 resource_keys=[str(x) for x in ha.get("resource_keys") or []],
                                                 history_words=[str(x) for x in ha.get("history_words") or []],
@@ -244,18 +241,8 @@ def parse_merge_tree(rc: int, out: str) -> list[str] | None:
     raise Refused(f"git merge-tree 실패(종료 코드 {rc}): {out[-300:]}")
 
 
-_PARTICLE = re.compile(r"(으로|에서|에게|까지|부터|이랑|하고|이|가|은|는|을|를|의|에|로|와|과|도|만)$")
 _STOP = {"main", "index", "config", "test", "tests", "api", "init", "readme", "md", "py", "js", "toml", "the", "and", "for",
          "합침", "기록", "고침", "더함", "뺌", "그대로", "있으면", "없으면", "때", "것", "뒤", "전", "수", "줄"}
-
-
-def _words(s: str) -> set[str]:
-    out = set()
-    for w in re.findall(r"[0-9A-Za-z_가-힣.-]+", s or ""):
-        w = _PARTICLE.sub("", w.strip(".-").lower()) if re.search(r"[가-힣]$", w) else w.strip(".-").lower()
-        if len(w) >= 2 and w not in _STOP and not w.isdigit():
-            out.add(w)
-    return out
 
 
 def _file_keys(files: list[str]) -> dict[str, str]:
@@ -279,154 +266,14 @@ def _has_key(line: str, key: str) -> bool:
     return re.search(r"(?<![\w.-])" + re.escape(key) + tail, line) is not None
 
 
-def readme_rows(readme: str, section: str) -> list[tuple[int, str]]:
-    """README의 `section` 낱말이 든 제목 아래 표 줄들 — [(줄 번호(1부터), 줄)]. 머리 · 구분 줄은 뺀다."""
-    out: list[tuple[int, str]] = []
-    inside = False
-    head_seen = False
-    for i, ln in enumerate(readme.splitlines(), 1):
-        if ln.startswith("#"):
-            if inside:
-                break
-            inside = section in ln
-            head_seen = False
-            continue
-        if inside and ln.startswith("|"):
-            if not head_seen:
-                head_seen = True          # 첫 줄 = 머리
-                continue
-            if re.match(r"^\|[\s:|-]+\|?\s*$", ln):
-                continue
-            out.append((i, ln))
-    return out
-
-
-def _quoted(s: str) -> list[str]:
-    """「…」 바깥 짝만(안에 「」가 겹쳐 있어도 — 「「권한 거부」 표시가 꺼지지 않는다」)."""
-    out, depth, start = [], 0, 0
-    for i, ch in enumerate(s):
-        if ch == "「":
-            if depth == 0:
-                start = i + 1
-            depth += 1
-        elif ch == "」" and depth:
-            depth -= 1
-            if depth == 0:
-                out.append(s[start:i])
-    return out
-
-
-def _plain(s: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"[*`]", "", s or "")).strip()
-
-
-_LINE_NO_ONLY = re.compile(r"^(?:README(?:\.md)?\s*)?(\d{1,5})\s*(?:줄)?$")
-_LINE_NO = re.compile(r"(?<![\d.\-/])(\d{1,5})\s*줄")
-
-
-def _drop_section(logs: dict[str, str]) -> list[tuple[str, str]]:
-    """세션 log의 「README에서 뺄 줄」 절의 목록 줄들 — [(log 경로, 줄)]."""
-    out: list[tuple[str, str]] = []
-    for path, body in sorted(logs.items()):
-        inside = False
-        for ln in body.splitlines():
-            if ln.startswith("#"):
-                inside = "README에서 뺄" in ln
-                continue
-            if inside and ln.lstrip().startswith(("-", "*", "|")):
-                out.append((path, ln))
-    return out
-
-
-def log_drop_lines(logs: dict[str, str]) -> list[tuple[str, str]]:
-    """세션 log의 「README에서 뺄 줄」 절에 적은 표 줄 이름들 — [(log 경로, 이름)]. 세션이 직접 「이 줄은 끝났다」고 적은 것(1순위).
-    이름은 「…」 안의 글이다. 맞대는 쪽(doc_candidates)이 **굵은 글씨 제목 전체**와 같을 때만 맞다고 본다(11-13 — 낱말·부분 문자열로
-    맞추면 「나중에 할 일」 같은 절 이름이 줄 제목 「나중에 할 일 정리」에 걸렸다). 줄 번호만 적은 「941」 · 「README 941줄」은 이름이 아니다."""
-    out: list[tuple[str, str]] = []
-    for path, ln in _drop_section(logs):
-        for q in _quoted(ln):
-            q = _plain(q)
-            if len(q) >= 4 and not _LINE_NO_ONLY.match(q):
-                out.append((path, q))
-    return out
-
-
-def log_drop_numbers(logs: dict[str, str]) -> list[tuple[str, int]]:
-    """「README에서 뺄 줄」 절에 줄 번호로 적은 것 — [(log 경로, 줄 번호)]. 「941」 · 「README 941줄」 · 본문의 「941줄」."""
-    out: list[tuple[str, int]] = []
-    for path, ln in _drop_section(logs):
-        nums = {int(m.group(1)) for q in _quoted(ln) if (m := _LINE_NO_ONLY.match(_plain(q)))}
-        nums |= {int(n) for n in _LINE_NO.findall(re.sub(r"[「」*`]", "", ln))}
-        out += [(path, n) for n in sorted(nums)]
-    return out
-
-
-def row_titles(cell: str) -> set[str]:
-    """README 표 줄 첫 칸의 굵은 글씨 제목(`**…**`) — 없으면 칸 전체. 「화면 — 제목」처럼 「 — 」로 앞이 붙은 줄은 뒤쪽도 제목으로 센다."""
-    m = re.search(r"\*\*(.+?)\*\*", cell)
-    t = _plain(m.group(1) if m else cell)
-    parts = t.split(" — ")
-    return {" — ".join(parts[i:]) for i in range(len(parts))}
-
-
-_INBOX_NO = re.compile(r"(?:받은 할 일|포스트잇)\s*#\s*(\d+)")   # 11-15 포스트잇(같은 번호, 옛 이름도 읽는다)
-_LOG_LINK = re.compile(r"(?<![\w/.-])(?:log/)?([\w.-]+\.md)\b")
-
-
-def doc_candidates(readme: str, section: str, docs: dict[str, str], files: list[str], subjects: list[str],
-                   limit: int = 12, logs: dict[str, str] | None = None) -> dict[str, Any]:
-    """넷 — 이번 작업으로 없어지거나 바뀔 수 있는 줄 **후보**(고르기 · 지우기는 승인 뒤 관리자 — 승인자가 사람인 프로젝트는 사람
+def doc_candidates(docs: dict[str, str], files: list[str], limit: int = 12) -> dict[str, Any]:
+    """이번 작업으로 맞출 수 있는 docs 줄 **후보**(고르기 · 고치기는 승인 뒤 관리자 — 승인자가 사람인 프로젝트는 사람
     승인 뒤, 관리자인 프로젝트는 관리자가 혼자(11-12)). 브리지는 맞대기만 한다.
-    README 표 줄 — 점수 높은 차례(11-11 2물결 「넷」: 282 카드 후보 15개 중 맞는 것은 2순위 하나뿐이었다):
-      100  세션 log(이번에 바뀐 log/*.md)의 「README에서 뺄 줄」에 그 줄 이름(굵은 글씨 제목 전체와 같게)이나 줄 번호를 적음 —
-           세션이 직접 끝났다고 한 것. 낱말 · 부분 문자열로는 맞추지 않는다(11-13)
-       50  표 줄 「근거」 칸이 링크한 log를 이번에 고침
-       40  표 줄의 「받은 할 일 #N」이 이번 커밋 글 · 세션 log에도 나옴
-       10  바뀐 파일(경로 · 이름 · 줄기, 낱말 경계로)을 적음(파일마다)
-        1  커밋 글의 **드문** 낱말 겹침(낱말마다) — 낱말만으로는 셋 넘게 겹쳐야 후보(11-11: 둘로는 헛걸림이 대부분이었다)
-    docs: 바뀐 파일 경로 · 이름을 적은 줄을 문서마다 묶는다. 이번에 그 문서를 고치지 않았으면 `stale` — 설계가 바뀌었으면 맞출 후보."""
-    logs = logs or {}
+    바뀐 파일의 경로나 이름을 적은 줄을 문서마다 묶는다. 이번에 그 문서를 고치지 않았으면 `stale`이고, 설계가 바뀌었으면 맞출 후보다.
+    README 「나중에 할 일」 표 줄 후보는 11-15에 뺐다(사용자가 표를 없앴다. 할 일은 포스트잇, 알려진 한계는 사람이 포스트잇에서 보낸다.
+    합치기나 옮기기가 README에 할 일을 넣거나 그 줄을 세는 길은 없다). 옛 카드 모양과 맞게 "readme"는 늘 빈 목록이다."""
     keys = _file_keys(files)
     changed = set(files)
-    changed_names = {os.path.basename(f) for f in changed if f.startswith("log/")}
-    rows = readme_rows(readme, section)
-    sub_words = set().union(*(_words(s) for s in subjects)) if subjects else set()
-    row_words = [(_words(ln)) for _, ln in rows]
-    common = {w for w in sub_words if rows and sum(w in rw for rw in row_words) > max(2, len(rows) // 10)}
-    drops = log_drop_lines(logs)
-    drop_nos = log_drop_numbers(logs)
-    inbox_seen = {m for s in [*subjects, *logs.values()] for m in _INBOX_NO.findall(s)}
-    cand: list[dict[str, Any]] = []
-    for (no, ln), rw in zip(rows, row_words):
-        cells = [c.strip() for c in ln.strip().strip("|").split("|")]
-        cell, evidence = cells[0], cells[-1] if len(cells) > 1 else ""
-        why: list[str] = []
-        score = 0
-        titles = row_titles(cell)
-        named = [p for p, q in drops if q in titles] + [p for p, n in drop_nos if n == no]
-        if named:
-            score += 100
-            why.append(f"세션 기록 「README에서 뺄 줄」({os.path.basename(named[0])})")
-        links = {m for m in _LOG_LINK.findall(evidence)} & changed_names
-        if links:
-            score += 50
-            why.append(f"근거 칸의 기록을 이번에 고침({', '.join(sorted(links))})")
-        inbox = sorted(set(_INBOX_NO.findall(ln)) & inbox_seen)
-        if inbox:
-            score += 40
-            why.append("포스트잇 " + " · ".join(f"#{n}" for n in inbox))
-        hit_f = sorted({keys[k] for k in keys if _has_key(ln, k)})
-        hit_w = sorted((sub_words & rw) - common)
-        score += 10 * len(hit_f) + len(hit_w)
-        if not why and not hit_f and len(hit_w) < 3:
-            continue
-        if hit_f:
-            why.append("바뀐 파일을 적음")
-        elif hit_w and not why:
-            why.append("커밋 글 낱말만 겹침")
-        cand.append({"where": "README", "line": no, "text": re.sub(r"\s+", " ", cell)[:200],
-                     "files": hit_f, "words": hit_w[:6], "score": score, "why": why, "weak": score < 10})
-    cand.sort(key=lambda x: -x["score"])
     dgroups: list[dict[str, Any]] = []
     fkeys = {k: v for k, v in keys.items() if "/" in k or "." in k}       # docs는 경로 · 파일 이름만(줄기는 헛걸림이 많다)
     for path, body in sorted(docs.items()):
@@ -441,7 +288,7 @@ def doc_candidates(readme: str, section: str, docs: dict[str, str], files: list[
             dgroups.append({"where": path, "lines": lines[:8], "count": len(lines), "files": sorted(hit),
                             "stale": path not in changed})
     dgroups.sort(key=lambda x: -x["count"])
-    return {"readme": cand[:limit], "docs": dgroups[:limit], "readme_rows": len(rows)}
+    return {"readme": [], "docs": dgroups[:limit]}
 
 
 # ── 카드 ─────────────────────────────────────────────────
@@ -499,7 +346,7 @@ class Card:
 
     def has_docs(self) -> bool:
         d = self.docs or {}
-        return bool(d.get("readme") or d.get("docs"))
+        return bool(d.get("docs"))       # 11-15, 옛 카드에 남은 README 후보는 세지 않는다
 
     @classmethod
     def from_saved(cls, d: dict[str, Any]) -> Card:
@@ -933,8 +780,6 @@ class MergePrep:
     async def _docs(self, repo: str, base: str, branch: str, st: dict[str, Any]) -> dict[str, Any]:
         d = self.cfg.docs
         _, files = await wt.git(repo, "diff", "--name-only", f"{base}...{branch}")
-        _, subj = await wt.git(repo, "log", "--format=%s", f"{base}..{branch}")
-        rc, readme = await wt.git(repo, "show", f"{base}:{d.readme}", check=False)
         rc2, names = await wt.git(repo, "ls-tree", "-r", "--name-only", base, "--", d.docs_dir, check=False)
         docs: dict[str, str] = {}
         for n in (names.splitlines() if rc2 == 0 else [])[:200]:
@@ -942,13 +787,7 @@ class MergePrep:
                 r3, body = await wt.git(repo, "show", f"{base}:{n}", check=False)
                 if r3 == 0:
                     docs[n] = body
-        logs: dict[str, str] = {}
-        for n in [f for f in files.splitlines() if f.startswith("log/") and f.endswith(".md")][:20]:
-            r4, body = await wt.git(repo, "show", f"{branch}:{n}", check=False)
-            if r4 == 0:
-                logs[n] = body
-        return doc_candidates(readme if rc == 0 else "", d.readme_section, docs, files.splitlines(), subj.splitlines(), d.max,
-                              logs=logs)
+        return doc_candidates(docs, files.splitlines(), d.max)
 
     async def prep(self, r: tuple[Any, ...], live: dict[str, Any], via: str = "sweep") -> Card | None:
         """한 세션 — 일을 마쳤고 합칠 것이 있으면 카드(같은 커밋이면 있던 카드 그대로). 아니면 None(있던 ready 카드는 치운다)."""
@@ -1030,7 +869,7 @@ class MergePrep:
         """카드가 생겼을 때 관리자에게(승인자 = 관리자인 프로젝트만)."""
         how = (f"충돌 {len(c.conflict)}개({', '.join(c.conflict[:5])})" if c.conflict
                else ("충돌 없음 · ff 가능" if c.ff else f"충돌 없음 · {c.base}에 새 커밋 {c.behind}개(rebase)"))
-        dn = len((c.docs or {}).get("readme") or []) + len((c.docs or {}).get("docs") or [])
+        dn = len((c.docs or {}).get("docs") or [])
         sq = (" 이 프로젝트는 squash로 합친다(커밋 하나, 본문에 원래 날짜 · 해시 · 제목). 제목은 세션 제목으로 기계가 만든다 — "
               "묶은 일을 더 잘 말하는 제목이 있으면 승인할 때 \"title\": \"…\"로 넘긴다(그 저장소 커밋 꼴로)."
               if self.cfg.rule(c.project).squash and c.ahead >= 2 else "")
@@ -1221,7 +1060,7 @@ class MergePrep:
             raise Refused("치울 합치기 카드가 없습니다. 이미 치웠거나 시간이 지나 사라졌습니다")
         if c.status != "merged":
             raise Refused(f"합친 카드가 아닙니다(지금 {c.status}). 정리 후보는 합친 뒤에 고릅니다. 대기 카드를 치우려면 skip")
-        dn = len((c.docs or {}).get("readme") or []) + len((c.docs or {}).get("docs") or [])
+        dn = len((c.docs or {}).get("docs") or [])
         await self.h._act(sid, ACT_DOCS, None, True, f"{c.name} {c.head[:8]} 정리 후보 {dn}개 · {by}")
         del self.cards[sid]
         await self.sync()
@@ -1363,14 +1202,9 @@ class MergePrep:
         mgr_picks = self.cfg.approver_of(c.project) == "manager" and not c.human_why
         ended = " 세션은 끝냈다." if res.get("ended") is not None else ""
         docs = (c.docs or {})
-        dn = len(docs.get("readme") or []) + len(docs.get("docs") or [])
-        # 근거가 있는 후보(세션 기록 · 근거 칸 · 받은 할 일 번호 — 점수 40 이상)는 글에 바로 적는다(11-11 2물결 「넷」)
-        sure = [x for x in docs.get("readme") or [] if x.get("score", 0) >= 40][:5]
+        dn = len(docs.get("docs") or [])      # README 「나중에 할 일」 후보는 11-15에 뺐다(doc_candidates)
         stale = [x["where"] for x in docs.get("docs") or [] if x.get("stale")][:5]
         extra = ""
-        if sure:
-            extra += " 근거 있는 README 정리 후보: " + "; ".join(
-                f"README:{x['line']} {x['text'][:80]}({' · '.join(x.get('why') or [])})" for x in sure) + "."
         if stale:
             extra += f" 이번에 바뀐 파일을 적었는데 고치지 않은 문서: {', '.join(stale)} — 설계가 바뀌었으면 맞출 후보."
         # 11-13 다 골랐으면 카드를 바로 치운다(안 부르면 keep_docs_h 뒤 치운다 — 다 고르고도 카드가 남지 않게)
@@ -1379,11 +1213,11 @@ class MergePrep:
         if not dn:
             pick = ""
         elif mgr_picks:     # 11-12 — 승인자가 관리자인 프로젝트는 정리 후보 고르기 · 지우기도 관리자
-            pick = (f" README · docs 정리 후보 {dn}개는 카드에 있다(GET /api/merge-prep?project={c.project} 의 card.docs, "
+            pick = (f" docs 정리 후보 {dn}개는 카드에 있다(GET /api/merge-prep?project={c.project} 의 card.docs, "
                     f"{self.cfg.keep_docs_h}시간 남는다 — 브리지를 다시 띄워도 DB에서 되살린다) — "
                     "관리자가 골라 지운다. 판단이 안 서는 줄만 사람에게 묻는다." + done)
         else:
-            pick = (f" README · docs 정리 후보 {dn}개는 그 세션 패널 카드에 있다 — 고르고 지우는 것은 사람 승인 뒤"
+            pick = (f" docs 정리 후보 {dn}개는 그 세션 패널 카드에 있다 — 고르고 지우는 것은 사람 승인 뒤"
                     "(판단이 필요하면 사람에게 묻고, 혼자 지우지 않는다)." + done)
         return (f"[FOREMAN 합치기] {who} 승인해 세션 {c.sid} 「{c.title or ''}」의 {c.branch}(커밋 {res.get('merged', c.ahead)}개)를 "
                 f"{c.base}에 합쳤다({how}).{ended} 1단계라 브리지는 합치기까지만 했다 — 시험 · push · 브리지 다시 띄우기 · 화면 점검은 "
