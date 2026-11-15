@@ -6,7 +6,7 @@
 
 import { esc, ago, keep, clock } from './render.js';
 import { promoteGroup, edits as promoteEdits, counts as promoteCounts, DOCS_GUIDE } from './promote.js';
-import { lossGroup } from './losscheck.js';
+import { lossGroup, lossCost, LOSS_CONFIRM } from './losscheck.js';
 import { moveStep, MOVE_STEPS, MOVE_TIP, chooseCount, writeLabel, chosen, selectable, chooseAll, chooseFinal, lossOutcome, retrySummaryId } from './moveflow.js';
 
 const SOURCE = { self: '세션이 씀', self_headless: '끝난 세션을 잠깐 불러 씀', compact: '자동 압축 요약에서', edited: '사람이 고침' };
@@ -598,7 +598,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
         r.summary_id ? `(요약 #${r.summary_id}의 「문서와 다른 지금」도 같이 넣었습니다)` : r.loss_check_id ? `(잃은 것 점검 #${r.loss_check_id}의 사라짐 · 약해짐도 같이 넣었습니다)` : ''}.` })));
     }
     if (act === 'loss-run') {
-      if (!confirm('압축으로 잊은 것을 찾습니다. 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 내가 보낸 말 20개당 약 0.4달러, 1.5분이 듭니다. 끝나면 알림이 갑니다.\n\n진행할까요?')) return;
+      if (!confirm(LOSS_CONFIRM)) return;
       return run('압축으로 잊은 것 찾기', () => post(`/api/sessions/${id}/losscheck`).then((r) => ({ msg: `점검을 시작했습니다(#${r.loss_check_id}, ${r.model}). 끝나면 알림이 갑니다.` })));
     }
     if (act === 'loss-use') {
@@ -765,7 +765,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (!confirm('지금 세션을 끝내고 같은 자리에 새 세션을 띄웁니다. '
       + '먼저 압축으로 잊은 것을 찾아 문서에 넣을 후보를 보여드리니 '
       + '고르기만 하면 됩니다. 나머지는 알아서 이어서 합니다. '
-      + '찾는 데 내가 보낸 말 20개당 약 0.4달러, 1.5분 걸립니다.\n\n'
+      + `찾는 데 ${lossCost()} 걸립니다.\n\n`
       + '진행할까요?')) return;
     note = null; promDraft = {};
     try {

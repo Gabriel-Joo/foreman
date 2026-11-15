@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lossGroup } from '../../bridge/static/js/losscheck.js';
+import { lossGroup, lossCost, LOSS_CONFIRM } from '../../bridge/static/js/losscheck.js';
+
+// 11-15 포스트잇 #49 — 비용 안내는 losscheck.js 한 곳. 다섯 곳(호버 둘 · 확인 창 셋)이 이것을 읽는다
+test('잊은 것 찾기 비용 — 한 곳에서 만든 글', () => {
+  assert.equal(lossCost(), '내가 보낸 말 20개당 약 0.4달러, 1.5분');
+  assert.equal(lossCost(' · '), '내가 보낸 말 20개당 약 0.4달러 · 1.5분');
+  assert.ok(LOSS_CONFIRM.includes(`${lossCost()}이 듭니다. 끝나면 알림이 갑니다.\n\n진행할까요?`));
+  assert.ok(lossGroup(null, true, null).includes(`${lossCost()}이 듭니다.`));
+});
 
 const NOW = new Date().toISOString();
 

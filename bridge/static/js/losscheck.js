@@ -5,6 +5,12 @@
 import { esc, ago, keep, pickedLabel, pickedFamily } from './render.js';
 import { lossOutcome } from './moveflow.js';
 
+// 11-15 포스트잇 #49 — 잊은 것 찾기 비용 안내는 여기 한 곳(손으로 정한 어림값이다. 실측(lc.cost_usd)에서 계산하지 않는다).
+// 쓰는 곳: 이 파일 버튼 호버, handoff.js 확인 창 둘, opanel.js 띠 호버 · 확인 창. 값이 바뀌면 여기만 고친다
+export const LOSS_COST = { prompts: 20, usd: 0.4, min: 1.5 };
+export const lossCost = (sep = ', ') => `내가 보낸 말 ${LOSS_COST.prompts}개당 약 ${LOSS_COST.usd}달러${sep}${LOSS_COST.min}분`;
+export const LOSS_CONFIRM = `압축으로 잊은 것을 찾습니다. 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. ${lossCost()}이 듭니다. 끝나면 알림이 갑니다.\n\n진행할까요?`;
+
 const STATUS = { running: '도는 중…', done: '끝', failed: '실패', nothing: '찾을 것 없음' };
 const OUT = { found: '끝', clean: '끝, 잊은 것 없음', nothing: '찾을 것 없음', partial: '일부만 끝', failed: '실패' };
 // 11-14 사용자 — 「찾을 것 없음」 밑에 따로 있던 설명 줄을 그 글의 호버로 옮겼다
@@ -42,7 +48,7 @@ export function lossGroup(lc, can, err) {
   // 11-06 이름 다시: 버튼 하나("잃은 것 찾기")로는 뭔지 몰랐다 — 이름 · 설명 줄 + 짧은 버튼
   // 11-14 사용자 — 평소에 너무 길다. 소제목 · 설명문을 빼고 이름을 버튼에, 설명은 버튼 호버로. 한 줄(버튼 + 상태)
   let head = b('loss-run', '압축으로 잊은 것 찾기', can,
-    '압축으로 잊은 것 찾기 — 자동 압축 때마다 앞에서 정한 것이 빠집니다. 사람이 한 말을 다시 읽어 지금 세션이 아직 기억하는지 판정합니다. 내가 보낸 말 20개당 약 0.4달러, 1.5분이 듭니다.',
+    `압축으로 잊은 것 찾기 — 자동 압축 때마다 앞에서 정한 것이 빠집니다. 사람이 한 말을 다시 읽어 지금 세션이 아직 기억하는지 판정합니다. ${lossCost()}이 듭니다.`,
     '', 'docs-run');
   if (lc) {
     // 11-14 사용자 — 가운뎃점으로 잇지 않고 칸마다 따로(빈칸으로 띄움). 모델은 날 이름(claude-sonnet-5-5) 대신 패널 모델 칩과 같은 배지

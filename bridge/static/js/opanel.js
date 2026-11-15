@@ -15,6 +15,7 @@ import { hideTip } from './tip.js';
 import { gripDrag } from './grip.js';
 import { modelMenuHtml, sameModel } from './modelpick.js';
 import { mountHandoff, FLOW_TIP } from './handoff.js';
+import { lossCost, LOSS_CONFIRM } from './losscheck.js';
 import { createScribe } from './scribe.js';
 import { createCoder } from './coder.js';
 import { createForemanPanel } from './fmpanel.js';
@@ -345,7 +346,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         ? '늦었습니다. 앞에서 정한 결정 · 금지가 이미 많이 빠졌을 수 있습니다.'
         : '넘어갈 때입니다. 처음에 정한 것이 빠지기 시작합니다.'}${c.short ? ' 요약 간격도 짧습니다.' : ''}</span>
       ${s.injectable ? `<button type="button" data-cmp="handoff" class="small primary" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
-      <button type="button" data-cmp="loss" class="small" title="압축으로 잊은 것 찾기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. 내가 보낸 말 20개당 약 0.4달러 · 1.5분이 들고, 결과는 [세션 정리] 탭 「넘기기 전 정리」에 나옵니다.">압축으로 잊은 것 찾기</button>
+      <button type="button" data-cmp="loss" class="small" title="압축으로 잊은 것 찾기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. ${lossCost(' · ')}이 들고, 결과는 [세션 정리] 탭 「넘기기 전 정리」에 나옵니다.">압축으로 잊은 것 찾기</button>
       <button type="button" data-cmp="later" class="ghost small" title="나중에 — 다음 압축까지 이 띠를 숨깁니다.">나중에</button>`;
     put('pCmp', 'cmp', html);
     $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;
@@ -444,7 +445,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       return;
     }
     if (b.dataset.cmp === 'loss') {
-      if (!confirm('압축으로 잊은 것을 찾습니다. 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 내가 보낸 말 20개당 약 0.4달러, 1.5분이 듭니다. 끝나면 알림이 갑니다.\n\n진행할까요?')) return;
+      if (!confirm(LOSS_CONFIRM)) return;
       b.disabled = true;
       const r = await fetch(`/api/sessions/${s.id}/losscheck`, { method: 'POST', headers: store.headers(true), body: '{}' });
       const j = await r.json().catch(() => ({}));
