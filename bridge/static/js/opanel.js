@@ -393,7 +393,9 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const tip = x.window_over
       ? `쌓인 대화 — 설정한 창보다 커서 %를 낼 수 없습니다. 창 크기 값이 틀렸습니다(config/models.toml [windows]).\n토큰 ${koNum(x.tokens)}\n설정한 창 ${koNum(x.window)}`
       : `쌓인 대화 — 이 세션의 대화가 모델이 한 번에 읽을 수 있는 양(창)을 얼마나 채웠는지입니다.${x.window ? '' : ' 창 크기를 모르는 모델이라 %는 내지 않습니다.'}`
-        + `\n토큰 ${koNum(x.tokens)}${x.window ? `\n창 ${koNum(x.window)}` : ''}`;
+        + `\n토큰 ${koNum(x.tokens)}${x.window ? `\n창 ${koNum(x.window)}` : ''}`
+        // 11-15: %는 요약하고 남은 양이라, 요약을 여러 번 했으면 낮게 보여도 이미 여러 번 줄인 대화다(요약 없으면 줄을 뺀다)
+        + (s.compact && s.compact.count ? `\n대화 자동 요약 ${s.compact.count}번, 요약하고 남은 양입니다` : '');
     return `<span class="${cls}" data-tip="${esc(tip)}">${label}</span> · `;
   }
   // 작업 전환 권유 띠(11-09, bridge/switchwatch.py) — 텔레그램과 같은 판정을 dashboard가 싣는다(s.switch).
