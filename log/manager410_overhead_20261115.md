@@ -165,4 +165,9 @@
 - **관리자 실수 — 시험 전에 push, 두 번째**: 448이 사람 승인으로 합쳐진(`8d12fd0`) 뒤 내 기록 커밋 push에 섞였다. 이번엔 push 전에 `origin/main..HEAD`를 찍었지만 push와 `&&`로 한 명령에 묶어, 출력에 448이 찍혔는데 멈추지 않았다. 바로 시험(node 203, pytest 1016) 통과. 메모리 `feedback-push-check-separately`(확인과 push를 다른 명령으로)
 - 448 뒤: `docs_done`. 브리지 다시 띄우기는 미룸 — 런슈즈 세션 452가 Bash 승인(110)을 기다리는 중(남의 프로젝트 승인이라 손대지 않음)
 - 450(Fable) 끝: 카드 충돌 1(`tests/data/screen_words.toml`, 사람 승인 — 파일 둘 지움) → rebase 지시. **스스로 밝힌 위반: 빈 heredoc 실행 1**(`cat > /dev/null <<'X'`)
+- 사용자: 조사 캐릭터만 발밑 원이 허리에 뜬다 → 모든 역할 같은 값, 한 곳에서, 새 역할도 저절로 + 역할마다 따로 정하는 값 목록 → 454 디자이너 sonnet `cc/foreman-6`(#881)
+- 런슈즈 승인 대기가 풀린 뒤 브리지 다시 띄움(590374 → 655494, 오류 0, 「역할 권한 observe: … inspector-write (막는 규칙 inspector-write)」)
+- 조사 규칙 실제 확인: 455 조사 sonnet 작업방(시험, #882) — 계획에서 읽기 전용 꺼짐 확인, 보통 모드로 뜸. log 쓰기 · 커밋 / README Edit / log 밖 쓰기 / `git add README.md` / 읽기 여섯 단계
+- 455 결과(브리지 `event` approval_req 판정으로 맞댐): Write `log/inspector_check_…` 허용, `git add log/… && git commit` 통과(커밋 `d00a04f`), README Read 허용, **README Edit 거부 · `echo > bridge/zz_test.txt` 거부 · `git add README.md` 거부(모두 `역할-조사쓰기`)**, `git log`/`status` 허용. 455 「규칙 위반 없음」. 작업방 버림(합치지 않음) → `hidden_reason='test'`(DB, 관리자)
+- 450(Fable) 충돌 풂(`screen_words.toml`, main rename 다 남김) → 카드 다시(충돌 없음, 사람 승인 — 파일 둘 지움). node 204 · pytest 1016
 - 그 밖에는 관리자 규칙 위반 없음(이 기록의 일). 412 끝내기 확인 창에 Enter를 보낸 것은 합치기 흐름 안에서 그 세션의 남은 예약을 끝낸 것이다(멈춘 CC 프로세스 · 다른 프로젝트 세션 아님)
