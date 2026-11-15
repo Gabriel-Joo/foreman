@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createScribe, behindText, pubCounts, ORDER } from '../../bridge/static/js/scribe.js';
 
-const TASKS = { retro: { title: '회고 쓰기', desc: 'r' }, doccheck: { title: '문서 점검', desc: 'd' }, readme: { title: 'README 갱신', desc: 'm' },
+const TASKS = { doccheck: { title: '문서 점검', desc: 'd' }, readme: { title: 'README 갱신', desc: 'm' },
   trim: { title: 'CLAUDE.md 정리', desc: 't' }, later: { title: '나중에 할 일 정리', desc: 'l' }, docfix: { title: '문서 고치기', desc: 'f' },
   portfolio: { title: '포트폴리오 쓰기', desc: 'p' } };
 
@@ -22,7 +22,7 @@ const PJ = {
     { slug: 'a', title: '글 A', about: 'x', written: true, blocked: null, last_at: '2026-11-08T08:00:00+09:00', since: 208 },
     { slug: 'b', title: '글 B', about: 'y', written: true, blocked: null, last_at: '2026-11-09T08:00:00+09:00', since: 12 }],
   portfolio: { written: 2, total: 2, last_at: '2026-11-09T08:00:00+09:00', since: 12, unread: null },
-  behind: { readme: { n: 13, stale: true, unit: '커밋', why: '' }, doccheck: { n: 0, stale: false }, trim: { n: 0, stale: false }, retro: { n: 3, stale: false }, later: { n: 0, stale: false } },
+  behind: { readme: { n: 13, stale: true, unit: '커밋', why: '' }, doccheck: { n: 0, stale: false }, trim: { n: 0, stale: false }, later: { n: 0, stale: false } },
   inbox: { n: 3, oldest_days: 2 }, report: { name: 'doccheck_20261110.md', fixed: false },
   docs_pub: { total: 16, published: 14, new: 1, changed: 1, deleted: 0, broken: 0, behind_commits: 4, last: { at: 1.7e9, done: 2, held: 0, failed: 1, failed_first: 'docs/a.md: 거부' } },
   pub_error: null, port_pub: null,
@@ -39,12 +39,13 @@ test('밀린 수는 이름 옆에 — 없으면 이름만, 못 읽으면 읽지 
   assert.equal(pubCounts({ published: 10, new: 0, changed: 0 }).text, '게시됨 10');
 });
 
-test('한 목록 — 메뉴 다섯이 한 줄씩이고 「문서 할 일」 · 「시킬 일」 칸은 없다', async () => {
+test('한 목록 — 메뉴 넷이 한 줄씩이고 「문서 할 일」 · 「시킬 일」 칸은 없다', async () => {
   const sc = mk({ foreman: PJ }, { enabled: true, docs: [{ path: 'portfolio/a.md', status: 'published', changed: false }] });
   sc.html('foreman', 'FOREMAN'); await settle();
   const h = sc.html('foreman', 'FOREMAN');
-  assert.deepEqual(ORDER.length, 5);
+  assert.deepEqual(ORDER, ['doccheck', 'readme', 'later', 'trim']);     // 회고 쓰기는 11-15에 뺐다
   for (const k of ORDER) assert.ok(h.includes(`data-sc-task="${k}"`), k);
+  assert.ok(!h.includes('회고'));
   assert.ok(!h.includes('문서 할 일') && !h.includes('<b>시킬 일</b>'));
   assert.match(h, /README 갱신<\/b> <span class="warn"[^>]*>13개 밀림/);
   assert.ok(!/data-sc-task="docfix"[^>]*data-topic=""/.test(h));

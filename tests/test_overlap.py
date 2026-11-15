@@ -111,7 +111,7 @@ def test_spawned_session_is_not_matched_against_its_manager():
 
 
 def test_scribe_jobs_are_skipped():
-    assert skip('\n\n<pasted_content id="d36c">\n[FOREMAN 서기 일감 — 회고] foreman')
+    assert skip('\n\n<pasted_content id="d36c">\n[FOREMAN 서기 일감 — README 갱신] foreman')
     assert not skip("[FOREMAN 인계 r=690cec] 직전 세션의 인계다") and not skip(B)
 
 

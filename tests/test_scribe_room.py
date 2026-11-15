@@ -60,8 +60,9 @@ def test_blocked_same_task_same_file_and_cap():
     assert sr.blocked("later", [trim]) is None                                # CLAUDE.md · docs/ ↔ README.md — 겹치지 않는다
     assert "이미 열려" in sr.blocked("trim", [trim])
     assert "README.md" in sr.blocked("readme", [later])                       # README 갱신 ↔ 나중에 할 일 — 같은 파일
-    assert "동시에 2개까지" in sr.blocked("retro", [trim, later])
-    assert sr.blocked("retro", []) is None
+    assert "동시에 2개까지" in sr.blocked("doccheck", [trim, later])
+    assert sr.blocked("doccheck", []) is None
+    assert "retro" not in sr.TASKS and "retro" not in sr.TOUCHES             # 회고 쓰기는 11-15에 뺐다
 
 
 def test_portfolio_topics_and_blocked_per_topic(tmp_path):

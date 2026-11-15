@@ -1461,7 +1461,7 @@ async def test_overlap_alert_on_human_prompt(env, tmp_path):
     await prompt(SID, "jenkins-0 harbor-jobservice 다시 봐줘")
     assert ow.for_session(me)["at"] == band["at"]
     await prompt(SID2, "Notion 게시 기능 만들자")
-    await prompt(SID2, "[FOREMAN 서기 일감 — 회고] jenkins-0 harbor-jobservice crashloopbackoff")
+    await prompt(SID2, "[FOREMAN 서기 일감 — 문서 점검] jenkins-0 harbor-jobservice crashloopbackoff")
     assert other not in ow.recent and tg.sent == []
 
     # 11-08 — 인계로 이어받은 세션은 겹침이 아니다(세션 214 ~ 211 헛알림). 인계 글이 넣음 기록보다 먼저 적재돼

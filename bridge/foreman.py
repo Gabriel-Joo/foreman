@@ -121,9 +121,8 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
    - "ask": 모호하거나 위험해서 사람이 정해야 할 것이 있을 때(questions에 물을 것)
 3. role — "coder"(고치기 · 만들기) · "inspector"(살펴보기 · 원인 찾기) · "scribe"(서기 — 문서 일) ·
    "designer"(디자이너 — 화면 일) · "manager"(관리자 — 거두는 일)
-   - scribe 일감(docs/12_scribe.md): 회고(retro) · 문서 맞추기(sync) · CLAUDE.md 정리(trim) · 압축 손실 반영(loss) · 포트폴리오
-   - 회고 · 문서 정리 요청이면 scribe. 서기는 따로 작업(worktree)으로 띄우고, 합치기가 사람의 검토다
-   - 회고의 first_prompt에는 기간(KST)을 꼭 적는다. 재료 묶음은 사람이 `python -m bridge.scribe`로 만든 경로를 준다
+   - scribe 일감(docs/12_scribe.md): 문서 맞추기(sync) · CLAUDE.md 정리(trim) · 압축 손실 반영(loss) · 포트폴리오
+   - 문서 정리 요청이면 scribe. 서기는 따로 작업(worktree)으로 띄우고, 합치기가 사람의 검토다
    - "manager"(관리자): 코드를 고치지 않고 다른 세션의 일을 거두는 일 — worktree 합친 뒤 시험 · push · 브리지 다시 띄우기 · 화면 점검 · log 기록.
      상주 세션이 아니다. 사람이 그런 일을 콕 집어 맡길 때만 고른다(코드를 고치는 일이면 coder)
    - "designer"(디자이너): 화면 일 — js · css · 테마(theme.json 자리 · 가구 · 색) · 캐릭터 · 이름표 · 카드 · 툴팁 글.

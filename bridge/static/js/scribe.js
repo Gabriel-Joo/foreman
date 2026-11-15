@@ -7,7 +7,7 @@
 import { esc, ago, keep } from './render.js';
 
 // 메뉴 순서 — 문서 점검이 앞이다(찾기 → 고치기가 핵심 흐름). 문서 고치기(docfix)는 메뉴에 없고 결과에서만 뜬다
-export const ORDER = ['doccheck', 'readme', 'later', 'trim', 'retro'];
+export const ORDER = ['doccheck', 'readme', 'later', 'trim'];
 const UNREAD = '읽지 못했습니다';
 
 // 일마다 옆에 붙는 밀린 수 — 「README 갱신 — 13개 밀림」. 밀린 것이 없으면 이름만(빈 문자열)
@@ -65,7 +65,7 @@ export function createScribe(store) {
       ].join(' ');
       return `<div class="sc-row"><div class="small"><code>${esc(d.path)}</code> ${st}${d.commit ? ` <span class="muted">· 커밋 ${esc(d.commit)}</span>` : ''}${d.updated_at ? ` <span class="muted">· ${ago(d.updated_at)}</span>` : ''}</div><div class="hand-btns">${btns}</div></div>`;
     }).join('');
-    return `${head(`<span class="${c.behind ? 'warn' : 'muted'}">${esc(c.text)}</span>`)}${rows || '<p class="small muted">게시할 글이 없습니다(main의 portfolio/*.md, 회고는 git에만 둡니다).</p>'}</details>`;
+    return `${head(`<span class="${c.behind ? 'warn' : 'muted'}">${esc(c.text)}</span>`)}${rows || '<p class="small muted">게시할 글이 없습니다(main의 portfolio/*.md).</p>'}</details>`;
   }
 
   // 기술문서 게시 — docs/ 전체를 프로젝트별 Notion 페이지로 맞춘다. 읽기 API(docs_pub)가 준 숫자만 보인다

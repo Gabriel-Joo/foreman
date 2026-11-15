@@ -3790,7 +3790,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
     if (a.kind === 'scribe') {
       const t = a.todo;
-      return `<div class="tip-h">서기</div><div class="tip-b">문서 담당: 회고 · 문서 점검 · README · CLAUDE.md · 나중에 할 일 · Notion 게시</div>${
+      return `<div class="tip-h">서기</div><div class="tip-b">문서 담당: 문서 점검 · README · CLAUDE.md · 나중에 할 일 · Notion 게시</div>${
         t && t.nudge ? `<div class="tip-s">정리할까요? 서기 몫 받은 할 일이 쌓였습니다(${esc(t.nudge.why)}). 누르면 「나중에 할 일 정리」를 고른 창이 열립니다. [시키기]를 눌러야 세션이 뜹니다.</div>` : ''}${
         t && t.items && t.items.length ? `<div>문서 할 일 ${t.items.length}: README가 낡은 것처럼 브리지가 찾은 문서 정리 거리입니다. 누르면 서기에게 맡깁니다.${t.items.slice(0, 3).map((x) => `<div class="tip-s">· ${esc(x.title)}</div>`).join('')}</div>` : ''}
         <div class="tip-t">누르면 일을 고르는 창이 열립니다.</div>`;

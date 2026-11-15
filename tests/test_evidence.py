@@ -22,7 +22,7 @@ def _repo(tmp_path):
 def test_check_text_marks_and_unsupported(tmp_path):
     r, g = _repo(tmp_path)
     sha = g("rev-parse", "--short", "HEAD")
-    body = f"""# 회고
+    body = f"""# 기록
 
 - 커밋은 49개였다 [c:{sha}] [log:a_result.md:2-3]
 - 없는 커밋 [c:deadbee] · 없는 파일 [log:없음.md] · 넘는 줄 [log:a_result.md:2-9] · 설계 [docs:12_x.md]
@@ -46,12 +46,12 @@ def test_check_text_marks_and_unsupported(tmp_path):
 def test_revision_splits_draft_and_after_feedback(tmp_path):
     r, g = _repo(tmp_path)
     g("checkout", "-qb", "cc/s1")
-    (r / "log" / "retro.md").write_text("\n".join(f"줄 {i}" for i in range(10)) + "\n", encoding="utf-8")
+    (r / "log" / "note.md").write_text("\n".join(f"줄 {i}" for i in range(10)) + "\n", encoding="utf-8")
     g("add", "."), g("commit", "-qm", "초안")
     feedback = datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=1)
     import time
     time.sleep(2)
-    (r / "log" / "retro.md").write_text("\n".join(f"줄 {i}" for i in range(8)) + "\n고친 줄\n", encoding="utf-8")
+    (r / "log" / "note.md").write_text("\n".join(f"줄 {i}" for i in range(8)) + "\n고친 줄\n", encoding="utf-8")
     g("commit", "-qam", "고침")
     out = asyncio.run(ev.revision(str(r), "main", "cc/s1", feedback))
     assert out["draft_lines"] == 10 and out["draft_commits"] == 1

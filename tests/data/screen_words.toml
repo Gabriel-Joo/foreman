@@ -113,6 +113,13 @@ new = "다른 세션은 바뀌지 않습니다. 이 세션이 이어지는 동�
 scope = "화면과 문서 인용"
 commit = "cc/foreman-4 11-15"
 
+# 11-15 서기실 「회고 쓰기」 줄을 없앰(cc/foreman-4, 410 서기 구조 첫 묶음). 새 이름이 없어 new에 「없앰」이라 적는다
+[[rename]]
+old = "회고 쓰기"
+new = "(없앰, 회고는 쓰지 않는다)"
+scope = "화면과 문서 인용"
+commit = "cc/foreman-4 11-15"
+
 # ── 안 A의 코드 예외 ────────────────────────────────────────
 # 화면이 아니라 세션 · claude -p에 넣는 글(문서 말을 쓴다 — docs/style_guide.md 「화면 말 · 문서 말이 다른 것」).
 # near = 그 문자열 안의 한 조각(같은 파일의 다른 화면 글은 계속 걸리게)
@@ -134,12 +141,6 @@ file = "bridge/handoff.py"
 old = "따로 작업"
 near = "이 세션은 원본 폴더가 아니라 **따로 작업(worktree)"
 why = "worktree 세션 첫 글 앞에 붙는 「이 세션이 뜬 자리」 안내(세션에 넣는 글)"
-
-[[code_exception]]
-file = "bridge/scribe.py"
-old = "따로 작업"
-near = "CLAUDE.md 「따로 작업」"
-why = "서기 세션 지시문. CLAUDE.md 절 이름 「따로 작업(worktree)에서 일할 때」를 가리킨다"
 
 [[code_exception]]
 file = "bridge/scribe_room.py"

@@ -8,7 +8,7 @@ slug = "00_overview"
 title = "한눈에 — FOREMAN이 무엇인가"
 about = "여러 Claude Code 세션을 한 화면에서 관제하는 시스템이 무엇이고, 어떤 구조로 도는지"
 sources = ["README.md", "docs/10_office_design.md", "docs/11_foreman_dispatch.md", "docs/12_scribe.md",
-           "log/retro_20261105_foreman.md", "log/stage10_office_result.md", "log/stage8_cicd_result.md"]
+           "log/stage10_office_result.md", "log/stage8_cicd_result.md"]
 screenshots = true
 
 [[topic]]

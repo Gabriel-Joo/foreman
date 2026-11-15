@@ -1,6 +1,6 @@
 """서기실(12a, 11-06) — 서기에게 시킬 일 · 할 일 세기(LLM 없음) · 일 시키기(worktree 서기 세션).
 
-시킬 일(사용자 11-06): 회고 쓰기 · 문서 점검 · README 갱신 · CLAUDE.md 정리 · 나중에 할 일 정리 · Notion 게시.
+시킬 일(사용자 11-06): 문서 점검 · README 갱신 · CLAUDE.md 정리 · 나중에 할 일 정리 · Notion 게시. 회고 쓰기는 11-15에 뺐다(docs/12_scribe.md 「0.」).
 Notion 게시는 세션 없이 [게시] 버튼(bridge/notion.py)이고, 나머지는 서기 세션을 worktree로 띄운다 — 합치기가 사람의 검토 관문이다.
 할 일(docs/12_scribe.md 「2. 언제 일하나」 2): 기계로 센다 — 서기 머리 위 "할 일 N", 누르면 목록. 자동으로 돌리지는 않는다.
 다른 저장소(런슈즈 · 펫퍼민트)는 읽기만 하고, 일은 사람이 그 방 서기를 눌렀을 때만 띄운다(그 저장소의 CLAUDE.md를 따르게 한다).
@@ -18,12 +18,10 @@ from sqlalchemy import text
 
 KST = timedelta(hours=9)
 README_STALE = 10            # README가 바뀐 뒤 커밋이 이만큼 쌓이면 "README 갱신"
-RETRO_STALE = 10             # 마지막 회고 뒤 커밋이 이만큼이면 "회고 쓰기"
 CLAUDE_MD_MAX = 80           # CLAUDE.md 줄 수 상한(설계 「2.」 예시)
 LATER = re.compile(r"나중에|미루|나중 일|later", re.I)
 
 TASKS = {
-    "retro": {"title": "회고 쓰기", "desc": "DB 기록(사람이 바로잡은 곳 · 뒤집힌 결정 · 실수 먼저)을 읽고 새 회고를 씁니다."},
     "doccheck": {"title": "문서 점검", "desc": "코드와 문서(README · docs · CLAUDE.md)가 안 맞는 곳을 찾아 보고합니다. 고치지는 않습니다."},
     "readme": {"title": "README 갱신", "desc": "마지막 README 변경 뒤의 커밋 · 결과 문서로 로드맵 표를 맞춥니다."},
     "trim": {"title": "CLAUDE.md 정리", "desc": "꼭 지킬 것만 짧게 남기고 상세는 docs로 옮겨 가리킵니다."},
@@ -31,7 +29,7 @@ TASKS = {
     # 메뉴에는 없다(화면 ORDER 밖) — 물어보기 답 · 문서 점검 결과의 [바로 고치기]에서만 뜬다(D2, 11-11)
     "docfix": {"title": "문서 고치기", "desc": "물어보기 답이나 문서 점검 결과에 적힌 어긋남을 고칩니다."},
     "portfolio": {"title": "포트폴리오 쓰기", "desc": "주제를 하나 골라 바깥 독자가 읽을 글을 portfolio/에 씁니다. 게시는 [게시] 버튼으로 합니다."},
-    "publish": {"title": "Notion 게시", "desc": "회고 · 문서를 Notion에 올립니다. 세션 없이 [게시] 버튼으로 합니다."},
+    "publish": {"title": "Notion 게시", "desc": "포트폴리오와 기술문서를 Notion에 올립니다. 세션 없이 [게시] 버튼으로 합니다."},
 }
 TOPICS_FILE = "config/portfolio.toml"   # 포트폴리오 주제 — 이 파일이 있는 저장소만 「포트폴리오 쓰기」를 보인다(12c, 11-06)
 
@@ -166,7 +164,7 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
         behind: dict[str, dict[str, Any]] = {}
         n, last = commits_since_path(repo, "README.md")
         if not git_ok:
-            behind["readme"] = behind["retro"] = no_git
+            behind["readme"] = no_git
         else:
             behind["readme"] = {"n": n, "stale": n >= README_STALE, "unit": "커밋", "why": f"README가 {last} 뒤로 그대로입니다" if last else ""}
         if n >= README_STALE:
@@ -182,12 +180,6 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
                               "why": f"CLAUDE.md {lines}줄(상한 {CLAUDE_MD_MAX}줄)"}
             if lines > CLAUDE_MD_MAX:
                 items.append({"kind": "trim", "title": f"CLAUDE.md 정리: {lines}줄", "why": f"{CLAUDE_MD_MAX}줄을 넘었습니다"})
-        retros = sorted(Path(repo, "log").glob("retro_*.md")) if Path(repo, "log").is_dir() else []
-        rn, _ = commits_since_path(repo, *[str(p.relative_to(repo)) for p in retros]) if retros else (0, None)
-        if retros and git_ok:
-            behind["retro"] = {"n": rn, "stale": rn >= RETRO_STALE, "unit": "커밋", "why": f"마지막 회고 {retros[-1].name} 뒤"}
-        if retros and rn >= RETRO_STALE:
-            items.append({"kind": "retro", "title": f"회고 쓰기: 마지막 회고 뒤 커밋 {rn}개", "why": retros[-1].name})
         later = await _later_count(engine, name, repo)
         if later:
             items.append({"kind": "later", "title": f"나중에 할 일 정리: \"나중에\" {later}번", "why": "지난 정리가 합쳐진 뒤(없으면 처음부터) 사람이 미룬 말"})
@@ -251,7 +243,7 @@ TASK_ACT = "scribe-task"       # session_action — 서기 일을 띄울 때 무
 # 동시에 시키기(11-06 판단) — 허용하되 셋을 막는다: 같은 일 · 같은 파일 · 프로젝트당 둘 넘게.
 # worktree는 서로를 못 봐서 충돌은 합칠 때 난다 — 같은 파일을 고치는 두 일이 열려 있으면 뒤의 합치기가 rebase 충돌.
 # 둘까지인 이유: 문서 초안은 사람이 diff를 하나씩 보고 합친다(검토 빚, docs/12_scribe.md 「2.」), 각각 Opus 세션이다
-TOUCHES = {"retro": {"log/retro_"}, "doccheck": {"log/doccheck_"}, "readme": {"README.md"}, "later": {"README.md"},
+TOUCHES = {"doccheck": {"log/doccheck_"}, "readme": {"README.md"}, "later": {"README.md"},
            "trim": {"CLAUDE.md", "docs/"}, "docfix": {"README.md", "CLAUDE.md", "docs/"}}
 MAX_OPEN = 2
 
@@ -533,7 +525,7 @@ REPORT_RE = re.compile(r"doccheck_[0-9A-Za-z_]{1,40}\.md")
 
 
 async def start(m: Any, engine: Any, project: str, task: str, topic: str | None = None, note: str | None = None) -> dict[str, Any]:
-    """서기 일을 worktree 세션으로 띄운다(handoff.spawn_new). 회고는 재료 묶음을 먼저 만든다. 포트폴리오는 주제(topic)가 있어야 한다.
+    """서기 일을 worktree 세션으로 띄운다(handoff.spawn_new). 포트폴리오는 주제(topic)가 있어야 한다.
     문서 고치기(docfix, D2)는 고칠 목록이 있어야 한다 — topic에 문서 점검 결과 이름(log/doccheck_*.md) 또는 note에 물어보기 답."""
     from bridge import scribe as sc
     from bridge.inject import Refused
@@ -569,17 +561,7 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
     now = datetime.now(UTC).replace(tzinfo=None)
     day = (now + KST).strftime("%Y%m%d")
     extra: dict[str, str] = {}
-    if task == "retro":
-        retros = sorted(Path(repo, "log").glob("retro_*.md"))
-        last = _git(repo, "log", "-1", "--format=%cI", "HEAD", "--", *[str(p.relative_to(repo)) for p in retros]) if retros else ""
-        start_utc = datetime.fromisoformat(last).astimezone(UTC).replace(tzinfo=None) if last else now - timedelta(days=1)
-        d = await sc.collect(engine, project, start_utc, now, repo)
-        from bridge.mask import Masker
-        body = sc.render(project, start_utc, now, d, repo, None, None, Masker())
-        mat = sc.write(sc.OUT_ROOT / f"{project}_{day}" / "materials.md", body)
-        period = f"{sc.kst(start_utc)} ~ {sc.kst(now)} KST"
-        prompt = sc.retro_prompt(project, period, str(mat), f"log/retro_{day}_{project}.md")
-    elif task == "later":
+    if task == "later":
         when = await later_since(engine, project)
         rows = await later_prompts(engine, project, when)
         inbox = await inbox_new(engine, project)
