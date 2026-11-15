@@ -1314,7 +1314,7 @@ class HandoffManager:
         """[쉬게 하기] — 커밋(커밋 안 한 변경이 있으면) → 세션만 끝냄 → worktree는 남김. session_action 'rest'에 남긴다."""
         repo, name = self._wt_of(row)
         if not row.cc or row.cc not in live_sessions(self.sessions_dir):
-            raise Refused("이미 끝난 세션입니다. 「따로 작업」에서 [이어서] · [합치기] · [버리기]를 고릅니다")
+            raise Refused("이미 끝난 세션입니다. 「브랜치 이름」 칸에서 [이어서], [합치기], [버리기]를 고릅니다")
         t, ls, busy = await resolve(row.cc, self.sessions_dir)
         if busy:
             raise Refused("작업 중입니다. 작업이 끝난 뒤에 쉬게 해 주세요. 세션은 그대로입니다")

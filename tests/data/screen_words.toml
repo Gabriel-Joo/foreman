@@ -1,0 +1,228 @@
+# 화면 말 시험(tests/test_screen_words.py)의 목록. 고치는 법은 docs/11_worktree.md 「8. 화면 말을 바꿀 때」.
+# 시험이 실패하면 실패 글이 어느 목록에 무엇을 적을지 알려 준다.
+
+# ── 안 A. 바꾼 이름 ─────────────────────────────────────────
+# 화면 말을 바꾸면 같은 브랜치에서 한 줄. old가 코드 문자열(주석 · 로그 · docstring 뺌)에 남으면 실패.
+# scope = "화면"            코드만 본다(문서에서는 그대로 쓰는 말 — 디스패처 · 일꾼처럼)
+# scope = "화면과 문서 인용"  문서(docs/*.md · README.md)의 인용 「…」 "…" […] 안도 본다. 이력 표시가 있는 줄은 뺀다
+
+[[rename]]
+old = "CC 화면"
+new = "세션 화면"
+scope = "화면과 문서 인용"
+commit = "fcd4b68"
+
+[[rename]]
+old = "세션 창"
+new = "Claude Code 창"
+scope = "화면과 문서 인용"
+commit = "1f08ac5"
+
+[[rename]]
+old = "웹 터미널"
+new = "셸"
+scope = "화면과 문서 인용"
+commit = "375ca61"
+
+[[rename]]
+old = "인계 요약 받기"
+new = "새 세션으로 옮기기"
+scope = "화면과 문서 인용"
+commit = "6b56db3"
+
+[[rename]]
+old = "넘기고 새로 시작"
+new = "새 세션으로 옮기기"
+scope = "화면과 문서 인용"
+commit = "6b56db3"
+
+[[rename]]
+old = "추가 사용 막힘"
+new = "추가 요금으로 쓰는 중"
+scope = "화면과 문서 인용"
+commit = "0e43917"
+
+[[rename]]
+old = "추가 사용으로 이어 씀"
+new = "추가 요금으로 쓰는 중"
+scope = "화면과 문서 인용"
+commit = "0e43917"
+
+[[rename]]
+old = "디스패처"
+new = "계획 세우기"
+scope = "화면"
+commit = "11-09 사용자"
+
+[[rename]]
+old = "일꾼"
+new = "(화면에 쓰지 않음)"
+scope = "화면"
+commit = "11-09 사용자"
+
+[[rename]]
+old = "따로 작업"
+new = "작업방(머리줄 · 계획 칸) 또는 「브랜치 이름」 칸(세션 정리 탭)"
+scope = "화면과 문서 인용"
+commit = "a7e359f"
+
+# 11-15 이번에 고친 셋(cc/foreman-4)
+[[rename]]
+old = "CC 화면이 없습니다"
+new = "세션 화면을 열 수 없습니다"
+scope = "화면과 문서 인용"
+commit = "cc/foreman-4 11-15"
+
+[[rename]]
+old = "세션 창 다루는 중"
+new = "Claude Code 창 다루는 중"
+scope = "화면과 문서 인용"
+commit = "cc/foreman-4 11-15"
+
+[[rename]]
+old = "「따로 작업」에서"
+new = "「브랜치 이름」 칸에서"
+scope = "화면과 문서 인용"
+commit = "cc/foreman-4 11-15"
+
+# ── 안 A의 코드 예외 ────────────────────────────────────────
+# 화면이 아니라 세션 · claude -p에 넣는 글(문서 말을 쓴다 — docs/style_guide.md 「화면 말 · 문서 말이 다른 것」).
+# near = 그 문자열 안의 한 조각(같은 파일의 다른 화면 글은 계속 걸리게)
+
+[[code_exception]]
+file = "bridge/foreman.py"
+old = "디스패처"
+near = "너는 FOREMAN의 디스패처(감독)다"
+why = "계획 세우기 claude -p에 주는 지시문(INSTRUCTIONS)"
+
+[[code_exception]]
+file = "bridge/foreman.py"
+old = "따로 작업"
+near = "서기는 따로 작업(worktree)으로 띄우고"
+why = "계획 세우기 claude -p에 주는 지시문(INSTRUCTIONS)"
+
+[[code_exception]]
+file = "bridge/handoff.py"
+old = "따로 작업"
+near = "이 세션은 원본 폴더가 아니라 **따로 작업(worktree)"
+why = "worktree 세션 첫 글 앞에 붙는 「이 세션이 뜬 자리」 안내(세션에 넣는 글)"
+
+[[code_exception]]
+file = "bridge/scribe.py"
+old = "따로 작업"
+near = "CLAUDE.md 「따로 작업」"
+why = "서기 세션 지시문. CLAUDE.md 절 이름 「따로 작업(worktree)에서 일할 때」를 가리킨다"
+
+[[code_exception]]
+file = "bridge/scribe_room.py"
+old = "따로 작업"
+near = "너는 따로 작업(worktree) 세션이다"
+why = "서기실 세션 지시문(COMMON)"
+
+# ── 안 B. 문서 [버튼] 인용의 예외 ─────────────────────────────
+# kind = "버튼이 아님"(대괄호일 뿐) | "계획 표"(만들지 않은 기능 · 계획 때 이름) | "이력 표"(전 버튼 칸처럼 옛 이름을 적는 표)
+
+[[button_exception]]
+doc = "docs/10_office_design.md"
+quote = ", 끝난 세션이면 압축 요약으로 만들기"
+kind = "버튼이 아님"
+why = "호버 글 인용 안에서 상황에 따라 붙는 부분을 대괄호로 표시"
+
+[[button_exception]]
+doc = "docs/11_foreman_dispatch.md"
+quote = "포먼에게 맡기기"
+kind = "계획 표"
+why = "야간 끔 검토 표, 만들지 않은 기능"
+
+[[button_exception]]
+doc = "docs/11_worktree.md"
+quote = "그냥 끝내기(나중에 정함)"
+kind = "이력 표"
+why = "끝내기 메뉴 표의 「전 버튼」 칸(11-14 전 이름)"
+
+[[button_exception]]
+doc = "docs/operations.md"
+quote = "External System Writes"
+kind = "버튼이 아님"
+why = "CC auto mode 거부 글의 갈래 이름 인용"
+
+[[button_exception]]
+doc = "docs/operations.md"
+quote = "접두"
+kind = "버튼이 아님"
+why = "알림 글 꼴의 자리 표시([접두] = 프로젝트 접두)"
+
+# ── 서기 몫 ─────────────────────────────────────────────────
+# docs/operations.md · docs/style_guide.md는 코더가 고치지 않는다. 거기서 걸린 것만 doc · text(걸린 글)로 적으면 통과.
+# 서기가 맞추면 시험이 「이 줄을 지웁니다」로 실패하니 그때 지운다.
+# (11-15 처음 돌렸을 때 그 둘에서 낡은 이름은 걸리지 않았다 — 「웹 터미널」 줄은 「전에는」 이력 표시로 빠진다)
+
+# ── 안 D. 호버 약속 ─────────────────────────────────────────
+# 호버 설명이 더블클릭 · 두 번 누르 · 끌어 · ↑↓ · Esc · Enter · Ctrl · 휠을 말하면 한 줄.
+# tip = 그 호버 글 안의 한 조각(파일 안에서 그 호버를 가리킬 만큼). acts = 약속한 조작
+# test = 그 약속을 해 보는 시험, 없으면 "". gap = 시험이 있어도 빠진 조작
+# 진짜 입력으로 해 보는 화면 시험(screen.py --promises)은 아직 없다(11-15 사용자 — 지금 만들지 않음)
+
+[[promise]]
+file = "bridge/static/js/opanel.js"
+tip = "높이 조절 — "
+acts = "끌어서 높이, 누른 뒤 ↑↓, 더블클릭하면 원래 높이"
+test = "tests/js/grip.test.mjs"
+gap = "↑↓, 더블클릭(끌기 계산 gripDrag만 시험)"
+
+[[promise]]
+file = "bridge/static/js/opanel.js"
+tip = "너비 — 두 번 누르면"
+acts = "두 번 누르면 넓게와 좁게를 오감"
+test = ""
+
+[[promise]]
+file = "bridge/static/js/ccscreen.js"
+tip = "크기 — 끌어 바꿉니다"
+acts = "모서리를 끌어 크기"
+test = ""
+
+[[promise]]
+file = "bridge/static/js/ccscreen.js"
+tip = "세션 화면 — 머리줄을 끌어 옮깁니다"
+acts = "머리줄을 끌어 옮김, 네 모서리를 끌어 크기"
+test = ""
+
+[[promise]]
+file = "bridge/static/js/office.js"
+tip = "현장 전체를 보는 감독실로 갑니다. Esc로도"
+acts = "Esc로 감독실"
+test = ""
+
+[[promise]]
+file = "bridge/static/js/todoinbox.js"
+tip = "적기 — 받은 할 일에 적습니다"
+acts = "Ctrl+Enter로 적기"
+test = ""
+
+[[promise]]
+file = "bridge/static/js/terminal.js"
+tip = "위로 — 지난 출력을"
+acts = "마우스 휠로 위로(셸 iframe 안)"
+test = ""
+
+# CC에 보내는 키를 설명할 뿐 화면 조작 약속이 아닌 것
+[[promise_skip]]
+file = "bridge/static/js/handoff.js"
+tip = "작업 중단 — 지금 하는 작업만 멈춥니다(Esc)"
+why = "CC에 Esc를 보낸다는 설명"
+
+[[promise_skip]]
+file = "bridge/static/js/handoff.js"
+tip = "일시정지 — 세션을 잠시 멈춥니다(Ctrl+Z)"
+why = "CC에 Ctrl+Z를 보낸다는 설명"
+
+[[promise_skip]]
+file = "bridge/static/js/opanel.js"
+tip = "이 세션 작업 중단 — 지금 하는 작업만 멈춥니다(Esc)"
+why = "CC에 Esc를 보낸다는 설명"
+
+[[promise_skip]]
+file = "bridge/static/js/opanel.js"
+tip = "세션 화면 — 이 세션의 Claude Code 창을 띄우는 창으로 봅니다"
+why = "세션 화면에서 친 키가 CC로 간다는 설명"

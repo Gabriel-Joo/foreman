@@ -189,7 +189,7 @@ const BASH_DOING = [
   [/^(?:cat|head|tail|sed\s+-n|ls|wc|less|tree|stat|du|diff)\b/, '파일 보는 중'],
   [/^curl\b/, 'API 부르는 중'],
   [/^(?:systemctl|journalctl)\b/, '서비스 보는 중'],
-  [/^(?:tmux)\b/, '세션 창 다루는 중'],
+  [/^(?:tmux)\b/, 'Claude Code 창 다루는 중'],
   [/^(?:docker|kubectl|helm)\b/, '컨테이너 다루는 중'],
   [/^(?:npm|pip|uv|apt)\s+(?:install|i|add|sync)\b/, '설치하는 중'],
   [/^(?:sleep|until|while)\b/, '기다리는 중'],

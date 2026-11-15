@@ -627,10 +627,10 @@ class TerminalManager:
         if row is None:
             return no("그런 세션이 없습니다")
         if row[1] != "agent" or not row[0]:
-            return no("CC 세션이 아니라 CC 화면이 없습니다")
+            return no("CC 세션이 아니라 세션 화면을 열 수 없습니다")
         ls = live_sessions(self.s.sessions_dir).get(row[0])
         if ls is None:
-            return no("세션이 끝나 CC 화면이 없습니다(살아 있는 CC 프로세스가 없습니다)")
+            return no("세션이 끝나 세션 화면을 열 수 없습니다(살아 있는 CC 프로세스가 없습니다)")
         if ls.state == "T":
             return no("멈춰 둔(Ctrl+Z) 세션이라 열지 않습니다. 사용자가 일부러 멈춰 둔 세션입니다")
         te = _tmux_env(ls.pid)

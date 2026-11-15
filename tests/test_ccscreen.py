@@ -379,8 +379,8 @@ async def test_cc_target_checks(shell, own_sock, monkeypatch):  # noqa: F811
         return await m.cc_target(5)
 
     assert (await t(None))["reason"] == "그런 세션이 없습니다"
-    assert "CC 세션이 아니라" in (await t(("cc-1", "shell")))["reason"]
-    assert "세션이 끝나" in (await t(("cc-1", "agent")))["reason"]
+    assert (await t(("cc-1", "shell")))["reason"] == "CC 세션이 아니라 세션 화면을 열 수 없습니다"   # 11-15 「CC 화면」 → 「세션 화면」
+    assert (await t(("cc-1", "agent")))["reason"].startswith("세션이 끝나 세션 화면을 열 수 없습니다")
     assert "멈춰 둔" in (await t(("cc-1", "agent"), live=LS(shell_pid, "T")))["reason"]
     assert "tmux 밖" in (await t(("cc-1", "agent"), live=LS(shell_pid)))["reason"]
     assert "tmux 서버가 아닌" in (await t(("cc-1", "agent"), live=LS(shell_pid), tmux_env=("/tmp/other-sock", pane)))["reason"]

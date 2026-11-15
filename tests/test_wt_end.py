@@ -79,3 +79,13 @@ def test_end_discard_ignores_dirty(monkeypatch):
     m, row, calls = _mgr(monkeypatch, dirty=["x.md"])
     r = asyncio.run(m.worktree_act(row, "discard", end=True))
     assert calls == ["exit", "remove"] and r["ok"]
+
+
+def test_rest_on_ended_session_points_to_branch_box(monkeypatch):
+    """끝난 세션의 [쉬게 하기] 거부는 세 버튼이 있는 「브랜치 이름」 칸을 가리킨다(11-15, 전 「따로 작업」)."""
+    m, row, calls = _mgr(monkeypatch, dirty=[])
+    monkeypatch.setattr(h, "live_sessions", lambda d: {})
+    with pytest.raises(h.Refused) as e:
+        asyncio.run(m.rest(row))
+    assert str(e.value) == "이미 끝난 세션입니다. 「브랜치 이름」 칸에서 [이어서], [합치기], [버리기]를 고릅니다"
+    assert calls == []

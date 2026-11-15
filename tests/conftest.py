@@ -8,6 +8,7 @@ Settings(mysql_database="foreman_test")는 bridge/config.py에서 이 DB로 바�
 """
 
 import os
+import sys
 
 import pytest
 import testdb
@@ -84,3 +85,7 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
     if _state["warn"]:
         terminalreporter.write_line(f"경고: {_state['warn']}", yellow=True)
+    # 화면 말 시험(11-15) — 서기 몫 · 시험 없는 호버 약속이 남은 수를 매번 찍어 잊히지 않게
+    sw = sys.modules.get("screen_words")
+    if sw is not None and sw.LAST is not None:
+        terminalreporter.write_line(sw.summary(sw.LAST), yellow=bool(sw.LAST.scribe))

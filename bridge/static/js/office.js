@@ -3521,7 +3521,9 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const tip = `${r.label} — 이 방으로 가서 주요 세션 대화를 엽니다.`
         + (act || pend || ques ? `\n작업 중 ${act}${pend ? ` · 승인 대기 ${pend}` : ''}${ques ? ` · 질문 ${ques}` : ''}` : '') + (unseen ? '\n안 본 새 답 있음' : '')
         + `\n오늘 쓴 글 ${fmt(allOut)} 토큰${rs.opus_out && allOut ? ` (그중 Opus ${Math.round(100 * rs.opus_out / allOut)}%)` : ''}`
-        + `\n오늘 읽은 양 ${fmt(rs.tin || 0)} 토큰 (대화 다시 읽기 포함)`;
+        + `\n오늘 읽은 양 ${fmt(rs.tin || 0)} 토큰`
+        // 11-15 사용자 — 무엇의 합인지, 왜 큰지 알기 어려웠다(값은 맞다, log/foreman_token_read_check_20261115.md 5절)
+        + '\n(이 프로젝트 세션들이 응답할 때마다 쌓인 대화를 다시 읽은 양의 합, 오늘 0시부터, 서브에이전트 빼고)';
       return `<button class="ghost oproj-b${view === key ? ' on' : ''}${pend || ques ? ' pend' : ''}" data-room="${esc(key)}" data-tip="${esc(tip)}" aria-pressed="${view === key}">${dot}${esc(r.label)}${nums}</button>`;
     }).join('');
     if ($('oProj').innerHTML !== html) $('oProj').innerHTML = html;

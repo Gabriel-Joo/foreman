@@ -22,6 +22,7 @@ test('명령 머리로 흔한 일을 가른다', () => {
     ['sed -n 1,20p a.py', '파일 보는 중'],
     ['curl -s http://127.0.0.1:8000/api/dashboard', 'API 부르는 중'],
     ['systemctl --user status foreman-bridge', '서비스 보는 중'],
+    ['tmux capture-pane -p -t %3', 'Claude Code 창 다루는 중'],   // 11-15 「세션 창」은 띄우는 창(세션 화면)으로 읽혔다
     ['python3 -c "print(1)"', '스크립트 돌리는 중'],
     ['echo "credit(bridge config tests): $(grep -rn \'c\' x)"', '명령 실행 중'],
     ['S=/tmp/x; mkdir -p $S/a; PYTHONPATH=. timeout 300 .venv/bin/python tools/screen.py --no-term', '화면 점검하는 중'],   // 준비 명령은 건너뛴다
