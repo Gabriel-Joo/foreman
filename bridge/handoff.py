@@ -403,7 +403,7 @@ class HandoffManager:
         if not live:
             why = "끝난 세션입니다"
         elif live.state == "T":
-            why = "일시정지된 세션입니다" + (" (FOREMAN이 멈춤)" if stopped_pid else " (사람이 멈춤 — 건드리지 않습니다)")
+            why = "일시정지된 세션입니다" + (" (FOREMAN이 멈춤)" if stopped_pid else " (사람이 멈춤, 건드리지 않습니다)")
         elif not te:
             why = "FOREMAN 터미널(tmux) 밖에서 띄운 세션이라 화면에서 보내거나 끌 수 없습니다"
         elif busy:
@@ -563,7 +563,7 @@ class HandoffManager:
             await self._finish(sid, "failed", None, None, f"보내지 못함: {e}")
             raise
         if not res.get("delivered"):
-            await self._finish(sid, "failed", None, None, "제출이 확인되지 않았다 — 입력 칸에 남았을 수 있다")
+            await self._finish(sid, "failed", None, None, "제출이 확인되지 않았다. 입력 칸에 남았을 수 있다")
             return {"summary_id": sid, "req": req, "status": "failed"}
         self._spawn_task(self._wait_live(row, sid, req, path, offset, (res["delivered"] or {}).get("prompt_id")))
         return {"summary_id": sid, "req": req, "status": "requested", "pid": ls.pid}
@@ -716,9 +716,9 @@ class HandoffManager:
             out["pointers"] = ptr.as_dicts(ps)
             bad = [p for p in ps if not p.ok]
             if not ps:
-                out["blocked"] = "「읽을 곳」이 비었습니다 — 요약을 고쳐 읽을 곳을 넣어 주세요"
+                out["blocked"] = "「읽을 곳」이 비었습니다. 요약을 고쳐 읽을 곳을 넣어 주세요"
             elif bad:
-                out["blocked"] = "읽을 곳이 틀렸습니다 — " + "; ".join(f"{p.path or p.raw}: {p.problem}" for p in bad)
+                out["blocked"] = "읽을 곳이 틀렸습니다. " +"; ".join(f"{p.path or p.raw}: {p.problem}" for p in bad)
         return out
 
     async def ensure_injectable(self, summary_id: int, target_cwd: str | None = None, confirm: bool = True) -> dict[str, Any]:
@@ -748,7 +748,7 @@ class HandoffManager:
         if repo and base and os.path.realpath(base) != os.path.realpath(repo):
             bb = await wt.base_branch(base)
             n = await ptr._git(repo, "rev-list", "--count", f"HEAD..{bb}")
-            note = (f"이 작업방이 {bb}보다 커밋 {n}개 뒤처졌습니다({bb}에는 있습니다) — fast-forward하면 읽을 수 있습니다"
+            note = (f"이 작업방이 {bb}보다 커밋 {n}개 뒤처졌습니다({bb}에는 있습니다). fast-forward하면 읽을 수 있습니다"
                     if n.isdigit() and int(n) else f"{bb}에는 있습니다")
         ps = await ptr.check(ptr.parse(s[1]), repo or "", other=base, other_note=note)
         # drift — 넣을 때 붙인 "인계 뒤 바뀐 것"(11-06). 받은 세션 패널에 보인다
@@ -817,7 +817,7 @@ class HandoffManager:
             # 11-11 아홉 — 관리자는 늘 원본 폴더. 전에는 살아 있는 세션만 보고 worktree로 보냈다(관리자가 .worktrees/에 떴다).
             # 아무것도 만들기 전(tmux · worktree)에 거절한다
             if worktree or wt.split(cwd)[1] is not None:
-                raise Refused("관리자는 원본 폴더에서만 띄웁니다 — 작업방을 끄고 저장소 맨 위 폴더에서 띄워 주세요")
+                raise Refused("관리자는 원본 폴더에서만 띄웁니다. 작업방을 끄고 저장소 맨 위 폴더에서 띄워 주세요")
             if why := await self.manager_conflict(cwd, exclude_cc):
                 raise Refused(why)
             worktree = False
@@ -899,7 +899,7 @@ class HandoffManager:
         latest = {cc: (sid, role) for cc, sid, role in rows}          # 같은 cc의 마지막 행(ORDER BY id)
         for cc, (sid, role) in latest.items():
             if role == "manager":
-                return (f"원본 폴더에 관리자(세션 {sid})가 이미 살아 있습니다 — 관리자는 원본 폴더에 하나입니다. "
+                return (f"원본 폴더에 관리자(세션 {sid})가 이미 살아 있습니다. 관리자는 원본 폴더에 하나입니다. "
                         "그 세션을 끝내거나, 그 세션 패널에서 [새 세션으로 옮기기]로 바꿔 주세요")
         return None
 
@@ -1145,7 +1145,7 @@ class HandoffManager:
         async with self.engine.connect() as c:
             later = await reused_by(c, row.id, os.path.join(repo, wt.WT_DIR, name))
         if later:
-            raise Refused(f"이 작업방 이름({name})은 지금 세션 {later}이 쓰고 있습니다 — 이 세션의 작업방은 이미 지워졌습니다. "
+            raise Refused(f"이 작업방 이름({name})은 지금 세션 {later}이 쓰고 있습니다. 이 세션의 작업방은 이미 지워졌습니다. "
                           f"세션 {later}의 패널에서 합치거나 버립니다")
 
     async def _role(self, sid: int) -> str | None:
@@ -1157,7 +1157,7 @@ class HandoffManager:
         """세션 역할 바꾸기(11-09) — character_session.role을 바꾸고 그 역할 캐릭터("관리자" · worktree면 "관리자 foreman-3")로
         옮긴다(새 세션 역할 캐릭터와 같은 규칙, _character_for). 프로젝트 밖 세션은 캐릭터를 그대로 둔다. session_action 'role'에 남긴다."""
         if role not in ROLE_KO:
-            raise Refused(f"바꿀 수 없는 역할입니다({role}) — {' · '.join(ROLE_KO.values())} 중에서 고릅니다")
+            raise Refused(f"바꿀 수 없는 역할입니다({role}). {' · '.join(ROLE_KO.values())} 중에서 고릅니다")
         old = await self._role(row.id)
         if old == role:
             return {"id": row.id, "role": role, "changed": False}
@@ -1225,16 +1225,16 @@ class HandoffManager:
         ended = None
         if row.cc and row.cc in live_sessions(self.sessions_dir):
             if not end:
-                raise Refused("세션이 아직 살아 있습니다 — [끝내고 합치기] · [끝내고 버리기]로 함께 할 수 있습니다")
+                raise Refused("세션이 아직 살아 있습니다. [끝내고 합치기] · [끝내고 버리기]로 함께 할 수 있습니다")
             if act == "merge":
                 st = await wt.status(repo, name)
                 if st.get("dirty"):
                     files = ", ".join(st["dirty"][:8]) + (" …" if len(st["dirty"]) > 8 else "")
-                    raise Refused(f"커밋 안 된 변경이 {len(st['dirty'])}개 있습니다({files}) — 세션에게 커밋을 시킨 뒤 다시 눌러 주세요."
+                    raise Refused(f"커밋 안 된 변경이 {len(st['dirty'])}개 있습니다({files}). 세션에게 커밋을 시킨 뒤 다시 눌러 주세요."
                                   " 세션은 끝내지 않았습니다")
             r = await self.action(row, "exit")
             if not r.get("ok"):
-                raise Refused("세션이 끝나지 않아 멈췄습니다 — " + (r.get("note") or "대화창을 확인해 주세요"))
+                raise Refused("세션이 끝나지 않아 멈췄습니다. " +(r.get("note") or "대화창을 확인해 주세요"))
             ended = {"tmux_closed": r.get("tmux_closed")}
         rv = None
         if act == "merge" and await self._role(row.id) == "scribe":   # 합치면 브랜치가 지워진다 — 검토는 먼저(12b)
@@ -1295,9 +1295,9 @@ class HandoffManager:
                 {"s": row.id, "cut": datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24)})).all()
             subs = (await c.execute(text("SELECT description FROM subagent_run WHERE session_id = :s AND status = 'running'"),
                                     {"s": row.id})).all()
-        out = [f"{tool or '셸'}{f' — {desc}' if desc and desc != 'null' else ''}"
+        out = [f"{tool or '셸'}{f': {desc}' if desc and desc != 'null' else ''}"
                for tool, desc, ts in bg if not (started and ts and ts < started)]
-        out += [f"서브에이전트{f' — {d}' if d else ''}" for (d,) in subs]
+        out += [f"서브에이전트{f': {d}' if d else ''}" for (d,) in subs]
         return out
 
     async def _exit_blocker(self, pane: str) -> str | None:
@@ -1314,13 +1314,13 @@ class HandoffManager:
         """[쉬게 하기] — 커밋(커밋 안 한 변경이 있으면) → 세션만 끝냄 → worktree는 남김. session_action 'rest'에 남긴다."""
         repo, name = self._wt_of(row)
         if not row.cc or row.cc not in live_sessions(self.sessions_dir):
-            raise Refused("이미 끝난 세션입니다 — 「따로 작업」에서 [이어서] · [합치기] · [버리기]를 고릅니다")
+            raise Refused("이미 끝난 세션입니다. 「따로 작업」에서 [이어서] · [합치기] · [버리기]를 고릅니다")
         t, ls, busy = await resolve(row.cc, self.sessions_dir)
         if busy:
-            raise Refused("작업 중입니다 — 작업이 끝난 뒤에 쉬게 해 주세요. 세션은 그대로입니다")
+            raise Refused("작업 중입니다. 작업이 끝난 뒤에 쉬게 해 주세요. 세션은 그대로입니다")
         bg = await self._running_work(row, ls.pid)
         if bg:
-            raise Refused(f"뒤에서 도는 일이 {len(bg)}개 있습니다({'; '.join(bg[:3])}{' …' if len(bg) > 3 else ''}) — 지금 끝내면 CC가 "
+            raise Refused(f"뒤에서 도는 일이 {len(bg)}개 있습니다({'; '.join(bg[:3])}{' …' if len(bg) > 3 else ''}). 지금 끝내면 CC가 "
                           "끝내기 확인 창에서 멈춥니다. 그 일이 끝난 뒤에 쉬게 해 주세요. 커밋도 하지 않았습니다")
         title = (row.title or "").strip() or f"세션 {row.id}"
         path = os.path.join(repo, wt.WT_DIR, name)
@@ -1338,13 +1338,13 @@ class HandoffManager:
             if self.on_change:
                 self.on_change()
             return {"ok": False, "commit": saved["commit"], "skipped": saved["skipped"],
-                    "note": f"{saved_txt}까지 했지만 세션이 끝나지 않았습니다 — {why}. 터미널(tmux)에서 확인해 주세요."}
+                    "note": f"{saved_txt}까지 했지만 세션이 끝나지 않았습니다({why}). 터미널(tmux)에서 확인해 주세요."}
         await self._act(row.id, REST_ACT, ls.pid, True, f"{name} {saved_txt}")
         if self.on_change:
             self.on_change()
         return {"ok": True, "commit": saved["commit"], "files": saved["files"], "skipped": saved["skipped"],
                 "tmux_closed": r.get("tmux_closed"),
-                "note": f"쉬게 했습니다 — {saved_txt}. 작업방 {wt.BRANCH_PREFIX}{name}는 남아 있습니다. [이어서] · [합치기] · [버리기]로 이어 갑니다."}
+                "note": f"쉬게 했습니다({saved_txt}). 작업방 {wt.BRANCH_PREFIX}{name}는 남아 있습니다. [이어서] · [합치기] · [버리기]로 이어 갑니다."}
 
     async def rest_resume(self, row: SessionRow) -> dict[str, Any]:
         """[이어서] — 같은 worktree에서 그 CC 세션을 `claude --resume`으로 다시 붙인다. 새 tmux 창에서."""
@@ -1352,14 +1352,14 @@ class HandoffManager:
         await self._guard_reused(row, repo, name)
         path = os.path.join(repo, wt.WT_DIR, name)
         if not Path(path).is_dir():
-            raise Refused("작업방이 없습니다 — 이미 합쳤거나 버렸습니다")
+            raise Refused("작업방이 없습니다. 이미 합쳤거나 버렸습니다")
         if not row.cc:
             raise Refused("CC 세션 ID가 없어 이어 붙일 수 없습니다")
         if row.cc in live_sessions(self.sessions_dir):
-            raise Refused("이미 살아 있는 세션입니다 — 패널에서 그대로 이어 쓰면 됩니다")
+            raise Refused("이미 살아 있는 세션입니다. 패널에서 그대로 이어 쓰면 됩니다")
         cwd = row.cwd if row.cwd and Path(row.cwd).is_dir() else path
         if not Path(transcript_path(cwd, row.cc)).is_file():
-            raise Refused("이 세션의 대화 기록 파일을 찾지 못해 이어 붙일 수 없습니다 — 새 세션으로 띄워 주세요")
+            raise Refused("이 세션의 대화 기록 파일을 찾지 못해 이어 붙일 수 없습니다. 새 세션으로 띄워 주세요")
         async with self.engine.connect() as c:
             model = (await c.execute(text("SELECT model FROM character_session WHERE id = :i"), {"i": row.id})).scalar()
         model = self.models.resolve(model)          # 11-14 전 값(opus 등 별칭)은 목록의 id로, 모르는 값은 None(CC 설정)
@@ -1376,7 +1376,7 @@ class HandoffManager:
         if cc is None:
             why = "폴더 신뢰 확인 창이 떴습니다" if trust else "45초 안에 이어 붙은 세션을 찾지 못했습니다"
             await self._act(row.id, REST_RESUME_ACT, None, False, f"{tname} {pane} {why}")
-            return {"ok": False, "tmux": tname, "note": f"{why} — 터미널(tmux {tname})에서 확인해 주세요."}
+            return {"ok": False, "tmux": tname, "note": f"{why}. 터미널(tmux {tname})에서 확인해 주세요."}
         sid = row.id
         if cc != row.cc:
             # CC가 다른 id로 이었으면 새 행에 이름 · 역할 · 자리를 물려준다(같은 캐릭터)

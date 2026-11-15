@@ -398,7 +398,7 @@ async def test_done_live_asks_is_still_done_but_denied_is_not(repo, monkeypatch)
     async def hn(c, ids):
         return needs
     monkeypatch.setattr(dashboard, "human_needs", hn)
-    assert await m._done_live(7, CC, 1) == "보고 옴 — 일하지 않고 응답을 마쳤습니다"
+    assert await m._done_live(7, CC, 1) == "보고 옴(일하지 않고 응답을 마쳤습니다)"
     assert (await m._asks(7))["tail"] == "한 번씩 확인해 주세요."
     needs[7] = {"denied": {"tool": "Bash"}}
     assert await m._done_live(7, CC, 1) is None
@@ -609,7 +609,7 @@ def test_human_reasons():
                            "diff --git a/charts/app/values-prod.yaml b/charts/app/values-prod.yaml\n+    cpu: 2\n", HA.paths, HA)
     s = "\n".join(why)
     for x in ("config/*.toml", "migrations/0030_x.sql", "sub/CLAUDE.md", "values-prod.yaml", "자원 크기(replicas): k8s/deploy.yaml",
-              "지우기 — 파일 1개를 지움: old.txt", "다른 저장소(서브모듈) 바뀜: vendor/lib", "「force push」"):
+              "지우기(파일 1개를 지움): old.txt", "다른 저장소(서브모듈) 바뀜: vendor/lib", "「force push」"):
         assert x in s, x
     assert "자원 크기(cpu)" not in s                    # 이미 경로로 걸린 파일은 두 번 적지 않는다
     off = mp.HumanAlways(paths=[], deletions=False, submodules=False)

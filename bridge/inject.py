@@ -160,14 +160,14 @@ def bang_check(text: str, decide: Any) -> str:
     승인을 묻는 규칙에 걸리면 여기서 막는다 — 그 밖은 보낸다(11-09 사용자: 명령에 공백은 당연히 들어간다, 막을 것만 막아라)."""
     cmd = text[1:].strip()
     if not cmd:
-        raise Refused("! 뒤에 명령이 없습니다 — 예: !ls -la")
+        raise Refused("! 뒤에 명령이 없습니다(예: !ls -la)")
     if "\n" in cmd:
-        raise Refused("! 명령은 한 줄만 보냅니다 — 여러 줄은 && 로 잇거나 스크립트 파일로 실행해 주세요")
+        raise Refused("! 명령은 한 줄만 보냅니다. 여러 줄은 && 로 잇거나 스크립트 파일로 실행해 주세요")
     if re.search(r"(^|[;&|]\s*)sudo\b", cmd):
-        raise Refused("sudo는 비밀번호를 물어 그 세션 입력이 멈춥니다 — 서버 터미널에서 직접 쳐 주세요(CLAUDE.md: sudo는 사람이 친다)")
+        raise Refused("sudo는 비밀번호를 물어 그 세션 입력이 멈춥니다. 서버 터미널에서 직접 쳐 주세요(CLAUDE.md: sudo는 사람이 친다)")
     d = decide("Bash", {"command": cmd})
     if d.verdict == "ask":
-        raise Refused(f"승인 규칙 '{d.rule}'에 걸리는 명령입니다({d.reason}). ! 명령은 승인 창을 거치지 않아 패널에서 보내지 않습니다 — "
+        raise Refused(f"승인 규칙 '{d.rule}'에 걸리는 명령입니다({d.reason}). ! 명령은 승인 창을 거치지 않아 패널에서 보내지 않습니다. "
                       f"그 세션에 \"{cmd[:60]} 실행해 줘\"처럼 맡기면 승인을 묻고 실행합니다")
     return "!" + cmd
 
@@ -249,7 +249,7 @@ async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, trans
     if not text.strip():
         # 빈칸 · 공백만 — 붙여넣을 것 없이 Enter만 가는 셈이다. 입력 칸에 CC의 프롬프트 제안(회색)이 떠 있으면
         # Enter가 그 제안을 제출하는지 문서에 없다(11-05) — 사람이 쓰지 않은 글이 실행될 수 있으니 보내지 않는다
-        raise Refused("빈 입력입니다 — 공백이나 줄바꿈만으로는 보내지 않습니다")
+        raise Refused("빈 입력입니다. 공백이나 줄바꿈만으로는 보내지 않습니다")
     t, _ls, busy = await resolve(session_id, sessions_dir)
     escs, dialog = await clear_screen(t, busy)
     send, guarded_ = guarded(text, command)
@@ -296,21 +296,21 @@ async def clear_screen(t: Target, busy: bool, tries: int = ESC_TRIES) -> tuple[i
         return 0, None
     if busy:
         raise Refused(f"CC에 {name or '알 수 없는'} 창이 떠 있습니다. 작업 중이라 Esc를 보내지 않았습니다"
-                      "(작업이 끊길 수 있습니다) — 그 세션 대화창에서 확인해 주세요")
+                      "(작업이 끊길 수 있습니다). 그 세션 대화창에서 확인해 주세요")
     sent, first = 0, name
     while True:
         what = f"{name} 창"
         if kind == "decision":
             log.warning("결정 창이 떠 있어 넣지 않음 %s: %s (Esc %d번 뒤)", t.pane, name, sent)
             raise Refused(f"{what}이 떠 있어 넣지 못했습니다. Esc가 그 창의 답이 될 수 있어 보내지 않았습니다"
-                          " — 그 세션 대화창에서 확인해 주세요")
+                          ". 그 세션 대화창에서 확인해 주세요")
         if kind == "unknown":
             log.warning("모르는 창이 떠 있어 넣지 않음 %s (Esc %d번 뒤)", t.pane, sent)
             raise Refused("CC에 입력 줄 대신 알 수 없는 창이 떠 있어 넣지 못했습니다. Esc가 무엇을 할지 몰라 보내지 않았습니다"
-                          " — 그 세션 대화창에서 확인해 주세요")
+                          ". 그 세션 대화창에서 확인해 주세요")
         if sent >= tries:
             log.warning("Esc %d번에도 입력 줄이 돌아오지 않음 %s: %s", tries, t.pane, name)
-            raise Refused(f"CC에 {what}이 떠 있고, Esc를 {tries}번 보내도 닫히지 않았습니다 — "
+            raise Refused(f"CC에 {what}이 떠 있고, Esc를 {tries}번 보내도 닫히지 않았습니다. "
                           "그 세션 대화창에서 확인해 주세요")
         await tmux(t.socket, "send-keys", "-t", t.pane, "Escape")
         sent += 1
@@ -323,7 +323,7 @@ async def clear_screen(t: Target, busy: bool, tries: int = ESC_TRIES) -> tuple[i
             return sent, first
 
 
-TYPED_REFUSED = "입력 칸에 사람이 치던 글이 있어 넣지 않았습니다 — 그 세션 대화창(세션 화면)을 확인해 주세요"
+TYPED_REFUSED = "입력 칸에 사람이 치던 글이 있어 넣지 않았습니다. 그 세션 대화창(세션 화면)을 확인해 주세요"
 
 
 def _refuse_if_typed(t: Target, raw: str) -> None:

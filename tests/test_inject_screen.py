@@ -291,7 +291,7 @@ async def test_typed_box_refused_nothing_sent(monkeypatch, busy):
     """입력 칸에 사람이 치던 글 — 일하는 중이든 아니든 붙여넣기 · Enter · Esc 어느 것도 보내지 않고 까닭을 돌려준다.
     11-14 전에는 거르지 않았다: screen_state가 「prompt」면 바로 붙여넣었다(PROMPT_DRAFT도 prompt)."""
     sent = _screens(monkeypatch, [PROMPT_TYPED_COLOR], busy=busy)
-    with pytest.raises(inj.Refused, match="입력 칸에 사람이 치던 글이 있어 넣지 않았습니다 — .*대화창"):
+    with pytest.raises(inj.Refused, match="입력 칸에 사람이 치던 글이 있어 넣지 않았습니다. .*대화창"):
         await inj.deliver(SID, "관리자 중계 글", sessions_dir="/s", transcript=None)
     assert sent == []
     sent = _screens(monkeypatch, [PROMPT_DRAFT], busy=busy)

@@ -72,9 +72,9 @@ def test_ask_user_question_is_readable():
                           "options": [{"label": "캐릭터만", "description": long}, {"label": "캐릭터+가구", "description": "같이"},
                                       {"label": "여백만", "description": "조금"}]}]}
     t = _target("AskUserQuestion", inp)
-    assert t.startswith("1. [키우는 법] 어떻게 키울까요?") and "   3) 여백만 — 조금" in t and "{" not in t
+    assert t.startswith("1. [키우는 법] 어떻게 키울까요?") and "   3) 여백만: 조금" in t and "{" not in t
     assert len(t) > 300
-    assert summarize("AskUserQuestion", inp, "cc", "", None) == "질문 — 어떻게 키울까요?"
+    assert summarize("AskUserQuestion", inp, "cc", "", None) == "질문: 어떻게 키울까요?"
     msg = _approval_text("foreman", "AskUserQuestion", t, "질문", "", 3600, None)
     assert "❓" in msg and "승인" not in msg and msg.endswith("그 세션의 대화창에서 답합니다")
 

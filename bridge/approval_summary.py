@@ -43,10 +43,10 @@ def _resolve(tok: str, cwd: str | None, env: dict[str, str]) -> tuple[str, str |
         if v == "@mktemp":
             return f"${m.group(1)}{m.group(2) or ''}", "이 명령에서 mktemp로 만든 것"
         if v is None:
-            return tok, "변수 — 이 명령 안에서 값을 모른다"
+            return tok, "변수, 이 명령 안에서 값을 모른다"
         tok = v + (m.group(2) or "")
     if "$" in tok or "`" in tok:
-        return tok, "변수 · 치환 — 이 명령 안에서 값을 모른다"
+        return tok, "변수 · 치환, 이 명령 안에서 값을 모른다"
     p = os.path.expanduser(tok)
     if not os.path.isabs(p):
         p = os.path.normpath(os.path.join(cwd or "/", p))
@@ -156,7 +156,7 @@ def _db(cmd: str) -> str | None:
         return None
     s = re.sub(r"\s+", " ", m.group(1))
     if re.match(r"(?i)delete", s) and not re.search(r"(?i)\bwhere\b", s):
-        s += " (WHERE 없음 — 전부)"
+        s += " (WHERE 없음, 전부)"
     c = re.search(r"\bdocker\s+exec\b(?:\s+-\w+)*\s+([\w.-]+)", cmd) or re.search(r"\bkubectl\b[^;&|\n]*\bexec\b[^;&|\n]*?\s([\w.-]+)\s+(?:-c\s+\S+\s+)?--", cmd)
     where = f" (컨테이너 {c.group(1)})" if c else ""
     return s + where
@@ -176,7 +176,7 @@ def summarize(tool: str, inp: dict[str, Any], rule: str, reason: str, cwd: str |
     if tool == "AskUserQuestion":
         qs = [q for q in (inp.get("questions") or []) if isinstance(q, dict)]
         first = qs[0].get("question") or qs[0].get("header") or "" if qs else ""
-        return (f"질문 {len(qs)}개 — " if len(qs) > 1 else "질문 — ") + str(first)[:MAX - 12]
+        return (f"질문 {len(qs)}개: " if len(qs) > 1 else "질문: ") + str(first)[:MAX - 12]
     if tool != "Bash":
         path = inp.get("file_path") or inp.get("notebook_path") or inp.get("path")
         verb = {"Write": "쓰기", "Edit": "고치기", "MultiEdit": "고치기", "NotebookEdit": "고치기",
@@ -186,7 +186,7 @@ def summarize(tool: str, inp: dict[str, Any], rule: str, reason: str, cwd: str |
             kind = "비밀 파일" if rule == "민감한-경로" else ("안전 규칙 · 설정 파일" if rule == "보호-설정파일" else
                                                          ("기존 파일" if os.path.exists(p) else "새 파일"))
             return f"{verb} → {p} ({kind})"[:MAX]
-        return f"{tool} — {reason}"[:MAX]
+        return f"{tool}: {reason}"[:MAX]
     full = str(inp.get("command") or "")
     # heredoc 본문은 대상을 뽑지 않는다(11-03 — 파이썬 f"rm … {SP}/shots"를 셸 명령으로 읽어 "frm (변수…)"가 나왔다).
     # 검사(approval.py)는 본문까지 하지만, 요약은 셸 명령 줄만 본다. 걸린 게 본문 안이면 "해석기 스크립트 안"이라고만 적는다
@@ -213,7 +213,7 @@ def summarize(tool: str, inp: dict[str, Any], rule: str, reason: str, cwd: str |
         head = bodies[0][0] or "heredoc"
         interp = re.search(r"\b(python3?|bash|sh|node|perl|ruby|mysql|psql|kubectl|vagrant)\b", head)
         return (f"{rule} → {interp.group(1) if interp else 'heredoc'} 스크립트 안에서 걸림 "
-                f"(본문 {len(bodies[0][1].splitlines())}줄 — 대상은 본문을 직접 본다)")[:MAX]
+                f"(본문 {len(bodies[0][1].splitlines())}줄, 대상은 본문을 직접 본다)")[:MAX]
     m = re.search(r"\(([^()]{3,})\)\s*$", reason)
     if m:
         return f"{rule} → {m.group(1)}"[:MAX]

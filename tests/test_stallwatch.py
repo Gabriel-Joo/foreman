@@ -81,7 +81,7 @@ def test_judge_dialog_kinds():
     # 안내 창(/model) — 화면에만
     f = judge_dialog(Sample(sid=1, live=True, cc_status="idle", screen=MODEL), NOW)
     assert kinds(f) == ["notice"] and f[0]["notify"] is True       # 11-14 — 안내 창도 오래 떠 있으면 알린다(2분)
-    assert "안내 창이 떠 있어 세션이 입력을 못 받습니다 — 대화창을 확인해 주세요" in f[0]["detail"]
+    assert "안내 창이 떠 있어 세션이 입력을 못 받습니다. 대화창을 확인해 주세요" in f[0]["detail"]
     # 끝내기 확인 창은 예전 kind 그대로
     assert kinds(judge_dialog(Sample(sid=1, live=True, screen=EXIT_SCREEN), NOW)) == ["exit_confirm"]
     # 화면을 못 읽음(tmux 밖) — status waiting + 승인 없음이면

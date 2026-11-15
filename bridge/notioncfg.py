@@ -75,7 +75,7 @@ HALT_ARGS = base_args({"docs": "manual", "create": False, "archive": False, "ord
 
 
 def halt_message(name: str, why: str) -> str:
-    return (f"{name}의 {REPO_FILE}을 읽지 못해 게시를 멈췄습니다({why}) — 파일을 되살리거나 FOREMAN 관리자에게 알려 주십시오")
+    return (f"{name}의 {REPO_FILE}을 읽지 못해 게시를 멈췄습니다({why}). 파일을 되살리거나 FOREMAN 관리자에게 알려 주십시오")
 
 
 def read_repo_file(repo: str, ref: str = REPO_REF) -> tuple[str | None, str | None, str | None]:

@@ -173,7 +173,7 @@ async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset
             # 11-09 — 사람이 옮겨 둔 페이지에 맞추는 프로젝트는 원본이 사라져도 휴지통으로 보내지 않는다(create = false 또는
             # archive = false — 사용자: 새 페이지 만들기와 옛 페이지 지우기는 다른 기능, 지운 문서는 실패로만 남기고 사람이 판단).
             # 경로만 바뀐 것(git mv)이면 짝을 새 경로로 옮기면 풀린다. 그냥 옮겼으면 펫퍼민트 20쪽이 모두 휴지통으로 갈 뻔했다
-            failed.append({"path": f, "error": "원본이 사라졌습니다 — 이 프로젝트는 휴지통으로 보내지 않습니다(archive = false). "
+            failed.append({"path": f, "error": "원본이 사라졌습니다. 이 프로젝트는 휴지통으로 보내지 않습니다(archive = false). "
                                                "경로가 바뀌었으면 짝(doc_publish)을 새 경로로 옮겨 주세요"})
             continue
         try:
@@ -312,7 +312,7 @@ async def todo_items(pub: Any, last: dict[str, Any] | None) -> list[dict[str, An
         # 저장소 게시 설정을 잃어 멈춤(11-12) — 이 한 줄만. act docsync — 서기 화면이 기술문서 줄 옆에 why를 보인다(scribe.js
         # docsBlock). 그 줄의 [지금 맞추기]를 눌러도 서버가 같은 사유로 거절한다
         return [{"kind": "publish", "act": "docsync", "project": pub.project, "halted": True,
-                 "title": "Notion 게시 멈춤 — 저장소 게시 설정을 읽지 못했습니다", "why": halt}]
+                 "title": "Notion 게시 멈춤(저장소 게시 설정을 읽지 못했습니다)", "why": halt}]
     if pub.docs_mode == "off":
         return []
     st = await status(pub)
@@ -323,13 +323,13 @@ async def todo_items(pub: Any, last: dict[str, Any] | None) -> list[dict[str, An
                  f"지워짐 {len(st['deleted'])}" if st["deleted"] else "", f"못 읽음 {len(st['broken'])}" if st["broken"] else ""]
         commits = f"커밋 {st['behind_commits']} · " if st["behind_commits"] else ""
         if last and last.get("failed"):
-            why = f"자동 게시 실패 — {last['failed'][0]['path']}: {last['failed'][0]['error'][:80]}"
+            why = f"자동 게시 실패, {last['failed'][0]['path']}: {last['failed'][0]['error'][:80]}"
         elif pub.docs_mode == "auto":
             why = f"push 뒤 {int(pub.quiet_min)}분 조용하면 바뀐 파일만 자동으로 올립니다"
         else:
-            why = "자동 게시가 꺼져 있습니다 — [지금 맞추기]로 올립니다"
+            why = "자동 게시가 꺼져 있습니다. [지금 맞추기]로 올립니다"
         out.append({"kind": "publish", "act": "docsync", "project": pub.project,
-                    "title": f"Notion 기술문서 — {commits}파일 {n + len(st['broken'])}개 뒤처짐({' · '.join(p for p in parts if p)})",
+                    "title": f"Notion 기술문서: {commits}파일 {n + len(st['broken'])}개 뒤처짐({' · '.join(p for p in parts if p)})",
                     "why": why})
     # 첫 H1이 없는 문서(st["h1_missing"])는 서기 할 일에 넣지 않는다 — 화면이 act를 docsync · force만 알아서(scribe.js) 새 act는
     # 보이지 않고 개수만 센다. 지금은 status 필드 + 로그 경고로 남기고, 화면 줄은 관리자 몫으로 넘긴다(log 기록)
@@ -337,6 +337,6 @@ async def todo_items(pub: Any, last: dict[str, Any] | None) -> list[dict[str, An
         # 한 쪽 게시가 남긴 줄(ref_sha가 있는 것)은 git이 그 뒤로 또 바뀌었으면 사라진다
         if h["path"] in st["changed"] and h.get("ref_sha", st["ref_sha"]) == st["ref_sha"]:
             out.append({"kind": "publish", "act": "force", "project": pub.project, "path": h["path"],
-                        "title": f"Notion에서 사람이 고친 곳 {h['count']}개 — {h['path']}",
+                        "title": f"Notion에서 사람이 고친 곳 {h['count']}개: {h['path']}",
                         "why": "덮지 않았습니다. 그 수정을 git에 옮기면 풀리고, 버리려면 [Notion 수정 버리고 덮기]"})
     return out

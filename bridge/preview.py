@@ -54,7 +54,7 @@ def head_inject(label: str, main_port: int = 8000) -> str:
             "<style>#fmPreview{position:fixed;left:50%;top:0;transform:translateX(-50%);z-index:9999;pointer-events:none;"
             "background:#b45309;color:#fff;font:600 12px/1.6 system-ui,sans-serif;padding:1px 12px;border-radius:0 0 8px 8px;"
             "opacity:.92;white-space:nowrap}</style>"
-            f"<div id=\"fmPreview\">미리보기 · {html.escape(label)} — 화면만 이 브랜치, 데이터 · 버튼은 실제 브리지입니다</div>")
+            f"<div id=\"fmPreview\">미리보기 · {html.escape(label)}: 화면만 이 브랜치, 데이터 · 버튼은 실제 브리지입니다</div>")
 
 
 def create_app(static_dir: str | Path, upstream: str, label: str, transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:

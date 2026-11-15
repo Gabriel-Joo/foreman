@@ -64,4 +64,4 @@ def one_line(c: dict[str, Any]) -> str:
         parts.append(f"{c['reset']}에 풀림")
     if c.get("request_id"):
         parts.append(c["request_id"])
-    return " · ".join(parts) + f" — {c['action']}"
+    return " · ".join(parts) + f". 할 일: {c['action']}"

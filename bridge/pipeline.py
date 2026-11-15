@@ -795,13 +795,13 @@ class PipelineManager:
                     "infra_endpoint, spawned_by, last_seen_at) VALUES (:p, :n, 'infra', 'IDLE', 'infra', :k, 'k8s', :e, "
                     "'auto', :t)"), {"p": p.project_id, "n": d.name, "k": kind, "e": f"https://{d.host}", "t": _now()})
                 log.info("인프라 캐릭터 등장: %s %s (첫 웹훅)", p.name, d.name)
-                self._record_infra(res.lastrowid, p, d, "등장 — 첫 웹훅")
+                self._record_infra(res.lastrowid, p, d, "등장(첫 웹훅)")
                 return res.lastrowid
             cid, retired, status = r
             if retired is not None or status == "STALE":
                 await c.execute(text("UPDATE `character` SET retired_at = NULL, status = 'IDLE', last_seen_at = :t "
                                      "WHERE id = :id"), {"t": _now(), "id": cid})
-                self._record_infra(cid, p, d, "돌아옴 — 웹훅")
+                self._record_infra(cid, p, d, "돌아옴(웹훅)")
             else:
                 await c.execute(text("UPDATE `character` SET last_seen_at = :t WHERE id = :id"), {"t": _now(), "id": cid})
             self._fails[cid] = 0

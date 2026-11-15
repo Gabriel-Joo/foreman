@@ -195,7 +195,7 @@ async def check_ops(c: Any, project: str | None, ops: Any) -> tuple[list[dict[st
             except (TypeError, ValueError):
                 nid = None
             if nid not in mine:
-                warn.append(f"노트 {o.get('id')}은(는) 이 프로젝트의 지금 진행 중인 일이 아닙니다 — 제안을 뺐습니다")
+                warn.append(f"노트 {o.get('id')}은(는) 이 프로젝트의 지금 진행 중인 일이 아닙니다. 제안을 뺐습니다")
                 continue
             op["id"] = nid
             op["was"] = mine[nid]["body"]
@@ -204,7 +204,7 @@ async def check_ops(c: Any, project: str | None, ops: Any) -> tuple[list[dict[st
             kind = o.get("kind") or op.get("kind") or "thread"
             body = re.sub(r"\s+", " ", str(o.get("body") or "")).strip()
             if kind == "decision":
-                warn.append(f"{DROPPED_WARN} — 진행 중인 일만 쌓습니다(규칙 · 금지 · 설계 결정은 CLAUDE.md · docs 몫): {body[:60]}")
+                warn.append(f"{DROPPED_WARN}. 진행 중인 일만 쌓습니다(규칙 · 금지 · 설계 결정은 CLAUDE.md · docs 몫): {body[:60]}")
                 continue
             if kind not in KINDS or not body:
                 warn.append("노트 제안 하나를 뺐습니다(종류 · 내용이 비었음)")
@@ -350,7 +350,7 @@ def verdict(sids: list[int], facts: dict[int, dict[str, Any]], spawned: set[int]
         else:
             return "open", f"세션 {s}의 일이 남음(합치지 않은 커밋 · 폴더)"
     if not decided:
-        return "unknown", "원본 폴더 세션뿐 — 끝남을 기계로 못 가름"
+        return "unknown", "원본 폴더 세션뿐이라 끝남을 기계로 못 가름"
     return "done", "자동: 세션 " + " · ".join(parts)
 
 

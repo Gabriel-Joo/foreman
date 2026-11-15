@@ -93,7 +93,7 @@ class Handover:
             raise Refused("시작 전 계획만 넘길 수 있습니다" + (f"(지금 {r[0]})" if r else "(없는 계획)"))
         plan = await self.f.check(dict(plan), did)
         if plan.get("mode") == "ask":
-            raise Refused("되묻는 계획입니다 — 답을 받아 다시 물어본 뒤 넘겨 주세요")
+            raise Refused("되묻는 계획입니다. 답을 받아 다시 물어본 뒤 넘겨 주세요")
         if not any(s.get("on", True) and (s.get("first_prompt") or "").strip() for s in plan.get("sessions") or []):
             raise Refused("켠 세션이 없거나 첫 글이 비었습니다")
         project, repo = plan.get("project"), plan.get("repo")
@@ -109,7 +109,7 @@ class Handover:
             async with self.engine.begin() as c:
                 await c.execute(text("UPDATE dispatch SET handed_to = NULL, handed_at = NULL WHERE id = :i"), {"i": did})
             return {"handed": False, "reason": out.get("reason"), "notified": out.get("notified"),
-                    "note": f"{project} 관리자에게 넘기지 못했습니다({out.get('reason')}) — [이대로 시작]으로 직접 띄울 수 있습니다."}
+                    "note": f"{project} 관리자에게 넘기지 못했습니다({out.get('reason')}). [이대로 시작]으로 직접 띄울 수 있습니다."}
         return {"handed": True, "to_session": out.get("to_session"), "queued": out.get("queued"),
                 "note": f"{project} 관리자(세션 {out.get('to_session')})에게 넘겼습니다. {self.cfg.wait_min}분 안에 시작하지 않으면 알립니다."}
 

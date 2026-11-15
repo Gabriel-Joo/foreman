@@ -118,7 +118,7 @@ async def test_merge_question_survives_human_input_and_does_not_hide_other_quest
     engine = make_engine(s)
     try:
         q = await escalate(engine, m, "question", "배포를 오늘 할까요?")
-        mq = await escalate(engine, m, "question", "세션 7 「일」 합치기 카드 — 사람 승인이 필요합니다", tag=merge_tag(7))
+        mq = await escalate(engine, m, "question", "세션 7 「일」 합치기 카드에 사람 승인이 필요합니다", tag=merge_tag(7))
         n = (await _needs(engine, m))["escalate"]
         assert n["question"]["id"] == mq["id"] and n["question"]["merge_sid"] == 7 and n["merges"] == [7]
         assert not n["question"]["text"].startswith("#merge")              # 사람에게 보이는 글에는 표시가 없다
@@ -155,7 +155,7 @@ async def test_human_card_goes_to_manager_and_comes_down(env):
         c = m.cards[7]
         assert c.esc_id and c.esc_mgr == mgr and c.esc_error is None
         rows = _acts(conn, "escalate")
-        assert len(rows) == 1 and rows[0][0] == mgr and rows[0][1].startswith("question:#merge:7# 세션 7 「일 하나」 합치기 카드 — 사람 승인이 필요합니다")
+        assert len(rows) == 1 and rows[0][0] == mgr and rows[0][1].startswith("question:#merge:7# 세션 7 「일 하나」 합치기 카드에 사람 승인이 필요합니다")
         assert "패널 [합치기]" in rows[0][1] and "마이그레이션" in rows[0][1]
         assert nt.sent and nt.sent[-1][0] == "escalate" and "#merge" not in nt.sent[-1][2]   # 알림 글에는 표시가 없다
         w = merge_waits(m)[7]

@@ -108,7 +108,7 @@ async def check(pointers: list[Pointer], repo: str, other: str | None = None,
         prob = _problem(p, repo)
         if prob:
             if other and other_note and os.path.realpath(other) != os.path.realpath(repo) and _problem(p, other) is None:
-                prob = f"{prob} — {other_note}"
+                prob = f"{prob}. {other_note}"
             p.ok, p.problem = False, prob
             continue
         f = _resolve(repo, p.path)

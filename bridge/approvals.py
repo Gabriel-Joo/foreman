@@ -50,7 +50,7 @@ def _questions_text(inp: dict[str, Any]) -> str:
         out.append(f"{i}. {head}{q.get('question') or ''}" + (" (여러 개 고름)" if q.get("multiSelect") else ""))
         for j, o in enumerate(q.get("options") or [], 1):
             if isinstance(o, dict):
-                out.append(f"   {j}) {o.get('label') or ''}" + (f" — {o['description']}" if o.get("description") else ""))
+                out.append(f"   {j}) {o.get('label') or ''}" + (f": {o['description']}" if o.get("description") else ""))
     return "\n".join(out)
 
 
@@ -280,7 +280,7 @@ class ApprovalManager:
         tuid, dec, _pid, summary = self.recent.get(_key(sid, tool, inp), (None, None, None, None))
         rule, reason = (dec.rule, dec.reason) if dec and dec.verdict == "ask" else ("cc", "CC가 묻는다(auto mode 분류기 · 설정)")
         if tool == "AskUserQuestion":
-            rule, reason = "질문", "세션이 사용자에게 묻는 질문입니다 — 패널의 선택지나 그 세션의 대화창에서 답합니다"
+            rule, reason = "질문", "세션이 사용자에게 묻는 질문입니다. 패널의 선택지나 그 세션의 대화창에서 답합니다"
         if not summary:   # CC 자체가 묻는 것에도 — 규칙이 아니라 명령을 본다
             summary = self._summary(tool, inp, rule, reason, p.get("cwd"))
         target = self.mask.text(_target(tool, inp)) or ""

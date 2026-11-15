@@ -103,7 +103,7 @@ class Previews:
             e = await self._start(project, wt_path)
         except Refused as ex:
             if was_dead:
-                raise Refused(f"미리보기가 죽어 있습니다 — {was_dead}. 다시 띄우지 못했습니다: {ex}") from ex
+                raise Refused(f"미리보기가 죽어 있습니다({was_dead}). 다시 띄우지 못했습니다: {ex}") from ex
             raise
         self.dead.pop(wt_path, None)
         return e | ({"restarted": True, "was_dead": was_dead} if was_dead else {})

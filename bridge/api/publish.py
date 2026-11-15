@@ -142,7 +142,7 @@ async def publish_do(body: PublishIn, request: Request) -> JSONResponse:
                 ds.hold(body.project, body.path, e.edits, e.url)
             except Exception:  # noqa: BLE001
                 pass
-        return JSONResponse({"refused": f"{e} — git에 옮기거나 [Notion 수정 버리고 덮기]를 눌러 주세요", "edits": e.edits[:10],
+        return JSONResponse({"refused": f"{e}. git에 옮기거나 [Notion 수정 버리고 덮기]를 눌러 주세요", "edits": e.edits[:10],
                              "url": e.url}, status_code=409)
     except OutOfScope as e:
         return JSONResponse({"refused": str(e)}, status_code=409)
@@ -157,5 +157,5 @@ async def publish_do(body: PublishIn, request: Request) -> JSONResponse:
                               f"{rule.prefix if rule else '[' + body.project + ']'} Notion 게시 실패 — {body.path}: {e}")
             except Exception:  # noqa: BLE001 — 알림 실패가 응답을 막지 않는다
                 pass
-        return JSONResponse({"refused": f"Notion이 거부했습니다 — {e}"}, status_code=502)
+        return JSONResponse({"refused": f"Notion이 거부했습니다: {e}"}, status_code=502)
     return JSONResponse(r)

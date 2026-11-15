@@ -72,7 +72,7 @@ async def start(body: StartIn, request: Request) -> JSONResponse:
         plan = body.plan
         if plan is None:
             if not body.use_saved:
-                raise Refused("계획(plan)이 없습니다 — 저장된 계획으로 시작하려면 use_saved: true")
+                raise Refused("계획(plan)이 없습니다. 저장된 계획으로 시작하려면 use_saved: true")
             plan = await d.saved_plan(body.dispatch_id)
         inbox = list(body.inbox_ids or plan.get("inbox_ids") or []) + ([body.inbox_id] if body.inbox_id else [])
         out = await d.start(body.dispatch_id, plan, inbox_id=inbox or None)
@@ -86,7 +86,7 @@ async def start(body: StartIn, request: Request) -> JSONResponse:
 def _handover(request: Request) -> Any:
     h = getattr(request.app.state, "handover", None)
     if h is None or not h.cfg.enabled:
-        raise HTTPException(503, "관리자에게 넘기기가 꺼져 있습니다 — config/managers.toml [handover] enabled")
+        raise HTTPException(503, "관리자에게 넘기기가 꺼져 있습니다(config/managers.toml [handover] enabled)")
     return h
 
 

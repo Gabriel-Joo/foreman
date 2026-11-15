@@ -510,7 +510,7 @@ class ForemanDispatcher:
             await self._finish(did, None, "failed", f"{PLAN_TIMEOUT_S:.0f}초 안에 계획을 받지 못했습니다", t0)
             raise Refused(f"{PLAN_TIMEOUT_S:.0f}초 안에 계획을 받지 못했습니다") from None
         except OSError as e:
-            why = f"claude를 띄우지 못했습니다: {e}" + (f" — PATH에 {self.claude_bin}가 없습니다(브리지 서비스의 PATH 확인)"
+            why = f"claude를 띄우지 못했습니다: {e}" + (f". PATH에 {self.claude_bin}가 없습니다(브리지 서비스의 PATH 확인)"
                                                        if isinstance(e, FileNotFoundError) else "")
             await self._finish(did, None, "failed", why, t0)
             raise Refused(why) from None
@@ -530,7 +530,7 @@ class ForemanDispatcher:
             kind, detail = diagnose(p.returncode, result, err.decode(errors="replace"), j)
             why = FAIL_WHY[kind]
             m = Masker()
-            rec = m.text(f"{why} [{kind}]" + (f" — {detail}" if detail else "") + "\n답 앞부분: " + (result or "")[:400]) or why
+            rec = m.text(f"{why} [{kind}]" + (f": {detail}" if detail else "") + "\n답 앞부분: " + (result or "")[:400]) or why
             log.warning("계획 받기 실패 dispatch=%s [%s] %s", did, kind, (m.text(detail) or "")[:300])
             await self._finish(did, None, "failed", rec, t0)
             raise Refused(f"{why}. 다시 물어보거나 직접 골라 주세요")
@@ -560,7 +560,7 @@ class ForemanDispatcher:
         plan.pop("read_only_set", None)
         plan["sessions"] = ss
         if plan.get("project") not in names and plan["mode"] != "ask":
-            warn.append(f"모르는 프로젝트 {plan.get('project')!r} — 사람이 골라 주세요"); plan["mode"] = "ask"
+            warn.append(f"모르는 프로젝트 {plan.get('project')!r}입니다. 사람이 골라 주세요"); plan["mode"] = "ask"
         plan["repo"] = names.get(plan.get("project"))
         async with self.engine.connect() as c:
             if plan.get("summary_id"):
@@ -568,12 +568,12 @@ class ForemanDispatcher:
                                           "JOIN `character` ch ON ch.id = cs.character_id LEFT JOIN project p ON p.id = ch.project_id "
                                           "WHERE s.id = :i"), {"i": plan["summary_id"]})).first()
                 if not r or r[0] != "ok" or r[1] != plan.get("project"):
-                    warn.append(f"인계 요약 {plan['summary_id']}을(를) 쓸 수 없습니다(없거나 다른 프로젝트) — 비웠습니다"); plan["summary_id"] = None
+                    warn.append(f"인계 요약 {plan['summary_id']}을(를) 쓸 수 없습니다(없거나 다른 프로젝트). 비웠습니다"); plan["summary_id"] = None
             if plan.get("attach_session"):
                 r = (await c.execute(text("SELECT cc_session_id FROM character_session WHERE id = :i"), {"i": plan["attach_session"]})).first()
                 ls = live_sessions(self.sessions_dir).get(r[0]) if r else None
                 if not ls or ls.state == "T" or not _tmux_env(ls.pid):
-                    warn.append(f"세션 {plan['attach_session']}에 보낼 수 없습니다(끝났거나 tmux 밖) — 새로 띄우기로 바꿨습니다")
+                    warn.append(f"세션 {plan['attach_session']}에 보낼 수 없습니다(끝났거나 tmux 밖). 새로 띄우기로 바꿨습니다")
                     plan["attach_session"] = None
                     plan["mode"] = "handoff" if plan.get("summary_id") else "new"
             # 노트 고치기 제안(11-08) — 그 프로젝트의 지금 노트와 맞춘다. 프로젝트를 바꾸면 다른 프로젝트 줄 제안은 빠진다
@@ -590,7 +590,7 @@ class ForemanDispatcher:
         if plan["mode"] == "attach" and sum(s["on"] for s in ss) > 1:
             for s in ss[1:]:
                 s["on"] = False
-            warn.append("보내기(attach)는 세션 하나에만 합니다 — 둘째 세션부터는 껐습니다")
+            warn.append("보내기(attach)는 세션 하나에만 합니다. 둘째 세션부터는 껐습니다")
         # 따로 작업(worktree, 11-05) — 그 프로젝트에 살아 있는 세션이 있으면 기본으로 켠다. 사람이 카드에서 끌 수 있다.
         # 둘째 세션부터는 첫 세션이 살아 있게 되니 기본으로 켠다(11-11)
         repo = plan.get("repo")
@@ -709,11 +709,11 @@ class ForemanDispatcher:
                 st or "", "없는 계획입니다"))
         plan = await self.check(dict(plan), dispatch_id)
         if plan["mode"] == "ask":
-            raise Refused("되묻는 계획입니다 — 질문에 답해 다시 물어보거나 직접 골라 주세요")
+            raise Refused("되묻는 계획입니다. 질문에 답해 다시 물어보거나 직접 골라 주세요")
         ss = plan["sessions"]
         on = [i for i, s in enumerate(ss) if s["on"]]
         if not on:
-            raise Refused("켠 세션이 없습니다 — 하나 이상 켜 주세요")
+            raise Refused("켠 세션이 없습니다. 하나 이상 켜 주세요")
         for i in on:
             if not ss[i]["first_prompt"].strip():
                 raise Refused("넣을 첫 글이 비었습니다" + (f"(세션 {i + 1})" if len(ss) > 1 else ""))
@@ -755,7 +755,7 @@ class ForemanDispatcher:
             out["failed"] = [{"idx": i, "title": ss[i]["title"], "error": e} for i, e in errs.items()]
             out["note"] = (f"{out.get('note') or ''} " + " ".join(
                 f"세션 {i + 1}「{ss[i]['title'] or ss[i]['role']}」은 띄우지 못했습니다({e[:120]})." for i, e in errs.items())
-                + " 띄운 세션은 그대로 둡니다 — 못 띄운 것은 새 계획으로 다시 띄워 주세요.").strip()
+                + " 띄운 세션은 그대로 둡니다. 못 띄운 것은 새 계획으로 다시 띄워 주세요.").strip()
         head = await _git(plan["repo"], "rev-parse", "HEAD") if plan.get("repo") else ""
         async with self.engine.begin() as c:
             await c.execute(text("UPDATE dispatch SET edited = :e, status = 'started', started_at = NOW(3), session_id = :s, project = :p WHERE id = :i"),
@@ -999,7 +999,7 @@ def diagnose(rc: int | None, result: str, err: str, j: dict[str, Any] | None) ->
     if LIMIT_RE.search(result) or LIMIT_RE.search(err) or j.get("api_error_status") == 429:
         return "limit", (result or err)[:200]
     if rc or j.get("is_error"):
-        return "call", f"종료 코드 {rc}" + (f" · {j.get('subtype')}" if j.get("subtype") else "") + f" — {(err or result)[:200]}"
+        return "call", f"종료 코드 {rc}" + (f" · {j.get('subtype')}" if j.get("subtype") else "") + f": {(err or result)[:200]}"
     if not result.strip():
         return "empty", f"stderr: {err[:200]}" if err.strip() else ""
     if "{" not in result:

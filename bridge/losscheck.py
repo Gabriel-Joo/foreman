@@ -317,7 +317,7 @@ def summarize(items: list[dict[str, Any]]) -> dict[str, int]:
     return dict(Counter(x["status"] for x in items))
 
 
-NO_COMPACT = "압축된 적이 없습니다 — 볼 것이 없습니다"
+NO_COMPACT = "압축된 적이 없습니다. 볼 것이 없습니다"
 OUTCOMES = ("running", "found", "clean", "nothing", "partial", "failed")
 
 
@@ -377,7 +377,7 @@ class LossChecker:
         from sqlalchemy import text
         async with self.m.engine.begin() as c:
             r = await c.execute(text("UPDATE loss_check SET status = 'failed', error = :e WHERE status = 'running'"),
-                                {"e": "브리지가 다시 떠서 멈췄습니다 — 다시 눌러 주세요"})
+                                {"e": "브리지가 다시 떠서 멈췄습니다. 다시 눌러 주세요"})
         return r.rowcount or 0
 
     async def _save(self, lid: int, **kw: Any) -> None:

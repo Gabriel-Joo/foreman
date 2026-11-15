@@ -146,11 +146,11 @@ def judge_bg(s: Sample, now: datetime) -> list[dict[str, Any]]:
         name = (b.get("description") or b.get("task") or "").strip()[:60]
         run = fmt_elapsed(now - since)
         if never:
-            detail = f"「{name}」이 {run}째 돌고 있습니다 — 아직 출력이 한 번도 없습니다(끝에서만 출력하는 명령일 수 있습니다)"
+            detail = f"「{name}」이 {run}째 돌고 있습니다. 아직 출력이 한 번도 없습니다(끝에서만 출력하는 명령일 수 있습니다)"
         elif mt is None:
-            detail = f"「{name}」이 {run}째 끝 알림 없이 돕니다 — 출력 파일을 찾지 못했습니다"
+            detail = f"「{name}」이 {run}째 끝 알림 없이 돕니다. 출력 파일을 찾지 못했습니다"
         else:
-            detail = f"「{name}」이 {run}째 돌고 출력이 {fmt_elapsed(now - mt)}째 그대로입니다 — 멈췄을 수 있습니다"
+            detail = f"「{name}」이 {run}째 돌고 출력이 {fmt_elapsed(now - mt)}째 그대로입니다. 멈췄을 수 있습니다"
         out.append({"kind": "bg_long", "label": LABEL["bg_long"], "since": since, "detail": detail,
                     "key": f"stall:bg_long:{s.sid}:{b.get('task')}", "task": b.get("task"), "stalled": mt is not None})
     return out
@@ -190,7 +190,7 @@ def judge_dialog(s: Sample, now: datetime, since: datetime | None = None) -> lis
 
     if not s.screen:
         if s.cc_status == "waiting" and not s.pending:
-            return item("dialog", "CC가 사람을 기다린다고 적었는데 브리지가 기다리는 승인이 없습니다(화면은 못 읽었습니다) — "
+            return item("dialog", "CC가 사람을 기다린다고 적었는데 브리지가 기다리는 승인이 없습니다(화면은 못 읽었습니다). "
                                   "그 세션의 대화창에 창이 떠 있을 수 있습니다")
         return []
     kind, name = screen_state(s.screen)
@@ -199,7 +199,7 @@ def judge_dialog(s: Sample, now: datetime, since: datetime | None = None) -> lis
     if name == "끝내기 확인" or EXIT_RE.search(s.screen):
         return item("exit_confirm", "CC가 뒤에서 도는 일을 멈출지 묻고 기다립니다(1 멈추고 끝내기 · 2 뒤로 보내고 끝내기 · 3 남기)")
     if kind == "dismiss":
-        return item("notice", (f"「{name}」 " if name else "") + "안내 창이 떠 있어 세션이 입력을 못 받습니다 — 대화창을 확인해 주세요")
+        return item("notice", (f"「{name}」 " if name else "") + "안내 창이 떠 있어 세션이 입력을 못 받습니다. 대화창을 확인해 주세요")
     if s.pending:
         return []                                  # 패널에 카드가 이미 있다
     if kind == "unknown" and s.cc_status != "waiting":
@@ -207,7 +207,7 @@ def judge_dialog(s: Sample, now: datetime, since: datetime | None = None) -> lis
     what = f"「{name}」 창" if name else "알 수 없는 창"
     st, at = s.last_appr or (None, None)
     quiet = kind == "decision" and st == "timeout" and at is not None and now - at < TIMEOUT_QUIET
-    return item("dialog", f"{what}이 떠 있는데 패널에는 기다리는 승인이 없습니다 — 그 세션의 대화창에서 답해야 이어집니다"
+    return item("dialog", f"{what}이 떠 있는데 패널에는 기다리는 승인이 없습니다. 그 세션의 대화창에서 답해야 이어집니다"
                 + (" (화면 승인은 대기 시간이 지나 닫혔습니다)" if quiet else ""), notify=not quiet)
 
 
@@ -227,7 +227,7 @@ def judge(s: Sample, now: datetime, exit_since: datetime | None = None) -> list[
     if s.busy and s.last_event and now - s.last_event >= SILENT:
         tool, target = s.last_tool or (None, None)
         mins = int((now - s.last_event).total_seconds() // 60)
-        add("silent", s.last_event, f"{mins}분째 대화 기록에 줄이 없습니다 — 마지막 도구 {tool or '?'}"
+        add("silent", s.last_event, f"{mins}분째 대화 기록에 줄이 없습니다. 마지막 도구 {tool or '?'}"
             + (f" {target[:80]}" if target else "") + "가 끝나지 않았을 수 있습니다")
     if s.turn_started:
         if s.same and s.same[2] >= LOOP_SAME:

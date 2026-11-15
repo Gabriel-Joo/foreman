@@ -195,7 +195,7 @@ async def save_progress(wt_path: str, message: str) -> dict[str, Any]:
     rc, out = await git(wt_path, "commit", "-q", "-m", message, check=False)
     if rc:
         await git(wt_path, "reset", "-q", check=False)       # 올려 둔 것을 내린다 — 작업 트리는 그대로
-        raise Refused(f"커밋하지 못했습니다 — {out[-300:] or 'git commit 실패'}. 세션은 끝내지 않았습니다")
+        raise Refused(f"커밋하지 못했습니다: {out[-300:] or 'git commit 실패'}. 세션은 끝내지 않았습니다")
     _, h = await git(wt_path, "rev-parse", "--short", "HEAD")
     return {"commit": h, "files": len(keep), "skipped": skipped}
 
@@ -283,20 +283,20 @@ def check_title(style: str, title: str) -> str:
     if not t:
         raise Refused("제목이 비어 있습니다")
     if "\n" in t or "\r" in t:
-        raise Refused("제목은 한 줄이어야 합니다 — 원래 커밋 목록은 본문에 저절로 들어갑니다")
+        raise Refused("제목은 한 줄이어야 합니다. 원래 커밋 목록은 본문에 저절로 들어갑니다")
     p = plain_title(t)
     if style == "conventional":
         if not CONV_RE.match(t):
-            raise Refused("이 저장소의 커밋 꼴은 `타입: 설명`입니다(예: feat: 챗봇 검색 색인) — 제목이 그 꼴이 아닙니다")
+            raise Refused("이 저장소의 커밋 꼴은 `타입: 설명`입니다(예: feat: 챗봇 검색 색인). 제목이 그 꼴이 아닙니다")
         if t.endswith("."):
             raise Refused("이 저장소의 커밋 제목은 마침표로 끝내지 않습니다")
         m = CONV_RE.match(p)
         if not m:
-            raise Refused("설명이 비어 있습니다 — 기호를 쉼표로 바꾸고 나니 남는 글이 없습니다")
+            raise Refused("설명이 비어 있습니다. 기호를 쉼표로 바꾸고 나니 남는 글이 없습니다")
         if len(m.group(3)) > CONV_DESC_MAX:
-            raise Refused(f"설명이 {len(m.group(3))}자입니다 — 이 저장소는 {CONV_DESC_MAX}자 안입니다")
+            raise Refused(f"설명이 {len(m.group(3))}자입니다. 이 저장소는 {CONV_DESC_MAX}자 안입니다")
     elif len(p) > FREE_TITLE_MAX:
-        raise Refused(f"제목이 {len(p)}자입니다 — {FREE_TITLE_MAX}자 안으로 넘겨 주세요")
+        raise Refused(f"제목이 {len(p)}자입니다. {FREE_TITLE_MAX}자 안으로 넘겨 주세요")
     return t
 
 
@@ -406,14 +406,14 @@ async def merge(repo: str, name: str, squash: bool | None = None, *, title: str 
         ref = SQUASH_REF + tip[:12]
         rrc, rout = await git(repo, "update-ref", "-m", f"foreman squash {sq[:12]}", ref, tip, check=False)
         kept = (f" 원래 커밋은 `git log {ref}`로 봅니다." if rrc == 0
-                else f" 원래 커밋 ref({ref})를 남기지 못했습니다 — {rout[-200:]}. 본문의 제목 · 날짜만 남습니다.")
+                else f" 원래 커밋 ref({ref})를 남기지 못했습니다: {rout[-200:]}. 본문의 제목 · 날짜만 남습니다.")
         # 원본 끝 트리 = 브랜치 트리일 때만 브랜치를 -D로 지운다. 아니면 브랜치를 남기고 그렇다고 알린다(조용히 잃지 않게)
         rc, _ = await git(repo, "diff", "--quiet", base, branch, check=False)
         await remove(repo, name, force=False, drop_branch=rc == 0)
         head = msg.split("\n", 1)[0]
         return {"ok": True, "merged": st["ahead"], "commits": st["commits"], "squash": sq[:12], "into": sq[:12], "title": head,
                 "orig_ref": ref if rrc == 0 else None,
-                "note": f"{base}에 커밋 {st['ahead']}개를 커밋 하나({sq[:8]} 「{head}」)로 묶어 합쳤습니다(squash — 본문에 원래 날짜 · 해시 · 제목)."
+                "note": f"{base}에 커밋 {st['ahead']}개를 커밋 하나({sq[:8]} 「{head}」)로 묶어 합쳤습니다(squash, 본문에 원래 날짜 · 해시 · 제목)."
                         + kept + ("" if rc == 0 else f" 트리가 달라 브랜치 {branch}는 지우지 않고 남겼습니다.")
                         + (f" {changed}" if changed else "") + " push는 하지 않았습니다."}
     # 11-14 화면 갈래 — 합친 뒤 원본 끝 커밋(rebase로 해시가 바뀌었을 수 있다)과 그 제목. 카드가 push 여부를 이 해시로 본다

@@ -58,7 +58,7 @@ def test_check_notes_other_side(tmp_path):
     (wt / "docs" / "a.md").write_text("# a\n", encoding="utf-8")                 # worktree가 뒤처졌다
     body = "## 읽을 곳\n- docs/a.md 「새 절」 — x\n- docs/a.md 「아무 데도 없는 절」 — y\n"
     ps = asyncio.run(ptr.check(ptr.parse(body), str(wt), other=str(main), other_note="worktree가 뒤처졌습니다"))
-    assert not ps[0].ok and ps[0].problem.endswith("— worktree가 뒤처졌습니다")
+    assert not ps[0].ok and ps[0].problem.endswith(". worktree가 뒤처졌습니다")
     assert not ps[1].ok and "뒤처졌" not in ps[1].problem
     ps = asyncio.run(ptr.check(ptr.parse(body), str(main), other=str(wt), other_note="worktree에만 있습니다"))
     assert ps[0].ok and not ps[1].ok and "worktree에만" not in ps[1].problem   # 원본 기준이면 새 절은 맞다

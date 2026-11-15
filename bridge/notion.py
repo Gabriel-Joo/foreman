@@ -41,7 +41,7 @@ class HumanEdited(Exception):
     """Notion에서 사람이 고친 블록이 있어 덮지 않았다(11-09) — git에 옮기면 풀리고, 버리려면 force로 다시 게시한다."""
 
     def __init__(self, path: str, edits: list[str], url: str | None = None) -> None:
-        super().__init__(f"Notion에서 사람이 고친 곳 {len(edits)}개가 있어 덮지 않았습니다 — {path}")
+        super().__init__(f"Notion에서 사람이 고친 곳 {len(edits)}개가 있어 덮지 않았습니다: {path}")
         self.path, self.edits, self.url = path, edits, url
 
 
@@ -462,7 +462,7 @@ class Scope:
         if not_root and norm(pid) == self.root:
             raise OutOfScope("FOREMAN 루트 페이지 자체는 고치거나 지울 수 없습니다")
         if not await self.under_root(pid):
-            raise OutOfScope("FOREMAN 페이지 아래가 아닙니다 — 건드리지 않습니다")
+            raise OutOfScope("FOREMAN 페이지 아래가 아닙니다. 건드리지 않습니다")
 
 
 # ── 게시기 ──────────────────────────────────────────────────
@@ -488,7 +488,7 @@ def git_show(repo: str, path: str, ref: str = "HEAD") -> tuple[str, str]:
     r = subprocess.run(["git", "-C", repo, "show", f"{ref}:{path}"], capture_output=True, text=True, timeout=15)
     if r.returncode != 0:
         where = "main" if ref == "HEAD" else ref
-        raise FileNotFoundError(f"{where}에 {path}가 없습니다 — 합친(push한) 뒤에 게시해 주세요")
+        raise FileNotFoundError(f"{where}에 {path}가 없습니다. 합친(push한) 뒤에 게시해 주세요")
     sha = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%h", ref, "--", path],
                          capture_output=True, text=True, timeout=15).stdout.strip()
     return r.stdout, sha
@@ -626,7 +626,7 @@ async def shape_patch(client: Any, pid: str, prev: list[dict[str, Any]], new: li
         hits = [k for k, x in enumerate(oc) if x == c]
         if not c or len(hits) != 1:
             raise HumanEdited(path, [f"git에서 바뀐 블록({what})이 Notion에서 {'빈 블록' if not c else f'{len(hits)}곳'}이라 "
-                                     f"자동으로 맞추지 않았습니다 — 그 자리를 Notion에서 직접 고치거나 [Notion 수정 버리고 덮기]"], url)
+                                     f"자동으로 맞추지 않았습니다. 그 자리를 Notion에서 직접 고치거나 [Notion 수정 버리고 덮기]"], url)
         return hits[0]
 
     def simple(b: dict[str, Any]) -> bool:
@@ -937,7 +937,7 @@ async def resolve_uploads(client: Any, repo: str, blocks: list[dict[str, Any]], 
         if "_upload" in b:
             data = git_bytes(repo, b["_upload"], ref)
             if limit and len(data) > limit:
-                raise OutOfScope(f"{b['_upload']}가 {len(data) / 1e6:.1f}MB로 Notion 파일 한도 {limit / 1e6:.1f}MB를 넘습니다 — "
+                raise OutOfScope(f"{b['_upload']}가 {len(data) / 1e6:.1f}MB로 Notion 파일 한도 {limit / 1e6:.1f}MB를 넘습니다. "
                                  "줄여서(tools/screen.py --colors · --every · --clip) 다시 커밋해 주세요")
             ext = PurePosixPath(b["_upload"]).suffix.lower()
             fid = await client.upload_file(PurePosixPath(b["_upload"]).name, data, CTYPES.get(ext, "image/png"))
@@ -1021,7 +1021,7 @@ class Publisher:
             mates = [r for r in rows if r[1] and r[0].rsplit("/", 1)[0] == folder]
             sib = {norm(r[1]) for r in mates}
             if len(sib) != 1:
-                raise OutOfScope(f"{folder}/의 부모 페이지를 정할 수 없습니다(게시된 형제 {len(rows)}편, 부모 {len(sib)}곳) — 만들지 않습니다: {path}")
+                raise OutOfScope(f"{folder}/의 부모 페이지를 정할 수 없습니다(게시된 형제 {len(rows)}편, 부모 {len(sib)}곳). 만들지 않습니다: {path}")
             parent = sib.pop()
             # 11-09 사용자 — Notion은 새 하위 페이지를 부모 끝에 붙인다(API로 자리를 못 정한다). 형제 중 가장 큰 번호보다 작으면
             # 사이드바 차례가 깨진다 → 만들지 않고 실패. 맨 뒤 번호만 만든다
@@ -1029,24 +1029,24 @@ class Publisher:
             last = max((k for r in mates if (k := file_order(r[0])) is not None), default=None)
             if key is None or (last is not None and key < last):
                 tail = f"(같은 폴더 마지막 번호 {last[0]:02d}{chr(96 + last[1]) if last[1] else ''})" if last else ""
-                raise OutOfScope(f"중간 번호라 자리를 정할 수 없습니다. 직접 만드십시오 — {path}{tail}")
+                raise OutOfScope(f"중간 번호라 자리를 정할 수 없습니다. 직접 만드십시오: {path}{tail}")
         title = None
         if self.new_title == "numbered":
             m = re.match(r"^(\d+)([a-z])?_", path.rsplit("/", 1)[-1])
             if not m:
-                raise OutOfScope(f"파일 이름에 번호가 없어 번호식 제목을 정할 수 없습니다(예: 19_x.md) — 만들지 않습니다: {path}")
+                raise OutOfScope(f"파일 이름에 번호가 없어 번호식 제목을 정할 수 없습니다(예: 19_x.md). 만들지 않습니다: {path}")
             num = m.group(1) + (f"-{ord(m.group(2)) - ord('a') + 1}" if m.group(2) else "")
             async with self.e.connect() as c:
                 src = (await c.execute(text(
                     "SELECT path FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' AND notion_page_id = :id"),
                     {"p": self.project, "id": parent})).first()
             if not src:
-                raise OutOfScope(f"부모 페이지의 원본 문서가 없어 이름을 정할 수 없습니다 — 만들지 않습니다: {path}")
+                raise OutOfScope(f"부모 페이지의 원본 문서가 없어 이름을 정할 수 없습니다. 만들지 않습니다: {path}")
             body, _ = git_show(self.repo, src[0], self.ref)
             names = [mm.group(1).strip() for ln in body.splitlines()
                      if (mm := re.match(rf"^\s*(?:[-*]\s+)?(?:\*\*)?{re.escape(num)}\.\s+(.+?)(?:\*\*)?\s*$", ln))]
             if not names:
-                raise OutOfScope(f"{src[0]}에 「{num}. …」 줄이 없어 제목을 정할 수 없습니다 — 그 목록에 한 줄 더한 뒤 맞춥니다: {path}")
+                raise OutOfScope(f"{src[0]}에 「{num}. …」 줄이 없어 제목을 정할 수 없습니다. 그 목록에 한 줄 더한 뒤 맞춥니다: {path}")
             title = f"{num}. {re.sub(r'[`*]', '', names[-1])}"
         return parent, title
 
@@ -1193,7 +1193,7 @@ class Publisher:
             # Notion에서 지워졌거나 범위 밖으로 옮겨졌다 — 그 페이지는 두고 새로 만든다
         if not self.create:
             # 11-09 펫퍼민트 — 사람이 옮겨 둔 페이지에만 맞춘다. 짝이 없거나 범위 밖이면 새로 만들지 않고 멈춘다(사용자: 새 페이지 0)
-            raise OutOfScope(f"짝 페이지가 없거나 범위 밖입니다 — 새 페이지를 만들지 않습니다(create = false): {path}")
+            raise OutOfScope(f"짝 페이지가 없거나 범위 밖입니다. 새 페이지를 만들지 않습니다(create = false): {path}")
         parent, planned = await self.new_page_plan(path)                # 정할 수 없으면 여기서 멈춘다(아무것도 쓰기 전)
         title = title if h1 else (planned or title)      # h1이 있으면 new_title = numbered보다 앞선다
         blocks = await resolve_uploads(self.c, self.repo, blocks, await self._upload_limit(), self.ref)
@@ -1299,10 +1299,10 @@ class Publisher:
         """내리기 = 휴지통. 우리가 만든 페이지이고 지금도 루트 아래일 때만."""
         if not self.archive_ok or not self.create:
             # 11-09 사용자: 새 페이지 만들기와 옛 페이지 지우기는 다른 기능 — archive = false면 create와 상관없이 막는다
-            raise OutOfScope("이 프로젝트는 페이지를 휴지통으로 보내지 않습니다(archive = false · create = false) — 사람이 보고 정합니다")
+            raise OutOfScope("이 프로젝트는 페이지를 휴지통으로 보내지 않습니다(archive = false · create = false). 사람이 보고 정합니다")
         row = await self._row(path)
         if not row or row["status"] != "published" or not row["notion_page_id"]:
-            raise OutOfScope("게시한 기록이 없는 글입니다 — 우리가 만든 페이지만 내립니다")
+            raise OutOfScope("게시한 기록이 없는 글입니다. 우리가 만든 페이지만 내립니다")
         await self.scope.require(row["notion_page_id"])
         await self.c.archive_page(row["notion_page_id"])
         await self._save(path, status="archived")
@@ -1312,7 +1312,7 @@ class Publisher:
         """옮기기 — 우리가 만든 글을 루트 아래 다른 묶음 페이지로. 글과 목적지 둘 다 지금 루트 아래여야 한다."""
         row = await self._row(path)
         if not row or row["status"] != "published" or not row["notion_page_id"]:
-            raise OutOfScope("게시한 기록이 없는 글입니다 — 우리가 만든 페이지만 옮깁니다")
+            raise OutOfScope("게시한 기록이 없는 글입니다. 우리가 만든 페이지만 옮깁니다")
         await self.scope.require(row["notion_page_id"])
         dest = await self._section(section)
         await self.scope.require(dest)
@@ -1358,7 +1358,7 @@ class Publisher:
         await self.scope.require(pid)
         left = [k for k in await self.c.children(pid) if k.get("type") == "child_page"]
         if left:
-            raise OutOfScope(f"「{name}」 아래에 페이지가 {len(left)}개 남아 있습니다 — 먼저 옮기거나 내려 주세요")
+            raise OutOfScope(f"「{name}」 아래에 페이지가 {len(left)}개 남아 있습니다. 먼저 옮기거나 내려 주세요")
         await self.c.archive_page(pid)
         await self._save(key, status="archived")
         return {"path": key, "action": "archived", "page_id": pid}

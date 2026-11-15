@@ -25,7 +25,7 @@ async def edit(iid: int, body: EditIn, request: Request) -> JSONResponse:
     except Refused as e:
         return JSONResponse({"refused": str(e)}, status_code=409)
     if not ok:
-        return JSONResponse({"refused": "새로인 할 일만 고칠 수 있습니다 — 이미 가져갔거나 버린 것입니다"}, status_code=409)
+        return JSONResponse({"refused": "새로인 할 일만 고칠 수 있습니다. 이미 가져갔거나 버린 것입니다"}, status_code=409)
     try:
         from bridge.api import coder
         coder.invalidate()

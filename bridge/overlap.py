@@ -358,12 +358,12 @@ async def merge_order(repo: str, branches: list[dict[str, Any]], main: str = "ma
             why.append(f"계획의 합칠 순서 {x['merge_order']}")
         why.append(f"다른 브랜치와 겹치는 파일 {touch[x['branch']]}개" if touch[x["branch"]] else "다른 브랜치와 겹치는 파일 없음")
         if x["uncommitted"]:
-            why.append(f"커밋 안 한 변경 {x['uncommitted']}개 — 커밋해야 합칠 수 있습니다")
-        reasons.append(f"{n}. {x['branch']} — " + " · ".join(why))
+            why.append(f"커밋 안 한 변경 {x['uncommitted']}개, 커밋해야 합칠 수 있습니다")
+        reasons.append(f"{n}. {x['branch']}: " +" · ".join(why))
     for p in pairs:
         if p["conflict"]:
             later = next(x["branch"] for x in reversed(ordered) if x["branch"] in (p["a"], p["b"]))
-            reasons.append(f"⚠ {p['a']} · {p['b']}가 부딪칩니다({', '.join(p['files'][:5])}) — {later}는 앞 것을 합친 뒤 main을 가져와 풀어야 합니다")
+            reasons.append(f"⚠ {p['a']} · {p['b']}가 부딪칩니다({', '.join(p['files'][:5])}). {later}는 앞 것을 합친 뒤 main을 가져와 풀어야 합니다")
     return {"branches": info, "pairs": pairs, "order": [x["branch"] for x in ordered], "reasons": reasons, "errors": errors}
 
 

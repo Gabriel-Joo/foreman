@@ -371,7 +371,7 @@ class Promoter:
         offset = os.path.getsize(path) if os.path.exists(path) else 0
         res = await deliver(row.cc, prompt, sessions_dir=self.m.sessions_dir, transcript=path)
         if not res.get("delivered"):
-            raise Refused("제출이 확인되지 않았습니다 — 입력 칸에 남았을 수 있습니다")
+            raise Refused("제출이 확인되지 않았습니다. 입력 칸에 남았을 수 있습니다")
         return path, offset, (res["delivered"] or {}).get("prompt_id")
 
     async def _wait(self, row: ho.SessionRow, tag: str, req: str, path: str, offset: int,
@@ -407,7 +407,7 @@ class Promoter:
             summary_id = loss_check_id = None
         elif summary_id is None and loss_check_id is None and (cand := await self.inputs(row, 2)):
             if len(cand) > 1:
-                raise Refused("같이 넣을 것이 여럿입니다 — 하나를 고르거나 「넣지 않음」을 골라 주세요")
+                raise Refused("같이 넣을 것이 여럿입니다. 하나를 고르거나 「넣지 않음」을 골라 주세요")
             if cand[0].get("kind") == "loss":
                 loss_check_id = cand[0]["loss_check_id"]
             else:
@@ -474,7 +474,7 @@ class Promoter:
         repo = await ho.repo_root(row.cwd)
         bad = [(it, ck) for it in approved if not (ck := check_dest(it, repo))["ok"]]
         if bad:
-            raise Refused("목적지가 틀렸습니다 — " + "; ".join(f"#{it['id']} {it['dest']}: {ck['problem']}" for it, ck in bad))
+            raise Refused("목적지가 틀렸습니다. " +"; ".join(f"#{it['id']} {it['dest']}: {ck['problem']}" for it, ck in bad))
         if await self._busy(row.id) or await self.m._pending(row.id):
             raise Refused("이미 이 세션에 요약 · 문서 적기 요청을 기다리는 중입니다")
         base = await ptr._git(repo or "", "rev-parse", "HEAD")
@@ -504,7 +504,7 @@ class Promoter:
                 out, why = None, "결과 블록이 JSON 객체가 아닙니다"
         res = await verify(repo, base, out, approved, wall)
         if why and body is None:
-            res["problems"].insert(0, f"결과 블록 없음 — {why}")
+            res["problems"].insert(0, f"결과 블록 없음: {why}")
             res["ok"] = False
         await self._save(pid, status="written" if res["ok"] else "write_failed", result=res, commit_sha=res["commit"],
                          raw=texts, error=None if res["ok"] else "; ".join(res["problems"])[:512])

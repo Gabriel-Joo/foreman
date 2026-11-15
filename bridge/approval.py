@@ -90,8 +90,8 @@ class Policy:
         d = self._decide(tool, tool_input or {}, cwd, scratchpad)
         if d is None:
             if pp.unmatched == "ask":
-                return Decision("ask", "unmatched", f"규칙에 없는 {tool} — 이 프로젝트는 규칙에 없으면 묻는다")
-            return Decision("pass", "unmatched", "규칙에 없음 — CC가 정한다")
+                return Decision("ask", "unmatched", f"규칙에 없는 {tool}. 이 프로젝트는 규칙에 없으면 묻는다")
+            return Decision("pass", "unmatched", "규칙에 없음(CC가 정한다)")
         return d
 
     def _decide(self, tool: str, inp: dict[str, Any], cwd: str | None, scratchpad: str | None) -> Decision | None:
@@ -102,11 +102,11 @@ class Policy:
             return Decision("ask", "민감한-경로", f"{tool}: 비밀이 든 파일({s})")
         if tool in EDIT_TOOLS and isinstance(path, str) and path and (s := self._match(path, cwd, self.protect)):
             if self.protect_mode == "notify":
-                return Decision("allow", "규칙파일-편집", f"{tool}: 안전 규칙 · 설정 파일 편집 — 묻지 않고 텔레그램으로 알림({s})")
+                return Decision("allow", "규칙파일-편집", f"{tool}: 안전 규칙 · 설정 파일 편집, 묻지 않고 텔레그램으로 알림({s})")
             # 11-03 "늘 Yes"(10번 모두 Edit 도구로 approval.toml) — 바뀐 내용이 터미널 · 기록에 그대로 보이는 도구 편집은
             # 통과시키고 텔레그램으로 알린다(approvals.py). 게이트를 통째로 끌 수 있는 파일(settings.json · hook 스크립트)은 계속 묻는다
             if self._match(path, cwd, self.protect_tool_ok):
-                return Decision("allow", "규칙파일-편집", f"{tool}: 안전 규칙 파일을 도구로 고친다 — 내용이 보인다, 텔레그램으로 알림({s})")
+                return Decision("allow", "규칙파일-편집", f"{tool}: 안전 규칙 파일을 도구로 고친다. 내용이 보인다, 텔레그램으로 알림({s})")
             return Decision("ask", "보호-설정파일", f"{tool}: 안전 규칙 · 설정 파일 쓰기({s})")
         if tool in self.allow_tools:
             return Decision("allow", f"도구-{tool}", f"{tool}는 읽기 전용")
@@ -134,14 +134,14 @@ class Policy:
         if (d := self._ask_patterns(scan)):
             return d
         if self.ambiguous_verb and (m := self.ambiguous_verb.search(scan)):
-            return Decision("ask", "애매한-운영명령", f"동사 자리가 변수 · 명령 치환({_short(m.group(0).strip(), 40)}) — 무엇을 할지 확정할 수 없다")
+            return Decision("ask", "애매한-운영명령", f"동사 자리가 변수 · 명령 치환({_short(m.group(0).strip(), 40)}). 무엇을 할지 확정할 수 없다")
         if self.secret_mode == "send":
             if (d := self._secret_send(scan)):
                 return d
         else:
             for head, tok in _path_tokens(scan):   # 경로 토큰마다(공백 뒤 .env도)
                 if any(s.search(tok) for s in self.sensitive) and (head in self.secret_readers or "@" in tok):
-                    return Decision("ask", "민감한-경로", f"Bash: 비밀이 든 파일을 찍거나 옮긴다 — 한번 찍히면 되돌릴 수 없다({head} {_short(tok, 50)})")
+                    return Decision("ask", "민감한-경로", f"Bash: 비밀이 든 파일을 찍거나 옮긴다. 한번 찍히면 되돌릴 수 없다({head} {_short(tok, 50)})")
             # 해석기로 들어가는 heredoc(python - <<EOF …)이 비밀 파일 경로를 쥐고 그 파일을 쓰거나 내용을 바로 찍는다.
             # (11-02 다시 돌려 보기에서 찾은 빈틈: python heredoc으로 .env.db를 쓰는 명령이 어느 규칙에도 걸리지 않았다.
             #  읽기만 하는 것 — 앱이 설정을 읽는 x = open('.env').read() — 은 5단계 결정대로 묻지 않는다)
@@ -155,15 +155,15 @@ class Policy:
         segs = _segments(scan)
         if segs is None:
             if self.delete_outside and re.search(r"(^|[\s;&|(])rm\s", scan):
-                return Decision("ask", "애매한-삭제", "rm이 있는데 명령을 나눌 수 없다(따옴표 등) — 무엇을 지울지 확정할 수 없다")
-            return Decision("pass", "규칙파일-편집", f"Bash: 안전 규칙 · 설정 파일 쓰기 — 묻지 않고 알림({rule_file})") if rule_file else None
+                return Decision("ask", "애매한-삭제", "rm이 있는데 명령을 나눌 수 없다(따옴표 등). 무엇을 지울지 확정할 수 없다")
+            return Decision("pass", "규칙파일-편집", f"Bash: 안전 규칙 · 설정 파일 쓰기, 묻지 않고 알림({rule_file})") if rule_file else None
         notes: list[str] = []
         if (d := self._segments_ask(segs, cwd, scratchpad, depth, notes, _literal_env(orig))):
             return d
         rule_file = rule_file or (notes[0] if notes else None)
         if rule_file:
             # 규칙 파일을 Bash로 고친다 — 묻지 않는다(pass: 나머지는 CC가 정한다). 대신 텔레그램 🛡 알림(approvals.py)
-            return Decision("pass", "규칙파일-편집", f"Bash: 안전 규칙 · 설정 파일 쓰기 — 묻지 않고 알림({rule_file})")
+            return Decision("pass", "규칙파일-편집", f"Bash: 안전 규칙 · 설정 파일 쓰기, 묻지 않고 알림({rule_file})")
         if any(x in orig for x in ("$(", "`", "<(", ">(")):
             return None                            # 명령 치환 — 무엇이 실행될지 확실하지 않다. allow하지 않는다(지우기 전 원문으로 본다)
         if self._all_allowed(segs, depth):
@@ -247,7 +247,7 @@ class Policy:
                     if a.startswith("-"):
                         continue
                     if "$" in a or "`" in a:
-                        return Decision("ask", "애매한-삭제", f"지울 경로에 변수가 있다({_short(a, 40)}) — 무엇을 지울지 확정할 수 없다")
+                        return Decision("ask", "애매한-삭제", f"지울 경로에 변수가 있다({_short(a, 40)}). 무엇을 지울지 확정할 수 없다")
                     if self._where(a, here, scratchpad) != "inside":
                         return Decision("ask", "작업트리-밖-삭제", f"작업 트리 밖 삭제({_short(_abs(a, here), 60)})")
         return None
@@ -344,7 +344,7 @@ class Policy:
                 empty = re.sub(r"\$\{?\w+\}?", "", empty)
                 if "\0" not in empty and empty.startswith("/") and \
                         (why := self._protected_delete(empty, here)):
-                    return f"{_short(a, 40)} — 변수가 비면 {why}"
+                    return f"{_short(a, 40)}: 변수가 비면 {why}"
             if not prefix:
                 return None
             if not prefix.startswith(("/", "~")) and here is None:
@@ -354,7 +354,7 @@ class Policy:
                 return None                          # 상대 경로(작업 폴더 안 $x) · 경로가 아닌 글자(따옴표가 꼬인 조각)
             p = os.path.normpath(_abs(base.rstrip("/") or "/", here))
             if self._is_whole(p, unknown=True):
-                return f"{_short(a, 50)} — 변수 값에 따라 {_short(p, 40)} 또는 그 바로 아래를 통째로 지운다"
+                return f"{_short(a, 50)}: 변수 값에 따라 {_short(p, 40)} 또는 그 바로 아래를 통째로 지운다"
             return None
         if not tok.startswith(("/", "~")) and here is None:
             return None                              # vagrant ssh 안쪽의 상대 경로 — VM 쪽이라 모른다
@@ -363,7 +363,7 @@ class Policy:
         if any(ch in last for ch in "*?["):
             p = os.path.dirname(p)                   # X/* — X의 내용 전부
             if self._is_whole(p) or p in self.delete_containers:
-                return f"{_short(a, 50)} — {_short(p, 40)} 안을 통째로 지운다"
+                return f"{_short(a, 50)}: {_short(p, 40)} 안을 통째로 지운다"
             return None
         if tok.endswith("/") and os.path.islink(p.rstrip("/")):
             p = os.path.realpath(p)

@@ -255,7 +255,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if not (allcfg.get("foreman") or {}).get("root"):
                 app.state.publisher_off = "config/notion.toml에 루트 페이지가 없습니다"
             elif not tok:
-                app.state.publisher_off = "Notion 토큰이 없습니다 — .env.notion에 NOTION_TOKEN을 넣고 브리지를 다시 띄워 주세요"
+                app.state.publisher_off = "Notion 토큰이 없습니다. .env.notion에 NOTION_TOKEN을 넣고 브리지를 다시 띄워 주세요"
             else:
                 client = NotionClient(tok)          # 프로젝트끼리 한 클라이언트(요청 간격 · 초당 한도를 같이 지킨다)
                 async with engine.connect() as c:

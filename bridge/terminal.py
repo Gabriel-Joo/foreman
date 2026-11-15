@@ -632,7 +632,7 @@ class TerminalManager:
         if ls is None:
             return no("세션이 끝나 CC 화면이 없습니다(살아 있는 CC 프로세스가 없습니다)")
         if ls.state == "T":
-            return no("멈춰 둔(Ctrl+Z) 세션이라 열지 않습니다 — 사용자가 일부러 멈춰 둔 세션입니다")
+            return no("멈춰 둔(Ctrl+Z) 세션이라 열지 않습니다. 사용자가 일부러 멈춰 둔 세션입니다")
         te = _tmux_env(ls.pid)
         if te is None:
             return no("tmux 밖에서 도는 세션이라 세션 화면을 볼 수 없습니다")
@@ -843,7 +843,7 @@ class TerminalManager:
                               **({} if ok else {"output": body[-3000:]})})
         self.publish({"type": "terminal_result", "request_id": r.id, "session_id": r.session_id, "ok": ok,
                       "exit": ec, "msg": "세션에 전달했다" + (" (대기열)" if info.get("queued") else "") if ok
-                      else f"세션에 전달 못 함 — {why}", "output": None if ok else body[-3000:]})
+                      else f"세션에 전달 못 함: {why}", "output": None if ok else body[-3000:]})
         self.on_change()
 
     async def _session_target(self, session_id: int) -> tuple[str | None, str | None]:
@@ -919,7 +919,7 @@ class TerminalManager:
             if len(cur) == 2 and cur[1] == "1":
                 await tmux(self.socket, "send-keys", "-t", t, "-X", "cancel")   # 복사 모드에서 나온다
             if cur[0] != "bash":
-                return False, f"셸이 다른 일을 하는 중({cur[0]}) — 직접 붙여넣는다"
+                return False, f"셸이 다른 일을 하는 중({cur[0]}), 직접 붙여넣는다"
             await tmux(self.socket, "send-keys", "-t", t, "C-e", "C-u")
             await tmux(self.socket, "send-keys", "-t", t, "-l", "--", r.fill)
             if r.left:

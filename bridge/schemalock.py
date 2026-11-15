@@ -132,7 +132,7 @@ class SchemaLock:
             return None
         if r.returncode or r.stdout.strip():
             return None
-        why = f"적용 · 커밋 끝 — migrations/ {len(files)}개가 모두 DB에 적용됐고(마지막 {files[-1]}) 커밋 안 한 변경이 없습니다"
+        why = f"적용 · 커밋 끝. migrations/ {len(files)}개가 모두 DB에 적용됐고(마지막 {files[-1]}) 커밋 안 한 변경이 없습니다"
         self.released[project] = {"cc": h["cc"], "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "why": why}
         self.release(project)
         return why

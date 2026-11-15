@@ -14,7 +14,7 @@ def test_safeguard_with_request_id():
     c = classify(SAFEGUARD, "invalid_request")
     assert (c["kind"], c["detail"], c["request_id"]) == ("safeguard", "reasoning_extraction", "req_011CgtKkMaLMkhEyDRTbEGka")
     line = one_line(c)
-    assert line.startswith("안전 분류기 거부 [reasoning_extraction] · req_011CgtKkMaLMkhEyDRTbEGka — /model")
+    assert line.startswith("안전 분류기 거부 [reasoning_extraction] · req_011CgtKkMaLMkhEyDRTbEGka. 할 일: /model")
     assert "http" not in line                              # URL은 싣지 않는다
 
 

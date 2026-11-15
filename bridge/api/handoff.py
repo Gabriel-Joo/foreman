@@ -80,7 +80,7 @@ async def handoff_view(sid: int, request: Request) -> dict[str, Any]:
             out["promotions"] = await m.promote.list(sid)
             out["promote_inputs"] = await m.promote.inputs(row)
         except Exception as e:  # noqa: BLE001 — 표가 없을 때(0020 전)도 인계 칸은 떠야 한다. 화면에 사유를 보인다
-            out["promotions_error"] = f"대화 결정 문서에 적기 목록을 읽지 못했습니다({type(e).__name__}) — 마이그레이션 0020 · 0021을 적용했는지 확인해 주세요"
+            out["promotions_error"] = f"대화 결정 문서에 적기 목록을 읽지 못했습니다({type(e).__name__}). 마이그레이션 0020 · 0021을 적용했는지 확인해 주세요"
     out["losschecks"], out["losschecks_error"] = [], None
     lc = getattr(m, "losscheck", None)
     if lc is not None:
@@ -88,7 +88,7 @@ async def handoff_view(sid: int, request: Request) -> dict[str, Any]:
             out["losschecks"] = await lc.list(sid)
             out["controls"]["losscheck"] = not any(x["status"] == "running" for x in out["losschecks"])
         except Exception as e:  # noqa: BLE001 — 0021 전에도 인계 칸은 뜬다
-            out["losschecks_error"] = f"잃은 것 점검을 읽지 못했습니다({type(e).__name__}) — 마이그레이션 0021을 적용했는지 확인해 주세요"
+            out["losschecks_error"] = f"잃은 것 점검을 읽지 못했습니다({type(e).__name__}). 마이그레이션 0021을 적용했는지 확인해 주세요"
     # 합치기 승인 카드(11-11 1물결 A, bridge/mergeprep.py) — 켜져 있을 때만. 꺼져 있으면 None
     mp = getattr(m, "mergeprep", None)
     out["merge_prep"] = ({"card": mp.card_for(sid), "health": mp.health, "stage": mp.cfg.stage} if mp is not None else None)
@@ -357,7 +357,7 @@ async def spawn_new(body: NewIn, request: Request) -> JSONResponse:
             "worktree": body.worktree, "files": body.files}
     try:
         if body.first_prompt and body.summary_id is not None:
-            raise Refused("첫 입력과 옮기기용 요약은 같이 줄 수 없습니다 — 하나만 골라 주세요")
+            raise Refused("첫 입력과 옮기기용 요약은 같이 줄 수 없습니다. 하나만 골라 주세요")
         r = await _mgr(request).spawn_new(body.cwd, body.summary_id, body.title, worktree=body.worktree,
                                           role=body.role, model=body.model or None, first_prompt=body.first_prompt or None)
     except Refused as e:
@@ -383,7 +383,7 @@ async def worktree_act(sid: int, body: WorktreeIn, request: Request) -> JSONResp
         if (body.action == "merge" and card is not None and getattr(request.state, "token_scope", None) is not None
                 and card.human_why):
             # 11-12 — 늘-사람 카드를 프로젝트 토큰(관리자)이 이 길로 돌아 합치지 못하게. 관리 토큰(사람 화면)은 그대로
-            raise Refused("이 세션의 합치기 카드는 사람 승인입니다 — 까닭: " + "; ".join(card.human_why))
+            raise Refused("이 세션의 합치기 카드는 사람 승인입니다. 까닭: " + "; ".join(card.human_why))
         r = await m.worktree_act(row, body.action, end=body.end, title=body.title if body.action == "merge" else None)
     except Refused as e:
         return _refused(e)

@@ -199,7 +199,7 @@ def human_reasons(changes: list[dict[str, str]], messages: str, yaml_diff: str, 
     if rules.deletions:
         gone = [ch["path"] for ch in changes if ch["status"] == "D"]
         if gone:
-            why.append(f"지우기 — 파일 {len(gone)}개를 지움: {', '.join(gone[:5])}" + (" …" if len(gone) > 5 else ""))
+            why.append(f"지우기(파일 {len(gone)}개를 지움): {', '.join(gone[:5])}" + (" …" if len(gone) > 5 else ""))
     if rules.submodules:
         sub = [ch["path"] for ch in changes if "160000" in (ch["old_mode"], ch["new_mode"])]
         if sub:
@@ -207,7 +207,7 @@ def human_reasons(changes: list[dict[str, str]], messages: str, yaml_diff: str, 
     low = messages.lower()
     words = [w for w in rules.history_words if w.lower() in low]
     if words:
-        why.append(f"이력 다시 쓰기 · force push — 커밋 글에 「{'」 · 「'.join(words[:4])}」")
+        why.append(f"이력 다시 쓰기 · force push(커밋 글에 「{'」 · 「'.join(words[:4])}」)")
     return why
 
 
@@ -599,7 +599,7 @@ class MergePrep:
                     async with self.engine.connect() as cn:
                         rows = (await cn.execute(text("SELECT session_id, card FROM merge_card"))).all()
             except Exception as e:  # noqa: BLE001 — 못 읽어도 브리지 · 훑기는 돈다(카드는 다시 만든다)
-                self._store_bad(f"합치기 카드를 DB에서 되살리지 못했습니다({type(e).__name__}: {str(e)[:160]}) — 카드는 다시 "
+                self._store_bad(f"합치기 카드를 DB에서 되살리지 못했습니다({type(e).__name__}: {str(e)[:160]}). 카드는 다시 "
                                 "만들지만 정리 후보 · 「오래됨」 시각 · 합친 카드가 사라졌을 수 있습니다", "load")
                 self._restored = True
                 return 0
@@ -614,7 +614,7 @@ class MergePrep:
                 self._saved[int(sid)] = card_json(c)   # DB에 있는 그대로 — 바뀌면 다시 쓴다
                 if c.status == "merging":
                     c.status = "failed"
-                    c.error = "합치는 중에 브리지가 다시 떴습니다 — 결과를 모릅니다. git log · 작업방을 확인해 주세요"
+                    c.error = "합치는 중에 브리지가 다시 떴습니다. 결과를 모릅니다. git log · 작업방을 확인해 주세요"
                     c.updated_at = _iso(_now())
                 cur = self.cards.get(int(sid))
                 if cur is not None:                    # 되살리기 전에 턴 끝이 먼저 만든 카드 — 같은 커밋이면 처음 시각을 잇는다
@@ -657,7 +657,7 @@ class MergePrep:
                             await cn.execute(text("DELETE FROM merge_card WHERE session_id IN :s")
                                              .bindparams(bindparam("s", expanding=True)), {"s": gone})
             except Exception as e:  # noqa: BLE001 — 저장 실패가 카드 · 합치기를 막지 않는다
-                self._store_bad(f"합치기 카드를 DB에 남기지 못했습니다({type(e).__name__}: {str(e)[:160]}) — 카드는 메모리로 돌지만 "
+                self._store_bad(f"합치기 카드를 DB에 남기지 못했습니다({type(e).__name__}: {str(e)[:160]}). 카드는 메모리로 돌지만 "
                                 "브리지를 다시 띄우면 사라집니다", "save")
                 return
             for sid, (_, js) in put.items():
@@ -718,7 +718,7 @@ class MergePrep:
     def esc_text(self, c: Card) -> str:
         why = "; ".join(c.human_why) if c.human_why else (c.note or "이 프로젝트의 합치기 승인자는 사람입니다")
         cf = f" 충돌 파일 {len(c.conflict)}개." if c.conflict else ""
-        return (f"세션 {c.sid} 「{c.title or ''}」 합치기 카드 — 사람 승인이 필요합니다(사유: {why}).{cf} "
+        return (f"세션 {c.sid} 「{c.title or ''}」 합치기 카드에 사람 승인이 필요합니다(사유: {why}).{cf} "
                 f"패널 [합치기]를 눌러 주십시오(세션 {c.sid} 패널 「세션 정리」 탭)")
 
     async def _esc_manager(self, c: Card) -> int | None:
@@ -901,7 +901,7 @@ class MergePrep:
         row = await self.h.session(sid)
         if row is None or await self.h._running_work(row, pid):
             return None
-        return "보고 옴 — 일하지 않고 응답을 마쳤습니다"
+        return "보고 옴(일하지 않고 응답을 마쳤습니다)"
 
     async def _asks(self, sid: int) -> dict[str, Any] | None:
         """마지막 응답이 사람에게 묻는 말이면 {at, tail, event_id}(대시보드 「답 기다림」과 같은 판정). 사람이 [답 안 해도 됨]으로
@@ -990,15 +990,15 @@ class MergePrep:
             try:
                 card.human_why = await self._human_why(repo, st["base"], st["branch"], project)
             except Exception as e:  # noqa: BLE001 — 가르지 못하면 사람에게(안전한 쪽)
-                card.human_why = [f"늘-사람 판정 실패({type(e).__name__}) — 사람 승인으로 둡니다"]
+                card.human_why = [f"늘-사람 판정 실패({type(e).__name__}), 사람 승인으로 둡니다"]
             mgr = await self.manager_of(repo)
             if card.human_why:
-                card.note = "사람 승인 카드입니다 — 승인자는 관리자지만 늘 사람에게 올릴 것에 걸렸습니다: " + "; ".join(card.human_why)
+                card.note = "사람 승인 카드입니다. 승인자는 관리자지만 늘 사람에게 올릴 것에 걸렸습니다: " + "; ".join(card.human_why)
             elif mgr is None:
                 card.note = "승인자는 관리자지만 살아 있는 관리자 세션이 없어 사람이 승인합니다."
             else:
                 card.approver = "manager"
-                card.note = "관리자가 승인합니다 — 관리자 세션에 카드를 알렸습니다. 사람 화면(승인 막대 · 말풍선 · [합치기])에는 띄우지 않습니다."
+                card.note = "관리자가 승인합니다. 관리자 세션에 카드를 알렸습니다. 사람 화면(승인 막대 · 말풍선 · [합치기])에는 띄우지 않습니다."
         if old is None or old.head != card.head:
             await self.h._act(sid, ACT_CARD, None, True, f"{name} {card.head[:8]} " + ("충돌 " + ",".join(conflict)[:300] if conflict else "충돌 없음")
                               + (" · 묻는 말 있음" if asks else "") + (" · 턴 끝" if via == "turn_end" else " · 훑기")
@@ -1194,10 +1194,10 @@ class MergePrep:
     def _manager_may(self, c: Card, what: str) -> None:
         """관리자가 승인 · 미루기를 해도 되는가(11-12). 안 되면 Refused — 까닭을 적는다."""
         if self.cfg.approver_of(c.project) != "manager":
-            raise Refused(f"이 프로젝트({c.project or '모름'})의 합치기 승인자는 사람입니다 — 관리자는 {what}할 수 없습니다"
+            raise Refused(f"이 프로젝트({c.project or '모름'})의 합치기 승인자는 사람입니다. 관리자는 {what}할 수 없습니다"
                           "(config/handoff.toml [merge_prep.per_project] approver)")
         if c.human_why:
-            raise Refused(f"이 카드는 사람 승인입니다 — 관리자는 {what}할 수 없습니다. 까닭: " + "; ".join(c.human_why))
+            raise Refused(f"이 카드는 사람 승인입니다. 관리자는 {what}할 수 없습니다. 까닭: " + "; ".join(c.human_why))
 
     async def skip(self, sid: int, by: str = "human") -> dict[str, Any]:
         """[나중에] — 이 브랜치 끝 커밋이 바뀌기 전까지 카드를 다시 띄우지 않는다."""
@@ -1211,16 +1211,16 @@ class MergePrep:
         await self.sync()
         if self.on_change:
             self.on_change()
-        return {"ok": True, "note": "카드를 치웠습니다 — 이 세션이 새로 커밋하면 다시 만듭니다."}
+        return {"ok": True, "note": "카드를 치웠습니다. 이 세션이 새로 커밋하면 다시 만듭니다."}
 
     async def docs_done(self, sid: int, by: str = "human") -> dict[str, Any]:
         """정리 후보를 다 골랐다(11-13 사용자) — 합친 카드를 바로 치운다(DB merge_card에서도). 안 부르면 지금처럼 keep_docs_h 뒤 치운다.
         합친 카드만 — 대기 · 충돌 카드는 skip(나중에)으로 치운다."""
         c = self.cards.get(sid)
         if not c:
-            raise Refused("치울 합치기 카드가 없습니다 — 이미 치웠거나 시간이 지나 사라졌습니다")
+            raise Refused("치울 합치기 카드가 없습니다. 이미 치웠거나 시간이 지나 사라졌습니다")
         if c.status != "merged":
-            raise Refused(f"합친 카드가 아닙니다(지금 {c.status}) — 정리 후보는 합친 뒤에 고릅니다. 대기 카드를 치우려면 skip")
+            raise Refused(f"합친 카드가 아닙니다(지금 {c.status}). 정리 후보는 합친 뒤에 고릅니다. 대기 카드를 치우려면 skip")
         dn = len((c.docs or {}).get("readme") or []) + len((c.docs or {}).get("docs") or [])
         await self.h._act(sid, ACT_DOCS, None, True, f"{c.name} {c.head[:8]} 정리 후보 {dn}개 · {by}")
         del self.cards[sid]
@@ -1241,9 +1241,9 @@ class MergePrep:
     async def _approve(self, sid: int, by: str, title: str | None = None) -> dict[str, Any]:
         c = self.cards.get(sid)
         if not c or c.status not in ("ready", "conflict_sent", "conflict_manager", "failed"):
-            raise Refused("승인할 합치기 카드가 없습니다 — 카드가 사라졌거나 이미 합치는 중입니다")
+            raise Refused("승인할 합치기 카드가 없습니다. 카드가 사라졌거나 이미 합치는 중입니다")
         if not c.head:
-            raise Refused("준비가 실패한 카드입니다 — 사유를 보고 다음 훑기를 기다리거나 패널 [합치기]로 합칩니다")
+            raise Refused("준비가 실패한 카드입니다. 사유를 보고 다음 훑기를 기다리거나 패널 [합치기]로 합칩니다")
         if by == "manager":
             self._manager_may(c, "승인")
         c.approved_by = by
@@ -1254,12 +1254,12 @@ class MergePrep:
             st = await self._git_facts(c.repo, c.name)
             if not st.get("exists"):
                 del self.cards[sid]
-                raise Refused("작업방이 없습니다 — 이미 합쳤거나 버렸습니다")
+                raise Refused("작업방이 없습니다. 이미 합쳤거나 버렸습니다")
             if st["dirty"]:
-                raise Refused(f"커밋 안 된 변경이 {len(st['dirty'])}개 생겼습니다 — 그 세션이 커밋한 뒤 카드가 다시 뜹니다. 아무것도 하지 않았습니다")
+                raise Refused(f"커밋 안 된 변경이 {len(st['dirty'])}개 생겼습니다. 그 세션이 커밋한 뒤 카드가 다시 뜹니다. 아무것도 하지 않았습니다")
             if st["head"] != c.head:
                 del self.cards[sid]
-                raise Refused("카드를 만든 뒤 브랜치에 커밋이 더 생겼습니다 — 다음 훑기에서 새 카드를 만듭니다. 아무것도 하지 않았습니다")
+                raise Refused("카드를 만든 뒤 브랜치에 커밋이 더 생겼습니다. 다음 훑기에서 새 카드를 만듭니다. 아무것도 하지 않았습니다")
             if title is not None:            # 끝내기 · 충돌 넘기기 전에 — 꼴이 틀린 제목으로 세션만 끝나는 일이 없게
                 title = await wt.check_title_for(c.repo, st["base"], title)
             live = bool(row.cc and row.cc in live_sessions(self.sessions_dir))
@@ -1318,7 +1318,7 @@ class MergePrep:
                 return None
             _, files = await wt.git(path, "diff", "--name-only", "--diff-filter=U", check=False)
             await wt.git(path, "rebase", "--abort", check=False)
-            return sorted(set(files.splitlines())) or ["(rebase 중 충돌 — 파일 이름을 읽지 못함)"]
+            return sorted(set(files.splitlines())) or ["(rebase 중 충돌, 파일 이름을 읽지 못함)"]
         finally:
             await wt.git(repo, "worktree", "remove", "--force", path, check=False)
             await wt.git(repo, "worktree", "prune", check=False)
@@ -1337,7 +1337,7 @@ class MergePrep:
             ok = await self._deliver(row.cc, row.cwd, msg)
             c.status = "conflict_sent"
             c.note = ("세션을 끝내지 않고 그 세션에 「main을 가져와 풀라」를 보냈습니다." if ok
-                      else "그 세션에 보내지 못했습니다 — 입력 칸을 확인해 주세요.")
+                      else "그 세션에 보내지 못했습니다. 입력 칸을 확인해 주세요.")
             if not ok:
                 c.error = c.note
                 self._notify(c, f"mergeprep:cfail:{c.sid}:{c.head[:12]}", f"⚠ 충돌 풀기를 보내지 못함 — 「{c.title or c.sid}」(세션 {c.sid})")
@@ -1346,7 +1346,7 @@ class MergePrep:
             c.manager_told = await self._tell_manager(c, (
                 f"[FOREMAN 합치기] {who} 세션 {c.sid} 「{c.title or ''}」의 {c.branch} 합치기를 승인했는데 {c.base}와 충돌한다(파일: {files}). "
                 f"그 세션은 끝났다 — 관리자가 원본 폴더에서 풀어 합친다(docs/11_worktree.md 「6.」). 시험 · push도 관리자 몫이다."))
-            c.note = "세션이 끝나 관리자에게 충돌 풀기를 넘겼습니다." if c.manager_told else "세션이 끝났고 관리자 세션도 없어 넘기지 못했습니다 — 텔레그램으로 알렸습니다."
+            c.note = "세션이 끝나 관리자에게 충돌 풀기를 넘겼습니다." if c.manager_told else "세션이 끝났고 관리자 세션도 없어 넘기지 못했습니다. 텔레그램으로 알렸습니다."
         await self.h._act(c.sid, ACT_CONFLICT, None, c.status == "conflict_sent" and not c.error or bool(c.manager_told),
                           f"{c.name} {c.head[:8]} {files}"[:500])
         if self.on_change:
@@ -1393,7 +1393,7 @@ class MergePrep:
         """2단계 자리 — 승인 뒤 시험 → push → 승인 대기 0 확인 → 브리지 다시 띄우기 → 화면 점검. 사용자가 1단계를 써 본 뒤 정한다.
         stage = 2로 켜도 지금은 아무것도 하지 않고 그렇다고 남긴다(조용히 넘어가지 않게)."""
         if self.cfg.stage >= 2:
-            c.note = (c.note or "") + " (2단계는 아직 만들지 않았습니다 — 시험 · push는 관리자가 합니다.)"
+            c.note = (c.note or "") + " (2단계는 아직 만들지 않았습니다. 시험 · push는 관리자가 합니다.)"
             log.warning("merge_prep stage=2지만 2단계는 아직 없다 — 합치기까지만 했다(세션 %s)", c.sid)
 
     # ── 알리기 ──

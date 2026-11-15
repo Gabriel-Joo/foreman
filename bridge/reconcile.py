@@ -80,7 +80,7 @@ async def sweep(engine: Any, sessions_dir: Any, repo_map: dict[str, str | None] 
                 _, dirty = await wt.git(d, "status", "--porcelain", check=False)
                 n_dirty = len([ln for ln in dirty.splitlines() if ln.strip()])
                 if not r:
-                    add("orphan", project, str(d), f"작업방 {d.name} — 이 폴더를 쓴 세션이 없습니다"
+                    add("orphan", project, str(d), f"작업방 {d.name}: 이 폴더를 쓴 세션이 없습니다"
                         + (f"(커밋 안 된 변경 {n_dirty}개)" if n_dirty else ""))
                     continue
                 sid = int(r[0])
@@ -95,9 +95,9 @@ async def sweep(engine: Any, sessions_dir: Any, repo_map: dict[str, str | None] 
                     st = await wt.in_base(repo, d.name) if (wt_root / d.name).is_dir() else None
                     if st:
                         # 11-13 — 앞선 커밋 0 · 변경 0 · 세션 끝남: 어긋남이 아니라 치우기만 하면 되는 빈 worktree
-                        add("empty", project, str(d), f"빈 작업방 {d.name} — 세션 {sid}이 끝났고 커밋이 모두 원본에 들어 있으며 변경이 없습니다", sid)
+                        add("empty", project, str(d), f"빈 작업방 {d.name}: 세션 {sid}이 끝났고 커밋이 모두 원본에 들어 있으며 변경이 없습니다", sid)
                         continue
-                    add("orphan", project, str(d), f"세션 {sid}이 합치기 · 쉬게 하기 없이 끝났습니다 — 작업방 {d.name}"
+                    add("orphan", project, str(d), f"세션 {sid}이 합치기 · 쉬게 하기 없이 끝났습니다(작업방 {d.name})"
                         + (" (합치지 않은 커밋이 있습니다)" if st is False else ""), sid)
             # 쉬게 하기 기록이 실제와 다름(받은 할 일 #17 판정 그대로)
             for sid, cwd in (await c.execute(text(
@@ -107,7 +107,7 @@ async def sweep(engine: Any, sessions_dir: Any, repo_map: dict[str, str | None] 
                     {"pp": str(wt_root).replace("%", r"\%").replace("_", r"\_") + "/%"})).all():
                 why = await cr.rest_stale(engine, int(sid), cwd)
                 if why:
-                    add("stale_rest", project, f"rest:{sid}", f"세션 {sid}의 「합치기 기다림」 — {why}", int(sid))
+                    add("stale_rest", project, f"rest:{sid}", f"세션 {sid}의 「합치기 기다림」: {why}", int(sid))
         # worktree 없이 남은 cc/* 브랜치
         _, branches = await wt.git(repo, "branch", "--list", f"{wt.BRANCH_PREFIX}*", "--format=%(refname:short)", check=False)
         for b in branches.split():
@@ -115,7 +115,7 @@ async def sweep(engine: Any, sessions_dir: Any, repo_map: dict[str, str | None] 
             if (wt_root / name).is_dir():
                 continue
             merged = await wt.in_base(repo, name)
-            add("branch", project, f"{repo}:{b}", f"브랜치 {b}만 남았습니다(작업방 없음) — "
+            add("branch", project, f"{repo}:{b}", f"브랜치 {b}만 남았습니다(작업방 없음). "
                 + ("원본에 들어 있어 지워도 됩니다" if merged else "원본에 없는 커밋이 있습니다(합치지 않은 일)"))
         # git이 아는데 폴더가 없는 worktree
         _, wl = await wt.git(repo, "worktree", "list", "--porcelain", check=False)
