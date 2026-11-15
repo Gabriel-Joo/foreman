@@ -34,7 +34,8 @@ export function modelMenuHtml(models, model, busy) {
   return '<div class="mdl-head">이 세션의 모델</div>' + items
     + (busy ? '<div class="small warn">작업 중입니다. 대기열에 들어가 지금 작업이 끝난 뒤 바뀝니다.</div>' : '')
     + '<div class="small muted">대화가 쌓인 세션은 바꾼 뒤 첫 응답이 전체 대화를 다시 읽느라 느리고 토큰이 더 들 수 있습니다.</div>'
-    + '<div class="small muted">이 세션만 바뀝니다. 브리지가 다시 떠도, 이 세션을 이어서 띄우거나 새 세션으로 옮겨도 바꾼 모델을 그대로 씁니다.</div>';
+    + '<div class="small muted">다른 세션은 바뀌지 않습니다. 이 세션이 이어지는 동안에는 바꾼 모델을 씁니다. 브리지가 다시 뜰 때, 새 세션으로 옮기거나 이어서 띄우면 바뀐 모델이 적용됩니다.</div>'
+    + '<div class="small muted">[+ 세션]으로 따로 띄우는 세션은 이 값을 따르지 않습니다.</div>';
 }
 
 // role · model <select> 한 쌍을 묶는다. 역할이 바뀌면(사람이 모델을 안 건드렸을 때만) 기본값으로

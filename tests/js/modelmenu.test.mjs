@@ -26,7 +26,9 @@ test('창 글 — 사용자가 고친 글, 속 이야기 · 가운뎃점 없음'
   assert.match(h, /<div class="mdl-head">이 세션의 모델<\/div>/);
   assert.doesNotMatch(h, /\/model|브리지가 대신|되돌립니다|·/);
   assert.match(h, /토큰이 더 들 수 있습니다\./);
-  assert.match(h, /이 세션만 바뀝니다\. 브리지가 다시 떠도/);
+  assert.match(h, /다른 세션은 바뀌지 않습니다\. 이 세션이 이어지는 동안에는 바꾼 모델을 씁니다\./);
+  assert.match(h, /바뀐 모델이 적용됩니다\.<\/div><div class="small muted">\[\+ 세션\]으로 따로 띄우는 세션은 이 값을 따르지 않습니다\./);
+  assert.doesNotMatch(h, /이 세션만 바뀝니다/);
   // 지금 모델은 Opus 5 하나만
   assert.equal((h.match(/class="cur"/g) || []).length, 1);
   assert.match(h, /data-id="claude-opus-5" data-label="Opus 5" class="cur"><span><b>Opus 5<\/b> <span class="muted">\(지금\)<\/span>/);
