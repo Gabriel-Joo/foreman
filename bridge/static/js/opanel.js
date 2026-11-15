@@ -79,7 +79,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         </div>
       </div>
       <form id="pForm" class="input" hidden>
-        <div id="pGrip" class="pgrip" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="입력 칸 높이" data-tip="높이 조절 — 끌어서 입력 칸 높이를 바꿉니다. 눌러서 고른 뒤 ↑↓로도 바꿉니다. 더블클릭하면 원래 높이로 돌아갑니다."></div>
+        <div id="pGrip" class="pgrip" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="입력 칸 높이" data-tip="높이 조절 — 끌어서 입력 칸 높이를 바꿉니다. 클릭한 뒤 ↑↓로도 바꿉니다. 더블클릭하면 원래 높이로 돌아갑니다."></div>
         <button type="button" id="pAskHint" class="ghost small pask" data-tip="입력 칸 — 세션이 질문의 답을 기다리는 동안은 질문 카드의 글 칸으로 보냅니다. 누르면 이 입력 칸을 펼칩니다.">질문에 답하는 중: 글은 질문 카드의 글 칸으로 · 입력 칸 펼치기</button>
         <textarea id="pText" rows="6"placeholder="이 세션에 보낼 입력 (Ctrl+Enter로 보냅니다)"></textarea>
         <div class="row prow">
