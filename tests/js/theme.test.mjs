@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { matchTool, resolveAction, infraAction, groupSubagents, tokenRate, viewState, bgCount } from '../../bridge/static/js/theme.js';
+import { ROLE_CLOTH, themeCloth } from '../../bridge/static/js/roles.js';
 
 test('기다림 — IDLE인데 서브에이전트 · 백그라운드가 돌면 WAITING, 자는 모습으로 떨어지지 않는다(11-06)', () => {
   const s = { state: 'IDLE', subagents_running: 0, background: [{ task: 'b1', tool: 'Bash' }] };
@@ -32,7 +33,7 @@ test('서기(12a) — 네 테마에 잉크 갈색, 쉴 때는 읽는 구역에�
   }
   for (const [name, zone] of Object.entries(want)) {
     const t = JSON.parse(readFileSync(new URL(`../../bridge/static/themes/${name}/theme.json`, import.meta.url)));
-    assert.equal(t.roles.colors.scribe, '#b0713a', name);
+    assert.equal(themeCloth(t).scribe, '#b0713a', name);
     const idle = resolveAction(t, { state: 'IDLE', role: 'scribe' });
     assert.equal(idle.go, zone, name);
     assert.equal(idle.anim, 'read', name);
@@ -141,13 +142,16 @@ test('잘못된 target 정규식은 안 맞는 것으로', () => {
 });
 
 test('역할 색 이름은 DB · 디스패처와 같다(11-05 — 전에는 lead · builder …라 실제 세션 색이 한 번도 안 맞았다)', () => {
-  // scribe = 12a 서기, manager = 11-09 관리자, designer = 11-10 디자이너(bridge/foreman.py ROLES)
+  // 11-15부터 옷 색은 roles.js ROLE_CLOTH 한 표 + 테마가 덮은 값(themeCloth). 테마는 표에 있는 역할만 덮는다(오타 막기)
   const ROLES = ['foreman', 'coder', 'inspector', 'scribe', 'manager', 'designer', 'helper'];
+  assert.deepEqual(Object.keys(ROLE_CLOTH).sort(), [...ROLES].sort());
   for (const name of ['office', 'magic', 'site', 'plain']) {
     const t = JSON.parse(readFileSync(new URL(`../../bridge/static/themes/${name}/theme.json`, import.meta.url)));
-    assert.deepEqual(Object.keys(t.roles.colors).sort(), [...ROLES].sort(), name);
+    for (const k of Object.keys(t.roles.colors || {})) assert.ok(ROLES.includes(k), `${name}: 표에 없는 역할 ${k}`);
+    const cloth = themeCloth(t);
+    assert.deepEqual(Object.keys(cloth).sort(), [...ROLES].sort(), name);
     // 역할 색끼리 겹치지 않는다(11-10 디자이너를 더할 때) — 끈 · 망토 색만으로 역할을 알아보게
-    const cs = Object.values(t.roles.colors).map((c) => c.toLowerCase());
+    const cs = Object.values(cloth).map((c) => c.toLowerCase());
     assert.equal(new Set(cs).size, cs.length, `${name} 역할 색 겹침`);
   }
 });

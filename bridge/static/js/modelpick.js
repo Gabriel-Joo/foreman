@@ -1,9 +1,11 @@
 // 모델 고르기(11-05) — [+ 세션] 창 · 포먼 계획 카드가 같이 쓴다. 목록 · 역할 기본값은 /api/spawn/options의 models(config/models.toml).
 // 역할을 바꾸면 모델도 그 역할의 기본값으로 따라간다 — 사람이 모델을 직접 고른 뒤에는 따라가지 않는다.
+import { SESSION_ROLES, ROLE_LABEL, ROLE_DESC } from './roles.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-export const ROLE_PICK = { coder: '코더 — 고치기 · 만들기', inspector: '조사 — 읽고 알아보기, 결과 log만 쓰기', scribe: '서기 — 문서와 포트폴리오', manager: '관리자 — 합치기 · 시험 · push · 기록', designer: '디자이너 — 화면 · 테마 · 캐릭터' };
+// 역할 고르기 칸 글 「이름 — 한 줄 설명」. 이름 · 설명 · 순서는 roles.js 한 곳(11-15 — 전에는 여기 · ROLE_LABEL · 교장 지시문에 따로 있었다)
+export const ROLE_PICK = Object.fromEntries(SESSION_ROLES.map((r) => [r, `${ROLE_LABEL[r]} — ${ROLE_DESC[r]}`]));
 // 11-09 scribe가 빠져 있어 교장이 서기 계획(role scribe)을 내도 계획 카드 칸이 첫 값(코더)으로 보였다 — 그대로 시작하면 코더로 떴다
 
 export function modelOptions(models, cur, role) {

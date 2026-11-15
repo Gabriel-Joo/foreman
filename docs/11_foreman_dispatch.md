@@ -130,7 +130,7 @@
 - 값 `manager`, 화면 "관리자". `foreman`은 감독실 교장 · 팀장 캐릭터(세션 없는 계획 창구)라 섞지 않는다
 - 하는 일: **코드를 고치지 않고 다른 세션의 일을 거둔다** — 교장 경로로 세션 띄우기 · 합치기 · 시험 · push · 브리지 다시 띄우기 · 화면 점검 · 기록. 직접 고쳐도 되는 것은 CLAUDE.md 「작업 규칙」의 셋뿐(11-09 사용자)
 - 교장 계획 프롬프트(`bridge/foreman.py`): "상주 세션이 아니다. 사람이 그런 일을 콕 집어 맡길 때만 고른다(코드를 고치는 일이면 coder)". 모델 기본 `claude-opus-5-5`(`config/models.toml`, 11-14 전 `opus` 별칭)
-- 역할 목록 다섯 곳을 맞춘다 — 바꾸면 모두: `bridge/handoff.py` `ROLE_KO` · `bridge/foreman.py` `ROLES` · `bridge/api/handoff.py` `SessionRole` · `bridge/wake.py` `ROLE_KO` · `config/models.toml [defaults]`. 시험 `tests/test_session_role.py`가 일치를 본다. 화면 목록 `bridge/static/js/modelpick.js` `ROLE_PICK`에도 관리자 · 서기(서기가 빠져 있어 교장의 서기 계획이 코더로 떴을 빈틈을 같이 막음)
+- 역할 목록은 11-15부터 파이썬 `bridge/roles.py`, 화면 `bridge/static/js/roles.js` 두 한 곳이다(전에는 `ROLE_KO` 세 벌 · `ROLES` · `SessionRole` · `ROLE_PICK` · `ROLE_LABEL`에 따로). 교장 지시문 「3. role」의 역할 한 줄 설명도 `roles.py`에서 만든다(화면 역할 고르기 칸과 같은 글). 시험 `tests/test_roles_agree.py`가 둘과 `config/models.toml [defaults]`의 일치를 본다. 새 역할 더하는 순서는 `docs/roles.md` 「3.」
 - 인계(새 세션으로 옮기기)는 역할을 물려준다 — 관리자 → 관리자
 - **관리자는 늘 원본 폴더, 하나**(11-11 아홉): `spawn_new`가 관리자를 worktree로 띄우는 것을 거절하고 `will_worktree(role="manager")`는 False, 계획 check도 관리자 세션의 따로 작업 기본값을 끈다(`bridge/handoff.py` · `bridge/foreman.py`). 원본 폴더에 관리자가 이미 살아 있으면 둘째를 거절한다(`manager_conflict`) [log:merge_misplaced_admin_20261111.md]
 - **역할 바꾸기 `PUT /api/sessions/{sid}/role {role}`**: 허용 값만(`foreman` · 모르는 값 · null은 422), 없는 세션 404, 거부 409 `{refused}`. `character_session.role`과 **그 역할 캐릭터도 같이 옮긴다**(원본 폴더 "관리자", worktree "관리자 <이름>") — 역할만 바꾸면 아래 줄이 "코더 foreman-3 · 관리자"처럼 엇갈린다. `session_action` `role` "옛 → 새 캐릭터 N". 같은 역할이면 아무것도 쓰지 않는다

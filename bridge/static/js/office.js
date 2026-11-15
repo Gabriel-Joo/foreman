@@ -16,6 +16,7 @@ import { uiScale } from './uiscale.js';
 import { wrapWords } from './wrap.js';
 import { applyGrid, INFRA_STAGES, gridProblems } from './grid.js';
 import { auraOf, auraStyle, drawAura, poseDrop } from './aura.js';
+import { themeCloth, clothColor } from './roles.js';
 import { STACK_GAP, column, stackCandidates, stackCover, pickStack, overTop, liftsOver, leapOver, nearBoxes, seatHost, isSide, freeColumn } from './overhead.js';
 
 // 픽셀 화면 글씨(화면 좌표로 그리는 것 — 구역 · 캐릭터 이름표, 말풍선, 방 카드, 단계 이름) 배율(11-09 사용자:
@@ -711,7 +712,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
 
   // 역할(로브 · 사원증 끈 · 안전모 색) — 세션의 role(DB character_session.role: foreman coder inspector helper).
   // 11-05 전에는 테마 이름(lead builder …)이 DB와 달라 실제 세션 색이 한 번도 맞지 않았다. 미리 보기: /office?roles=demo
-  const ROLES = (theme.roles && theme.roles.colors) || {};
+  // 11-15 옷 색은 roles.js ROLE_CLOTH 한 표 + 테마가 다르게 적은 것(현장 코더 · 감독). 둘 다 없는 새 역할은 배지 색(clothColor)
+  const ROLES = themeCloth(theme);
   const ROLE_MODE = (theme.roles && theme.roles.mode) || 'robe';   // robe(옷 색) · lanyard(사원증 끈) · helmet(안전모)
   const DEMO_ROLES = new URLSearchParams(location.search).get('roles') === 'demo' ? Object.keys(ROLES) : null;
   function roleOf(s) { return s.role || (DEMO_ROLES && DEMO_ROLES.length ? DEMO_ROLES[s.id % DEMO_ROLES.length] : null); }
@@ -719,7 +721,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function roleColor(role) {
     const R = theme.roles || {};
     if (role === 'foreman') return R.foreman || null;
-    return (role && ROLES[role]) || R.default || null;
+    return clothColor(ROLES, role) || R.default || null;
   }
 
   // 발밑 역할 색 원(11-13 사용자, aura.js) — 꼴은 테마마다(theme.json aura.style), 견주기용 ?aura=<꼴>|off. 걷는 동안도 발 점을 따라간다
@@ -1677,7 +1679,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
 
   // 방 경계(11-10 모눈 — 사용자: "팀장실만 바닥색이 달라 나머지는 어디가 방인지 읽히지 않는다").
   // 방마다 흐린 선, 이웃한 방은 바닥을 번갈아 조금 밝게. 선 색은 방 이름 색(테마의 팀장 · 교장 색)과 같다
-  const ROOM_INK = (theme.roles && ((theme.roles.colors && theme.roles.colors.foreman) || theme.roles.foreman)) || P.label;
+  const ROOM_INK = themeCloth(theme).foreman || P.label;   // 11-15 옷 색 한 표(roles.js ROLE_CLOTH + 테마가 덮은 값)
   function gridRooms() {
     if (!GRIDDEF) return [];
     const roles = (theme.tags && theme.tags.roles) || {};

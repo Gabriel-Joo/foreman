@@ -659,25 +659,43 @@
    "models": {
     "choices": [
      {
-      "id": "opus",
-      "label": "Opus",
+      "id": "claude-opus-5-5",
+      "label": "Opus 5.5",
       "note": "가장 잘하지만 비쌉니다"
      },
      {
-      "id": "sonnet",
-      "label": "Sonnet",
+      "id": "claude-opus-5",
+      "label": "Opus 5",
+      "note": "Opus 5.5의 앞 버전입니다"
+     },
+     {
+      "id": "claude-sonnet-5-5",
+      "label": "Sonnet 5.5",
       "note": "대부분의 일에 충분합니다"
      },
      {
-      "id": "haiku",
-      "label": "Haiku",
-      "note": "가볍고 빠른 일"
+      "id": "claude-haiku-5-5",
+      "label": "Haiku 5.5",
+      "note": "가볍고 빠른 일에 맞습니다"
+     },
+     {
+      "id": "claude-fable-5-2",
+      "label": "Fable 5.2",
+      "note": "가장 비싸고, 주간 한도가 따로 있습니다"
      }
     ],
     "defaults": {
-     "coder": "opus",
-     "inspector": "sonnet",
-     "scribe": "opus"
+     "coder": "claude-opus-5-5",
+     "inspector": "claude-sonnet-5-5",
+     "scribe": "claude-opus-5-5",
+     "manager": "claude-opus-5-5",
+     "designer": "claude-opus-5-5"
+    },
+    "aliases": {
+     "opus": "claude-opus-5-5",
+     "sonnet": "claude-sonnet-5-5",
+     "haiku": "claude-haiku-5-5",
+     "fable": "claude-fable-5-2"
     }
    },
    "summaries": []

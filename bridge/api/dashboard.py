@@ -29,6 +29,7 @@ from bridge.liveness import live_sessions
 from bridge.compactwatch import context_status, status as compact_status
 from bridge.model_choice import family as model_family
 from bridge.model_choice import label as model_label
+from bridge.roles import WORKER_ROLES
 from bridge.uiver import ui_version
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
@@ -325,7 +326,7 @@ async def api_stops(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
     return out
 
 
-WORKER_ROLES = {"coder", "scribe", "designer"}      # notify.WORKER_ROLES와 같은 것(중계 대상)
+# 중계 대상 역할 WORKER_ROLES는 bridge/roles.py 한 곳(11-15, notify와 같은 것. 위 import)
 MGR_QUIET_ORIGINS = {"relay", "manager_ask", "merge_card"}   # 관리자 턴 중 사람에게 띄우지 않는 출처(merge_card 11-15 — 합치기 카드로 연 턴)
 RELAY_OUT_ACT = "relay-out"     # 작업 세션 session_action — 알림이 그 턴을 관리자에게 넘긴 결과. detail = "<kind>:<turn_id>"
 # 넘기는 동안(턴 끝 → 관리자 입력 칸) 사람용 표시를 안 띄우는 시간 — 넘기면 relayed, 못 넘기면 사람에게.

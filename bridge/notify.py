@@ -35,6 +35,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from bridge.config import REPO
+from bridge.roles import WORKER_ROLES
 
 log = logging.getLogger("foreman.notify")
 
@@ -55,7 +56,7 @@ ORIGIN_LABEL = {"human": "요청", "meta": "입력", "agent_message": "다른 �
                 "subagent_message": "서브에이전트 결과", "handoff": "옮기기 요약 요청", "handoff_in": "옮겨 온 요약",
                 "manager_ask": "관리자 부탁", "relay": "작업 세션에서 온 보고", "merge_card": "합치기 카드"}
 URGENT_REASONS = FAIL_REASONS | {"session_end"}     # 턴 끝 중 묶음으로 미루지 않는 것
-WORKER_ROLES = {"coder", "scribe", "designer"}      # 턴 끝을 관리자에게 넘기는 역할(관리자 · 교장 아닌 작업 세션)
+# 턴 끝을 관리자에게 넘기는 역할 WORKER_ROLES는 bridge/roles.py 한 곳(11-15, 위 import)
 DIGEST_KIND_LABEL = {"turn": "턴 끝", "batch": "서브에이전트 묶음", "merge": "합치기", "handoff": "옮기기 · 기록",
                      "docsync": "Notion 문서", "recon": "어긋남", "escalate": "관리자 보고"}
 SUB_STATUS = {"done": "완료", "failed": "실패", "stopped": "중단", "running": "진행", "stale": "확인 안 됨"}

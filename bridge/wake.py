@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 
 from bridge.inject import Refused
+from bridge.roles import ROLE_KO
 
 log = logging.getLogger("foreman.wake")
 KST = ZoneInfo("Asia/Seoul")
@@ -33,7 +34,7 @@ KINDS = {
     "ingest_stuck": "적재 막힘",
 }
 MODE_KO = {"new": "새 세션", "handoff": "인계해서 새 세션", "attach": "살아 있는 세션에 보내기", "ask": "되묻기"}
-ROLE_KO = {"inspector": "조사", "coder": "코더", "scribe": "서기", "manager": "관리자", "designer": "디자이너"}
+# 역할 화면 이름 ROLE_KO는 bridge/roles.py 한 곳(11-15, 위 import)
 
 
 @dataclass

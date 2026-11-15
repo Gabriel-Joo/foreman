@@ -16,8 +16,13 @@ class CharacterStatus(StrEnum):
 
 
 class Role(StrEnum):
+    """캐릭터 · 세션 역할 값 전부. 세션이 고를 수 있는 것은 bridge/roles.py SESSION_ROLES(시험이 여기에 다 있는지 본다).
+    foreman · helper · infra는 캐릭터 몫, 11-15 scribe · manager · designer가 빠져 있던 것을 채웠다."""
     FOREMAN = "foreman"
     CODER = "coder"
+    DESIGNER = "designer"
+    MANAGER = "manager"
+    SCRIBE = "scribe"
     INSPECTOR = "inspector"
     HELPER = "helper"
     INFRA = "infra"

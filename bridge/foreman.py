@@ -29,12 +29,13 @@ from bridge.handoff import HandoffManager
 from bridge.inject import Refused, _tmux_env, deliver
 from bridge.liveness import live_sessions
 from bridge.mask import Masker
+from bridge.roles import ROLE_KO, SESSION_ROLES, role_line
 from bridge.usage import record_cli
 
 log = logging.getLogger("foreman.dispatch")
 
 MODES = ("new", "handoff", "attach", "ask")
-ROLES = ("coder", "inspector","scribe", "manager", "designer")
+ROLES = SESSION_ROLES   # 교장 계획이 쓸 수 있는 역할 — bridge/roles.py 한 곳(11-15)
 PLAN_TIMEOUT_S = 180.0
 _cache: dict[str, tuple[float, str]] = {}
 
@@ -119,8 +120,7 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
    - "handoff": 끝났거나 오래된 세션의 일을 이어 가야 하면 그 세션의 인계 요약(summary_id)을 쓴다. 요약이 없으면 "new"로 하고 이유에 적는다
    - "new": 새 일
    - "ask": 모호하거나 위험해서 사람이 정해야 할 것이 있을 때(questions에 물을 것)
-3. role — "coder"(코더, 코드를 고치거나 만든다) · "inspector"(조사, 읽고 알아본다. 고치지 않는다. 조사와 제안은 모두 여기) · "scribe"(서기 — 문서 일) ·
-   "designer"(디자이너 — 화면 일) · "manager"(관리자 — 거두는 일)
+3. role — {ROLE_LINE}
    - scribe 일감(docs/12_scribe.md): 문서 맞추기(sync) · CLAUDE.md 정리(trim) · 압축 손실 반영(loss) · 포트폴리오
    - 문서 정리 요청이면 scribe. 서기는 따로 작업(worktree)으로 띄우고, 합치기가 사람의 검토다
    - "manager"(관리자): 코드를 고치지 않고 다른 세션의 일을 거두는 일 — worktree 합친 뒤 시험 · push · 브리지 다시 띄우기 · 화면 점검 · log 기록.
@@ -172,14 +172,13 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
 {"project": "...", "mode": "new|handoff|attach|ask", "base_session": null, "summary_id": null, "attach_session": null,
  "sessions": [{"role": "coder", "read_only": false, "title": "...", "first_prompt": "...", "files": ["bridge/x.py"], "merge_order": 1}],
  "reasons": ["..."], "confidence": 0.8, "questions": [], "note_updates": []}
-```"""
+```""".replace("{ROLE_LINE}", role_line())   # 역할 한 줄 설명은 bridge/roles.py 한 곳(11-15) — 화면 역할 고르기 칸과 같은 글
 
 # ── 한 계획에 여러 세션(11-11 교장 ①) ─────────────────────────
 # 계획 JSON의 sessions[]가 세션마다 역할 · 모델 · 이름 · 첫 글 · 읽기 전용 · worktree · 맡을 파일 · 합칠 순서 · 켬을 갖는다.
 # 위쪽 칸(role · title · first_prompt …)은 sessions[0]과 같게 둔다(check가 맞춘다) — 옛 계획(세션 하나 모양) · 옛 계획 카드가 그대로 돈다:
 # 옛 카드는 위쪽 칸만 고쳐 보내므로, sessions_edit가 없으면 위쪽 칸이 sessions[0]을 이긴다. 세션별로 고치는 카드는 sessions_edit: true를 보낸다
 MAX_SESSIONS = 6
-ROLE_KO = {"coder": "코더", "inspector": "조사", "scribe": "서기", "manager": "관리자", "designer": "디자이너"}
 S_FIELDS = ("role", "model", "title", "first_prompt", "read_only", "worktree", "files", "merge_order", "task")
 TASK_RE = re.compile(r"[a-z][a-z0-9_-]{0,19}")   # 서기 일 종류(11-15) — scribe_room.TASKS의 키 꼴. 띄울 때 session_action scribe-task로 남는다
 

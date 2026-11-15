@@ -22,6 +22,7 @@ from sqlalchemy import text
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from bridge.config import get_settings  # noqa: E402
 from bridge.db.engine import make_engine  # noqa: E402
+from bridge.model_choice import Models  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 OUT = REPO / "bridge" / "static" / "demo"
@@ -276,10 +277,8 @@ async def stills(c) -> dict:
              "lost": lost, "error": None}]},
         "/api/foreman/plan": {"dispatch_id": 1, "ms": 18000, "plan": plan},
         "/api/spawn/options": {"home": "/demo", "projects": [{"name": p, "repo": f"/demo/{p}"} for p in LABEL], "recent_cwds": [],
-                               "models": {"choices": [{"id": "opus", "label": "Opus", "note": "가장 잘하지만 비쌉니다"},
-                                                      {"id": "sonnet", "label": "Sonnet", "note": "대부분의 일에 충분합니다"},
-                                                      {"id": "haiku", "label": "Haiku", "note": "가볍고 빠른 일"}],
-                                          "defaults": {"coder": "opus", "inspector": "sonnet", "cicd": "sonnet", "scribe": "opus"}},
+                               # 모델 목록 · 역할 기본값은 지금 config/models.toml 그대로(11-15 — 전에는 옛 별칭과 지난 역할 cicd가 박혀 있었다)
+                               "models": Models().view(),
                                "summaries": []},
         **convo(991, ("헤더 글씨 키워 줘", "탭 · 버튼 · 라벨을 2px 키웠습니다. 세 테마 × 세 크기 점검 0건입니다."), ("패널 접기도 봐 줘", None))}
     return {"title": "정지 사진용 장면", "source": "script",

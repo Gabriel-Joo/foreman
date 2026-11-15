@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from bridge import handoff_state as hs
 from bridge import pointers as ptr
+from bridge import roles
 from bridge import worktree as wt
 from bridge.inject import Refused, _status, _tmux_env, deliver, resolve, tmux
 from bridge.liveness import _proc_stat, live_sessions
@@ -43,8 +44,8 @@ KEEP_FULL = ("진행", "미완", "다음", "주의")      # 분량을 줄일 때
 # 역할 캐릭터 이름(0017 재배치와 같다, 서기는 12a, 관리자는 11-09 — 합치기 · 시험 · push · 브리지 다시 띄우기 · 기록, 상주 아님).
 # 디자이너는 11-10 — 화면(office.js · panel.css · 테마 · 캐릭터 · 이름표 · 카드), 상주 아님.
 # 세션이 가질 수 있는 역할이 이것뿐이다 — foreman은 감독실 캐릭터(세션 없음) 몫이라 넣지 않는다
-ROLE_KO = {"coder": "코더", "inspector": "조사", "scribe": "서기", "manager": "관리자", "designer": "디자이너"}   # inspector 화면 이름 11-15 점검 → 조사
-ROLE_OLD_KO = {"inspector": "점검"}   # 바꾸기 전 화면 이름 — 그 이름의 캐릭터(DB)를 쓸 때 새 이름으로 바꾼다(_character_for)
+# 이름 · 목록은 bridge/roles.py 한 곳(11-15). ROLE_OLD_KO는 바꾸기 전 화면 이름 — 그 이름의 캐릭터(DB)를 쓸 때 새 이름으로 바꾼다(_character_for)
+ROLE_KO, ROLE_OLD_KO = roles.ROLE_KO, roles.ROLE_OLD_KO
 ROLE_ACT = "role"               # session_action — 역할 바꾸기(11-09). detail "옛 → 새"
 SCRIBE_TASK_ACT = "scribe-task"   # session_action — 서기 세션이 무슨 일인지(detail "일 [토픽]", 11-15부터 spawn_new 한 곳에서). scribe_room.TASK_ACT
 REST_ACT = "rest"                 # session_action — [쉬게 하기](11-09). 합치기 · 버리기 전까지 그 worktree는 "합치기 기다림"
