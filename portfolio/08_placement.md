@@ -48,7 +48,7 @@
 | 터미널(ttyd)은 **UNIX 소켓**(디렉토리 0700)에만. TCP 포트 없음 | 루프백 포트에 묶기(설계 지시) | 루프백 포트는 같은 PC의 다른 계정 · 다른 프로세스도 붙는다. ttyd에는 자체 인증이 없다 | [log:stage7_terminal_result.md] |
 | 사람이 쳐야 하는 비밀(sudo 암호 · 레지스트리 로그인)은 **사람이 터미널 패널에서 친다** | CC에게 암호를 넘기기 | CC가 부탁하면 브리지가 명령을 미리 채우되 비밀번호 자리는 비운다. CC는 마스킹된 결과만 받는다 | [log:stage7_terminal_result.md] |
 | Notion은 **브리지가 API로 직접** 올리고, 통합은 FOREMAN 페이지에만 연결 | 서기 세션이 Notion 커넥터로 쓰기 | 사용자: "권한을 코드가 아니라 구조로 막는 게 맞고" → 「서기 — 근거가 확인되는 문서」 | [log:stage12_scribe_result.md] [c:cd23b1d] |
-| 점검 역할 세션은 **plan 모드**로 띄운다 | 첫 글에 "고치지 마라"고 쓰기 | 읽기 전용을 말이 아니라 CC 권한 모드로 건다 | [log:stage11_foreman_dispatch_result.md] [log:stage11_roles_result.md] |
+| 조사 역할 세션은 **plan 모드**로 띄운다 | 첫 글에 "고치지 마라"고 쓰기 | 읽기 전용을 말이 아니라 CC 권한 모드로 건다 | [log:stage11_foreman_dispatch_result.md] [log:stage11_roles_result.md] |
 
 ## 3. 구조 · 흐름
 

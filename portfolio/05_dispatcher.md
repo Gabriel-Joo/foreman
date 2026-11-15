@@ -169,7 +169,7 @@ flowchart LR
 | 한 번 부르는 시간 | 약 9~22초(4건) | DB `dispatch` 표 |
 | 상황 묶음 크기 | 6.2k자 → 11.4k자(세션별 최근 요청 추가) | [log:stage11_foreman_dispatch_result.md] |
 | 같은 일 판단 | `new` 0.8 → `attach 156` 0.85 | [log:stage11_foreman_dispatch_result.md] |
-| 시작 경로 시험 | 읽기 전용 점검 세션이 plan 모드로 떠 첫 글에 바르게 답함 | [log:stage11_foreman_dispatch_result.md] |
+| 시작 경로 시험 | 읽기 전용 조사 세션이 plan 모드로 떠 첫 글에 바르게 답함 | [log:stage11_foreman_dispatch_result.md] |
 | worktree 세션 · 합치기 · 버리기 | 15개 · 8번 · 4번(11-06 기준) | DB `character_session` · `session_action` |
 | 스키마 잠금 시험 | 다른 세션의 마이그레이션 쓰기가 거부되고 파일이 생기지 않음 | [log:stage11_worktree_result.md] |
 | 시험 | worktree 5 · 끝내고 합치기 5 · 문서 일감 겹침 1 · 노트(제안 맞추기 · 반영 · 이력 · ⚠ · 접기) · 자동 기상(한 번만 · 하루 상한 · 실패 알림) | [log:stage11_worktree_result.md] [log:stage12_scribe_result.md] [log:stage14_dispatcher_note_wake_result.md] |

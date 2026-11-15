@@ -1424,7 +1424,7 @@ async def test_postit_net_sweep(env):
 
 
 async def test_postit_check_collect_and_resolve(env, tmp_path):
-    """[갱신](11-15) — 점검 세션의 마지막 응답에서 결과 블록을 읽는다. 코드 자리 없는 「끝남」은 모름으로, 결과가 들어오면 다시 읽지 않고,
+    """[갱신](11-15) — 조사 세션의 마지막 응답에서 결과 블록을 읽는다. 코드 자리 없는 「끝남」은 모름으로, 결과가 들어오면 다시 읽지 않고,
     사람이 [닫기]를 누를 때만 포스트잇이 닫힌다(자동으로 지우지 않는다)."""
     from sqlalchemy import text as T
     from bridge import handoff as h

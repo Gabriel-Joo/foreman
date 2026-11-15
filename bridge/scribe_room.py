@@ -177,7 +177,7 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
             items.append({"kind": "later", "title": f"알려진 한계 쓰기: 쓸 줄 {lim}, 뺄 줄 {drop}",
                           "why": "포스트잇 [→]로 보낸 것과 [갱신]에서 끝났다고 닫은 줄입니다. README에 쓰는 것은 서기 세션입니다"})
         if pst["check"] and pst["check"]["state"] == "failed":
-            items.append({"kind": "postit", "title": f"포스트잇 [갱신] 실패: 점검 세션 {pst['check']['session_id']}",
+            items.append({"kind": "postit", "title": f"포스트잇 [갱신] 실패: 조사 세션{pst['check']['session_id']}",
                           "why": pst["check"]["detail"] or "결과 없이 끝났습니다"})
         port_pub: dict[str, Any] | None = None
         docs_pub: dict[str, Any] | None = None
@@ -443,7 +443,7 @@ def later_material(project: str, when: datetime | None, rows: list[dict[str, Any
         for x in inbox:
             lines += [f"## 포스트잇 #{x['id']} {sc.kst(x['created_at'])}", m(x["body"]) or "", ""]
     if rows:
-        lines += [f"# 뺄 줄 — [갱신] 점검 세션이 「끝남」으로 보고 사람이 닫은 README 「{_pi.README_LIMIT}」 줄", ""]
+        lines += [f"# 뺄 줄 — [갱신] 조사 세션이 「끝남」으로 보고 사람이 닫은 README 「{_pi.README_LIMIT}」 줄", ""]
         for x in rows:
             lines += [f"## {x.get('item') or ''} (판정 #{x['id']} {sc.kst(x['started_at'])})", m(x["prompt_text"]) or "",
                       f"근거: {x.get('evidence') or '(없음)'}" + (f" — {x['reason']}" if x.get("reason") else ""), ""]
@@ -563,7 +563,7 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
     if why:
         raise Refused(why)
     if task == "docfix" and topic and not Path(repo, "log", topic).is_file():
-        raise Refused(f"log/{topic}가 main에 없습니다. 문서 점검 세션을 합친 뒤에 고칠 수 있습니다")
+        raise Refused(f"log/{topic}가 main에 없습니다. 문서 점검 결과를 합친 뒤에 고칠 수 있습니다")
     now = datetime.now(UTC).replace(tzinfo=None)
     day = (now + KST).strftime("%Y%m%d")
     extra: dict[str, str] = {}

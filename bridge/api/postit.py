@@ -5,7 +5,7 @@
 - POST /api/postit {project, body, session?}   하나 올리기. session(관리자 자기 세션 id)을 주면 출처 said, 근거는 그 세션의 마지막 사람 턴
 - POST /api/postit/save {project, body?, confirm?}   [저장] — 적은 글을 올리고 확인 전 줄을 받아들인다
 - POST /api/postit/{id}/close {reason: drop|limit|done, note?}   [x] · [→] · 끝남
-- POST /api/postit/refresh {project}   [갱신] — 점검 세션을 띄운다
+- POST /api/postit/refresh {project}   [갱신] — 조사 세션을 띄운다
 - POST /api/postit/check/{cid} {action: close|keep}   판정 한 줄을 사람이 닫거나 남긴다
 """
 

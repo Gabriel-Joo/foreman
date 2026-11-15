@@ -404,7 +404,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.foreman.note_rules = load_note_rules(Path(__file__).resolve().parent.parent / "config" / "wake.toml")
         note_task = asyncio.create_task(app.state.foreman.note_loop(), name="foreman-note-loop")
         app.state.foreman.poke_notes("브리지 뜸")
-        # 11-15 포스트잇(bridge/postit.py) — 2분마다 대화 그물 훑기 · [갱신] 점검 세션 결과 받기
+        # 11-15 포스트잇(bridge/postit.py) — 2분마다 대화 그물 훑기 · [갱신] 조사 세션 결과 받기
         from bridge import postit as postit_mod
         postit_task = asyncio.create_task(postit_mod.run(engine, app.state.handoff,
                                                          on_change=lambda: pipeline.publish({"type": "postit"})),

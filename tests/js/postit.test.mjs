@@ -85,10 +85,10 @@ test('[갱신] 옆 글 — 마지막으로 갱신한 때(월/일 시:분), 한 �
 test('[갱신] 상태 — 보는 중이면 단추가 꺼지고, 결과 없이 끝났으면 그렇게 보인다(조용히 사라지지 않게)', () => {
   const base = { project: 'foreman', items: [], closed: [], readme_checks: [] };
   const run = listHtml({ ...base, summary: { check: { state: 'running', at: new Date().toISOString(), session_id: 5 } } });
-  assert.match(run, /점검 세션 5이 코드를 보는 중/);
+  assert.match(run, /조사 세션 5이 코드를 보는 중/);
   assert.match(run, /data-pi-refresh="1" disabled/);
   const bad = listHtml({ ...base, summary: { check: { state: 'failed', session_id: 6 } } });
-  assert.match(bad, /class="bad">지난 \[갱신\]이 결과 없이 끝났습니다\(점검 세션 6\)/);
+  assert.match(bad, /class="bad">지난 \[갱신\]이 결과 없이 끝났습니다\(조사 세션 6\)/);
   assert.match(listHtml(null, { bad: true }), /포스트잇을 읽지 못했습니다/);
 });
 

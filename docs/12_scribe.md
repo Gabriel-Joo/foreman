@@ -247,7 +247,7 @@
 ### 11-5. 닫기와 [갱신]
 
 - [x] → `closed_reason drop`(목록에서 사라짐). [→] → `limit`, README 「알려진 한계」에 쓸 줄로 서기 할 일에 센다(쓰는 것은 서기 세션 「알려진 한계 쓰기」. README에 그 절이 아직 없으면 서기가 만든다)
-- **[갱신] = 점검(inspector) 세션**(사용자 답 5, 438 3-3의 `claude -p` 안 대신). `POST /api/postit/refresh` → 원본 폴더에 점검 세션(고치지 않으니 worktree도 합치기 카드도 없다). 재료는 열린 포스트잇, README 「알려진 한계」 줄(`readme_limits`), 최근 커밋(참고만)
+- **[갱신] = 조사(inspector) 세션**(사용자 답 5, 438 3-3의 `claude -p` 안 대신. 11-15 전 이름 「점검」). `POST /api/postit/refresh` → 원본 폴더에 조사 세션(고치지 않으니 worktree도 합치기 카드도 없다). 재료는 열린 포스트잇, README 「알려진 한계」 줄(`readme_limits`), 최근 커밋(참고만)
 - 결과: 마지막 응답의 `<<<FOREMAN-POSTIT-CHECK r=…>>>` JSON 배열 `{id, verdict(끝남, 남음, 모름), evidence, reason, coder}`. 브리지가 2분마다 트랜스크립트에서 읽어(`collect`) `postit_check`에 넣는다(옮기기 결과 블록과 같은 꼴)
 - **「끝남」은 근거가 코드 자리(`파일:줄` 또는 시험 이름)일 때만 받는다.** 아니면 「모름」으로 내린다(`CODE_REF`). 판정은 제안이다. 사람이 줄마다 [닫기](포스트잇은 done, 근거는 closed_note) 또는 [남기기]. README 줄을 닫으면 서기 「알려진 한계 쓰기」의 뺄 줄이 된다
 - 「남음」이고 coder true면 코더 추천([띄우기]). 띄우는 길은 계획(`/api/foreman/plan` → 사람이 [이대로 시작])이다

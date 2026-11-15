@@ -1,7 +1,7 @@
 // 포스트잇(11-15 사용자, 서기 구조 다시 짜기 2번) — 머리 탭 종이와 서기실이 같은 목록을 본다(/api/postit).
 // 11-15 늦게: 머리 탭 [＋ 할 일] 단추와 그 창(todoinbox.js)을 뺐다 — 이 창이 적기와 프로젝트 고르기를 다 한다(사용자).
 // 들어오는 것: 포스트잇에 바로 적음 · 대화에서 사람이 미룬 것(관리자가 올림 · 브리지 그물은 「확인 전」으로 흐리게) ·
-// 옮기기 「문서에 넣을 것 고르기」의 미완. 줄마다 [x] 삭제 · [→] 알려진 한계, 전체 [저장] · [갱신](점검 세션이 코드를 보고 판정).
+// 옮기기 「문서에 넣을 것 고르기」의 미완. 줄마다 [x] 삭제 · [→] 알려진 한계, 전체 [저장] · [갱신](조사 세션이 코드를 보고 판정).
 // 판정은 제안이다 — 「끝난 것 같음」은 사람이 줄마다 닫는다. 코더에게 맡길 만한 것은 [띄우기]로 계획 창을 바로 연다.
 // 조용한 고장 금지: 못 읽으면 0이 아니라 「읽지 못했습니다」, [갱신]이 결과 없이 끝나면 그렇게 보인다.
 
@@ -59,7 +59,7 @@ export function planText(items) {
 
 function checkHtml(k, text) {
   const ev = k.evidence ? ` <code>${esc(k.evidence)}</code>` : '';
-  return `<div class="pi-row pi-check" data-tip="${esc(`끝난 것 같음 — 점검 세션 ${k.session_id}이 코드를 보고 끝났다고 봤습니다. 맞으면 [닫기], 아니면 [남기기]를 누릅니다.`)}">
+  return `<div class="pi-row pi-check" data-tip="${esc(`끝난 것 같음 — 조사 세션 ${k.session_id}이 코드를 보고 끝났다고 봤습니다. 맞으면 [닫기], 아니면 [남기기]를 누릅니다.`)}">
     <div class="pi-main small"><b>${esc(firstLine(text, 80))}</b>${ev}${k.reason ? `<div class="muted">${esc(k.reason)}</div>` : ''}</div>
     <div class="pi-btns"><button type="button" class="small" data-pi-check="${k.id}" data-act="close" title="닫기 — 끝난 것으로 닫습니다. 근거는 닫은 줄에 남습니다.">닫기</button>
     <button type="button" class="small ghost" data-pi-check="${k.id}" data-act="keep" title="남기기 — 아직 남은 일로 둡니다. 다음 [갱신]에서 다시 봅니다.">남기기</button></div></div>`;
@@ -85,8 +85,8 @@ function rowHtml(x, busy) {
 function checkState(s) {
   const c = s && s.check;
   // 도는 중 · 실패는 그대로 보인다(조용히 사라지지 않게). 그 밖에는 마지막으로 결과를 받은 [갱신]의 때(요약 last_check_at)
-  if (c && c.state === 'running') return `<span class="warn">점검 세션 ${c.session_id}이 코드를 보는 중입니다(${ago(c.at)} 시작).</span>`;
-  if (c && c.state === 'failed') return `<span class="bad">지난 [갱신]이 결과 없이 끝났습니다(점검 세션 ${c.session_id}). 다시 [갱신]을 누릅니다.</span>`;
+  if (c && c.state === 'running') return `<span class="warn">조사 세션 ${c.session_id}이 코드를 보는 중입니다(${ago(c.at)} 시작).</span>`;
+  if (c && c.state === 'failed') return `<span class="bad">지난 [갱신]이 결과 없이 끝났습니다(조사 세션 ${c.session_id}). 다시 [갱신]을 누릅니다.</span>`;
   const at = (s && s.last_check_at) || (c && c.at) || null;
   return `<span class="muted">마지막 갱신: ${at ? esc(mmddhm(at) || String(at)) : '없음'}</span>`;
 }
@@ -115,7 +115,7 @@ export function listHtml(view, { busy = false, draft = '', note = null, label = 
     <textarea class="pi-draft" rows="2" maxlength="${MAX}" placeholder="할 일을 메모합니다"${busy ? ' disabled' : ''}>${esc(draft)}</textarea>
     <div class="pi-foot"><span class="small">${checkState(s)}</span>
       <button type="button" class="small primary" data-pi-save="1"${busy ? ' disabled' : ''} title="${esc(saveTip)}">저장${unconf.length ? ` (확인 전 ${unconf.length})` : ''}</button>
-      <button type="button" class="small" data-pi-refresh="1"${busy || running ? ' disabled' : ''} title="${esc(running ? '갱신 — 점검 세션이 이미 보는 중입니다.' : '갱신 — 점검 세션을 띄워 코드를 보고 이미 끝난 것을 찾습니다. 포스트잇과 README 「알려진 한계」를 함께 봅니다. 지우는 것은 사람이 합니다.')}">갱신</button></div>
+      <button type="button" class="small" data-pi-refresh="1"${busy || running ? ' disabled' : ''} title="${esc(running ? '갱신 — 조사 세션이 이미 보는 중입니다.' : '갱신 — 조사 세션을 띄워 코드를 보고 이미 끝난 것을 찾습니다. 포스트잇과 README 「알려진 한계」를 함께 봅니다. 지우는 것은 사람이 합니다.')}">갱신</button></div>
     ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}">${esc(note.msg)}</div>` : ''}${closedHtml}</div>`;
 }
 
@@ -148,9 +148,9 @@ export async function act(ev, ctx) {
       return ctx.done({ msg: [j.id ? `#${j.id}을 저장했습니다.` : '', j.confirmed ? `확인 전 ${j.confirmed}줄을 받아들였습니다.` : ''].filter(Boolean).join(' ') });
     }
     if (rf) {
-      if (typeof confirm === 'function' && !confirm(`${ctx.project}의 포스트잇과 README 「알려진 한계」를 점검 세션이 코드를 보고 판정합니다. 원본 폴더에 점검 세션이 뜨고(역할 점검, 고치지 않음), 끝나면 「끝난 것 같음」이 여기 뜹니다.\n\n띄울까요?`)) return true;
+      if (typeof confirm === 'function' && !confirm(`${ctx.project}의 포스트잇과 README 「알려진 한계」를 조사 세션이 코드를 보고 판정합니다. 원본 폴더에 조사 세션이 뜨고(역할 조사, 고치지 않음), 끝나면 「끝난 것 같음」이 여기 뜹니다.\n\n띄울까요?`)) return true;
       const j = await api('/api/postit/refresh', { project: ctx.project });
-      return ctx.done({ msg: `[갱신]: 점검 세션 ${j.session_id || '?'}을 띄웠습니다(포스트잇 ${j.items} · README 줄 ${j.limits}).${j.note ? ` ${j.note}` : ''}` });
+      return ctx.done({ msg: `[갱신]: 조사 세션 ${j.session_id || '?'}을 띄웠습니다(포스트잇 ${j.items} · README 줄 ${j.limits}).${j.note ? ` ${j.note}` : ''}` });
     }
     if (ck) {
       await api(`/api/postit/check/${ck.dataset.piCheck}`, { action: ck.dataset.act });

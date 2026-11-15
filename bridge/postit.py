@@ -8,7 +8,7 @@
   chat    브리지 그물(sweep) — 사람이 미루자고 했는데 포스트잇이 안 생긴 턴. 확인 전(confirmed 0, 화면에 흐리게)
   promote 옮기기 「문서에 넣을 것 고르기」의 미완(bridge/promote.py dest "postit") — 세션이 쓰지 않고 브리지가 넣는다
 닫기: [x] drop(그냥 사라짐) · [→] limit(README 「알려진 한계」로 — 쓰는 것은 서기 「알려진 한계 쓰기」) · done(끝남).
-[갱신]: 점검(inspector) 세션이 코드를 보고 줄마다 판정한다(끝남 · 남음 · 모름). 근거가 코드 자리일 때만 「끝남」.
+[갱신]: 조사(inspector) 세션이 코드를 보고 줄마다 판정한다(끝남 · 남음 · 모름). 근거가 코드 자리일 때만 「끝남」.
 판정은 제안이다 — 사람이 줄마다 닫는다(커밋만 보고 자동으로 지우지 않는다, 사용자).
 """
 
@@ -32,7 +32,7 @@ SOURCES = ("note", "todo", "said", "chat", "promote")
 SOURCE_KO = {"note": "포스트잇에 적음", "todo": "포스트잇에 적음", "said": "대화에서 올림", "chat": "대화에서 찾음", "promote": "옮기기 미완"}
 CLOSE = ("drop", "limit", "done")
 README_LIMIT = "알려진 한계"        # README 절 제목(이 글이 든 머리줄) — 아직 없을 수 있다(관리자가 「나중에 할 일」 표를 옮기기 전)
-CHECK_ACT = "postit-run"            # session_action(칸 12자) — [갱신] 점검 세션을 띄움(detail: "<프로젝트> <req> p<N> L<N>")
+CHECK_ACT = "postit-run"            # session_action(칸 12자) — [갱신] 조사 세션을 띄움(detail: "<프로젝트> <req> p<N> L<N>")
 CHECK_DONE_ACT = "postit-done"      # 결과를 받음(ok) · 결과 없이 끝남(ok 0)
 CHECK_TAG = "FOREMAN-POSTIT-CHECK"
 NET_WAIT = timedelta(minutes=30)    # 열린 턴은 이만큼 지나야 그물이 본다 — 관리자가 그 턴에서 올릴 틈(같은 턴 두 번 막기)
@@ -231,7 +231,7 @@ async def readme_drop_pending(engine: Any, project: str, since: datetime | None)
     return [dict(r) for r in rows]
 
 
-# ── [갱신] — 점검 세션 ───────────────────────────────────────
+# ── [갱신] — 조사 세션 ───────────────────────────────────────
 def readme_limits(repo: str) -> list[str] | None:
     """README 「알려진 한계」 절의 줄(목록 줄 · 표 줄). 절이 없으면 None."""
     try:
@@ -254,9 +254,9 @@ def readme_limits(repo: str) -> list[str] | None:
     return out
 
 
-CHECK_PROMPT = """[FOREMAN 점검 일감 — 포스트잇 갱신 r={req}] {project}
+CHECK_PROMPT = """[FOREMAN 조사 일감 — 포스트잇 갱신 r={req}] {project}
 
-너는 점검(읽기 전용) 세션이다. 포스트잇(열린 할 일)과 README 「{limit}」 줄 가운데 **이미 끝난 것**을 코드를 보고 찾는다. 가볍게 보지 말고 제대로 본다.
+너는 조사(읽기 전용) 세션이다. 포스트잇(열린 할 일)과 README 「{limit}」 줄 가운데 **이미 끝난 것**을 코드를 보고 찾는다. 가볍게 보지 말고 제대로 본다.
 - 재료(저장소 밖): `{materials}` — 끝까지 읽는다. 항목마다 id가 있다(포스트잇 p:번호, README 줄 L:번호)
 - 항목마다 그 일이 지금 저장소에 되어 있는지 본다. 관련 코드 · 시험 · 설정 · docs를 직접 열어 확인한다. 커밋 제목은 찾을 실마리로만 쓴다
 - 판정
@@ -298,7 +298,7 @@ def check_material(project: str, posts: list[dict[str, Any]], limits: list[str] 
 
 
 def parse_check(body: str, known: dict[str, str]) -> list[dict[str, Any]]:
-    """점검 세션이 낸 배열 → 재료에 있던 항목만. 「끝남」인데 근거가 코드 자리가 아니면 「모름」으로 내린다."""
+    """조사 세션이 낸 배열 → 재료에 있던 항목만. 「끝남」인데 근거가 코드 자리가 아니면 「모름」으로 내린다."""
     try:
         data = json.loads(body)
     except ValueError:
@@ -349,7 +349,7 @@ async def _runs(engine: Any, project: str | None = None, open_only: bool = False
 
 
 async def start_check(m: Any, engine: Any, project: str) -> dict[str, Any]:
-    """[갱신] — 점검 세션을 원본 폴더에 띄운다(고치지 않으니 worktree가 필요 없다 — 합치기 카드도 생기지 않는다)."""
+    """[갱신] — 조사 세션을 원본 폴더에 띄운다(고치지 않으니 worktree가 필요 없다 — 합치기 카드도 생기지 않는다)."""
     from bridge import handoff as ho
     from bridge import scribe as sc
     from bridge.inject import Refused
@@ -364,7 +364,7 @@ async def start_check(m: Any, engine: Any, project: str) -> dict[str, Any]:
     for run in await _runs(engine, project, open_only=True):
         row = await m.session(run["session_id"])
         if row and row.cc in live:
-            raise Refused(f"이미 [갱신] 중입니다(점검 세션 {run['session_id']}). 끝나면 결과가 포스트잇에 뜹니다")
+            raise Refused(f"이미 [갱신] 중입니다(조사 세션 {run['session_id']}). 끝나면 결과가 포스트잇에 뜹니다")
     posts = await items(engine, project)
     limits = readme_limits(repo)
     if not posts and not limits:
@@ -375,7 +375,7 @@ async def start_check(m: Any, engine: Any, project: str) -> dict[str, Any]:
     mat = sc.write(sc.OUT_ROOT / f"{project}_{day}" / f"postit_check_{req}.md",
                    check_material(project, posts, limits, _recent_commits(repo), now, Masker()))
     prompt = CHECK_PROMPT.format(req=req, project=project, limit=README_LIMIT, materials=mat, tag=CHECK_TAG)
-    res = await m.spawn_new(repo, None, "점검 — 포스트잇 갱신", role="inspector", worktree=False, first_prompt=prompt)
+    res = await m.spawn_new(repo, None, "조사 — 포스트잇 갱신", role="inspector", worktree=False, first_prompt=prompt)
     if res.get("session_id"):
         await m._act(res["session_id"], CHECK_ACT, res.get("pid"), True, f"{project} {req} p{len(posts)} L{len(limits or [])}")
         known = {f"p:{x['id']}": x["body"] for x in posts} | {f"L:{n}": ln for n, ln in enumerate(limits or [], 1)}
@@ -466,7 +466,7 @@ async def resolve_check(engine: Any, cid: int, action: str) -> dict[str, Any]:
     if r[4] is not None:
         return {"ok": False, "why": "이미 정한 판정입니다"}
     if action == "close" and r[0].startswith("p:"):
-        await close(engine, int(r[0][2:]), "done", f"[갱신] 점검 세션 {r[1]}: {r[2] or ''} {('— ' + r[3]) if r[3] else ''}".strip())
+        await close(engine, int(r[0][2:]), "done", f"[갱신] 조사 세션 {r[1]}: {r[2] or ''} {('— ' + r[3]) if r[3] else ''}".strip())
     async with engine.begin() as c:
         await c.execute(text("UPDATE postit_check SET resolved = :a, resolved_at = UTC_TIMESTAMP(3) WHERE id = :i AND resolved IS NULL"),
                         {"a": "closed" if action == "close" else "kept", "i": cid})

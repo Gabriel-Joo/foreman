@@ -120,6 +120,31 @@ new = "조사 — 읽고 알아보기"
 scope = "화면"
 commit = "cc/foreman-6 11-15"
 
+# 11-15 포스트잇 [갱신] 글에 「점검 세션」이 남아 있었다(cc/foreman-5, 410). 역할 뜻의 꼴만 잡는다(화면 점검 · 문서 점검 등은 그대로)
+[[rename]]
+old = "점검 세션"
+new = "조사 세션"
+scope = "화면"
+commit = "cc/foreman-5 11-15"
+
+[[rename]]
+old = "점검 역할"
+new = "조사 역할"
+scope = "화면"
+commit = "cc/foreman-5 11-15"
+
+[[rename]]
+old = "역할 점검"
+new = "역할 조사"
+scope = "화면"
+commit = "cc/foreman-5 11-15"
+
+[[rename]]
+old = "점검(inspector)"
+new = "조사(inspector)"
+scope = "화면"
+commit = "cc/foreman-5 11-15"
+
 # 11-15 합치기 카드 「자세히」 겹침 정리(cc/foreman-4, 410)
 [[rename]]
 old = "합치는 방법"
@@ -228,7 +253,7 @@ why = "worktree 세션 첫 글 앞에 붙는 「이 세션이 뜬 자리」 안�
 file = "bridge/postit.py"
 old = "열린 것"
 near = "## 포스트잇(열린 것"
-why = "[갱신] 점검 세션에 주는 재료 파일의 머리줄(세션에 넣는 글, 화면에 나가지 않음)"
+why = "[갱신] 조사 세션에 주는 재료 파일의 머리줄(세션에 넣는 글, 화면에 나가지 않음)"
 
 [[code_exception]]
 file = "bridge/scribe_room.py"
