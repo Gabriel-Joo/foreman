@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/handoff.js, bridge/static/js/moveflow.js, bridge/static/js/losscheck.js, bridge/static/js/promote.js, bridge/handoff.py, bridge/api/handoff.py, bridge/losscheck.py, bridge/promote.py, bridge/pointers.py, config/handoff.toml
-읽은 커밋: b97ff43
+읽은 커밋: 9a7c22d
 -->
 
 # 세션 정리: 인계와 옮기기

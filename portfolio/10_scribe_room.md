@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/scribe.js, bridge/scribe_room.py, bridge/scribe_ask.py, bridge/notion.py, bridge/docsync.py, bridge/manuscript.py, bridge/api/scribe.py, bridge/api/publish.py, config/notion.toml
-읽은 커밋: b97ff43
+읽은 커밋: 9a7c22d
 -->
 
 # 서기실

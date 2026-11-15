@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/newsession.js, bridge/static/js/modelpick.js, bridge/static/js/roles.js, bridge/roles.py, bridge/model_choice.py, bridge/worktree.py, bridge/handoff.py, bridge/api/handoff.py, config/models.toml
-읽은 커밋: b97ff43
+읽은 커밋: 9a7c22d
 -->
 
 # 새 세션 창
