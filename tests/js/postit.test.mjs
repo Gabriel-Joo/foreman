@@ -55,8 +55,10 @@ test('목록 — 확인 전은 흐리게, 끝난 것 같음은 근거와 [닫기
     closed: [],
   };
   const h = listHtml(view, { label: 'FOREMAN' });
-  assert.match(h, /<b>포스트잇<\/b> FOREMAN <b class="pi-n">3장<\/b><span class="muted">, 확인 전 1<\/span>/);
-  assert.match(listHtml({ ...view, items: view.items.slice(1) }, { label: 'FOREMAN' }).replace(/<[^>]+>/g, ''), /^포스트잇 FOREMAN 2장끝난 것 같음/);   // 확인 전이 없으면 「포스트잇 FOREMAN 2장」만
+  assert.match(h, /<b>FOREMAN<\/b> 할 일 <b class="pi-n">3장<\/b><span class="muted">, 확인 전 1<\/span>/);
+  assert.match(listHtml({ ...view, items: view.items.slice(1) }, { label: 'FOREMAN' }).replace(/<[^>]+>/g, ''), /^FOREMAN 할 일 2장끝난 것 같음/);   // 확인 전이 없으면 「FOREMAN 할 일 2장」만
+  // 11-15 쌓임 안내 줄은 뺐다(쌓임 표시는 단추 주황과 호버, 서기 말풍선이 맡는다). 쌓였어도 창에는 줄이 없다
+  assert.ok(!listHtml({ ...view, summary: { ...view.summary, nudge: { why: '할 일 26장' } } }).includes('쌓였습니다'));
   assert.match(h, /class="pi-row pi-unconf" data-pi-row="1"/);
   assert.match(h, /\(대화에서 찾음, 11\/13, t:77\)/);
   assert.match(h, /<b>끝난 것 같음 2<\/b>/);

@@ -99,8 +99,7 @@ export function listHtml(view, { busy = false, draft = '', note = null, label = 
   const unconf = items.filter((x) => !x.confirmed);
   const done = items.filter((x) => x.check && x.check.verdict === 'done');
   const lim = (view.readme_checks || []).filter((k) => k.verdict === 'done');
-  const head = `<div class="pi-head small"><b>포스트잇</b> ${esc(label || view.project)} <b class="pi-n">${items.length}장</b>${unconf.length ? `<span class="muted">, 확인 전 ${unconf.length}</span>` : ''}${bad ? ` <span class="bad">(지금 값을 ${UNREAD}. 지난 값입니다)</span>` : ''}</div>`;
-  const nudge = s.nudge ? `<div class="small warn">쌓였습니다: ${esc(s.nudge.why)}. 끝난 것은 [갱신]으로 찾고, 안 할 것은 [x]로 지웁니다.</div>` : '';
+  const head = `<div class="pi-head small"><b>${esc(label || view.project)}</b> 할 일 <b class="pi-n">${items.length}장</b>${unconf.length ? `<span class="muted">, 확인 전 ${unconf.length}</span>` : ''}${bad ? ` <span class="bad">(지금 값을 ${UNREAD}. 지난 값입니다)</span>` : ''}</div>`;
   const doneHtml = done.length + lim.length ? `<div class="pi-sec"><div class="small"><b>끝난 것 같음 ${done.length + lim.length}</b> <span class="muted">근거가 코드 자리인 것만입니다. 사람이 줄마다 닫습니다.</span></div>
     ${done.map((x) => checkHtml(x.check, x.body)).join('')}${lim.map((k) => checkHtml(k, `README 「알려진 한계」 ${k.item}: ${k.item_text || ''}`)).join('')}</div>` : '';
   const rows = items.length ? items.map((x) => rowHtml(x, busy)).join('') : '<p class="small muted">할 일이 없습니다.</p>';
@@ -111,7 +110,7 @@ export function listHtml(view, { busy = false, draft = '', note = null, label = 
     ? `저장 — 적은 글을 포스트잇에 올리고, 확인 전 ${unconf.length}줄도 받아들입니다. 아닌 줄은 먼저 [x]로 지웁니다.`
     : '저장 — 적은 글을 포스트잇에 바로 올립니다. Ctrl+Enter로도 저장합니다.';
   const running = s.check && s.check.state === 'running';
-  return `<div class="postit paper" data-pi-project="${esc(view.project)}">${head}${nudge}${doneHtml}
+  return `<div class="postit paper" data-pi-project="${esc(view.project)}">${head}${doneHtml}
     <div class="pi-list">${rows}</div>
     <textarea class="pi-draft" rows="2" maxlength="${MAX}" placeholder="할 일을 메모합니다"${busy ? ' disabled' : ''}>${esc(draft)}</textarea>
     <div class="pi-foot"><span class="small">${checkState(s)}</span>

@@ -3731,7 +3731,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         const tip = c.seat === 'coder'
           ? `<div class="tip-h">코더 자리: 맡길 일</div><div class="tip-b">이 방 코더에게 맡길 일입니다. 코더가 몇이든, 자리에 아무도 없어도 자리에 늘 뜹니다.</div>${coderJobsTip(room.coderJobs)}<div class="tip-t">누르면 맡길 일 목록이 열립니다.</div>`
           : `<div class="tip-h">${t && t.nudge ? '서기 자리: 포스트잇 쌓임' : '서기 자리: 문서 할 일'}</div><div class="tip-b">이 방 서기에게 맡길 문서 일입니다. 서기 세션이 일하는 동안에도 자리에 늘 뜹니다.</div>${
-            t && t.nudge ? `<div class="tip-s">포스트잇이 쌓였습니다(${esc(t.nudge.why)}). 누르면 서기실 포스트잇이 열립니다. 끝난 것은 [갱신]으로 찾고 안 할 것은 [x]로 지웁니다.</div>` : ''}${
+            t && t.nudge ? `<div class="tip-s">포스트잇이 쌓였습니다(${esc(t.nudge.why)}). 누르면 서기실 포스트잇이 열립니다.</div>` : ''}${
             t && t.items && t.items.length ? `<div>문서 할 일 ${t.items.length}: CLAUDE.md가 길어진 것처럼 브리지가 찾은 문서 정리 거리입니다.${t.items.slice(0, 3).map((q) => `<div class="tip-s">· ${esc(q.title)}</div>`).join('')}</div>` : ''}<div class="tip-t">누르면 일을 고르는 창이 열립니다.</div>`;
         HITS.push({ x, y, w, h, soft: true, tip });
       }
@@ -3794,7 +3794,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (a.kind === 'scribe') {
       const t = a.todo;
       return `<div class="tip-h">서기</div><div class="tip-b">문서 담당: 문서 점검, CLAUDE.md, 알려진 한계, 포스트잇, Notion 게시</div>${
-        t && t.nudge ? `<div class="tip-s">포스트잇 쌓임: ${esc(t.nudge.why)}. 누르면 서기실 포스트잇이 열립니다. 끝난 것은 [갱신]으로 찾고 안 할 것은 [x]로 지웁니다.</div>` : ''}${
+        t && t.nudge ? `<div class="tip-s">포스트잇 쌓임: ${esc(t.nudge.why)}. 누르면 서기실 포스트잇이 열립니다.</div>` : ''}${
         t && t.items && t.items.length ? `<div>문서 할 일 ${t.items.length}: CLAUDE.md가 길어진 것처럼 브리지가 찾은 문서 정리 거리입니다. 누르면 서기에게 맡깁니다.${t.items.slice(0, 3).map((x) => `<div class="tip-s">· ${esc(x.title)}</div>`).join('')}</div>` : ''}
         <div class="tip-t">누르면 일을 고르는 창이 열립니다.</div>`;
     }
