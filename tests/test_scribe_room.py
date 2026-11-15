@@ -120,6 +120,20 @@ def test_portfolio_pieces_from_folder_and_blocked_per_piece(tmp_path):
     assert "16편" in sr.task_prompt("portfolio", "foreman", "/repo", {"note": "포트폴리오 16편, 합치지 않는다"})
 
 
+def test_writing_prompts_keep_user_rules():
+    """11-15 사용자 지시 셋이 두 지시문에 모두 들어 있다(빠지면 실패). 문단으로 쓴다, 비개발자도 읽는다(어려운 말은 그 자리에서 풀기),
+    포트폴리오는 편마다 화면 사진과 움직이는 것은 영상."""
+    port = sr.task_prompt("portfolio", "foreman", "/repo", {"siblings": "「한눈에」"})
+    tech = sr.task_prompt("techdoc", "foreman", "/repo", {})
+    for p in (port, tech):
+        assert "목록이 아니라 문단" in p and "짧은 줄을 나열하지 않는다" in p
+        assert "비개발자도 포함된다" in p and "그 자리에서 무엇인지 한 줄로 풀어" in p
+    assert "다루는 범위가 좁다는 뜻이다. 문장을 짧게 끊으라는 뜻이 아니다" in port
+    for want in ("편마다 그 화면 사진을 한 장 이상", "영상", "docs/13_demo_capture.md", "portfolio/img/", "--record", "?demo=", "bridge/static/demo/",
+                 "5MB", "비밀값"):
+        assert want in port, want
+
+
 def test_techdoc_task_prompt_and_two_days():
     """기술문서 쓰기(11-15) — 목차는 서기가, 편마다 서브에이전트. 쓰는 법 · 나무 규칙 · 머리 주석이 일감에 든다.
     마지막으로 합친 뒤 이틀이 지났고 다루는 코드가 바뀐 편이 있을 때만 할 일에 올린다."""
