@@ -579,7 +579,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     g.addEventListener('pointerdown', (ev) => {
       if (ev.button) return;
       ev.preventDefault();
-      h0 = textH(); st = { y0: ev.clientY, h0 }; min0 = Math.max(MIN_INPUT_H, Math.ceil(parseFloat(getComputedStyle($('pText')).minHeight) || 0)); max0 = maxInputH(); z0 = zoomF(); g.setPointerCapture(ev.pointerId); g.classList.add('drag');
+      g.focus({ preventScroll: true });   // preventDefault가 기본 포커스까지 막으니 직접 준다 — 눌러서 고른 뒤 ↑↓로 바꾼다는 호버 글이 사실이 되게(11-15)
+      h0 = textH(); st ={ y0: ev.clientY, h0 }; min0 = Math.max(MIN_INPUT_H, Math.ceil(parseFloat(getComputedStyle($('pText')).minHeight) || 0)); max0 = maxInputH(); z0 = zoomF(); g.setPointerCapture(ev.pointerId); g.classList.add('drag');
       // 끄는 동안 쪽지는 끈다 — preventDefault로 mousedown이 오지 않아 tip.js가 못 숨겼다. 놓으면 되돌려 다시 올리면 뜬다
       hideTip(); tipText = g.dataset.tip || tipText; g.removeAttribute('data-tip');
     });
