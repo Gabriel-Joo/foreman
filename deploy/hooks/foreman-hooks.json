@@ -7,6 +7,6 @@
     "SubagentStart": [{"hooks": [{"type": "command", "command": "/home/kopo17/AI_programming/foreman/scripts/foreman-hook.sh", "timeout": 5}]}],
     "SubagentStop": [{"hooks": [{"type": "command", "command": "/home/kopo17/AI_programming/foreman/scripts/foreman-hook.sh", "timeout": 5}]}],
     "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "/home/kopo17/AI_programming/foreman/scripts/foreman-decide.sh pre", "timeout": 6}]}],
-    "PermissionRequest": [{"matcher": "*", "hooks": [{"type": "command", "command": "/home/kopo17/AI_programming/foreman/scripts/foreman-decide.sh permission", "timeout": 900}]}]
+    "PermissionRequest": [{"matcher": "*", "hooks": [{"type": "command", "command": "/home/kopo17/AI_programming/foreman/scripts/foreman-decide.sh permission", "timeout": 3660}]}]
   }
 }
