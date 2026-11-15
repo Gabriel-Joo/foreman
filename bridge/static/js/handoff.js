@@ -115,9 +115,7 @@ export function mpSection(mp, b, sid) {
   const c = mp.card;
   if (!c) return h ? `<section class="hand mp-card"><div class="hand-h"><b>합치기 승인</b></div>${h}</section>` : '';
   const conf = c.conflict && c.conflict.length;
-  const how = conf ? `<span class="bad" title="충돌 — 합치면 ${esc(c.base)}와 같은 줄을 서로 고친 곳이 있습니다. 승인하면 합치지 않고 그 세션(끝났으면 관리자)에게 풀라고 보냅니다.">충돌 ${c.conflict.length}개</span>`
-    : c.ff ? '<span class="ok" title="충돌 없음 — 합칠 때 같은 줄을 서로 고친 곳이 없습니다.">충돌 없음</span>'
-      : `<span class="ok" title="main이 앞섬 — 이 브랜치를 만든 뒤 ${esc(c.base)}에 커밋 ${c.behind}개가 들어왔습니다. 합칠 때 그 위로 다시 얹습니다(rebase).">충돌 없음, ${esc(c.base)}에 새 커밋 ${c.behind}개(rebase)</span>`;
+  const how = conf ? `<span class="bad" title="충돌 — 합치면 ${esc(c.base)}와 같은 줄을 서로 고친 곳이 있습니다. 승인하면 합치지 않고 그 세션(끝났으면 관리자)에게 풀라고 보냅니다.">충돌 ${c.conflict.length}개</span>` : '';
   const d = c.docs || {};
   // 11-11 2물결 「넷」 — 근거(세션 기록 「README에서 뺄 줄」 · 근거 칸 기록 · 받은 할 일 번호)가 있는 것을 앞에, 낱말만 겹친 것(weak)은 접어 둔다
   const rLine = (x) => `<div class="small${x.weak ? ' muted' : ''}">README:${x.line} ${esc(x.text)} <span class="muted">(${esc((x.why && x.why.length ? x.why : [...(x.files || []), ...(x.words || [])]).slice(0, 5).join(' · '))})</span></div>`;
@@ -133,7 +131,13 @@ export function mpSection(mp, b, sid) {
       : '합치기 — main에 합칩니다(main이 앞섰으면 rebase). push는 하지 않습니다. 시험 · push는 관리자가 합니다.';
   // 11-14 사용자 「판단하는 데 필요한 건 걸린 파일이 무엇인가 하나뿐」 — 위에는 배지 · 수 · 걸린 파일만, 나머지는 「자세히」 안(없애지 않는다)
   const badge = c.status === 'merged' ? 'ok' : c.status === 'ready' ? 'wait' : c.status === 'merging' ? 'busy' : 'bad';
-  const note = c.note ? `<div class="small ${c.status === 'merged' ? 'ok' : 'muted'}">${esc(c.note)}${c.manager_told === false ? ' 관리자 세션에는 알리지 못했습니다(텔레그램으로 남김).' : c.manager_told ? ' 관리자 세션에 알렸습니다.' : ''}</div>` : '';
+  // 11-15 사용자 — 위 「승인해야 할 파일」 · 관리자 승인 줄과 같은 뜻의 서버 글(사람 승인 카드입니다 · 관리자가 승인합니다)과 「알렸습니다」는 그리지 않는다.
+  // 관리자에게 못 알린 것(manager_told === false)은 조용한 고장이라 경고로 남긴다.
+  const told = c.manager_told === false ? '관리자 세션에는 알리지 못했습니다(텔레그램으로 남김).' : '';
+  const noteDup = !!c.note && (c.note.startsWith('사람 승인 카드입니다') || c.note.startsWith('관리자가 승인합니다'));
+  const noteTxt = !c.note || noteDup ? '' : c.note;
+  const note = (noteTxt ? `<div class="small ${told ? 'warn' : c.status === 'merged' ? 'ok' : 'muted'}">${esc(noteTxt)}</div>` : '')
+    + (told && !noteTxt.includes('알리지 못') ? `<div class="small warn">${told}</div>` : '');
   const done = c.status === 'merged' ? mergedNote(c) : null, merged = done ? done.top : '';
   const hf = humanFiles(c);
   const hfRows = hf.length ? `<div class="small mp-hf"><b>승인해야 할 파일 ${hf.length}개</b>${hf.map((x) => x.path
@@ -147,19 +151,25 @@ export function mpSection(mp, b, sid) {
     const g = head && hwGroups.find((y) => y.head === head);
     if (g) g.paths.push(x.path); else hwGroups.push({ head: head || x.why, paths: x.path ? [x.path] : [] });
   }
-  const hwRows = hwGroups.map((g) => `<div class="small muted mp-hw">${esc(g.head)}${g.paths.map((p) =>
-    `<div class="mp-hf-row" title="${esc(p)}">${esc(p.split('/').pop())}</div>`).join('')}</div>`).join('');
-  const more = `<details class="mp-more"${keep(`hand:${sid}:mp-more`)}><summary class="small muted" title="자세히 — 합치는 방법, 세션이 끝낸 까닭, 사람 승인 까닭, 커밋과 바뀐 파일, 정리 후보를 봅니다.">자세히</summary>
-      ${done ? done.more : ''}
-      <div class="small">합치는 방법: ${how}</div>
-      ${c.why ? `<div class="small muted">${esc(c.why)}</div>` : ''}
-      ${hwRows}
-      ${c.status === 'ready' ? note : ''}
-      <details${keep(`hand:${sid}:mp-commits`)}><summary class="small muted">커밋 ${c.commits.length} · 바뀐 파일 ${c.files.length}</summary><pre class="hand-body">${esc(c.commits.join('\n'))}\n\n${esc(c.files.join('\n'))}</pre></details>
-      ${docs}
-    </details>`;
+  // 11-15 사용자(410) — 위 「승인해야 할 파일 N개」와 겹치는 것은 뺀다: 늘 사람 경로 묶음은 통째로, 파일 없는 까닭은 위에서 안 잘렸을 때.
+  // 위에 안 보이는 것(다른 까닭 · 잘린 긴 까닭)만 남긴다.
+  const hwRows = hwGroups.filter((g) => g.paths.length ? g.head !== '늘 사람이 승인해야 하는 파일입니다.' : g.head.length > 60)
+    .map((g) => `<div class="small muted mp-hw">${esc(g.head)}${g.paths.map((p) =>
+      `<div class="mp-hf-row" title="${esc(p)}">${esc(p.split('/').pop())}</div>`).join('')}</div>`).join('');
+  // main이 앞선 카드만 한 줄: 「main에 새 커밋 N개(rebase)」(「합치는 방법:」 머리말 · 「충돌 없음」은 위 줄과 같아 뺌. 충돌 카드는 위 「충돌 파일」이 있음)
+  const rebase = !conf && !c.ff ? `<div class="small"><span class="ok" title="main이 앞섬 — 이 브랜치를 만든 뒤 ${esc(c.base)}에 커밋 ${c.behind}개가 들어왔습니다. 합칠 때 그 위로 다시 얹습니다(rebase).">${esc(c.base)}에 새 커밋 ${c.behind}개(rebase)</span></div>` : '';
+  const inner = [done ? done.more : '', rebase, c.why ? `<div class="small muted">${esc(c.why)}</div>` : '', hwRows, c.status === 'ready' ? note : '', docs]
+    .map((s) => s.trim()).filter(Boolean).join('\n      ');
+  const more = inner ? `<details class="mp-more"${keep(`hand:${sid}:mp-more`)}><summary class="small muted" title="자세히 — 세션이 끝낸 까닭, main이 앞섰는지, 정리 후보를 봅니다.">자세히</summary>
+      ${inner}
+    </details>` : '';
+  // 커밋 · 바뀐 파일 목록은 위 줄 「커밋 N개」 · 「바뀐 파일 N개」 호버로(길면 처음 10개 + 「외 N개」)
+  const tipList = (head, arr) => `${head}${arr.slice(0, 10).map((s) => `\n${s}`).join('')}${arr.length > 10 ? `\n외 ${arr.length - 10}개` : ''}`;
+  const hoverAttr = (s) => esc(s).replace(/\n/g, '&#10;');
+  const commitsTip = hoverAttr(tipList('커밋 — 이 브랜치에서 합칠 커밋입니다.', c.commits));
+  const filesTip = hoverAttr(tipList('바뀐 파일 — 이 커밋들이 바꾼 파일입니다.', c.files));
   return `<section class="hand mp-card"><div class="hand-h mp-head"><b>합치기 승인</b> <span class="mp-badge mp-${badge}">${esc(MP_STATUS[c.status] || c.status)}</span><code class="mp-branch" title="브랜치 — 이 카드가 합칠 작업방 브랜치입니다.">${esc(c.branch)}</code></div>${h}
-    <div class="small">커밋 <b>${c.ahead}</b>개 · 바뀐 파일 ${c.files.length}개 · ${conf ? how : '<span class="ok" title="충돌 없음 — 합칠 때 같은 줄을 서로 고친 곳이 없습니다. main이 앞섰는지는 「자세히」에 있습니다.">충돌 없음</span>'}</div>
+    <div class="small"><span title="${commitsTip}">커밋 <b>${c.ahead}</b>개</span> · <span title="${filesTip}">바뀐 파일 ${c.files.length}개</span> · ${conf ? how : '<span class="ok" title="충돌 없음 — 합칠 때 같은 줄을 서로 고친 곳이 없습니다. main이 앞섰는지는 「자세히」에 있습니다.">충돌 없음</span>'}</div>
     ${c.asks && c.status === 'ready' ? `<div class="small warn mp-asks" title="묻는 말 — 일을 마친 보고 끝에 사람에게 묻는 말이 있습니다. 합치기 전에 답할지 정합니다.">❓ 세션이 묻는 말이 있습니다. 패널에서 답하십시오: ${esc(c.asks.tail || '')}</div>` : ''}
     ${conf ? `<div class="small bad">충돌 파일: ${c.conflict.map(esc).join(', ')}</div>` : ''}
     ${hfRows}
