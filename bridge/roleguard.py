@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from bridge import hookmiss
 from bridge.reposcope import _strip_redir
 
 CONFIG = Path(__file__).resolve().parent.parent / "config" / "roles.toml"
@@ -203,6 +204,7 @@ class RoleGuard:
             h = self._check(role, cwd, tool, inp, scratch, session)
         except Exception as e:  # noqa: BLE001 — 판정 실패가 세션을 묶지 않게: 통과시키고 알린다
             self._fail(f"역할 권한 판정 실패({tool}): {type(e).__name__}: {str(e)[:200]}")
+            hookmiss.record("역할판정예외", type(e).__name__, session, tool)   # 알림은 시간마다 한 번, 기록은 매번(11-15)
             return None
         if h:
             h.enforce = self.cfg.mode == "enforce" or h.key in self.cfg.enforce

@@ -7,12 +7,15 @@
 import asyncio
 import json
 import logging
+import time
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
+from bridge import hookmiss
 from bridge.api.auth import token_ok
 
+HOOK_PRE_MAX_S = 4.0   # scripts/foreman-decide.sh pre의 curl -m 4 — 이보다 오래 걸린 판정은 버려진다
 router = APIRouter()
 log = logging.getLogger("foreman.hooks")
 _tasks: set[asyncio.Task[None]] = set()
@@ -41,19 +44,27 @@ async def _authed_body(request: Request) -> tuple[dict | None, JSONResponse | No
 @router.post("/hooks/pre")
 async def pre_tool_use(request: Request) -> Response:
     """PreToolUse — 판정을 바로 돌려준다(메모리 안에서). 판정하지 않으면 204(본문 없음 → CC가 정한다)."""
+    t0 = time.monotonic()
     body, err = await _authed_body(request)
     if err:
         return err
+    sid, tool = body.get("session_id"), body.get("tool_name")
     mgr = getattr(request.app.state, "approvals", None)
-    if mgr is None:
+    if mgr is None:                        # 판정 없이 통과(조사 A 3-2) — 설정으로 껐거나 기동 중 만들기 전
+        s = request.app.state.settings
+        hookmiss.record("승인꺼짐", "설정꺼짐" if not getattr(s, "approval_enabled", True) else "준비전", sid, tool)
         return Response(status_code=204)
     srole = None                           # 역할 권한(11-11 bridge/roleguard.py) — 켜져 있을 때만 읽는다(60초 기억). 못 읽으면 역할 없음으로
     if getattr(mgr, "roles", None) is not None and mgr.roles.active:
         try:
-            srole = await mgr.roles.role_of(mgr.engine, body.get("session_id"))
+            srole = await mgr.roles.role_of(mgr.engine, sid)
         except Exception as e:  # noqa: BLE001
             log.warning("역할 권한: 세션 역할을 읽지 못함: %s", type(e).__name__)
+            hookmiss.record("역할읽기실패", type(e).__name__, sid, tool)   # 역할 없음으로 판정 — 역할 규칙이 꺼진다
     out = mgr.pre_tool_use(body, role=await mgr.session_role(body), session_role=srole)   # 역할은 git push가 보일 때만 읽는다(11-10)
+    took = time.monotonic() - t0
+    if took >= HOOK_PRE_MAX_S:             # 스크립트가 이미 끊었다 — 이 판정은 버려졌다
+        hookmiss.record("늦은응답", f"{took:.1f}s", sid, tool)
     return JSONResponse(out) if out else Response(status_code=204)
 
 

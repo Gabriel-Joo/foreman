@@ -1,0 +1,11 @@
+[Unit]
+Description=FOREMAN bridge 포기 알림 (브리지 밖, curl만)
+Documentation=file:///home/kopo17/AI_programming/foreman/log/foreman-6_bridge_alert_20261115.md
+# foreman-bridge.service의 OnFailure=가 부른다 — systemd가 다시 띄우기를 포기(start-limit-hit 등)해 failed가 됐을 때.
+# 브리지 코드 · .venv · notify.toml을 읽지 않는 스크립트라 브리지와 같은 원인으로 함께 죽지 않는다.
+# 자동 재시작 중(포기 전)이나 살아 있지만 답하지 않는 멈춤에는 불리지 않는다 — 그것은 바깥 감시 타이머 몫(아직 없음)
+
+[Service]
+Type=oneshot
+ExecStart=/home/kopo17/AI_programming/foreman/scripts/foreman-bridge-alert.sh foreman-bridge.service
+TimeoutStartSec=60

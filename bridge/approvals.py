@@ -25,7 +25,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from bridge.approval import Decision, Policy, _short
-from bridge import pgrep_guard
+from bridge import hookmiss, pgrep_guard
 from bridge.approval_summary import summarize
 from bridge.models import EventIn, EventSource, EventStatus, EventType
 
@@ -160,18 +160,24 @@ class ApprovalManager:
                                             session=p.get("session_id"))
             except Exception as e:  # noqa: BLE001 — 판정 실패가 PreToolUse를 막지 않게(roleguard가 알림)
                 log.error("역할 권한 판정 실패: %s: %s", type(e).__name__, str(e)[:200])
+                hookmiss.record("역할판정예외", type(e).__name__, p.get("session_id"), tool)
         pp = self.policy.for_project(project)
-        # 스키마 잠금 — 다른 세션이 이 프로젝트의 스키마를 바꾸는 중이면 거부. 승인 모드(observe)와 상관없이(11-05 사용자 지시)
-        why_lock = self.schema.check(project, p.get("session_id"), p.get("cwd"), tool, inp) if self.schema else None
         rule = "스키마-잠금"
-        if not why_lock and self.scope:
-            # 다른 저장소는 읽기만 — 역시 승인 모드와 상관없이(11-09 사용자)
-            why_lock = self.scope.check(project, p.get("cwd"), tool, inp, p.get("scratchpad_dir") or _scratchpad(p), role)
-            rule = "다른저장소-쓰기"
-        if not why_lock:
-            # pgrep -f · pkill -f가 자기 셸에 걸림(11-11, bridge/pgrep_guard.py) — 역시 승인 모드와 상관없이
-            why_lock = pgrep_guard.check(tool, inp)
-            rule = "pgrep-자기걸림"
+        try:
+            # 스키마 잠금 — 다른 세션이 이 프로젝트의 스키마를 바꾸는 중이면 거부. 승인 모드(observe)와 상관없이(11-05 사용자 지시)
+            why_lock = self.schema.check(project, p.get("session_id"), p.get("cwd"), tool, inp) if self.schema else None
+            if not why_lock and self.scope:
+                # 다른 저장소는 읽기만 — 역시 승인 모드와 상관없이(11-09 사용자)
+                rule = "다른저장소-쓰기"
+                why_lock = self.scope.check(project, p.get("cwd"), tool, inp, p.get("scratchpad_dir") or _scratchpad(p), role)
+            if not why_lock:
+                # pgrep -f · pkill -f가 자기 셸에 걸림(11-11, bridge/pgrep_guard.py) — 역시 승인 모드와 상관없이
+                rule = "pgrep-자기걸림"
+                why_lock = pgrep_guard.check(tool, inp)
+        except Exception as e:  # noqa: BLE001 — 전에는 500 → 스크립트가 통과. 판정은 그대로 통과, 사실만 남긴다(11-15)
+            log.error("%s 판정 실패 — 판정 없이 통과: %s: %s", rule, type(e).__name__, str(e)[:200])
+            hookmiss.record("판정예외", f"{rule}:{type(e).__name__}", p.get("session_id"), tool)
+            return None
         # 막는 역할 규칙 — mode enforce거나 [roles] enforce에 든 규칙(11-15 조사 규칙은 mode가 observe여도 막는다)
         if not why_lock and role_hit and (self.roles.cfg.mode == "enforce" or getattr(role_hit, "enforce", False)):
             why_lock, rule = role_hit.reason, role_hit.rule
