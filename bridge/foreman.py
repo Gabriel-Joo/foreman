@@ -809,9 +809,9 @@ class ForemanDispatcher:
                     if await sr.inbox_take_pick(self.engine, iid, int(out["session_id"])):
                         taken.append(iid)
                     else:
-                        whys.append(f"받은 할 일 #{iid}은 이미 다른 세션이 가져갔거나 버린 것이라 이 세션 몫으로 적지 않았습니다.")
+                        whys.append(f"포스트잇 #{iid}은 이미 다른 세션이 가져갔거나 닫은 것이라 이 세션 몫으로 적지 않았습니다.")
                 except Exception as e:  # noqa: BLE001 — 0028 전 DB 등. 시작을 되돌리지 않고 화면에 알린다
-                    whys.append(f"받은 할 일 #{iid}을 이 세션 몫으로 적지 못했습니다({type(e).__name__}).")
+                    whys.append(f"포스트잇 #{iid}을 이 세션 몫으로 적지 못했습니다({type(e).__name__}).")
             out["inbox_taken"] = bool(taken) and len(taken) == len(set(inbox_list))
             out["inbox_taken_ids"] = taken
             if whys:

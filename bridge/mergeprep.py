@@ -369,7 +369,7 @@ def row_titles(cell: str) -> set[str]:
     return {" — ".join(parts[i:]) for i in range(len(parts))}
 
 
-_INBOX_NO = re.compile(r"받은 할 일\s*#\s*(\d+)")
+_INBOX_NO = re.compile(r"(?:받은 할 일|포스트잇)\s*#\s*(\d+)")   # 11-15 포스트잇(같은 번호, 옛 이름도 읽는다)
 _LOG_LINK = re.compile(r"(?<![\w/.-])(?:log/)?([\w.-]+\.md)\b")
 
 
@@ -414,7 +414,7 @@ def doc_candidates(readme: str, section: str, docs: dict[str, str], files: list[
         inbox = sorted(set(_INBOX_NO.findall(ln)) & inbox_seen)
         if inbox:
             score += 40
-            why.append("받은 할 일 " + " · ".join(f"#{n}" for n in inbox))
+            why.append("포스트잇 " + " · ".join(f"#{n}" for n in inbox))
         hit_f = sorted({keys[k] for k in keys if _has_key(ln, k)})
         hit_w = sorted((sub_words & rw) - common)
         score += 10 * len(hit_f) + len(hit_w)

@@ -5,6 +5,7 @@
 // 조용한 고장 금지: 못 읽은 수는 0이 아니라 「읽지 못했습니다」로 보인다.
 
 import { esc, ago, keep } from './render.js';
+import { createPostitBlock } from './postit.js';
 
 // 메뉴 순서 — 문서 점검이 앞이다(찾기 → 고치기가 핵심 흐름). 문서 고치기(docfix)는 메뉴에 없고 결과에서만 뜬다
 export const ORDER = ['doccheck', 'readme', 'later', 'trim'];
@@ -32,6 +33,7 @@ export function createScribe(store) {
   let todo = null, pub = null, note = null, busy = false, at = 0;
   let todoBad = false, pubBad = false;          // 마지막으로 읽기에 실패했나 — 지난 것을 보이되 「읽지 못했습니다」를 함께 보인다
   let askText = '', asking = false, answer = null;
+  const postit = createPostitBlock(store);        // 11-15 머리 탭 포스트잇과 같은 목록 · 같은 동작
 
   async function load(force = false) {
     if (!force && Date.now() - at < 20000) return;
@@ -141,13 +143,18 @@ export function createScribe(store) {
       return `<div class="sc-row${k === pick ? ' sc-pick' : ''}"><div class="small"><b>${esc(tasks[k].title)}</b>${bt.text ? ` <span class="${bt.cls}"${bt.tip ? ` title="${esc(bt.tip)}"` : ''}>${esc(bt.text)}</span>` : ''} <span class="muted">${esc(sub)}</span></div>
         ${go(k, '시키기', k === pick)}</div>${extra}`;
     }).join('');
-    // 받은 할 일 — 할 일이 아니라 상태다. 단추 없이 숫자만(정리는 「나중에 할 일 정리」 줄이 한다)
-    const inboxRow = pj.inbox ? `<div class="small sc-line" title="받은 할 일 — 머리줄 [＋ 할 일]로 받은 글입니다. 「나중에 할 일 정리」가 README 표로 옮깁니다."><b>받은 할 일 ${pj.inbox.n}개</b> <span class="muted">${pj.inbox.oldest_days >= 1 ? `(가장 오래된 것 ${pj.inbox.oldest_days}일째)` : '(오늘 받음)'}</span></div>` : '';
+    // 11-15 받은 할 일 숫자 줄은 없앴다 — 아래 포스트잇이 그 목록이다(머리 탭 포스트잇과 같은 것)
+    const inboxRow = '';
     const openHtml = opened.length ? `<div class="small"><b>열려 있는 일 ${opened.length}</b> <span class="muted">합치거나 버리기 전까지(같은 일, 같은 파일을 고치는 일은 하나씩. 계획으로 띄운 서기 세션도 셉니다)</span>${
       opened.map((o) => `<div class="sc-row"><div class="small">· ${esc((tasks[o.task] || {}).title || o.title || '서기 세션')}${o.topic && tasks[o.task] ? `: ${esc(o.topic)}` : ''} <span class="muted">세션 ${o.session_id}</span></div>
         <button type="button" class="small" data-sc-open="${o.session_id}" title="세션 열기 — 이 서기 세션의 [세션 정리] 탭을 엽니다. 「작업방」에서 diff를 보고 합치거나 버립니다(끝난 세션은 화면에서 사라져도 여기서 엽니다).">세션 열기</button></div>`).join('')}</div>` : '';
     const nudge = pj.nudge;
-    const pickHead = pick && tasks[pick] ? `<div class="small warn">정리할까요? 받은 할 일이 쌓였습니다(${esc(nudge ? nudge.why : '')}). 「${esc(tasks[pick].title)}」을 골라 두었습니다. [시키기]를 눌러야 서기 세션이 뜹니다.</div>` : '';
+    const pickHead = pick && tasks[pick] ? `<div class="small warn">「${esc(tasks[pick].title)}」을 골라 두었습니다. [시키기]를 눌러야 서기 세션이 뜹니다.</div>` : '';
+    // 포스트잇(11-15) — 쌓여 말풍선으로 열었으면(pick 'postit') 편 채로
+    const pst = pj.postit;
+    const pstHead = !pst ? '' : `<span class="${pst.nudge ? 'warn' : 'muted'}">열린 것 ${pst.open}${pst.unconfirmed ? `, 확인 전 ${pst.unconfirmed}` : ''}${pst.likely_done ? `, 끝난 것 같음 ${pst.likely_done}` : ''}</span>`;
+    const postitHtml = `<details class="hand"${pick === 'postit' ? ' open' : keep(`scribe:${room}:postit`)}><summary title="포스트잇 — 열린 할 일입니다. 머리줄 포스트잇과 같은 목록입니다."><b>포스트잇</b> ${pstHead}</summary>
+      ${pick === 'postit' && nudge ? `<div class="small warn">포스트잇이 쌓였습니다: ${esc(nudge.why)}.</div>` : ''}${postit.html(room, label)}</details>`;
     const nAlert = items.filter((x) => x.kind === 'publish' && x.act === 'force').length;
     const bad = todoBad ? ` <span class="bad">· 지금 값을 ${UNREAD}(지난 값입니다)</span>` : '';
     const sumCount = !todo ? '' : (nBehind + nAlert ? `<span class="warn">밀린 것 ${nBehind + nAlert}</span>` : '<span class="muted">밀린 것 없음</span>');
@@ -163,14 +170,16 @@ export function createScribe(store) {
     return `<div class="small muted">${esc(label)} · 서기(문서 담당). 시킨 일은 작업방 세션으로 돌고, 끝나면 사람이 diff를 보고 합칩니다.</div>
       ${askHtml}
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}"${note.tip ? ` title="${esc(note.tip)}"` : ''}>${esc(note.msg)}</div>` : ''}
-      <details class="hand"${pick ? ' open' : keep(`scribe:${room}:list`, true)}><summary title="할 일 — 서기에게 시킬 일 한 목록입니다. 이름 옆 숫자는 밀린 정도이고, 숫자가 없으면 지금 밀린 것이 없습니다."><b>할 일</b> ${sumCount}${bad}</summary>${listBody}</details>
+      ${postitHtml}
+      <details class="hand"${pick && pick !== 'postit' ? ' open' : keep(`scribe:${room}:list`, true)}><summary title="할 일 — 서기에게 시킬 일 한 목록입니다. 이름 옆 숫자는 밀린 정도이고, 숫자가 없으면 지금 밀린 것이 없습니다."><b>할 일</b> ${sumCount}${bad}</summary>${listBody}</details>
       <div class="hand">${portfolioBlock(room, pj, tasks)}${portPubBlock(room, pj)}${docsPubBlock(room, pj)}</div>
       ${pubBad && pub ? `<div class="small bad">게시 목록을 ${UNREAD}(지난 값입니다).</div>` : ''}`;
   }
 
   // 글 칸은 다시 그려져도 남게 입력마다 적어 둔다(opanel이 #pSel의 input을 넘긴다)
-  function onInput(ev) {
+  function onInput(ev, room) {
     if (ev.target && ev.target.id === 'scAskText') askText = ev.target.value;
+    if (room) postit.onInput(ev, room);
   }
   function onKey(ev, room) {
     if (ev.target && ev.target.id === 'scAskText' && ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); ask(room); }
@@ -212,6 +221,7 @@ export function createScribe(store) {
     // 합치지 않은 worktree의 [합치기]에 닿을 길이 없었다
     const o = ev.target.closest('[data-sc-open]');
     if (o) { ev.preventDefault(); if (openSession) openSession(Number(o.dataset.scOpen)); return; }
+    if (await postit.onClick(ev, room)) { await load(true); return; }      // 포스트잇 줄 · [저장] · [갱신]
     if (ev.target.closest('[data-sc-ask]')) { ev.preventDefault(); await ask(room); return; }
     if (ev.target.closest('[data-sc-fix]')) {        // 물어보기 답으로 바로 고치기
       ev.preventDefault();

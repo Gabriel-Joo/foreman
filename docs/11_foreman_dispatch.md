@@ -153,7 +153,7 @@
   - (11-15 바뀜) 맞대는 상대는 「살아 있는 세션」에 「열려 있는 세션」을 더한다. 열려 있다 = 합치거나 버리기 전. worktree 세션은 폴더가 남아 있는 동안, 원본 폴더 세션은 끝나기 전(`foreman.py` `UNMERGED_SQL`, `still_open`). 서기실 열린 일과 같은 판단이다. CC가 끝나도 합치지 않은 worktree는 합칠 때 충돌하니 겹침에 넣는다. 합치기 기록 없이 지운 worktree(296, 311)는 폴더가 없어 빠진다
   - 서기실 [시키기]로 띄운 서기 세션도 잡힌다. 서기실이 `dispatch`(origin `scribe`)와 `dispatch_session`(맡을 파일 = 그 일의 `TOUCHES`)을 남기고, 그 기록이 없던 11-15 전 서기실 세션은 `scribe_room.open_tasks`로 더한다 → `docs/12_scribe.md` 「2.」
 - **서기 일 종류(`task`, 11-15)**: 계획 세션 칸에 `task`(서기실 일 이름: readme, later, trim, doccheck, docfix, portfolio). 역할 scribe면 `spawn_new`가 `session_action scribe-task`로 남긴다(없으면 `plan`). `POST /api/spawn`도 `task`를 받는다. 계획 카드는 이 칸을 보이지 않고 그대로 넘긴다
-- **받은 할 일에서 바로**(받은 할 일 #8): [＋ 할 일] 창에서 새로인 줄을 골라 [고른 것으로 계획 받기] → 교장 계획 창이 열려 바로 계획을 받는다. 번호는 `inbox_ids`로 [이대로 시작]에 실려 뜬 세션이 가져간다(`PUT /api/todo/{id}`로 그 자리에서 고치기, `bridge/api/todo.py`) [log:coder_c_wave2_20261111.md]
+- **포스트잇에서 바로**(받은 할 일 #8, 11-15 포스트잇으로 옮김): 코더 추천이 붙은 포스트잇의 [띄우기]가 교장 계획 창을 열고 바로 계획을 받는다(`foremanChat.openWith(…, {ask: true})`). 번호는 `inbox_ids`로 [이대로 시작]에 실려 뜬 세션이 가져간다. 11-11의 [＋ 할 일] 창 목록과 [고른 것으로 계획 받기]는 11-15에 뺐다(목록은 포스트잇이 맡는다, `docs/12_scribe.md` 「11.」). 열린 것 고치기는 `PUT /api/todo/{id}` 그대로 [log:coder_c_wave2_20261111.md] [log:foreman-5_postit_20261115.md]
 
 **설정 스위치 뒤에 있던 것 — 합칠 때(11-11 286)는 하나도 켜지 않았고, 같은 날 저녁 사용자 지시로 넷을 켰다(역할 권한만 관찰)** [log:coder_c_wave2_20261111.md] [log:merge_c_wave2_20261111.md] [log:enable_c_wave2_20261111.md]
 

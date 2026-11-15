@@ -1306,9 +1306,11 @@ async def test_later_since_counts_only_merged_runs(env):
     assert await sr.later_since(engine, proj) == datetime(2026, 11, 6, 6, 5)  # 합쳤다(커밋 0개여도) → 그 뒤부터
 
 
-async def test_todo_inbox_states(env):
-    """할 일 받는 함(11-09) — 적으면 새로, 서기가 가져가면 정리 중, 합치면 옮김, 버린 정리면 다시 새로, 사람이 버리면 버림."""
+async def test_postit_states_close_and_limit(env):
+    """포스트잇(11-15, 0033) — 받는 함이 곧 포스트잇. 적으면 열림, [x] 삭제, [→] 알려진 한계(서기 「알려진 한계 쓰기」가 가져가
+    합치면 README에 씀, 버리면 다시 쓸 줄), 같은 근거는 두 번 안 들어가고 그물의 확인 전 줄은 관리자가 올리면 확인된 줄이 된다."""
     from sqlalchemy import text as T
+    from bridge import postit as pi
     from bridge import scribe_room as sr
     from bridge.inject import Refused
     s, _main = env
@@ -1323,36 +1325,59 @@ async def test_todo_inbox_states(env):
             await sr.inbox_add(engine, proj, bad)
     with pytest.raises(Refused):
         await sr.inbox_add(engine, "없는-프로젝트", "할 일")
-    a = await sr.inbox_add(engine, proj, "질문 카드 — 답한 뒤 한 줄로 접기\n둘째 줄")
+    with pytest.raises(Refused):
+        await sr.inbox_add(engine, proj, "할 일", "nobody")
+    a = await sr.inbox_add(engine, proj, "질문 카드: 답한 뒤 한 줄로 접기\n둘째 줄")
     b = await sr.inbox_add(engine, proj, "터미널 입력 칸 겹침")
+
     async def state():
         return {r["id"]: r["state"] for r in await sr.inbox_list(engine, proj)}
     assert await state() == {a: "new", b: "new"}
-    assert [x["id"] for x in await sr.inbox_new(engine, proj)] == [a, b]      # 서기에게는 오래된 것부터
-    assert [x["id"] for x in await sr.inbox_list(engine, proj)] == [b, a]     # 화면 목록은 최근 것부터
+    assert [x["id"] for x in await pi.items(engine, proj)] == [a, b]            # 열린 것은 오래된 것부터
+    assert await sr.inbox_new(engine, proj) == [] and await sr.inbox_new(engine, proj, "coder") == []
     todo = await sr.todo(engine)
-    assert any(i["title"] == "받은 할 일 2개" and i["kind"] == "later" for i in todo[proj]["items"])
-    await sr._inbox_take(engine, [a, b], sid)
-    assert await state() == {a: "taking", b: "taking"} and await sr.inbox_new(engine, proj) == []
+    assert todo[proj]["postit"]["open"] == 2 and not any(i["kind"] == "later" for i in todo[proj]["items"])  # 열린 포스트잇은 서기 몫이 아니다
+    # [→] 알려진 한계 — 서기 「알려진 한계 쓰기」 몫이 된다
+    assert await pi.close(engine, a, "limit", "못 푼다") is True and await pi.close(engine, a, "drop") is False
+    assert [x["id"] for x in await sr.inbox_new(engine, proj)] == [a]
+    todo = await sr.todo(engine)
+    assert any(i["title"] == "알려진 한계 쓰기: 쓸 줄 1, 뺄 줄 0" for i in todo[proj]["items"])
+    await sr._inbox_take(engine, [a], sid)
+    assert (await state())[a] == "limit_writing" and await sr.inbox_new(engine, proj) == []
     async with engine.begin() as c:
         await c.execute(T("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, 'wt-discard', 1, 'x')"), {"s": sid})
-    assert await state() == {a: "new", b: "new"}                               # 정리를 버렸다 → 다시 새로
+    assert (await state())[a] == "limit"                                       # 쓰기를 버렸다 → 다시 쓸 줄
     assert await sr.inbox_drop(engine, b) is True and await sr.inbox_drop(engine, b) is False
     async with engine.begin() as c:
         await c.execute(T("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, 'wt-merge', 1, 'x')"), {"s": sid})
-    assert await state() == {a: "moved", b: "dropped"}                         # 합쳤다 → 옮김, 사람이 버린 것은 버림
-    todo = await sr.todo(engine)
-    assert not any("받은 할 일" in i["title"] for v in todo.values() for i in v["items"])   # 새로가 없으면 할 일 줄도 없다
+    assert await state() == {a: "limit_written", b: "drop"}
+    assert q(s, "SELECT dropped_at IS NOT NULL FROM todo_inbox WHERE id = %s", b)[0][0] == 1   # 옛 칸도 함께(0032 코드가 읽어도 버림)
+    assert [x["id"] for x in await pi.items(engine, proj, open_only=False)] == [b, a]   # 닫힌 것은 최근 닫은 것부터
+    with pytest.raises(Refused):
+        await pi.close(engine, b, "없는까닭")
+    # 같은 근거는 한 번만 · 그물의 확인 전 줄을 관리자가 같은 턴으로 올리면 확인된 줄로
+    r1 = await pi.add(engine, proj, "그물이 찾음", "chat", "t:999999", confirmed=False)
+    r2 = await pi.add(engine, proj, "그물이 또 찾음", "chat", "t:999999", confirmed=False)
+    assert r1["created"] and not r2["created"] and r2["id"] == r1["id"]
+    r3 = await pi.add(engine, proj, "관리자가 올림", "said", "t:999999")
+    assert r3 == {"id": r1["id"], "created": False}
+    row = q(s, "SELECT source, confirmed, body FROM todo_inbox WHERE id = %s", r1["id"])[0]
+    assert row == ("said", 1, "관리자가 올림")
+    c2 = await pi.add(engine, proj, "확인 전 하나", "chat", "t:999998", confirmed=False)
+    assert await pi.confirm(engine, [c2["id"]]) == 1 and await pi.confirm(engine, [c2["id"]]) == 0
+    # 코더 [띄우기] — 계획으로 띄운 세션이 가져가면 coder가 되고, 그 세션이 합쳐져도 닫히지 않는다(사람 · [갱신]이 닫는다)
+    k = await sr.inbox_add(engine, proj, "코더에게 맡길 일")
+    assert await sr.inbox_take_pick(engine, k, sid) is True and await sr.inbox_take_pick(engine, k, sid) is False
+    assert (await state())[k] == "merged" and k in [x["id"] for x in await pi.items(engine, proj)]
+    assert q(s, "SELECT assignee FROM todo_inbox WHERE id = %s", k)[0][0] == "coder"
 
 
-async def test_inbox_assignee_coder_jobs_and_rest(env, tmp_path):
-    """11-09 받는 사람(0028) — 서기 몫 · 코더 몫이 섞이지 않고, 코더 몫은 계획으로 띄운 세션이 가져가 합치면 「끝남」.
-    쉬게 한 일은 합치거나 버리기 전까지(그리고 다시 살아나지 않은 동안) 코더 맡길 일에 든다. 서기 제안은 기준(새로 · 일수)을 넘을 때만."""
-    from datetime import datetime, timedelta
+async def test_postit_net_sweep(env):
+    """그물(11-15) — 사람 턴에서 미룬 말을 찾아 확인 전으로. 띄운 세션의 첫 턴(일감 글) · 합치기 카드 · 아직 열린 턴은 빼고,
+    한 번 올린 턴은 다시 올리지 않으며, 관리자가 그 세션으로 올리면 그 줄이 확인된 줄이 된다."""
+    from datetime import datetime
     from sqlalchemy import text as T
-    from bridge import coder_room as cr
-    from bridge import scribe_room as sr
-    from bridge.inject import Refused
+    from bridge import postit as pi
     s, _main = env
     await run(s)
     engine = make_engine(s)
@@ -1360,24 +1385,138 @@ async def test_inbox_assignee_coder_jobs_and_rest(env, tmp_path):
     sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
     proj = q(s, "SELECT p.name FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
                 "JOIN project p ON p.id = ch.project_id WHERE cs.id = %s", sid)[0][0]
-    with pytest.raises(Refused):
-        await sr.inbox_add(engine, proj, "할 일", "nobody")
-    a = await sr.inbox_add(engine, proj, "서기 몫")
-    c = await sr.inbox_add(engine, proj, "코더 몫 — 화면 고치기", "coder")
-    assert [x["id"] for x in await sr.inbox_new(engine, proj)] == [a]                  # 서기 정리는 서기 몫만 가져간다
-    assert [x["id"] for x in await sr.inbox_new(engine, proj, "coder")] == [c]
-    rows = {r["id"]: r for r in await sr.inbox_list(engine, proj)}
-    assert rows[c]["assignee"] == "coder" and rows[a]["assignee"] == "scribe"
-    # 코더 몫 — 이 세션(worktree 아님)이 가져가면 하는 중, 끝나면 끝남. 서기 몫에는 손대지 않는다
-    assert await sr.inbox_take_coder(engine, a, sid) is False
+    first = q(s, "SELECT id FROM turn WHERE session_id = %s ORDER BY seq LIMIT 1", sid)[0][0]
+    seq = q(s, "SELECT MAX(seq) FROM turn WHERE session_id = %s", sid)[0][0]
+    async with engine.begin() as c:
+        # 이 세션은 브리지가 띄웠다 — 첫 턴은 띄울 때 넣은 일감 글이다
+        await c.execute(T("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, 'spawn', 1, :d)"),
+                        {"s": sid, "d": f"cc-x %1 cc=abc 새 세션 행 {sid}"})
+        await c.execute(T("UPDATE turn SET prompt_text = '끝낸 줄은 「나중에 할 일」에 적어 넣어라', origin = 'human' WHERE id = :i"), {"i": first})
+        ids = []
+        for n, (txt, origin, ended) in enumerate([
+                ("[FOREMAN 합치기 카드] 세션 3 「x」 — 「나중에 할 일」에 올려라", "merge_card", True),
+                ("이건 「포스트잇」에 올려라. 지금 맡기지 마라", "human", False),
+                ("오늘 일은 끝", "human", True),
+                ("이건 「포스트잇」에 올려라. 지금 맡기지 마라", "human", True)], 1):
+            r = await c.execute(T("INSERT INTO turn (session_id, seq, prompt_text, started_at, ended_at, origin) VALUES "
+                                  "(:s, :q, :t, UTC_TIMESTAMP(3), IF(:e, UTC_TIMESTAMP(3), NULL), :o)"),
+                                {"s": sid, "q": seq + n, "t": txt, "e": ended, "o": origin})
+            ids.append(r.lastrowid)
+    card, open_t, plain, real = ids
+    since = datetime(2000, 1, 1)
+    got = {x["id"] for x in await pi.candidates(engine, since)}
+    assert real in got and not {first, card, open_t, plain} & got           # 첫 턴 · 카드 · 열린 턴 · 미룬 말 없음은 뺀다
+    assert await pi.sweep(engine, since) >= 1
+    row = q(s, "SELECT source, confirmed, project FROM todo_inbox WHERE source_ref = %s", f"t:{real}")[0]
+    assert row == ("chat", 0, proj)
+    assert real not in {x["id"] for x in await pi.candidates(engine, since)}
+    assert await pi.sweep(engine, since) == 0                                # 이미 올린 턴은 다시 올리지 않는다
+    # 관리자가 같은 세션으로 올림 — 근거는 그 세션의 마지막 사람 턴(= real). 확인 전 줄이 확인된 줄이 된다
+    r = await pi.add(engine, proj, "포스트잇에 올림", "said", session=sid)
+    assert r["created"] is False
+    assert q(s, "SELECT source, confirmed FROM todo_inbox WHERE source_ref = %s", f"t:{real}")[0] == ("said", 1)
+
+
+async def test_postit_check_collect_and_resolve(env, tmp_path):
+    """[갱신](11-15) — 점검 세션의 마지막 응답에서 결과 블록을 읽는다. 코드 자리 없는 「끝남」은 모름으로, 결과가 들어오면 다시 읽지 않고,
+    사람이 [닫기]를 누를 때만 포스트잇이 닫힌다(자동으로 지우지 않는다)."""
+    from sqlalchemy import text as T
+    from bridge import handoff as h
+    from bridge import postit as pi
+    s, _main = env
+    await run(s)
+    engine = make_engine(s)
+    ENGINES.append(engine)
+    sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
+    proj = q(s, "SELECT p.name FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
+                "JOIN project p ON p.id = ch.project_id WHERE cs.id = %s", sid)[0][0]
+    a = (await pi.add(engine, proj, "질문 카드 접기"))["id"]
+    b = (await pi.add(engine, proj, "터미널 스크롤"))["id"]
+    tr = tmp_path / "check.jsonl"
+    block = (f"<<<{pi.CHECK_TAG} r=rq1>>>\n" + json.dumps([
+        {"id": f"p:{a}", "verdict": "끝남", "evidence": "bridge/static/js/opanel.js:120", "reason": "접힌다"},
+        {"id": f"p:{b}", "verdict": "끝남", "evidence": "c0ffee1", "reason": "커밋만"}], ensure_ascii=False) + "\n<<<END r=rq1>>>")
+    tr.write_text(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": block}]}}, ensure_ascii=False) + "\n",
+                  encoding="utf-8")
+
+    class M:
+        sessions_dir = s.sessions_dir
+
+        async def session(self, i):
+            return h.SessionRow(i, "cc-check", None, str(tmp_path), str(tr), proj, "점검")
+
+        async def _act(self, i, action, pid, ok, detail):
+            async with engine.begin() as c:
+                await c.execute(T("INSERT INTO session_action (session_id, action, pid, ok, detail) VALUES (:s, :a, :p, :o, :d)"),
+                                {"s": i, "a": action, "p": pid, "o": ok, "d": detail})
+    m = M()
+    await m._act(sid, pi.CHECK_ACT, None, True, f"{proj} rq1 p2 L0")
+    pi._KNOWN[(sid, "rq1")] = {f"p:{a}": "질문 카드 접기", f"p:{b}": "터미널 스크롤"}
+    summ = await pi.summary(engine, proj)
+    assert summ["check"]["state"] == "running"
+    assert await pi.collect(m, engine) == 2
+    assert await pi.collect(m, engine) == 0                                   # 결과를 받은 세션은 다시 읽지 않는다
+    by = {k["item"]: k for k in await pi.checks(engine, proj)}
+    assert by[f"p:{a}"]["verdict"] == "done" and by[f"p:{b}"]["verdict"] == "unknown"
+    summ = await pi.summary(engine, proj)
+    assert summ["check"]["state"] == "done" and summ["likely_done"] == 1 and summ["open"] == 2   # 판정만으로는 닫히지 않는다
+    assert (await pi.resolve_check(engine, by[f"p:{b}"]["id"], "keep"))["ok"]
+    assert (await pi.resolve_check(engine, by[f"p:{a}"]["id"], "close"))["ok"]
+    assert (await pi.resolve_check(engine, by[f"p:{a}"]["id"], "close"))["ok"] is False
+    row = q(s, "SELECT closed_reason, closed_note FROM todo_inbox WHERE id = %s", a)[0]
+    assert row[0] == "done" and "opanel.js:120" in row[1]
+    assert [x["id"] for x in await pi.items(engine, proj)] == [b]
+
+
+async def test_promote_postit_only_skips_session(env, monkeypatch):
+    """옮기기 2/2(11-15) — 승인한 것이 모두 dest postit(할 일인 미완)이면 세션에 쓰기 요청을 보내지 않고 브리지가 포스트잇에 넣는다.
+    같은 항목을 다시 써도 포스트잇은 하나다(근거 pr:<id>:<항목>)."""
+    from sqlalchemy import text as T
+    from bridge import handoff as h
+    from bridge import promote as pm
+    s, _main = env
+    await run(s)
+    engine = make_engine(s)
+    ENGINES.append(engine)
+    mgr = h.HandoffManager(engine, s.sessions_dir)
+    mgr.promote = pr = pm.Promoter(mgr)
+    sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
+    sent = []
+
+    async def fake_deliver(*a, **kw):
+        sent.append(a)
+        return {"delivered": None}
+    monkeypatch.setattr(pm, "deliver", fake_deliver)
+    items = [{"id": 1, "kind": "미완", "what": "질문 카드 접기를 끝낸다", "quote": "접어라", "dest": "postit", "section": "", "why": "", "state": "approved"},
+             {"id": 2, "kind": "결정", "what": "그때뿐", "quote": "", "dest": "drop", "section": "", "why": "", "state": "dropped"}]
+    async with engine.begin() as c:
+        r = await c.execute(T("INSERT INTO promotion (session_id, req, status, items) VALUES (:s, 'pp1', 'listed', :i)"),
+                            {"s": sid, "i": json.dumps(items, ensure_ascii=False)})
+        pid = r.lastrowid
+    out = await pr.write(pid)
+    assert out["status"] == "written" and len(out["postit"]) == 1 and sent == []
+    row = q(s, "SELECT source, source_ref, body FROM todo_inbox WHERE id = %s", out["postit"][0])[0]
+    assert row[0] == "promote" and row[1] == f"pr:{pid}:1" and "사람 말: 「접어라」" in row[2]
+    assert q(s, "SELECT status FROM promotion WHERE id = %s", pid)[0][0] == "written"
+
+
+async def test_inbox_assignee_coder_jobs_and_rest(env, tmp_path):
+    """쉬게 한 일은 합치거나 버리기 전까지(그리고 다시 살아나지 않은 동안) 코더 맡길 일에 든다.
+    11-15 「코더에게」 받은 할 일은 포스트잇 코더 추천으로 옮겨 코더 맡길 일의 inbox는 늘 비어 있다."""
+    from datetime import datetime, timedelta
+    from sqlalchemy import text as T
+    from bridge import coder_room as cr
+    from bridge import scribe_room as sr
+    s, _main = env
+    await run(s)
+    engine = make_engine(s)
+    ENGINES.append(engine)
+    sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
+    proj = q(s, "SELECT p.name FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
+                "JOIN project p ON p.id = ch.project_id WHERE cs.id = %s", sid)[0][0]
+    c = await sr.inbox_add(engine, proj, "옛 코더 몫", "coder")
+    assert await sr.inbox_new(engine, proj, "coder") == []
     assert await sr.inbox_take_coder(engine, c, sid) is True and await sr.inbox_take_coder(engine, c, sid) is False
-    st = {r["id"]: (r["state"], sr.inbox_label(r["state"], r["assignee"])) for r in await sr.inbox_list(engine, proj)}
-    assert st[c] == ("taking", "코더가 하는 중") and st[a] == ("new", "새로")
-    async with engine.begin() as cn:
-        await cn.execute(T("UPDATE character_session SET detached_at = UTC_TIMESTAMP(3) WHERE id = :s"), {"s": sid})
-    st = {r["id"]: (r["state"], sr.inbox_label(r["state"], r["assignee"])) for r in await sr.inbox_list(engine, proj)}
-    assert st[c] == ("moved", "끝남")
-    assert sr.inbox_label("moved", "scribe") == "옮김"
     # 쉬게 한 일 — worktree 폴더가 있고 세션이 살아 있지 않으면 센다. 합치면 빠진다
     wtp = tmp_path / "proj" / ".worktrees" / "rest-a"
     wtp.mkdir(parents=True)

@@ -103,8 +103,12 @@ def test_portfolio_topics_and_blocked_per_topic(tmp_path):
     assert "tools/screen.py" not in sr.task_prompt("portfolio", "foreman", "/repo", {"slug": "01_loss", "title": "t", "about": "B", "sources": ""})
 
 
-def test_later_pattern():
-    assert sr.LATER.search("이건 나중에 하자") and sr.LATER.search("일단 미루고") and not sr.LATER.search("지금 바로 해")
+def test_later_task_is_known_limits():
+    """11-15 포스트잇 — 미룬 말 그물은 bridge/postit.py(tests/test_postit.py). 서기 later는 README 「알려진 한계」 쓰기다."""
+    assert not hasattr(sr, "LATER")
+    assert sr.TASKS["later"]["title"] == "알려진 한계 쓰기"
+    p = sr.task_prompt("later", "foreman", "/repo", {"materials": "/m/later.md"})
+    assert "알려진 한계" in p and "포스트잇 #번호" in p and "나중에 할 일" not in p
 
 
 def test_last_change_commits_since_and_unreadable(tmp_path):

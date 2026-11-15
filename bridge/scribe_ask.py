@@ -24,7 +24,7 @@ COMMIT_DAYS = 3             # 재료에 넣는 최근 커밋 기간
 
 INSTRUCTIONS = """너는 이 프로젝트의 문서 담당(서기)이다. 사람이 문서 · 기록에 대해 묻는다. 아래 재료와 저장소 파일(README · docs · log · CLAUDE.md)을 읽고 한국어로 답하라.
 - 읽기만 한다. 파일을 고치거나 명령을 실행할 수 없다. 문서를 고쳐 달라는 말이면 고치지 말고 "서기실의 [시키기]에서 시키십시오"라고 답하라.
-- 근거가 있는 것만 답한다. 파일에서 읽은 것은 파일 이름을, 재료에서 읽은 것은 커밋 해시나 받은 할 일 번호를 적어라. 모르면 모른다고 하라.
+- 근거가 있는 것만 답한다. 파일에서 읽은 것은 파일 이름을, 재료에서 읽은 것은 커밋 해시나 포스트잇 번호를 적어라. 모르면 모른다고 하라.
 - 짧게 답한다. 비밀값(.env*, 토큰, 키)은 읽지도 적지도 마라.
 """
 
@@ -40,7 +40,7 @@ async def material(engine: Any, project: str, repo: str) -> str:
     now = datetime.now(UTC).replace(tzinfo=None)
     lines = [f"# 재료 — {project} ({sc.kst(now)} KST, 저장소 {repo})", ""]
     inbox = await sr.inbox_list(engine, project, 30)
-    lines.append(f"## 받은 할 일 {len(inbox)}개(최근 것부터)")
+    lines.append(f"## 포스트잇 {len(inbox)}개(최근 것부터, 닫힌 것 포함)")
     for x in inbox:
         lines.append(f"- #{x['id']} [{sr.inbox_label(x['state'], x.get('assignee'))}] {sc._clip(x['body'], 300)}")
     lines += ["", f"## 최근 {COMMIT_DAYS}일 커밋"]

@@ -52,6 +52,10 @@ MGR_ASK = "[관리자 부탁 — "
 MGR_ASK_HUMAN = "[관리자 부탁 — 사람 관리자"
 # 작업 세션 턴 끝 보고 · 사람에게 올릴 물음을 관리자에게 넣은 것(bridge/managers.py relay_text, 11-12) — 출처 relay
 RELAY_HEADS = ("[작업 보고 — ", "[사람에게 올릴 물음 — ")
+# 브리지가 관리자 입력 칸에 넣는 합치기 카드 · 합치기 결과(bridge/mergeprep.py, 11-15 포스트잇) — 출처 merge_card.
+# 전에는 human으로 들어와 「나중에」 그물 · 겹침 알림 · 마지막 사람 말에 섞였다(log/foreman-6_postit_proposal_20261115.md 1-2, 15턴).
+# 알림 · 화면은 relay처럼 다룬다(bridge/notify.py BRIDGE_ORIGINS, bridge/api/dashboard.py MGR_QUIET_ORIGINS)
+MERGE_CARD_HEAD = "[FOREMAN 합치기"
 TEXT_CLIP = 2000      # tool_use 입력의 문자열 하나
 PREVIEW = 500         # 큐 · 알림 미리보기
 QUEUE_TEXT = 20_000   # 작업 중에 보낸 입력(대기열) — 턴이 되지 않고 열린 턴에 끼어든다. 대화 패널이 이것을 내 글로 보여 준다(11-05)
@@ -768,6 +772,8 @@ class Assembler:
             return "manager_ask"
         if any(h in head for h in RELAY_HEADS):
             return "relay"
+        if MERGE_CARD_HEAD in head:
+            return "merge_card"
         if d.get("isMeta"):
             return "agent_message" if AGENT_MSG in s[:120] else "meta"
         return "human"

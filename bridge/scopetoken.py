@@ -188,6 +188,12 @@ async def why_out_of_scope(scope: str, method: str, path: str, query: dict[str, 
         if p == scope:
             return None
         return f"프로젝트 토큰({scope})으로는 이 프로젝트 짝만 등록할 수 있습니다 — 받은 project: {p or '없음'}"
+    if path == "/api/postit":
+        # 11-15 포스트잇 — 그 프로젝트 관리자가 사람 말(「포스트잇에 올려라」)을 그 턴에서 올린다. 읽기도 그 프로젝트만
+        p = query.get("project") if method == "GET" else (body or {}).get("project") if isinstance(body, dict) else None
+        if p == scope and method in ("GET", "POST"):
+            return None
+        return f"프로젝트 토큰({scope})으로는 이 프로젝트 포스트잇만 읽고 올릴 수 있습니다. 받은 project: {p or '없음'}"
     return f"프로젝트 토큰({scope})은 이 API({method} {path})에 닿지 않습니다 — {ADMIN_ONLY_HINT}"
 
 

@@ -45,15 +45,17 @@ function itemRow(it, m, editable, isOpen) {
   const dis = editable ? '' : ' disabled';
   const mark = !ck.ok ? `<span class="bad">✗ ${esc(ck.problem || '')}</span>` : ck.note ? `<span class="warn">${esc(ck.note)}</span>` : '';
   const changed = m.dest !== it.dest || m.section !== it.section ? ' <span class="muted">(고친 목적지는 저장하면 다시 확인합니다)</span>' : '';
-  const dest = m.dest === 'memory' ? '메모리' : m.dest === 'drop' ? '버림' : m.dest;
+  // 11-15 postit — 할 일인 미완은 포스트잇으로(세션이 쓰지 않고 브리지가 넣는다). 절이 없다
+  const special = m.dest === 'memory' || m.dest === 'drop' || m.dest === 'postit';
+  const dest = m.dest === 'memory' ? '메모리' : m.dest === 'drop' ? '버림' : m.dest === 'postit' ? '포스트잇' : m.dest;
   const head = `<div class="small prom-head"><select data-f="state"${dis} title="상태 — 승인한 것만 씁니다. 빼기는 쓰지 않습니다.">${
       Object.entries(STATE).map(([k, v]) => `<option value="${k}"${m.state === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
-      <button type="button" class="prom-fold" data-act="prom-fold" data-pid="${it.id}" title="${isOpen ? '접기 — 이 항목을 한 줄로 접습니다.' : '펼치기 — 글 칸, 원문, 왜 거기를 봅니다.'}"><b>#${it.id}</b> <span class="muted">${esc(it.kind)}</span><code>${esc(dest)}</code>${m.section && m.dest !== 'memory' && m.dest !== 'drop' ? `<span>「${esc(m.section)}」</span>` : ''}<span class="prom-arrow">${isOpen ? '▼' : '▶'}</span></button>
+      <button type="button" class="prom-fold" data-act="prom-fold" data-pid="${it.id}" title="${isOpen ? '접기 — 이 항목을 한 줄로 접습니다.' : '펼치기 — 글 칸, 원문, 왜 거기를 봅니다.'}"><b>#${it.id}</b> <span class="muted">${esc(it.kind)}</span><code>${esc(dest)}</code>${m.section && !special ? `<span>「${esc(m.section)}」</span>` : ''}<span class="prom-arrow">${isOpen ? '▼' : '▶'}</span></button>
       ${mark}</div>`;
   if (!isOpen) return `<div class="prom-item prom-${esc(m.state)}" data-pid="${it.id}">${head}</div>`;
   return `<div class="prom-item prom-${esc(m.state)} open" data-pid="${it.id}">${head}
-    <div class="small prom-where">어디로 <input data-f="dest" class="prom-dest" value="${esc(m.dest)}"${dis} title="어디로 — 저장소 기준 .md 경로, memory(사람 선호), drop(버림)">
-      ${m.dest === 'memory' || m.dest === 'drop' ? '' : `「<input data-f="section" class="prom-sec" value="${esc(m.section || '')}"${dis} title="절 — 그 문서의 절 제목. 없으면 새로 만듭니다.">」`}${changed}</div>
+    <div class="small prom-where">어디로 <input data-f="dest" class="prom-dest" value="${esc(m.dest)}"${dis} title="어디로 — 저장소 기준 .md 경로, memory(사람 선호), drop(버림), postit(끝나지 않은 할 일, 포스트잇)">
+      ${special ? '' : `「<input data-f="section" class="prom-sec" value="${esc(m.section || '')}"${dis} title="절 — 그 문서의 절 제목. 없으면 새로 만듭니다.">」`}${changed}</div>
     <textarea data-f="what" rows="2" class="prom-what"${dis}>${esc(m.what)}</textarea>
     ${it.quote ? `<div class="small muted">원문: “${esc(it.quote)}”</div>` : ''}
     ${it.why ? `<div class="small muted">왜 거기: ${esc(it.why)}</div>` : ''}

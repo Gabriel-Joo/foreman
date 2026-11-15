@@ -49,9 +49,11 @@ TITLES = {
     "no_signal": "종료 신호 없이 다음 턴이 시작됨",
     "abandoned": "끝 신호 없이 버려진 턴",
 }
+# 브리지가 넣은 글로 연 턴 — origins 설정과 상관없이 사람 턴처럼 판정한다(위 relay 주석)
+BRIDGE_ORIGINS = ("relay", "merge_card")
 ORIGIN_LABEL = {"human": "요청", "meta": "입력", "agent_message": "다른 세션 메시지", "task_notification": "완료 알림",
                 "subagent_message": "서브에이전트 결과", "handoff": "옮기기 요약 요청", "handoff_in": "옮겨 온 요약",
-                "manager_ask": "관리자 부탁", "relay": "작업 세션에서 온 보고"}
+                "manager_ask": "관리자 부탁", "relay": "작업 세션에서 온 보고", "merge_card": "합치기 카드"}
 URGENT_REASONS = FAIL_REASONS | {"session_end"}     # 턴 끝 중 묶음으로 미루지 않는 것
 WORKER_ROLES = {"coder", "scribe", "designer"}      # 턴 끝을 관리자에게 넘기는 역할(관리자 · 교장 아닌 작업 세션)
 DIGEST_KIND_LABEL = {"turn": "턴 끝", "batch": "서브에이전트 묶음", "merge": "합치기", "handoff": "옮기기 · 기록",
@@ -487,7 +489,8 @@ class Notifier:
                 return None
             why = None
             # relay = 작업 세션 보고 · 물음을 받아 관리자가 연 턴 — 관리자가 사람에게 올리는 길이라 origins와 상관없이 판정한다
-            if origin not in rule.origins and origin != "relay":
+            # merge_card(11-15) = 브리지가 넣은 합치기 카드로 연 턴 — 0033 전에는 human이라 판정했다. 같은 판정을 이어 간다
+            if origin not in rule.origins and origin not in BRIDGE_ORIGINS:
                 why = f"origin:{origin}"
             elif reason not in rule.end_reasons:
                 why = f"end_reason:{reason}"
@@ -520,7 +523,7 @@ class Notifier:
             ask = ask_line(reply) if reason == "stop" else None
             # 11-13 관리자가 중계 · 부탁으로 연 턴의 묻는 말은 급함으로 치지 않는다 — 사람에게 올릴 물음은 escalate(❓ 바로)가 맡아
             # 화면(「사용자 답 기다림」)과 알림이 같은 신호를 쓴다. 턴 끝 알림 자체는 그대로 나간다(묶음을 켰으면 묶음)
-            if role == "manager" and origin in ("relay", "manager_ask"):
+            if role == "manager" and origin in ("relay", "manager_ask", "merge_card"):
                 ask = None
             urgent = reason in URGENT_REASONS or ask is not None
             relay = None

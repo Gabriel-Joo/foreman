@@ -23,13 +23,14 @@ log = logging.getLogger("foreman.scribe_room")
 KST = timedelta(hours=9)
 README_STALE = 10            # README가 바뀐 뒤 커밋이 이만큼 쌓이면 "README 갱신"
 CLAUDE_MD_MAX = 80           # CLAUDE.md 줄 수 상한(설계 「2.」 예시)
-LATER = re.compile(r"나중에|미루|나중 일|later", re.I)
+# 11-15 포스트잇 — 미룬 말은 브리지 그물(bridge/postit.py NET)이 포스트잇에 바로 올린다. 서기가 README 표로 옮기는 단계는 없다
 
 TASKS = {
     "doccheck": {"title": "문서 점검", "desc": "코드와 문서(README · docs · CLAUDE.md)가 안 맞는 곳을 찾아 보고합니다. 고치지는 않습니다."},
     "readme": {"title": "README 갱신", "desc": "마지막 README 변경 뒤의 커밋 · 결과 문서로 로드맵 표를 맞춥니다."},
     "trim": {"title": "CLAUDE.md 정리", "desc": "꼭 지킬 것만 짧게 남기고 상세는 docs로 옮겨 가리킵니다."},
-    "later": {"title": "나중에 할 일 정리", "desc": "대화에서 \"나중에 하자\"고 한 것을 모아 README 「나중에 할 일」 표에 넣습니다."},
+    # 11-15 포스트잇 — 할 일은 포스트잇에 남고, 서기는 [→]로 보낸 것만 README 「알려진 한계」에 쓴다(키는 later 그대로)
+    "later": {"title": "알려진 한계 쓰기", "desc": "포스트잇에서 [→]로 보낸 것을 README 「알려진 한계」에 쓰고, [갱신]에서 끝났다고 닫은 줄을 뺍니다."},
     # 메뉴에는 없다(화면 ORDER 밖) — 물어보기 답 · 문서 점검 결과의 [바로 고치기]에서만 뜬다(D2, 11-11)
     "docfix": {"title": "문서 고치기", "desc": "물어보기 답이나 문서 점검 결과에 적힌 어긋남을 고칩니다."},
     "portfolio": {"title": "포트폴리오 쓰기", "desc": "주제를 하나 골라 바깥 독자가 읽을 글을 portfolio/에 씁니다. 게시는 [게시] 버튼으로 합니다."},
@@ -53,8 +54,8 @@ def nudge_conf(path: Path | None = None) -> dict[str, int]:
 
 
 def nudge_of(inbox: list[dict[str, Any]], conf: dict[str, int] | None = None, now: datetime | None = None) -> dict[str, Any] | None:
-    """서기 머리 위 "정리할까요?"(11-09) — 서기 몫 새로가 new_min개 이상이거나 가장 오래된 것이 oldest_days일 지났으면.
-    자동은 제안까지만: 누르면 서기 창이 「나중에 할 일 정리」를 고른 채 열리고, 세션은 사람이 [시키기]를 눌러야 뜬다."""
+    """[nudge] 기준 판단(11-09). 11-15 포스트잇 뒤로 서기 말풍선은 bridge/postit.py nudge_of(열린 포스트잇)가 정하고,
+    이것은 README에 아직 안 쓴 [→] 줄(「알려진 한계 쓰기」 몫)에만 쓴다."""
     if not inbox:
         return None
     cf = conf or nudge_conf()
@@ -184,17 +185,19 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
                               "why": f"CLAUDE.md {lines}줄(상한 {CLAUDE_MD_MAX}줄)"}
             if lines > CLAUDE_MD_MAX:
                 items.append({"kind": "trim", "title": f"CLAUDE.md 정리: {lines}줄", "why": f"{CLAUDE_MD_MAX}줄을 넘었습니다"})
-        later = await _later_count(engine, name, repo)
-        if later:
-            items.append({"kind": "later", "title": f"나중에 할 일 정리: \"나중에\" {later}번", "why": "지난 정리가 합쳐진 뒤(없으면 처음부터) 사람이 미룬 말"})
-        inbox = await inbox_new(engine, name)
-        nudge = nudge_of(inbox)
-        inbox_age = (datetime.now(UTC).replace(tzinfo=None) - inbox[0]["created_at"]).days if inbox else 0
-        behind["later"] = {"n": later + len(inbox), "stale": bool(later or inbox), "unit": "건",
-                           "why": f"미룬 말 {later} · 받은 할 일 {len(inbox)}"}
-        if inbox:
-            items.append({"kind": "later", "title": f"받은 할 일 {len(inbox)}개" + (f", 가장 오래된 것 {inbox_age}일째" if inbox_age >= INBOX_STALE_DAYS else ""),
-                          "why": "머리줄 [＋ 할 일]로 받은 글입니다. 「나중에 할 일 정리」가 README 표로 옮깁니다"})
+        # 11-15 포스트잇 — 열린 것은 할 일 목록 그 자체(서기 몫이 아니다). 서기 몫은 [→]로 보내 README에 아직 안 쓴 줄 ·
+        # [갱신]에서 끝났다고 닫은 README 한계 줄뿐. 쌓이면 서기 말풍선(bridge/postit.py nudge_of — 21시 묶음에는 넣지 않는다)
+        from bridge import postit as pi
+        pst = await pi.summary(engine, name, await later_since(engine, name))
+        nudge = pst["nudge"]
+        lim, drop = pst["limit_pending"], pst["readme_drop"]
+        behind["later"] = {"n": lim + drop, "stale": bool(lim or drop), "unit": "줄", "why": f"쓸 줄 {lim}, 뺄 줄 {drop}"}
+        if lim or drop:
+            items.append({"kind": "later", "title": f"알려진 한계 쓰기: 쓸 줄 {lim}, 뺄 줄 {drop}",
+                          "why": "포스트잇 [→]로 보낸 것과 [갱신]에서 끝났다고 닫은 줄입니다. README에 쓰는 것은 서기 세션입니다"})
+        if pst["check"] and pst["check"]["state"] == "failed":
+            items.append({"kind": "postit", "title": f"포스트잇 [갱신] 실패: 점검 세션 {pst['check']['session_id']}",
+                          "why": pst["check"]["detail"] or "결과 없이 끝났습니다"})
         port_pub: dict[str, Any] | None = None
         docs_pub: dict[str, Any] | None = None
         pub_error: str | None = None
@@ -235,9 +238,20 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
         report = doccheck_report(repo)
         out[name] = {"items": items, "open": opened, "topics": tps, "nudge": nudge,
                      "blocked": {k: b for k in TASKS if k not in ("publish", "portfolio") and (b := blocked(k, opened))},
-                     "behind": behind, "inbox": {"n": len(inbox), "oldest_days": inbox_age} if inbox else None,
+                     "behind": behind, "inbox": None, "postit": _json_postit(pst),
                      "portfolio": portfolio, "port_pub": port_pub, "docs_pub": docs_pub, "pub_error": pub_error,
                      "report": {"name": report, "fixed": report in await fixed_reports(engine, name)} if report else None}
+    return out
+
+
+def _iso(v: Any) -> Any:
+    return v.isoformat() + "Z" if isinstance(v, datetime) else v
+
+
+def _json_postit(p: dict[str, Any]) -> dict[str, Any]:
+    """포스트잇 요약을 화면으로 — 시각은 UTC ISO(Z)."""
+    out = {k: _iso(v) for k, v in p.items() if k != "check"}
+    out["check"] = {k: _iso(v) for k, v in p["check"].items()} if p.get("check") else None
     return out
 
 
@@ -328,67 +342,49 @@ async def later_since(engine: Any, project: str) -> datetime | None:
         return None
 
 
-async def _later_count(engine: Any, project: str, repo: str) -> int:
-    return len(await later_prompts(engine, project, await later_since(engine, project)))
+# ── 받는 함 = 포스트잇(11-09 migrations/0027 → 11-15 0033, bridge/postit.py) ───────────
+# 사람이 적은 할 일은 포스트잇에 남는다(「받은 할 일」과 포스트잇은 같은 것 — 11-15 사용자). 서기가 README 표로 옮기지 않는다.
+# 상태는 bridge/postit.py STATE(닫힌 까닭 칸 + 가져간 세션 계산). 아래 inbox_* 이름은 부르는 곳(start · foreman · coder_room)에 맞춰 남긴다
+from bridge import postit as _pi  # noqa: E402
 
-
-# ── 할 일 받는 함(11-09, migrations/0027) ─────────────────────────
-# 사람이 머리줄 [＋ 할 일]에 적은 글 — 세션을 거치지 않고 그대로 둔다. 「나중에 할 일 정리」 서기가 재료로 받아 README 표로 옮긴다.
-# 상태는 계산한다: 버림(dropped_at) / 새로(아무도 안 가져감 · 가져간 정리를 버림) / 정리 중(가져간 세션이 아직 열림) / 옮김(합쳐짐)
-INBOX_MAX = 8000
-INBOX_STALE_DAYS = 3        # 새로인 채 이만큼 지나면 서기 할 일 글에 "N일째"를 붙여 눈에 띄게(조용히 쌓이지 않게)
-# 받는 사람(11-09, 0028) — 서기 정리(「나중에 할 일 정리」가 README 표로) · 코더에게(그 방 코더의 "맡길 일", 계획으로 세션이 가져감)
+INBOX_MAX = _pi.MAX
+INBOX_STALE_DAYS = 3
+# 받는 사람(0028) — 11-15 [＋ 할 일]의 「코더에게」를 없앴다(사용자는 관리자에게만 말한다). 칸은 남긴다: 포스트잇 [띄우기]로
+# 코더 세션이 가져가면 coder가 된다(inbox_take_pick). 옛 코더 몫 줄도 그대로 읽힌다
 ASSIGNEES = ("scribe", "coder")
-# 코더 몫이 끝나는 때: 가져간 세션이 합쳐짐, 또는 원본 폴더(worktree 아님) 세션이 끝남 — 원본 폴더 세션은 합치기가 없다
-_INBOX_STATE = ("CASE WHEN i.dropped_at IS NOT NULL THEN 'dropped' WHEN i.taken_by IS NULL THEN 'new' "
-                "WHEN EXISTS (SELECT 1 FROM session_action m WHERE m.session_id = i.taken_by AND m.action = 'wt-merge' AND m.ok) THEN 'moved' "
-                "WHEN EXISTS (SELECT 1 FROM session_action m WHERE m.session_id = i.taken_by AND m.action = 'wt-discard' AND m.ok) THEN 'new' "
-                "WHEN i.assignee = 'coder' AND EXISTS (SELECT 1 FROM character_session t WHERE t.id = i.taken_by "
-                "  AND t.worktree_path IS NULL AND t.detached_at IS NOT NULL) THEN 'moved' "
-                "ELSE 'taking' END")
-INBOX_LABEL = {"new": "새로", "taking": "서기가 정리 중", "moved": "옮김", "dropped": "버림"}
-INBOX_LABEL_CODER = {"new": "새로", "taking": "코더가 하는 중", "moved": "끝남", "dropped": "버림"}
-ASSIGNEE_KO = {"scribe": "서기 정리", "coder": "코더에게"}
+_INBOX_STATE = _pi.STATE
+ASSIGNEE_KO = {"scribe": "포스트잇", "coder": "코더가 가져감"}
 
 
-def inbox_label(state: str, assignee: str | None) -> str:
-    """받는 사람에 맞는 상태 이름 — 코더 몫은 합쳐지면 "옮김" 대신 "끝남"."""
-    return (INBOX_LABEL_CODER if assignee == "coder" else INBOX_LABEL).get(state, state)
+def inbox_label(state: str, assignee: str | None = None) -> str:
+    """상태 이름(화면 글) — bridge/postit.py STATE_KO."""
+    return _pi.STATE_KO.get(state, state)
 
 
-async def inbox_add(engine: Any, project: str, body: str, assignee: str = "scribe") -> int:
+async def inbox_add(engine: Any, project: str, body: str, assignee: str = "scribe", source: str = "todo") -> int:
+    """[＋ 할 일](source todo)로 포스트잇 하나. 옛 API(/api/scribe/inbox)도 이 길이다."""
     from bridge.inject import Refused
-    body = (body or "").strip()
-    if not body:
-        raise Refused("적을 글이 비어 있습니다")
-    if len(body) > INBOX_MAX:
-        raise Refused(f"글이 너무 깁니다({len(body)}자). {INBOX_MAX}자까지 받습니다")
     if assignee not in ASSIGNEES:
-        raise Refused(f"받는 사람은 서기 정리 · 코더에게 중 하나입니다: {assignee}")
-    async with engine.begin() as c:
-        if not (await c.execute(text("SELECT 1 FROM project WHERE name = :p"), {"p": project})).first():
-            raise Refused(f"모르는 프로젝트입니다: {project}")
-        r = await c.execute(text("INSERT INTO todo_inbox (project, body, assignee) VALUES (:p, :b, :a)"),
-                            {"p": project, "b": body, "a": assignee})
-        return int(r.lastrowid)
+        raise Refused(f"받는 사람은 {', '.join(ASSIGNEES)} 중 하나입니다: {assignee}")
+    return (await _pi.add(engine, project, body, source, assignee=assignee))["id"]
 
 
 async def inbox_list(engine: Any, project: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
-    """최근 것부터 — 버린 것도 보인다(나중에 다시 볼 수 있게)."""
-    q = (f"SELECT i.id, i.project, i.body, i.assignee, i.created_at, i.taken_by, i.dropped_at, {_INBOX_STATE} AS state FROM todo_inbox i "
-         + ("WHERE i.project = :p " if project else "") + "ORDER BY i.id DESC LIMIT :n")
+    """최근 것부터 — 닫힌 것도 보인다(물어보기 재료 · 옛 API)."""
+    q = (f"SELECT i.id, i.project, i.body, i.assignee, i.source, i.confirmed, i.created_at, i.taken_by, i.dropped_at, i.closed_reason, "
+         f"{_INBOX_STATE} AS state FROM todo_inbox i " + ("WHERE i.project = :p " if project else "") + "ORDER BY i.id DESC LIMIT :n")
     async with engine.connect() as c:
         rows = (await c.execute(text(q), {"p": project, "n": limit})).mappings().all()
     return [dict(r) for r in rows]
 
 
 async def inbox_new(engine: Any, project: str, assignee: str = "scribe") -> list[dict[str, Any]]:
-    """받는 사람이 가져갈 것 — 새로인 것만, 오래된 것부터. 서기 「나중에 할 일 정리」는 서기 몫만 가져간다."""
-    async with engine.connect() as c:
-        rows = (await c.execute(text(
-            f"SELECT i.id, i.body, i.created_at FROM todo_inbox i WHERE i.project = :p AND i.assignee = :a "
-            f"AND {_INBOX_STATE} = 'new' ORDER BY i.id"), {"p": project, "a": assignee})).mappings().all()
-    return [dict(r) for r in rows]
+    """가져갈 것 — 오래된 것부터. 11-15 포스트잇 뒤로:
+    - scribe: 서기 「알려진 한계 쓰기」(start의 later)가 가져갈 것 = [→]로 보내 README에 아직 안 쓴 줄
+    - coder: 없다 — 코더 「맡길 일」은 포스트잇의 코더 추천 [띄우기]로 옮겼다"""
+    if assignee != "scribe":
+        return []
+    return await _pi.limit_pending(engine, project)
 
 
 async def inbox_take_coder(engine: Any, iid: int, session_id: int) -> bool:
@@ -429,9 +425,12 @@ async def inbox_edit(engine: Any, iid: int, body: str) -> bool:
 
 
 async def inbox_drop(engine: Any, iid: int) -> bool:
-    async with engine.begin() as c:
-        r = await c.execute(text("UPDATE todo_inbox SET dropped_at = UTC_TIMESTAMP(3) WHERE id = :i AND dropped_at IS NULL"), {"i": iid})
-        return r.rowcount > 0
+    """[x] — 안 하기로 함(11-15 포스트잇: closed_reason drop. 옛 칸 dropped_at도 함께 — 0032 코드가 읽어도 버림)."""
+    ok = await _pi.close(engine, iid, "drop")
+    if ok:
+        async with engine.begin() as c:
+            await c.execute(text("UPDATE todo_inbox SET dropped_at = closed_at WHERE id = :i AND dropped_at IS NULL"), {"i": iid})
+    return ok
 
 
 async def _inbox_take(engine: Any, ids: list[int], session_id: int) -> None:
@@ -444,30 +443,29 @@ async def _inbox_take(engine: Any, ids: list[int], session_id: int) -> None:
 
 
 async def later_prompts(engine: Any, project: str, since: datetime | None, limit: int = 300) -> list[dict[str, Any]]:
-    """사람이 "나중에 · 미루"라고 한 턴 — since(UTC) 뒤, None이면 처음부터. 오래된 것부터, limit개까지."""
-    async with engine.connect() as c:
-        rows = (await c.execute(text(
-            "SELECT t.id, t.started_at, t.prompt_text FROM turn t JOIN character_session cs ON cs.id = t.session_id "
-            "JOIN `character` ch ON ch.id = cs.character_id JOIN project p ON p.id = ch.project_id "
-            "WHERE p.name = :p AND t.origin = 'human' AND cs.hidden_at IS NULL AND t.started_at >= :s ORDER BY t.started_at"),
-            {"p": project, "s": since or datetime(2000, 1, 1)})).mappings().all()
-    return [dict(r) for r in rows if LATER.search(r["prompt_text"] or "")][:limit]
+    """「알려진 한계 쓰기」(start의 later)가 README에서 뺄 줄 — [갱신]에서 사람이 「끝남」으로 닫은 README 「알려진 한계」 줄.
+    11-15 포스트잇 전에는 「나중에 · 미루」 사람 턴이었다. 미룬 말은 이제 브리지 그물이 포스트잇에 바로 올리고(bridge/postit.py sweep)
+    서기 재료로 주지 않는다. 이름은 부르는 곳(start)에 맞춰 남긴다. 모양: {id, started_at, prompt_text, item, evidence}"""
+    rows = await _pi.readme_drop_pending(engine, project, since)
+    return [{"id": r["id"], "started_at": r["resolved_at"], "prompt_text": r["item_text"] or "", "item": r["item"],
+             "evidence": r["evidence"], "reason": r["reason"]} for r in rows][:limit]
 
 
 def later_material(project: str, when: datetime | None, rows: list[dict[str, Any]], inbox: list[dict[str, Any]], mk: Any = None) -> str:
-    """「나중에 할 일 정리」 재료(later.md) — 사람 말은 자르지 않는다(#14, 11-10)."""
+    """「알려진 한계 쓰기」 재료(later.md) — 쓸 줄(포스트잇 [→]) · 뺄 줄([갱신]에서 닫음). 사람 말은 자르지 않는다(#14, 11-10)."""
     from bridge import scribe as sc
     m = mk.text if mk else (lambda s: s)
-    lines = [f"# 미룬 말 · 받은 할 일 — {project} ({(sc.kst(when) + ' 뒤') if when else '처음부터'}, 사람 턴 {len(rows)}개 · 받은 할 일 {len(inbox)}개)",
-             "README 「나중에 할 일」 표에 이미 있는 것은 빼고, 이미 한 일도 뺀다(지난 정리를 버렸으면 같은 범위를 다시 본다).",
+    lines = [f"# README 「{_pi.README_LIMIT}」 — {project} ({(sc.kst(when) + ' 뒤') if when else '처음부터'}, 쓸 줄 {len(inbox)}개 · 뺄 줄 {len(rows)}개)",
              "사람 말은 자르지 않은 원문이다 — 길면 쪽으로 나눠 끝까지 읽는다.", ""]
     if inbox:
-        lines += ["# 받은 할 일 — 사람이 머리줄 [＋ 할 일]로 직접 적은 것. 모두 할 일이다(\"그때뿐\"으로 거르지 않는다)", ""]
+        lines += [f"# 쓸 줄 — 사람이 포스트잇에서 [→]로 보낸 것(못 풀 것, README를 읽는 남에게 「지금은 ~이다」로 알릴 것)", ""]
         for x in inbox:
-            lines += [f"## 받은 할 일 #{x['id']} {sc.kst(x['created_at'])}", m(x["body"]) or "", ""]
-        lines += ["# 대화에서 미룬 말", ""]
-    for x in rows:
-        lines += [f"## [t:{x['id']}] {sc.kst(x['started_at'])}", m(sc._full(x["prompt_text"])) or "", ""]
+            lines += [f"## 포스트잇 #{x['id']} {sc.kst(x['created_at'])}", m(x["body"]) or "", ""]
+    if rows:
+        lines += [f"# 뺄 줄 — [갱신] 점검 세션이 「끝남」으로 보고 사람이 닫은 README 「{_pi.README_LIMIT}」 줄", ""]
+        for x in rows:
+            lines += [f"## {x.get('item') or ''} (판정 #{x['id']} {sc.kst(x['started_at'])})", m(x["prompt_text"]) or "",
+                      f"근거: {x.get('evidence') or '(없음)'}" + (f" — {x['reason']}" if x.get("reason") else ""), ""]
     return "\n".join(lines)
 
 
@@ -507,10 +505,11 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
 - 옮긴 규칙마다 목적지를 표로: `log/trim_{today}.md`
 - 사용자 원문 인용 · 날짜 표시는 그대로 둔다"""
     elif task == "later":
-        body = f"""할 일: 대화에서 "나중에 하자"고 한 것과 사람이 [＋ 할 일]로 적은 것을 README 「나중에 할 일 (정해 두고 미룬 것)」 표에 넣는다.
-- 재료(저장소 밖, 사람 말 원문): `{e.get('materials') or '(없음)'}` — 받은 할 일(모두 넣는다) + 지난 정리가 합쳐진 뒤(없으면 처음부터) "나중에 · 미루"가 나온 사람 말
-- 받은 할 일은 근거 칸에 `받은 할 일 #번호`를 적는다. 같은 일이 표에 이미 있으면 새 줄을 만들지 않고 그 줄에 보탠다
-- 항목마다 무엇 · 언제 · 조건 · 근거(결과 문서 · log). 이미 한 것은 표에서 뺀다. 그때뿐인 "나중에"(잠깐 뒤에)는 넣지 않는다
+        body = f"""할 일: README 「{_pi.README_LIMIT}」 절을 맞춘다. 할 일은 README가 아니라 포스트잇에 있다(11-15) — 여기에는 못 풀 것만 쓴다.
+- 재료(저장소 밖, 사람 말 원문): `{e.get('materials') or '(없음)'}` — 쓸 줄(포스트잇에서 사람이 [→]로 보낸 것) · 뺄 줄([갱신]에서 끝났다고 닫은 것)
+- 쓸 줄: 할 일 말투(「할 것: …」)를 README를 읽는 남에게 알리는 말투(「지금은 ~이다. ~하면 다시 연다」)로 다시 쓴다. 근거 칸에 `포스트잇 #번호`. 같은 한계가 이미 있으면 그 줄에 보탠다
+- 뺄 줄: 그 줄을 지운다. 재료의 근거(코드 자리)가 지금 저장소와 맞는지 한 번 본 뒤 지운다. 안 맞으면 지우지 말고 마지막 응답에 적는다
+- 절이 없으면 README 「6. 로드맵」 아래에 `### {_pi.README_LIMIT}`을 만든다
 - README.md만 고친다"""
     elif task == "portfolio":
         slug = e["slug"]

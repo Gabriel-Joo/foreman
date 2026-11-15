@@ -207,7 +207,7 @@ class RoleGuard:
                            "합친 뒤 깨진 것을 바로 막는 몇 줄이면 사람에게 허락을 받습니다")
             if role == "scribe" and self._on("scribe-code") and _match(rel, self.cfg.scribe_deny):
                 return Hit("역할-서기코드", f"서기는 코드를 고치지 않습니다 — {rel}. 문서(README · docs · log · portfolio)만 고칩니다. "
-                           "코드 고칠 것은 받은 할 일(코더에게)이나 관리자에게 보냅니다")
+                           "코드 고칠 것은 포스트잇이나 관리자에게 보냅니다")
             return None
         if tool != "Bash":
             return None

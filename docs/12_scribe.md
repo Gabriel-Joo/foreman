@@ -40,7 +40,7 @@ README 로드맵 12는 원래 "떠돌이 포트폴리오 작성 캐릭터"였다
 | `trim` CLAUDE.md 정리 | 꼭 지킬 규칙만 짧게 남기고 상세는 docs로 옮겨 가리킨다 | diff, 옮긴 규칙의 목적지 표 |
 | `loss` 압축 손실 반영 | 압축 손실 점검 결과(예: `log/runshoes_compaction_loss_20261105.md`)에서 살릴 것을 CLAUDE.md · docs · 메모리에 넣자고 제안한다 | 제안 diff. 뒤집힌 결정은 넣지 않는다 |
 | `polish` 인계 요약 다듬기 | 세션이 쓴 요약을 원문(트랜스크립트)과 맞대 빠진 결정 · 틀린 사실을 고친다 | 요약의 새 판(`summary`의 새 행, 옛것은 남긴다) |
-| `later` 나중에 할 일 정리(11-06 사용자) | 대화에서 "이건 나중에 하자"고 한 것을 모아 README 「나중에 할 일 (정해 두고 미룬 것)」 표에 넣는다 — 무엇 · 언제 · 조건 · 근거. 이미 한 것은 표에서 뺀다 | README 표 diff. 예: 11-06 Codex 연동(쓸 데 둘 · Sonnet 먼저 비교) |
+| `later` 알려진 한계 쓰기(11-15, 전 「나중에 할 일 정리」) | 포스트잇에서 사람이 [→]로 보낸 것을 README 「알려진 한계」에 「지금은 ~이다」 말투로 쓰고, [갱신]에서 끝났다고 닫은 한계 줄을 뺀다. 할 일은 README로 옮기지 않는다(11절) | README diff |
 
 **띄우는 길은 셋, 기록은 하나(11-15 사용자 「한 곳으로 합쳐라」)** [log:foreman-4_scribe_two_paths_20261115.md]
 - 길: 서기실 [시키기](`scribe_room.start`), 계획 [시작](`ForemanDispatcher.start`), 직접 띄우기(`POST /api/spawn`). 셋 모두 `HandoffManager.spawn_new`로 간다
@@ -76,8 +76,9 @@ README 로드맵 12는 원래 "떠돌이 포트폴리오 작성 캐릭터"였다
 ## 3. 무엇을 읽나 — 재료
 
 브리지가 LLM 없이 재료를 만들어 첫 글이 가리키는 파일로 준다. 서기는 거기서 시작해 필요한 원문만 더 읽는다. 함께 쓰는 함수는 `bridge/scribe.py`(`kst`, `_clip`, `_full`, `git_commits`, `write`).
-- 「나중에 할 일 정리」: `later.md`(`scribe_room.py` `later_material`). 받은 할 일, 그리고 「나중에」 「미루」 같은 낱말이 든 사람 턴 원문. Masker를 거쳐 저장소 밖(`~/.foreman/scribe/`, 700)에 쓴다
-- 물어보기: 받은 할 일 최근 30개, 최근 3일 커밋(`bridge/scribe_ask.py`, 12절)
+- 「알려진 한계 쓰기」: `later.md`(`scribe_room.py` `later_material`). 쓸 줄(포스트잇 [→]) 원문과 뺄 줄([갱신] 판정과 근거). Masker를 거쳐 저장소 밖(`~/.foreman/scribe/`, 700)에 쓴다. 11-15 전에는 받은 할 일과 「나중에」 낱말이 든 사람 턴이었다
+- 포스트잇 [갱신]: `postit_check_<req>.md`(`bridge/postit.py` `check_material`). 열린 포스트잇 원문, README 「알려진 한계」 줄, 최근 커밋 40개(참고만)
+- 물어보기: 포스트잇 최근 30개(닫힌 것 포함), 최근 3일 커밋(`bridge/scribe_ask.py`, 12절)
 - 그 밖의 일감(README 갱신, 문서 점검, CLAUDE.md 정리, 포트폴리오)은 재료 파일 없이 저장소를 직접 읽는다
 
 **사람 말은 자르지 않고 다 준다**(11-10 사용자, dispatch #209) [log:scribe_material_noclip_20261110.md] [log:merge_scribe_noclip_20261110.md] [log:note_threads_only_20261113.md]
@@ -85,7 +86,7 @@ README 로드맵 12는 원래 "떠돌이 포트폴리오 작성 캐릭터"였다
 - 「턴 번호만 주고 서기가 DB를 읽게」 하는 길은 안 쓴다
   - 서기가 저장소 밖 재료만 읽는다는 약속이 깨진다
   - 읽을지가 서기 판단에 달려 또 조용히 빠진다
-- 자르는 칸은 요약 줄뿐이다(`_clip`, 지금은 물어보기 재료의 받은 할 일 300자). 줄 앞에 `#번호`가 먼저 와서 잘려도 원문 번호는 남는다
+- 자르는 칸은 요약 줄뿐이다(`_clip`, 지금은 물어보기 재료의 포스트잇 300자). 줄 앞에 `#번호`가 먼저 와서 잘려도 원문 번호는 남는다
 - 상한을 두지 않은 근거: 11-10 사람 턴 가장 긴 것이 1.8만 자(petmint)로 서기가 쪽을 나눠 읽을 수 있다. 상한을 두면 같은 잘림이 다시 생긴다
 - 2,000자 넘는 한 줄은 Read가 조용히 자르므로 `LINE_WRAP = 1500`자마다 줄만 나눈다(글자는 그대로)
 
@@ -199,54 +200,76 @@ README 로드맵 12는 원래 "떠돌이 포트폴리오 작성 캐릭터"였다
 2. Notion 부모 페이지 — **사용자가 만들어 알려 준다(대기)**
 3. 모델 — 서기만이 아니라 **모든 세션이 모델을 고르게** 먼저 넣었다([결과](../log/stage12_model_choice_result.md)). 서기의 기본값은 `config/models.toml`의 `scribe = "claude-opus-5-5"`(11-14 전 `"opus"`)이고, 일감마다 바꿀 수 있다(`sync` · `polish`는 Sonnet 권장)
 
-## 11. 받는 함 [＋ 할 일] (11-09) [log:todo_inbox_20261109.md] [log:coder_resident_20261109.md]
+## 11. 포스트잇 (11-09 받는 함 → 11-15 포스트잇) [log:foreman-5_postit_20261115.md] [log:foreman-6_postit_proposal_20261115.md]
 
-**세션을 거치지 않고 할 일을 그대로 적고, 서기가 몰아서 README 「나중에 할 일」로 옮긴다.** 11-09 관리자 세션에 온 지시 중 "할 일에 넣어라"가 10건쯤이었고, 이것이 맥락을 쌓아 두 번 인계한 주된 까닭이었다 [log:dispatch_flow_decision_20261109.md].
+**열린 할 일 목록 그 자체다. 서기가 README로 옮기는 단계는 없다.** 「받은 할 일」(11-09 받는 함, `todo_inbox`)과 포스트잇은 같은 것이다(11-15 사용자). 머리줄 [＋ 할 일] 옆 종이와 서기실 「포스트잇」이 같은 목록이다(화면은 `docs/10_office_design.md` 「머리 탭 포스트잇」). 받는 함을 만든 까닭(11-09 관리자에게 온 "할 일에 넣어라"가 맥락을 쌓아 두 번 인계했다 [log:dispatch_flow_decision_20261109.md])은 그대로다.
 
-### 11-1. 적는 곳
+### 11-1. 저장(`todo_inbox`, `migrations/0027`, `0028`, `0031`, `0033`)
 
-- 머리줄 **[＋ 세션] 옆 [＋ 할 일]**(`bridge/static/js/todoinbox.js`). 할 일은 여러 프로젝트에 걸치는 일이 많아 머리줄에 두고, 프로젝트는 지금 보는 탭이 기본(11-09 사용자 결정)
-- 창: 프로젝트 · **누구에게(서기 정리 / 코더에게)** · 글 칸(Ctrl+Enter) · [적기](primary) · [닫기]. 결과 띠 "적었습니다: … #번호", 못 적으면 까닭과 "글은 칸에 그대로 있습니다"
-- 창 아래 접힌 "받은 할 일: 프로젝트 최근 N개 · 새로 N": 상태 · 시각 · 첫 글 줄, 펼치면 원문, 새로면 [버리기]
-- 표 `todo_inbox`(`migrations/0027_todo_inbox.sql` · `0028_todo_inbox_assignee.sql`): id · project · body(8,000자까지) · assignee(`scribe` 기본 · `coder`) · created_at · taken_by(가져간 세션) · taken_at · dropped_at
-- 왜 새 표인가: `foreman_note`는 글 300자 · 프로젝트당 2k 토큰 상한이라 받은 글(대개 600자 넘음)이 잘린다. README 표에 브리지가 바로 커밋하면 여러 세션이 README를 같이 고칠 때 충돌한다
+- 칸: id, project, body(8,000자까지), assignee, source, source_ref, confirmed, created_at, edited_at, taken_by, taken_at, closed_reason, closed_at, closed_note(옛 dropped_at도 남는다)
+- source(어디서 왔나): `note` 포스트잇에 바로 적음, `todo` [＋ 할 일], `said` 대화에서 사람이 말해 관리자가 올림, `chat` 브리지 그물(확인 전), `promote` 옮기기 「문서에 넣을 것 고르기」의 미완
+- source_ref(근거): `t:<턴>`(said, chat), `pr:<promotion>:<항목>`(promote). 같은 근거는 두 번 들어가지 않는다. 그물이 먼저 올린 확인 전 줄에 관리자가 같은 턴으로 올리면 그 줄이 확인된 줄(said)이 된다
+- confirmed: 그물에서 온 것만 0. 화면에 흐리게 뜨고 사람이 [저장]으로 받거나 [x]로 지운다
+- 0033이 지난 줄을 맞췄다: 버린 것은 drop, 서기가 README로 옮긴 것(옛 「옮김」)과 코더가 끝낸 것은 done(closed_note에 「포스트잇 전」). 11-15 FOREMAN 23줄은 열린 것 4, 끝남 17, 삭제 2가 된다
 
-### 11-2. 상태는 칸이 아니라 계산한다
+### 11-2. 상태(`bridge/postit.py` `STATE`, 칸 + 계산)
 
-`bridge/scribe_room.py` `_INBOX_STATE` — 합치기 코드를 건드리지 않고 `session_action` · `character_session`에서 센다.
+| 상태 | 언제 | 화면 |
+|---|---|---|
+| `new` | 열림. 가져간 세션이 버려졌어도(`wt-discard`) | 열림 |
+| `taking` | 포스트잇 [띄우기]로 뜬 세션이 가져가 아직 열림 | 코더가 하는 중 |
+| `merged` | 가져간 세션이 합쳐짐 또는 원본 폴더 세션이 끝남. **닫히지 않는다**(커밋만 보고 지우지 않는다, 사용자). [갱신]이나 사람이 닫는다 | 코더 세션 끝남 |
+| `drop` | [x] 안 하기로 함 | 삭제 |
+| `done` | [갱신] 판정을 사람이 [닫기] | 끝남 |
+| `limit`, `limit_writing`, `limit_written` | [→] 알려진 한계. 서기 「알려진 한계 쓰기」가 가져가면 쓰는 중, 합쳐지면 README에 씀, 버리면 다시 `limit` | 알려진 한계로 보냄 |
 
-| 상태 | 언제 | 화면(서기 몫) | 화면(코더 몫) |
-|---|---|---|---|
-| `dropped` | 사람이 [버리기] | 버림 | 버림 |
-| `new` | 아무도 안 가져감, 또는 가져간 세션이 버려짐(`wt-discard`) | 새로 | 새로 |
-| `taking` | 가져간 세션이 아직 열림 | 서기가 정리 중 | 코더가 하는 중 |
-| `moved` | 가져간 세션이 합쳐짐(`wt-merge`). 코더 몫은 원본 폴더 세션이 끝나도 | 옮김 | 끝남 |
+### 11-3. 들어오는 길
 
-### 11-3. 누가 가져가나
+| 길 | 어떻게 |
+|---|---|
+| 포스트잇에 바로 적음 | 펼친 창이나 서기실의 글 칸 → [저장](`POST /api/postit/save`) |
+| [＋ 할 일] | `POST /api/scribe/inbox`(source todo). 11-15 「누구에게(코더에게)」를 없앴다 |
+| 대화: 사람 표시 | 사람이 「포스트잇에 올려라」 「나중에 할 일에 넣어라」라고 하면 관리자가 그 턴에서 `POST /api/postit {project, body, session: <자기 세션 id>}`(CLAUDE.md 「작업 규칙」). 근거는 그 세션의 마지막 사람 턴 |
+| 대화: 그물 | 브리지가 2분마다(`postit.run`) 사람 턴을 문장 꼴(`NET`, LLM 없음)로 훑어 확인 전으로 올린다. 아래 11-4 |
+| 옮기기 미완 | `bridge/promote.py` dest `postit`. 2/2에서 세션이 쓰지 않고 브리지가 넣는다 → `docs/11_handoff_v2.md` |
 
-- **서기 몫** — 「나중에 할 일 정리」(`later`)가 띄울 때 가져간다. 재료 파일 맨 앞에 "받은 할 일 #번호"를 **모두** 넣는다("그때뿐"으로 거르지 않는다), README 근거 칸에 `받은 할 일 #번호`. 미룬 말도 받은 할 일도 없으면 띄우지 않는다. 서기 몫만 가져간다
-- **코더 몫** — 「코더」 패널의 [계획으로] → 감독실 계획 → [이대로 시작]이 `inbox_id`를 실어 보내고(`POST /api/foreman/start`), 뜬 세션이 가져간다(`taken_by`). 이미 다른 세션이 가져갔으면 시작은 막지 않고 적지만 않는다 → `docs/10_office_design.md` 「코더 · 맡길 일」
-- 11-10 첫 실제 정리: 받은 할 일 #2 ~ #11이 서기 237이 합쳐진 뒤 「옮김」 — 적기 → 가져감 → 합치면 옮김이 끝까지 돌았다 [log:merge_237_242_20261110.md]
+### 11-4. 그물(`bridge/postit.py`의 `NET`과 `sweep`)
 
-### 11-4. 조용히 쌓이지 않게
+- 438 설계 1-5 추천대로: **사람 표시를 앞에, 문장 꼴은 그물로.** 걸리면 「확인 전」
+- 들어오는 문에서 뺀다: 띄운 세션의 첫 턴(브리지가 띄운 세션 = `session_action spawn`의 「새 세션 행 N」, 일감 글이다. 역할로 빼지 않는다), 합치기 카드 글(턴 출처 `merge_card`, `bridge/assembler.py` `_origin`), 아직 열린 턴(30분 전까지, 관리자가 그 턴에서 올릴 틈), 숨긴 세션
+- `pasted_content` 안도 본다(사람이 붙여 넣은 지시서에 진짜 미룬 말이 있다, 438 1-2)
+- 꼴(둘 다 알아듣는다): 「포스트잇」이나 「나중에 할 일」에 올려(넣어, 적어, 더해), 「나중에 할 일」의 「…」 줄에 한 줄 더해, 나중에 정한다(하자, 본다), 미루자, 지금은 두(하지 마), 쌓이면 그때 다시. 「아니라 지금」이 든 줄은 뺀다
+- 보기 시작하는 때: 0033 적용 시각(그 전 미룬 말은 서기가 README로 이미 옮겼다). 브리지가 뜬 뒤 첫 훑기는 그때부터, 그 뒤는 2일 창
+- 11-15 지금 DB 438 기간(11-11 01:46 UTC 뒤 FOREMAN 사람 턴 368, 첫 턴과 카드를 빼면 218)에 돌린 값: 걸림 20, 진짜 17/17, 경계 2, 가짜 1(438 F''는 16/17, 가짜 3). 꼴을 같은 기록에 맞춰 짰으니 새 말투에는 더 낮을 수 있다. 예문은 `tests/test_postit.py`
 
-- 서기 할 일(머리 위 "할 일 N")에 "받은 할 일 N개", 새로인 채 **3일**(`INBOX_STALE_DAYS`)이 넘으면 ", 가장 오래된 것 N일째". 텔레그램은 보내지 않는다
-- **"정리할까요?"** — 서기 몫 새로가 `new_min`개 이상이거나 가장 오래된 것이 `oldest_days`일이면 서기 머리 위 말풍선(`config/scribe.toml [nudge]`, 기본 3 · 3, 없으면 코드 기본값). 누르면 서기 창이 「나중에 할 일 정리」 줄을 밝히고 그 [시키기]를 primary로 연다. **자동은 제안까지만 — 세션은 사람이 [시키기]를 눌러야 뜬다**(2절의 "할 일은 세고, 실행은 사람이 누른다"와 같다). 값을 바꾸면 브리지를 다시 띄운다
+### 11-5. 닫기와 [갱신]
 
-### 11-5. API
+- [x] → `closed_reason drop`(목록에서 사라짐). [→] → `limit`, README 「알려진 한계」에 쓸 줄로 서기 할 일에 센다(쓰는 것은 서기 세션 「알려진 한계 쓰기」. README에 그 절이 아직 없으면 서기가 만든다)
+- **[갱신] = 점검(inspector) 세션**(사용자 답 5, 438 3-3의 `claude -p` 안 대신). `POST /api/postit/refresh` → 원본 폴더에 점검 세션(고치지 않으니 worktree도 합치기 카드도 없다). 재료는 열린 포스트잇, README 「알려진 한계」 줄(`readme_limits`), 최근 커밋(참고만)
+- 결과: 마지막 응답의 `<<<FOREMAN-POSTIT-CHECK r=…>>>` JSON 배열 `{id, verdict(끝남, 남음, 모름), evidence, reason, coder}`. 브리지가 2분마다 트랜스크립트에서 읽어(`collect`) `postit_check`에 넣는다(옮기기 결과 블록과 같은 꼴)
+- **「끝남」은 근거가 코드 자리(`파일:줄` 또는 시험 이름)일 때만 받는다.** 아니면 「모름」으로 내린다(`CODE_REF`). 판정은 제안이다. 사람이 줄마다 [닫기](포스트잇은 done, 근거는 closed_note) 또는 [남기기]. README 줄을 닫으면 서기 「알려진 한계 쓰기」의 뺄 줄이 된다
+- 「남음」이고 coder true면 코더 추천([띄우기]). 띄우는 길은 계획(`/api/foreman/plan` → 사람이 [이대로 시작])이다
+- 로드맵 표를 함께 볼지는 사용자가 아직 정하지 않았다(자리만 log)
 
-- `POST /api/scribe/inbox` `{project, body, assignee}` → 201 `{id}`. 빈 글 · 8,000자 넘음 · 모르는 받는 사람 · 모르는 프로젝트는 409 `{refused}`
-- `GET /api/scribe/inbox?project=&limit=` — 최근 것부터(버린 것도), 줄마다 `label`(받는 사람에 맞는 상태 이름) · `to`
-- `POST /api/scribe/inbox/{id}/drop`
+### 11-6. 조용히 쌓이지 않게
 
-### 11-6. 남은 것
+- 머리 탭 단추에 열린 수와 가장 오래된 날. **쌓임 기준**(`config/scribe.toml [postit]`, 없으면 코드 기본값 `open_max` 20, `stale_days` 7, `refresh_days` 7): 열린 것 20개 이상, 가장 오래된 것 7일, 마지막 [갱신] 뒤(한 번도 안 했으면 가장 오래된 것부터) 7일 중 하나면 서기 자리 말풍선 「포스트잇 쌓임」과 단추 주황. **말풍선만, 21시 묶음 보고에는 넣지 않는다**(사용자 답 4)
+- [갱신]이 결과 없이 세션이 끝나면 `postit-done`(ok 0)을 남기고 화면 「지난 [갱신]이 결과 없이 끝났습니다」, 서기 할 일 줄 「포스트잇 [갱신] 실패」
+- README에 아직 안 쓴 [→] 줄과 뺄 줄은 서기 할 일 「알려진 한계 쓰기: 쓸 줄 N, 뺄 줄 M」
+- 그물이 깨져 늘 0이 되면 `tests/test_postit.py`의 실제 예문 시험이 걸린다
 
-- 텔레그램으로 할 일 받기(밖에서 적기)는 하지 않았다 — 필요하면 같은 API로
+### 11-7. API
+
+- `GET /api/postit?project=` 열린 것, 판정, 최근 닫은 것 20, 요약. `GET /api/postit/summary` 프로젝트마다 요약
+- `POST /api/postit {project, body, session?}` 201(새로) 또는 200(같은 근거가 이미 있음). 프로젝트 토큰은 자기 프로젝트만(`bridge/scopetoken.py`)
+- `POST /api/postit/save {project, body?, confirm?}`, `POST /api/postit/{id}/close {reason: drop|limit|done, note?}`, `POST /api/postit/refresh {project}`, `POST /api/postit/check/{cid} {action: close|keep}`
+- 옛 길은 그대로 돈다: `POST /api/scribe/inbox`(= source todo), `GET /api/scribe/inbox`, `POST /api/scribe/inbox/{id}/drop`(= [x]), `PUT /api/todo/{id}`(열린 것 고치기)
+- 남은 것: 텔레그램으로 적기는 하지 않았다. 노션 「이것도 써라」는 [＋ 할 일]에 넣지 않는다(관리자에게 말한다, 사용자 답 11)
 
 ## 12. 물어보기 (11-10) [log:scribe_ask_20261110.md]
 
 **서기 세션이 없어도 문서 · 기록에 대해 한 번 물을 수 있다.** 서기 패널(상주 서기를 누르면 열리는 창) 맨 위 「물어보기」 칸.
 - 길: `POST /api/scribe/ask` `{project, text}` → `bridge/scribe_ask.py` → 읽기 전용 `claude -p` 한 번(`--no-session-persistence`, 도구는 `Read,Grep,Glob`만, Bash · Edit · Write 등은 막음 — `foreman.py` `_plan`과 같은 방식). 막는 것은 말이 아니라 도구다
-- 재료: 받은 할 일 최근 30개 · 최근 3일 커밋(Masker를 거침) + 저장소 파일을 직접 읽는다
+- 재료: 포스트잇 최근 30개(닫힌 것 포함, 11-15 전 「받은 할 일」), 최근 3일 커밋(Masker를 거침), 그리고 저장소 파일을 직접 읽는다
 - 모델: 코드 기본값 sonnet, `config/models.toml [tasks] scribe_ask`로 바꿀 수 있다(없으면 sonnet). 사용량은 `usage_extra` source `scribe_ask`("서기에게 물어보기")
 - **문서를 고치는 일은 하지 않는다.** 고치려면 [시키기] → worktree 서기 세션 → [합치기]가 검토(2절). 이전 대화는 기억하지 않는다 — 이어서 일하려면 [시키기]

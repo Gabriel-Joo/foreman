@@ -326,7 +326,7 @@ async def api_stops(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
 
 
 WORKER_ROLES = {"coder", "scribe", "designer"}      # notify.WORKER_ROLES와 같은 것(중계 대상)
-MGR_QUIET_ORIGINS = {"relay", "manager_ask"}        # 관리자 턴 중 사람에게 띄우지 않는 출처
+MGR_QUIET_ORIGINS = {"relay", "manager_ask", "merge_card"}   # 관리자 턴 중 사람에게 띄우지 않는 출처(merge_card 11-15 — 합치기 카드로 연 턴)
 RELAY_OUT_ACT = "relay-out"     # 작업 세션 session_action — 알림이 그 턴을 관리자에게 넘긴 결과. detail = "<kind>:<turn_id>"
 # 넘기는 동안(턴 끝 → 관리자 입력 칸) 사람용 표시를 안 띄우는 시간 — 넘기면 relayed, 못 넘기면 사람에게.
 # 11-13 관리자가 잰 실제 값(11-12 ~ 11-13 session_action mgr-relay 6건): 2.5초 ×3 · 17.4초 ×3, 실패 0. 17.4초는 settle 2초 +

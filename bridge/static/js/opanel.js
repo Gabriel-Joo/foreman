@@ -106,7 +106,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       (p, to) => window.office && window.office.openTodo && window.office.openTodo(p, to));
     if (target && target.kind === 'foreman') fmp.onClick(ev);
   });
-  $('pSel').addEventListener('input', (ev) => { if (target && target.kind === 'scribe') scribe.onInput(ev); });
+  $('pSel').addEventListener('input', (ev) => { if (target && target.kind === 'scribe') scribe.onInput(ev, target.room); });
   $('pSel').addEventListener('keydown', (ev) => { if (target && target.kind === 'scribe') scribe.onKey(ev, target.room); });
   window.addEventListener('foreman-state', () => { if (target && target.kind === 'foreman') fmp.load([], true); });
   mountApprovalHistory($('pHist'), $('pHistHead'), $('pHistBody'), store);

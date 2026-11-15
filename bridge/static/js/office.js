@@ -7,6 +7,7 @@ import { loadSprites } from './sprites.js';
 import { createSidePanel } from './opanel.js';
 import { mountNewSession } from './newsession.js';
 import { mountTodoInbox } from './todoinbox.js';
+import { mountPostit } from './postit.js';
 import { coderJobs, coderBubble, isCoder, REST_DAYS } from './coder.js';
 import { roleTag, sessionName, needMark, mergeWaits, roleNameInk, bgLine, bgTip, nowDoing } from './render.js';
 import { PROBE } from './store.js';
@@ -64,7 +65,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         <button id="oAll" class="ghost" title="전체 — 모든 현장을 한 화면에 봅니다.">전체</button>
         <nav id="oProj" class="oproj" aria-label="프로젝트"></nav>
         <button id="oNew" class="ghost onew" title="새 세션 — 프로젝트나 폴더를 골라 새 세션을 띄웁니다.">＋ 세션</button>
-        <button id="oTodo" class="ghost onew" title="할 일 — 세션을 띄우지 않고 할 일을 적어 둡니다. 서기 정리로 주면 README 표로, 코더에게 주면 그 방 코더의 맡길 일로 갑니다.">＋ 할 일</button>
+        <button id="oTodo" class="ghost onew" title="할 일 — 세션을 띄우지 않고 할 일을 적어 둡니다. 적은 것은 옆 포스트잇에 붙습니다.">＋ 할 일</button>
+        <button id="oPostit" class="opostit" title="포스트잇 — 열린 할 일입니다. 누르면 펼칩니다.">포스트잇</button>
         <span id="oAlerts" class="oalerts"></span>
       </div>
       <div class="otop-row otop-sub">
@@ -2311,7 +2313,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 서기 "할 일 N"은 화면 px로 고정(11-06 — 월드 8px이 줌 2.5~3배로 20px 넘게 커져 다른 글씨보다 훨씬 컸다)
   const todoPx = () => tpx(12);                  // 11-10 방 안에서는 방 배율을 따른다(감독실은 글씨 배율)
   // 서기 말풍선(11-09) — 받은 할 일이 쌓이면(config/scribe.toml [nudge]) "정리할까요?" — 누르면 「나중에 할 일 정리」를 고른 창(세션은 사람이)
-  const scribeText = (t) => (t && t.nudge ? '정리할까요?' : t && t.items && t.items.length ? `문서 할 일 ${t.items.length}` : null);
+  // 11-15 말풍선은 포스트잇이 쌓였을 때(bridge/postit.py nudge_of — 21시 묶음 보고에는 넣지 않는다)
+  const scribeText = (t) => (t && t.nudge ? '포스트잇 쌓임' : t && t.items && t.items.length ? `문서 할 일 ${t.items.length}` : null);
   const scribeBubble = (a) => scribeText(a.todo);           // 도형 테마(시트 없는 그리기)의 서기만 — 시트 테마는 서기 자리(seatCards, 11-13)
   // 코더 말풍선 — 도형 테마(시트 없는 그리기)의 쉬는 코더만. 시트 테마는 코더 자리에 붙는다(seatCards, 11-13)
   const coderBubbleOf = (a) => (a.kind === 'coder' ? coderBubble(a.jobs) : null);
@@ -3591,8 +3594,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const pend = a.fm && a.fm.pending[0];
       if (window.foremanChat) (pend ? window.foremanChat.openDispatch(pend.dispatch_id) : window.foremanChat.open(room));
     } else if (a.kind === 'scribe') {
-      // 서기실 — 무엇을 시킬지 고르는 창 · 할 일 · Notion 게시. "정리할까요?"가 떠 있으면 「나중에 할 일 정리」를 고른 채(누르는 것은 사람)
-      panel.show({ kind: 'scribe', room: a.room, pick: a.todo && a.todo.nudge ? 'later' : null });
+      // 서기실 — 무엇을 시킬지 고르는 창 · 할 일 · 포스트잇 · Notion 게시. "포스트잇 쌓임"이 떠 있으면 포스트잇을 편 채(11-15)
+      panel.show({ kind: 'scribe', room: a.room, pick: a.todo && a.todo.nudge ? 'postit' : null });
     } else if (a.kind === 'coder') {
       panel.show({ kind: 'coder', room: a.room });            // 코더 — 맡길 일 · 지금 일(11-09)
     }
@@ -3727,8 +3730,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         const [x, y, w, h] = toScr(c.rect), t = room.scribeTodo;
         const tip = c.seat === 'coder'
           ? `<div class="tip-h">코더 자리: 맡길 일</div><div class="tip-b">이 방 코더에게 맡길 일입니다. 코더가 몇이든, 자리에 아무도 없어도 자리에 늘 뜹니다.</div>${coderJobsTip(room.coderJobs)}<div class="tip-t">누르면 맡길 일 목록이 열립니다.</div>`
-          : `<div class="tip-h">${t && t.nudge ? '서기 자리: 정리할까요?' : '서기 자리: 문서 할 일'}</div><div class="tip-b">이 방 서기에게 맡길 문서 일입니다. 서기 세션이 일하는 동안에도 자리에 늘 뜹니다.</div>${
-            t && t.nudge ? `<div class="tip-s">서기 몫 받은 할 일이 쌓였습니다(${esc(t.nudge.why)}). 누르면 「나중에 할 일 정리」를 고른 창이 열립니다. [시키기]를 눌러야 세션이 뜹니다.</div>` : ''}${
+          : `<div class="tip-h">${t && t.nudge ? '서기 자리: 포스트잇 쌓임' : '서기 자리: 문서 할 일'}</div><div class="tip-b">이 방 서기에게 맡길 문서 일입니다. 서기 세션이 일하는 동안에도 자리에 늘 뜹니다.</div>${
+            t && t.nudge ? `<div class="tip-s">포스트잇이 쌓였습니다(${esc(t.nudge.why)}). 누르면 서기실 포스트잇이 열립니다. 끝난 것은 [갱신]으로 찾고 안 할 것은 [x]로 지웁니다.</div>` : ''}${
             t && t.items && t.items.length ? `<div>문서 할 일 ${t.items.length}: README가 낡은 것처럼 브리지가 찾은 문서 정리 거리입니다.${t.items.slice(0, 3).map((q) => `<div class="tip-s">· ${esc(q.title)}</div>`).join('')}</div>` : ''}<div class="tip-t">누르면 일을 고르는 창이 열립니다.</div>`;
         HITS.push({ x, y, w, h, soft: true, tip });
       }
@@ -3738,7 +3741,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function coderJobsTip(jobs) {
     if (!jobs || !jobs.length) return '';
     const line = (j) => (j.kind === 'rested' ? `합치기 기다림: ${j.title}${j.days >= REST_DAYS ? ` · ${j.days}일째` : ''}` : j.title);
-    return `<div>맡길 일 ${jobs.length}: 코더에게 받은 할 일과 브리지가 이미 아는 신호입니다.${jobs.slice(0, 3).map((j) => `<div class="tip-s">· ${esc(short(line(j), 60))}</div>`).join('')}${jobs.length > 3 ? `<div class="tip-s">… ${jobs.length - 3}개 더</div>` : ''}</div>`;
+    return `<div>맡길 일 ${jobs.length}: 브리지가 이미 아는 신호입니다. 코더에게 맡길 할 일은 포스트잇의 코더 추천에 뜹니다.${jobs.slice(0, 3).map((j) => `<div class="tip-s">· ${esc(short(line(j), 60))}</div>`).join('')}${jobs.length > 3 ? `<div class="tip-s">… ${jobs.length - 3}개 더</div>` : ''}</div>`;
   }
   function actorTip(a) {
     const roleKey = (r) => ((theme.tags && theme.tags.roles) || {})[r];
@@ -3790,8 +3793,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     }
     if (a.kind === 'scribe') {
       const t = a.todo;
-      return `<div class="tip-h">서기</div><div class="tip-b">문서 담당: 문서 점검 · README · CLAUDE.md · 나중에 할 일 · Notion 게시</div>${
-        t && t.nudge ? `<div class="tip-s">정리할까요? 서기 몫 받은 할 일이 쌓였습니다(${esc(t.nudge.why)}). 누르면 「나중에 할 일 정리」를 고른 창이 열립니다. [시키기]를 눌러야 세션이 뜹니다.</div>` : ''}${
+      return `<div class="tip-h">서기</div><div class="tip-b">문서 담당: 문서 점검, README, CLAUDE.md, 알려진 한계, 포스트잇, Notion 게시</div>${
+        t && t.nudge ? `<div class="tip-s">포스트잇 쌓임: ${esc(t.nudge.why)}. 누르면 서기실 포스트잇이 열립니다. 끝난 것은 [갱신]으로 찾고 안 할 것은 [x]로 지웁니다.</div>` : ''}${
         t && t.items && t.items.length ? `<div>문서 할 일 ${t.items.length}: README가 낡은 것처럼 브리지가 찾은 문서 정리 거리입니다. 누르면 서기에게 맡깁니다.${t.items.slice(0, 3).map((x) => `<div class="tip-s">· ${esc(x.title)}</div>`).join('')}</div>` : ''}
         <div class="tip-t">누르면 일을 고르는 창이 열립니다.</div>`;
     }
@@ -3832,9 +3835,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // + 새 세션(11-05) — 지금 보고 있는 현장을 기본 프로젝트로. 띄우면 그 세션을 골라 패널에 연다
   const newSession = mountNewSession(store, { onCreated: (sid) => setTimeout(() => openSession(sid), 300) });
   $('oNew').onclick = () => newSession.open(view !== 'hq' && view !== 'map' && view !== '_lounge' ? view : null);
-  // 11-09 [＋ 할 일] — 받는 함에 적는다(세션 없음). 적으면 서기 머리 위 "할 일 N"을 다시 센다
-  const todoInbox = mountTodoInbox(store, { onSaved: () => { loadScribeTodo(); loadCoderTodo(); } });
-  $('oTodo').onclick = () => todoInbox.open(view !== 'hq' && view !== 'map' && view !== '_lounge' ? view : null);
+  // 11-15 포스트잇 — [＋ 할 일] 옆 종이(개수 · 가장 오래된 날). 서기실 창도 같은 목록이다(postit.js)
+  const roomNow = () => (view !== 'hq' && view !== 'map' && view !== '_lounge' ? view : null);
+  const postit = mountPostit(store, $('oPostit'), { room: roomNow, onChanged: () => { loadScribeTodo(); loadCoderTodo(); } });
+  // 11-09 [＋ 할 일] — 받는 함(= 포스트잇)에 적는다(세션 없음). 적으면 포스트잇 · 서기 할 일을 다시 센다
+  const todoInbox = mountTodoInbox(store, { onSaved: () => { loadScribeTodo(); loadCoderTodo(); postit.reload(); } });
+  $('oTodo').onclick = () => todoInbox.open(roomNow());
   window.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Escape') return;
     if (ev.target.closest && ev.target.closest('input, textarea, select')) return;   // 입력 칸에서 친 Esc는 칸이 처리
@@ -3883,7 +3889,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   return { go, view: () => view, theme, outside: () => (OUTSIDE ? { ...OUTSIDE } : null),
            // 보고 있는 방의 화면 칸(캔버스 px, [x0, y0, x1, y1]) — 방 아래 빈 높이 재기(11-11)
            roomBox: () => { const q = view === 'hq' || view === 'map' ? null : roomByView(); if (!q) return null;
-             const [x0, y0] = toScreen(q.x * T, q.y * T), [x1, y1] = toScreen((q.x + q.w) * T, (q.y + q.h) * T); return [x0, y0, x1, y1].map(Math.round); }, openSession, panel, actors, newSession: (p) => newSession.open(p), openTodo: (p, to) => todoInbox.open(p, to), foremanName: FM_NAME,
+             const [x0, y0] = toScreen(q.x * T, q.y * T), [x1, y1] = toScreen((q.x + q.w) * T, (q.y + q.h) * T); return [x0, y0, x1, y1].map(Math.round); }, openSession, panel, actors, newSession: (p) => newSession.open(p), openTodo: (p) => todoInbox.open(p), openPostit: (p) => postit.open(p), postitChanged: () => postit.reload(), foremanName: FM_NAME,
            probeMode: () => PROBE,       // 점검 화면인가(?probe=1, 11-11) — screen.py가 확인한다. 아니면 읽음 같은 사람 흔적이 남는다
            audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: (o) => layoutAudit(o), labelAudit: () => labelAudit(), gridAudit: () => gridAudit(), camScale: () => ({ cam: cam.s, room: roomViewScale() }), roomLabels: (name) => roomLabels(world.rooms.find((r) => r.name === name) || null).map((l) => ({ ...l, box: labelBox(l) })),furnRects: (w) => furnRects(w), standSpots: () => standSpots(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), stackAudit: () => stackAudit(), walkAudit: () => walkAudit(),
            jumpWatch: () => { JUMP_LOG = { last: new Map(), name: { walk: 0, jump: 0, who: {} }, stack: { walk: 0, jump: 0, who: {} } }; return true; },

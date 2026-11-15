@@ -271,6 +271,36 @@ button.rolebadge.fixed:hover { background:color-mix(in srgb, var(--rc) 16%, tran
 .ti-item.st-new .ti-st { color:var(--warn); font-weight:600; }
 .ti-item.st-moved .ti-st { color:var(--ok); }
 .ti-item.st-dropped { opacity:.6; }
+/* 포스트잇(11-15, postit.js) — 머리 탭 종이 · 펼친 창 · 서기실이 같은 노란 종이. 색 변수는 종이 안에서만 덮는다 */
+.opostit { background:#f3d76b; color:#2a2410; border-color:#d9b94a; font-weight:600; box-shadow:1px 2px 0 rgba(0,0,0,.35); transform:rotate(-1.5deg); white-space:nowrap; }
+.opostit.warn { background:#f5b04a; border-color:#c77c12; }
+.postit.paper { --bg:#fdf3b8; --fg:#2a2410; --muted:#6b6040; --line:#d9c77a; --card:#fff8d6; --code:#f3e7a0;
+  --warn:#9a5b00; --ok:#2f7a3a; --bad:#b3261e; --act:#1f5fb8;
+  background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:3px; padding:8px 10px;
+  box-shadow:2px 3px 0 rgba(0,0,0,.28); display:flex; flex-direction:column; gap:6px; min-width:0; }
+.postit .pi-list { display:grid; max-height:42vh; overflow:auto; }
+.postit .pi-row { display:flex; gap:8px; align-items:flex-start; border-bottom:1px dashed var(--line); padding:3px 0; }
+.postit .pi-row.pi-unconf { opacity:.55; }
+.postit .pi-main { flex:1; min-width:0; }
+.postit .pi-main summary { cursor:pointer; overflow-wrap:anywhere; }
+.postit .pi-main pre { max-height:24vh; margin:4px 0 0; white-space:pre-wrap; background:var(--card); }
+.postit .pi-btns { flex:none; display:flex; gap:4px; }
+.postit .pi-chip { font-size:13px; padding:0 5px; border:1px solid var(--line); border-radius:8px; color:var(--muted); white-space:nowrap; }
+.postit .pi-chip.pi-rec { color:var(--act); border-color:var(--act); }
+.postit .pi-sec { border:1px solid var(--warn); border-radius:3px; padding:4px 6px; }
+.postit .pi-sec .pi-row { border-bottom:0; }
+.postit .pi-draft { resize:vertical; background:var(--card); color:var(--fg); border-color:var(--line); }
+.postit .pi-foot { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.postit .pi-foot > span { flex:1; min-width:10em; }
+.postit .pi-closed .pi-crow { overflow-wrap:anywhere; }
+.postit button { color:var(--fg); background:var(--card); border-color:var(--line); }
+.postit button.ghost { background:transparent; }
+.postit code { background:var(--code); overflow-wrap:anywhere; }
+.pi-pop { position:fixed; z-index:60; width:min(560px, calc(100vw - 16px)); max-height:80vh; overflow:auto; display:none;
+  background:var(--card); border:1px solid var(--line); border-radius:8px; padding:6px; box-shadow:0 6px 24px rgba(0,0,0,.45); }
+.pi-pop.on { display:block; }
+.pi-pop .pi-bar { display:flex; gap:6px; justify-content:space-between; align-items:center; margin-bottom:6px; }
+.pi-pop .pi-proj { width:auto; }
 .ns-two { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
 .ns-two label { display:flex; flex-direction:column; gap:2px; }
 @media (max-width:480px) { .ns-two { grid-template-columns:1fr; } }

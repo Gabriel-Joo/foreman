@@ -1,10 +1,9 @@
 // 코더 상주(11-09 사용자, log/coder_resident_20261109.md) — 방마다 늘 있는 코더를 누르면 패널에 뜨는 창.
-// 맡길 일 = "코더에게" 받은 할 일(새로) + 기계로 센 것: 쉬게 한 일(합치기 기다림) · 파이프라인 실패 · 빌드 알림 없음 · 승인 대기 · 권한 거부.
-// 받은 할 일 · 쉬게 한 일은 /api/coder/todo(DB), 나머지는 화면이 이미 받는 값(store — 대시보드 · 파이프라인 스냅숏)으로 센다. 새로 판정하지 않는다.
-// 받은 할 일 줄을 누르면 [＋ 세션] 창의 감독실 말하기 칸에 그 글을 채운다 — 계획으로 가고, 바로 띄우지 않는다.
+// 맡길 일 = 기계로 센 것: 쉬게 한 일(합치기 기다림) · 파이프라인 실패 · 빌드 알림 없음 · 승인 대기 · 권한 거부.
+// 쉬게 한 일은 /api/coder/todo(DB), 나머지는 화면이 이미 받는 값(store — 대시보드 · 파이프라인 스냅숏)으로 센다. 새로 판정하지 않는다.
+// 11-15 「코더에게」 받은 할 일은 없앴다 — 코더에게 맡길 할 일은 포스트잇의 코더 추천([띄우기], postit.js)이 맡는다.
 
-import { esc, ago, keep } from './render.js';
-import { firstLine } from './todoinbox.js';
+import { esc, keep } from './render.js';
 
 export const REST_DAYS = 1;          // 쉬게 한 지 이만큼(일) 지나면 "N일째"를 붙인다 — 잊히지 않게
 
@@ -14,7 +13,7 @@ export const isCoder = (s) => !s.role || s.role === 'coder';
 // 맡길 일 목록(순수) — room 이름, data = /api/coder/todo의 그 방 값, st = store.state 모양({sessions, approvals, pipeline}: Map)
 export function coderJobs(room, data, st) {
   const out = [];
-  for (const x of (data && data.inbox) || []) out.push({ kind: 'inbox', id: x.id, title: firstLine(x.body, 50), body: x.body, at: x.created_at });
+  // 11-15 「코더에게」 받은 할 일은 없앴다 — 코더에게 맡길 할 일은 포스트잇의 코더 추천([띄우기])이 맡는다
   for (const r of (data && data.rested) || []) out.push({ kind: 'rested', sid: r.session_id, title: r.title, branch: r.branch, days: r.days || 0, at: r.rested_at });
   // 끝난 뒤 어긋난 것(11-11, bridge/reconcile.py) — 고아 worktree · 커밋 안 된 변경 · 실제와 다른 합치기 기다림 · 남은 브랜치
   // 빈 worktree(kind 'empty', 11-13)는 맡길 일이 아니라 치울 것 — 여기서 세지 않는다(emptyWorktrees)
@@ -55,7 +54,6 @@ export function coderBubble(jobs) {
 }
 
 const WHY = {
-  inbox: '머리줄 [＋ 할 일]에서 코더에게 받은 글입니다. 누르면 계획 창에 채워집니다.',
   rested: '쉬게 한 일 — 커밋하고 세션만 끝냈습니다. 세션을 열어 [이어서] · [합치기] · [버리기]를 고릅니다.',
   pipe: '파이프라인 실패 — 파이프라인(빌드 · 이미지 · 배포)에서 멈췄습니다. 고칠 일을 계획으로 맡깁니다.',
   build: '빌드 알림 없음 — Jenkins를 확인합니다. FOREMAN 밖에서 풉니다.',
@@ -87,12 +85,8 @@ export function createCoder(store) {
     const live = [...st.sessions.values()].filter((s) => s.project === room && s.state !== 'DORMANT' && isCoder(s)).sort((a, b) => a.id - b.id);
     const name = (s) => s.custom_title || s.title || s.cc_name || `세션 ${s.id}`;
     const row = (j) => {
-      const btn = j.kind === 'inbox'
-        ? `<button type="button" class="small" data-cd-plan="${j.id}" title="계획으로 — 이 글을 감독실 말하기 칸에 채워 계획 창을 엽니다. 바로 띄우지 않습니다.">계획으로</button>
-           <button type="button" class="small ghost" data-cd-drop="${j.id}" title="버리기 — 이 할 일을 맡기지 않습니다. 받은 할 일 목록에 「버림」으로 남습니다.">버리기</button>`
-        : j.sid ? `<button type="button" class="small" data-cd-open="${j.sid}" title="세션 열기 — 이 세션의 [세션 정리] 탭을 엽니다.">세션 열기</button>` : '';
+      const btn = j.sid ? `<button type="button" class="small" data-cd-open="${j.sid}" title="세션 열기 — 이 세션의 [세션 정리] 탭을 엽니다.">세션 열기</button>` : '';
       const head = j.kind === 'rested' ? `합치기 기다림: ${esc(j.title)}${j.days >= REST_DAYS ? ` <span class="warn">${j.days}일째</span>` : ''} <span class="muted">· <code>${esc(j.branch)}</code></span>`
-        : j.kind === 'inbox' ? `${esc(j.title)} <span class="muted">· ${ago(j.at)}</span>`
         : j.kind === 'drift' ? `<span class="warn">어긋남</span>: ${esc(j.title)}` : esc(j.title);
       return `<div class="sc-row" data-tip="${esc(WHY[j.kind] || '')}"><div class="small"><b>${head}</b></div><div class="hand-btns">${btn}</div></div>`;
     };
@@ -107,16 +101,15 @@ export function createCoder(store) {
         <button type="button" class="small ghost" data-cd-clean="${e.sid}" data-cd-name="${esc(e.name)}" title="버리기 — 빈 작업방 ${esc(e.name)}를 지웁니다. 잃는 커밋 · 변경은 없습니다.">버리기</button></div></div>`).join('')}</details>` : '';
     return `<div class="small muted">${esc(label)} · 코더: 이 방의 코딩 담당입니다. 새 일은 새 세션으로, 같은 일을 이어 할 때만 그 세션으로 합니다. 세션이 뜬 수만큼 코더가 자리에서 책상으로 가고, 끝나면 자리로 돌아갑니다.</div>
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}">${esc(note.msg)}</div>` : ''}
-      <details class="hand"${keep(`coder:${room}:jobs`, true)}><summary title="맡길 일 — 코더에게 받은 할 일과, 브리지가 이미 아는 신호(쉬게 한 일 · 파이프라인 실패 · 빌드 알림 없음 · 승인 대기 · 권한 거부)입니다."><b>맡길 일 ${jobs.length}</b></summary>${jobsHtml}
-        <div class="hand-btns"><button type="button" class="small ghost" data-cd-add="1" title="할 일 적기 — 받는 칸을 「코더에게」로 골라 엽니다.">＋ 할 일 적기</button></div></details>
+      <details class="hand"${keep(`coder:${room}:jobs`, true)}><summary title="맡길 일 — 브리지가 이미 아는 신호(쉬게 한 일, 파이프라인 실패, 빌드 알림 없음, 승인 대기, 권한 거부)입니다."><b>맡길 일 ${jobs.length}</b></summary>${jobsHtml}
+        <div class="hand-btns"><button type="button" class="small ghost" data-cd-add="1" title="포스트잇 — 이 방 포스트잇을 펼칩니다. 코더에게 맡길 만한 것은 코더 추천으로 뜨고 [띄우기]로 계획을 받습니다.">포스트잇 보기</button></div></details>
       ${emptyHtml}
       <details class="hand"${keep(`coder:${room}:live`, true)}><summary title="지금 일 — 이 방에서 도는 코더 세션입니다. 모두 같은 코더입니다."><b>지금 일 ${live.length}</b></summary>${liveHtml}</details>`;
   }
 
   async function onClick(ev, room, openSession, openTodo) {
-    const o = ev.target.closest('[data-cd-open]'), p = ev.target.closest('[data-cd-plan]'),
-      d = ev.target.closest('[data-cd-drop]'), a = ev.target.closest('[data-cd-add]'), cl = ev.target.closest('[data-cd-clean]');
-    if (!o && !p && !d && !a && !cl) return;
+    const o = ev.target.closest('[data-cd-open]'), a = ev.target.closest('[data-cd-add]'), cl = ev.target.closest('[data-cd-clean]');
+    if (!o && !a && !cl) return;
     ev.preventDefault();
     if (cl) {
       const name = cl.dataset.cdName;
@@ -128,19 +121,9 @@ export function createCoder(store) {
       return;
     }
     if (o) { if (openSession) openSession(Number(o.dataset.cdOpen)); return; }
-    if (a) { if (openTodo) openTodo(room, 'coder'); return; }
-    if (p) {
-      const j = ((roomData(room) || {}).inbox || []).find((x) => String(x.id) === p.dataset.cdPlan);
-      if (!j) return;
-      if (window.foremanChat && window.foremanChat.openWith) window.foremanChat.openWith(room, j.body, j.id);
-      else { note = { bad: true, msg: '계획 창을 열지 못했습니다. 화면을 새로 고쳐 주세요.' }; store.touch('panel'); }
-      return;
-    }
-    if (d) {
-      d.disabled = true;
-      const r = await fetch(`/api/scribe/inbox/${d.dataset.cdDrop}/drop`, { method: 'POST', headers: store.headers(true), body: '{}' });
-      note = r.ok ? { msg: `받은 할 일 #${d.dataset.cdDrop}을 버렸습니다.` } : { bad: true, msg: `버리지 못했습니다(HTTP ${r.status}).` };
-      await load(true);
+    if (a) {
+      if (window.office && window.office.openPostit) window.office.openPostit(room);
+      else if (openTodo) openTodo(room);
     }
   }
 

@@ -57,13 +57,23 @@ def test_parse_items_normalizes():
     assert pm.parse_items("[]") == []
 
 
+def test_parse_items_unfinished_goes_to_postit():
+    """11-15 — 할 일인 미완은 README가 아니라 포스트잇. 결정 · 기준이 README로 가는 것은 그대로 둔다."""
+    items = pm.parse_items('[{"kind":"미완","what":"질문 카드 접기","dest":"README.md","section":"나중에 할 일"},'
+                           '{"kind":"미완","what":"목적지 없음"},{"kind":"결정","what":"README 결정","dest":"README.md","section":"x"},'
+                           '{"kind":"미완","what":"docs로 가는 미완","dest":"docs/a.md","section":"s"}]')
+    assert [(i["dest"], i["section"], i["state"]) for i in items] == [
+        ("postit", "", "pending"), ("postit", "", "pending"), ("README.md", "x", "pending"), ("docs/a.md", "s", "pending")]
+    assert "postit" in pm.LIST_PROMPT
+
+
 def test_check_dest(tmp_path):
     (tmp_path / "CLAUDE.md").write_text("# x\n## 작업 규칙\n- a\n", encoding="utf-8")
     ck = lambda d, s="": pm.check_dest({"dest": d, "section": s}, str(tmp_path))  # noqa: E731
     assert ck("CLAUDE.md", "작업 규칙") == {"ok": True, "problem": None, "note": None}
     assert ck("CLAUDE.md", "없는 절")["note"] == "새 절입니다"
     assert ck("docs/new.md")["note"] == "새 파일입니다"
-    assert ck("memory")["ok"] and ck("drop")["ok"]
+    assert ck("memory")["ok"] and ck("drop")["ok"] and ck("postit")["ok"]
     for bad in ("/etc/passwd.md", "../x.md", "~/x.md", "config/notify.toml", ""):
         assert not ck(bad)["ok"], bad
     assert not pm.check_dest({"dest": "CLAUDE.md"}, None)["ok"]
@@ -136,6 +146,17 @@ async def test_verify_catches_wrong_files_head_and_missing(repo):
     assert not r["ok"] and any("docs/a.md" in p for p in r["problems"])
     r = await pm.verify(str(repo), c2, {"commit": c3, "skipped": [{"id": 2, "why": "이미 있음"}]}, two, time.time())
     assert r["ok"]                                                         # 이유를 단 건너뜀은 괜찮다
+
+
+async def test_verify_postit_wants_no_file(repo):
+    """포스트잇 목적지는 브리지가 넣는다 — 커밋 · 파일을 바라지 않는다."""
+    base = _git(repo, "rev-parse", "HEAD")
+    r = await pm.verify(str(repo), base, {}, [{"id": 1, "dest": "postit", "state": "approved"}], time.time())
+    assert r["ok"] and r["commit"] is None and r["files"] == []
+    c = _commit(repo, "인계 전 결정 기록: 섞임", **{"CLAUDE.md": "## 작업 규칙\n- z\n"})
+    mixed = A + [{"id": 2, "dest": "postit", "state": "approved"}]
+    r = await pm.verify(str(repo), base, {"commit": c}, mixed, time.time())
+    assert r["ok"] and r["files"] == ["CLAUDE.md"]
 
 
 async def test_verify_memory(repo, tmp_path):

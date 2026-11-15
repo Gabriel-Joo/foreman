@@ -156,7 +156,7 @@ def test_doc_candidates_ranks_by_evidence():
     order = [x["line"] for x in d["readme"]]
     assert order[0] == 4 and by[4]["score"] >= 100 and "README에서 뺄 줄" in by[4]["why"][0]   # 다른 절의 「…」는 세지 않는다
     assert by[6]["score"] >= 50 and "근거 칸" in by[6]["why"][0]
-    assert by[5]["score"] >= 40 and by[5]["why"] == ["받은 할 일 #8"]
+    assert by[5]["score"] >= 40 and by[5]["why"] == ["포스트잇 #8"]       # 11-15 같은 번호, 옛 이름 「받은 할 일 #8」도 읽는다
     assert 7 not in by                                   # 낱말 둘로는 후보가 아니다
     assert by[8]["weak"] is True and not by[4]["weak"]  # 낱말 셋은 후보지만 약하다
     assert d["docs"][0]["stale"] is True

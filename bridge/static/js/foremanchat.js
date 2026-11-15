@@ -393,13 +393,14 @@ function mount(dlg) {
   who();
   // 11-09 코더의 맡길 일 → 받은 할 일 글을 말하기 칸에 채운다. 바로 계획을 받지 않는다(사람이 읽고 [계획 받기])
   // id — 하나(코더 맡길 일) 또는 여럿(11-11 할 일 목록에서 골라 [골라서 계획 받기]). 여럿이면 바로 계획을 받는다(사람이 이미 골랐다)
-  function prefill(text, id) {
+  // 11-15 포스트잇 [띄우기] — opts.ask면 하나여도 바로 계획을 받는다(사람이 포스트잇에서 이미 골랐다). 시작은 사람이 [이대로 시작]
+  function prefill(text, id, opts) {
     $('fmText').value = text || '';
     sent = false;
     inboxIds = (Array.isArray(id) ? id : id ? [id] : []).map(Number);
-    const tag = inboxIds.map((i) => `#${i}`).join(' · ');
-    msg(inboxIds.length ? `받은 할 일 ${tag}을 채웠습니다. 고칠 것은 고친 뒤 [계획 받기]를 누릅니다. 시작하면 그 세션이 ${inboxIds.length > 1 ? '이 할 일들을' : '이 할 일을'} 가져갑니다.` : '', 'muted');
-    if (inboxIds.length > 1) ask();
+    const tag = inboxIds.map((i) => `#${i}`).join(', ');
+    msg(inboxIds.length ? `포스트잇 ${tag}을 채웠습니다. 고칠 것은 고친 뒤 [계획 받기]를 누릅니다. 시작하면 그 세션이 ${inboxIds.length > 1 ? '이 할 일들을' : '이 할 일을'} 가져갑니다.` : '', 'muted');
+    if (inboxIds.length > 1 || (opts && opts.ask)) ask();
   }
   ui = { reset, load, prefill, focus: () => $('fmText').focus() };
   // 머리줄 [＋ 세션](office.js → newsession.js open)으로 열 때는 이 칸을 거치지 않는다 — 창이 열리는 것을 보고 같이 비운다.
@@ -428,9 +429,9 @@ async function openDispatch(id) {
   if (ui) await ui.load(id);
 }
 // 코더의 맡길 일(11-09) — 받은 할 일을 말하기 칸에 채워 연다(계획으로 — 바로 띄우지 않는다)
-async function openWith(project, text, inboxId) {
+async function openWith(project, text, inboxId, opts) {
   await open(project || null);
-  if (ui) ui.prefill(text, inboxId);
+  if (ui) ui.prefill(text, inboxId, opts);
 }
 // [+ 세션] 창은 office.js가 처음 그릴 때 만든다 — 생기면 붙는다. document가 없으면(node 시험) 붙이지 않는다
 if (typeof document !== 'undefined') {

@@ -394,8 +394,10 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     const rows = items.map((it) => {
       const ck = it.check || {}, on = chosen(it, promDraft), sel = selectable(it);
       const why = !sel ? (ck.ok === false ? `목적지가 틀렸습니다${ck.problem ? `(${ck.problem})` : ''}` : '세션이 문서에 남기지 않아도 된다고 했습니다') : '';
-      const dest = it.dest === 'memory' ? '메모리(사람 선호)' : it.dest === 'drop' ? '버림' : it.dest;
-      return `<label class="mv-item${on ? ' on' : ''}${sel ? '' : ' off'}" data-tip="${esc(sel ? `후보 #${it.id} — 고르면 세션이 이 문장을 ${dest}에 씁니다.` : `고를 수 없음 — ${why}. 「옮기기 전 정리」에서 목적지를 고치면 고를 수 있습니다.`)}">
+      // 11-15 postit — 끝나지 않은 할 일은 세션이 쓰지 않고 브리지가 포스트잇에 올린다(bridge/promote.py POSTIT_DEST)
+      const dest = it.dest === 'memory' ? '메모리(사람 선호)' : it.dest === 'drop' ? '버림' : it.dest === 'postit' ? '포스트잇' : it.dest;
+      const goes = it.dest === 'postit' ? '고르면 끝나지 않은 할 일을 포스트잇에 올립니다. 세션이 쓰지 않고 브리지가 넣습니다.' : `고르면 세션이 이 문장을 ${dest}에 씁니다.`;
+      return `<label class="mv-item${on ? ' on' : ''}${sel ? '' : ' off'}" data-tip="${esc(sel ? `후보 #${it.id} — ${goes}` : `고를 수 없음 — ${why}. 「옮기기 전 정리」에서 목적지를 고치면 고를 수 있습니다.`)}">
         <input type="checkbox" data-mv-item="${it.id}"${on ? ' checked' : ''}${sel ? '' : ' disabled'}>
         <span class="mv-body">
           <span class="mv-what">${it.kind ? `<span class="mv-kind">${esc(it.kind)}</span> ` : ''}${esc(it.what)}</span>

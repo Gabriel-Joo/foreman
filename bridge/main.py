@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from bridge.api import approvals as approvals_api, dashboard as dashboard_api, debug, health, hooks, sessions, ws
 from bridge.api import foreman as foreman_api, handoff as handoff_api, terminal as terminal_api, webhooks
 from bridge.api import managers as managers_api, todo as todo_api
+from bridge.api import postit as postit_api
 from bridge.api import publish as publish_api
 from bridge.api import scribe as scribe_api
 from bridge.api import coder as coder_api
@@ -373,6 +374,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.foreman.note_rules = load_note_rules(Path(__file__).resolve().parent.parent / "config" / "wake.toml")
         note_task = asyncio.create_task(app.state.foreman.note_loop(), name="foreman-note-loop")
         app.state.foreman.poke_notes("브리지 뜸")
+        # 11-15 포스트잇(bridge/postit.py) — 2분마다 대화 그물 훑기 · [갱신] 점검 세션 결과 받기
+        from bridge import postit as postit_mod
+        postit_task = asyncio.create_task(postit_mod.run(engine, app.state.handoff,
+                                                         on_change=lambda: pipeline.publish({"type": "postit"})),
+                                          name="foreman-postit")
         if app.state.reconciler is not None:
             sw.on_gone = lambda: (app.state.reconciler.poke("세션 끝남"), app.state.foreman.poke_notes("세션 끝남"))
         # 11-11 C 2물결 — 역할 권한 · 프로젝트별 관리자 · 계획 넘기기(본문은 bridge/roleguard.py · managers.py · handover.py).
@@ -461,7 +467,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await app.state.terminal.stop()   # ttyd만 내린다 — tmux 셸은 남는다
             recon_task = app.state.reconciler._task if app.state.reconciler else None
             for t in (watch_task, state_task, health_task, usage_task, docsync_task, denied_task, schema_task, stall_task, recon_task,
-                      mprep_task, handover_task, note_task, app.state.foreman._note_task):
+                      mprep_task, handover_task, note_task, postit_task, app.state.foreman._note_task):
                 if t:
                     t.cancel()
                     try:
@@ -485,6 +491,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(foreman_api.router)
     app.include_router(managers_api.router)        # 11-11 프로젝트별 관리자(bridge/api/managers.py)
     app.include_router(todo_api.router)            # 11-11 할 일 목록에서 바로 고치기(bridge/api/todo.py)
+    app.include_router(postit_api.router)          # 11-15 포스트잇(bridge/api/postit.py)
     app.include_router(approvals_api.router)
     app.include_router(dashboard_api.router)
     app.include_router(usage_api.router)

@@ -127,6 +127,20 @@ new = "(없앰, 같은 일과 같은 파일만 막는다)"
 scope = "화면과 문서 인용"
 commit = "cc/foreman-4 11-15"
 
+# 11-15 포스트잇(cc/foreman-5, 410 서기 구조 2번). 「받은 할 일」과 포스트잇은 같은 것(사용자 답 6).
+# 문서의 지난 기록(「받은 할 일 #17」 같은 근거 표시)은 그대로라 scope는 화면만
+[[rename]]
+old = "받은 할 일"
+new = "포스트잇"
+scope = "화면"
+commit = "cc/foreman-5 11-15"
+
+[[rename]]
+old = "나중에 할 일 정리"
+new = "알려진 한계 쓰기"
+scope = "화면"
+commit = "cc/foreman-5 11-15"
+
 # ── 안 A의 코드 예외 ────────────────────────────────────────
 # 화면이 아니라 세션 · claude -p에 넣는 글(문서 말을 쓴다 — docs/style_guide.md 「화면 말 · 문서 말이 다른 것」).
 # near = 그 문자열 안의 한 조각(같은 파일의 다른 화면 글은 계속 걸리게)
@@ -148,6 +162,24 @@ file = "bridge/handoff.py"
 old = "따로 작업"
 near = "이 세션은 원본 폴더가 아니라 **따로 작업(worktree)"
 why = "worktree 세션 첫 글 앞에 붙는 「이 세션이 뜬 자리」 안내(세션에 넣는 글)"
+
+[[code_exception]]
+file = "bridge/mergeprep.py"
+old = "받은 할 일"
+near = "(?:받은 할 일|포스트잇)"
+why = "11-15 전 커밋 글 · 세션 log의 「받은 할 일 #N」도 읽는 정규식(화면에 나가지 않음)"
+
+[[code_exception]]
+file = "bridge/scribe_room.py"
+old = "받은 할 일"
+near = "한 사람 말도, 받은 할 일도 없습니다"
+why = "scribe_room.start 안 거부 사유. 11-15 같은 시각 다른 코더(두 길 합치기)가 start를 고쳐 이번에 건드리지 않음. 합친 뒤 「포스트잇에서 [→]로 보낸 줄도, 뺄 줄도 없습니다」로 따로 고친다"
+
+[[code_exception]]
+file = "bridge/scribe_room.py"
+old = "받은 할 일"
+near = "개 받은 할 일 "
+why = "scribe_room.start가 남기는 session_action detail(화면에 나가지 않음). 위와 같은 까닭으로 이번에 건드리지 않음"
 
 [[code_exception]]
 file = "bridge/scribe_room.py"
@@ -231,8 +263,14 @@ acts = "Esc로 감독실"
 test = ""
 
 [[promise]]
+file = "bridge/static/js/postit.js"
+tip = "저장 — 적은 글을 포스트잇에 바로 올립니다"
+acts = "Ctrl+Enter로 저장(mountPostit keydown)"
+test = ""
+
+[[promise]]
 file = "bridge/static/js/todoinbox.js"
-tip = "적기 — 받은 할 일에 적습니다"
+tip = "적기 — 포스트잇에 적습니다"
 acts = "Ctrl+Enter로 적기"
 test = ""
 

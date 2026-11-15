@@ -29,7 +29,9 @@ from bridge.liveness import live_sessions
 
 KINDS = ("결정", "금지", "기준", "선호", "미완")
 STATES = ("pending", "approved", "dropped")
-SPECIAL_DEST = ("memory", "drop")
+# postit(11-15) — 끝나지 않은 할 일(종류 미완)은 README가 아니라 포스트잇으로. 2/2에서 세션이 쓰지 않고 브리지가 넣는다(bridge/postit.py)
+SPECIAL_DEST = ("memory", "drop", "postit")
+POSTIT_DEST = "postit"
 COMMIT_HEAD = "인계 전 결정 기록"
 MAX_ITEMS = 60
 DIFF_SECTION = "문서와 다른 지금"
@@ -43,8 +45,9 @@ LIST_PROMPT = """{head} 대화 결정 문서에 적기 1/2 — 목록만
   - kind: 결정 | 금지 | 기준 | 선호 | 미완
   - what: 문서에 들어갈 한두 문장(그 문서 문체로)
   - quote: 사용자 말 그대로(없으면 빈 글)
-  - dest: 저장소 맨 위 기준 .md 경로(예: CLAUDE.md, docs/11_handoff.md) · "memory"(사람의 작업 선호 — CC 메모리) · "drop"(그때뿐이라 버림)
-  - section: 그 파일의 절 제목(있는 절이면 글자 그대로, 없으면 새 이름). memory · drop이면 빈 글
+  - dest: 저장소 맨 위 기준 .md 경로(예: CLAUDE.md, docs/11_handoff.md) · "memory"(사람의 작업 선호 — CC 메모리) · "drop"(그때뿐이라 버림) ·
+    "postit"(끝나지 않은 할 일 — 포스트잇. kind가 미완인 할 일은 README가 아니라 postit이 기본이다. 규칙 · 결정 · 기준은 지금처럼 docs · style_guide · CLAUDE.md)
+  - section: 그 파일의 절 제목(있는 절이면 글자 그대로, 없으면 새 이름). memory · drop · postit이면 빈 글
   - why: 왜 거기인지 한 줄. CLAUDE.md는 꼭 지킬 것만 짧게, 상세는 docs
 {extra}- 아래 모양 그대로, 마지막 응답에 한 번만 써라(JSON 배열, 표지 줄 두 개를 글자 그대로). 없으면 빈 배열 []:
 
@@ -128,8 +131,12 @@ def parse_items(body: str) -> list[dict[str, Any]]:
     for d in data[:MAX_ITEMS]:
         if not isinstance(d, dict) or not _s(d.get("what"), 10):
             continue
-        dest = _s(d.get("dest"), 255) or "drop"
-        out.append({"id": len(out) + 1, "kind": _s(d.get("kind"), 8) if _s(d.get("kind"), 8) in KINDS else "결정",
+        kind = _s(d.get("kind"), 8) if _s(d.get("kind"), 8) in KINDS else "결정"
+        dest = _s(d.get("dest"), 255)
+        if kind == "미완" and dest in ("", "README.md"):
+            dest = POSTIT_DEST        # 11-15 — 할 일인 미완은 포스트잇으로(전엔 README 「나중에 할 일」로 갔다)
+        dest = dest or "drop"
+        out.append({"id": len(out) + 1, "kind": kind,
                     "what": _s(d.get("what"), 2000), "quote": _s(d.get("quote"), 2000), "dest": dest,
                     "section": "" if dest in SPECIAL_DEST else _s(d.get("section"), 200),
                     "why": _s(d.get("why"), 500), "state": "dropped" if dest == "drop" else "pending"})
@@ -477,6 +484,15 @@ class Promoter:
             raise Refused("목적지가 틀렸습니다. " +"; ".join(f"#{it['id']} {it['dest']}: {ck['problem']}" for it, ck in bad))
         if await self._busy(row.id) or await self.m._pending(row.id):
             raise Refused("이미 이 세션에 요약 · 문서 적기 요청을 기다리는 중입니다")
+        # 11-15 포스트잇 — dest postit은 세션에 보내지 않고 브리지가 넣는다(같은 근거 pr:<id>:<항목>는 두 번 들어가지 않는다)
+        posts = [it for it in approved if it["dest"] == POSTIT_DEST]
+        approved = [it for it in approved if it["dest"] != POSTIT_DEST]
+        post_ids = await self._postit(row, pid, posts) if posts else []
+        if not approved:
+            res = {"ok": True, "problems": [], "commit": None, "files": [], "memory": [], "skipped": [], "postit": post_ids}
+            await self._save(pid, status="written", result=res, error=None, commit_sha=None)
+            self.m._notify(row, f"대화 결정 문서에 적기 끝 — 포스트잇 {len(post_ids)}개(세션에 보내지 않음)")
+            return {"promotion_id": pid, "status": "written", "approved": 0, "postit": post_ids}
         base = await ptr._git(repo or "", "rev-parse", "HEAD")
         if not base:
             raise Refused("저장소 HEAD를 읽지 못했습니다")
@@ -488,11 +504,24 @@ class Promoter:
         except Refused as e:
             await self._save(pid, status="write_failed", error=f"보내지 못함: {e}")
             raise
-        self.m._spawn_task(self._wait_write(row, pid, req, path, offset, prompt_id, repo or "", base, approved, wall))
-        return {"promotion_id": pid, "req": req, "status": "writing", "approved": len(approved)}
+        self.m._spawn_task(self._wait_write(row, pid, req, path, offset, prompt_id, repo or "", base, approved, wall, post_ids))
+        return {"promotion_id": pid, "req": req, "status": "writing", "approved": len(approved), "postit": post_ids}
+
+    async def _postit(self, row: ho.SessionRow, pid: int, posts: list[dict[str, Any]]) -> list[int]:
+        """승인한 미완 항목을 포스트잇에 넣는다(source promote, 근거 pr:<promotion id>:<항목 id>). 넣은(또는 이미 있던) id들."""
+        from bridge import postit as pi
+        if not row.project:
+            raise Refused("이 세션의 프로젝트를 몰라 포스트잇에 넣지 못했습니다")
+        ids = []
+        for it in posts:
+            body = it["what"] + (f"\n사람 말: 「{it['quote']}」" if it.get("quote") else "")
+            r = await pi.add(self.m.engine, row.project, body, "promote", f"pr:{pid}:{it['id']}")
+            ids.append(r["id"])
+        return ids
 
     async def _wait_write(self, row: ho.SessionRow, pid: int, req: str, path: str, offset: int, prompt_id: str | None,
-                          repo: str, base: str, approved: list[dict[str, Any]], wall: float) -> None:
+                          repo: str, base: str, approved: list[dict[str, Any]], wall: float,
+                          post_ids: list[int] | None = None) -> None:
         body, texts, why = await self._wait(row, "FOREMAN-PROMOTED", req, path, offset, prompt_id)
         out = None
         if body is not None:
@@ -503,6 +532,7 @@ class Promoter:
             if not isinstance(out, dict):
                 out, why = None, "결과 블록이 JSON 객체가 아닙니다"
         res = await verify(repo, base, out, approved, wall)
+        res["postit"] = post_ids or []
         if why and body is None:
             res["problems"].insert(0, f"결과 블록 없음: {why}")
             res["ok"] = False

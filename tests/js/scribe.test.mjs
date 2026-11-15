@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createScribe, behindText, pubCounts, ORDER } from '../../bridge/static/js/scribe.js';
 
 const TASKS = { doccheck: { title: '문서 점검', desc: 'd' }, readme: { title: 'README 갱신', desc: 'm' },
-  trim: { title: 'CLAUDE.md 정리', desc: 't' }, later: { title: '나중에 할 일 정리', desc: 'l' }, docfix: { title: '문서 고치기', desc: 'f' },
+  trim: { title: 'CLAUDE.md 정리', desc: 't' }, later: { title: '알려진 한계 쓰기', desc: 'l' }, docfix: { title: '문서 고치기', desc: 'f' },
   portfolio: { title: '포트폴리오 쓰기', desc: 'p' } };
 
 function mk(projects, pub, { todoOk = true, pubOk = true } = {}) {
@@ -52,12 +52,20 @@ test('한 목록 — 메뉴 넷이 한 줄씩이고 「문서 할 일」 · 「�
   assert.ok(h.includes('밀린 것 1'));
 });
 
-test('받은 할 일은 숫자만 — 단추가 없다', async () => {
-  const sc = mk({ foreman: PJ }, { enabled: true, docs: [] });
-  sc.html('foreman', 'F'); await settle();
-  const h = sc.html('foreman', 'F');
-  const line = h.split('\n').join(' ').match(/<div class="small sc-line"[^>]*><b>받은 할 일 3개<\/b>.*?<\/div>/)[0];
-  assert.ok(line.includes('2일째') && !line.includes('<button'));
+test('포스트잇(11-15) — 받은 할 일 숫자 줄 대신 머리 탭과 같은 포스트잇 목록, 쌓여서 열면 편 채로', async () => {
+  const pj = { ...PJ, postit: { open: 2, unconfirmed: 1, likely_done: 0, nudge: { why: '열린 것 20개' } }, nudge: { why: '열린 것 20개' } };
+  globalThis.fetch = async (u) => {
+    if (u === '/api/scribe/todo') return { ok: true, json: async () => ({ tasks: TASKS, projects: { foreman: pj } }) };
+    if (u.startsWith('/api/postit')) return { ok: true, json: async () => ({ project: 'foreman', summary: {}, closed: [], readme_checks: [],
+      items: [{ id: 3, body: '질문 카드 접기', source_label: '[＋ 할 일]', created_at: '2026-11-14T00:00:00Z', confirmed: true, state: 'new', label: '열림' }] }) };
+    return { ok: true, json: async () => ({ enabled: true, docs: [] }) };
+  };
+  const sc = createScribe({ headers: () => ({}), touch() {} });
+  sc.html('foreman', 'F', 'postit'); await settle();
+  const h = sc.html('foreman', 'F', 'postit');
+  assert.ok(!h.includes('받은 할 일'));
+  assert.match(h, /<details class="hand" open><summary[^>]*><b>포스트잇<\/b> <span class="warn">열린 것 2, 확인 전 1/);
+  assert.ok(h.includes('data-pi-row="3"') && h.includes('data-pi-save="1"') && h.includes('data-pi-refresh="1"'));
 });
 
 test('포트폴리오 쓰기 — 마지막 쓴 시각 · 그 뒤 커밋 수 · [갱신]은 가장 옛 글을 고른다', async () => {
