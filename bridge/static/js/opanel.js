@@ -53,7 +53,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     </button>
     <div class="oside-main">
       <div class="oside-bar">
-        <button id="pRole" type="button" class="rolebadge" hidden></button><span id="pSid" class="small muted psid" hidden></span><b id="pTitle">패널</b><span id="pCount" class="small"></span>
+        <button id="pRole" type="button" class="rolebadge" hidden></button><span id="pSid" class="psid" hidden></span><b id="pTitle">패널</b><span id="pCount" class="small"></span>
         <button id="pWide" class="ghost small right" title="너비 — 대화를 읽을 땐 넓게, 픽셀을 볼 땐 좁게 합니다."></button>
         <button id="pClear" class="ghost small" title="선택 해제 — 고른 세션을 놓습니다." hidden>✕</button>
         <button id="pFold" class="ghost small" title="접기 — 패널을 접어 픽셀 화면을 넓힙니다.">▶</button>
@@ -735,8 +735,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const rows = [];
     const btn = (s) => `
         <button class="plist" data-sid="${s.id}">${stateBadge(s)}
-          ${roleBadge(s)}<span class="muted small" title="세션 ${s.id} — FOREMAN 세션 번호입니다.">${s.id}</span>
-          <b>${esc(oneLine(sessionName(s), 40))}</b>${s.activity && s.state === 'ACTIVE' ? ` <span class="muted">${esc(s.activity.tool)}</span>` : ''}${s.state === 'DORMANT' ? ` <span class="muted small">${s.ended && s.ended.kind !== 'gone' ? `${esc(s.ended.label.split(' — ')[0])} · ` : ''}${ago((s.ended && s.ended.at) || s.last_ts)}</span>` : ''}</button>`;
+          ${roleBadge(s)}<span class="pln" title="세션 ${s.id} — FOREMAN 세션 번호입니다.">${s.id}</span>
+          <span class="plt">${esc(oneLine(sessionName(s), 40))}</span>${s.activity && s.state === 'ACTIVE' ? ` <span class="muted">${esc(s.activity.tool)}</span>` : ''}${s.state === 'DORMANT' ? ` <span class="muted small">${s.ended && s.ended.kind !== 'gone' ? `${esc(s.ended.label.split(' — ')[0])} · ` : ''}${ago((s.ended && s.ended.at) || s.last_ts)}</span>` : ''}</button>`;
     for (const p of st.projects) {
       if (names && !names.includes(p.name)) continue;
       const all = p.sessionIds.map((id) => st.sessions.get(id)).filter(Boolean);

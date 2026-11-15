@@ -168,7 +168,9 @@
   .ofont button:disabled { opacity:.4; cursor:default; }
   .plist-h { margin-top:8px; }
   .plist { display:flex; gap:6px; align-items:center; width:100%; text-align:left; margin-top:4px; padding:4px 8px; }
-  .plist b { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  /* 11-15 사람이 세션을 부르는 말은 번호라 번호가 굵게(.pln), 제목은 작은 회색(.plt) — 전에는 반대 */
+  .plist .plt { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:16px; color:var(--muted); }
+  .plist .pln { flex:none; white-space:nowrap; font-weight:600; }
   details > summary { cursor:pointer; }
 
   /* 휴대폰 — 패널은 아래 판(접으면 막대 한 줄). 캔버스는 위에 남는다 */

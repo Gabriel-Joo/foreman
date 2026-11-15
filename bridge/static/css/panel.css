@@ -236,7 +236,9 @@ button.rolebadge.fixed { cursor:default; }
 button.rolebadge:hover { background:color-mix(in srgb, var(--rc) 30%, transparent); }
 button.rolebadge.fixed:hover { background:color-mix(in srgb, var(--rc) 16%, transparent); }
 .prole-pick { flex:none; font-size:.9em; }
-.psid { flex:none; white-space:nowrap; }
+/* 11-15 사람이 세션을 부르는 말은 번호라 번호(.psid)가 크고 굵게, 제목(#pTitle)이 작은 회색 — 전에는 반대. 크기 값은 서로 바꾼 것(새 크기 없음) */
+.psid { flex:none; white-space:nowrap; font-weight:700; }
+.oside-bar.sess #pTitle { font-size:16px; font-weight:400; color:var(--muted); }
 /* 세션을 고르면 머리줄 두 줄 — 제목은 둘째 줄 폭 전체(한 줄 말줄임). 고치는 칸도 그 자리 */
 .oside-bar.sess { flex-wrap:wrap; row-gap:4px; }
 .oside-bar.sess #pTitle, .oside-bar.sess .ptitle-edit { order:9; flex:1 0 100%; }

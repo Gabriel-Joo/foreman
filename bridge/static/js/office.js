@@ -3760,7 +3760,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       // 코더(11-13 — 상주 · 임시 구분 없음): 이 방에서 일하는 코더 수 · 끝나면 자리로. 맡길 일은 코더 자리 말풍선에
       const who = a.coder ? `<div class="tip-s">코더 · 일 ${a.coders || 1}: 이 방에서 일하는 코더 세션입니다. 끝나면 코더 자리로 걸어 돌아갑니다. 맡길 일은 코더 자리 말풍선에 있습니다.</div>` : '';
       // 11-09 사용자 — 이름표는 역할만이라 호버 첫 줄에 역할 · 세션 번호 · 제목("237 합쳐라"를 듣고 어느 세션인지 찾게)
-      return `<div class="tip-h">${esc(roleTag(roleOf(s)))} 세션 ${s.id}</div><div class="tip-b">${esc(a.name)}</div>${who}<div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', WAITING: '기다리는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[vs] || vs)}${
+      // 11-15 사용자 — 사람이 세션을 부르는 말은 번호라 번호 줄이 굵게(.tip-b), 제목은 작은 머리 글씨(.tip-h). 제목이 없어 이름이 「세션 N」이면 겹치니 줄을 뺀다
+      return `<div class="tip-b">${esc(roleTag(roleOf(s)))} 세션 ${s.id}</div>${a.name && a.name !== `세션 ${s.id}` ? `<div class="tip-h">${esc(a.name)}</div>` : ''}${who}<div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', WAITING: '기다리는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[vs] || vs)}${
         a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
         s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎${vs === 'WAITING' ? '(둘레의 작은 캐릭터)' : ''}${(s.subagent_descs || []).map((d) => `<div class="tip-s">· ${esc(short(d, 50))}</div>`).join('')}</div>` : ''}${
         bg.length ? `<div>뒤에서 도는 일 ${bg.length}개(백그라운드 명령)${vs === 'WAITING' ? ', 머리 위 어두운 상자의 도는 막대 「|」' : ''}${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}<br>&nbsp;&nbsp;${esc(bgTip(x))}</div>`).join('')}</div>` : ''}${
