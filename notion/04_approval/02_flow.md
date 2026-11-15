@@ -107,8 +107,6 @@ CC 공식 문서(permission-modes)는 「자동 모드에서 PreToolUse hook의 
 | PermissionRequest가 8초 기다림 | 3초 시점에 대화창에 승인 창이 이미 떠 있다. hook이 빈손으로 끝나면 창은 그대로 남는다 |
 | 기다리는 중 대화창에서 Yes | 즉시 진행(`user_temporary`). 20초째 기다리던 hook과 무관하다 |
 
-출처: [log:stage5_approval_result.md]
-
 셋째 줄은 일부러 확인한 것이다. CC 실행 파일 안에 「자동 모드에서는 hook이 승인할 수 없다」는 문구가 있어서 `allow`가 무시될까 걱정했는데, 실제로는 적용됐다. 그 문구는 별칭 맞추기 같은 특정 조건에 걸리는 것으로 보았다. 넷째, 다섯째 줄이 이 편의 나머지 설계를 정했다. 승인 창은 hook이 결정을 돌려주기 전부터 이미 떠 있고, 사람이 그 창에서 먼저 답하면 hook은 결정권을 잃는다.
 
 실제로 쓰면서도 같은 결과가 나왔다. FOREMAN을 만드는 세션 하나(트랜스크립트 461줄 모두 `permissionMode`가 `auto`)에서 FOREMAN의 `ask` 26건이 모두 승인 창으로 떴다 [code:README.md].
@@ -129,9 +127,7 @@ CC 공식 문서(permission-modes)는 「자동 모드에서 PreToolUse hook의 
 2. 메모리에 `asyncio.Future`(「나중에 값이 채워질 빈 상자」)를 하나 만들어 `waiting[id]`에 둔다. `tool_use_id`를 알면 `by_tool_use[tool_use_id] = id`도 둔다.
 3. 화면으로 `approval pending` 메시지를 보낸다(WS). 그 세션 패널에 승인 카드가 뜬다.
 4. 텔레그램으로 「🔐 승인 대기」를 보낸다. 요약, 명령, 규칙, 그리고 「60분이 지나면 대화창으로만」이라는 안내가 들어간다.
-5. 빈 상자가 채워질 때까지, 최대 `wait_s`초 기다린다.
-
-출처: [code:bridge/approvals.py]
+5. 빈 상자가 채워질 때까지, 최대 `wait_s`초 기다린다 [code:bridge/approvals.py].
 
 기다리는 동안 `foreman-decide.sh`의 curl은 HTTP 연결을 열어 둔 채 브리지의 답을 기다리고, CC는 그 hook이 끝나기를 기다린다. 그러나 앞의 실측대로 그 사이에도 대화창에는 승인 창이 떠 있고, 사람은 언제든 거기서 답할 수 있다. 브리지가 쥔 것은 결정권이 아니라 「결정할 수 있는 또 하나의 자리」다.
 
@@ -143,7 +139,7 @@ CC 공식 문서(permission-modes)는 「자동 모드에서 PreToolUse hook의 
 
 ## 세 갈래 가운데 먼저 온 것이 정한다
 
-빈 상자를 채울 수 있는 곳은 셋이다. 화면의 승인 카드, 대화창, 그리고 시간. 상자는 한 번만 채워진다. `Future`는 이미 값이 들어 있으면 `done()`이 참이 되고, 모든 결정 길이 값을 넣기 전에 이것을 먼저 확인한다. 그래서 늦게 온 결정은 아무것도 바꾸지 못하고 조용히 떨어진다 [code:bridge/approvals.py].
+빈 상자를 채울 수 있는 곳은 셋이다. 화면의 승인 카드, 대화창, 그리고 시간. 상자는 한 번만 채워진다. `Future`는 이미 값이 들어 있으면 `done()`이 참이 되고, 모든 결정 길이 값을 넣기 전에 이것을 먼저 확인한다. 그래서 늦게 온 결정은 아무것도 바꾸지 못하고 조용히 떨어진다 [code:bridge/approvals.py] [code:bridge/api/approvals.py] [code:migrations/0010_approval.sql].
 
 | 갈래 | 상자를 채우는 곳 | hook이 CC에 돌려주는 것 | `status` | `decided_by` |
 |---|---|---|---|---|
@@ -153,8 +149,6 @@ CC 공식 문서(permission-modes)는 「자동 모드에서 PreToolUse hook의 
 | 대화창에서 답 | 트랜스크립트의 도구 결과 → `on_tool_result()` | 없음 | `terminal` | `terminal` |
 | 시간 초과 | `asyncio.timeout(wait_s)` | 없음 | `timeout` | `timeout` |
 | 브리지 다시 뜸 | 다음 시작 때 `start()` | (연결이 이미 끊김) | `abandoned` | `bridge` |
-
-출처: [code:bridge/approvals.py] [code:bridge/api/approvals.py] [code:migrations/0010_approval.sql]
 
 ### 화면 카드
 
@@ -192,15 +186,13 @@ API는 API 토큰을 요구한다. 이 길은 원격에서 명령 실행을 허�
 
 ### 세 겹의 시간 제한
 
-기다림에는 시간 제한이 세 겹 걸려 있고, 안쪽이 반드시 먼저 끝나도록 길이를 맞췄다.
+기다림에는 시간 제한이 세 겹 걸려 있고, 안쪽이 반드시 먼저 끝나도록 길이를 맞췄다 [code:config/approval.toml] [code:scripts/foreman-decide.sh] [c:1724c25].
 
 | 자리 | 값 | 어디에 |
 |---|---|---|
 | 브리지가 결정을 기다리는 시간 | 3600초 | `config/approval.toml`의 `wait_s` |
 | 스크립트 curl이 응답을 기다리는 시간 | 3630초 | `scripts/foreman-decide.sh`의 `max` |
 | CC가 hook을 기다리는 시간 | 3660초 | 사용자 설정 `~/.claude/settings.json` PermissionRequest `timeout` |
-
-출처: [code:config/approval.toml] [code:scripts/foreman-decide.sh] [c:1724c25]
 
 순서가 바뀌면 일이 꼬인다. CC가 먼저 hook을 끊으면 브리지는 연결이 사라진 줄 모르고 계속 기다리다가 나중에 시간 초과를 기록한다. curl이 브리지보다 먼저 끊으면 브리지가 정한 결정이 CC에 닿지 못한다. 브리지가 가장 먼저 포기해야 「시간 초과」가 한 곳에서 깔끔하게 정해진다. 셋 가운데 CC 쪽 값은 저장소 밖 사용자 설정이라 코드가 맞출 수 없다. 그래서 `approval.toml`의 `wait_s` 주석에 「바꾸면 스크립트와 사용자 설정도 그보다 길게」를 적어 두었다 [code:config/approval.toml].
 
@@ -256,7 +248,7 @@ hook은 아무것도 돌려주지 않고 끝난다. 이것이 중요하다. 시�
 
 ### 무엇을 어디에 남기나
 
-판정과 승인은 세 곳에 남는다.
+판정과 승인은 세 곳에 남는다 [code:bridge/approvals.py] [code:migrations/0010_approval.sql].
 
 | 어디 | 언제 | 무엇 |
 |---|---|---|
@@ -264,13 +256,11 @@ hook은 아무것도 돌려주지 않고 끝난다. 이것이 중요하다. 시�
 | `approval` | 승인 창이 떠서 PermissionRequest가 온 것만 | 아래 표 |
 | `event` (`type = approval_res`) | 승인 하나가 닫힐 때 | 승인 번호, 결과, 규칙, 거부 이유 |
 
-출처: [code:bridge/approvals.py] [code:migrations/0010_approval.sql]
-
 `approval` 표는 「사람이 답해야 했던 것」만 담는다. 자동으로 지나간 수천 건까지 이 표에 넣으면 승인 이력이 소음에 묻힌다. 「무엇이 자동으로 통과됐나」는 `event`의 `approval_req`로 따로 볼 수 있다 [code:config/approval.toml].
 
 ### approval 표
 
-`migrations/0010_approval.sql`이 만든 칸과 뜻이다.
+`migrations/0010_approval.sql`이 만든 칸과 뜻이다 [code:migrations/0010_approval.sql].
 
 | 칸 | 뜻 |
 |---|---|
@@ -284,8 +274,6 @@ hook은 아무것도 돌려주지 않고 끝난다. 이것이 중요하다. 시�
 | `message` | 거부 이유나 질문에 고른 답. 최대 255자 |
 | `terminal_decision` | 대화창에서 답했을 때 CC가 트랜스크립트에 적은 결정(`accept`, `reject`) |
 | `created_at`, `decided_at` | 뜬 시각과 닫힌 시각(밀리초까지) |
-
-출처: [code:migrations/0010_approval.sql]
 
 나중에 `summary` 칸(최대 512자)이 `reason` 뒤에 붙었다. 승인 창의 한 줄 요약을 같은 글로 남기는 칸이다 → 승인 요약 [code:migrations/0013_approval_summary.sql].
 

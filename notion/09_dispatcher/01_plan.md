@@ -113,7 +113,7 @@ claude -p --model sonnet --output-format json --no-session-persistence
 
 ## 계획의 칸
 
-교장은 아래 모양의 JSON 하나만 ```json 블록으로 답한다. 자유 대화가 아니다. 되물을 것이 있으면 대화로 묻지 않고 계획의 `questions` 칸에 적는다 [code:bridge/foreman.py].
+교장은 아래 모양의 JSON 하나만 json 코드 블록으로 답한다. 자유 대화가 아니다. 되물을 것이 있으면 대화로 묻지 않고 계획의 `questions` 칸에 적는다 [code:bridge/foreman.py].
 
 ```json
 {"project": "foreman", "mode": "new", "base_session": null, "summary_id": null, "attach_session": null,

@@ -104,7 +104,7 @@ heredoc은 이 차이가 가장 크게 드러나는 곳이다. 엔진은 heredoc
 
 | 모양 | 바꾸는 조건(하나라도 어긋나면 그대로 검사) |
 |---|---|
-| 검색어: `grep`, `rg`, `sed`, `awk`의 패턴 인자 | 패턴에 `$( )`가 없고, 같은 파이프 뒤에 셸, 해석기, `xargs`, `eval`이 없고, sed의 `e` 명령이나 `s///e`, awk의 `system()`, `getline`, `print |`가 없을 때 |
+| 검색어: `grep`, `rg`, `sed`, `awk`의 패턴 인자 | 패턴에 `$( )`가 없고, 같은 파이프 뒤에 셸, 해석기, `xargs`, `eval`이 없고, sed의 `e` 명령이나 `s///e`, awk의 `system()`, `getline`, `print \|`가 없을 때 |
 | 메시지와 출력: `echo`, `printf`의 따옴표 인자, `git commit -m`, `git tag -m`, `curl --data` 본문 | 따옴표 안이고 명령 치환이 없고, 출력이 파이프로 어디에도 넘어가지 않고, 명령 치환이나 프로세스 치환 안이 아니고, `.sh`, `.py`로 쓰지 않을 때 |
 | 비밀 파일의 키 이름만 보기: 마지막 단계가 `sed 's/=.*//'`, `cut -d= -f1`, `awk -F= '{print $1}'`, `wc`, `sha256sum`, `grep -q`, `grep -c` | 앞 단계가 읽기만 하고(`cat`, `grep`, `sed`(-i 없음), `tr` …), 리다이렉트와 치환이 없을 때 |
 | 비밀 값을 curl 요청 헤더로만 넘기기: `-H @<(printf '이름: %s' "$(sed -n 's/^KEY=//p' 파일)")` | `-v`, `--trace`, `--libcurl`이 없고, 보내는 곳이 이 PC나 VM 망이고 변수가 아닐 때 |

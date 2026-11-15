@@ -14,7 +14,7 @@ DB를 왜 MySQL로 골랐는지, 왜 ENUM 대신 VARCHAR를 쓰는지, 보관과
 
 **시간은 모두 UTC이고 밀리초까지 담는다(DATETIME(3)).** 화면에 보일 때만 서울 시각으로 바꾼다 [code:migrations/0001_init.sql].
 
-**`character`는 MySQL 예약어라 SQL에서는 늘 백틱(`` ` ``)으로 감싼다.** 코드에서 `` `character` ``가 보이면 이 까닭이다.
+**`character`는 MySQL 예약어라 SQL에서는 늘 백틱 글자로 감싼다.** 코드에서 character가 백틱에 싸여 있으면 이 까닭이다.
 
 **표끼리의 잇기에는 두 종류가 있다.** 하나는 외래 키(FK, 「이 칸의 값은 저 표에 실제로 있는 행이어야 한다」를 DB가 지키게 하는 약속)다. 다른 하나는 칸에 다른 표의 id를 담기만 하고 DB는 지키지 않는 잇기다. 이 편의 그림에서 실선은 외래 키, 점선은 외래 키 없는 잇기다. 처음 여덟 표는 `event`만 빼고 외래 키로 촘촘히 묶였다. 뒤에 더한 표들은 대부분 외래 키를 두지 않았고, 프로젝트도 `project.id`가 아니라 프로젝트 이름 글자(`project VARCHAR(64)`)로 담는다 [code:migrations/0022_doc_publish.sql] [code:migrations/0025_foreman_note.sql] [code:migrations/0027_todo_inbox.sql]. 이 표들을 쓰는 설정 파일과 API가 모두 프로젝트를 이름으로 부르기 때문에, 이름을 그대로 담으면 id로 바꾸는 한 번의 조회가 없어진다. 대신 프로젝트 이름을 바꾸면 이 표들은 따라오지 않는다. 지금까지 프로젝트 이름을 바꾼 적은 없다.
 
