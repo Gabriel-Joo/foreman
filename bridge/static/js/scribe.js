@@ -48,10 +48,10 @@ export function createScribe(store) {
   // 포트폴리오 게시 — 파일 목록은 접힘 기본, 접은 채 「게시됨 10」
   function portPubBlock(room, pj) {
     const head = (inner) => `<details class="hand"${keep(`scribe:${room}:pubport`)}><summary title="포트폴리오 게시 — 바깥 독자에게 내는 portfolio/ 글을 Notion에 올립니다. 원본은 git이고 버튼을 눌러야만 올라갑니다."><b>포트폴리오 게시</b> ${inner}</summary>`;
-    if (room !== 'foreman') return '<div class="small muted sc-line"><b>포트폴리오 게시</b> — 이 프로젝트는 포트폴리오를 게시하지 않습니다(지금은 FOREMAN만 연결돼 있습니다).</div>';
-    if (pubBad && !pub) return `<div class="small bad sc-line"><b>포트폴리오 게시</b> — 게시 목록을 ${UNREAD}.</div>`;
-    if (!pub) return '<div class="small muted sc-line"><b>포트폴리오 게시</b> — 게시 목록을 읽는 중입니다.</div>';
-    if (!pub.enabled) return `<div class="small warn sc-line"><b>포트폴리오 게시</b> — ${esc(pub.why || 'Notion 게시가 꺼져 있습니다.')}</div>`;
+    if (room !== 'foreman') return '<div class="small muted sc-line"><b>포트폴리오 게시</b>: 이 프로젝트는 포트폴리오를 게시하지 않습니다(지금은 FOREMAN만 연결돼 있습니다).</div>';
+    if (pubBad && !pub) return `<div class="small bad sc-line"><b>포트폴리오 게시</b>: 게시 목록을 ${UNREAD}.</div>`;
+    if (!pub) return '<div class="small muted sc-line"><b>포트폴리오 게시</b>: 게시 목록을 읽는 중입니다.</div>';
+    if (!pub.enabled) return `<div class="small warn sc-line"><b>포트폴리오 게시</b>: ${esc(pub.why || 'Notion 게시가 꺼져 있습니다.')}</div>`;
     const docs = pub.docs || [];
     const c = pubCounts({ published: docs.filter((d) => d.status === 'published').length, new: docs.filter((d) => d.status === 'new').length,
       changed: docs.filter((d) => d.status === 'published' && d.changed).length });
@@ -65,28 +65,28 @@ export function createScribe(store) {
       ].join(' ');
       return `<div class="sc-row"><div class="small"><code>${esc(d.path)}</code> ${st}${d.commit ? ` <span class="muted">· 커밋 ${esc(d.commit)}</span>` : ''}${d.updated_at ? ` <span class="muted">· ${ago(d.updated_at)}</span>` : ''}</div><div class="hand-btns">${btns}</div></div>`;
     }).join('');
-    return `${head(`<span class="${c.behind ? 'warn' : 'muted'}">${esc(c.text)}</span>`)}${rows || '<p class="small muted">게시할 글이 없습니다(main의 portfolio/*.md — 회고는 git에만 둡니다).</p>'}</details>`;
+    return `${head(`<span class="${c.behind ? 'warn' : 'muted'}">${esc(c.text)}</span>`)}${rows || '<p class="small muted">게시할 글이 없습니다(main의 portfolio/*.md, 회고는 git에만 둡니다).</p>'}</details>`;
   }
 
   // 기술문서 게시 — docs/ 전체를 프로젝트별 Notion 페이지로 맞춘다. 읽기 API(docs_pub)가 준 숫자만 보인다
   function docsPubBlock(room, pj) {
     const tag = '<b>기술문서 게시</b>';
     const tip = 'title="기술문서 게시 — docs/의 기술 문서를 Notion에 맞춥니다. push 뒤 조용하면 바뀐 파일만 자동으로 올립니다."';
-    if (pj.pub_error) return `<div class="small bad sc-line" ${tip}>${tag} — 게시 상태를 ${UNREAD}(${esc(pj.pub_error)}).</div>`;
+    if (pj.pub_error) return `<div class="small bad sc-line" ${tip}>${tag}: 게시 상태를 ${UNREAD}(${esc(pj.pub_error)}).</div>`;
     const d = pj.docs_pub;
-    if (!d) return `<div class="small muted sc-line" ${tip}>${tag} — 이 프로젝트는 기술문서 게시가 꺼져 있거나 연결돼 있지 않습니다.</div>`;
+    if (!d) return `<div class="small muted sc-line" ${tip}>${tag}: 이 프로젝트는 기술문서 게시가 꺼져 있거나 연결돼 있지 않습니다.</div>`;
     const c = pubCounts(d);
     const behindN = (d.new || 0) + (d.changed || 0) + (d.deleted || 0);
     const commits = d.behind_commits === null || d.behind_commits === undefined ? '맞춘 적 없음' : `push 대기 커밋 ${d.behind_commits}개`;
     const l = d.last;
     const lastTxt = !l ? '아직 자동으로 맞춘 기록 없음'
-      : `마지막 맞춤 ${l.at ? ago(new Date(l.at * 1000).toISOString()) : ''} — 올림 ${l.done}${l.held ? ` · 사람이 고쳐 멈춤 ${l.held}` : ''}${l.failed ? ` · 실패 ${l.failed}` : ''}`;
+      : `마지막 맞춤 ${l.at ? ago(new Date(l.at * 1000).toISOString()) : ''}: 올림 ${l.done}${l.held ? ` · 사람이 고쳐 멈춤 ${l.held}` : ''}${l.failed ? ` · 실패 ${l.failed}` : ''}`;
     const failed = l && l.failed ? `<div class="small bad">실패: ${esc(l.failed_first || '')}</div>` : '';
     const why = ((pj.items || []).find((x) => x.act === 'docsync') || {}).why;
     const btn = behindN || d.broken
       ? `<button type="button" class="small" data-pub="docsync" data-proj="${esc(room)}"${busy ? ' disabled' : ''} title="지금 맞추기 — 기다리지 않고 지금 바뀐 기술문서만 Notion에 올립니다. 사람이 Notion에서 고친 페이지는 덮지 않습니다.">지금 맞추기</button>` : '';
     return `<div class="sc-row" ${tip}><div class="small">${tag} <span class="${c.behind ? 'warn' : 'ok'}">${esc(c.text)}</span> <span class="muted">/ 문서 ${d.total}개 · ${commits}</span>
-      <div class="muted">${esc(lastTxt)}${why ? ` — ${esc(why)}` : ''}</div>${failed}</div>${btn}</div>`;
+      <div class="muted">${esc(lastTxt)}${why ? ` (${esc(why)})` : ''}</div>${failed}</div>${btn}</div>`;
   }
 
   // 포트폴리오 쓰기 — 「10/10 썼다」에 마지막 쓴 시각 · 그 뒤 커밋 수를 붙이고 [갱신]. 코드는 바뀌는데 글이 옛 것일 수 있다
@@ -122,7 +122,7 @@ export function createScribe(store) {
       return `<button type="button" class="small${pri && !why ? ' primary' : ''}" data-sc-task="${esc(k)}"${busy || why ? ' disabled' : ''} title="${esc(why ? `${(tasks[k] || {}).title || k} — 지금은 시킬 수 없습니다. ${why}` : `${(tasks[k] || {}).title || k} — 서기 세션을 작업방으로 띄워 맡깁니다. 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다.`)}">${label}</button>`;
     };
     // 사람 수정으로 멈춘 파일 — 눈에 띄게 맨 위(조용히 멈춰 있지 않게)
-    const alerts = items.filter((x) => x.kind === 'publish' && x.act === 'force').map((x) => `<div class="sc-row"><div class="small bad"><b>${esc(x.title)}</b> <span class="muted">— ${esc(x.why)}</span></div>
+    const alerts = items.filter((x) => x.kind === 'publish' && x.act === 'force').map((x) => `<div class="sc-row"><div class="small bad"><b>${esc(x.title)}</b> <span class="muted">(${esc(x.why)})</span></div>
         <button type="button" class="small danger" data-pub="publish" data-force="1" data-proj="${esc(x.project)}" data-path="${esc(x.path)}" title="Notion 수정 버리고 덮기 — Notion에서 사람이 고친 곳을 버리고 git 원본으로 덮습니다. 살릴 수정이면 먼저 git에 옮겨 주세요.">Notion 수정 버리고 덮기</button></div>`).join('');
     // 한 목록 — 「문서 할 일」(센 것)과 「시킬 일」(메뉴)이 같은 줄이다. 밀린 수는 이름 옆에
     let nBehind = 0;
@@ -134,20 +134,20 @@ export function createScribe(store) {
       if (k === 'doccheck' && pj.report) {          // 문서 점검 결과로 바로 고치기 — 찾기만 하고 끝나지 않게
         const r = pj.report;
         extra = r.fixed
-          ? `<div class="sc-row"><div class="small muted">· 점검 결과 <code>${esc(r.name)}</code> — 고쳐서 합쳤습니다</div></div>`
-          : `<div class="sc-row"><div class="small">· 점검 결과 <code>${esc(r.name)}</code> <span class="muted">— 합쳐진 결과의 어긋남을 고칩니다</span></div>
+          ? `<div class="sc-row"><div class="small muted">· 점검 결과 <code>${esc(r.name)}</code>: 고쳐서 합쳤습니다</div></div>`
+          : `<div class="sc-row"><div class="small">· 점검 결과 <code>${esc(r.name)}</code> <span class="muted">(합쳐진 결과의 어긋남을 고칩니다)</span></div>
             <button type="button" class="small" data-sc-task="docfix" data-topic="${esc(r.name)}" data-name="${esc(r.name)}"${busy || blocked.docfix ? ' disabled' : ''} title="${esc(blocked.docfix ? `문서 고치기 — 지금은 시킬 수 없습니다. ${blocked.docfix}` : `문서 고치기 — ${r.name}에 적힌 어긋남을 서기가 문서에서 고칩니다. 코드는 건드리지 않고, 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다.`)}">바로 고치기</button></div>`;
       }
-      return `<div class="sc-row${k === pick ? ' sc-pick' : ''}"><div class="small"><b>${esc(tasks[k].title)}</b>${bt.text ? ` <span class="${bt.cls}"${bt.tip ? ` title="${esc(bt.tip)}"` : ''}>— ${esc(bt.text)}</span>` : ''} <span class="muted">${esc(sub)}</span></div>
+      return `<div class="sc-row${k === pick ? ' sc-pick' : ''}"><div class="small"><b>${esc(tasks[k].title)}</b>${bt.text ? ` <span class="${bt.cls}"${bt.tip ? ` title="${esc(bt.tip)}"` : ''}>${esc(bt.text)}</span>` : ''} <span class="muted">${esc(sub)}</span></div>
         ${go(k, '시키기', k === pick)}</div>${extra}`;
     }).join('');
     // 받은 할 일 — 할 일이 아니라 상태다. 단추 없이 숫자만(정리는 「나중에 할 일 정리」 줄이 한다)
-    const inboxRow = pj.inbox ? `<div class="small sc-line" title="받은 할 일 — 머리줄 [＋ 할 일]로 받은 글입니다. 「나중에 할 일 정리」가 README 표로 옮깁니다."><b>받은 할 일 ${pj.inbox.n}개</b> <span class="muted">${pj.inbox.oldest_days >= 1 ? `— 가장 오래된 것 ${pj.inbox.oldest_days}일째` : '— 오늘 받음'}</span></div>` : '';
-    const openHtml = opened.length ? `<div class="small"><b>열려 있는 일 ${opened.length}</b> <span class="muted">— 합치거나 버리기 전까지(동시에 2개까지, 같은 파일을 고치는 일은 하나씩)</span>${
-      opened.map((o) => `<div class="sc-row"><div class="small">· ${esc((tasks[o.task] || {}).title || o.task)}${o.topic ? ` — ${esc(o.topic)}` : ''} <span class="muted">세션 ${o.session_id}</span></div>
+    const inboxRow = pj.inbox ? `<div class="small sc-line" title="받은 할 일 — 머리줄 [＋ 할 일]로 받은 글입니다. 「나중에 할 일 정리」가 README 표로 옮깁니다."><b>받은 할 일 ${pj.inbox.n}개</b> <span class="muted">${pj.inbox.oldest_days >= 1 ? `(가장 오래된 것 ${pj.inbox.oldest_days}일째)` : '(오늘 받음)'}</span></div>` : '';
+    const openHtml = opened.length ? `<div class="small"><b>열려 있는 일 ${opened.length}</b> <span class="muted">합치거나 버리기 전까지(동시에 2개까지, 같은 파일을 고치는 일은 하나씩)</span>${
+      opened.map((o) => `<div class="sc-row"><div class="small">· ${esc((tasks[o.task] || {}).title || o.task)}${o.topic ? `: ${esc(o.topic)}` : ''} <span class="muted">세션 ${o.session_id}</span></div>
         <button type="button" class="small" data-sc-open="${o.session_id}" title="세션 열기 — 이 서기 세션의 [세션 정리] 탭을 엽니다. 「작업방」에서 diff를 보고 합치거나 버립니다(끝난 세션은 화면에서 사라져도 여기서 엽니다).">세션 열기</button></div>`).join('')}</div>` : '';
     const nudge = pj.nudge;
-    const pickHead = pick && tasks[pick] ? `<div class="small warn">정리할까요? — 받은 할 일이 쌓였습니다(${esc(nudge ? nudge.why : '')}). 「${esc(tasks[pick].title)}」을 골라 두었습니다. [시키기]를 눌러야 서기 세션이 뜹니다.</div>` : '';
+    const pickHead = pick && tasks[pick] ? `<div class="small warn">정리할까요? 받은 할 일이 쌓였습니다(${esc(nudge ? nudge.why : '')}). 「${esc(tasks[pick].title)}」을 골라 두었습니다. [시키기]를 눌러야 서기 세션이 뜹니다.</div>` : '';
     const nAlert = items.filter((x) => x.kind === 'publish' && x.act === 'force').length;
     const bad = todoBad ? ` <span class="bad">· 지금 값을 ${UNREAD}(지난 값입니다)</span>` : '';
     const sumCount = !todo ? '' : (nBehind + nAlert ? `<span class="warn">밀린 것 ${nBehind + nAlert}</span>` : '<span class="muted">밀린 것 없음</span>');
@@ -160,7 +160,7 @@ export function createScribe(store) {
       <div class="hand-btns"><button type="button" class="small primary" data-sc-ask="1"${asking ? ' disabled' : ''} title="물어보기 — 답만 받습니다. 답에서 찾은 어긋남은 아래 [이 답대로 문서 고치기]로 시킵니다.">${asking ? '묻는 중…' : '물어보기'}</button></div>
       ${asking ? '<div class="small muted">서기가 문서를 읽고 있습니다… 보통 20초쯤 걸립니다.</div>' : ''}
       ${answer ? `<div class="small ${answer.bad ? 'bad' : ''} sc-answer" style="white-space:pre-wrap">${esc(answer.text)}</div>` : ''}${fixBtn}</details>`;
-    return `<div class="small muted">${esc(label)} · 서기 — 문서 담당. 시킨 일은 작업방 세션으로 돌고, 끝나면 사람이 diff를 보고 합칩니다.</div>
+    return `<div class="small muted">${esc(label)} · 서기(문서 담당). 시킨 일은 작업방 세션으로 돌고, 끝나면 사람이 diff를 보고 합칩니다.</div>
       ${askHtml}
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}"${note.tip ? ` title="${esc(note.tip)}"` : ''}>${esc(note.msg)}</div>` : ''}
       <details class="hand"${pick ? ' open' : keep(`scribe:${room}:list`, true)}><summary title="할 일 — 서기에게 시킬 일 한 목록입니다. 이름 옆 숫자는 밀린 정도이고, 숫자가 없으면 지금 밀린 것이 없습니다."><b>할 일</b> ${sumCount}${bad}</summary>${listBody}</details>
@@ -184,8 +184,8 @@ export function createScribe(store) {
     try {
       const r = await fetch('/api/scribe/ask', { method: 'POST', headers: store.headers(true), body: JSON.stringify({ project: room, text }) });
       const j = await r.json().catch(() => ({}));
-      answer = r.ok ? { text: j.answer } : { bad: true, text: `답을 받지 못했습니다 — ${j.refused || j.detail || r.status}. 글은 칸에 그대로 있습니다.` };
-    } catch { answer = { bad: true, text: '답을 받지 못했습니다 — 서버에 닿지 못했습니다. 글은 칸에 그대로 있습니다.' }; }
+      answer = r.ok ? { text: j.answer } : { bad: true, text: `답을 받지 못했습니다: ${j.refused || j.detail || r.status}. 글은 칸에 그대로 있습니다.` };
+    } catch { answer = { bad: true, text: '답을 받지 못했습니다. 서버에 닿지 못했습니다. 글은 칸에 그대로 있습니다.' }; }
     asking = false;
     store.touch('panel');
   }
@@ -193,16 +193,16 @@ export function createScribe(store) {
   // 서기 일 시키기 — 확인 창 → /api/scribe/start. 문서 고치기는 점검 결과(topic) 또는 물어보기 답(note)을 같이 보낸다
   async function start(room, label, k, topic, nameExtra, noteText) {
     const title = ((todo && todo.tasks) || {})[k]?.title || k;
-    const name = title + (nameExtra ? ` — ${nameExtra}` : '');
+    const name = title + (nameExtra ? `: ${nameExtra}` : '');
     if (!confirm(`${label}의 서기에게 「${name}」을 맡깁니다. 서기 세션이 작업방으로 뜨고(Opus), 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다. 진행할까요?`)) return;
-    busy = true; note = { msg: `「${name}」 — 서기 세션을 띄우는 중입니다…` }; store.touch('panel');
+    busy = true; note = { msg: `「${name}」: 서기 세션을 띄우는 중입니다…` }; store.touch('panel');
     const body = { project: room, task: k, topic: topic || null };
     if (noteText) body.note = noteText;
     try {
       const r = await fetch('/api/scribe/start', { method: 'POST', headers: store.headers(true), body: JSON.stringify(body) });
       const j = await r.json().catch(() => ({}));
-      note = r.ok ? { msg: `「${name}」 — 서기 세션을 띄웠습니다. 서기실에서 일합니다.`, tip: `서기 세션 — tmux 창 ${j.tmux || '?'}` } : { bad: true, msg: `띄우지 못했습니다 — ${j.refused || j.detail || r.status}` };
-    } catch { note = { bad: true, msg: '띄우지 못했습니다 — 서버에 닿지 못했습니다.' }; }
+      note = r.ok ? { msg: `「${name}」: 서기 세션을 띄웠습니다. 서기실에서 일합니다.`, tip: `서기 세션 — tmux 창 ${j.tmux || '?'}` } : { bad: true, msg: `띄우지 못했습니다: ${j.refused || j.detail || r.status}` };
+    } catch { note = { bad: true, msg: '띄우지 못했습니다. 서버에 닿지 못했습니다.' }; }
     busy = false;
     await load(true);
   }
@@ -236,7 +236,7 @@ export function createScribe(store) {
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.action === 'docsync') {
       note = { bad: !!(j.held.length || j.failed.length),
-        msg: `기술문서를 맞췄습니다 — 올림 ${j.done.length}${j.held.length ? ` · 사람이 고쳐 멈춤 ${j.held.length}` : ''}${j.failed.length ? ` · 실패 ${j.failed.length}(${j.failed[0].path})` : ''}` };
+        msg: `기술문서를 맞췄습니다: 올림 ${j.done.length}${j.held.length ? ` · 사람이 고쳐 멈춤 ${j.held.length}` : ''}${j.failed.length ? ` · 실패 ${j.failed.length}(${j.failed[0].path})` : ''}` };
       await load(true);
       return;
     }

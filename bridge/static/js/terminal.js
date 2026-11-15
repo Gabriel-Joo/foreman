@@ -58,10 +58,10 @@ export function createTerminal(store, { getProject } = {}) {
     try {
       // 쿠키는 대시보드가 연결될 때 이미 받았다(store.js hello). 패널을 열 때 한 번 더 받아 만료 · 재시작에 대비한다
       const j = await store.terminalSession();
-      $('termMsg').textContent = j.running ? '' : '셸 서버(ttyd)가 꺼져 있습니다 — 브리지 로그(.run/ttyd.log)를 확인해 주세요';
+      $('termMsg').textContent = j.running ? '' : '셸 서버(ttyd)가 꺼져 있습니다. 브리지 로그(.run/ttyd.log)를 확인해 주세요';
       if (!loaded || force) { frame.src = termSrc(); loaded = true; }
     } catch (err) {
-      $('termMsg').textContent = `셸을 열지 못했습니다 — ${err.message || err}`;
+      $('termMsg').textContent = `셸을 열지 못했습니다: ${err.message || err}`;
     }
   }
   function focusShell() {
@@ -90,9 +90,9 @@ export function createTerminal(store, { getProject } = {}) {
     // [새 셸] 단추는 11-14에 [셸 비우기]로 바꿨다(사용자 — 눌러도 셸이 쌓인다고 느꼈다). 새 셸을 여는 단추는 없다 — exit로 닫으면 다음에 열 때 새 설정으로 뜬다
     const old = !err && shown && shown.shell_old;
     const bad = err ? err
-      : want && cur !== want ? `고른 것(${plabel(want)})과 다른 셸입니다 — 지금 보이는 것은 ${now}입니다`
+      : want && cur !== want ? `고른 것(${plabel(want)})과 다른 셸입니다. 지금 보이는 것은 ${now}입니다`
       : cur && inDir && inDir !== cur ? `${plabel(cur)} 셸인데 ${plabel(inDir)} 폴더에 들어가 있습니다`
-      : old ? '셸 설정이 바뀌었습니다 — 이 창은 옛 설정입니다. 셸에서 exit를 친 뒤 셸을 다시 열면 새 설정을 읽습니다' : '';
+      : old ? '셸 설정이 바뀌었습니다. 이 창은 옛 설정입니다. 셸에서 exit를 친 뒤 셸을 다시 열면 새 설정을 읽습니다' : '';
     w.textContent = bad; w.hidden = !bad;
     if (old) w.dataset.tip = `옛 셸 — 셸이 뜬 뒤 셸 설정 파일이 바뀌었습니다.\n바뀐 파일 ${old.files.join(' · ')} · ${hm(old.changed_at)}\n셸이 뜬 시각 ${hm(old.started_at)}`;
     else delete w.dataset.tip;
@@ -104,7 +104,7 @@ export function createTerminal(store, { getProject } = {}) {
   async function scrollTo(action) {
     const my = ++seq;
     try { const j = await store.terminalScroll(TAB, action); if (my === seq) { shown = { ...shown, ...j }; drawProj(); } }
-    catch (e) { if (my === seq) drawProj(`스크롤하지 못했습니다 — ${e.message || e}`); }
+    catch (e) { if (my === seq) drawProj(`스크롤하지 못했습니다: ${e.message || e}`); }
     if (action === 'exit') setTimeout(focusShell, 100);
   }
   $('termUp').addEventListener('click', () => scrollTo('up'));
@@ -128,7 +128,7 @@ export function createTerminal(store, { getProject } = {}) {
       shown = j; drawProj();
       setTimeout(focusShell, 200);
     } catch (e) {
-      drawProj(`셸을 비우지 못했습니다 — ${e.message || e}`);
+      drawProj(`셸을 비우지 못했습니다: ${e.message || e}`);
     } finally { cb.disabled = false; }
   }
   $('termClear').addEventListener('click', clearShell);
@@ -144,12 +144,12 @@ export function createTerminal(store, { getProject } = {}) {
       if (my !== seq) return;                 // 그 사이 창을 골랐다 — 옛 답으로 덮지 않는다
       noView = j.view === false && loaded ? noView + 1 : 0;
       const was = winErr; winErr = false;
-      if (noView >= 2) { drawProj('이 탭의 셸 연결을 찾지 못했습니다 — 다른 탭과 보이는 창을 함께 씁니다. 셸을 닫았다 열면 다시 붙습니다'); return; }
+      if (noView >= 2) { drawProj('이 탭의 셸 연결을 찾지 못했습니다. 다른 탭과 보이는 창을 함께 씁니다. 셸을 닫았다 열면 다시 붙습니다'); return; }
       if (was || noView === 0 && shown && shown.view === false && j.view
         || !shown || shown.window !== j.window || shown.cwd !== j.cwd || !shown.shell_old !== !j.shell_old
         || !shown.scrolling !== !j.scrolling) { shown = j; drawProj(); }
     } catch (e) {
-      if (!winErr) { winErr = true; drawProj(`지금 보이는 창을 확인하지 못했습니다 — ${e.message || e}`); }
+      if (!winErr) { winErr = true; drawProj(`지금 보이는 창을 확인하지 못했습니다: ${e.message || e}`); }
     }
   }
   setInterval(checkWindow, 3000);
@@ -157,7 +157,7 @@ export function createTerminal(store, { getProject } = {}) {
     want = p || null;
     const my = ++seq;                         // 방을 빨리 옮기면 늦게 온 앞 답이 뒤 답을 덮지 않게
     try { const j = await store.terminalOpen(want, TAB); if (my === seq) { shown = j; drawProj(); } }
-    catch (e) { if (my === seq) drawProj(`셸 창을 고르지 못했습니다 — ${e.message || e}`); }
+    catch (e) { if (my === seq) drawProj(`셸 창을 고르지 못했습니다: ${e.message || e}`); }
   }
   $('termPick').addEventListener('change', (ev) => { pickProject(ev.target.value || null).then(() => setTimeout(focusShell, 100)); });
 
@@ -203,7 +203,7 @@ export function createTerminal(store, { getProject } = {}) {
         wheelAcc += wheelAcc < 0 ? 1 : -1;                  // 한 번에 한 칸씩(서버가 3줄)
         const my = ++seq;
         try { const j = await store.terminalScroll(TAB, act); if (my === seq) { shown = { ...shown, ...j }; drawProj(); } }
-        catch (e) { wheelAcc = 0; if (my === seq) drawProj(`스크롤하지 못했습니다 — ${e.message || e}`); }
+        catch (e) { wheelAcc = 0; if (my === seq) drawProj(`스크롤하지 못했습니다: ${e.message || e}`); }
       }
     } finally { wheelBusy = false; }
   }
@@ -247,8 +247,8 @@ export function createTerminal(store, { getProject } = {}) {
     let html = reqs.map((r) => {
       const who = `${PROJ[r.project] || r.project || '미분류'}${r.title ? ' · ' + r.title : ''}`;
       const state = r.prefilled
-        ? (r.blank ? '셸에 미리 채웠다 — 커서가 비밀번호 자리에 있다. 채우고 Enter' : '셸에 미리 채웠다 — 확인하고 Enter(암호는 물을 때 입력)')
-        : `미리 채우지 못했다 — ${r.note || ''}`;
+        ? (r.blank ? '셸에 미리 채웠습니다. 커서가 비밀번호 자리에 있습니다. 채우고 Enter' : '셸에 미리 채웠습니다. 확인하고 Enter(암호는 물을 때 입력)')
+        : `미리 채우지 못했습니다: ${r.note || ''}`;
       return `<div class="term-req">
         <div class="term-req-main"><b>${esc(who)}</b>의 부탁 <code>${esc(r.cmd)}</code>
           <div class="small ${r.prefilled ? 'muted' : 'warn'}">${esc(state)} · 결과는 이 세션에 돌려준다</div>

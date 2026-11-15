@@ -37,8 +37,8 @@ test('맡길 일 — 끝난 뒤 어긋난 것(11-11 drift)은 쉬게 한 일 뒤
 
 test('말풍선 — 쉬게 한 일만이면 "맡은 일 N — 합치기 기다림", 하루 넘으면 N일째, 섞이면 맡길 일', () => {
   assert.equal(coderBubble([]), null);
-  assert.equal(coderBubble([{ kind: 'rested', days: 0 }]), '맡은 일 1 — 합치기 기다림');
-  assert.equal(coderBubble([{ kind: 'rested', days: 3 }, { kind: 'rested', days: 1 }]), '맡은 일 2 — 합치기 기다림 · 3일째');
+  assert.equal(coderBubble([{ kind: 'rested', days: 0 }]), '맡은 일 1: 합치기 기다림');
+  assert.equal(coderBubble([{ kind: 'rested', days: 3 }, { kind: 'rested', days: 1 }]), '맡은 일 2: 합치기 기다림 · 3일째');
   assert.equal(coderBubble([{ kind: 'inbox' }, { kind: 'appr' }]), '맡길 일 2');
   assert.equal(coderBubble([{ kind: 'inbox' }, { kind: 'rested', days: 2 }]), '맡길 일 2 · 합치기 기다림 1 · 2일째');
 });

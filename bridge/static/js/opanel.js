@@ -79,7 +79,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       </div>
       <form id="pForm" class="input" hidden>
         <div id="pGrip" class="pgrip" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="입력 칸 높이" data-tip="높이 조절 — 위아래로 끌어 입력 칸 높이를 바꿉니다(키보드는 ↑ ↓). 더블클릭하면 기본 높이로 돌아갑니다."></div>
-        <button type="button" id="pAskHint" class="ghost small pask" data-tip="입력 칸 — 세션이 질문의 답을 기다리는 동안은 질문 카드의 글 칸으로 보냅니다. 누르면 이 입력 칸을 펼칩니다.">질문에 답하는 중 — 글은 질문 카드의 글 칸으로 · 입력 칸 펼치기</button>
+        <button type="button" id="pAskHint" class="ghost small pask" data-tip="입력 칸 — 세션이 질문의 답을 기다리는 동안은 질문 카드의 글 칸으로 보냅니다. 누르면 이 입력 칸을 펼칩니다.">질문에 답하는 중: 글은 질문 카드의 글 칸으로 · 입력 칸 펼치기</button>
         <textarea id="pText" rows="6"placeholder="이 세션에 보낼 입력 (Ctrl+Enter로 보냅니다)"></textarea>
         <div class="row prow">
           <span id="pWhy" class="pwhy small"></span>
@@ -154,7 +154,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       pickingRole = false;
       sel.remove(); btn.hidden = false;
       if (!role || role === s.role) return;
-      try { await store.setRole(s.id, role); } catch (e) { $('pResult').innerHTML = `<span class="bad">역할을 바꾸지 못했습니다 — ${esc(e.message)}</span>`; }
+      try { await store.setRole(s.id, role); } catch (e) { $('pResult').innerHTML = `<span class="bad">역할을 바꾸지 못했습니다: ${esc(e.message)}</span>`; }
     };
     sel.addEventListener('change', () => done(sel.value));
     sel.addEventListener('blur', () => done(undefined));
@@ -184,7 +184,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       const v = val === null ? null : val.trim();
       if (v !== null && v === (s.custom_title || '')) return;
       if (v !== null && !s.custom_title && v === sessionName(s)) return;      // 그대로 눌렀다
-      try { await store.setTitle(s.id, v || null); } catch (e) { $('pTitle').textContent = `이름을 저장하지 못했습니다 — ${e.message}`; }
+      try { await store.setTitle(s.id, v || null); } catch (e) { $('pTitle').textContent = `이름을 저장하지 못했습니다: ${e.message}`; }
     };
     inp.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') { ev.preventDefault(); done(inp.value); }
@@ -308,7 +308,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       ev.stopPropagation();
       off.disabled = true;
       try { await store.asksOff(Number(off.dataset.asksoff)); }
-      catch (e) { off.disabled = false; off.title = `끄지 못했습니다 — ${e.message}`; }
+      catch (e) { off.disabled = false; off.title = `끄지 못했습니다: ${e.message}`; }
       return;
     }
     const b = ev.target.closest('[data-mdl]');
@@ -340,7 +340,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const snoozed = c && compactSnoozed(s.id, c.count);
     if (!c || !c.level || snoozed) { drawContext(s); return; }
     const late = c.level === 'late';
-    const html = `<span class="${late ? 'bad' : 'warn'}" title="대화 자동 요약 — 대화가 길어 앞부분을 요약해 줄였습니다. 줄일수록 처음에 정한 것을 잊습니다.">📦 대화 자동 요약 ${c.count}번 — ${late
+    const html = `<span class="${late ? 'bad' : 'warn'}" title="대화 자동 요약 — 대화가 길어 앞부분을 요약해 줄였습니다. 줄일수록 처음에 정한 것을 잊습니다.">📦 대화 자동 요약 ${c.count}번: ${late
         ? '늦었습니다. 앞에서 정한 결정 · 금지가 이미 많이 빠졌을 수 있습니다.'
         : '넘어갈 때입니다. 처음에 정한 것이 빠지기 시작합니다.'}${c.short ? ' 요약 간격도 짧습니다.' : ''}</span>
       ${s.injectable ? `<button type="button" data-cmp="handoff" class="small primary" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
@@ -363,7 +363,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const usd = x.usd_reply != null ? ` · 응답당 약 $${x.usd_reply < 0.1 ? x.usd_reply.toFixed(2) : x.usd_reply.toFixed(1)}` : '';
     // 툴팁 모양(11-09): 제목 — 설명 / 숫자 한 줄에 하나
     const tip = '지금까지 쌓인 대화 — 답할 때마다 이걸 전부 다시 읽고, 그만큼 비용이 듭니다. 새 세션으로 옮기면 수십k에서 다시 시작합니다.'
-      + `\n토큰 ${koNum(x.tokens)}${x.pct != null ? ` — 창 ${koNum(x.window)}의 ${x.pct}%` : ''}\n한글 약 ${koNum(Math.round(x.tokens * 0.9 / 10000) * 10000)} 자 (책 ${koBooks(x.tokens * 0.9 / 100000)}쯤)`
+      + `\n토큰 ${koNum(x.tokens)}${x.pct != null ? ` (창 ${koNum(x.window)}의 ${x.pct}%)` : ''}\n한글 약 ${koNum(Math.round(x.tokens * 0.9 / 10000) * 10000)} 자 (책 ${koBooks(x.tokens * 0.9 / 100000)}쯤)`
       + (x.usd_reply != null ? `\n응답당 약 $${x.usd_reply.toFixed(2)}` : '');
     const html = `<span class="${late ? 'bad' : 'warn'}" title="${esc(tip)}">🧠 지금까지 쌓인 대화 ${Math.round(x.tokens / 1000)}k${x.pct != null ? ` (${x.pct}%)` : ''}${usd}</span>
       ${s.injectable ? `<button type="button" data-cmp="handoff" class="small primary" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
@@ -405,7 +405,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const why = w.committed && w.idle ? '방금 커밋했고 한참 쉬었다 오셨고' : w.committed ? '방금 커밋했고' : '한참 쉬었다 오셨고';
     const tip = `작업 전환 권유 — 새 일을 시작하는 말에, 방금 한 커밋이나 긴 쉼이 겹치고 쌓인 대화가 많을 때 띄웁니다. 옮기기 전에 대화에서만 정한 결정은 문서로 옮겨 둡니다.`
       + `\n걸린 말 「${w.phrase}」\n쌓인 대화 ${w.pct}%`;
-    put('pSw', 'sw', `<span data-tip="${esc(tip)}">🔀 다른 일로 넘어가시는 것 같습니다 — ${why} 쌓인 대화가 ${w.pct}%입니다. 새 일은 새 세션에서 시작하면 빠르고 쌉니다.</span>
+    put('pSw', 'sw', `<span data-tip="${esc(tip)}">🔀 다른 일로 넘어가시는 것 같습니다. ${why} 쌓인 대화가 ${w.pct}%입니다. 새 일은 새 세션에서 시작하면 빠르고 쌉니다.</span>
       ${s.injectable ? `<button type="button" data-sw="handoff" class="small primary" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
       <button type="button" data-sw="later" class="ghost small" title="나중에 — 이 띠를 숨깁니다. 다음에 다른 일로 넘어갈 때 다시 판단합니다.">나중에</button>`);
     $('pSw').hidden = false;
@@ -446,7 +446,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       const r = await fetch(`/api/sessions/${s.id}/losscheck`, { method: 'POST', headers: store.headers(true), body: '{}' });
       const j = await r.json().catch(() => ({}));
       store.state.lastInput = { sessionId: s.id, ts: Date.now(), ok: r.ok,
-        msg: r.ok ? `압축으로 잊은 것 찾기를 시작했습니다(#${j.loss_check_id}). 진행과 결과는 [세션 정리] 탭 「옮기기 전 정리」에 나옵니다.` : `시작하지 못했습니다 — ${j.refused || j.detail || r.status}` };
+        msg: r.ok ? `압축으로 잊은 것 찾기를 시작했습니다(#${j.loss_check_id}). 진행과 결과는 [세션 정리] 탭 「옮기기 전 정리」에 나옵니다.` : `시작하지 못했습니다: ${j.refused || j.detail || r.status}` };
       if (r.ok) setTab('sess');
       b.disabled = false;
       store.touch('panel');
@@ -482,15 +482,15 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const wordsTip = o.words && o.words.length ? `\n겹친 낱말 ${o.words.join(', ')}` : '';
     let soft = false;
     const html = files.length
-      ? `<span class="bad" data-tip="${esc(`같은 파일 — 이 세션과 세션 ${o.with}이 최근 3시간 안에 같은 파일을 고쳤습니다. 합칠 때 부딪치거나 서로 고친 것을 덮을 수 있습니다. 일부러 나눈 것이면 그대로 두면 됩니다.\n${files.join('\n')}`)}">📝 같은 파일 — 세션 ${o.with}「${esc(o.with_title || '')}」도 ${esc(fileList)}를 고쳤습니다(마지막 ${esc(o.since_kst)}).</span>
+      ? `<span class="bad" data-tip="${esc(`같은 파일 — 이 세션과 세션 ${o.with}이 최근 3시간 안에 같은 파일을 고쳤습니다. 합칠 때 부딪치거나 서로 고친 것을 덮을 수 있습니다. 일부러 나눈 것이면 그대로 두면 됩니다.\n${files.join('\n')}`)}">📝 같은 파일: 세션 ${o.with}「${esc(o.with_title || '')}」도 ${esc(fileList)}를 고쳤습니다(마지막 ${esc(o.since_kst)}).</span>
       <button type="button" data-ovl="go" class="small" title="그 세션 보기 — 같은 파일을 고친 세션을 고릅니다.">세션 ${o.with} 보기</button>`
       : !o.cross && !(o.edited && o.edited.length)       // 근거(상대가 고친 파일)가 없으면 약한 띠 — 11-09 전 형식(edited 없음)도
-      ? ((soft = true), `<span class="muted" data-tip="${esc(`겹칠 수도 — 세션 ${o.with}이 ${o.since_kst}부터 받은 요청과 드문 낱말이 겹칩니다. 그 세션이 고친 파일과는 겹치지 않습니다. 두 세션에 같은 지시서를 보냈다면 말에 나왔을 뿐입니다. 두 세션이 같은 파일을 고치면 「같은 파일」 알림이 갑니다.${wordsTip}`)}">🔁 겹칠 수도 — 세션 ${o.with}「${esc(o.with_title || '')}」과 요청 낱말이 겹칩니다. 말에 나왔을 뿐일 수 있습니다.</span>
+      ? ((soft = true), `<span class="muted" data-tip="${esc(`겹칠 수도 — 세션 ${o.with}이 ${o.since_kst}부터 받은 요청과 드문 낱말이 겹칩니다. 그 세션이 고친 파일과는 겹치지 않습니다. 두 세션에 같은 지시서를 보냈다면 말에 나왔을 뿐입니다. 두 세션이 같은 파일을 고치면 「같은 파일」 알림이 갑니다.${wordsTip}`)}">🔁 겹칠 수도: 세션 ${o.with}「${esc(o.with_title || '')}」과 요청 낱말이 겹칩니다. 말에 나왔을 뿐일 수 있습니다.</span>
       <button type="button" data-ovl="go" class="small ghost" title="그 세션 보기 — 낱말이 겹친 세션을 고릅니다.">세션 ${o.with} 보기</button>`)
       : !o.cross
-      ? `<span class="warn" data-tip="${esc(`겹침 — 세션 ${o.with}이 ${o.since_kst}부터 비슷한 일을 하고, 요청에 나온 파일을 실제로 고쳤습니다. 이 세션도 같은 파일을 고치면 「같은 파일」 알림이 갑니다.${wordsTip}`)}">🔁 겹침 — 세션 ${o.with}「${esc(o.with_title || '')}」이 ${esc(o.since_kst)}부터 비슷한 일을 하고 ${esc((o.edited || []).join(', '))}를 실제로 고쳤습니다.</span>
+      ? `<span class="warn" data-tip="${esc(`겹침 — 세션 ${o.with}이 ${o.since_kst}부터 비슷한 일을 하고, 요청에 나온 파일을 실제로 고쳤습니다. 이 세션도 같은 파일을 고치면 「같은 파일」 알림이 갑니다.${wordsTip}`)}">🔁 겹침: 세션 ${o.with}「${esc(o.with_title || '')}」이 ${esc(o.since_kst)}부터 비슷한 일을 하고 ${esc((o.edited || []).join(', '))}를 실제로 고쳤습니다.</span>
       <button type="button" data-ovl="go" class="small" title="그 세션 보기 — 겹친 세션을 고릅니다.">세션 ${o.with} 보기</button>`
-      : `<span class="bad">📋 다른 프로젝트 — 이 글은 ${esc(o.with_label || o.with_project || '')} 세션 ${o.with}「${esc(o.with_title || '')}」에 ${esc(o.since_kst)}에 들어간 글과 거의 같습니다. 잘못된 창에 붙여 넣었을 수 있습니다.</span>
+      : `<span class="bad">📋 다른 프로젝트: 이 글은 ${esc(o.with_label || o.with_project || '')} 세션 ${o.with}「${esc(o.with_title || '')}」에 ${esc(o.since_kst)}에 들어간 글과 거의 같습니다. 잘못된 창에 붙여 넣었을 수 있습니다.</span>
       ${s.state === 'ACTIVE' ? '<button type="button" data-ovl="stop" class="small warn" title="이 세션 작업 중단 — 지금 하는 작업만 멈춥니다(Esc). 세션은 살아 있습니다.">이 세션 작업 중단</button>' : ''}
       <button type="button" data-ovl="go" class="small" title="그 세션 보기 — 같은 글을 받은 세션을 고릅니다.">세션 ${o.with} 보기</button>`;
     const later = `
@@ -507,7 +507,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       b.disabled = true;
       const r = await fetch(`/api/sessions/${s.id}/action`, { method: 'POST', headers: store.headers(true), body: JSON.stringify({ action: 'interrupt' }) });
       const j = await r.json().catch(() => ({}));
-      store.state.lastInput = { sessionId: s.id, ts: Date.now(), ok: r.ok, msg: r.ok ? '이 세션의 작업을 중단했습니다.' : `중단하지 못했습니다 — ${j.refused || j.detail || r.status}` };
+      store.state.lastInput = { sessionId: s.id, ts: Date.now(), ok: r.ok, msg: r.ok ? '이 세션의 작업을 중단했습니다.' : `중단하지 못했습니다: ${j.refused || j.detail || r.status}` };
       store.touch('panel');
       return;
     }
@@ -617,7 +617,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     // 그 아래 답한 줄, 끝에 다른 세션 것 한 줄 요약(누르면 펼침). 답은 그 세션 패널에서(사용자: 보여 주는 것은 되지만 그 자리에서 답하면 안 된다)
     const html = mine.map((a) => approvalCard(a, st)).join('')
       + folded.map((a) => apprFoldLine(a, st)).join('')
-      + (peek.length ? `<details class="appr-peeks"${keep('appr:peeks', false)}><summary class="small" data-tip="다른 세션 — 다른 세션이 기다리는 것입니다. 여기서는 보기만 하고, 답은 [세션 열기]로 그 세션 패널에서 합니다."><span class="warn">다른 세션 ${cnt(peek)}</span> <span class="muted">— 답은 그 세션 패널에서</span></summary>${peek.map((a) => apprPeekLine(a, st)).join('')}</details>` : '');
+      + (peek.length ? `<details class="appr-peeks"${keep('appr:peeks', false)}><summary class="small" data-tip="다른 세션 — 다른 세션이 기다리는 것입니다. 여기서는 보기만 하고, 답은 [세션 열기]로 그 세션 패널에서 합니다."><span class="warn">다른 세션 ${cnt(peek)}</span> <span class="muted">(답은 그 세션 패널에서)</span></summary>${peek.map((a) => apprPeekLine(a, st)).join('')}</details>` : '');
     if (html !== lastAppr) { lastAppr = html; $('pAppr').innerHTML = html; restoreNotes($('pAppr')); }
     $('pAppr').classList.toggle('has-mine', mine.length > 0);    // 이 세션이 답할 카드 — 좁은 패널에서도 칸을 지킨다(office.html)
     // 이 세션이 질문의 답을 기다리면 패널 입력 칸은 한 줄 안내로 접는다 — 카드에 글 칸이 있고, 좁은 패널에서 카드가 입력 칸 밑에 묻혔다(11-10).
@@ -714,7 +714,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     $('pText').disabled = blocked; $('pSend').disabled = blocked;
     // 입력 칸 아래 — 가운데는 세션 상태(짧게), 아래 줄은 보낸 결과(성공은 한 마디, 잘못됐을 때만 자세히)(11-05)
     const why_ = blocked ? why(s) : '';
-    $('pWhy').textContent = blocked ? '보낼 수 없음' : (s.state === 'ACTIVE' ? '작업 중 — 끝나면 전달' : '');
+    $('pWhy').textContent = blocked ? '보낼 수 없음' : (s.state === 'ACTIVE' ? '작업 중, 끝나면 전달' : '');
     $('pWhy').className = `pwhy small${blocked ? ' bad' : s.state === 'ACTIVE' ? ' busy' : ''}`;
     if (blocked) $('pWhy').dataset.tip = `보낼 수 없음 — ${why_}`; else if (s.state === 'ACTIVE') $('pWhy').dataset.tip = '작업 중 — 지금 보내면 하던 일이 끝난 뒤 이어서 전달됩니다.'; else delete $('pWhy').dataset.tip;
     const li = st.lastInput && st.lastInput.sessionId === s.id && Date.now() - st.lastInput.ts < (st.lastInput.ok ? 8000 : 60000) ? st.lastInput : null;

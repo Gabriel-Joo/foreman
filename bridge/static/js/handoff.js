@@ -73,8 +73,8 @@ export function autoNote(auto) {
 }
 
 export const managerCard =(c) => !!c && c.approver === 'manager' && !(c.human_why && c.human_why.length);
-const MP_STATUS = { ready: '승인 기다림', merging: '합치는 중…', merged: '합쳤습니다', conflict_sent: '충돌 — 세션에 풀라고 보냈습니다',
-  conflict_manager: '충돌 — 관리자에게 넘겼습니다', failed: '멈췄습니다' };
+const MP_STATUS = { ready: '승인 기다림', merging: '합치는 중…', merged: '합쳤습니다', conflict_sent: '충돌: 세션에 풀라고 보냈습니다',
+  conflict_manager: '충돌: 관리자에게 넘겼습니다', failed: '멈췄습니다' };
 // 「승인해야 할 파일」(11-14 사용자) — 서버 human_why는 「늘 사람 경로(*db/migration/*): a/V19.sql, a/V20.sql」꼴 글이다(bridge/mergeprep.py
 // human_reasons). 글 속 경로 중 카드의 바뀐 파일(files)에 있는 것만 파일로 뽑는다. 파일이 없는 까닭(이력 다시 쓰기 · 판정 실패 등)은 까닭 글을 그대로 한 줄로
 export function humanFiles(c) {
@@ -121,12 +121,12 @@ export function mpSection(mp, b, sid) {
       : `<span class="ok" title="main이 앞섬 — 이 브랜치를 만든 뒤 ${esc(c.base)}에 커밋 ${c.behind}개가 들어왔습니다. 합칠 때 그 위로 다시 얹습니다(rebase).">충돌 없음 · ${esc(c.base)}에 새 커밋 ${c.behind}개(rebase)</span>`;
   const d = c.docs || {};
   // 11-11 2물결 「넷」 — 근거(세션 기록 「README에서 뺄 줄」 · 근거 칸 기록 · 받은 할 일 번호)가 있는 것을 앞에, 낱말만 겹친 것(weak)은 접어 둔다
-  const rLine = (x) => `<div class="small${x.weak ? ' muted' : ''}">README:${x.line} — ${esc(x.text)} <span class="muted">(${esc((x.why && x.why.length ? x.why : [...(x.files || []), ...(x.words || [])]).slice(0, 5).join(' · '))})</span></div>`;
+  const rLine = (x) => `<div class="small${x.weak ? ' muted' : ''}">README:${x.line} ${esc(x.text)} <span class="muted">(${esc((x.why && x.why.length ? x.why : [...(x.files || []), ...(x.words || [])]).slice(0, 5).join(' · '))})</span></div>`;
   const strong = (d.readme || []).filter((x) => !x.weak), weak = (d.readme || []).filter((x) => x.weak);
   const rRows = strong.map(rLine).join('') + (weak.length ? `<details><summary class="small muted" title="낱말만 겹친 후보 — 커밋 글 낱말이 표 줄과 겹치기만 한 것입니다. 헛걸림이 많아 접어 둡니다.">낱말만 겹친 후보 ${weak.length}개</summary>${weak.map(rLine).join('')}</details>` : '');
-  const dRows = (d.docs || []).map((x) => `<div class="small"><code>${esc(x.where)}</code> — ${x.count}줄(${x.lines.join(', ')}${x.count > x.lines.length ? ' …' : ''}) <span class="muted">${esc(x.files.join(', '))}</span>${x.stale ? ' <span class="warn" title="맞출 문서 — 이번에 바뀐 파일을 적고 있는데 이 문서는 고치지 않았습니다. 설계가 바뀌었으면 함께 맞춥니다.">이번에 안 고침</span>' : ''}</div>`).join('');
+  const dRows = (d.docs || []).map((x) => `<div class="small"><code>${esc(x.where)}</code> ${x.count}줄(${x.lines.join(', ')}${x.count > x.lines.length ? ' …' : ''}) <span class="muted">${esc(x.files.join(', '))}</span>${x.stale ? ' <span class="warn" title="맞출 문서 — 이번에 바뀐 파일을 적고 있는데 이 문서는 고치지 않았습니다. 설계가 바뀌었으면 함께 맞춥니다.">이번에 안 고침</span>' : ''}</div>`).join('');
   const docs = d.error ? `<div class="small warn">${esc(d.error)}</div>`
-    : rRows || dRows ? `<details${keep(`hand:${sid}:mp-docs`)}><summary class="small" title="정리 후보 — 바뀐 파일 · 커밋 글과 README 「나중에 할 일」 줄 · docs 줄을 기계로 맞댄 것입니다. 고르고 지우는 것은 사람 승인 뒤 관리자가 합니다.">정리 후보 — README ${(d.readme || []).length} · docs ${(d.docs || []).length}</summary>${rRows}${dRows}</details>` : '';
+    : rRows || dRows ? `<details${keep(`hand:${sid}:mp-docs`)}><summary class="small" title="정리 후보 — 바뀐 파일 · 커밋 글과 README 「나중에 할 일」 줄 · docs 줄을 기계로 맞댄 것입니다. 고르고 지우는 것은 사람 승인 뒤 관리자가 합니다.">정리 후보: README ${(d.readme || []).length} · docs ${(d.docs || []).length}</summary>${rRows}${dRows}</details>` : '';
   const open = c.status === 'ready' || c.status === 'failed' || c.status.startsWith('conflict');
   // 11-14 사용자 — 승인하면 세션이 끝난다는 안내는 카드 글에서 [합치기] 호버로 옮겼다
   const tip = conf ? '합치기 — 충돌이 있어 합치지 않습니다. 세션이 살아 있으면 그 세션에 main을 가져와 풀라고 보내고, 끝났으면 관리자에게 넘깁니다.'
@@ -151,16 +151,16 @@ export function mpSection(mp, b, sid) {
     </details>`;
   return `<section class="hand mp-card"><div class="hand-h mp-head"><b>합치기 승인</b> <span class="mp-badge mp-${badge}">${esc(MP_STATUS[c.status] || c.status)}</span><code class="mp-branch" title="브랜치 — 이 카드가 합칠 작업방 브랜치입니다.">${esc(c.branch)}</code></div>${h}
     <div class="small">커밋 <b>${c.ahead}</b>개 · 바뀐 파일 ${c.files.length}개 · ${conf ? how : '<span class="ok" title="충돌 없음 — 합칠 때 같은 줄을 서로 고친 곳이 없습니다. ff · rebase 여부는 「자세히」에 있습니다.">충돌 없음</span>'}</div>
-    ${c.asks && c.status === 'ready' ? `<div class="small warn mp-asks" title="묻는 말 — 일을 마친 보고 끝에 사람에게 묻는 말이 있습니다. 합치기 전에 답할지 정합니다.">❓ 세션이 묻는 말이 있습니다 — 패널에서 답하십시오: ${esc(c.asks.tail || '')}</div>` : ''}
+    ${c.asks && c.status === 'ready' ? `<div class="small warn mp-asks" title="묻는 말 — 일을 마친 보고 끝에 사람에게 묻는 말이 있습니다. 합치기 전에 답할지 정합니다.">❓ 세션이 묻는 말이 있습니다. 패널에서 답하십시오: ${esc(c.asks.tail || '')}</div>` : ''}
     ${conf ? `<div class="small bad">충돌 파일: ${c.conflict.map(esc).join(', ')}</div>` : ''}
     ${hfRows}
     ${merged}
     ${more}
     ${c.status === 'ready' || merged ? '' : note}
     ${c.error ? `<div class="small bad">${esc(c.error)}</div>` : ''}
-    ${c.esc_off_at && c.status === 'ready' ? `<div class="small muted mp-off" title="답 안 해도 됨 — 사람이 관리자 머리 위의 이 카드 물음을 껐습니다. 머리 위 · 승인 막대 숫자에서 뺐고 카드는 남습니다. 이 세션이 새로 커밋하면 다시 올립니다.">사람이 답 안 해도 됨으로 둠 — ${esc(clock(c.esc_off_at))}. 관리자 머리 위 · 승인 막대에서 뺐습니다(합치려면 [합치기]).</div>` : ''}
-    ${c.status === 'merged' && !merged ? '<div class="small muted">합치기까지 했습니다 — 시험 · push · 브리지 다시 띄우기는 관리자가 합니다.</div>' : ''}
-    ${open && managerCard(c) && c.status === 'ready' ? '<div class="small muted mp-by-manager" title="관리자 승인 — 이 프로젝트는 합치기 승인을 관리자 세션이 합니다. 사람이 누를 것은 없습니다.">관리자 세션이 승인합니다 — 사람이 누를 것은 없습니다.</div>'
+    ${c.esc_off_at && c.status === 'ready' ? `<div class="small muted mp-off" title="답 안 해도 됨 — 사람이 관리자 머리 위의 이 카드 물음을 껐습니다. 머리 위 · 승인 막대 숫자에서 뺐고 카드는 남습니다. 이 세션이 새로 커밋하면 다시 올립니다.">사람이 답 안 해도 됨으로 둠(${esc(clock(c.esc_off_at))}). 관리자 머리 위 · 승인 막대에서 뺐습니다(합치려면 [합치기]).</div>` : ''}
+    ${c.status === 'merged' && !merged ? '<div class="small muted">합치기까지 했습니다. 시험 · push · 브리지 다시 띄우기는 관리자가 합니다.</div>' : ''}
+    ${open && managerCard(c) && c.status === 'ready' ? '<div class="small muted mp-by-manager" title="관리자 승인 — 이 프로젝트는 합치기 승인을 관리자 세션이 합니다. 사람이 누를 것은 없습니다.">관리자 세션이 승인합니다. 사람이 누를 것은 없습니다.</div>'
       : open ? `<div class="hand-btns">${b('mp-merge', '합치기', !!c.head && c.status !== 'merging', 'primary', tip)}${b('mp-skip', '나중에', true, 'ghost', '나중에 — 이 카드를 치웁니다. 이 세션이 새로 커밋하면 다시 뜹니다.')}</div>` : ''}
   </section>`;
 }
@@ -214,7 +214,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       const j = await api('GET', `/api/sessions/${want}/handoff`);
       if (want !== sid) return;
       data = j;
-    } catch (e) { note = { bad: true, msg: `불러오지 못했습니다 — ${e.message}` }; }
+    } catch (e) { note = { bad: true, msg: `불러오지 못했습니다. ${e.message}` }; }
     // 글을 고치는 중이면 다시 그리지 않는다(커서 · 글자 위치를 지킨다). 데이터는 받아 두고 다음 번에 그린다
     const a = document.activeElement;
     if (a && el.contains(a) && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT') && a.type !== 'checkbox') { schedule(); return; }
@@ -233,8 +233,8 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
   }
   async function run(label, fn) {
     note = { msg: `${label}…` }; draw();
-    try { const r = await fn(); note = r && r.msg ? r : { ok: true, msg: `${label} — 마쳤습니다.` }; }
-    catch (e) { note = { bad: true, msg: `${label} — ${e.message}` }; }
+    try { const r = await fn(); note = r && r.msg ? r : { ok: true, msg: `${label}: 마쳤습니다.` }; }
+    catch (e) { note = { bad: true, msg: `${label}: ${e.message}` }; }
     // 11-13 승인 · 버리기 등 뒤 사무실 스냅샷도 곧바로 — 승인 막대 「🔀 합치기 대기 N」 · 머리 위 말풍선은 스냅샷(merge_waits)에서 온다.
     // 전엔 패널만 다시 받아 막대는 15초 주기(store.js RESNAP_MS)를 기다렸다 — 잰 값 2.0 · 3.1 · 13.2 · 11.2초(log/screen_api_error_bar_20261113.md)
     store.scheduleSnapshot(0);
@@ -254,11 +254,11 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (!rv) return '';
     if (rv.error) return `<div class="small warn">${esc(rv.error)}</div>`;
     const r = rv.revision || {};
-    const head = `<span class="${rv.bad ? 'bad' : 'ok'}">근거 표시 ${rv.marks}개 — ${rv.bad ? `틀림 ${rv.bad}` : '모두 맞음'}</span>`
+    const head = `<span class="${rv.bad ? 'bad' : 'ok'}">근거 표시 ${rv.marks}개: ${rv.bad ? `틀림 ${rv.bad}` : '모두 맞음'}</span>`
       + `${rv.unsupported ? ` · <span class="warn">근거 없는 줄 ${rv.unsupported}</span>` : ''}`
       + ` · 고친 양: 초안 ${r.draft_lines || 0}줄${r.revision_lines ? ` → 고침 ${r.revision_lines}줄` : ''}`;
     const rows = (rv.files || []).map((f) => [
-      ...f.bad.map((b) => `<div class="small bad">✗ ${esc(f.path)}:${b.line} <code>${esc(b.mark)}</code> — ${esc(b.why)}</div>`),
+      ...f.bad.map((b) => `<div class="small bad">✗ ${esc(f.path)}:${b.line} <code>${esc(b.mark)}</code>: ${esc(b.why)}</div>`),
       ...f.unsupported.slice(0, 8).map((u) => `<div class="small muted">? ${esc(f.path)}:${u.line} ${esc(u.text)}</div>`),
     ].join('')).join('');
     return `<div class="small" title="근거 확인 — 서기 글의 [c:커밋] · [log:파일] · [docs:파일] · [t:턴]이 실제로 있는지 기계로 봅니다. 근거 없는 줄은 숫자 · 인용이 있는데 근거 표시가 없는 줄입니다(의심).">${head}</div>
@@ -271,18 +271,18 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (w.error) return `<div class="hand-group"><span class="hand-lbl small muted">작업방</span><div class="small bad">${esc(w.error)}</div></div>`;
     // 11-14 사용자 — 칸에 든 것은 worktree 이름이 아니라 브랜치 이름이다(칸 이름 「따로 작업」 → 「브랜치 이름」, 오류 줄만 그대로).
     // 처음엔 지시대로 「branch 이름」으로 했다가 같은 날 사용자가 「브랜치 이름」으로, 호버 안 글도 같이
-    if (!w.exists) return `<div class="hand-group"><span class="hand-lbl hand-lbl-br small muted">브랜치 이름</span><div class="small muted">${esc(w.branch)} — 합쳤거나 버려서 지금은 없습니다.</div></div>`;
+    if (!w.exists) return `<div class="hand-group"><span class="hand-lbl hand-lbl-br small muted">브랜치 이름</span><div class="small muted">${esc(w.branch)}: 합쳤거나 버려서 지금은 없습니다.</div></div>`;
     // 11-11(받은 할 일 #17) — 같은 이름을 뒤 세션이 다시 씀: 지금 폴더는 그 세션 것이라 여기서는 합치기 · 버리기를 보이지 않는다
-    if (w.reused_by) return `<div class="hand-group"><span class="hand-lbl hand-lbl-br small muted">브랜치 이름</span><div class="small muted" title="이름 다시 씀 — 작업방 이름은 다시 쓰입니다. 이 세션의 작업방은 이미 합쳤거나 버렸습니다.">${esc(w.branch)} — 이 세션의 일은 끝났습니다. 지금 이 이름은 세션 ${w.reused_by}이 씁니다.</div></div>`;
+    if (w.reused_by) return `<div class="hand-group"><span class="hand-lbl hand-lbl-br small muted">브랜치 이름</span><div class="small muted" title="이름 다시 씀 — 작업방 이름은 다시 쓰입니다. 이 세션의 작업방은 이미 합쳤거나 버렸습니다.">${esc(w.branch)}: 이 세션의 일은 끝났습니다. 지금 이 이름은 세션 ${w.reused_by}이 씁니다.</div></div>`;
     // 살아 있으면 설명 줄 없음(11-14 사용자 — 바로 위 [끝내기 ▾]를 다시 설명하는 말이었다)
-    const why = !w.live && w.dirty.length ? `커밋 안 된 변경 ${w.dirty.length}개 — 그 세션에서 커밋하거나 버려야 합칠 수 있습니다.` : '';
+    const why = !w.live && w.dirty.length ? `커밋 안 된 변경이 ${w.dirty.length}개 있습니다. 그 세션에서 커밋하거나 버려야 합칠 수 있습니다.` : '';
     return `<div class="hand-group"><span class="hand-lbl hand-lbl-br small muted">브랜치 이름</span><div>
       <div class="small"><code>${esc(w.branch)}</code></div>
       <div class="small">${esc(w.base)}보다 커밋 <b>${w.ahead}</b>개 앞${w.behind ? ` · <span title="${esc(w.base)}가 ${w.behind}개 앞서감(합칠 때 rebase) — 이 브랜치를 만든 뒤 ${esc(w.base)}에 들어온 커밋입니다. 합칠 때 그 위로 다시 얹습니다.">${esc(w.base)}에 새 변경 ${w.behind}개</span>` : ''}${w.dirty.length ? ` · <span class="warn">커밋 안 됨 ${w.dirty.length}</span>` : ''}${w.schema_lock ? ' · <span class="warn" title="스키마 잠금 보유 — 이 세션이 DB 구조(migrations)를 바꾸는 중이라 다른 세션은 바꿀 수 없습니다.">DB 구조 바꾸는 중</span>' : ''}</div>
       ${w.commits.length ? `<details${keep(`hand:${sid}:wt-commits`)}><summary class="small muted">커밋 · 바뀐 파일</summary><pre class="hand-body">${esc(w.commits.join('\n'))}\n\n${esc(w.diffstat.join('\n'))}</pre></details>` : ''}
       ${why ? `<div class="small muted">${esc(why)}</div>` : ''}
       ${w.stale ? `<div class="small ok" title="이미 원본에 들어 있음 — 밖에서 git merge로 합쳤거나 합칠 커밋이 없습니다. [합치기]는 작업방과 브랜치만 지웁니다.">${esc(w.stale)}</div>` : ''}
-      ${w.rested_at ? `<div class="small warn wt-rest" title="쉬는 중 — [커밋만 하고 끝내기]로 지금까지를 작업방에 커밋하고 세션만 끝냈습니다. 같은 일을 이어 하려면 [이어서], 끝났으면 [합치기]입니다.">쉬는 중 — 합치기 기다림 · ${esc(ago(w.rested_at))}부터${restDays(w.rested_at) >= 1 ? ` · ${restDays(w.rested_at)}일째` : ''}</div>` : ''}
+      ${w.rested_at ? `<div class="small warn wt-rest" title="쉬는 중 — [커밋만 하고 끝내기]로 지금까지를 작업방에 커밋하고 세션만 끝냈습니다. 같은 일을 이어 하려면 [이어서], 끝났으면 [합치기]입니다.">쉬는 중: 합치기 기다림 · ${esc(ago(w.rested_at))}부터${restDays(w.rested_at) >= 1 ? ` · ${restDays(w.rested_at)}일째` : ''}</div>` : ''}
       ${reviewBlock(w.review)}
       ${w.preview ? `<div class="small ok">미리보기가 :${w.preview.port}에서 돌고 있습니다.</div>` : ''}
       <div class="hand-btns">
@@ -302,10 +302,10 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     const rows = (p.pointers || []).map((x) => {
       const where = x.path ? `${x.path}${x.start ? `:${x.start}${x.end && x.end !== x.start ? '-' + x.end : ''}` : ''}${x.section ? ` 「${x.section}」` : ''}` : x.raw;
       const mark = !x.ok ? `<span class="bad">✗ ${esc(x.problem)}</span>`
-        : x.stale ? `<span class="warn">⚠ 이 문서 뒤로 커밋 ${x.commits_since}개 — 오래됐을 수 있습니다</span>` : '<span class="ok">✓</span>';
-      return `<div class="small"><code>${esc(where)}</code> ${mark}${x.why ? ` <span class="muted">— ${esc(x.why)}</span>` : ''}</div>`;
+        : x.stale ? `<span class="warn">⚠ 이 문서 뒤로 커밋 ${x.commits_since}개(오래됐을 수 있습니다)</span>` : '<span class="ok">✓</span>';
+      return `<div class="small"><code>${esc(where)}</code> ${mark}${x.why ? ` <span class="muted">(${esc(x.why)})</span>` : ''}</div>`;
     }).join('');
-    return `<div class="hand-ptrs"><div class="small"><b>읽을 곳 ${(p.pointers || []).length}</b> — 새 세션이 먼저 읽습니다</div>${rows}
+    return `<div class="hand-ptrs"><div class="small"><b>읽을 곳 ${(p.pointers || []).length}</b>: 새 세션이 먼저 읽습니다</div>${rows}
       ${p.blocked ? `<div class="small bad">${esc(p.blocked)}</div>` : ''}</div>`;
   }
   // 11-09 — 이 프로젝트에 살아 있는 세션이 있으면 새 세션은 따로 작업(worktree)에서 뜬다. 넣을 때 브리지가 그 사실을 글 앞에 붙인다
@@ -313,11 +313,11 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
   const wtNext = (p) => (p && p.role === 'manager' ? (p.manager_block
     ? `<div class="small bad" title="띄울 수 없습니다 — 관리자는 원본 폴더에 하나입니다.">✗ ${esc(p.manager_block)}</div>`
     : '<div class="small ok" title="원본 폴더 — 관리자는 작업방이 아니라 저장소 맨 위 폴더에서 뜹니다.">관리자라 원본 폴더에서 뜹니다.</div>')
-    : p && p.worktree_next ? `<div class="small warn" title="작업방에서 뜹니다 — 이 프로젝트에 살아 있는 세션이 있어(옮기기는 이 세션을 빼고 셉니다) 새 세션은 .worktrees/ 아래 자기 브랜치에서 뜹니다. 받은 세션은 push · 브리지 재시작을 하지 않고, 끝낸 뒤 [합치기]로 합칩니다.">⑂ 새 세션은 작업방에서 뜹니다 — 넣을 때 그 사실을 글 맨 앞에 덧붙입니다.</div>` : '');
+    : p && p.worktree_next ? `<div class="small warn" title="작업방에서 뜹니다 — 이 프로젝트에 살아 있는 세션이 있어(옮기기는 이 세션을 빼고 셉니다) 새 세션은 .worktrees/ 아래 자기 브랜치에서 뜹니다. 받은 세션은 push · 브리지 재시작을 하지 않고, 끝낸 뒤 [합치기]로 합칩니다.">⑂ 새 세션은 작업방에서 뜹니다. 넣을 때 그 사실을 글 맨 앞에 덧붙입니다.</div>` : '');
   // 인계 검증(11-06) — 만들 때 상태와 지금이 다르면 넣는 글 앞에 붙는 "인계 뒤 바뀐 것"
   function driftList(d, head) {
-    if (!d || !d.length) return `<div class="small ok">✓ ${esc(head)} — 요약을 쓴 뒤 바뀐 것이 없습니다(git · 스키마 잠금).</div>`;
-    return `<div class="hand-drift"><div class="small warn"><b>⚠ ${esc(head)} ${d.length}</b> — 받은 세션이 「지금 상태」를 다시 판단하도록 글 앞에 붙습니다.</div>
+    if (!d || !d.length) return `<div class="small ok">✓ ${esc(head)}: 요약을 쓴 뒤 바뀐 것이 없습니다(git · 스키마 잠금).</div>`;
+    return `<div class="hand-drift"><div class="small warn"><b>⚠ ${esc(head)} ${d.length}</b>: 받은 세션이 「지금 상태」를 다시 판단하도록 글 앞에 붙습니다.</div>
       ${d.map((x) => `<div class="small">· ${esc(x)}</div>`).join('')}</div>`;
   }
   // 2판 인계를 받고 시작한 세션 — 읽을 곳을 실제로 Read했나
@@ -327,9 +327,9 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     const failed = r.failed || [], miss = r.missing || [];
     const drift = r.drift && r.drift.length ? `<div class="hand-group"><span class="hand-lbl small muted">요약 뒤 바뀐 것</span><div>${driftList(r.drift, '받을 때 요약 뒤 바뀐 것')}</div></div>` : '';
     // 11-09 확인에 실패한 곳(이 세션 폴더에 파일 · 절이 없다)은 읽음으로 세지 않고 따로 — 전에는 "6/6 읽음"에 ✗가 섞였다
-    const failRows = failed.map((f) => `<div class="small bad">✗ <code>${esc(f.path)}</code> — ${esc(f.problem || '')}</div>`).join('');
+    const failRows = failed.map((f) => `<div class="small bad">✗ <code>${esc(f.path)}</code>: ${esc(f.problem || '')}</div>`).join('');
     return `<div class="hand-group"><span class="hand-lbl small muted" title="읽을 곳 — 새 세션이 먼저 읽어야 할 문서 중 실제로 열고, 이 세션 폴더에서 찾던 곳이 맞는 것의 수입니다.">읽을 곳</span><div class="hand-btns">
-      <span class="small ${all ? 'ok' : 'warn'}">${r.read}/${r.total} 읽음${miss.length ? ` — 안 읽음: ${miss.map(esc).join(', ')}` : ''}${failed.length ? ` · 확인 실패 ${failed.length}` : ''}${autoNote(r.auto)}</span>
+      <span class="small ${all ? 'ok' : 'warn'}">${r.read}/${r.total} 읽음${miss.length ? `, 안 읽음:${miss.map(esc).join(', ')}` : ''}${failed.length ? ` · 확인 실패 ${failed.length}` : ''}${autoNote(r.auto)}</span>
       ${failRows}
       ${!miss.length ? '' : `<button data-act="reads-resend" class="small primary"${can ? '' : ' disabled'} title="안 읽은 곳 다시 보내기 — 아직 읽지 않은 문서만 다시 보내고, 읽은 뒤 걸리는 규칙을 말하게 합니다.">안 읽은 곳 다시 보내기</button>`}
     </div></div>${drift}`;
@@ -340,7 +340,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (!r) return '';
     if (r.error) return `<div class="small warn">${esc(r.error)}</div>`;
     const fresh = !!r.at && Date.now() - Date.parse(r.at) < 3600e3;
-    return `<details class="hand-recv"${keep(`hand:${sid}:recv`, fresh)}><summary class="small" title="넘겨받은 글 — 이 세션이 옮기기로 받은 요약입니다. 무엇이 넘어왔는지 여기서 봅니다.">넘겨받은 글 — 세션 ${esc(String(r.from_session))}에서 · ${ago(r.at)}</summary><pre class="hand-body">${esc(r.body)}</pre></details>`;
+    return `<details class="hand-recv"${keep(`hand:${sid}:recv`, fresh)}><summary class="small" title="넘겨받은 글 — 이 세션이 옮기기로 받은 요약입니다. 무엇이 넘어왔는지 여기서 봅니다.">넘겨받은 글: 세션 ${esc(String(r.from_session))}에서 · ${ago(r.at)}</summary><pre class="hand-body">${esc(r.body)}</pre></details>`;
   }
   function moveBody(m, b, c) {
     const steps = `<ol class="flow-steps">${MOVE_STEPS.map((n, k) => `<li class="${k < m.i ? 'done' : k === m.i ? (m.bad ? 'bad' : 'now') : ''}">${k < m.i ? '✓' : k + 1} ${n}</li>`).join('')}</ol>`;
@@ -364,7 +364,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     const n = chooseCount(items, promDraft), can = items.filter(selectable).length;
     const rows = items.map((it) => {
       const ck = it.check || {}, on = chosen(it, promDraft), sel = selectable(it);
-      const why = !sel ? (ck.ok === false ? `목적지가 틀렸습니다 — ${ck.problem || ''}` : '세션이 문서에 남기지 않아도 된다고 했습니다') : '';
+      const why = !sel ? (ck.ok === false ? `목적지가 틀렸습니다${ck.problem ? `(${ck.problem})` : ''}` : '세션이 문서에 남기지 않아도 된다고 했습니다') : '';
       const dest = it.dest === 'memory' ? '메모리(사람 선호)' : it.dest === 'drop' ? '버림' : it.dest;
       return `<label class="mv-item${on ? ' on' : ''}${sel ? '' : ' off'}" data-tip="${esc(sel ? `후보 #${it.id} — 고르면 세션이 이 문장을 ${dest}에 씁니다.` : `고를 수 없음 — ${why}. 「옮기기 전 정리」에서 목적지를 고치면 고를 수 있습니다.`)}">
         <input type="checkbox" data-mv-item="${it.id}"${on ? ' checked' : ''}${sel ? '' : ' disabled'}>
@@ -419,7 +419,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (st && mode == null) {
       const steps = `<ol class="flow-steps">${FLOW_STEPS.map((n, k) => `<li class="${k < st.i ? 'done' : k === st.i ? (st.bad ? 'bad' : 'now') : ''}">${k < st.i ? '✓' : k + 1} ${n}</li>`).join('')}</ol>`;
       let body = '';
-      if (st.done) body = `<div class="small ok">새 세션으로 옮겼습니다 — 새 세션${fs && fs.injected_cc_session ? ` ${esc(fs.injected_cc_session.slice(0, 8))}` : ''}이 이어받았습니다.</div><div class="row">${b('flow-close', '닫기', true, 'ghost', '닫기 — 이 안내를 치웁니다.')}</div>`;
+      if (st.done) body = `<div class="small ok">새 세션으로 옮겼습니다. 새 세션${fs && fs.injected_cc_session ? ` ${esc(fs.injected_cc_session.slice(0, 8))}` : ''}이 이어받았습니다.</div><div class="row">${b('flow-close', '닫기', true, 'ghost', '닫기 — 이 안내를 치웁니다.')}</div>`;
       else if (st.bad) body = `<div class="small bad">${esc(st.msg)}</div><div class="row flow-act">${st.i === 3 ? b('flow-end', '옛 세션 다시 끝내기', can.exit, 'primary danger', '옛 세션 다시 끝내기 — 새 세션은 이미 이어받았습니다. 옛 세션만 /exit로 끝냅니다.') : st.i === 0 ? b('flow-start', '다시 요약', can.summary || can.headless, 'primary', '다시 요약 — 요약을 새로 요청합니다.') : b('flow-go', '다시 시도', true, 'primary', '다시 시도 — 이 단계부터 다시 합니다.')}${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 넘기기를 그만둡니다. 받은 요약은 남습니다.')}</div>`;
       else if (st.i === 0) body = `<div class="small muted">세션이 옮길 요약을 쓰는 중입니다… 다 쓰면 넣을 글을 보여 드립니다.</div><div class="row">${b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 기다리지 않습니다. 세션은 쓰던 요약을 마저 쓰고, 요약은 남습니다.')}</div>`;
       else if (st.i === 1) {
@@ -429,7 +429,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
           : `<div class="small">새 세션에 아래 글을 첫 입력으로 넣습니다. 보내면 새 세션을 띄우고 이 세션을 끝냅니다.${p.cut ? ` <span class="warn">길어서 일부 절을 줄였습니다.</span>` : ''}</div>
             ${wtNext(p)}${driftList(p.drift, '요약 뒤 바뀐 것')}${p.v2 ? pointerList(p) : ''}<pre class="hand-body">${esc(p.text)}</pre>`;
         // 11-09 사용자 — 보내기 전에 한 줄 덧붙일 수 있게. 요약은 그대로 두고 넣는 글 끝에만 붙는다(bridge/handoff.py note_block)
-        if (p && noteOpen) body += `<div class="hand-note"><label class="small" for="hNote">덧붙일 말 — 위 글 맨 끝에 「사람이 덧붙인 말」로 붙습니다. 요약은 바뀌지 않습니다.</label>
+        if (p && noteOpen) body += `<div class="hand-note"><label class="small" for="hNote">덧붙일 말: 위 글 맨 끝에 「사람이 덧붙인 말」로 붙습니다. 요약은 바뀌지 않습니다.</label>
             <textarea id="hNote" rows="2" maxlength="2000" class="hand-edit" placeholder="예: 다음 할 일 중 3번부터 해 주세요.">${esc(noteDraft)}</textarea></div>`;
         const go = !!p && !p.blocked && !p.manager_block && can.spawn;
         const goTip = p && p.manager_block ? '띄울 수 없습니다 — 원본 폴더에 관리자가 이미 살아 있습니다.'
@@ -529,7 +529,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (btn.closest('.end-menu')) { endOpen = false; draw(); }
     if (act === 'prom-req') {
       const pick = el.querySelector('#promIn'), v = pick ? pick.value : 'none';
-      if (v === '') { note = { bad: true, msg: '같이 넣을 것을 골라 주세요 — 넣지 않으려면 「넣지 않음」을 고릅니다.' }; draw(); return; }
+      if (v === '') { note = { bad: true, msg: '같이 넣을 것을 골라 주세요. 넣지 않으려면 「넣지 않음」을 고릅니다.' }; draw(); return; }
       const body = v === 'none' ? { no_input: true } : v.startsWith('lc:') ? { loss_check_id: Number(v.slice(3)) } : { summary_id: Number(v) };
       return run('문서 후보 묻기', () => post(`/api/sessions/${id}/promote`, body).then((r) => ({ msg: `요청을 보냈습니다. 세션이 목록을 만드는 중입니다${
         r.summary_id ? `(요약 #${r.summary_id}의 「문서와 다른 지금」도 같이 넣었습니다)` : r.loss_check_id ? `(잃은 것 점검 #${r.loss_check_id}의 사라짐 · 약해짐도 같이 넣었습니다)` : ''}.` })));
@@ -540,7 +540,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     }
     if (act === 'loss-use') {
       promIn = 'lc:' + btn.dataset.lc;
-      note = { msg: '잊은 것을 같이 넣도록 골랐습니다 — 아래 [대화에서만 정한 것 문서에 적기]를 누릅니다.' };
+      note = { msg: '잊은 것을 같이 넣도록 골랐습니다. 아래 [대화에서만 정한 것 문서에 적기]를 누릅니다.' };
       draw();
       return;
     }
@@ -550,7 +550,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     }
     if (act === 'prom-write') {
       const p = prom(), n = p.items.filter((x) => x.state === 'approved').length;
-      if (promoteEdits(p.items, promDraft).length) { note = { bad: true, msg: '고친 것이 저장되지 않았습니다 — 먼저 [고친 것 저장]을 눌러 주세요.' }; draw(); return; }
+      if (promoteEdits(p.items, promDraft).length) { note = { bad: true, msg: '고친 것이 저장되지 않았습니다. 먼저 [고친 것 저장]을 눌러 주세요.' }; draw(); return; }
       if (!confirm(`승인한 ${n}개를 세션이 문서에 쓰고 커밋합니다. 브리지가 커밋을 확인합니다. 진행할까요?`)) return;
       return run('고른 것을 문서에 쓰기', () => post(`/api/promotions/${p.id}/write`).then(() => ({ msg: '보냈습니다. 세션이 쓰고 커밋하는 중입니다.' })));
     }
@@ -570,7 +570,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (act === 'flow-note-off') { noteOpen = false; noteDraft = ''; draw(); return; }
     if (act === 'flow-go-note') {
       const v = (el.querySelector('#hNote') || {}).value ?? noteDraft;
-      if (!v.trim()) { note = { bad: true, msg: '덧붙일 말이 비었습니다 — 적거나 [덧붙이지 않기]를 누릅니다.' }; draw(); return; }
+      if (!v.trim()) { note = { bad: true, msg: '덧붙일 말이 비었습니다. 적거나 [덧붙이지 않기]를 누릅니다.' }; draw(); return; }
       noteDraft = v;
       return flowGo(v);
     }
@@ -602,7 +602,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       return run('새로 띄우기', async () => {
         const r = await post(`/api/sessions/${id}/spawn`, { summary_id });
         const where = `tmux ${r.tmux}`;
-        return r.note ? { bad: !r.cc_session_id, msg: `${where} — ${r.note}` }
+        return r.note ? { bad: !r.cc_session_id, msg: `${where}: ${r.note}` }
           : { ok: true, msg: `새 세션을 띄웠습니다(${where}).${summary_id ? (r.injected ? ' 요약을 넣었습니다.' : ' 요약은 넣지 못했습니다.') : ''}` };
       });
     }
@@ -654,7 +654,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
         if (!confirm(`세션을 끝내고 ${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 커밋 안 된 변경이 있으면 끝내지 않고 알립니다. 충돌이 나면 되돌리고 멈춥니다(세션은 이미 끝난 뒤입니다). push는 하지 않습니다. 진행할까요?${rvWarn}`)) return;
         return run('합치고 끝내기', () => post(`/api/sessions/${id}/worktree`, { action: 'merge', end: true })
           .then((r) => (r.ok ? { ok: true, msg: '세션을 끝내고 ' + r.note + (r.schema_unlocked ? ' 스키마 잠금도 풀었습니다.' : '') }
-            : { bad: true, msg: '세션은 끝냈습니다. ' + r.note + (r.conflict && r.conflict.length ? ` 충돌 파일: ${r.conflict.join(', ')}` : '') + ' — 아래 「브랜치 이름」 칸에서 다시 합치거나 버립니다.' })));
+            : { bad: true, msg: '세션은 끝냈습니다. ' + r.note + (r.conflict && r.conflict.length ? ` 충돌 파일: ${r.conflict.join(', ')}` : '') + ' 아래 「브랜치 이름」 칸에서 다시 합치거나 버립니다.' })));
       }
       if (act === 'wt-merge') {
         if (!confirm(`${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다. 합칠까요?${rvWarn}`)) return;
@@ -679,7 +679,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       const action = act === 'exit-after' ? 'exit' : act;
       return run(ACT[act], () => post(`/api/sessions/${id}/action`, { action }).then((r) => (r.ok
         ? { ok: true, msg: DONE[act] + (r.tmux_closed ? ' tmux 창도 닫았습니다.' : '') }
-        : { bad: true, msg: `${ACT[act]} — ${r.note || '확인하지 못했습니다.'}` })));
+        : { bad: true, msg: `${ACT[act]}: ${r.note || '확인하지 못했습니다.'}` })));
     }
   });
 
@@ -699,7 +699,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       const r = await api('POST', `/api/sessions/${sid}/losscheck`);
       setFlow({ v: 2, stage: 'find', lcId: r.loss_check_id, at: Date.now() });
     } catch (e) {          // 이미 도는 점검 등 — 그 단계 없이 문서 후보부터(까닭은 흐름 위에 남긴다)
-      setFlow({ v: 2, stage: 'list', at: Date.now(), note: `잊은 것 찾기는 건너뜁니다 — ${e.message}` });
+      setFlow({ v: 2, stage: 'list', at: Date.now(), note: `잊은 것 찾기는 건너뜁니다. ${e.message}` });
     }
     await load();
   }
@@ -722,7 +722,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
         if (id === sid) setFlow({ ...flow, stage: 'summary', sumId: r.summary_id, at: Date.now() });
       }
     } catch (e) {
-      if (id === sid) setFlow({ ...flow, err: `${m.auto === 'promote' ? '문서 후보를 묻지' : '요약을 요청하지'} 못했습니다 — ${e.message}`, errAt: m.i });
+      if (id === sid) setFlow({ ...flow, err: `${m.auto === 'promote' ? '문서 후보를 묻지' : '요약을 요청하지'} 못했습니다. ${e.message}`, errAt: m.i });
     } finally { moveBusy = false; }
     if (id === sid) await load();
   }
@@ -741,7 +741,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       } else {
         setFlow({ ...flow, stage: 'summary', sumId: null, at: Date.now(), err: null });
       }
-    } catch (e) { note = { bad: true, msg: `문서에 쓰지 못했습니다 — ${e.message}` }; }
+    } catch (e) { note = { bad: true, msg: `문서에 쓰지 못했습니다. ${e.message}` }; }
     finally { moveBusy = false; }
     await load();
   }
@@ -764,20 +764,20 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (c.move_flow && c.live && c.can.summary) return startMove();     // 11-11 한 흐름(끝난 세션은 옛 흐름 — 문서에 쓸 세션이 없다)
     const live = c.live && c.can.summary;
     if (!live && !(c.can.headless && confirm('끝난 세션입니다. 잠깐 불러 요약을 받습니다.\n그 세션의 맥락을 다시 읽느라 토큰을 씁니다(식은 맥락은 비쌉니다).\n진행할까요?'))) {
-      if (!live && !c.can.headless) { note = { bad: true, msg: `옮기기를 시작할 수 없습니다 —${c.why || '지금은 요약을 받을 수 없습니다'}` }; draw(); }
+      if (!live && !c.can.headless) { note = { bad: true, msg: `옮기기를 시작할 수 없습니다. ${c.why || '지금은 요약을 받을 수 없습니다'}` }; draw(); }
       return;
     }
     note = null; flowPrev = null;
     try {
       const r = await api('POST', `/api/sessions/${sid}/summary`, { kind: 'handoff', mode: live ? 'live' : 'headless', fmt: 'v2' });
       setFlow({ sumId: r.summary_id, at: Date.now() });
-    } catch (e) { note = { bad: true, msg: `옮기기 — 요약을 요청하지 못했습니다:${e.message}` }; }
+    } catch (e) { note = { bad: true, msg: `요약을 요청하지 못했습니다. ${e.message}` }; }
     await load();
   }
   // ② 확인을 그리기 전에 넣을 글을 한 번 받는다
   async function flowPreview() {
     if (!flow || (flowPrev && flowPrev.summary_id === flow.sumId)) return;
-    try { flowPrev = await api('GET', `/api/summaries/${flow.sumId}/injection?replace=1`); } catch (e) { setFlow({ ...flow, err: `넣을 글을 받지 못했습니다 — ${e.message}`, errAt: 1 }); }
+    try { flowPrev = await api('GET', `/api/summaries/${flow.sumId}/injection?replace=1`); } catch (e) { setFlow({ ...flow, err: `넣을 글을 받지 못했습니다. ${e.message}`, errAt: 1 }); }
     draw();
   }
   async function flowGo(extra) {                 // ③ 새 세션 → ④ 옛 세션 끝내기. extra — [덧붙여서 보내기]의 말
@@ -788,7 +788,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     try {
       const r = await api('POST', `/api/sessions/${id}/spawn`, { summary_id: f.sumId, replace: true, ...(add ? { note: add } : {}) });   // 옮기기 — 옛 세션은 빼고 worktree 판단
       if (!r.cc_session_id || !r.injected) throw new Error(r.note || '새 세션에 요약을 넣었는지 확인하지 못했습니다');
-    } catch (e) { if (id === sid) { setFlow({ ...f, phase: null, err: `새 세션을 띄우지 못했습니다 — ${e.message}`, errAt: f.v === 2 ? 5 : 2 }); await load(); } return; }
+    } catch (e) { if (id === sid) { setFlow({ ...f, phase: null, err: `새 세션을 띄우지 못했습니다. ${e.message}`, errAt: f.v === 2 ? 5 : 2 }); await load(); } return; }
     await flowEnd(id);
   }
   async function flowEnd(id = sid) {
@@ -797,8 +797,8 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     let res;
     try {
       const r = data && data.controls.live === false ? { ok: true } : await api('POST', `/api/sessions/${id}/action`, { action: 'exit' });
-      res = r.ok ? { ...f, phase: 'done', err: null } : { ...f, phase: null, err: `옛 세션을 끝내지 못했습니다 — ${r.note || '확인하지 못했습니다'}`, errAt: f.v === 2 ? 6 : 3 };
-    } catch (e) { res = { ...f, phase: null, err: `옛 세션을 끝내지 못했습니다 — ${e.message}`, errAt: f.v === 2 ? 6 : 3 }; }
+      res = r.ok ? { ...f, phase: 'done', err: null } : { ...f, phase: null, err: `옛 세션을 끝내지 못했습니다. ${r.note || '확인하지 못했습니다'}`, errAt: f.v === 2 ? 6 : 3 };
+    } catch (e) { res = { ...f, phase: null, err: `옛 세션을 끝내지 못했습니다. ${e.message}`, errAt: f.v === 2 ? 6 : 3 }; }
     flowPut(id, res);
     if (id === sid) { flow = res; await load(); }
   }

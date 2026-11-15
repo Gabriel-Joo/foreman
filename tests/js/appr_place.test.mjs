@@ -39,12 +39,12 @@ test('답한 카드는 한 줄 — ✓ 답함 「질문」 → 고른 답, 누�
   const a = Q(7, 251, 'allowed', { message: '어느 쪽으로 할까요? → 나 · 글: 이유는 이렇다', decided_by: 'browser' });
   assert.equal(apprAnswer(a), '나 · 글: 이유는 이렇다');
   const h = apprFoldLine(a, st);
-  assert.match(h, /✓ 답함<\/span> — 「어느 쪽으로 할까요\?」 → <b>나 · 글: 이유는 이렇다<\/b>/);
+  assert.match(h, /✓ 답함<\/span> 「어느 쪽으로 할까요\?」 → <b>나 · 글: 이유는 이렇다<\/b>/);
   assert.match(h, /data-act="fold"/);
   assert.match(h, /data-act="dismiss"/);
   assert.ok(!/class="appr appr-ask/.test(h));               // 접힌 채로는 카드 본문이 없다
   assert.match(apprFoldLine(Q(8, 251, 'terminal'), st), /터미널에서 답함/);
-  assert.match(apprFoldLine({ ...A(9, 251, 'denied') }, st), /✕ 거부함<\/span> — ▶ push/);
+  assert.match(apprFoldLine({ ...A(9, 251, 'denied') }, st), /✕ 거부함<\/span> ▶ push/);
 });
 
 test('질문 카드에 글 칸 · [글만 보내기] — 글이 있어야 켜진다', () => {

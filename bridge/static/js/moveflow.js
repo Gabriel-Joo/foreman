@@ -24,7 +24,7 @@ export function moveStep(flow, data, now = Date.now()) {
   if (flow.phase === 'ending') return { i: 6, busy: true };
   if (flow.err) return { i: flow.errAt ?? 0, bad: true, msg: flow.err };
   const stall = (i, msg) => (flow.at && now - flow.at > STALL_MS
-    ? { i, bad: true, stalled: true, msg: `${msg} — ${Math.round((now - flow.at) / 60000)}분째 그대로입니다. 멈춘 것 같습니다.` } : { i, busy: true, msg });
+    ? { i, bad: true, stalled: true, msg: `${msg}. ${Math.round((now - flow.at) / 60000)}분째 그대로입니다. 멈춘 것 같습니다.` } : { i, busy: true, msg });
   if (flow.stage === 'find') {
     const lc = byId(data && data.losschecks, flow.lcId);
     if (!lc || lc.status === 'running') return stall(0, lc ? `잊은 것을 찾는 중입니다 ${lc.groups_done || 0}/${lc.groups_total || '?'}` : '잊은 것 찾기를 시작하는 중입니다');
@@ -35,7 +35,7 @@ export function moveStep(flow, data, now = Date.now()) {
     if (!flow.promId) return { i: 1, auto: 'promote' };
     const p = byId(data && data.promotions, flow.promId);
     if (!p || p.status === 'requested') return stall(1, '세션이 문서에 넣을 후보를 고르는 중입니다');
-    if (p.status === 'failed' || p.status === 'timeout') return { i: 1, bad: true, msg: `문서 후보 목록을 받지 못했습니다 — ${p.error || p.status}` };
+    if (p.status === 'failed' || p.status === 'timeout') return { i: 1, bad: true, msg: `문서 후보 목록을 받지 못했습니다. ${p.error || p.status}` };
     if (p.status === 'listed' || p.status === 'write_failed') {
       if (!(p.items || []).length) return { i: 4, auto: 'summary', note: '세션이 문서에 넣을 것이 없다고 했습니다.' };
       return { i: 2, wait: true, p };
@@ -47,7 +47,7 @@ export function moveStep(flow, data, now = Date.now()) {
   if (flow.stage === 'write') {
     const p = byId(data && data.promotions, flow.promId);
     if (!p || p.status === 'writing') return stall(3, '세션이 고른 것을 문서에 쓰는 중입니다');
-    if (p.status === 'write_failed') return { i: 2, wait: true, p, msg: `문서에 쓴 것을 확인하지 못했습니다 — ${p.error || '아래 문제를 봐 주세요'}` };
+    if (p.status === 'write_failed') return { i: 2, wait: true, p, msg: `문서에 쓴 것을 확인하지 못했습니다. ${p.error || '아래 문제를 봐 주세요'}` };
     if (p.status === 'written') return { i: 4, auto: 'summary' };
     return { i: 3, bad: true, msg: `모르는 상태입니다(${p.status})` };
   }
@@ -76,9 +76,9 @@ export function lossOutcome(lc) {
 // 흐름 위에 남길 한 줄 — 「없음」과 「실패」를 다른 글 · 다른 색으로(11-13 사용자 — 실패가 조용히 「없음」으로 보이면 안 된다)
 export function lossNote(lc) {
   const o = lossOutcome(lc);
-  const why = lc && lc.error ? ` — ${lc.error}` : '';
-  if (o === 'found') return { tone: 'ok', msg: `잊은 것 찾기 — 잊은 것 ${lc.lost_total}개를 찾아 문서 후보를 물을 때 같이 넣었습니다.` };
-  if (o === 'clean') return { tone: 'ok', msg: '잊은 것 찾기 — 끝까지 찾았고 잊은 것이 없습니다.' };
+  const why = lc && lc.error ? `(${lc.error})` : '';
+  if (o === 'found') return { tone: 'ok', msg: `잊은 것 찾기: 잊은 것 ${lc.lost_total}개를 찾아 문서 후보를 물을 때 같이 넣었습니다.` };
+  if (o === 'clean') return { tone: 'ok', msg: '잊은 것 찾기: 끝까지 찾았고 잊은 것이 없습니다.' };
   if (o === 'nothing') return { tone: 'muted', msg: '잊은 것 없음' };   // 11-14 사용자 — 줄은 남기고 글만 짧게
   if (o === 'partial') return { tone: 'warn', msg: `잊은 것 찾기가 일부만 끝났습니다${why}. ${lc.lost_total ? `찾은 ${lc.lost_total}개만 같이 넣었습니다` : '찾은 것은 없지만 「없음」은 아닙니다'}. 「옮기기 전 정리」에서 다시 찾을 수 있습니다.` };
   if (o === 'failed') return { tone: 'bad', msg: `잊은 것 찾기가 실패했습니다${why}. 그 결과 없이 문서 후보를 물었습니다.` };

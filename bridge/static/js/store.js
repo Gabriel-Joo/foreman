@@ -29,9 +29,9 @@ export function xmsgText(x) {
   if (!x || !Object.keys(x).length) return '';
   const hm = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const to = x.to_label ? ` (${x.to_label})` : '';
-  if (x.read_at) return ` — ✓ 읽음 ${hm(x.read_at)}${x.how === 'mid_turn' ? ' · 작업 중에' : ''}${to}`;
-  if (x.arrived_at) return ` — 도착 ${hm(x.arrived_at)}, 아직 안 읽음${to}`;
-  return ' — 도착 기록 없음(받는 세션이 꺼졌거나 FOREMAN이 보지 않는 세션)';
+  if (x.read_at) return `, ✓ 읽음 ${hm(x.read_at)}${x.how === 'mid_turn' ? ' · 작업 중에' : ''}${to}`;
+  if (x.arrived_at) return `, 도착 ${hm(x.arrived_at)}, 아직 안 읽음${to}`;
+  return ', 도착 기록 없음(받는 세션이 꺼졌거나 FOREMAN이 보지 않는 세션)';
 }
 
 export function charState(proc, ccStatus, openTurn) {
@@ -135,7 +135,7 @@ export class Store {
     d.id = 'uiStale';
     d.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:9999;background:#f2c14e;color:#141414;'
       + 'padding:6px 12px;border-radius:0 0 8px 8px;font:600 15px system-ui,sans-serif;display:flex;gap:10px;align-items:center;box-shadow:0 2px 8px #0008';
-    d.innerHTML = '<span>화면 코드가 바뀌었습니다 — 새로 고쳐야 바뀐 기능이 보입니다.</span>'
+    d.innerHTML = '<span>화면 코드가 바뀌었습니다. 새로 고쳐야 바뀐 기능이 보입니다.</span>'
       + '<button style="font:inherit;padding:2px 10px;cursor:pointer" title="새로 고침 — 이 페이지를 다시 불러옵니다. 입력 칸에 쓰던 글은 사라집니다.">새로 고침</button>';
     d.querySelector('button').onclick = () => location.reload();
     document.body.appendChild(d);
@@ -317,7 +317,7 @@ export class Store {
       // 11-13 API 오류로 닫힌 턴 — 종류 · 까닭(api_stop)은 스냅샷에만 있어 곧바로 받는다(15초 주기를 기다리면 그동안 쉼으로 보인다)
       if (m.reason === 'stop_failure') this.scheduleSnapshot();
       s.replyAt = Date.now();                  // 새 답이 왔다 — 머리말 프로젝트 줄이 "안 본 답" 점을 붙인다(11-05)
-      this.pushFeed(s, m.ts, 'turn', `턴 끝 — ${m.reason}`);
+      this.pushFeed(s, m.ts, 'turn', `턴 끝: ${m.reason}`);
       if (this.state.selected === s.id) this.convoLater(s.id);
     }
     s.state = charState(s.proc, s.cc_status, s.open_turn);
@@ -379,7 +379,7 @@ export class Store {
       case 'approval_req': {
         const pl = e.payload || {};
         if (pl.decision !== 'ask') return;
-        this.pushFeed(s, e.ts, 'ask', `승인 ${pl.enforced ? '필요' : '필요했을 것(관찰)'}: ${e.tool} ${e.target || ''} — ${pl.rule}`);
+        this.pushFeed(s, e.ts, 'ask', `승인 ${pl.enforced ? '필요' : '필요했을 것(관찰)'}: ${e.tool} ${e.target || ''} (규칙 ${pl.rule})`);
         break;
       }
       case 'error': this.pushFeed(s, e.ts, 'error', `오류: ${e.summary || ''}`); break;
@@ -387,7 +387,7 @@ export class Store {
       case 'term_result': {
         const pl = e.payload || {};
         this.pushFeed(s, e.ts, pl.delivered ? 'input' : 'error',
-          `셸 결과(종료 ${pl.exit}) ${pl.delivered ? '전달' : `전달 못 함 — ${pl.refused || ''}`}: ${e.target || ''}`);
+          `셸 결과(종료 ${pl.exit}) ${pl.delivered ? '전달' : `전달 못 함(${pl.refused || ''})`}: ${e.target || ''}`);
         break;
       }
       default: return;
@@ -506,7 +506,7 @@ export class Store {
     const r = await fetch(`/api/sessions/${id}/input`, { method: 'POST', headers: this.headers(true), body: JSON.stringify({ text, command }) });
     const j = await r.json().catch(() => ({}));
     // 결과 글(11-05) — 잘 갔으면 한 마디("보냈습니다."), 잘못됐을 때만 무엇이 왜인지와 할 일. 내부 동작(기록 확인 등)은 말하지 않는다
-    const res = r.status === 409 ? { ok: false, msg: `보내지 못했습니다 — ${j.refused}` }
+    const res = r.status === 409 ? { ok: false, msg: `보내지 못했습니다. ${j.refused}` }
       : r.status === 202 ? { ok: true, msg: j.queued ? '보냈습니다. 작업이 끝나면 이어서 전달됩니다.' : '보냈습니다.' }
       : r.status === 504 ? (j.left_in_box === false
           ? { ok: true, msg: '보냈습니다.' }
@@ -525,7 +525,7 @@ export class Store {
     const r = await fetch(`/api/sessions/${id}/model`, { method: 'POST', headers: this.headers(true), body: JSON.stringify({ model }) });
     const j = await r.json().catch(() => ({}));
     const ok = r.status === 202 || (r.status === 504 && j.left_in_box === false);
-    const res = r.status === 409 ? { ok: false, msg: `모델을 바꾸지 못했습니다 — ${j.refused}` }
+    const res = r.status === 409 ? { ok: false, msg: `모델을 바꾸지 못했습니다. ${j.refused}` }
       : ok ? { ok: true, msg: j.queued ? `${label}(으)로 바꾸기를 대기열에 넣었습니다. 지금 작업이 끝나면 바뀝니다.` : `${label}(으)로 바꿨습니다. 다음 응답부터 적용됩니다.` }
       : r.status === 504 ? { ok: false, msg: '모델 바꾸기가 제출됐는지 확인하지 못했습니다. 대화창에서 입력 칸을 확인해 주세요.' }
       : { ok: false, msg: `모델을 바꾸지 못했습니다 (HTTP ${r.status}).` };
@@ -582,7 +582,7 @@ export class Store {
     const r = await fetch(`/api/terminal/cc/${sid}`, { headers: this.headers() });
     const j = await r.json().catch(() => ({}));
     // 404 — 도는 브리지가 CC 화면을 모른다(옛 코드 · worktree 미리보기). 세션이 없을 때는 200 + 까닭이다
-    if (r.status === 404) throw new Error('도는 브리지에 세션 화면 길이 없습니다 — 브리지를 새 코드로 다시 띄워야 합니다');
+    if (r.status === 404) throw new Error('도는 브리지에 세션 화면 길이 없습니다. 브리지를 새 코드로 다시 띄워야 합니다');
     if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
     return j;
   }

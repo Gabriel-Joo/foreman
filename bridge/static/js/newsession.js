@@ -29,7 +29,7 @@ export function mountNewSession(store, { onCreated }) {
     </div>
     <div class="small muted">시작</div>
     <label class="small ns-opt"><input type="radio" name="nsMode" value="fresh" checked><span>새로 시작</span></label>
-    <label class="small ns-opt" id="nsHandOpt"><input type="radio" name="nsMode" value="handoff"><span>옮기기용 요약 넣고 시작</span><span id="nsNoSum" class="muted" hidden> — 넣을 요약이 없습니다</span></label>
+    <label class="small ns-opt" id="nsHandOpt"><input type="radio" name="nsMode" value="handoff"><span>옮기기용 요약 넣고 시작</span><span id="nsNoSum" class="muted" hidden>(넣을 요약이 없습니다)</span></label>
     <div id="nsHand" hidden>
       <label class="small muted" for="nsSum">어느 세션의 요약을 넣을까요</label>
       <select id="nsSum"></select>
@@ -61,7 +61,7 @@ export function mountNewSession(store, { onCreated }) {
       $('nsUp').disabled = !j.parent;
       $('nsUp').dataset.p = j.parent || '';
       $('nsDirs').innerHTML = j.dirs.map((d) => `<button type="button" class="ghost small" data-d="${esc(d)}">${esc(d)}/</button>`).join('') || '<span class="small muted">하위 폴더가 없습니다.</span>';
-    } catch (e) { msg(`폴더를 읽지 못했습니다 — ${e.message}`, 'bad'); }
+    } catch (e) { msg(`폴더를 읽지 못했습니다: ${e.message}`, 'bad'); }
   }
   $('nsUp').onclick = () => { if ($('nsUp').dataset.p) browse($('nsUp').dataset.p); };
   $('nsDirs').onclick = (ev) => { const b = ev.target.closest('[data-d]'); if (b) browse(cwd.replace(/\/$/, '') + '/' + b.dataset.d); };
@@ -97,9 +97,9 @@ export function mountNewSession(store, { onCreated }) {
     const when = (t) => new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     const KIND = { snapshot: '지금 요약', handoff: '옮기기용 요약' };
     const cut = (t, n) => (t && t.length > n ? t.slice(0, n) + '…' : t || '');
-    $('nsSum').innerHTML = '<option value="">— 세션을 골라 주세요 —</option>' + [...groups.values()].map((g) =>
+    $('nsSum').innerHTML = '<option value="">세션을 골라 주세요</option>' + [...groups.values()].map((g) =>
       `<optgroup label="세션 ${g.head.session_id} · ${esc(cut(g.head.session, 30))}">${g.list.map((s) =>
-        `<option value="${s.id}">${esc(when(s.created_at))} ${esc(KIND[s.kind] || s.kind)}${s.source === 'edited' ? '(고침)' : ''} · ${s.chars}자 — ${esc(cut(s.head, 50))}</option>`).join('')}</optgroup>`).join('');
+        `<option value="${s.id}">${esc(when(s.created_at))} ${esc(KIND[s.kind] || s.kind)}${s.source === 'edited' ? '(고침)' : ''} · ${s.chars}자: ${esc(cut(s.head, 50))}</option>`).join('')}</optgroup>`).join('');
     if (keep && list.some((s) => String(s.id) === keep)) $('nsSum').value = keep;
     preview();
   }
@@ -110,7 +110,7 @@ export function mountNewSession(store, { onCreated }) {
     try {
       const j = await api('GET', `/api/summaries/${$('nsSum').value}/injection`);
       $('nsPrev').textContent = j.text + (j.cut ? `\n\n(길어서 일부 절을 줄였습니다. 전체는 ${j.full_path}에 있습니다.)` : '');
-    } catch (e) { $('nsPrev').textContent = `불러오지 못했습니다 — ${e.message}`; }
+    } catch (e) { $('nsPrev').textContent = `불러오지 못했습니다: ${e.message}`; }
   }
   $('nsWhere').onchange = whereChanged;
   $('nsSum').onchange = preview;
@@ -139,7 +139,7 @@ export function mountNewSession(store, { onCreated }) {
       } else {
         msg(r.note || '새 세션을 찾지 못했습니다.', 'warn');
       }
-    } catch (e) { msg(`띄우지 못했습니다 — ${e.message}`, 'bad'); }
+    } catch (e) { msg(`띄우지 못했습니다: ${e.message}`, 'bad'); }
     busy = false; $('nsGo').disabled = false;
   };
 
@@ -151,12 +151,12 @@ export function mountNewSession(store, { onCreated }) {
     dlg.querySelector('input[value=fresh]').checked = true;
     $('nsSum').value = '';
     dlg.classList.add('on');
-    try { opts = await api('GET', '/api/spawn/options'); } catch (e) { msg(`불러오지 못했습니다 — ${e.message}`, 'bad'); return; }
+    try { opts = await api('GET', '/api/spawn/options'); } catch (e) { msg(`불러오지 못했습니다: ${e.message}`, 'bad'); return; }
     $('nsRole').value = 'coder';
     if (!rm) rm = bindRoleModel($('nsRole'), $('nsModel'), opts.models);
     rm.reset();
-    $('nsWhere').innerHTML = opts.projects.map((p) => `<option value="${esc(p.name)}">${esc(label(p.name))} — ${esc(home(p.repo, opts.home))}</option>`).join('')
-      + '<option value="">프로젝트 없이 — 폴더 고르기(떠돌이)</option>';
+    $('nsWhere').innerHTML = opts.projects.map((p) => `<option value="${esc(p.name)}">${esc(label(p.name))} (${esc(home(p.repo, opts.home))})</option>`).join('')
+      + '<option value="">프로젝트 없이 폴더 고르기(떠돌이)</option>';
     $('nsRecent').innerHTML = opts.recent_cwds.length ? '최근: ' + opts.recent_cwds.slice(0, 8).map((c) => `<button type="button" class="ghost small" data-c="${esc(c)}">${esc(home(c, opts.home))}</button>`).join(' ') : '';
     $('nsWhere').value = opts.projects.some((p) => p.name === project) ? project : (opts.projects[0] ? opts.projects[0].name : '');
     whereChanged();

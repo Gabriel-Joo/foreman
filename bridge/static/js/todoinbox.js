@@ -58,8 +58,8 @@ export function mountTodoInbox(store, { onSaved } = {}) {
       <label class="small ns-opt" title="서기 정리 — 서기가 「나중에 할 일 정리」로 모아 README 「나중에 할 일」 표에 옮깁니다."><input type="radio" name="tiTo" value="scribe" checked><span>서기 정리</span></label>
       <label class="small ns-opt" title="코더에게 — 그 방 코더 머리 위 「맡길 일」에 뜹니다. 코더를 눌러 줄을 고르면 계획 창에 이 글이 채워집니다."><input type="radio" name="tiTo" value="coder"><span>코더에게</span></label>
     </div>
-    <label class="small muted" for="tiBody">할 일(붙여 넣어도 됩니다 — 줄바꿈 그대로 둡니다)</label>
-    <textarea id="tiBody" rows="8" maxlength="${MAX}" placeholder="예: 질문 카드 — 답한 뒤에도 자리를 먹는다. 한 줄로 접고 [×]로 치우게"></textarea>
+    <label class="small muted" for="tiBody">할 일(붙여 넣어도 됩니다. 줄바꿈은 그대로 둡니다)</label>
+    <textarea id="tiBody" rows="8" maxlength="${MAX}" placeholder="예: 질문 카드는 답한 뒤에도 자리를 먹는다. 한 줄로 접고 [×]로 치우게"></textarea>
     <div class="row ns-act"><span id="tiMsg" class="small"></span>
       <button type="button" id="tiCancel" class="ghost" title="닫기 — 적지 않고 닫습니다. 쓰던 글은 남아 있습니다.">닫기</button>
       <button type="button" id="tiGo" class="primary" title="적기 — 받은 할 일에 적습니다. Ctrl+Enter로도 적습니다.">적기</button></div>
@@ -83,7 +83,7 @@ export function mountTodoInbox(store, { onSaved } = {}) {
       const j = await api('GET', `/api/scribe/inbox?project=${encodeURIComponent($('tiProj').value)}&limit=20`);
       const items = j.items || [];
       const nNew = items.filter((x) => x.state === 'new').length;
-      $('tiListHead').textContent = `받은 할 일 — ${label($('tiProj').value)} ${items.length ? `최근 ${items.length}개 · 새로 ${nNew}` : '없음'}`;
+      $('tiListHead').textContent = `받은 할 일: ${label($('tiProj').value)} ${items.length ? `최근 ${items.length}개 · 새로 ${nNew}` : '없음'}`;
       shown = items;
       $('tiList').innerHTML = items.map((x) => `<div class="ti-item st-${esc(x.state)}" data-row="${x.id}">
           ${x.state === 'new' ? `<input type="checkbox" class="ti-pick" data-pick="${x.id}" title="고르기 — 고른 할 일을 묶어 교장에게 계획을 받습니다." aria-label="할 일 #${x.id} 고르기">` : ''}
@@ -93,7 +93,7 @@ export function mountTodoInbox(store, { onSaved } = {}) {
           <button type="button" class="ghost small" data-drop="${x.id}" title="버리기 — 이 할 일을 아무에게도 넘기지 않습니다. 목록에는 「버림」으로 남습니다.">버리기</button>` : ''}
         </div>`).join('') + (items.some((x) => x.state === 'new') ? `<div class="row ti-pickrow"><button type="button" id="tiPlan" class="small"></button></div>` : '');
       drawPick();
-    } catch (e) { $('tiListHead').textContent = `받은 할 일 — 불러오지 못했습니다(${e.message})`; }
+    } catch (e) { $('tiListHead').textContent = `받은 할 일: 불러오지 못했습니다(${e.message})`; }
   }
   let shown = [];
   const picked = () => [...dlg.querySelectorAll('[data-pick]:checked')].map((el) => Number(el.dataset.pick));
@@ -130,7 +130,7 @@ export function mountTodoInbox(store, { onSaved } = {}) {
       await api('PUT', `/api/todo/${id}`, { body: ta.value });
       msg(`할 일 #${id}을 고쳤습니다.`, 'ok');
       await loadList();
-    } catch (e) { msg(`고치지 못했습니다 — ${e.message}. 글은 칸에 그대로 있습니다.`, 'bad'); }
+    } catch (e) { msg(`고치지 못했습니다(${e.message}). 글은 칸에 그대로 있습니다.`, 'bad'); }
   }
 
   async function save() {
@@ -142,10 +142,10 @@ export function mountTodoInbox(store, { onSaved } = {}) {
     try {
       const r = await api('POST', '/api/scribe/inbox', { project: $('tiProj').value, body, assignee: to });
       $('tiBody').value = '';
-      msg(`적었습니다 — ${label($('tiProj').value)} 받은 할 일 #${r.id}. ${to === 'coder' ? '그 방 코더의 「맡길 일」에 뜹니다.' : '서기가 정리할 때 README 표로 옮깁니다.'}`, 'ok');
+      msg(`적었습니다: ${label($('tiProj').value)} 받은 할 일 #${r.id}. ${to === 'coder' ? '그 방 코더의 「맡길 일」에 뜹니다.' : '서기가 정리할 때 README 표로 옮깁니다.'}`, 'ok');
       if (onSaved) onSaved(r.id);
       await loadList();
-    } catch (e) { msg(`적지 못했습니다 — ${e.message}. 글은 칸에 그대로 있습니다.`, 'bad'); }
+    } catch (e) { msg(`적지 못했습니다(${e.message}). 글은 칸에 그대로 있습니다.`, 'bad'); }
     busy = false; $('tiGo').disabled = false;
   }
 
@@ -166,7 +166,7 @@ export function mountTodoInbox(store, { onSaved } = {}) {
     const b = ev.target.closest('[data-drop]');
     if (!b) return;
     b.disabled = true;
-    try { await api('POST', `/api/scribe/inbox/${b.dataset.drop}/drop`, {}); msg('버렸습니다 — 목록에 「버림」으로 남습니다.', 'muted'); } catch (e) { msg(`버리지 못했습니다 — ${e.message}`, 'bad'); }
+    try { await api('POST', `/api/scribe/inbox/${b.dataset.drop}/drop`, {}); msg('버렸습니다. 목록에 「버림」으로 남습니다.', 'muted'); } catch (e) { msg(`버리지 못했습니다: ${e.message}`, 'bad'); }
     await loadList();
   });
   dlg.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !busy) { ev.stopPropagation(); close(); } });

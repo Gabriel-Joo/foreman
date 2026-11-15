@@ -53,7 +53,7 @@ test('같이 넣을 인계 — 여럿이면 말없이 첫째를 고르지 않고
   assert.ok(!promoteGroup(p, false, {}, null).includes('>같이 넣은'));
   const withLoss = inputPick([{ id: 'lc:3', kind: 'loss', title: '잃은 것 점검 #3', why: '사라짐 2 · 약해짐 1' }, two[0]], 'lc:3');
   assert.equal(sel(withLoss), 'lc:3');
-  assert.ok(withLoss.includes('잃은 것 점검 #3 — 사라짐 2 · 약해짐 1'));
+  assert.ok(withLoss.includes('잃은 것 점검 #3: 사라짐 2 · 약해짐 1'));
 });
 
 // 11-14 사용자 — 평소 한 줄: [대화에서만 정한 것 문서에 적기] 아직 없습니다 같이 넣을 것(N개). 소제목 · 설명문은 버튼 호버로

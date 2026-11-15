@@ -104,7 +104,7 @@ const ESC_TIP = {
   question: (e) => (e && e.merge_sid != null
     ? `사용자 답 기다림 — 세션 ${e.merge_sid}의 합치기 카드가 사람 승인을 기다립니다. 말풍선을 누르면 그 세션 패널의 「세션 정리」 탭에서 합치거나 나중으로 미룹니다. 합치거나 미루면 사라집니다.${e.text ? `\n${e.text}` : ''}`
     : `사용자 답 기다림 — 관리자가 사람에게 물었습니다. 패널 입력 칸에 답하면 풀립니다.${e && e.text ? `\n${e.text}` : ''}`),
-  report: (e) => `사용자에게 보고함 —관리자가 사람에게 보고했습니다. 누르면 대화가 열리고, 읽으면 사라집니다.${e && e.text ? `\n${e.text}` : ''}`,
+  report: (e) => `사용자에게 보고함 — 관리자가 사람에게 보고했습니다. 누르면 대화가 열리고, 읽으면 사라집니다.${e && e.text ? `\n${e.text}` : ''}`,
 };
 // 캐릭터 머리 위 말풍선(11-11 사용자 — 답 기다림 · 보고가 캐릭터에 안 보였다). 답 기다림은 노랑(warn), 보고 옴은 초록(ok)으로 갈라
 // 「답해야 하는 것」과 「읽기만 하면 되는 것」을 한눈에. 보고 옴은 그 세션 패널을 열면 사라진다(opanel → store.reportRead)
@@ -374,7 +374,7 @@ export function why(s) {
 export function projectLabel(st, name) { return (st.projects.find((p) => p.name === name) || {}).label || name || '미분류'; }
 
 // 처리된 승인 카드의 상태(11-06 — "allowed · browser"처럼 DB 값이 그대로 보였다). [글, 색]
-const APPR_DONE = { allowed: ['허용했습니다', 'ok'], denied: ['거부했습니다', 'bad'], timeout: ['시간 초과 — CC가 기본값대로 정했습니다', 'warn'],
+const APPR_DONE = { allowed: ['허용했습니다', 'ok'], denied: ['거부했습니다', 'bad'], timeout: ['시간 초과(CC가 기본값대로 정했습니다)', 'warn'],
   terminal: ['터미널에서 답했습니다', ''], abandoned: ['브리지가 다시 떠서 정리했습니다', 'muted'], pending: ['기다리는 중입니다', 'warn'] };
 const APPR_BY = { browser: '화면에서', terminal: '터미널에서', bridge: '브리지가' };
 // ── 카드가 어디에 뜨나(11-10 사용자 — 받은 할 일 #5 · #11) ──────────────────────────
@@ -417,7 +417,7 @@ export function apprFoldLine(a, st) {
   const open = EXPANDED.has(a.id);
   return `<div class="appr-fold${open ? ' open' : ''}">
     <button class="appr-fold-b" data-aid="${a.id}" data-act="fold" aria-expanded="${open}"
-      data-tip="${esc(`${q ? '답한 질문' : '처리한 승인'} — 누르면 ${open ? '접습니다' : '펼쳐 전체를 봅니다'}. ${apprWho(a, st)}`)}"><span class="${cls}">${mark} ${esc(verb)}</span> — ${esc(what)}${ans ? ` → <b>${esc(oneLine(ans, 80))}</b>` : ''}</button>
+      data-tip="${esc(`${q ? '답한 질문' : '처리한 승인'} — 누르면 ${open ? '접습니다' : '펼쳐 전체를 봅니다'}. ${apprWho(a, st)}`)}"><span class="${cls}">${mark} ${esc(verb)}</span> ${esc(what)}${ans ? ` → <b>${esc(oneLine(ans, 80))}</b>` : ''}</button>
     <button class="ghost small appr-x" data-aid="${a.id}" data-act="dismiss" data-tip="치우기 — 이 줄을 지웁니다. 답은 [세션 정리] 탭 승인 기록에 남습니다." aria-label="치우기">×</button>
   </div>${open ? approvalCard(a, st) : ''}`;
 }
@@ -540,7 +540,7 @@ export function sessionKv(s, pend) {
   return `<div class="small kv">
       <span>상태</span><span title="${esc(procTip(s))}">${procLabel(s)}</span>
       <span>지금</span><span>${s.activity && s.state === 'ACTIVE' ? doingHtml(s.activity) + ` (${ago(s.activity.ts)})` : (s.state === 'ACTIVE' ? '생각 중' : STATE_LABEL[s.state])}</span>
-      <span>서브에이전트</span><span>${s.subagents_running ? `${s.subagents_running}개 — ${esc((s.subagent_descs || []).join(', '))}` : '없음'}</span>
+      <span>서브에이전트</span><span>${s.subagents_running ? `${s.subagents_running}개: ${esc((s.subagent_descs || []).join(', '))}` : '없음'}</span>
       <span>모델</span><span>${modelChip(s, pend) || '<span class="muted">아직 응답 없음</span>'}</span>
       <span>토큰</span><span><span title="입력(캐시 포함) — 대화가 이어질 때마다 앞 대화를 다시 읽는 몫(캐시)까지 더한 양입니다. 캐시는 싸게 매겨집니다.">입력(캐시 포함) ${tok(t.input)}</span> · 출력 ${tok(t.output)} · 오늘 입력 ${tok(t.today_input)} · 출력 ${tok(t.today_output)}<br><span class="muted" title="서브에이전트 토큰(추정) — 서브에이전트 기록에서 셈한 값이라 실제와 조금 다를 수 있습니다.">서브에이전트 입력 ${tok(t.subagent_input)} · 출력 ${tok(t.subagent_output)}(추정)</span></span>
       ${(t.by_model || []).length ? `<span>모델별</span><span>${byModelTable(t.by_model)}</span>` : ''}
@@ -608,7 +608,7 @@ export function endLabel(x) {
   const base = END_LABEL[x.end_reason] || x.end_reason;
   const e = x.end_reason === 'stop_failure' ? x.api_error : null;
   if (!e) return esc(base);
-  const name = e.kind === 'unknown' ? base : `${base} — ${e.label}${e.detail ? ` [${e.detail}]` : ''}`;
+  const name = e.kind === 'unknown' ? base : `${base}: ${e.label}${e.detail ? ` [${e.detail}]` : ''}`;
   const tip = `${e.label} — ${e.action}.${e.reset ? ` ${e.reset}에 풀립니다.` : ''}${e.request_id ? ` 요청 번호는 ${e.request_id}입니다.` : ''}`;
   return `<span class="warn" title="${esc(tip)}">${esc(name)}</span>`;
 }
@@ -631,17 +631,17 @@ export function mountApprovalHistory(det, head, body, store) {
       if (!r.ok) { body.textContent = `불러오지 못함(${r.status})`; return; }
       const h = await r.json();
       const t = h.total;
-      head.textContent = `— ${histDays === 1 ? '오늘' : histDays + '일'} ${t.n}건 · 승인 ${t.approved} · 거부 ${t.denied}${t.unknown ? ' · 답 확인 못 함 ' + t.unknown : ''}`;
+      head.textContent = ` (${histDays === 1 ? '오늘' : histDays + '일'} ${t.n}건 · 승인 ${t.approved} · 거부 ${t.denied}${t.unknown ? ' · 답 확인 못 함 ' + t.unknown : ''})`;
       head.title = '답 확인 못 함 — 대화창에서 직접 답했거나 시간이 지나, 어떻게 됐는지 FOREMAN이 알 수 없는 것입니다.';
       const yes = h.by_rule.filter((b) => b.always_yes);
-      const rules = h.by_rule.map((b) => `<tr${b.always_yes ? ' class="warn"' : ''}><td>${esc(b.rule)}</td><td>${b.n}</td><td>${b.approved}</td><td>${b.denied}</td><td>${b.unknown}</td><td>${b.always_yes ? '늘 허락함 — 묻지 않게 바꿀 후보' :''}</td></tr>`).join('');
+      const rules = h.by_rule.map((b) => `<tr${b.always_yes ? ' class="warn"' : ''}><td>${esc(b.rule)}</td><td>${b.n}</td><td>${b.approved}</td><td>${b.denied}</td><td>${b.unknown}</td><td>${b.always_yes ? '늘 허락함, 묻지 않게 바꿀 후보' :''}</td></tr>`).join('');
       // 질문은 고른 답(DB message)까지 — 답한 질문 줄을 치운 뒤 다시 보는 곳(11-10)
       const items = h.items.slice(0, 30).map((x) => `<li><span class="${OUT[x.outcome][1]}">${x.tool === 'AskUserQuestion' ? (x.message ? '답함' : '질문') : OUT[x.outcome][0]}</span> <span class="muted">${ago(x.at)} · ${esc(x.project || '미분류')}${x.session_id ? ` · 세션 ${x.session_id}` : ''} · ${esc(x.rule)}</span> ${esc(oneLine(x.summary || '', 140))}${
         x.tool === 'AskUserQuestion' && x.message ? ` <b>→ ${esc(oneLine(x.message, 160))}</b>` : ''}</li>`).join('');
       const obs = h.observe.length ? `<div class="muted" title="묻지 않고 지켜보기만 한 것 — 관찰 모드인 규칙입니다. 승인 창을 띄우지 않고, 창을 띄웠다면 걸렸을 것만 셉니다.">묻지 않고 지켜보기만 한 것:${h.observe.map((o) => `${esc(o.project)} ${esc(o.rule)} ${o.n}`).join(' · ')}</div>` : '';
       body.innerHTML = `
         <div class="row"><button class="ghost small" data-days="1">오늘</button><button class="ghost small" data-days="7">7일</button><button class="ghost small" data-days="30">30일</button></div>
-        ${yes.length ? `<div class="warn" title="늘 허락함 — 매번 허락한 규칙입니다. 묻지 않게 바꾸면 번거로움이 줄어듭니다(config/approval.toml).">늘 허락함: ${yes.map((b) => `${esc(b.rule)} ${b.n}번`).join(' · ')} — 묻는 의미가 없으면 규칙을 고칩니다</div>` : ''}
+        ${yes.length ? `<div class="warn" title="늘 허락함 — 매번 허락한 규칙입니다. 묻지 않게 바꾸면 번거로움이 줄어듭니다(config/approval.toml).">늘 허락함: ${yes.map((b) => `${esc(b.rule)} ${b.n}번`).join(' · ')}. 묻는 의미가 없으면 규칙을 고칩니다.</div>` : ''}
         ${rules ? `<table class="hist"><tr><th title="규칙 — 승인 창을 띄운 규칙의 이름입니다(config/approval.toml).">규칙</th><th>걸림</th><th>승인</th><th>거부</th><th>모름</th><th></th></tr>${rules}</table>` : '<div class="muted">걸린 것 없음</div>'}
         ${obs}<ul class="hist-items">${items}</ul>`;
     } catch (e) { body.textContent = '불러오지 못함'; }
@@ -687,7 +687,7 @@ function inputHtml(tool, inp) {
 }
 export function toolDetailHtml(d) {
   if (!d || d.loading) return '<div class="fdet small muted">트랜스크립트에서 읽는 중…</div>';
-  if (d.error) return `<div class="fdet small bad">못 읽음 — ${esc(d.error)}</div>`;
+  if (d.error) return `<div class="fdet small bad">못 읽음: ${esc(d.error)}</div>`;
   const ex = d.extra || {};
   const res = d.result == null
     ? `<div class="small muted">${d.found && d.found.result ? '결과 글 없음' : '결과가 아직 없다(도는 중이거나 기록 전)'}</div>`
@@ -713,9 +713,9 @@ export function pipeBlock(pp) {
   // 빠진 알림 찾기(11-03): push 뒤 시작 알림이 없으면 3분에 노란색, 17분에 빨간색(텔레그램도)
   const w = pp.watch;
   const watch = w && w.state !== 'ok'
-    ? `<div class="small ${w.state === 'missing' ? 'bad' : 'warn'}"${w.state === 'missing' ? '' : ' title="빌드 시작 알림 없음 — Jenkins가 push 알림(웹훅)을 못 받은 것 같습니다. 몇 분마다 저장소를 직접 확인하는 폴링이 대신 빌드를 시작하길 기다립니다."'}>${w.state === 'missing' ? '빌드 알림 없음 — Jenkins 확인' : '빌드 시작 알림 없음 — Jenkins가 스스로 확인하길 기다리는 중'}: push <code class="sha">${esc(w.short)}</code> ${esc(oneLine(w.subject || '', 60))} · ${ago(w.since)}</div>`
+    ? `<div class="small ${w.state === 'missing' ? 'bad' : 'warn'}"${w.state === 'missing' ? '' : ' title="빌드 시작 알림 없음 — Jenkins가 push 알림(웹훅)을 못 받은 것 같습니다. 몇 분마다 저장소를 직접 확인하는 폴링이 대신 빌드를 시작하길 기다립니다."'}>${w.state === 'missing' ? '빌드 알림 없음, Jenkins 확인' : '빌드 시작 알림 없음, Jenkins가 스스로 확인하길 기다리는 중'}: push <code class="sha">${esc(w.short)}</code> ${esc(oneLine(w.subject || '', 60))} · ${ago(w.since)}</div>`
     : (w ? `<div class="small muted">빌드 기다리는 중: push <code class="sha">${esc(w.short)}</code> · ${ago(w.since)}</div>` : '');
-  const hook = pp.webhook_broken ? '<div class="small bad" title="빌드 알림 끊김 의심 — push 때 Jenkins로 가는 알림(웹훅)이 끊긴 것 같습니다. 최근 빌드가 웹훅이 아니라 폴링(주기적 확인)으로 시작했습니다.">빌드 알림 끊김 의심 — 최근 빌드가 늦게 시작했습니다</div>' : '';
+  const hook = pp.webhook_broken ? '<div class="small bad" title="빌드 알림 끊김 의심 — push 때 Jenkins로 가는 알림(웹훅)이 끊긴 것 같습니다. 최근 빌드가 웹훅이 아니라 폴링(주기적 확인)으로 시작했습니다.">빌드 알림 끊김 의심: 최근 빌드가 늦게 시작했습니다</div>' : '';
   const chips = infra.map((c) => `<span class="pill infra ${c.status === 'STALE' ? 'warn' : ''}" title="${esc(INFRA_LABEL[c.status] || c.status)} · 마지막 응답 ${esc(ago(c.last_seen_at))}">${esc(c.name)}${c.status === 'STALE' ? ' ⚠' : ''}</span>`).join('');
   const who = (c) => c.title || c.character || (c.session_id ? '세션' : '사람');
   const chains = pp.chains.slice(0, 4).map((ch) => {
@@ -727,15 +727,15 @@ export function pipeBlock(pp) {
       const x = ch.stages[k];
       if (!x && skip && k !== 'jenkins') return `<span class="ps ps-none muted" title="${esc(label)} 건너뜀 — 문서만 바뀐 빌드라 이미지 · 배포를 하지 않았습니다. 정상입니다.">${label} –</span>`;
       const cls = x ? `ps-${x.status}` : 'ps-none';
-      const tip = x ? `${label} ${x.status}${x.step ? ' · ' + x.step : ''}${x.status === 'waiting' ? '\nArgoCD Sync 대기 — 수동 Sync 앱이라 ArgoCD 화면에서 Sync를 눌러야 올라갑니다. FOREMAN에는 누를 곳이 없습니다. 누르면 ArgoCD가 열립니다.' : ''}${x.message ? '\n' + x.message : ''}` : `${label} 아직`;
+      const tip = x ? `${label} ${x.status}${x.step ? ' · ' + x.step : ''}${x.status === 'waiting' ? '\nArgoCD Sync 대기: 수동 Sync 앱이라 ArgoCD 화면에서 Sync를 눌러야 올라갑니다. FOREMAN에는 누를 곳이 없습니다. 누르면 ArgoCD가 열립니다.' : ''}${x.message ? '\n' + x.message : ''}` : `${label} 아직`;
       const inner = `${label} ${x ? PIPE_MARK[x.status] || '' : '·'}${x && x.step && x.status === 'failed' ? ` <b>${esc(x.step)}</b>` : ''}`;
       return x && x.url ? `<a class="ps ${cls}" href="${esc(x.url)}" target="_blank" rel="noopener" title="${esc(tip)}">${inner}</a>`
         : `<span class="ps ${cls}" title="${esc(tip)}">${inner}</span>`;
     }).join('<span class="ps-arrow">→</span>');
-    return `<div class="chain ${ch.broke ? 'broke' : ''}" title="${esc(commits.map((c) => `${c.short} ${c.subject || ''} — ${who(c)}`).join('\n'))}">
+    return `<div class="chain ${ch.broke ? 'broke' : ''}" title="${esc(commits.map((c) => `${c.short} ${c.subject || ''} (${who(c)})`).join('\n'))}">
       <div class="chain-commit small"><code class="sha">${esc(head.short)}</code> ${esc(oneLine(head.subject || '', 60))}${extra} <span class="muted">· ${esc(who(head))} · ${ago(ch.at)}</span></div>
       <div class="chain-steps small">${steps}</div>
-      ${ch.broke ? `<div class="small bad">여기서 깨짐: ${esc(PIPE_STAGES.find(([k]) => k === ch.broke)[1])}${ch.stages[ch.broke].step ? ' · ' + esc(ch.stages[ch.broke].step) : ''}${ch.stages[ch.broke].message ? ' — ' + esc(oneLine(ch.stages[ch.broke].message, 140)) : ''}</div>` : ''}
+      ${ch.broke ? `<div class="small bad">여기서 깨짐: ${esc(PIPE_STAGES.find(([k]) => k === ch.broke)[1])}${ch.stages[ch.broke].step ? ' · ' + esc(ch.stages[ch.broke].step) : ''}${ch.stages[ch.broke].message ? ' (' + esc(oneLine(ch.stages[ch.broke].message, 140)) + ')' : ''}</div>` : ''}
     </div>`;
   }).join('');
   const waiting = pp.waiting.length ? `<div class="small muted">빌드 전 커밋: ${pp.waiting.map((w) => `<code class="sha">${esc(w.short)}</code>${w.pushed ? '' : '(push 전)'}`).join(' ')}</div>` : '';
@@ -765,7 +765,7 @@ export function createRenderer(root, store) {
           <div id="feed" class="feed"></div>
         </div>
         <form id="inputForm" class="input">
-          <textarea id="inputText" rows="3" placeholder="이 세션에 보낼 입력 — Ctrl+Enter로 보내기"></textarea>
+          <textarea id="inputText" rows="3" placeholder="이 세션에 보낼 입력(Ctrl+Enter로 보내기)"></textarea>
           <div class="row">
             <label class="small"><input id="cmd" type="checkbox"> '/'를 슬래시 명령으로</label>
             <span id="inputWhy" class="small muted"></span>
@@ -833,7 +833,7 @@ export function createRenderer(root, store) {
     const down = c.status === 'down';
     $('down').classList.toggle('on', down);
     if (down) {
-      $('downWhy').textContent = `${c.reason || '브리지와 연락이 없습니다'} — ${new Date(c.since).toLocaleTimeString()}부터`;
+      $('downWhy').textContent = `${c.reason || '브리지와 연락이 없습니다'} (${new Date(c.since).toLocaleTimeString()}부터)`;
       $('downNext').textContent = c.nextIn ? `${c.nextIn}초 뒤 다시 연결 (시도 ${c.attempt})` : `연결 중… (시도 ${c.attempt})`;
     }
     if (c.status === 'auth') $('tokDlg').classList.add('on');
@@ -851,8 +851,8 @@ export function createRenderer(root, store) {
     // 적재(수집기)가 막히면 맨 앞에 — 이 화면이 보여 주는 기록 자체가 멈춘 것이다(11-03)
     const ig = st.ingest;
     const ingest = !ig ? '' : (ig.stalled ? `<span class="bad" title="트랜스크립트 감시가 ${ig.tick_age_s}초째 멈춰 있습니다">⚠ 와처 멈춤</span>`
-      : (ig.stuck && ig.stuck.length ? `<span class="bad" title="${esc(ig.stuck.map((x) => `${x.session} ${x.minutes}분 · ${x.failures}번 — ${x.error}`).join('\n'))}">⚠ 적재 막힘 ${ig.stuck.length}개 세션 · ${Math.max(...ig.stuck.map((x) => x.minutes))}분</span>`
-      : (ig.skips && ig.skips.length ? `<span class="warn" title="${esc(ig.skips.map((x) => `${x.session} ${x.kind === 'chunk' ? '덩어리' : '줄'} ${x.count} — ${x.reason}`).join('\n'))}">적재 중 버린 줄 있음(24시간)</span>` : '')));
+      : (ig.stuck && ig.stuck.length ? `<span class="bad" title="${esc(ig.stuck.map((x) => `${x.session} ${x.minutes}분 · ${x.failures}번: ${x.error}`).join('\n'))}">⚠ 적재 막힘 ${ig.stuck.length}개 세션 · ${Math.max(...ig.stuck.map((x) => x.minutes))}분</span>`
+      : (ig.skips && ig.skips.length ? `<span class="warn" title="${esc(ig.skips.map((x) => `${x.session} ${x.kind === 'chunk' ? '덩어리' : '줄'} ${x.count}: ${x.reason}`).join('\n'))}">적재 중 버린 줄 있음(24시간)</span>` : '')));
     $('summary').innerHTML = ingest +
       `<span>작업 중 <b>${active}</b>/${live}</span>` +
       (subs ? `<span>서브에이전트 <b>${subs}</b></span>` : '') +
@@ -927,7 +927,7 @@ export function createRenderer(root, store) {
     $('inputForm').hidden = false;
     const blocked = !s.injectable;
     $('inputText').disabled = blocked; $('sendBtn').disabled = blocked;
-    $('inputWhy').textContent = blocked ? `보낼 수 없음 — ${why(s)}` : (s.state === 'ACTIVE' ? '작업 중 — 끝나면 전달' : '');
+    $('inputWhy').textContent = blocked ? `보낼 수 없음: ${why(s)}` : (s.state === 'ACTIVE' ? '작업 중, 끝나면 전달' : '');
     const li = st.lastInput && st.lastInput.sessionId === s.id ? st.lastInput : null;
     $('inputResult').innerHTML = li ? `<span class="${li.ok ? 'ok' : 'bad'}">${esc(li.msg)}${li.guarded ? ' (첫 글자 보호)' : ''}</span>` : '';
     if (lastSel !== s.id) { $('inputText').value = ''; lastSel = s.id; }

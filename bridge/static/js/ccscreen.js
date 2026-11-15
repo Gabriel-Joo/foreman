@@ -140,7 +140,7 @@ export function createCcWindow(store) {
     } catch (e) {
       if (my !== seq) return;
       detach(); info.textContent = '';
-      say(`세션 화면을 확인하지 못했습니다 — ${e.message || e}`, 'bad');
+      say(`세션 화면을 확인하지 못했습니다: ${e.message || e}`, 'bad');
       return;
     }
     if (my !== seq) return;                                   // 그 사이 닫았거나 다른 세션으로 바꿨다

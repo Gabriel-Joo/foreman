@@ -130,7 +130,7 @@ worktree 세션을 **끝내지 않고 잠깐 내려놓는** 길. 끝내면 합�
 - 새 tmux 창에서 `claude --resume <cc> [--model]`. 대화 기록 파일이 없거나 45초 안에 안 붙으면 까닭을 띄운다. 이미 살아 있는 세션이면 거부한다
 - `rest-resume` · `spawn` 기록을 남긴다(끝낼 때 tmux 정리가 알아보게). 다른 cc id로 이어지면 새 행에 이름 · 역할 · 캐릭터를 물려준다
 
-**「따로 작업」 칸(11-14부터 「브랜치 이름」)** — "쉬는 중 — 합치기 기다림 · …부터 · N일째"(하루 넘으면 N일째). [합치기] · [버리기]는 그대로. 코더 말풍선과 「코더」 패널의 맡길 일에도 센다(`docs/10_office_design.md` 「코더 · 맡길 일」)
+**「따로 작업」 칸(11-14부터 「브랜치 이름」)** — "쉬는 중: 합치기 기다림 · …부터 · N일째"(하루 넘으면 N일째). [합치기] · [버리기]는 그대로. 코더 말풍선과 「코더」 패널의 맡길 일에도 센다(`docs/10_office_design.md` 「코더 · 맡길 일」)
 
 **빈 worktree는 어긋남이 아니라 「치울 것」**(11-13 `e4a901c` [log:judge_three_20261113.md]): 끝난 세션의 worktree가 **커밋 안 한 변경 0 · 합치기/버리기/쉬게 하기 기록 없음 · 브랜치가 원본에 모두 들어 있음**(`wt.in_base`)이면 `bridge/reconcile.py`가 `orphan`이 아니라 `empty`로 둔다. 앞선 커밋이 있거나(`in_base` False) 변경이 있으면(`dirty`) 지금처럼 어긋남이고, `wt-merge` · `wt-discard` 기록이 있는데 폴더가 남은 것도 `orphan` 그대로다. `empty`는 텔레그램에서 뺀다 — 고장이 아니라 치울 것이라서(화면에는 남는다). 되돌리려면 `Reconciler.run_once`의 `found = [f … != "empty"]` 한 줄을 지운다
 
@@ -142,8 +142,8 @@ worktree 세션을 **끝내지 않고 잠깐 내려놓는** 길. 끝내면 합�
 
 | | 무엇 |
 |---|---|
-| ① 배너 + [풀기] | 방 배너 줄 "🔒 DB 구조 잠금 — 세션 N(원본 폴더\|worktree x)이 HH:MM부터 쥐고 있습니다(무엇) — 눌러서 풉니다". 누르면 확인 창 → `DELETE /api/schema-lock/{project}`. 화면용 `GET /api/schema-lock/board`가 세션 번호를 붙여 준다. 원본 폴더 세션이 쥔 것도 보인다 |
-| ② 막힘 알림 | 다른 세션이 잠금에 막히면 잠금 상태에 `blocked`를 남기고 배너가 "🔒 멈춤 — 세션 M이 스키마 잠금에 막혔습니다. 쥔 세션 N(…부터)"로 바뀐다. 텔레그램은 막힌 세션마다 한 번(`notification.kind = schlock`) |
+| ① 배너 + [풀기] | 방 배너 줄 "🔒 DB 구조 잠금: 세션 N(원본 폴더\|worktree x)이 HH:MM부터 쥐고 있습니다. 눌러서 풉니다". 누르면 확인 창 → `DELETE /api/schema-lock/{project}`. 화면용 `GET /api/schema-lock/board`가 세션 번호를 붙여 준다. 원본 폴더 세션이 쥔 것도 보인다 |
+| ② 막힘 알림 | 다른 세션이 잠금에 막히면 잠금 상태에 `blocked`를 남기고 배너가 "🔒 멈춤: 세션 M이 스키마 잠금에 막혔습니다(쥔 세션 N). 눌러서 풉니다"로 바뀐다. 텔레그램은 막힌 세션마다 한 번(`notification.kind = schlock`) |
 | ③ 일찍 풀기 | 원본 폴더 세션이 쥔 FOREMAN 잠금은 1분마다 본다 — 그 작업 트리 `migrations/NNNN_*.sql`이 모두 `schema_migrations`에 있고 `git status -- migrations/`가 비면 푼다(`SchemaLock.try_release_early`). 로그 "스키마 잠금을 일찍 풀었다 — …", 배너가 10분 "🔓 잠금을 풀었습니다 — 적용 · 커밋 끝 — …". worktree 세션이 쥔 것은 합치기 전까지 그대로(그 스키마가 main에 없다). **FOREMAN 저장소만** — 런슈즈(flyway)의 적용 기록은 다른 DB라 브리지가 모른다 |
 | ④ 잠그는 명령만 | `config/worktree.toml`의 `commands`를 마이그레이션을 **돌리는** 명령으로 좁혔다 |
 

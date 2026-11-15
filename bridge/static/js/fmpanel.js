@@ -17,8 +17,8 @@ function noteRow(n, project, staleRow) {
     + `<button type="button" class="small ghost" data-fm-retire="${n.id}" data-proj="${esc(project)}" title="내리기 — 이 줄을 진행 중인 일에서 뺍니다. 기록은 남습니다.">내리기</button>`;
   return `<div class="sc-row${n.folded ? ' fm-folded' : ''}"><div class="small">
         ${staleRow ? '<b>낡음</b> ' : ''}${esc(n.body)}
-        <div class="muted">출처 ${esc(n.source)} · 확인 ${ago(n.checked_at)}${n.folded ? ' · <span class="warn">접힘 — 상한을 넘어 계획을 세울 때 안 들어갑니다</span>' : ''}</div>
-        ${staleRow ? `<div class="warn">확인 필요 — ${(n.stale || []).map(esc).join(' · ')}</div>` : ''}
+        <div class="muted">출처 ${esc(n.source)} · 확인 ${ago(n.checked_at)}${n.folded ? ' · <span class="warn">접힘(상한을 넘어 계획을 세울 때 안 들어갑니다)</span>' : ''}</div>
+        ${staleRow ? `<div class="warn">확인 필요: ${(n.stale || []).map(esc).join(' · ')}</div>` : ''}
         ${n.drift.length ? `<div class="warn">⚠ ${n.drift.map(esc).join(' · ')}</div>` : ''}</div>
         <div class="row">${btns}</div></div>`;
 }
@@ -59,7 +59,7 @@ export function createForemanPanel(store) {
     const { fresh, stale } = splitNotes(d.notes);
     const rule = d.stale_rule ? `마지막 확인 뒤 ${d.stale_rule.days}일 또는 커밋 ${d.stale_rule.commits}개가 넘은 진행 중인 일입니다. ` : '';
     const rows = fresh.map((n) => noteRow(n, project, false)).join('')
-      + (stale.length ? `<div class="small warn" title="낡음 — 확인 필요: ${esc(rule)}끝났는지 기계로 가르지 못했습니다. 계획을 세울 때 진행 중인 일로 믿지 않게 따로 넣습니다."><b>낡음 — 확인 필요 ${stale.length}</b></div>`
+      + (stale.length ? `<div class="small warn" title="낡음 — 확인 필요: ${esc(rule)}끝났는지 기계로 가르지 못했습니다. 계획을 세울 때 진행 중인 일로 믿지 않게 따로 넣습니다."><b>낡음: 확인 필요 ${stale.length}</b></div>`
         + stale.map((n) => noteRow(n, project, true)).join('') : '')
       + autoBlock(project, d.auto_retired);
     const disp = (d.dispatches || []).length ? `<details class="hand"${keep(`fm:${project}:disp`)}><summary class="small" title="지난 요청 — 사용자가 시킨 요청, 그때 띄운 것(모드, 역할, 제목), 사람이 고친 칸입니다. 계획을 세울 때 함께 들어가 같은 실수를 되풀이하지 않게 합니다."><b>지난 요청 ${d.dispatches.length}</b></summary>${
@@ -76,7 +76,7 @@ export function createForemanPanel(store) {
         <div class="muted">${esc((x.why || '').split(' — ')[0])} · ${ago(x.created_at)}</div></div>
         <button type="button" class="small" data-fm-open="${x.dispatch_id}" title="계획 보기 — 실패 이벤트가 부른 계획을 엽니다. [이대로 시작]을 눌러야 시작합니다.">계획 보기</button></div>`).join('')}</div>` : '';
     // 11-09 사용자 — "디스패처의 얼굴" 은 디스패처를 모르면 도움이 안 됐다. 화면에는 "디스패처"를 쓰지 않는다(코드 · 문서는 씀)
-    return `<div class="small muted">${esc(name)} — 뭘 할지 말하면 계획을 세워줍니다. 어느 프로젝트에서, 새 세션으로 할지 기존 세션에 붙일지, 무엇을 읽어야 하는지를 정해서 보여줍니다. 확인하면 세션이 뜹니다.</div>
+    return `<div class="small muted">${esc(name)}: 뭘 할지 말하면 계획을 세워줍니다. 어느 프로젝트에서, 새 세션으로 할지 기존 세션에 붙일지, 무엇을 읽어야 하는지를 정해서 보여줍니다. 확인하면 세션이 뜹니다.</div>
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}">${esc(note.msg)}</div>` : ''}
       <div class="row fm-row"><button type="button" class="small" data-fm-talk="${esc(room || '')}" title="말하기 — ${esc(name)}에게 뭘 하려는지 말하면 계획을 냅니다.">${esc(name)}에게 말하기</button></div>
       ${pend}${projects.map((p) => notesBlock(p, labelOf(p))).join('')}`;
@@ -95,7 +95,7 @@ export function createForemanPanel(store) {
         { method: 'POST', headers: store.headers(true) });
       const j = await res.json().catch(() => ({}));
       note = res.ok ? { msg: restore ? '되살렸습니다.' : '확인 시각을 지금으로 바꿨습니다.' }
-        : { bad: true, msg: `${restore ? '되살리지' : '바꾸지'} 못했습니다 — ${j.refused || j.detail || res.status}` };
+        : { bad: true, msg: `${restore ? '되살리지' : '바꾸지'} 못했습니다: ${j.refused || j.detail || res.status}` };
       await load([x.dataset.proj], true);
       return;
     }
@@ -104,7 +104,7 @@ export function createForemanPanel(store) {
     if (!confirm('이 줄을 진행 중인 일에서 내립니다. 다음 계획부터 들어가지 않습니다(기록은 남습니다). 내릴까요?')) return;
     const res = await fetch(`/api/foreman/notes/${r.dataset.fmRetire}/retire`, { method: 'POST', headers: store.headers(true) });
     const j = await res.json().catch(() => ({}));
-    note = res.ok ? { msg: '내렸습니다.' } : { bad: true, msg: `내리지 못했습니다 — ${j.refused || j.detail || res.status}` };
+    note = res.ok ? { msg: '내렸습니다.' } : { bad: true, msg: `내리지 못했습니다: ${j.refused || j.detail || res.status}` };
     await load([r.dataset.proj], true);
   }
 

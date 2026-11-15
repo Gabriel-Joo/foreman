@@ -68,7 +68,7 @@ export function inputPick(inputs, chosen) {
   const opt = (v, label, tip) => `<option value="${v}"${cur === String(v) ? ' selected' : ''}${tip ? ` title="${esc(tip)}"` : ''}>${esc(label)}</option>`;
   return `<select id="promIn" class="small" title="같이 넣을 것 — 옮기기용 요약의 「문서와 다른 지금」 절이나 잃은 것 점검의 사라짐 · 약해짐을 목록 요청에 같이 넣습니다.">${
     inputs.length > 1 ? opt('', `같이 넣을 것(${inputs.length}개)`) : ''}${
-    inputs.map((x) => opt(x.id, x.kind === 'loss' ? `${x.title} — ${x.why}` : `#${x.id} ${x.title || x.cc} — ${x.why}`, x.diff)).join('')}${opt('none', '넣지 않음')}</select>`;
+    inputs.map((x) => opt(x.id, x.kind === 'loss' ? `${x.title}: ${x.why}` : `#${x.id} ${x.title || x.cc}: ${x.why}`, x.diff)).join('')}${opt('none', '넣지 않음')}</select>`;
 }
 
 // 이 목록에 무엇을 같이 넣었나 — 11-14 사용자: 줄에 세 가지를 몰아넣지 않는다. 줄에서 빼고 시각 호버로
@@ -107,7 +107,7 @@ export function promoteGroup(p, can, draft, err, inputs = [], chosen = null, ope
   }
   const r = p.result;
   if (r) {
-    body += `<div class="small ${r.ok ? 'ok' : 'bad'}">${r.ok ? '✓ 확인했습니다' : '✗ 확인 실패'}${r.commit ? ` — 커밋 <code>${esc(r.commit.slice(0, 8))}</code>` : ''}${r.files && r.files.length ? ` · ${r.files.map(esc).join(', ')}` : ''}${r.memory && r.memory.length ? ` · 메모리 ${r.memory.length}` : ''}</div>`;
+    body += `<div class="small ${r.ok ? 'ok' : 'bad'}">${r.ok ? '✓ 확인했습니다' : '✗ 확인 실패'}${r.commit ? `. 커밋 <code>${esc(r.commit.slice(0, 8))}</code>` : ''}${r.files && r.files.length ? ` · ${r.files.map(esc).join(', ')}` : ''}${r.memory && r.memory.length ? ` · 메모리 ${r.memory.length}` : ''}</div>`;
     for (const x of r.problems || []) body += `<div class="small bad">- ${esc(x)}</div>`;
     for (const x of r.skipped || []) body += `<div class="small warn">건너뜀 #${esc(String(x.id))}: ${esc(x.why || '')}</div>`;
   }

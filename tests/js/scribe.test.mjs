@@ -46,7 +46,7 @@ test('한 목록 — 메뉴 다섯이 한 줄씩이고 「문서 할 일」 · �
   assert.deepEqual(ORDER.length, 5);
   for (const k of ORDER) assert.ok(h.includes(`data-sc-task="${k}"`), k);
   assert.ok(!h.includes('문서 할 일') && !h.includes('<b>시킬 일</b>'));
-  assert.match(h, /README 갱신<\/b> <span class="warn"[^>]*>— 13개 밀림/);
+  assert.match(h, /README 갱신<\/b> <span class="warn"[^>]*>13개 밀림/);
   assert.ok(!/data-sc-task="docfix"[^>]*data-topic=""/.test(h));
   assert.ok(h.includes('밀린 것 1'));
 });
@@ -96,7 +96,7 @@ test('펫퍼민트처럼 기술문서만이면 포트폴리오 게시는 연결 
   sc.html('petmint', 'P'); await settle();
   const h = sc.html('petmint', 'P');
   assert.ok(h.includes('포트폴리오를 게시하지 않습니다'));
-  assert.match(h, /기술문서 게시<\/b> — 게시 상태를 읽지 못했습니다\(NotionError: 401\)/);
+  assert.match(h, /기술문서 게시<\/b>: 게시 상태를 읽지 못했습니다\(NotionError: 401\)/);
 });
 
 test('물어보기 답 · 문서 점검 결과에서 바로 고치기', async () => {

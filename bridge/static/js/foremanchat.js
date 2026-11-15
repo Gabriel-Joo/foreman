@@ -64,7 +64,7 @@ function mount(dlg) {
   const manual = document.createElement('details');
   manual.className = 'fm-manual';
   // 11-09 사용자 — "직접 고르기 — … 내가 정한다"로는 뭘 하는지 안 보였다. 하는 일로
-  manual.innerHTML = '<summary title="계획 없이 직접 띄우기 — 감독실을 거치지 않고 프로젝트(폴더) · 이름 · 역할 · 시작 방식을 직접 골라 새 세션을 바로 띄웁니다. 계획이 틀렸을 때 씁니다.">계획 없이 직접 띄우기 <span class="muted">— 폴더 · 이름 · 시작 방식을 내가 고릅니다</span></summary>';
+  manual.innerHTML = '<summary title="계획 없이 직접 띄우기 — 감독실을 거치지 않고 프로젝트(폴더) · 이름 · 역할 · 시작 방식을 직접 골라 새 세션을 바로 띄웁니다. 계획이 틀렸을 때 씁니다.">계획 없이 직접 띄우기 <span class="muted">(폴더 · 이름 · 시작 방식을 내가 고릅니다)</span></summary>';
   const act = box.querySelector('.ns-act');          // [취소] · [띄우기] 줄은 접지 않는다
   while (h2.nextSibling && h2.nextSibling !== act) manual.appendChild(h2.nextSibling);
   const fm = document.createElement('section');
@@ -158,7 +158,7 @@ function mount(dlg) {
       disp = d; opts = o;
       msg(`계획이 나왔습니다(${Math.round(disp.ms / 1000)}초). 아래에서 확인하고, 고칠 것은 고친 뒤 [이대로 시작]을 누릅니다.`, 'ok');
       draw(disp.plan);
-    } catch (e) { clearInterval(tick); msg(`계획을 받지 못했습니다 — ${e.message}\n아래 "계획 없이 직접 띄우기"로 띄울 수 있습니다.`, 'bad'); }
+    } catch (e) { clearInterval(tick); msg(`계획을 받지 못했습니다: ${e.message}\n아래 "계획 없이 직접 띄우기"로 띄울 수 있습니다.`, 'bad'); }
     $('fmAsk').disabled = false;
   }
 
@@ -176,28 +176,28 @@ function mount(dlg) {
         $('fmWake').innerHTML = `<b>실패 이벤트가 부른 제안입니다</b><div>• ${esc(d.wake_text || '')}</div>
           <div class="small muted">${esc(josa(fmName()))} 계획만 세웠습니다. [이대로 시작]을 눌러야 시작합니다.</div>`;
       }
-      if (!d.plan) { clearPlan(); msg(`이 계획은 만들어지지 못했습니다 — ${d.error || d.status}`, 'bad'); return; }
+      if (!d.plan) { clearPlan(); msg(`이 계획은 만들어지지 못했습니다: ${d.error || d.status}`, 'bad'); return; }
       disp = { dispatch_id: d.dispatch_id, plan: d.plan, status: d.status };
       draw(d.plan, d.status);
       msg(d.status === 'planned' ? '아래에서 확인하고, 고칠 것은 고친 뒤 [이대로 시작]을 누릅니다.' : `이미 ${d.status === 'started' ? '시작한' : '버린'} 계획입니다.`,
         d.status === 'planned' ? 'ok' : 'warn');
       if (d.handed && d.status === 'planned') {
-        msg(`관리자(세션 ${d.handed.to_session})에게 넘긴 계획입니다 — 관리자가 아직 띄우지 않았습니다${d.handed.alerted ? '(오래 지나 알렸습니다)' : ''}. 직접 띄우려면 [이대로 시작]을 누릅니다.`, 'warn');
+        msg(`관리자(세션 ${d.handed.to_session})에게 넘긴 계획입니다. 관리자가 아직 띄우지 않았습니다${d.handed.alerted ? '(오래 지나 알렸습니다)' : ''}. 직접 띄우려면 [이대로 시작]을 누릅니다.`, 'warn');
       }
-    } catch (e) { msg(`계획을 불러오지 못했습니다 — ${e.message}`, 'bad'); }
+    } catch (e) { msg(`계획을 불러오지 못했습니다: ${e.message}`, 'bad'); }
   }
 
   function notesHtml(p) {
     const ups = p.note_updates || [];
     if (!ups.length) return '';
-    const line = (o) => o.op === 'retire' ? `${esc(o.was)}${o.why ? ` <span class="muted">— ${esc(o.why)}</span>` : ''}`
+    const line = (o) => o.op === 'retire' ? `${esc(o.was)}${o.why ? ` <span class="muted">(${esc(o.why)})</span>` : ''}`
       : o.op === 'touch' ? esc(o.was)
       : `${esc(o.body)}${o.op === 'update' ? ` <span class="muted">(전: ${esc(o.was)})</span>` : ''}`;
     // 11-09 사용자 — 접어 두고 몇 개인지만. 펼치면 줄마다 켜고 끄기
     return `<details class="fm-fold fm-notes-box"><summary title="진행 중인 일 고치기 제안 — ${esc(fmName())}${josa(fmName(), '이', '가')} 이 방의 진행 중인 일을 이렇게 고치자고 합니다. [이대로 시작]을 누를 때 켠 것만 반영합니다.">진행 중인 일 고치기 제안 ${ups.length}개</summary>
       <div class="fm-notes">${
       ups.map((o, i) => `<label class="small fm-note"><input type="checkbox" data-ni="${i}"${o.on !== false ? ' checked' : ''}>
-        <span><b>${OPK[o.op] || o.op}</b> — ${line(o)} <span class="muted">출처 ${esc(o.source || '이번 요청')}</span></span></label>`).join('')}</div></details>`;
+        <span><b>${OPK[o.op] || o.op}</b>: ${line(o)} <span class="muted">출처 ${esc(o.source || '이번 요청')}</span></span></label>`).join('')}</div></details>`;
   }
   // "자세히"가 접혀 있어도 지금 값이 보이게 — 접힌 줄에 한 줄 요약
   function moreLine() {
@@ -234,7 +234,7 @@ function mount(dlg) {
         <label class="muted" for="fmMode">방식</label>
         <select id="fmMode">${Object.entries(MODE).map(([k, v]) => opt(k, p.mode, v)).join('')}</select>
         <label class="muted" id="fmSumL" for="fmSum" title="넣을 요약 — 다른 세션에서 새 세션으로 옮길 때 쓴 요약입니다. 고르면 새 세션의 첫 글 뒤에 붙습니다.">넣을 요약</label>
-        <select id="fmSum">${opt('', p.summary_id, '쓰지 않음')}${sums.map((s) => opt(s.id, p.summary_id, `세션 ${s.session_id} · ${s.chars}자 — ${(s.head || s.session || '').slice(0, 50)}`)).join('')}</select>
+        <select id="fmSum">${opt('', p.summary_id, '쓰지 않음')}${sums.map((s) => opt(s.id, p.summary_id, `세션 ${s.session_id} · ${s.chars}자: ${(s.head || s.session || '').slice(0, 50)}`)).join('')}</select>
         <label class="muted" for="fmTitle">이름</label>
         <input id="fmTitle" value="${esc(p.title || '')}">
       </div>
@@ -249,13 +249,13 @@ function mount(dlg) {
           <label class="muted" for="fmAttach">보낼 세션</label>
           <input id="fmAttach" value="${esc(p.attach_session ?? '')}" placeholder="방식이 '살아 있는 세션에 보내기'일 때 세션 번호">
           <label class="muted" for="fmFiles" title="맡을 파일 — 이 세션이 고칠 파일입니다. 살아 있는 세션 · 다른 계획과 겹치면 위 경고에 뜹니다.">맡을 파일</label>
-          <input id="fmFiles" value="${esc(filesText(s0.files))}" placeholder="쉼표로 나눔 — 예: bridge/foreman.py, migrations/">
+          <input id="fmFiles" value="${esc(filesText(s0.files))}" placeholder="쉼표로 나눔 (예: bridge/foreman.py, migrations/)">
           ${many ? `<label class="muted" for="fmOrder" title="합칠 순서 — 작은 것부터 합칩니다. 맡을 파일이 겹칠 때 먼저 합칠 세션을 정합니다.">합칠 순서</label>
           <input id="fmOrder" type="number" min="1" max="99" value="${esc(s0.merge_order ?? 1)}">` : ''}
         </div>
-        <label class="fm-check"><input id="fmRO" type="checkbox"${p.read_only ? ' checked' : ''}> 읽기 전용으로 시작 <span class="muted">— 살펴보기만, 고치기 전에 승인</span></label>
+        <label class="fm-check"><input id="fmRO" type="checkbox"${p.read_only ? ' checked' : ''}> 읽기 전용으로 시작 <span class="muted">(살펴보기만, 고치기 전에 승인)</span></label>
         <label class="fm-check" title="작업방 — 저장소 안 .worktrees/에 이 세션만의 폴더 · 브랜치(cc/…)를 만들어 띄웁니다. 끝낸 뒤 [합치기]로 main에 합칩니다."><input id="fmWT" type="checkbox"${p.worktree ? ' checked' : ''}> 작업방
-          <span class="muted">${p.live_here ? `— 이 프로젝트에 살아 있는 세션 ${p.live_here}개와 파일이 겹치지 않습니다` : '— 지금 이 프로젝트에 다른 세션이 없습니다'}</span></label>
+          <span class="muted">${p.live_here ? `(이 프로젝트에 살아 있는 세션 ${p.live_here}개와 파일이 겹치지 않습니다)` : '(지금 이 프로젝트에 다른 세션이 없습니다)'}</span></label>
       </details>
       ${many ? sessionsHtml(ss, opt) : ''}
       ${notesHtml(p)}
@@ -265,7 +265,7 @@ function mount(dlg) {
         <button type="button" id="fmDrop" class="ghost" title="버리기 — 이 계획을 쓰지 않습니다. 기록에는 '사람이 버림'으로 남습니다."${done ? ' disabled' : ''}>버리기</button>
         <button type="button" id="fmAgain" class="ghost">다시 물어보기</button>
         <button type="button" id="fmHand" class="ghost" hidden>관리자에게 보내기</button>
-        <button type="button" id="fmGo" class="primary"${p.mode === 'ask' || done ? ` disabled title="${done ? '이미 끝난 계획입니다.' : '되묻는 계획입니다 — 답을 요청에 덧붙여 다시 물어보거나 방식을 바꿔 주세요.'}"` : ''}>이대로 시작</button></div>`;
+        <button type="button" id="fmGo" class="primary"${p.mode === 'ask' || done ? ` disabled title="${done ? '이미 끝난 계획입니다.' : '되묻는 계획입니다. 답을 요청에 덧붙여 다시 물어보거나 방식을 바꿔 주세요.'}"` : ''}>이대로 시작</button></div>`;
     $('fmPlan').hidden = false;
     bindRoleModel($('fmRole'), $('fmModel'), opts.models);
     for (const el of box.querySelectorAll('.fm-sess')) {
@@ -302,11 +302,11 @@ function mount(dlg) {
     try {
       const r = await api('POST', '/api/foreman/handover', { dispatch_id: disp.dispatch_id, plan, ...(inboxIds.length ? { inbox_ids: inboxIds } : {}) });
       $('fmStartMsg').className = `small ${r.handed ? 'ok' : 'warn'}`;
-      $('fmStartMsg').textContent = r.note || (r.handed ? '보냈습니다.' : `보내지 못했습니다 — ${r.reason}`);
+      $('fmStartMsg').textContent = r.note || (r.handed ? '보냈습니다.' : `보내지 못했습니다: ${r.reason}`);
       if (!r.handed) { $('fmGo').disabled = false; $('fmHand').disabled = false; }
     } catch (e) {
       $('fmStartMsg').className = 'small bad';
-      $('fmStartMsg').textContent = `보내지 못했습니다 — ${e.message}. [이대로 시작]으로 직접 띄울 수 있습니다.`;
+      $('fmStartMsg').textContent = `보내지 못했습니다: ${e.message}. [이대로 시작]으로 직접 띄울 수 있습니다.`;
       $('fmGo').disabled = false; $('fmHand').disabled = false;
     }
   }
@@ -314,8 +314,8 @@ function mount(dlg) {
   function sessionsHtml(ss, opt) {
     const on0 = ss[0].on !== false;
     return `<div class="fm-sessions">
-      <div class="small muted">세션 ${ss.length}개 — 세션 1은 위 칸입니다. 끈 세션은 띄우지 않습니다.</div>
-      <label class="fm-check" title="세션 1 띄우기 — 끄면 위 칸의 세션은 띄우지 않습니다."><input id="fmOn0" type="checkbox"${on0 ? ' checked' : ''}> 세션 1 띄우기 <span class="muted">— ${esc(ss[0].title || '')}</span></label>
+      <div class="small muted">세션 ${ss.length}개입니다. 세션 1은 위 칸입니다. 끈 세션은 띄우지 않습니다.</div>
+      <label class="fm-check" title="세션 1 띄우기 — 끄면 위 칸의 세션은 띄우지 않습니다."><input id="fmOn0" type="checkbox"${on0 ? ' checked' : ''}> 세션 1 띄우기 <span class="muted">(${esc(ss[0].title || '')})</span></label>
       ${ss.slice(1).map((s, j) => { const i = j + 1; return `<div class="fm-sess" data-si="${i}">
         <label class="fm-check" title="세션 ${i + 1} 띄우기 — 끄면 이 세션은 띄우지 않습니다."><input type="checkbox" data-k="on"${s.on !== false ? ' checked' : ''}> 세션 ${i + 1} 띄우기 <span class="muted" data-sum></span></label>
         <details class="fm-fold"><summary title="세션 ${i + 1} — 펼쳐서 이름 · 역할 · 모델 · 맡을 파일 · 첫 글을 고칩니다.">세션 ${i + 1} 고치기</summary>
@@ -328,7 +328,7 @@ function mount(dlg) {
           </div>
           <label class="muted">넣을 첫 글</label>
           <textarea data-k="first_prompt" rows="8" class="fm-first">${esc(s.first_prompt || '')}</textarea>
-          <label class="fm-check"><input type="checkbox" data-k="read_only"${s.read_only ? ' checked' : ''}> 읽기 전용으로 시작 <span class="muted">— 살펴보기만, 고치기 전에 승인</span></label>
+          <label class="fm-check"><input type="checkbox" data-k="read_only"${s.read_only ? ' checked' : ''}> 읽기 전용으로 시작 <span class="muted">(살펴보기만, 고치기 전에 승인)</span></label>
           <label class="fm-check" title="작업방 — 이 세션만의 폴더 · 브랜치(cc/…)에서 띄웁니다. 둘째 세션부터는 기본으로 켭니다."><input type="checkbox" data-k="worktree"${s.worktree !== false ? ' checked' : ''}> 작업방</label>
         </details></div>`; }).join('')}
     </div>`;
@@ -337,7 +337,7 @@ function mount(dlg) {
     const q = (k) => el.querySelector(`[data-k=${k}]`);
     const t = (sel) => (sel && sel.selectedOptions && sel.selectedOptions[0] ? sel.selectedOptions[0].textContent.split(' — ')[0] : '');
     const n = parseFiles(q('files').value).length;
-    return `— ${q('title').value || '(이름 없음)'} · ${t(q('role'))} · ${t(q('model')) || '기본 모델'}${n ? ` · 맡을 파일 ${n}개` : ''}`;
+    return `(${q('title').value || '이름 없음'} · ${t(q('role'))} · ${t(q('model')) || '기본 모델'}${n ? ` · 맡을 파일 ${n}개` : ''})`;
   }
   function collect() {
     const v = (id) => $(id).value;
@@ -375,7 +375,7 @@ function mount(dlg) {
       if (r.session_id && window.office) setTimeout(() => { dlg.classList.remove('on'); window.office.openSession(r.session_id); }, r.note ? 4000 : 1200);
     } catch (e) {
       $('fmStartMsg').className = 'small bad';
-      $('fmStartMsg').textContent = `시작하지 못했습니다 — ${e.message}`;
+      $('fmStartMsg').textContent = `시작하지 못했습니다: ${e.message}`;
       $('fmGo').disabled = false;
     }
   }
@@ -386,7 +386,7 @@ function mount(dlg) {
       $('fmStartMsg').className = 'small muted';
       $('fmStartMsg').textContent = '버렸습니다.';
       $('fmGo').disabled = true; $('fmDrop').disabled = true;
-    } catch (e) { $('fmStartMsg').className = 'small bad'; $('fmStartMsg').textContent = `버리지 못했습니다 — ${e.message}`; }
+    } catch (e) { $('fmStartMsg').className = 'small bad'; $('fmStartMsg').textContent = `버리지 못했습니다: ${e.message}`; }
   }
   $('fmAsk').onclick = ask;
   $('fmText').addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); ask(); } });

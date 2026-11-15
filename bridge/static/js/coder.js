@@ -22,7 +22,7 @@ export function coderJobs(room, data, st) {
   const pp = st && st.pipeline && st.pipeline.get ? st.pipeline.get(room) : null;
   const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
   if (broke) out.push({ kind: 'pipe', title: `파이프라인 실패 · ${broke}` });
-  if (pp && pp.watch && pp.watch.state === 'missing') out.push({ kind: 'build', title: '빌드 알림 없음 — push 뒤 Jenkins 시작 알림이 오지 않았습니다' });
+  if (pp && pp.watch && pp.watch.state === 'missing') out.push({ kind: 'build', title: '빌드 알림 없음: push 뒤 Jenkins 시작 알림이 오지 않았습니다' });
   const live = st && st.sessions ? [...st.sessions.values()].filter((s) => s.project === room && s.state !== 'DORMANT') : [];
   const ids = new Set(live.map((s) => s.id));
   const appr = new Map();
@@ -32,8 +32,8 @@ export function coderJobs(room, data, st) {
   }
   const name = (s) => s.custom_title || s.title || s.cc_name || `세션 ${s.id}`;
   for (const s of live) {
-    if (appr.get(s.id)) out.push({ kind: 'appr', sid: s.id, n: appr.get(s.id), title: `승인 대기 ${appr.get(s.id)} — ${name(s)}` });
-    if (s.denied) out.push({ kind: 'denied', sid: s.id, title: `권한 거부 — ${name(s)}` });
+    if (appr.get(s.id)) out.push({ kind: 'appr', sid: s.id, n: appr.get(s.id), title: `승인 대기 ${appr.get(s.id)}: ${name(s)}` });
+    if (s.denied) out.push({ kind: 'denied', sid: s.id, title: `권한 거부: ${name(s)}` });
   }
   return out;
 }
@@ -50,7 +50,7 @@ export function coderBubble(jobs) {
   const rested = jobs.filter((j) => j.kind === 'rested');
   const days = Math.max(0, ...rested.map((j) => j.days || 0));
   const old = rested.length && days >= REST_DAYS ? ` · ${days}일째` : '';
-  if (rested.length === jobs.length) return `맡은 일 ${rested.length} — 합치기 기다림${old}`;
+  if (rested.length === jobs.length) return `맡은 일 ${rested.length}: 합치기 기다림${old}`;
   return `맡길 일 ${jobs.length}${rested.length ? ` · 합치기 기다림 ${rested.length}${old}` : ''}`;
 }
 
@@ -91,21 +91,21 @@ export function createCoder(store) {
         ? `<button type="button" class="small" data-cd-plan="${j.id}" title="계획으로 — 이 글을 감독실 말하기 칸에 채워 계획 창을 엽니다. 바로 띄우지 않습니다.">계획으로</button>
            <button type="button" class="small ghost" data-cd-drop="${j.id}" title="버리기 — 이 할 일을 맡기지 않습니다. 받은 할 일 목록에 「버림」으로 남습니다.">버리기</button>`
         : j.sid ? `<button type="button" class="small" data-cd-open="${j.sid}" title="세션 열기 — 이 세션의 [세션 정리] 탭을 엽니다.">세션 열기</button>` : '';
-      const head = j.kind === 'rested' ? `합치기 기다림 — ${esc(j.title)}${j.days >= REST_DAYS ? ` <span class="warn">${j.days}일째</span>` : ''} <span class="muted">· <code>${esc(j.branch)}</code></span>`
+      const head = j.kind === 'rested' ? `합치기 기다림: ${esc(j.title)}${j.days >= REST_DAYS ? ` <span class="warn">${j.days}일째</span>` : ''} <span class="muted">· <code>${esc(j.branch)}</code></span>`
         : j.kind === 'inbox' ? `${esc(j.title)} <span class="muted">· ${ago(j.at)}</span>`
-        : j.kind === 'drift' ? `<span class="warn">어긋남</span> — ${esc(j.title)}` : esc(j.title);
+        : j.kind === 'drift' ? `<span class="warn">어긋남</span>: ${esc(j.title)}` : esc(j.title);
       return `<div class="sc-row" data-tip="${esc(WHY[j.kind] || '')}"><div class="small"><b>${head}</b></div><div class="hand-btns">${btn}</div></div>`;
     };
     const jobsHtml = jobs.length ? jobs.map(row).join('') : '<p class="small muted">맡길 일이 없습니다.</p>';
-    const liveHtml = live.length ? live.map((s) => `<div class="sc-row"><div class="small">코더 · ${esc(name(s))} <span class="muted">— ${s.state === 'ACTIVE' ? '작업 중' : '쉼'}</span></div>
+    const liveHtml = live.length ? live.map((s) => `<div class="sc-row"><div class="small">코더 · ${esc(name(s))} <span class="muted">(${s.state === 'ACTIVE' ? '작업 중' : '쉼'})</span></div>
         <button type="button" class="small" data-cd-open="${s.id}" title="세션 열기 — 이 세션의 [세션 정리] 탭을 엽니다.">세션 열기</button></div>`).join('')
       : '<p class="small muted">지금 도는 코더 세션이 없습니다. 코더는 자리에서 쉽니다.</p>';
     const empties = emptyWorktrees(roomData(room));
-    const emptyHtml = empties.length ? `<details class="hand"${keep(`coder:${room}:empty`, true)}><summary title="치울 것 — 빈 작업방입니다. 커밋이 모두 원본에 들어 있고 변경이 없으며 세션도 끝났습니다. 누구에게 맡길 일이 아니라 치우기만 하면 됩니다."><b>치울 것 — 빈 작업방 ${empties.length}</b></summary>${empties.map((e) =>
+    const emptyHtml = empties.length ? `<details class="hand"${keep(`coder:${room}:empty`, true)}><summary title="치울 것 — 빈 작업방입니다. 커밋이 모두 원본에 들어 있고 변경이 없으며 세션도 끝났습니다. 누구에게 맡길 일이 아니라 치우기만 하면 됩니다."><b>치울 것: 빈 작업방 ${empties.length}</b></summary>${empties.map((e) =>
       `<div class="sc-row" data-tip="${esc(WHY.empty)}"><div class="small"><b>${esc(e.title)}</b></div><div class="hand-btns">
         <button type="button" class="small" data-cd-open="${e.sid}" title="세션 열기 — 이 세션의 [세션 정리] 탭을 엽니다.">세션 열기</button>
         <button type="button" class="small ghost" data-cd-clean="${e.sid}" data-cd-name="${esc(e.name)}" title="버리기 — 빈 작업방 ${esc(e.name)}를 지웁니다. 잃는 커밋 · 변경은 없습니다.">버리기</button></div></div>`).join('')}</details>` : '';
-    return `<div class="small muted">${esc(label)} · 코더 — 이 방의 코딩 담당입니다. 새 일은 새 세션으로, 같은 일을 이어 할 때만 그 세션으로 합니다. 세션이 뜬 수만큼 코더가 자리에서 책상으로 가고, 끝나면 자리로 돌아갑니다.</div>
+    return `<div class="small muted">${esc(label)} · 코더: 이 방의 코딩 담당입니다. 새 일은 새 세션으로, 같은 일을 이어 할 때만 그 세션으로 합니다. 세션이 뜬 수만큼 코더가 자리에서 책상으로 가고, 끝나면 자리로 돌아갑니다.</div>
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}">${esc(note.msg)}</div>` : ''}
       <details class="hand"${keep(`coder:${room}:jobs`, true)}><summary title="맡길 일 — 코더에게 받은 할 일과, 브리지가 이미 아는 신호(쉬게 한 일 · 파이프라인 실패 · 빌드 알림 없음 · 승인 대기 · 권한 거부)입니다."><b>맡길 일 ${jobs.length}</b></summary>${jobsHtml}
         <div class="hand-btns"><button type="button" class="small ghost" data-cd-add="1" title="할 일 적기 — 받는 칸을 「코더에게」로 골라 엽니다.">＋ 할 일 적기</button></div></details>
@@ -123,7 +123,7 @@ export function createCoder(store) {
       if (!window.confirm(`빈 작업방 ${name}를 버립니다. 커밋은 모두 원본에 들어 있고 변경이 없습니다. 계속합니까?`)) return;
       cl.disabled = true;
       const r = await fetch(`/api/sessions/${cl.dataset.cdClean}/worktree`, { method: 'POST', headers: store.headers(true), body: JSON.stringify({ action: 'discard', confirm: name }) });
-      note = r.ok ? { msg: `빈 작업방 ${name}를 버렸습니다.` } : { bad: true, msg: `버리지 못했습니다 — HTTP ${r.status}` };
+      note = r.ok ? { msg: `빈 작업방 ${name}를 버렸습니다.` } : { bad: true, msg: `버리지 못했습니다(HTTP ${r.status}).` };
       await load(true);
       return;
     }
@@ -133,13 +133,13 @@ export function createCoder(store) {
       const j = ((roomData(room) || {}).inbox || []).find((x) => String(x.id) === p.dataset.cdPlan);
       if (!j) return;
       if (window.foremanChat && window.foremanChat.openWith) window.foremanChat.openWith(room, j.body, j.id);
-      else { note = { bad: true, msg: '계획 창을 열지 못했습니다 — 화면을 새로 고쳐 주세요.' }; store.touch('panel'); }
+      else { note = { bad: true, msg: '계획 창을 열지 못했습니다. 화면을 새로 고쳐 주세요.' }; store.touch('panel'); }
       return;
     }
     if (d) {
       d.disabled = true;
       const r = await fetch(`/api/scribe/inbox/${d.dataset.cdDrop}/drop`, { method: 'POST', headers: store.headers(true), body: '{}' });
-      note = r.ok ? { msg: `받은 할 일 #${d.dataset.cdDrop}을 버렸습니다.` } : { bad: true, msg: `버리지 못했습니다 — HTTP ${r.status}` };
+      note = r.ok ? { msg: `받은 할 일 #${d.dataset.cdDrop}을 버렸습니다.` } : { bad: true, msg: `버리지 못했습니다(HTTP ${r.status}).` };
       await load(true);
     }
   }

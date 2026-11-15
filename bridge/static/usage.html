@@ -92,12 +92,12 @@
   </section>
   <section><h2>시간대별 <span class="small muted">(환산액, 토큰 종류별로 쌓음 · 세로 점선은 주간 리셋 · 음영은 지금 5시간 구간)</span></h2>
     <div class="chart" id="chart"></div></section>
-  <section><h2>세션별 <span class="small muted">— 응답당 맥락이 크면 응답 하나하나가 비쌉니다</span></h2><div class="tbl" id="tSess"></div></section>
+  <section><h2>세션별 <span class="small muted">(응답당 맥락이 크면 응답 하나하나가 비쌉니다)</span></h2><div class="tbl" id="tSess"></div></section>
   <div class="two">
     <section><h2>프로젝트별</h2><div class="tbl" id="tProj"></div></section>
     <section><h2>모델별</h2><div class="tbl" id="tModel"></div></section>
   </div>
-  <section><h2>관찰 기록 <span class="small muted">(/usage에서 읽은 % — 값이 바뀔 때만)</span></h2><div class="tbl" id="tObs"></div></section>
+  <section><h2>관찰 기록 <span class="small muted">(/usage에서 읽은 %, 값이 바뀔 때만)</span></h2><div class="tbl" id="tObs"></div></section>
 </main>
 <div id="tokDlg"><form id="tokForm"><b>API 토큰</b><div class="small muted">.env.bridge의 FOREMAN_API_TOKEN을 넣어 주세요. 이 브라우저에만 저장합니다.</div>
   <input id="tokIn" type="password" autocomplete="off"><button>저장</button></form></div>
@@ -136,7 +136,7 @@ async function load() {
     render(data);
   } catch (e) {
     $('read').className = 'read bad'; $('read').textContent = '불러오지 못했습니다';
-    $('bands').innerHTML = `<div class="band">사용량을 불러오지 못했습니다 — ${esc(e.message)}</div>`;
+    $('bands').innerHTML = `<div class="band">사용량을 불러오지 못했습니다: ${esc(e.message)}</div>`;
   }
 }
 
@@ -146,7 +146,7 @@ function render(d) {
   $('read').textContent = r.ok ? `읽음 ${hm(r.last_ok_at)}` : r.last_ok_at ? `⚠ 못 읽음 · 마지막 ${mdhm(r.last_ok_at)}` : '⚠ 아직 못 읽음';
   $('read').title = r.ok ? `사용량 읽기 — ${Math.round((r.poll_s || 600) / 60)}분마다 /usage를 읽습니다.` : `사용량 읽기 — ${r.error || '오래 읽지 못했습니다'}`;
   const bands = [];
-  if (!r.ok) bands.push(`<div class="band"><b>⚠ 사용량(/usage)을 읽지 못하고 있습니다.</b> ${esc(r.error || '마지막으로 읽은 지 오래됐습니다')} — 아래 측정 %는 ${r.last_ok_at ? mdhm(r.last_ok_at) + ' 값' : '없습니다'}. ${r.fails ? `연달아 ${r.fails}번 실패했습니다.` : ''}</div>`);
+  if (!r.ok) bands.push(`<div class="band"><b>⚠ 사용량(/usage)을 읽지 못하고 있습니다.</b> ${esc(r.error || '마지막으로 읽은 지 오래됐습니다')}. 아래 측정 %는 ${r.last_ok_at ? mdhm(r.last_ok_at) + ' 값' : '없습니다'}. ${r.fails ? `연달아 ${r.fails}번 실패했습니다.` : ''}</div>`);
   // 11-14 CC가 /usage에서 한도 줄을 뺀 경우 — 실패가 아니라 "그 한도를 확인할 수 없음". 옛 값은 지금 값이 아니다
   for (const l of (d.limits || []).filter((x) => x.absent))
     bands.push(`<div class="band warn"><b>${esc(l.label)} 확인할 수 없음.</b> /usage에 ${esc(l.label)} 줄이 없습니다. 서버가 ${esc(l.label)} 한도 값을 주지 않을 때 CC가 줄을 뺍니다. ${l.last_pct != null ? `마지막으로 본 값은 ${l.last_pct}%(${mdhm(l.last_at)})이며 지금 값이 아닙니다. ` : ''}${l.scoped ? '' : '이 한도의 80 · 95% 알림은 줄이 다시 나올 때까지 멈춥니다.'}</div>`);
@@ -155,10 +155,10 @@ function render(d) {
   $('bands').innerHTML = bands.join('');
   $('cards').innerHTML = (d.limits || []).map(card).join('');
   const wk = (d.limits || []).find((l) => l.key === 'weekly_all');
-  $('basis').innerHTML = `<b>왜 하한인가</b> — 한도는 웹 · 앱 Claude, 다른 PC와 <b>같이 씁니다</b>. 측정 %는 그 모두(이 PC의 CC + 웹 · 앱 Claude + 다른 PC)를 센 값이고, FOREMAN은 이 PC의 CC만 봅니다. 웹에서 긴 대화를 이어 쓰면 그것도 응답마다 맥락을 다시 읽어 한도를 씁니다.<br>`
+  $('basis').innerHTML = `<b>왜 하한인가</b>: 한도는 웹 · 앱 Claude, 다른 PC와 <b>같이 씁니다</b>. 측정 %는 그 모두(이 PC의 CC + 웹 · 앱 Claude + 다른 PC)를 센 값이고, FOREMAN은 이 PC의 CC만 봅니다. 웹에서 긴 대화를 이어 쓰면 그것도 응답마다 맥락을 다시 읽어 한도를 씁니다.<br>`
     + `실제 한도 = (FOREMAN이 본 것 + 못 보는 사용) ÷ 측정 % <b>≥</b> FOREMAN이 본 것 ÷ 측정 % = 하한`
-    + (wk && wk.floor ? ` — 예: 주간 ${usd(wk.window_usd, 0)} ÷ ${wk.measured_pct}% = ${usd(wk.floor.usd, 0)}. 웹에서 많이 쓴 주일수록 실제 한도는 이보다 큽니다.` : '.')
-    + `<br><span class="muted">${esc(d.basis)}. 같은 이유로 "추정 %"와 "이 속도면 언제 100%"는 FOREMAN이 보는 사용만으로 셈합니다 — 웹을 함께 쓰면 실제로는 더 빨리 찹니다(다음 /usage 읽기에서 바로잡힙니다).</span>`;
+    + (wk && wk.floor ? `. 예: 주간 ${usd(wk.window_usd, 0)} ÷ ${wk.measured_pct}% = ${usd(wk.floor.usd, 0)}. 웹에서 많이 쓴 주일수록 실제 한도는 이보다 큽니다.` : '.')
+    + `<br><span class="muted">${esc(d.basis)}. 같은 이유로 "추정 %"와 "이 속도면 언제 100%"는 FOREMAN이 보는 사용만으로 셈합니다. 웹을 함께 쓰면 실제로는 더 빨리 찹니다(다음 /usage 읽기에서 바로잡힙니다).</span>`;
   where(d);
   chart(d);
   tables(d);
@@ -169,7 +169,7 @@ function card(x) {
   const show = e ?? m;
   const cls = show >= 95 ? 'w95' : show >= 80 ? 'w80' : '';
   const f = x.floor;
-  const eta = x.eta_100 ? `<span class="${x.eta_before_reset ? 'bad' : 'muted'}">이 속도면 ${mdhm(x.eta_100)}에 100%${x.eta_before_reset ? ' — 리셋 전입니다' : ' — 리셋이 먼저입니다'}</span>` : '<span class="muted">—</span>';
+  const eta = x.eta_100 ? `<span class="${x.eta_before_reset ? 'bad' : 'muted'}">이 속도면 ${mdhm(x.eta_100)}에 100%${x.eta_before_reset ? '(리셋 전입니다)' : '(리셋이 먼저입니다)'}</span>` : '<span class="muted">—</span>';
   return `<div class="card" title="${esc(x.label)} — ${LIMIT_TIP}">
     <div><b>${esc(x.label)}</b> <span class="small muted">${x.window_h >= 24 ? '이번 주(7일)' : '지금 5시간 구간'}</span></div>
     <div class="big ${show >= 95 ? 'bad' : show >= 80 ? 'warn' : ''}">${x.absent ? '<span class="small">확인할 수 없음</span>' : show == null ? '—' : (e != null && m != null && Math.abs(e - m) >= 0.5 ? '약 ' : '') + Math.round(show) + '%'}</div>
@@ -178,7 +178,7 @@ function card(x) {
     <dl class="kv">
       <dt>리셋</dt><dd>${mdhm(x.reset_at)} <span class="muted small">${left(x.reset_at)}</span></dd>
       <dt title="FOREMAN이 본 것 — 이 구간에서 FOREMAN이 기록한 CC 세션 · claude -p 사용의 환산액입니다.">FOREMAN이 본 것</dt><dd>${usd(x.window_usd)}</dd>
-      <dt title="못 보는 사용 — 웹 · 앱 Claude, 다른 PC의 CC는 기록이 없습니다. 측정 %에는 들어 있습니다.">못 보는 사용</dt><dd class="muted">웹 · 앱 · 다른 PC — 금액 모름</dd>
+      <dt title="못 보는 사용 — 웹 · 앱 Claude, 다른 PC의 CC는 기록이 없습니다. 측정 %에는 들어 있습니다.">못 보는 사용</dt><dd class="muted">웹 · 앱 · 다른 PC (금액 모름)</dd>
       <dt title="한도 하한 — FOREMAN이 본 것 ÷ 측정 %입니다. 못 보는 사용만큼 실제 한도는 더 큽니다.">한도 하한</dt><dd>${f ? `${usd(f.usd, 0)} 이상 <span class="muted small">근거 ${f.n}개${f.n > 1 ? ` · ${usd(f.min, 0)}~${usd(f.max, 0)}` : ''}${f.stable ? '' : ' · 아직 흔들림'}</span>` : '<span class="muted">관찰이 더 필요합니다(20% 이상)</span>'}</dd>
       <dt>최근 1시간</dt><dd>${usd(x.rate_usd_h)}/시간</dd>
       <dt>예상</dt><dd>${eta}</dd>
@@ -233,7 +233,7 @@ function chart(d) {
   const y = (v) => base - v / max * (base - top);
   let s = `<svg width="${W}" height="${H}" role="img" aria-label="시간대별 환산액">`;
   const sess = (d.limits || []).find((l) => l.window_h < 24 && l.window_start);
-  if (sess) s += `<rect x="${x(D(sess.window_start).getTime())}" y="${top}" width="${(D(sess.reset_at) - D(sess.window_start)) / 36e5 * bw}" height="${base - top}" fill="var(--act)" opacity=".08"><title>지금 5시간 구간 —${mdhm(sess.window_start)} ~ ${mdhm(sess.reset_at)}</title></rect>`;
+  if (sess) s += `<rect x="${x(D(sess.window_start).getTime())}" y="${top}" width="${(D(sess.reset_at) - D(sess.window_start)) / 36e5 * bw}" height="${base - top}" fill="var(--act)" opacity=".08"><title>지금 5시간 구간: ${mdhm(sess.window_start)} ~ ${mdhm(sess.reset_at)}</title></rect>`;
   for (const v of [max / 2, max]) s += `<line x1="40" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="2" y="${y(v) + 4}">${usd(v, 0)}</text>`;
   hours.forEach((h) => {
     const t = new Date(h.key.replace(' ', 'T') + 'Z').getTime();
@@ -290,7 +290,7 @@ function tables(d) {
 $('period').addEventListener('change', load);
 $('pollBtn').addEventListener('click', async () => {
   $('pollBtn').disabled = true; $('pollBtn').textContent = '읽는 중…';
-  try { await api('/api/usage/poll', { method: 'POST' }); } catch (e) { alert('읽지 못했습니다 — ' + e.message); }
+  try { await api('/api/usage/poll', { method: 'POST' }); } catch (e) { alert('읽지 못했습니다: ' + e.message); }
   $('pollBtn').disabled = false; $('pollBtn').textContent = '지금 읽기';
   load();
 });

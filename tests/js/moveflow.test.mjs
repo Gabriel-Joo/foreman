@@ -11,7 +11,7 @@ test('11-13 잊은 것 찾기 — 없음 · 볼 것 없음 · 일부 · 실패�
   const p = lossNote({ status: 'done', outcome: 'partial', error: '묶음 1개 실패', lost_total: 0 });
   assert.equal(p.tone, 'warn'); assert.match(p.msg, /「없음」은 아닙니다/);
   const f = lossNote({ status: 'failed', outcome: 'failed', error: 'TimeoutError' });
-  assert.equal(f.tone, 'bad'); assert.match(f.msg, /실패했습니다 — TimeoutError/);
+  assert.equal(f.tone, 'bad'); assert.match(f.msg, /실패했습니다\(TimeoutError\)/);
   // 흐름 — 볼 것 없음은 실패가 아니다
   const fl = { v: 2, stage: 'find', lcId: 5, at: T };
   const none = moveStep(fl, data({ losschecks: [{ id: 5, status: 'nothing', outcome: 'nothing' }] }), T);

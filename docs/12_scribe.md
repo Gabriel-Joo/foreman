@@ -238,7 +238,7 @@ CC 세션들 ─hook·트랜스크립트→ 브리지 ─→ DB(턴 · 커밋 ·
 
 - 머리줄 **[＋ 세션] 옆 [＋ 할 일]**(`bridge/static/js/todoinbox.js`). 할 일은 여러 프로젝트에 걸치는 일이 많아 머리줄에 두고, 프로젝트는 지금 보는 탭이 기본(11-09 사용자 결정)
 - 창: 프로젝트 · **누구에게(서기 정리 / 코더에게)** · 글 칸(Ctrl+Enter) · [적기](primary) · [닫기]. 결과 띠 "적었습니다 — … #번호", 못 적으면 까닭과 "글은 칸에 그대로 있습니다"
-- 창 아래 접힌 "받은 할 일 — 최근 N개 · 새로 N": 상태 · 시각 · 첫 글 줄, 펼치면 원문, 새로면 [버리기]
+- 창 아래 접힌 "받은 할 일: 프로젝트 최근 N개 · 새로 N": 상태 · 시각 · 첫 글 줄, 펼치면 원문, 새로면 [버리기]
 - 표 `todo_inbox`(`migrations/0027_todo_inbox.sql` · `0028_todo_inbox_assignee.sql`): id · project · body(8,000자까지) · assignee(`scribe` 기본 · `coder`) · created_at · taken_by(가져간 세션) · taken_at · dropped_at
 - 왜 새 표인가: `foreman_note`는 글 300자 · 프로젝트당 2k 토큰 상한이라 받은 글(대개 600자 넘음)이 잘린다. README 표에 브리지가 바로 커밋하면 여러 세션이 README를 같이 고칠 때 충돌한다
 

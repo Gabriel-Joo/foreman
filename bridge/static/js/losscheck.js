@@ -56,15 +56,15 @@ export function lossGroup(lc, can, err) {
     head += '<span class="small muted">아직 없습니다</span>';
   }
   let body = '';
-  if (err) body += `<div class="small bad">✗ 찾기 칸을 불러오지 못했습니다 — ${esc(err)}</div>`;
+  if (err) body += `<div class="small bad">✗ 찾기 칸을 불러오지 못했습니다. ${esc(err)}</div>`;
   const out = lossOutcome(lc);
   // 11-13 사용자 — 「없음」과 「실패」를 가른다. 실패가 조용히 「없음」으로 보이면 안 된다(bridge/losscheck.py outcome)
-  if (out === 'failed') body += `<div class="small bad">✗ 찾기 실패 — 잊은 것이 없는 것이 아니라 찾지 못했습니다.${lc.error ? ` ${esc(lc.error)}${/[.다]$/.test(lc.error) ? '' : '.'}` : ''} [다시 찾기]로 다시 돌릴 수 있습니다.</div>`;
-  else if (out === 'partial') body += `<div class="small warn">⚠ 일부만 찾았습니다 — ${esc(lc.error || '묶음 일부가 실패했습니다')}. 아래 수는 찾은 데까지이고, 0이어도 「없음」이 아닙니다.</div>`;
+  if (out === 'failed') body += `<div class="small bad">✗ 찾기 실패: 잊은 것이 없는 것이 아니라 찾지 못했습니다.${lc.error ? ` ${esc(lc.error)}${/[.다]$/.test(lc.error) ? '' : '.'}` : ''} [다시 찾기]로 다시 돌릴 수 있습니다.</div>`;
+  else if (out === 'partial') body += `<div class="small warn">⚠ 일부만 찾았습니다. ${esc(lc.error || '묶음 일부가 실패했습니다')}. 아래 수는 찾은 데까지이고, 0이어도 「없음」이 아닙니다.</div>`;
   if (lc && lc.status === 'done') {
     body += sumLine(lc, out);
     if (lc.lost_total) body += `<div class="hand-btns">${b('loss-use', '잊은 것으로 문서 후보 묻기', true, '잊은 것으로 문서 후보 묻기 — 찾은 잊은 것을 세션에게 넘겨, 아직 문서에 없는 것만 문서 후보로 받습니다. 후보는 아래 [대화에서만 정한 것 문서에 적기] 줄에 뜨고, 사람이 고른 것만 씁니다.', ` data-lc="${lc.id}"`, 'primary')}</div>`;
-    body += '<div class="small muted">기계 판정입니다 — 놓친 것이 있을 수 있고, 나중에 바뀐(뒤집힌) 결정이 섞일 수 있습니다. 문서에 넣기 전에 아래 [대화에서만 정한 것 문서에 적기] 줄에서 사람이 확인합니다.</div>';
+    body += '<div class="small muted">기계 판정입니다. 놓친 것이 있을 수 있고, 나중에 바뀐(뒤집힌) 결정이 섞일 수 있습니다. 문서에 넣기 전에 아래 [대화에서만 정한 것 문서에 적기] 줄에서 사람이 확인합니다.</div>';
     if (lc.lost && lc.lost.length) {
       body += `<details class="loss-list"${keep(`loss:${lc.id}:list`)}><summary class="small">잃은 것 ${lc.lost_total}${lc.lost_total > lc.lost.length ? `(앞 ${lc.lost.length}개)` : ''}</summary>${lc.lost.map(item).join('')}</details>`;
     }

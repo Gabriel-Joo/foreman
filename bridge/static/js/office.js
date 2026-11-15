@@ -150,11 +150,11 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const who = lk.session_id ? `세션 ${lk.session_id}` : `세션 ${lk.cc}`, where = lk.wt ? `작업방 ${lk.wt}` : '원본 폴더';
       const b = lk.blocked;
       // 겉은 짧게(한 줄), 쥔 곳 · 무엇으로는 호버(BANNER_LOCK tip) — 11-09 두 줄로 넘쳐 방이 줄고 이름이 겹쳤다
-      if (b) out.push([`🔒 멈춤 — ${b.session_id ? `세션 ${b.session_id}` : `세션 ${b.cc}`}이 스키마 잠금에 막혔습니다(쥔 ${who}) — 눌러서 풉니다`, P.warn, 'bold 15px', true, 'schemalock']);
-      else out.push([`🔒 DB 구조 잠금 — ${who}이 ${hmOf(lk.since)}부터 쥐고 있습니다 — 눌러서 풉니다`, P.muted, '15px', true, 'schemalock']);
+      if (b) out.push([`🔒 멈춤: ${b.session_id ? `세션 ${b.session_id}` : `세션 ${b.cc}`}이 스키마 잠금에 막혔습니다(쥔 ${who}). 눌러서 풉니다`, P.warn, 'bold 15px', true, 'schemalock']);
+      else out.push([`🔒 DB 구조 잠금: ${who}이 ${hmOf(lk.since)}부터 쥐고 있습니다. 눌러서 풉니다`, P.muted, '15px', true, 'schemalock']);
       lockTip = `스키마 잠금 풀기 — ${who}(${where})이 ${hmOf(lk.since)}부터 쥐고 있습니다(${lk.what || '?'}).${b ? ` 세션 ${b.session_id || b.cc}이 ${hmOf(b.at)}에 ${b.what || '?'}를 하려다 막혔습니다.` : ''} 쥔 세션이 스키마 일을 끝냈으면 누르고 확인해 풉니다.`;
     }
-    if (rel && Date.now() - Date.parse(rel.at) < 10 * 60000) out.push([`🔓 잠금을 풀었습니다 — ${rel.why}`, P.ok || P.act, '15px', true]);
+    if (rel && Date.now() - Date.parse(rel.at) < 10 * 60000) out.push([`🔓 잠금을 풀었습니다: ${rel.why}`, P.ok || P.act, '15px', true]);
     return out;
   }
   // 감독실 캐릭터 = 디스패처의 얼굴(11-08). 세션은 없고, 디스패처가 하는 일이 여기 보인다:
@@ -249,7 +249,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
           para(`/usage에 ${nm} 줄이 없습니다. 서버가 ${nm} 한도 값을 주지 않을 때 CC가 줄을 뺍니다.`
             + `${l.last_pct != null ? ` 마지막으로 본 값은 ${Math.round(l.last_pct)}%(${resetKo(l.last_at)})이고 지금 값이 아닙니다.` : ''} 이 한도의 80 · 95% 알림은 줄이 다시 나올 때까지 멈춥니다.`));
       } else {
-        lines.push(head(`${nm} ${usagePct(l) == null ? '—' : Math.round(usagePct(l)) + '%'}${l.reset_at ? ` — ${resetKo(l.reset_at)} 리셋` : ''}${l.eta_before_reset ? ` (이 속도면 ${l.eta_100 ? resetKo(l.eta_100) + '에 ' : '리셋 전에 '}100%)` : ''}`));
+        lines.push(head(`${nm} ${usagePct(l) == null ? '?' : Math.round(usagePct(l)) + '%'}${l.reset_at ? `, ${resetKo(l.reset_at)} 리셋` : ''}${l.eta_before_reset ? ` (이 속도면 ${l.eta_100 ? resetKo(l.eta_100) + '에 ' : '리셋 전에 '}100%)` : ''}`));
         if (l.key === 'weekly_all' && (usage.contributing || []).length) { lines.push(contribNote); noted = true; }   // 「어림한 값」 문단은 주간 머리 아래
       }
     }
@@ -419,7 +419,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   function courierNow(p) {
     if (!p) return '쉬는 중';
     if (p.handing) return '일감 받는 중';
-    if (!p.at) return '쉬는 중 — 진행 중인 빌드 없음';
+    if (!p.at) return '쉬는 중, 진행 중인 빌드 없음';
     return `${STAGE_KO[p.at]} ${({ running: '진행 중', waiting: 'ArgoCD Sync 대기', success: '✓ 끝', failed: '✗ 실패' })[p.st] || ''}`;
   }
   function laterRebuild(key, ms) {
@@ -2657,7 +2657,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     if (l.stage) {
       const st = l.st;
       return `<div class="tip-h">${'①②③'[l.i]} ${esc(stageName(l.stage).name)}</div><div class="tip-b">${esc(l.what || INFRA_ROLE[l.stage].what)}</div><div>${INFRA_ROLE[l.stage].desc}</div>` +
-        (st !== 'none' ? `<div class="tip-s">${esc(STATUS_KO[st] || st)}${st === 'waiting' ? ' — ' + WAIT_TIP : ''}</div>` : '');
+        (st !== 'none' ? `<div class="tip-s">${esc(STATUS_KO[st] || st)}${st === 'waiting' ? '. ' + WAIT_TIP : ''}</div>` : '');
     }
     if (l.noShip) return `<div class="tip-h">${esc(l.text)}</div><div class="tip-b">파이프라인 없음</div><div>빌드해 내보내는 앱이 아니라 빌드 → 이미지 → 배포 줄이 없습니다. 클러스터 · 서버 작업은 이 현장 세션에서 봅니다.</div>`;
     if (l.zone === 'infra') return `<div class="tip-h">${esc(l.text)}</div><div class="tip-b">파이프라인</div><div>커밋이 빌드 → 이미지 → 배포 순서로 나가는 곳입니다. 바닥 화살표 ① ② ③이 그 순서입니다.</div>`;
@@ -3021,19 +3021,19 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     lines.push([`작업 ${st.ACTIVE || 0} · 쉼 ${st.IDLE || 0}${st.SUSPENDED ? ' · 멈춤 ' + st.SUSPENDED : ''}${st.subs ? ' · 서브에이전트 ' + st.subs : ''}${r.overflow ? ' · 책상 없음 +' + r.overflow : ''}`, P.muted, '15px']);
     // 넷째 칸 true = 경고 줄 — 한 방을 볼 때는 이 줄만 카드로 띄운다(11-08, 나머지는 머리말과 겹친다)
     if (st.pending) lines.push([`❗ 승인 대기 ${st.pending}`, P.warn, 'bold 16px', true]);
-    if (st.question) lines.push([`❓ 질문 ${st.question} — 패널에서 답합니다`, P.warn, 'bold 16px', true]);
+    if (st.question) lines.push([`❓ 질문 ${st.question}: 패널에서 답합니다`, P.warn, 'bold 16px', true]);
     // 11-09 FOREMAN 승인 카드로 오지 않는 것 — 무엇을 어디서 해야 풀리는지 글에 넣는다
-    if (st.denied) lines.push([`✋ 권한 거부 ${st.denied} — CC 자체 검사가 막았습니다. 그 세션에 허용하거나 다른 방법을 지시합니다`, P.warn, 'bold 16px', true]);
-    if (st.apiStops) lines.push([`⚠ API 오류로 멈춤 ${st.apiStops} — 그 세션에 다시 보내면 풀립니다(까닭은 머리 위 호버)`, P.bad, 'bold 16px', true]);
-    if (st.asks) lines.push([`💬 답 기다림 ${st.asks} — 묻고 끝났습니다. 패널 입력 칸이나 세션 화면에서 답합니다`, P.warn, 'bold 16px', true]);
+    if (st.denied) lines.push([`✋ 권한 거부 ${st.denied}: CC 자체 검사가 막았습니다. 그 세션에 허용하거나 다른 방법을 지시합니다`, P.warn, 'bold 16px', true]);
+    if (st.apiStops) lines.push([`⚠ API 오류로 멈춤 ${st.apiStops}: 그 세션에 다시 보내면 풀립니다(까닭은 머리 위 호버)`, P.bad, 'bold 16px', true]);
+    if (st.asks) lines.push([`💬 답 기다림 ${st.asks}: 묻고 끝났습니다. 패널 입력 칸이나 세션 화면에서 답합니다`, P.warn, 'bold 16px', true]);
     // 11-13 사람 승인 합치기 카드도 관리자 머리 위 물음으로 센다 — 답은 관리자 패널, 합치기 카드는 말풍선을 눌러 [합치기]
-    if (st.userAsks) lines.push([`💬 사용자 답 기다림 ${st.userAsks} — 관리자 패널에서 답하거나, 합치기 카드면 말풍선을 누릅니다`, P.warn, 'bold 16px', true]);
+    if (st.userAsks) lines.push([`💬 사용자 답 기다림 ${st.userAsks}: 관리자 패널에서 답하거나, 합치기 카드면 말풍선을 누릅니다`, P.warn, 'bold 16px', true]);
     if (r.name) lines.push(...schemaLines(r.name));                // 스키마 잠금(11-09)
     const pp = r.pipe;
     const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
     if (broke) lines.push([`🔥 파이프라인 실패 · ${broke}`, P.bad, 'bold 15px', true]);
     // 11-09 "배포 승인 기다림"은 FOREMAN 안에서 승인할 것처럼 읽혔다 — 푸는 곳(ArgoCD)을 말에 넣는다. 배너에서 누르면 ArgoCD 앱 화면
-    else if (r.st_argocd === 'waiting') lines.push([`⏸ 배포 대기 — ArgoCD에서 Sync를 눌러야 올라갑니다${pp && pp.argocd_url ? ' ↗' : ''}`, P.warn, '15px', true, 'argocd']);
+    else if (r.st_argocd === 'waiting') lines.push([`⏸ 배포 대기: ArgoCD에서 Sync를 눌러야 올라갑니다${pp && pp.argocd_url ? ' ↗' : ''}`, P.warn, '15px', true, 'argocd']);
     if (pp && pp.webhook_broken) lines.push(['⚠ 빌드 알림 끊김 의심', P.bad, '15px', true]);
     if (pp && pp.watch && pp.watch.state !== 'ok') lines.push([`⚠ 빌드 알림 ${pp.watch.state === 'missing' ? '없음' : '늦음'}`, pp.watch.state === 'missing' ? P.bad : P.warn, '15px', true]);
     // 토큰 — 지금 어느 방이 쓰고 있나(사용자 요청 11-03). 오늘 누적 + 최근 10분 증가
@@ -3110,13 +3110,13 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const st = r.stats || {}, pp = r.pipe;
     const broke = pp && pp.chains && pp.chains[0] && pp.chains[0].broke;
     let state;
-    if (broke) state = [`멈춤 — 파이프라인 실패(${broke})`, P.bad, 'bold 16px'];
-    else if (st.pending) state = [`멈춤 — 승인 대기 ${st.pending}`, P.warn, 'bold 16px'];
-    else if (st.question) state = [`멈춤 — 질문 ${st.question}`, P.warn, 'bold 16px'];
-    else if (st.denied) state = [`멈춤 — 권한 거부 ${st.denied}`, P.warn, 'bold 16px'];
-    else if (st.apiStops) state = [`멈춤 — API 오류 ${st.apiStops}`, P.bad, 'bold 16px'];
-    else if (st.asks) state = [`멈춤 — 답 기다림 ${st.asks}`, P.warn, 'bold 16px'];
-    else if (st.userAsks) state = [`멈춤 — 사용자 답 기다림 ${st.userAsks}`, P.warn, 'bold 16px'];
+    if (broke) state = [`멈춤: 파이프라인 실패(${broke})`, P.bad, 'bold 16px'];
+    else if (st.pending) state = [`멈춤: 승인 대기 ${st.pending}`, P.warn, 'bold 16px'];
+    else if (st.question) state = [`멈춤: 질문 ${st.question}`, P.warn, 'bold 16px'];
+    else if (st.denied) state = [`멈춤: 권한 거부 ${st.denied}`, P.warn, 'bold 16px'];
+    else if (st.apiStops) state = [`멈춤: API 오류 ${st.apiStops}`, P.bad, 'bold 16px'];
+    else if (st.asks) state = [`멈춤: 답 기다림 ${st.asks}`, P.warn, 'bold 16px'];
+    else if (st.userAsks) state = [`멈춤: 사용자 답 기다림 ${st.userAsks}`, P.warn, 'bold 16px'];
     else if (st.ACTIVE) state = [`작업 중 ${st.ACTIVE}`, P.act, '16px'];
     else if ((st.IDLE || 0) + (st.SUSPENDED || 0) + (st.DORMANT || 0)) state = ['쉼', P.muted, '16px'];
     else state = ['세션 없음', P.muted, '16px'];
@@ -3128,12 +3128,12 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const span = Math.round((r.rateSpan || 0) / 60000);
     const rows = [
       `작업 ${st.ACTIVE || 0} · 쉼 ${st.IDLE || 0}${st.SUSPENDED ? ' · 멈춰 둠 ' + st.SUSPENDED : ''}${st.subs ? ' · 서브에이전트 ' + st.subs : ''}${r.overflow ? ' · 책상 없음 +' + r.overflow : ''}`,
-      ...(st.pending || st.question ? [`승인 대기 ${st.pending || 0} · 질문 ${st.question || 0} — 패널 카드에서 답합니다`] : []),
-      ...(st.denied ? [`권한 거부 ${st.denied} — CC 자체 검사, 그 세션에 허용 · 다른 방법 지시`] : []),
-      ...(st.apiStops ? [`API 오류로 멈춤 ${st.apiStops} — 마지막 턴이 API 오류로 끝남, 그 세션에 다시 보내면 풀림`] : []),
-      ...(st.asks ? [`답 기다림 ${st.asks} — 패널 입력 칸이나 세션 화면에서 답합니다`] : []),
-      ...(st.userAsks ? [`사용자 답 기다림 ${st.userAsks} — 관리자 패널에서 답하거나, 합치기 카드면 말풍선을 누릅니다`] : []),
-      ...(r.st_argocd === 'waiting' ? ['배포 대기 — ArgoCD에서 Sync를 눌러야 올라갑니다'] : []),
+      ...(st.pending || st.question ? [`승인 대기 ${st.pending || 0} · 질문 ${st.question || 0}: 패널 카드에서 답합니다`] : []),
+      ...(st.denied ? [`권한 거부 ${st.denied}: CC 자체 검사, 그 세션에 허용 · 다른 방법 지시`] : []),
+      ...(st.apiStops ? [`API 오류로 멈춤 ${st.apiStops}: 마지막 턴이 API 오류로 끝남, 그 세션에 다시 보내면 풀림`] : []),
+      ...(st.asks ? [`답 기다림 ${st.asks}: 패널 입력 칸이나 세션 화면에서 답합니다`] : []),
+      ...(st.userAsks ? [`사용자 답 기다림 ${st.userAsks}: 관리자 패널에서 답하거나, 합치기 카드면 말풍선을 누릅니다`] : []),
+      ...(r.st_argocd === 'waiting' ? ['배포 대기: ArgoCD에서 Sync를 눌러야 올라갑니다'] : []),
       ...(pp && pp.webhook_broken ? ['빌드 알림 끊김 의심'] : []),
       ...(pp && pp.watch && pp.watch.state !== 'ok' ? [`빌드 알림 ${pp.watch.state === 'missing' ? '없음' : '늦음'}`] : []),
       `토큰 오늘 출력 ${fmt(st.tout || 0)} · 입력 ${fmt(st.tin || 0)}`,
@@ -3543,7 +3543,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       subs += s.subagents_running || 0;
     }
     const igWhy = !ig ? '' : ig.stalled ? `화면 갱신 멈춤 — 세션 기록을 읽어 화면을 바꾸는 감시가 멈췄습니다.\n트랜스크립트 감시가 ${ig.tick_age_s}초째 멈춰 있습니다`
-      : '기록 못 읽는 세션 — 브리지가 이 세션들의 대화 기록을 읽지 못해 화면이 늦습니다.\n' + (ig.stuck || []).map((x) => `${x.session} ${x.minutes}분 · ${x.failures}번 — ${x.error}`).join('\n');
+      : '기록 못 읽는 세션 — 브리지가 이 세션들의 대화 기록을 읽지 못해 화면이 늦습니다.\n' + (ig.stuck || []).map((x) => `${x.session} ${x.minutes}분 · ${x.failures}번: ${x.error}`).join('\n');
     $('oAlerts').innerHTML = (pend ? `<button id="oPend" class="ghost warn" title="승인 대기 — 누르면 그 세션 패널을 엽니다. 거기서 승인하거나 거부합니다.">❗ 승인 대기 ${pend}</button>` : '') +
       (ques ? `<button id="oAsk" class="ghost warn" title="질문 — 세션이 고를 것을 묻고 있습니다. 누르면 그 세션 패널을 엽니다. 선택지를 누르면 답이 들어갑니다.">❓ 질문 ${ques}</button>` : '') +
       // 합치기 기다림(11-11) — 합치기 카드는 그 세션 패널 안에만 있어 사람이 몰랐다. 0건이면 아무것도 그리지 않는다
@@ -3562,7 +3562,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     $('oDown').hidden = !down;
     $('oStage').classList.toggle('offline', down || c.status === 'auth');
     if (down) {
-      $('oDownWhy').textContent = `${c.reason || '브리지와 연락이 없습니다'} — ${new Date(c.since).toLocaleTimeString()}부터`;
+      $('oDownWhy').textContent = `${c.reason || '브리지와 연락이 없습니다'} (${new Date(c.since).toLocaleTimeString()}부터)`;
       $('oDownNext').textContent = c.nextIn ? `${c.nextIn}초 뒤 다시 연결합니다 (시도 ${c.attempt})` : `연결하는 중입니다… (시도 ${c.attempt})`;
     }
     if (c.status === 'auth') $('tokDlg').classList.add('on');
@@ -3724,10 +3724,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         if (!c.seat) continue;
         const [x, y, w, h] = toScr(c.rect), t = room.scribeTodo;
         const tip = c.seat === 'coder'
-          ? `<div class="tip-h">맡길 일 — 코더 자리</div><div class="tip-b">이 방 코더에게 맡길 일입니다. 코더가 몇이든, 자리에 아무도 없어도 자리에 늘 뜹니다.</div>${coderJobsTip(room.coderJobs)}<div class="tip-t">누르면 맡길 일 목록이 열립니다.</div>`
-          : `<div class="tip-h">${t && t.nudge ? '정리할까요? — 서기 자리' : '문서 할 일 — 서기 자리'}</div><div class="tip-b">이 방 서기에게 맡길 문서 일입니다. 서기 세션이 일하는 동안에도 자리에 늘 뜹니다.</div>${
+          ? `<div class="tip-h">코더 자리: 맡길 일</div><div class="tip-b">이 방 코더에게 맡길 일입니다. 코더가 몇이든, 자리에 아무도 없어도 자리에 늘 뜹니다.</div>${coderJobsTip(room.coderJobs)}<div class="tip-t">누르면 맡길 일 목록이 열립니다.</div>`
+          : `<div class="tip-h">${t && t.nudge ? '서기 자리: 정리할까요?' : '서기 자리: 문서 할 일'}</div><div class="tip-b">이 방 서기에게 맡길 문서 일입니다. 서기 세션이 일하는 동안에도 자리에 늘 뜹니다.</div>${
             t && t.nudge ? `<div class="tip-s">서기 몫 받은 할 일이 쌓였습니다(${esc(t.nudge.why)}). 누르면 「나중에 할 일 정리」를 고른 창이 열립니다. [시키기]를 눌러야 세션이 뜹니다.</div>` : ''}${
-            t && t.items && t.items.length ? `<div>문서 할 일 ${t.items.length} — README가 낡은 것처럼 브리지가 찾은 문서 정리 거리입니다.${t.items.slice(0, 3).map((q) => `<div class="tip-s">· ${esc(q.title)}</div>`).join('')}</div>` : ''}<div class="tip-t">누르면 일을 고르는 창이 열립니다.</div>`;
+            t && t.items && t.items.length ? `<div>문서 할 일 ${t.items.length}: README가 낡은 것처럼 브리지가 찾은 문서 정리 거리입니다.${t.items.slice(0, 3).map((q) => `<div class="tip-s">· ${esc(q.title)}</div>`).join('')}</div>` : ''}<div class="tip-t">누르면 일을 고르는 창이 열립니다.</div>`;
         HITS.push({ x, y, w, h, soft: true, tip });
       }
     }
@@ -3735,8 +3735,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // 코더 맡길 일 호버 줄(11-09) — 몇 개 · 앞의 셋
   function coderJobsTip(jobs) {
     if (!jobs || !jobs.length) return '';
-    const line = (j) => (j.kind === 'rested' ? `합치기 기다림 — ${j.title}${j.days >= REST_DAYS ? ` · ${j.days}일째` : ''}` : j.title);
-    return `<div>맡길 일 ${jobs.length} — 코더에게 받은 할 일과 브리지가 이미 아는 신호입니다.${jobs.slice(0, 3).map((j) => `<div class="tip-s">· ${esc(short(line(j), 60))}</div>`).join('')}${jobs.length > 3 ? `<div class="tip-s">… ${jobs.length - 3}개 더</div>` : ''}</div>`;
+    const line = (j) => (j.kind === 'rested' ? `합치기 기다림: ${j.title}${j.days >= REST_DAYS ? ` · ${j.days}일째` : ''}` : j.title);
+    return `<div>맡길 일 ${jobs.length}: 코더에게 받은 할 일과 브리지가 이미 아는 신호입니다.${jobs.slice(0, 3).map((j) => `<div class="tip-s">· ${esc(short(line(j), 60))}</div>`).join('')}${jobs.length > 3 ? `<div class="tip-s">… ${jobs.length - 3}개 더</div>` : ''}</div>`;
   }
   function actorTip(a) {
     const roleKey = (r) => ((theme.tags && theme.tags.roles) || {})[r];
@@ -3745,7 +3745,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const v = ((theme.tags && theme.tags.zones) || {})[key];
       const nm = Array.isArray(v) ? v[0] : v;
       const role = ZONE_ROLE[roleKey(key)];
-      return nm ? `${esc(nm)}${role ? ` — ${esc(role.what)}` : ''}` : '';
+      return nm ? `${esc(nm)}${role ? `(${esc(role.what)})` : ''}` : '';
     };
     if (a.kind === 'session' && a.s) {
       const s = a.s;
@@ -3756,45 +3756,45 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         : `${esc(s.activity.tool)} ${softEsc(short(s.activity.target || '', 70))}`) : '생각 중') : '';
       const vs = viewState(s), bg = s.background || [];
       // 코더(11-13 — 상주 · 임시 구분 없음): 이 방에서 일하는 코더 수 · 끝나면 자리로. 맡길 일은 코더 자리 말풍선에
-      const who = a.coder ? `<div class="tip-s">코더 · 일 ${a.coders || 1} — 이 방에서 일하는 코더 세션입니다. 끝나면 코더 자리로 걸어 돌아갑니다. 맡길 일은 코더 자리 말풍선에 있습니다.</div>` : '';
+      const who = a.coder ? `<div class="tip-s">코더 · 일 ${a.coders || 1}: 이 방에서 일하는 코더 세션입니다. 끝나면 코더 자리로 걸어 돌아갑니다. 맡길 일은 코더 자리 말풍선에 있습니다.</div>` : '';
       // 11-09 사용자 — 이름표는 역할만이라 호버 첫 줄에 역할 · 세션 번호 · 제목("237 합쳐라"를 듣고 어느 세션인지 찾게)
       return `<div class="tip-h">${esc(roleTag(roleOf(s)))} 세션 ${s.id}</div><div class="tip-b">${esc(a.name)}</div>${who}<div class="tip-b">${esc({ ACTIVE: '작업 중', IDLE: '쉬는 중', WAITING: '기다리는 중', SUSPENDED: '멈춤', DORMANT: '종료' }[vs] || vs)}${
         a.act && a.act.go ? ` · ${zoneName(a.act.go)}` : ''}</div>${now ? `<div>${now}</div>` : ''}${
-        s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎${vs === 'WAITING' ? ' — 둘레의 작은 캐릭터' : ''}${(s.subagent_descs || []).map((d) => `<div class="tip-s">· ${esc(short(d, 50))}</div>`).join('')}</div>` : ''}${
-        bg.length ? `<div>뒤에서 도는 일 ${bg.length}개(백그라운드 명령)${vs === 'WAITING' ? ' — 머리 위 어두운 상자의 도는 막대 「|」' : ''}${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}<br>&nbsp;&nbsp;${esc(bgTip(x))}</div>`).join('')}</div>` : ''}${
-        a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝났는지 모름(빨간 「…」) — 끝 신호가 오지 않았습니다. 대화창을 확인하거나 [작업 중단]을 누릅니다.' }[a.act.flag] || a.act.flag)}</div>` : ''}${
+        s.subagents_running ? `<div>서브에이전트 ${s.subagents_running}개 돎${vs === 'WAITING' ? '(둘레의 작은 캐릭터)' : ''}${(s.subagent_descs || []).map((d) => `<div class="tip-s">· ${esc(short(d, 50))}</div>`).join('')}</div>` : ''}${
+        bg.length ? `<div>뒤에서 도는 일 ${bg.length}개(백그라운드 명령)${vs === 'WAITING' ? ', 머리 위 어두운 상자의 도는 막대 「|」' : ''}${bg.map((x) => `<div class="tip-s">· ${esc(x.tool)} ${esc(short(x.description || x.task, 50))}<br>&nbsp;&nbsp;${esc(bgTip(x))}</div>`).join('')}</div>` : ''}${
+        a.act && a.act.flag ? `<div class="tip-s">${esc({ approval_pending: '승인 대기', stuck_turn: '끝났는지 모름(빨간 「…」). 끝 신호가 오지 않았습니다. 대화창을 확인하거나 [작업 중단]을 누릅니다.' }[a.act.flag] || a.act.flag)}</div>` : ''}${
         needMark(s) ? `<div class="tip-s">${esc(needMark(s).tip)}</div>` : ''}${
-        a.subHidden ? `<div class="tip-s">+${a.subHidden} — 서브에이전트가 많아 화면에 다 그리지 않고 접은 수입니다.</div>` : ''}${
-        s.compact && s.compact.level ? `<div class="tip-s">📦 대화 자동 요약 ${s.compact.count}번(대화가 길어 앞부분을 요약해 줄였습니다. 줄일수록 처음에 정한 것을 잊습니다) —${s.compact.level === 'late' ? '늦었습니다' : '새 세션으로 넘어갈 때입니다'}</div>` : ''}
+        a.subHidden ? `<div class="tip-s">+${a.subHidden}: 서브에이전트가 많아 화면에 다 그리지 않고 접은 수입니다.</div>` : ''}${
+        s.compact && s.compact.level ? `<div class="tip-s">📦 대화 자동 요약 ${s.compact.count}번(대화가 길어 앞부분을 요약해 줄였습니다. 줄일수록 처음에 정한 것을 잊습니다). ${s.compact.level === 'late' ? '늦었습니다' : '새 세션으로 넘어갈 때입니다'}</div>` : ''}
         <div class="tip-t">누르면 대화가 열립니다.</div>`;
     }
     if (a.kind === 'mini') return `<div class="tip-h">서브에이전트</div><div>${esc(a.name)}</div><div class="tip-t">누르면 부모 세션이 열립니다.</div>`;
     if (a.kind === 'infra') {
       const r = world.rooms.find((q) => q.name === a.room), st = r ? r['st_' + a.infra] : 'none';
-      return `<div class="tip-h">${esc(a.name)}</div>${tipOf(INFRA_ROLE[a.infra])}<div class="tip-s">지금: ${esc(STATUS_KO[st] || st)}${st === 'waiting' ? ' — ' + WAIT_TIP : ''}</div>`;
+      return `<div class="tip-h">${esc(a.name)}</div>${tipOf(INFRA_ROLE[a.infra])}<div class="tip-s">지금: ${esc(STATUS_KO[st] || st)}${st === 'waiting' ? '. ' + WAIT_TIP : ''}</div>`;
     }
     if (a.kind === 'courier') {
       const ch = a.plan && a.plan.ch, c = ch && ch.commits && ch.commits[0];
       return `<div class="tip-h">${esc(a.name)}</div><div class="tip-b">파이프라인 담당</div><div>커밋을 받아 단계마다 옮기는 사람입니다.</div>
-        <div class="tip-s">${esc(courierNow(a.plan))}${a.plan && a.plan.st === 'waiting' ? ' — ' + WAIT_TIP : ''}</div>${c ? `<div class="tip-t">${esc(c.short)} ${esc(short(c.subject || '', 70))}</div>` : ''}${
+        <div class="tip-s">${esc(courierNow(a.plan))}${a.plan && a.plan.st === 'waiting' ? '. ' + WAIT_TIP : ''}</div>${c ? `<div class="tip-t">${esc(c.short)} ${esc(short(c.subject || '', 70))}</div>` : ''}${
         a.plan && a.plan.queue.length ? `<div class="tip-t">대기 ${a.plan.queue.length}개</div>` : ''}<div class="tip-t">누르면 파이프라인이 열립니다.</div>`;
     }
     if (a.kind === 'foreman') {
       const fm = a.fm || { running: false, pending: [] };
-      const now_ = fm.running ? '지금 계획을 세우는 중입니다.' : fm.pending.length ? `시작할 일 ${fm.pending.length} — 세워 둔 계획 중 [시작]을 기다리는 것입니다.` : '기다리는 중입니다.';
+      const now_ = fm.running ? '지금 계획을 세우는 중입니다.' : fm.pending.length ? `시작할 일 ${fm.pending.length}: 세워 둔 계획 중 [시작]을 기다리는 것입니다.` : '기다리는 중입니다.';
       return `<div class="tip-h">${esc(a.name)}</div>${tipOf(ZONE_ROLE.hq)}<div class="tip-s">${now_}</div>${
         fm.pending.slice(0, 2).map((x) => `<div class="tip-t">· ${esc(short(x.title || x.why || '', 60))}</div>`).join('')}<div class="tip-t">누르면 말하기 창이 열립니다. 세션은 없습니다.</div>`;
     }
     if (a.kind === 'scribe') {
       const t = a.todo;
-      return `<div class="tip-h">서기</div><div class="tip-b">문서 담당 — 회고 · 문서 점검 · README · CLAUDE.md · 나중에 할 일 · Notion 게시</div>${
-        t && t.nudge ? `<div class="tip-s">정리할까요? — 서기 몫 받은 할 일이 쌓였습니다(${esc(t.nudge.why)}). 누르면 「나중에 할 일 정리」를 고른 창이 열립니다. [시키기]를 눌러야 세션이 뜹니다.</div>` : ''}${
-        t && t.items && t.items.length ? `<div>문서 할 일 ${t.items.length} — README가 낡은 것처럼 브리지가 찾은 문서 정리 거리입니다. 누르면 서기에게 맡깁니다.${t.items.slice(0, 3).map((x) => `<div class="tip-s">· ${esc(x.title)}</div>`).join('')}</div>` : ''}
+      return `<div class="tip-h">서기</div><div class="tip-b">문서 담당: 회고 · 문서 점검 · README · CLAUDE.md · 나중에 할 일 · Notion 게시</div>${
+        t && t.nudge ? `<div class="tip-s">정리할까요? 서기 몫 받은 할 일이 쌓였습니다(${esc(t.nudge.why)}). 누르면 「나중에 할 일 정리」를 고른 창이 열립니다. [시키기]를 눌러야 세션이 뜹니다.</div>` : ''}${
+        t && t.items && t.items.length ? `<div>문서 할 일 ${t.items.length}: README가 낡은 것처럼 브리지가 찾은 문서 정리 거리입니다. 누르면 서기에게 맡깁니다.${t.items.slice(0, 3).map((x) => `<div class="tip-s">· ${esc(x.title)}</div>`).join('')}</div>` : ''}
         <div class="tip-t">누르면 일을 고르는 창이 열립니다.</div>`;
     }
     if (a.kind === 'coder') {
       const now_ = a.returning ? '일을 마치고 코더 자리로 돌아가는 중입니다.' : '지금은 세션이 없어 자리에서 쉽니다. 코더 세션이 뜨면 뜬 수만큼 책상으로 가서 일합니다.';
-      return `<div class="tip-h">코더</div><div class="tip-b">코딩 담당 — ${now_}</div>${coderJobsTip(a.jobs)}
+      return `<div class="tip-h">코더</div><div class="tip-b">코딩 담당. ${now_}</div>${coderJobsTip(a.jobs)}
         <div class="tip-t">누르면 맡길 일 목록이 열립니다.</div>`;
     }
     return `<div class="tip-h">${esc(a.name || '')}</div>`;
