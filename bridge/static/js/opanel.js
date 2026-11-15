@@ -12,6 +12,7 @@ import { approvalCard, handleApprovalClick, handleApprovalInput, restoreNotes, a
 import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
 import { hideTip } from './tip.js';
+import { gripDrag } from './grip.js';
 import { modelMenuHtml, sameModel } from './modelpick.js';
 import { mountHandoff, FLOW_TIP } from './handoff.js';
 import { createScribe } from './scribe.js';
@@ -78,7 +79,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         </div>
       </div>
       <form id="pForm" class="input" hidden>
-        <div id="pGrip" class="pgrip" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="입력 칸 높이" data-tip="높이 조절 — 위아래로 끌어 입력 칸 높이를 바꿉니다(키보드는 ↑ ↓). 더블클릭하면 기본 높이로 돌아갑니다."></div>
+        <div id="pGrip" class="pgrip" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="입력 칸 높이" data-tip="높이 조절 — 끌어서 입력 칸 높이를 바꿉니다. 눌러서 고른 뒤 ↑↓로도 바꿉니다. 더블클릭하면 원래 높이로 돌아갑니다."></div>
         <button type="button" id="pAskHint" class="ghost small pask" data-tip="입력 칸 — 세션이 질문의 답을 기다리는 동안은 질문 카드의 글 칸으로 보냅니다. 누르면 이 입력 칸을 펼칩니다.">질문에 답하는 중: 글은 질문 카드의 글 칸으로 · 입력 칸 펼치기</button>
         <textarea id="pText" rows="6"placeholder="이 세션에 보낼 입력 (Ctrl+Enter로 보냅니다)"></textarea>
         <div class="row prow">
@@ -553,7 +554,9 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   const textH = () => $('pText').offsetHeight;
   const zoomF = () => { const e = $('pText'), r = e.getBoundingClientRect().height; return e.offsetHeight && r ? r / e.offsetHeight : 1; };
   function maxInputH() {
-    const cv = $('pConvo'), vp = Math.round(window.innerHeight * 0.45 / zoomF());
+    // 위 한도는 CSS의 max-height(45dvh)가 실제로 자르는 값을 읽는다(11-15). 창 높이 × 0.45를 배율로 나누면 배율이 90%일 때
+    // CSS가 자르는 값(345px)보다 커서(384px) 끝을 넘긴 만큼 손잡이가 마우스보다 앞서 밀렸다
+    const cv = $('pConvo'), cssMax = parseFloat(getComputedStyle($('pText')).maxHeight), vp = Math.floor(cssMax > 0 ? cssMax : window.innerHeight * 0.45 / zoomF());
     if (!cv || $('pForm').hidden) return vp;
     // 지금 대화 칸이 MIN_CONVO보다 작으면(원래 낮은 창) 지금 높이가 상한 — 더 키우지 못하고 줄이는 것만 된다
     return Math.max(MIN_INPUT_H, Math.min(vp, Math.floor(textH() + cv.clientHeight - MIN_CONVO)));
@@ -572,17 +575,20 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   }
   (() => {
     const g = $('pGrip');
-    let y0 = 0, h0 = 0, max0 = 0, z0 = 1, tipText = '';
+    let st = { y0: 0, h0: 0 }, h0 = 0, min0 = MIN_INPUT_H, max0 = 0, z0 = 1, tipText = '';
     g.addEventListener('pointerdown', (ev) => {
       if (ev.button) return;
       ev.preventDefault();
-      y0 = ev.clientY; h0 = textH(); max0 = maxInputH(); z0 = zoomF(); g.setPointerCapture(ev.pointerId); g.classList.add('drag');
+      h0 = textH(); st = { y0: ev.clientY, h0 }; min0 = Math.max(MIN_INPUT_H, Math.ceil(parseFloat(getComputedStyle($('pText')).minHeight) || 0)); max0 = maxInputH(); z0 = zoomF(); g.setPointerCapture(ev.pointerId); g.classList.add('drag');
       // 끄는 동안 쪽지는 끈다 — preventDefault로 mousedown이 오지 않아 tip.js가 못 숨겼다. 놓으면 되돌려 다시 올리면 뜬다
       hideTip(); tipText = g.dataset.tip || tipText; g.removeAttribute('data-tip');
     });
     g.addEventListener('pointermove', (ev) => {
       if (!g.classList.contains('drag')) return;
-      $('pText').style.height = `${Math.round(Math.max(MIN_INPUT_H, Math.min(h0 + (y0 - ev.clientY) / z0, Math.max(max0, h0))))}px`;   // 위로 끌면 커진다
+      // 위로 끌면 커진다. 처음 누른 지점과의 차이로 잡고, 끝에 닿으면 기준점을 그 자리로 옮긴다(grip.js — 끝을 넘긴 거리가 쌓이지 않게)
+      const r = gripDrag(st, ev.clientY, min0, Math.max(max0, h0), z0);
+      st = r.st;
+      $('pText').style.height = `${Math.round(r.h)}px`;
     });
     // 안 바뀐 클릭은 기억하지 않는다(원래 낮은 창에서 클릭만으로 높이가 저장 · 줄어들지 않게)
     const end = () => { if (!g.classList.contains('drag')) return; g.classList.remove('drag'); g.dataset.tip = tipText; repinConvo(); if (textH() === h0) { if (!savedH()) $('pText').style.height = ''; } else setInputH(textH(), true); };
