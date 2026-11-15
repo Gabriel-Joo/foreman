@@ -355,6 +355,10 @@ class Card:
     pushed: bool | None = None
     # 11-15 조사 세션 카드인데 브리지가 스스로 합치지 않는 까닭(log 밖 파일, 충돌, 묻는 말 등). 스스로 합치는 카드(approver auto)는 None
     auto_why: str | None = None
+    # 11-15 D2 바뀐 파일 중 안전 규칙 · 게이트 파일(config/approval.toml [sensitive] protect). 합치기를 막지 않고 표시만 —
+    # 합치면 브리지를 다시 띄울 때 살아난다. 확인을 못 했으면 rule_files_error에 까닭
+    rule_files: list[str] = field(default_factory=list)
+    rule_files_error: str | None = None
     made_at: str = ""
     updated_at: str = ""
 
@@ -390,6 +394,15 @@ def _dt(s: str | None) -> datetime:
         return datetime.fromisoformat((s or "").removesuffix("Z"))
     except ValueError:
         return _now()
+
+
+def rule_line(c: Card) -> str:
+    """카드 · 알림 · 관리자 글의 「규칙 파일이 바뀝니다」 한 줄(11-15 D2)."""
+    if c.rule_files_error:
+        return c.rule_files_error + "."
+    fs = c.rule_files
+    return (f"규칙 파일이 바뀝니다: {', '.join(fs[:5])}{' …' if len(fs) > 5 else ''}. "
+            "합치기는 막지 않습니다. 합친 뒤 브리지를 다시 띄우면 반영됩니다.")
 
 
 def card_json(c: Card) -> str:
@@ -849,6 +862,7 @@ class MergePrep:
                     head=st["head"], base_head=st["base_head"], live=bool(ls), why=why, ahead=st["ahead"], behind=st["behind"],
                     commits=st["commits"], files=files.splitlines()[:60], conflict=conflict, docs=docs, asks=asks, via=via,
                     made_at=made, updated_at=now)
+        card.rule_files, card.rule_files_error = await wt.rule_changes(repo, st["base"], st["branch"])
         mgr = None
         if self.cfg.approver_of(project) == "manager":
             try:
@@ -885,6 +899,7 @@ class MergePrep:
                              f"⑂ 합치기 준비됨 — 「{title or sid}」(세션 {sid}) {card.branch} 커밋 {card.ahead}개, "
                              + (f"충돌 {len(conflict)}개" if conflict else ("충돌 없음 · ff 가능" if card.ff else f"충돌 없음 · {card.base}에 새 커밋 {card.behind}개(rebase)"))
                              + (f"\n❓ 세션이 묻는 말이 있습니다 — 패널에서 답하십시오: {asks.get('tail') or ''}" if asks else "")
+                             + (f"\n🛡 {rule_line(card)}" if card.rule_files or card.rule_files_error else "")
                              + ("\n▶ 관리자 세션이 승인합니다(사람 승인 필요 없음)" if card.approver == "manager"
                                 else (f"\n⚠ 사람 승인 — {'; '.join(card.human_why)}" if card.human_why else "")
                                 + "\n▶ 그 세션 패널의 「합치기 승인」에서 승인합니다"))
@@ -949,7 +964,8 @@ class MergePrep:
         head = (f"[FOREMAN 합치기 카드] 세션 {c.sid} 「{c.title or ''}」 {c.branch} 커밋 {c.ahead}개 · 바뀐 파일 {len(c.files)}개 · {how}."
                 f"{' 세션이 살아 있다 — 승인하면 끝낸다.' if c.live else ''}"
                 f"{' 세션이 묻는 말이 있다: ' + str((c.asks or {}).get('tail') or '') if c.asks else ''}"
-                f"{' 조사 세션이지만 브리지가 스스로 끝내고 합치지 않았다: ' + c.auto_why + '.' if c.auto_why else ''}")
+                f"{' 조사 세션이지만 브리지가 스스로 끝내고 합치지 않았다: ' + c.auto_why + '.' if c.auto_why else ''}"
+                f"{' 🛡 ' + rule_line(c) if c.rule_files or c.rule_files_error else ''}")
         see = f" 카드 전부: GET /api/merge-prep?project={c.project}(커밋 · 바뀐 파일 · 정리 후보 {dn}개)."
         if c.human_why:
             return (head + " 이 카드는 **사람 승인**이다 — 승인자는 관리자지만 늘 사람에게 올릴 것에 걸렸다: " + "; ".join(c.human_why)

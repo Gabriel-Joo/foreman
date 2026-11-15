@@ -1,6 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mpSection, managerCard, humanFiles, mergedNote } from '../../bridge/static/js/handoff.js';
+import { mpSection, managerCard, humanFiles, mergedNote, ruleNote } from '../../bridge/static/js/handoff.js';
+
+// 11-15 규칙 파일(D2) — 바뀐 파일 중 승인 규칙 · 게이트 파일이 있으면 카드에 한 줄. 없으면 그리지 않는다
+test('규칙 파일이 바뀌면 카드에 🛡 한 줄, 확인 실패도 보인다', () => {
+  const c = { sid: 7, branch: 'cc/w', base: 'main', head: 'abc', ahead: 1, behind: 0, live: false, commits: ['a1'], status: 'ready',
+    files: ['config/approval.toml', 'bridge/x.py'], conflict: null, docs: null };
+  assert.equal(ruleNote(c), '');
+  const h = mpSection({ card: { ...c, rule_files: ['config/approval.toml'] } }, () => '', 7);
+  assert.match(h, /🛡 규칙 파일이 바뀝니다: approval\.toml/);
+  assert.match(ruleNote({ ...c, rule_files: ['config/approval.toml'] }), /title="규칙 파일 — [^"]*&#10;config\/approval\.toml"/);
+  assert.match(ruleNote({ ...c, rule_files_error: '규칙 파일이 바뀌는지 확인하지 못했습니다(OSError)' }), /확인하지 못했습니다/);
+});
 
 // 합치기 승인 카드(11-11 1물결 A) — 브리지가 만든 카드를 패널이 그린다. 사람은 [합치기] · [나중에]만
 const b = (act, label, on, cls = '', tip = '') => `<button data-act="${act}"${on ? '' : ' disabled'} title="${tip}">${label}</button>`;

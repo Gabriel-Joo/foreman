@@ -19,6 +19,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from bridge.approval import rule_files
 from bridge.inject import Refused
 
 WT_DIR = ".worktrees"
@@ -384,6 +385,8 @@ async def merge(repo: str, name: str, squash: bool | None = None, *, title: str 
             return {"ok": False, "conflict": files.splitlines(), "detail": out[-800:],
                     "note": "rebase 중 충돌이 나서 되돌렸습니다. 충돌 파일을 그 세션에서 풀어 커밋한 뒤 다시 합쳐 주세요."}
     _, dirty_main = await git(repo, "status", "--porcelain", "--untracked-files=no")
+    rules, rules_err = await rule_changes(repo, base, branch)
+    rnote = _rule_note(rules, rules_err)
     target, sq = branch, None
     if squash and st["ahead"] >= 2:                      # 커밋 하나는 묶을 것이 없다 — 그대로 ff
         _, tree = await git(repo, "rev-parse", f"{branch}^{{tree}}")
@@ -412,16 +415,34 @@ async def merge(repo: str, name: str, squash: bool | None = None, *, title: str 
         await remove(repo, name, force=False, drop_branch=rc == 0)
         head = msg.split("\n", 1)[0]
         return {"ok": True, "merged": st["ahead"], "commits": st["commits"], "squash": sq[:12], "into": sq[:12], "title": head,
-                "orig_ref": ref if rrc == 0 else None,
+                "orig_ref": ref if rrc == 0 else None, "rule_files": rules,
                 "note": f"{base}에 커밋 {st['ahead']}개를 커밋 하나({sq[:8]} 「{head}」)로 묶어 합쳤습니다(squash, 본문에 원래 날짜 · 해시 · 제목)."
                         + kept + ("" if rc == 0 else f" 트리가 달라 브랜치 {branch}는 지우지 않고 남겼습니다.")
-                        + (f" {changed}" if changed else "") + " push는 하지 않았습니다."}
+                        + (f" {changed}" if changed else "") + " push는 하지 않았습니다." + rnote}
     # 11-14 화면 갈래 — 합친 뒤 원본 끝 커밋(rebase로 해시가 바뀌었을 수 있다)과 그 제목. 카드가 push 여부를 이 해시로 본다
     _, into = await git(repo, "rev-parse", base, check=False)
     _, into_title = await git(repo, "log", "-1", "--format=%s", base, check=False)
     await remove(repo, name, force=False)
     return {"ok": True, "merged": st["ahead"], "commits": st["commits"], "into": (into or "")[:12] or None, "title": into_title or None,
-            "note": f"{base}에 커밋 {st['ahead']}개를 합쳤습니다." + unused + " push는 하지 않았습니다."}
+            "rule_files": rules, "note": f"{base}에 커밋 {st['ahead']}개를 합쳤습니다." + unused + " push는 하지 않았습니다." + rnote}
+
+
+async def rule_changes(repo: str, base: str, branch: str) -> tuple[list[str], str | None]:
+    """이 합치기가 바꾸는 안전 규칙 · 게이트 파일(11-15, config/approval.toml [sensitive] protect). 합치기를 막지는 않는다 —
+    결과 · 카드 · 🛡 알림에 「규칙 파일이 바뀝니다」로 보인다. 확인을 못 했으면 (빈 목록, 까닭) — 조용히 「없음」으로 두지 않는다."""
+    try:
+        _, names = await git(repo, "diff", "--name-only", f"{base}...{branch}")
+        return rule_files(repo, names.splitlines()), None
+    except Exception as e:  # noqa: BLE001
+        return [], f"규칙 파일이 바뀌는지 확인하지 못했습니다({type(e).__name__})"
+
+
+def _rule_note(rules: list[str], err: str | None) -> str:
+    if err:
+        return f" {err}."
+    if not rules:
+        return ""
+    return f" 🛡 규칙 파일이 바뀝니다({', '.join(rules[:5])}{' …' if len(rules) > 5 else ''}). 브리지를 다시 띄우면 반영됩니다."
 
 
 async def remove(repo: str, name: str, force: bool, drop_branch: bool | None = None) -> None:

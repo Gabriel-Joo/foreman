@@ -110,6 +110,14 @@ export function mergedNote(c) {
       ${c.manager_told === false ? '<div class="small warn">관리자 세션에는 알리지 못했습니다(텔레그램으로 남김).</div>' : ''}`,
   };
 }
+// 11-15 규칙 파일(D2, bridge/mergeprep.py rule_files) — 바뀐 파일 중 승인 규칙 · 게이트 파일. 합치기를 막지 않고 한 줄로 보인다(파일 이름만, 전체 경로는 호버)
+export function ruleNote(c) {
+  if (!c) return '';
+  if (c.rule_files_error) return `<div class="small warn mp-rule" title="규칙 파일 — 승인 규칙 파일이 바뀌는지 확인하지 못했습니다.">🛡 ${esc(c.rule_files_error)}</div>`;
+  const fs = c.rule_files || [];
+  if (!fs.length) return '';
+  return `<div class="small warn mp-rule" title="${esc(`규칙 파일 — 승인 규칙이나 게이트 파일이 바뀝니다. 합친 뒤 브리지를 다시 띄우면 반영됩니다.\n${fs.join('\n')}`).replace(/\n/g, '&#10;')}">🛡 규칙 파일이 바뀝니다: ${esc(fs.map((p) => p.split('/').pop()).join(', '))}</div>`;
+}
 export function mpSection(mp, b, sid) {
   if (!mp) return '';
   const h = mp.health && !mp.health.ok ? `<div class="small bad">⚠ ${esc(mp.health.error || '합치기 준비가 멈췄습니다')}</div>` : '';
@@ -171,6 +179,7 @@ export function mpSection(mp, b, sid) {
     ${c.asks && c.status === 'ready' ? `<div class="small warn mp-asks" title="묻는 말 — 일을 마친 보고 끝에 사람에게 묻는 말이 있습니다. 합치기 전에 답할지 정합니다.">❓ 세션이 묻는 말이 있습니다. 패널에서 답하십시오: ${esc(c.asks.tail || '')}</div>` : ''}
     ${conf ? `<div class="small bad">충돌 파일: ${c.conflict.map(esc).join(', ')}</div>` : ''}
     ${hfRows}
+    ${ruleNote(c)}
     ${merged}
     ${more}
     ${c.status === 'ready' || merged ? '' : note}

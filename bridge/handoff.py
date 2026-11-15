@@ -536,12 +536,12 @@ class HandoffManager:
         if self.on_change:
             self.on_change()
 
-    def _notify(self, row: SessionRow, msg: str) -> None:
+    def _notify(self, row: SessionRow, msg: str, kind: str = "handoff") -> None:
         if self.notifier:
             try:
                 rule = self.notifier.rules.for_project(row.project) if hasattr(self.notifier, "rules") else None
                 prefix = (rule.prefix if rule and rule.prefix else "[미분류]") + " "     # 승인 알림과 같은 접두어
-                self.notifier.send_direct(row.project, "handoff", row.id, prefix + msg)
+                self.notifier.send_direct(row.project, kind, row.id, prefix + msg)
             except Exception as e:  # noqa: BLE001 — 알림 실패가 요약을 막지 않는다
                 log.warning("인계 알림 실패: %s", type(e).__name__)
 
@@ -1281,6 +1281,10 @@ class HandoffManager:
                 res["review"] = {k: rv[k] for k in ("marks", "bad", "unsupported", "revision")}
             except Exception as e:  # noqa: BLE001 — 기록 실패가 합치기를 되돌리지 않는다
                 log.warning("서기 검토 기록 실패: %s", type(e).__name__)
+        if res.get("ok") and res.get("rule_files"):      # 11-15 D2 — 합치기는 Edit 도구를 거치지 않아 편집 때 🛡가 없다. 효과가 나는 이 순간에 알린다
+            fs = res["rule_files"]
+            self._notify(row, f"🛡 안전 규칙 파일이 합치기로 바뀌었습니다 · {name}\n▶ {', '.join(fs[:5])}{' …' if len(fs) > 5 else ''}\n"
+                              "브리지를 다시 띄우면 반영됩니다", kind="rulefile")
         if res.get("ok") and self.schema and row.project:
             res["schema_unlocked"] = self.schema.release(row.project, name)
         if res.get("ok"):

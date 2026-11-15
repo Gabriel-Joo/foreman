@@ -133,12 +133,13 @@ secret = [
 ]
 # 그중 Edit · Write 도구로 고치는 것은 통과(바뀐 내용이 터미널 · 기록에 보인다) — 대신 텔레그램 "🛡 안전 규칙 파일 수정"(10분에 한 번).
 # Bash로 덮어쓰기(> · tee · sed -i · cp)는 계속 묻는다. 11-03 "늘 Yes": 7일 10번 모두 Edit 도구로 approval.toml
+# 11-15 작업방 경로도(config/approval.toml과 같이 고침)
 protect_tool_edit_ok = [
-  '(^|/)AI_programming/foreman/config/(approval|notify)\.toml$',
+  '(^|/)AI_programming/foreman/(\.worktrees/[^/]+/)?config/(approval|notify)\.toml$',
 ]
 protect = [
-  '(^|/)AI_programming/foreman/config/(approval|notify)\.toml$',   # FOREMAN 안전 규칙 · 알림 규칙 자체
-  '(^|/)AI_programming/foreman/scripts/foreman-(hook|decide)\.sh$', # 11-03 — 게이트 자신(hook 스크립트)을 고쳐 끄는 길(PolicyApprovalGate 자기 보호)
+  '(^|/)AI_programming/foreman/(\.worktrees/[^/]+/)?config/(approval|notify)\.toml$',   # FOREMAN 안전 규칙 · 알림 규칙 자체
+  '(^|/)AI_programming/foreman/(\.worktrees/[^/]+/)?scripts/foreman-(hook|decide)\.sh$', # 11-03 — 게이트 자신(hook 스크립트)을 고쳐 끄는 길(PolicyApprovalGate 자기 보호)
   '(^|/)\.claude\.json$',                                           # CC 전역 설정(MCP 서버 등)
   '(^|/)\.mcp\.json$',
   '(^|/)\.claude/settings(\.local)?\.json$',

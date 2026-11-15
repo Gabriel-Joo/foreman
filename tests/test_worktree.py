@@ -82,6 +82,31 @@ async def test_merge_rebases_and_cleans(repo):
     assert not p.exists() and "cc/x" not in sh(repo, "branch")
 
 
+async def test_merge_marks_rule_files(repo):
+    """11-15 D2 — 바뀐 파일 중 승인 규칙 · 게이트 파일(config/approval.toml protect)을 결과에 싣는다. 합치기는 막지 않는다."""
+    p = Path((await wt.create(str(repo), "r"))["path"])
+    (p / ".claude").mkdir(); (p / ".claude" / "settings.json").write_text("{}\n")
+    (p / "b.txt").write_text("b\n")
+    sh(p, "add", "."); sh(p, "commit", "-qm", "rules")
+    r = await wt.merge(str(repo), "r")
+    assert r["ok"] and r["rule_files"] == [".claude/settings.json"]
+    assert "🛡 규칙 파일이 바뀝니다(.claude/settings.json)" in r["note"]
+    p = Path((await wt.create(str(repo), "s"))["path"])
+    (p / "c.txt").write_text("c\n"); sh(p, "add", "."); sh(p, "commit", "-qm", "plain")
+    r = await wt.merge(str(repo), "s")
+    assert r["ok"] and r["rule_files"] == [] and "규칙 파일" not in r["note"]
+
+
+async def test_merge_rule_check_failure_is_said(repo, monkeypatch):
+    def boom(*_a, **_k):
+        raise OSError("x")
+    monkeypatch.setattr(wt, "rule_files", boom)
+    p = Path((await wt.create(str(repo), "f"))["path"])
+    (p / "c.txt").write_text("c\n"); sh(p, "add", "."); sh(p, "commit", "-qm", "plain")
+    r = await wt.merge(str(repo), "f")
+    assert r["ok"] and "규칙 파일이 바뀌는지 확인하지 못했습니다(OSError)" in r["note"]
+
+
 async def test_conflict_stops_and_keeps(repo):
     p = Path((await wt.create(str(repo), "y"))["path"])
     (p / "a.txt").write_text("wt\n"); sh(p, "commit", "-qam", "wt")

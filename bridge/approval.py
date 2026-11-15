@@ -8,7 +8,9 @@ CC(auto mode 분류기 · 사용자 설정)가 지금처럼 정한다.
 - 파일에 쓰기만 하는 heredoc(cat > f <<EOF, tee f <<EOF)의 본문은 검사하지 않는다 — 실행되지 않는다.
   해석기로 들어가는 heredoc(bash <<EOF, python - <<EOF)은 검사한다 — 실행된다
 - 대신 **스크립트를 실행할 때**(bash x.sh, sh x.sh, source x, ./x.sh) 그 파일 내용을 읽어 검사한다 — heredoc이든
-  Write 도구든 파일에 숨긴 위험 명령은 실행되는 순간 잡힌다. bash -c '…' · vagrant ssh … -c '…'는 안쪽으로
+  Write 도구든 파일에 숨긴 위험 명령은 실행되는 순간 잡힌다. bash -c '…' · vagrant ssh … -c '…'는 안쪽으로.
+  11-15부터 셸이 받는 heredoc 본문과 실행 스크립트 본문도 안쪽처럼 조각 판정(통째로-삭제 등)까지 다시 한다
+  (log/foreman-7_silent_delete_fix_20261115.md)
 - 규칙 파일(config/approval.toml 등)은 [sensitive] protect — 쓰기 자체가 "안전 규칙 변경"이라 ask
 
 판정은 메모리 안에서 끝난다(스크립트 파일 읽기 제외, 256KB까지) — 모든 도구 호출 앞에서 불리므로 빨라야 한다.
@@ -152,13 +154,18 @@ class Policy:
                 for lit in re.findall(r"['\"]([^'\"\n]{1,200})['\"]", body):
                     if any(s.search(os.path.expanduser(lit)) for s in self.sensitive):
                         return Decision("ask", "민감한-경로", f"Bash: 스크립트가 비밀이 든 파일을 쓰거나 찍는다({_short(lit, 50)})")
-        segs = _segments(scan)
+        # 11-15(조사 B 고치기): $(pwd) · `pwd` · $(git rev-parse --show-toplevel)을 자리표시로 — 조각 판정이 cwd · 저장소 뿌리로 푼다.
+        # heredoc 본문은 조각에서 빼되 bodies에 모아, 받는 쪽이 셸이면 그 본문을 bash -c 안쪽처럼 다시 판정한다
+        marked = _mark_pwd(scan)
+        bodies: list[str] = []
+        segs = _segments(marked, bodies)
         if segs is None:
             if self.delete_outside and re.search(r"(^|[\s;&|(])rm\s", scan):
                 return Decision("ask", "애매한-삭제", "rm이 있는데 명령을 나눌 수 없다(따옴표 등). 무엇을 지울지 확정할 수 없다")
             return Decision("pass", "규칙파일-편집", f"Bash: 안전 규칙 · 설정 파일 쓰기, 묻지 않고 알림({rule_file})") if rule_file else None
         notes: list[str] = []
-        if (d := self._segments_ask(segs, cwd, scratchpad, depth, notes, _literal_env(orig))):
+        env = {**_literal_env(orig), **_pwd_env(marked)}
+        if (d := self._segments_ask(segs, cwd, scratchpad, depth, notes, env, bodies)):
             return d
         rule_file = rule_file or (notes[0] if notes else None)
         if rule_file:
@@ -177,13 +184,16 @@ class Policy:
         return None
 
     def _segments_ask(self, segs: list[tuple[str, list[str]]], cwd: str | None, scratchpad: str | None,
-                      depth: int, notes: list[str] | None = None, env: dict[str, str] | None = None) -> Decision | None:
-        """notes: protect_mode = notify일 때 보호 파일 쓰기를 묻지 않고 여기 모은다(알림용)."""
+                      depth: int, notes: list[str] | None = None, env: dict[str, str] | None = None,
+                      bodies: list[str] | None = None) -> Decision | None:
+        """notes: protect_mode = notify일 때 보호 파일 쓰기를 묻지 않고 여기 모은다(알림용).
+        bodies: _segments가 뺀 heredoc 본문(조각에는 <<HD_MARK<번호>로 남는다)."""
         here = cwd
         notify = self.protect_mode == "notify"
         notes = notes if notes is not None else []
         wpats = self.protect + (self.sensitive if self.secret_mode == "read" else [])
-        for _sep, seg in segs:
+        written: dict[str, str] = {}               # heredoc으로 쓴 파일(펼친 경로) → 본문
+        for k, (_sep, seg) in enumerate(segs):
             words = _strip_redirects(seg) if any(REDIRECT.match(t) for t in seg) else seg
             for i, t in enumerate(seg):            # 리다이렉트로 보호 · 비밀 파일에 쓰기
                 if t in (">", ">>", "&>", "1>", "2>") and i + 1 < len(seg) and \
@@ -192,13 +202,10 @@ class Policy:
                         return Decision("ask", "보호-설정파일", f"Bash: 안전 규칙 · 설정 · 비밀 파일 쓰기({s})")
                     if self._match(seg[i + 1], here, self.protect):
                         notes.append(s)
-            words = [w for w in words if not re.fullmatch(r"[A-Za-z_]\w*=.*", w)] or words
+            words = _cmd_words(words)
             if not words:
                 continue
             head = words[0]
-            if head in ("sudo", "nohup", "time", "env") and len(words) > 1:
-                words = words[1:]
-                head = words[0]
             if head == "cd" and len(words) == 2:
                 here = _abs(words[1], here) if not words[1].startswith("$") else here
                 continue
@@ -223,6 +230,24 @@ class Policy:
                         if not notify:
                             return Decision("ask", "보호-설정파일", f"Bash: 안전 규칙 · 설정 파일 쓰기({base} → {s})")
                         notes.append(f"{base} → {s}")
+            # 셸이 받는 heredoc(bash <<EOF · sh · zsh · bash -s · ssh … · cat <<EOF | bash) — 본문을 bash -c 안쪽처럼 다시 판정(11-15 A1)
+            marks = [int(m.group(1)) for t in seg if (m := _HD_TOK.fullmatch(t))]
+            if marks and bodies and depth < 3:
+                recv = words
+                if os.path.basename(head) == "cat" and len(words) == 1 and k + 1 < len(segs) and segs[k + 1][0] in ("|", "|&"):
+                    nxt = segs[k + 1][1]
+                    recv = _cmd_words(_strip_redirects(nxt) if any(REDIRECT.match(t) for t in nxt) else nxt)
+                kind = _heredoc_shell(recv)
+                if not kind and (tgt := _heredoc_file(seg, words)):
+                    written[_abs(tgt, here)] = bodies[marks[0]] if marks[0] < len(bodies) else ""
+                for i in marks if kind else []:
+                    if i >= len(bodies):
+                        continue
+                    d = self._bash(bodies[i], None if kind == "remote" else here, scratchpad, depth + 1)
+                    if d and d.verdict == "ask":
+                        return Decision("ask", d.rule, f"heredoc 본문: {d.reason}")
+                    if d and d.rule == "규칙파일-편집":
+                        notes.append(d.reason)
             inner = _inner_command(words)
             if inner is not None and depth < 3:     # bash -c '…' · vagrant ssh … -c '…' — 안쪽 명령으로
                 d = self._bash(inner, None if words[0] == "vagrant" else here, scratchpad, depth + 1)
@@ -232,17 +257,22 @@ class Policy:
                     notes.append(d.reason)
                 continue
             script = _script_path(words)
-            if script and depth < 3:                # 스크립트 실행 — 파일 내용을 검사한다
-                body = _read_script(script, here)
-                if body is not None and (d := self._ask_patterns(body)):
+            if script and depth < 3:                # 스크립트 실행 — 파일 내용을 bash -c 안쪽처럼 다시 판정한다(11-15 A1s, 전엔 정규식만)
+                # 같은 명령에서 heredoc으로 막 쓴 스크립트(cat > x.sh <<EOF … && bash x.sh)는 판정 순간 파일이 없다 — 그 본문으로
+                body = written.get(_abs(script, here))
+                body = body if body is not None else _read_script(script, here)
+                d = self._bash(body, here, scratchpad, depth + 1) if body is not None else None
+                if d and d.verdict == "ask":
                     return Decision("ask", d.rule, f"스크립트 {_short(script, 40)} 안: {d.reason}")
-            if head == "rm" and self.delete_protect:
+                if d and d.rule == "규칙파일-편집":
+                    notes.append(d.reason)
+            if os.path.basename(head) == "rm" and self.delete_protect:
                 for a in words[1:]:
                     if a.startswith("-"):
                         continue
                     if (why := self._protected_delete(a, here, env or {})):
                         return Decision("ask", "통째로-삭제", why)
-            if head == "rm" and self.delete_outside:
+            if os.path.basename(head) == "rm" and self.delete_outside:
                 for a in words[1:]:
                     if a.startswith("-"):
                         continue
@@ -334,6 +364,14 @@ class Policy:
         tok = re.sub(r"\$\{?HOME\}?(?=/|$)", "~", a)
         for v, val in (env or {}).items():           # T=/tmp/x && rm -rf $T — 값을 안다
             tok = re.sub(rf"\$\{{{v}(:\?)?\}}|\${v}(?!\w)", lambda _m, val=val: val, tok)
+        # 11-15 B1: 작업 폴더 · 저장소 뿌리 — $(pwd) · `pwd`(_mark_pwd가 PWD_MARK로 바꿈) · $PWD · ${PWD} · $(git rev-parse --show-toplevel)
+        if here is not None:
+            tok = re.sub(rf"{re.escape(PWD_MARK)}(?!\w)|\$\{{PWD(:\?)?\}}|\$PWD(?!\w)", lambda _m: here, tok)
+            if TOP_MARK in tok and (top := worktree_root(here)):
+                tok = tok.replace(TOP_MARK, top)
+        # 11-15 B2: 고정 부분 없이 명령 치환으로 시작한다($(dirname "$PWD") 등) — 무엇을 지울지 글로는 모른다
+        if re.match(rf"\$\(|`|\$$|{re.escape(PWD_MARK)}(?!\w)|{re.escape(TOP_MARK)}(?!\w)", tok):
+            return f"{_short(a, 40)}: 명령 치환으로 정해지는 경로를 지운다. 무엇을 지울지 확정할 수 없다(통째로일 수 있다)"
         m = re.search(r"\$|`", tok)
         if m:
             prefix = tok[:m.start()]
@@ -409,6 +447,11 @@ class Policy:
             if (tok := secret_in(seg) or next((t for p in prev if (t := secret_in(p))), None)):
                 return Decision("ask", "비밀-외부전송", f"비밀 파일({_short(tok, 40)})을 밖으로 보낸다({head})")
         return None
+
+    def protected_changes(self, repo: str, files: list[str]) -> list[str]:
+        """저장소 상대 경로 목록 중 [sensitive] protect(안전 규칙 · 게이트 파일)에 걸리는 것(11-15 D2 — 합칠 때 본다)."""
+        root = os.path.realpath(repo)
+        return [f for f in files if f and any(p.search(os.path.join(root, f)) for p in self.protect)]
 
     def _match(self, path: str, cwd: str | None, pats: list[re.Pattern[str]]) -> str | None:
         p = _abs(path, cwd)
@@ -884,10 +927,104 @@ def _strip_interp_heredocs(cmd: str) -> str:
     return HEREDOC.sub(sub, cmd)
 
 
-def _segments(cmd: str) -> list[tuple[str, list[str]]] | None:
+PWD_MARK = "$__FOREMAN_PWD__"      # $(pwd) · `pwd` 자리 — 조각 판정(_protected_delete)이 cwd로 푼다
+TOP_MARK = "$__FOREMAN_TOP__"      # $(git rev-parse --show-toplevel) 자리 — 저장소 뿌리로 푼다
+HD_MARK = "FOREMANHD"              # _segments가 뺀 heredoc 본문 자리(<<FOREMANHD<번호>)
+_HD_TOK = re.compile(rf"{HD_MARK}(\d+)")
+_PWD_SUB = re.compile(r"\$\(\s*pwd(?:\s+-[LP])?\s*\)|`\s*pwd(?:\s+-[LP])?\s*`")
+_TOP_SUB = re.compile(r"\$\(\s*git(?:\s+-C\s+\.)?\s+rev-parse\s+--show-toplevel\s*\)|`\s*git\s+rev-parse\s+--show-toplevel\s*`")
+_LEAD = {"sudo", "nohup", "time", "env", "command", "exec", "then", "do", "else", "elif", "if", "while", "until", "!", "{", "("}
+
+
+def _mark_pwd(cmd: str) -> str:
+    return _TOP_SUB.sub(TOP_MARK, _PWD_SUB.sub(PWD_MARK, cmd))
+
+
+def _pwd_env(cmd: str) -> dict[str, str]:
+    """d=$(pwd) · d="$PWD" · d=$(git rev-parse --show-toplevel)처럼 작업 폴더 · 저장소 뿌리로 딱 한 번 정한 변수(_mark_pwd 뒤의 글)."""
+    env: dict[str, str] = {}
+    marks = rf"{re.escape(PWD_MARK)}|{re.escape(TOP_MARK)}|\$\{{PWD\}}|\$PWD"
+    for m in re.finditer(rf"(?:^|[\s;&|(])([A-Za-z_]\w*)=(\"?)({marks})\2(?=[\s;&|)]|$)", cmd):
+        env[m.group(1)] = m.group(3)
+    for v in list(env):
+        if len(re.findall(rf"(?<![\w$]){v}=", cmd)) != 1 or re.search(
+                rf"\bfor\s+{v}\b|\bread\b[^;&|\n]*\b{v}\b|\$\{{{v}:?[=+-]|\beval\b|\bsource\b", cmd):
+            del env[v]
+    return env
+
+
+def _cmd_words(words: list[str]) -> list[str]:
+    """조각의 낱말에서 실제 명령부터 — 앞붙임 환경변수 · sudo · nohup · env · then · do · { · ( 따위를 건너뛴다."""
+    words = [w for w in words if not re.fullmatch(r"[A-Za-z_]\w*=.*", w)] or words
+    while len(words) > 1 and words[0] in _LEAD:
+        words = words[1:]
+        words = [w for w in words if not re.fullmatch(r"[A-Za-z_]\w*=.*", w)] or words
+    return words
+
+
+def _newline_seps(text: str) -> str:
+    """줄바꿈도 명령 구분으로 — shlex는 줄바꿈을 빈칸으로 본다(11-15: 스크립트 · heredoc 본문의 `set -e` 다음 줄 rm이 한 조각으로
+    뭉쳐 머리가 set이 됐다). 다음 줄 앞에 ;를 붙인다(주석은 줄 끝까지라 앞 줄 끝에 붙이면 먹힌다). | · && · || · \\ 로 끝난 줄은 잇는다."""
+    if "\n" not in text:
+        return text
+    lines = text.replace("\\\n", " ").split("\n")
+    out = [lines[0]]
+    for prev, ln in zip(lines, lines[1:]):
+        out.append(ln if re.search(r"(\||&&)\s*$", prev) else ";" + ln)
+    return "\n".join(out)
+
+
+def _heredoc_file(seg: list[str], words: list[str]) -> str | None:
+    """heredoc을 파일에 쓰는 조각(cat > f · cat >> f · tee [-a] f)이면 그 파일."""
+    if not words or os.path.basename(words[0]) not in ("cat", "tee"):
+        return None
+    if words[0].endswith("tee"):
+        return next((w for w in words[1:] if not w.startswith("-")), None)
+    return next((seg[i + 1] for i, t in enumerate(seg[:-1]) if t in (">", ">>")), None)
+
+
+_SSH_ARG = {"-p", "-i", "-l", "-o", "-F", "-J", "-b", "-c", "-D", "-E", "-e", "-L", "-m", "-O", "-Q", "-R", "-S", "-W", "-w", "-B"}
+
+
+def _heredoc_shell(words: list[str]) -> str | None:
+    """heredoc을 받는 명령이 본문을 셸 명령으로 실행하는가 — "local"(bash · sh · zsh · bash -s) · "remote"(ssh · vagrant ssh) · None.
+    bash -c '…'(stdin은 데이터) · bash x.sh(스크립트가 stdin을 읽는다)는 아니다."""
+    if not words:
+        return None
+    head = os.path.basename(words[0])
+    if head in SHELLS:
+        if "-c" in words:
+            return None
+        pos = [w for w in words[1:] if not w.startswith("-")]
+        return "local" if not pos or "-s" in words else None
+    if head == "vagrant" and len(words) > 1 and words[1] == "ssh":
+        return "remote" if "-c" not in words else None
+    if head == "ssh":
+        pos, i = [], 1
+        while i < len(words):
+            w = words[i]
+            if w in _SSH_ARG:
+                i += 2
+                continue
+            if not w.startswith("-"):
+                pos.append(w)
+            i += 1
+        if len(pos) <= 1:
+            return "remote"                     # 원격 명령 없이 — 로그인 셸이 stdin을 실행한다
+        return "remote" if os.path.basename(pos[1]) in SHELLS else None
+    return None
+
+
+def _segments(cmd: str, bodies: list[str] | None = None) -> list[tuple[str, list[str]]] | None:
     """(앞 구분자, 낱말들) 목록. heredoc 본문은 뺀다(남은 본문은 _strip_file_heredocs가 걸러 낸 뒤의 것).
+    bodies를 주면 뺀 본문을 거기 모으고 조각에는 <<HD_MARK<번호>와 여는 줄의 나머지를 남긴다(11-15 — 받는 쪽이 셸이면 다시 판정).
     따옴표가 안 닫히는 등 나눌 수 없으면 None."""
-    body = HEREDOC.sub(lambda m: m.group("line") + "<<" + m.group("tag"), cmd)
+    def cut(m: re.Match[str]) -> str:
+        if bodies is None:
+            return m.group("line") + "<<" + m.group("tag")
+        bodies.append(m.group("body"))
+        return m.group("line") + "<<" + f"{HD_MARK}{len(bodies) - 1}" + m.group("rest")
+    body = _newline_seps(HEREDOC.sub(cut, cmd))
     try:
         lex = shlex.shlex(body, posix=True, punctuation_chars=True)
         lex.whitespace_split = True
@@ -1029,6 +1166,15 @@ def worktree_root(cwd: str) -> str | None:
     except (OSError, subprocess.TimeoutExpired):
         return None
     return os.path.realpath(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else None
+
+
+DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config" / "approval.toml"   # 도는 브리지의 규칙(원본 폴더)
+
+
+def rule_files(repo: str, files: list[str], config: str | Path | None = None) -> list[str]:
+    """합치기가 바꾸는 파일 중 안전 규칙 · 게이트 파일(11-15 D2). 지금 도는 규칙(원본 폴더 config)의 protect로 본다 —
+    브랜치가 protect 목록 자체를 줄여도 합치기 전 목록으로 걸린다. 규칙을 못 읽으면 예외(부른 쪽이 까닭을 결과에 적는다)."""
+    return load_policy(config or DEFAULT_CONFIG).protected_changes(repo, files)
 
 
 def load_policy(path: str | Path) -> Policy:
