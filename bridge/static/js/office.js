@@ -3751,10 +3751,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     };
     if (a.kind === 'session' && a.s) {
       const s = a.s;
-      // 11-14 — Bash는 하는 일(「시험 돌리는 중」), 명령은 그 아래 작은 줄. 다른 도구는 전처럼 「도구 대상」
+      // 11-14 — Bash는 하는 일(「시험 돌리는 중」). 11-15 사용자 — 명령 글(임시 폴더 경로 등)은 호버에 안 보인다. 다른 도구는 전처럼 「도구 대상」
       const nd = s.state === 'ACTIVE' && s.activity ? nowDoing(s.activity) : null;
       const now = s.state === 'ACTIVE' ? (nd ? (nd.tool === 'Bash'
-        ? `${esc(nd.text)}${s.activity.target ? `<div class="tip-s">${softEsc(short(s.activity.target, 70))}</div>` : ''}`
+        ? esc(nd.text)
         : `${esc(s.activity.tool)} ${softEsc(short(s.activity.target || '', 70))}`) : '생각 중') : '';
       const vs = viewState(s), bg = s.background || [];
       // 코더(11-13 — 상주 · 임시 구분 없음): 이 방에서 일하는 코더 수 · 끝나면 자리로. 맡길 일은 코더 자리 말풍선에
