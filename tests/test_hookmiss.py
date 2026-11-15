@@ -41,6 +41,16 @@ def miss_log(tmp_path, monkeypatch):
     return p
 
 
+def test_default_log_is_not_the_real_one_and_real_file_untouched():
+    """기본으로 걸린 고정물(conftest) 덕에 기록 자리가 실제 .run이 아니고, 부르고 나서도 실제 파일 크기가 그대로다."""
+    real = ROOT / ".run" / "hook_miss.log"
+    before = real.stat().st_size if real.exists() else None
+    assert hookmiss.path() != real and real.parent not in hookmiss.path().parents
+    hookmiss.record("역할판정예외", "ZeroDivisionError", SID, "Bash")
+    assert hookmiss.path().exists()
+    assert (real.stat().st_size if real.exists() else None) == before
+
+
 def _lines(p: Path) -> list[str]:
     return p.read_text(encoding="utf-8").splitlines() if p.exists() else []
 

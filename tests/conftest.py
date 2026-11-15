@@ -45,6 +45,16 @@ def pytest_configure(config: pytest.Config) -> None:
     _state["name"] = name
 
 
+@pytest.fixture(autouse=True)
+def _hook_miss_log_isolated(tmp_path_factory, monkeypatch):
+    """판정 없이 통과한 기록(`.run/hook_miss.log`)을 모든 시험에서 임시 폴더로 돌린다(11-15).
+
+    브리지 쪽 갈래(역할 판정 예외 등)를 가짜 예외로 부르는 시험이 실제 기록에 줄을 넣어, 나중에 갈래별 수로 알림 문턱을
+    정할 때 거짓 값이 되는 일이 있었다(log/foreman-5_hook_miss_test_isolation_20261115.md). 기록을 확인하는 시험은
+    자기 고정물(miss_log)로 다시 덮어쓴다."""
+    monkeypatch.setenv("FOREMAN_HOOK_MISS_LOG", str(tmp_path_factory.mktemp("hookmiss") / "hook_miss.log"))
+
+
 @pytest.fixture(scope="session")
 def migrated_db():
     """시험 DB에 이 worktree의 migrations/를 올리고 그 Settings를 준다(pytest 한 번에 한 번, 11-14).
