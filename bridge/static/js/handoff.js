@@ -676,7 +676,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
         confirmName = prompt(`${end ? '세션을 끝내고 ' : ''}작업방과 브랜치 ${w.branch}를 지웁니다. 합치지 않은 커밋 ${w.ahead}개${w.dirty.length ? `와 커밋 안 된 변경 ${w.dirty.length}개` : ''}도 사라집니다.\n\n지우려면 이름 "${w.name}"을 적어 주세요.`) || '';
         if (!confirmName) return;
       }
-      return run(kind === 'merge' ? '합치기' : end ? '끝내고 버리기' : '버리기', () => post(`/api/sessions/${id}/worktree`, { action: kind, confirm: confirmName, end })
+      return run(kind === 'merge' ? '합치기' : '버리기', () => post(`/api/sessions/${id}/worktree`, { action: kind, confirm: confirmName, end })
         .then((r) => (r.ok ? { ok: true, msg: r.note + (r.schema_unlocked ? ' 스키마 잠금도 풀었습니다.' : '') }
           : { bad: true, msg: r.note + (r.conflict && r.conflict.length ? ` 충돌 파일: ${r.conflict.join(', ')}` : '') })));
     }

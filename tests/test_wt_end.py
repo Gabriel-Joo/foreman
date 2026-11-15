@@ -49,7 +49,7 @@ def _mgr(monkeypatch, *, dirty, exit_ok=True):
 
 def test_live_without_end_is_refused(monkeypatch):
     m, row, calls = _mgr(monkeypatch, dirty=[])
-    with pytest.raises(h.Refused, match="끝내고 합치기"):
+    with pytest.raises(h.Refused, match="합치고 끝내기"):
         asyncio.run(m.worktree_act(row, "merge"))
     assert calls == []
 

@@ -1225,7 +1225,7 @@ class HandoffManager:
         ended = None
         if row.cc and row.cc in live_sessions(self.sessions_dir):
             if not end:
-                raise Refused("세션이 아직 살아 있습니다. [끝내고 합치기] · [끝내고 버리기]로 함께 할 수 있습니다")
+                raise Refused("세션이 아직 살아 있습니다. [끝내기 ▾]의 [합치고 끝내기]로 끝내면서 합칠 수 있습니다. 버리려면 세션을 끝낸 뒤 「브랜치 이름」 칸의 [버리기]를 누릅니다")
             if act == "merge":
                 st = await wt.status(repo, name)
                 if st.get("dirty"):
