@@ -88,7 +88,7 @@
 
 **순서 의견** — 한 번에 자동으로 가지 말고:
 1. 지금: 포먼 디스패처(사람이 말하고 → 계획 → 승인)
-2. 다음: 실패 이벤트가 오면 포먼이 **계획만** 만들어 텔레그램 · 화면에 계획을 올리고 사람이 [시작]을 누름(설계 때의 예시 글은 "이렇게 보자고 합니다 — [시작]"이었고, 11-08에 만든 실제 텔레그램 글은 「🧭 <실패 종류> — 이렇게 살펴보자는 계획을 세웠습니다」 · 「[시작]? 화면에서 계획을 보고 눌러 주세요 — <링크>」, `bridge/wake.py` 112 · 119)
+2. 다음: 실패 이벤트가 오면 포먼이 **계획만** 만들어 텔레그램 · 화면에 계획을 올리고 사람이 [시작]을 누름(설계 때의 예시 글은 "이렇게 보자고 합니다 — [시작]"이었고, 11-08에 만든 실제 텔레그램 글은 「🧭 <실패 종류> — 이렇게 살펴보자는 계획을 세웠습니다」 · 「[시작]? 화면에서 계획을 보고 눌러 주세요 — <링크>」, `bridge/wake.py` 112 · 119). (11-15 바뀜 → 둘째 줄은 「[시작]? 계획을 보고 화면에서 눌러 주세요. <여는 법>: <링크>」이고, 자리는 `bridge/wake.py` `_wake_inner`다(줄 번호는 뺐다). 링크가 열리지 않는 주소였던 것을 고치며 여는 법을 글에 넣었다, `10e1e5b`) [log:wake_link_20261115.md]
 3. 2가 몇 주 동안 맞으면: 실패 시 읽기 전용 조사 세션을 자동으로(1개 · 20분 · 하루 5회 · 낮에만)
 
 ## 8. 만들 것(구현 순서)
@@ -109,7 +109,7 @@
 - 관리자가 세션을 띄울 때도 **`POST /api/foreman/plan`(짧은 요청) → 계획을 받아 `first_prompt`를 지시문으로 바꿔 `POST /api/foreman/start`**로 한다. 바꾼 칸은 `dispatch.edited`에 남는다 — 계획 카드에서 사람이 칸을 고치는 것과 같은 경로
 - **관리자도 `POST /api/spawn`을 직접 쓰지 않는다.** `/api/spawn`은 `dispatch` 기록을 남기지 않았다 — 11-09 18:25 서기 세션을 관리자가 `/api/spawn`으로 띄워 기록이 없었다. 이것은 약속이다(코드가 막지는 않는다). 11-11부터는 `/api/spawn` · 새 세션으로 옮기기도 `record_direct`로 `dispatch`(origin `spawn` · `move`)와 `dispatch_session`에 한 줄을 남긴다(`bridge/api/handoff.py` → `bridge/api/foreman.py`) — 약속을 어겨도 기록은 남지만, 계획을 거치지 않은 띄우기라는 것은 그대로다. [＋ 세션] 「직접 고르기」는 사람이 쓰는 길로 그대로 남는다
 - 첫 적용: 코더 상주 일 — dispatch #152(경고 · 질문 없음, 확신도 0.75) → 첫 글을 지시문으로 바꿔 시작 → 세션 233(worktree `foreman-2`). 관리자 역할 화면 · API — dispatch #158 → 세션 242(`foreman-3`, opus)
-- 받은 할 일에서 띄우면 `start`에 `inbox_id`를 같이 보내 뜬 세션이 그 할 일을 가져간다 → `docs/12_scribe.md` 「11. 받는 함 [＋ 할 일]」
+- 받은 할 일에서 띄우면 `start`에 `inbox_id`를 같이 보내 뜬 세션이 그 할 일을 가져간다 → `docs/12_scribe.md` 「11. 포스트잇」(11-15 바뀜: 절 이름이 「받는 함 [＋ 할 일]」에서 바뀌었고 [＋ 할 일] 창은 뺐다)
 
 ### 9-2. 관리자를 상주로 두지 않는 까닭
 
@@ -149,6 +149,7 @@
 
 - 값 `inspector`, 화면 이름 「조사」(전 이름 「점검」). 사용자: 「점검이면 고치는 일도 포함될 것처럼 들린다. 조사가 맞다」. 읽고 알아보고 고치지 않는다. 조사와 제안은 모두 여기다
 - 코드 값은 그대로 두었다(DB `character_session.role`, 설정 키, 함수 이름). 화면 이름만 `ROLE_KO`(`bridge/handoff.py`, `bridge/foreman.py`, `bridge/wake.py`), `ROLE_PICK`, `render.js` `ROLE_LABEL`에서 바꿨다. 이미 있는 「점검」 캐릭터(DB)는 마이그레이션 없이, 그 프로젝트에서 다음 조사 세션이 뜰 때 「조사」로 이름을 바꿔 이어 쓴다(`ROLE_OLD_KO`, `_character_for`)
+  - (11-15 바뀜 → 같은 날 역할 목록을 한 곳으로 모아, 화면 이름과 `ROLE_OLD_KO`는 지금 `bridge/roles.py` `ROLE_INFO`, 화면 쪽은 `bridge/static/js/roles.js` `ROLE_LABEL`에만 있다. `handoff.py`, `foreman.py`, `wake.py`, `ROLE_PICK`은 거기서 가져간다. 「10.」 끝 줄)
 - **조사는 자기 결과 log를 승인 없이 쓰고 커밋한다.** 전에는 CC plan 모드(읽기 전용)로 떠서 log 하나에도 계획 승인이 한 번 필요했고, 그래서 관리자가 조사를 피하고 코더로 띄웠다. 이제 보통 모드로 뜨고 브리지(PreToolUse, `bridge/roleguard.py` `inspector-write`)가 막는다
   - 허용: `log/` 아래 새 파일 Write, 이 세션이 만든 log(또는 git이 아직 모르는 log) Edit, `git add log/<파일>`, 스테이지가 log 파일뿐인 `git commit`, `git restore --staged`, 읽기 명령, 저장소 밖(스크래치, /tmp) 쓰기
   - 거부: log 밖 Edit, Write, NotebookEdit. 다른 세션이 커밋한 log 고치기. Bash로 저장소 파일 쓰기(리디렉션, `sed -i`, `tee`, `rm`, `mv`, `cp`, `touch`, `mkdir` 등). `git push`. 저장소를 바꾸는 git(checkout, reset, rebase, merge, stash, 브랜치나 태그 만들기 등). log 밖 `git add`(`-A`, `.` 포함). `git commit -a`, 경로를 준 커밋, 스테이지에 log 밖 파일이 있는 커밋
@@ -169,7 +170,7 @@
 - **맡을 파일 겹침 경고**: 새로 띄울 세션의 맡을 파일이 이미 도는 세션이 고치는 파일과 겹치면 계획 경고에 뜬다(11-11 282 때 286 계획이 `tests/test_terminal.py`로 처음 잡았다)
   - (11-15 바뀜) 맞대는 상대는 「살아 있는 세션」에 「열려 있는 세션」을 더한다. 열려 있다 = 합치거나 버리기 전. worktree 세션은 폴더가 남아 있는 동안, 원본 폴더 세션은 끝나기 전(`foreman.py` `UNMERGED_SQL`, `still_open`). 서기실 열린 일과 같은 판단이다. CC가 끝나도 합치지 않은 worktree는 합칠 때 충돌하니 겹침에 넣는다. 합치기 기록 없이 지운 worktree(296, 311)는 폴더가 없어 빠진다
   - 서기실 [시키기]로 띄운 서기 세션도 잡힌다. 서기실이 `dispatch`(origin `scribe`)와 `dispatch_session`(맡을 파일 = 그 일의 `TOUCHES`)을 남기고, 그 기록이 없던 11-15 전 서기실 세션은 `scribe_room.open_tasks`로 더한다 → `docs/12_scribe.md` 「2.」
-- **서기 일 종류(`task`, 11-15)**: 계획 세션 칸에 `task`(서기실 일 이름: later, trim, doccheck, docfix, portfolio. readme는 11-15에 뺐다). 역할 scribe면 `spawn_new`가 `session_action scribe-task`로 남긴다(없으면 `plan`). `POST /api/spawn`도 `task`를 받는다. 계획 카드는 이 칸을 보이지 않고 그대로 넘긴다
+- **서기 일 종류(`task`, 11-15)**: 계획 세션 칸에 `task`(서기실 일 이름: later, trim, doccheck, docfix, portfolio. readme는 11-15에 뺐다). 이 다섯은 교장 지시문이 고르게 하는 이름이다. 서기실에 11-15에 생긴 techdoc(기술문서 쓰기)은 지시문 목록에 없다(`bridge/foreman.py` 「10. sessions」, `bridge/scribe_room.py` `TASKS`). 역할 scribe면 `spawn_new`가 `session_action scribe-task`로 남긴다(없으면 `plan`). `POST /api/spawn`도 `task`를 받는다. 계획 카드는 이 칸을 보이지 않고 그대로 넘긴다
 - **포스트잇에서 바로**(받은 할 일 #8, 11-15 포스트잇으로 옮김): 코더 추천이 붙은 포스트잇의 [띄우기]가 교장 계획 창을 열고 바로 계획을 받는다(`foremanChat.openWith(…, {ask: true})`). 번호는 `inbox_ids`로 [이대로 시작]에 실려 뜬 세션이 가져간다. 11-11의 [＋ 할 일] 창 목록과 [고른 것으로 계획 받기]는 11-15에 뺐다(목록은 포스트잇이 맡는다, `docs/12_scribe.md` 「11.」). 열린 것 고치기는 `PUT /api/todo/{id}` 그대로 [log:coder_c_wave2_20261111.md] [log:foreman-5_postit_20261115.md]
 
 **설정 스위치 뒤에 있던 것 — 합칠 때(11-11 286)는 하나도 켜지 않았고, 같은 날 저녁 사용자 지시로 넷을 켰다(역할 권한만 관찰)** [log:coder_c_wave2_20261111.md] [log:merge_c_wave2_20261111.md] [log:enable_c_wave2_20261111.md]
@@ -184,5 +185,5 @@
 
 - **켜는 법**(기록 `log/coder_c_wave2_20261111.md`에 있는 것만): 토큰 · 관리자 — ① `python -m bridge.scopetoken new <프로젝트>`(값은 화면에 안 찍히고 파일에만) ② `tokens.toml enabled = true` · `managers.toml [managers] enabled = true` ③ 그 저장소 CLAUDE.md에 관리자 규칙 줄(초안은 같은 log, 그 저장소 세션에 부탁) ④ 관리자 세션을 원본 폴더에 띄움(역할 manager) ⑤ 필요하면 `roles.toml projects` · `handoff.toml [merge_prep] projects`에 그 프로젝트를 더함. 계획 넘기기 · 옮기기 한 흐름은 `[handover] enabled = true` · `[move] one_flow = true`로 켜 보고 시험 계획 · 시험 세션 하나로 15분 알림 · ①~⑦을 확인한다(끝나면 시험 세션은 `hidden_reason='test'`). 역할 권한은 하루 관찰 뒤 규칙별 걸린 수를 보고 사용자가 `enforce`로 올린다(그 쿼리는 같은 log 「합친 뒤 관리자가 할 일」 2). 바꾼 뒤에는 모두 브리지를 다시 띄운다(`[move]`만 제외). 이 문단은 켜기 전에 정한 순서이고, 토큰 · 관리자 · 넘기기 · 옮기기 한 흐름은 11-11 저녁 사용자 지시로 켜졌다 — 켠 경위 · 시험은 [log:enable_c_wave2_20261111.md]
 - **기능 사이에 무엇을 먼저 켤지, enforce로 켠 뒤 무엇을 볼지는 정해지지 않았다**(기록에도 없다 — [log:merge_c_wave2_20261111.md] 「켜는 순서가 기록에 있는가」)
-- (11-12 바뀜) 인프라 · 런슈즈(310)에 관리자가 섰다. `[merge_prep] projects`는 `["foreman", "ronanlab-infra"]` — 런슈즈는 사용자가 정할 때 더한다(`docs/11_worktree.md` 「6-1.」)
-- **역할 권한은 관찰만 하고 켜지 않는다**(11-12 사용자 — "확인만이다. 켜지 마라"). enforce와 런슈즈 · 인프라로 넓히는 것은 사용자가 정한다. 넓히려면 `projects`, 프로젝트별 `manager_allow` · `scribe_deny`(코드), 무시되는 작업 폴더 빼기, 관찰 기간이 있어야 한다(지난 7일 다시 돌리기 290건). 해석기 · `$` 경로 · cp/mv 같은 지나가는 길도 같이 막아야 한다 [log:approval_hell_plan_20261112.md]
+- (11-12 바뀜) 인프라 · 런슈즈(310)에 관리자가 섰다. `[merge_prep] projects`는 `["foreman", "ronanlab-infra"]` — 런슈즈는 사용자가 정할 때 더한다(`docs/11_worktree.md` 「6-1.」). (11-13 바뀜 → 펫퍼민트 관리자를 세우며 펫퍼민트를, 런슈즈 5-2를 합친 뒤 런슈즈를 더해 지금은 네 프로젝트다(`config/handoff.toml`, `ddb9d15`, `eab68a0`))
+- **역할 권한은 관찰만 하고 켜지 않는다**(11-12 사용자 — "확인만이다. 켜지 마라")(11-15 바뀜 → 조사 규칙 `inspector-write` 하나만 `[roles] enforce`로 막는다, 「10-2.」. 나머지 규칙은 그대로 관찰). enforce와 런슈즈 · 인프라로 넓히는 것은 사용자가 정한다. 넓히려면 `projects`, 프로젝트별 `manager_allow` · `scribe_deny`(코드), 무시되는 작업 폴더 빼기, 관찰 기간이 있어야 한다(지난 7일 다시 돌리기 290건). 해석기 · `$` 경로 · cp/mv 같은 지나가는 길도 같이 막아야 한다 [log:approval_hell_plan_20261112.md]

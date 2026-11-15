@@ -130,6 +130,7 @@
   - **패널 띠로도 뜬다** — `/api/dashboard` 세션의 `switch: {turn_id, phrase, committed, idle, pct}`(없으면 null). 판정은 텔레그램과 같은 함수(`switchwatch.latest_signal` · `should_suggest`)를 쌓인 대화 ≥ `switch_min_pct`인 세션만 다시 부른다. [나중에]는 그 사람 턴 동안만 숨긴다 [log:foreman-2_screen_ctx_switch_overlap_20261109.md] [log:merge_foreman2_check_20261109.md]
   - clear가 아니라 새 세션으로 옮기기를 권하는 까닭 — 대화에서만 정한 결정은 문서로 옮긴 뒤 넘겨야 한다(1장)
 - 확인 안 된 것: Sonnet · Haiku 창 크기(추정 200k). 큰 기록이 보이면 `over:` 알림이 온다
+  - (11-14 바뀜 → Sonnet은 223k 맥락이 보여 `[windows]`에서 뺐다(모름, %를 보이지 않는다). 추정으로 남은 것은 Haiku 200k. 이 절 첫 줄)
 
 ### 어떻게 — 알림에서 바로 이어 가기
 
@@ -156,6 +157,7 @@
 1. **추출(브리지, LLM 없음)** — 트랜스크립트에서 압축 구간별 사람 프롬프트와 각 압축 요약을 뽑는다.
    - 지금 맥락 = 마지막 요약 + 그 뒤 프롬프트 + CLAUDE.md + 메모리
 2. **판정(`claude -p`, Sonnet)** — 프롬프트 약 80개씩 나눠 여러 번 돈다.
+   - (11-06 바뀜 → 한 번에 20개씩(`bridge/losscheck.py` `GROUP_MAX`). Sonnet에 68개를 한 번에 주니 훑어 읽어 정답 프롬프트 53개 중 18개만 봤다)
    - 형식은 런슈즈 · 포먼 점검과 같은 JSON(살아 있음 · 약해짐 · 사라짐 · 뒤집힘 · 끝남, 원문 인용, 어디 있나, 언제 빠졌나)
 3. **결과**
    - `log/<프로젝트>_compaction_loss_<날짜>.md`에 쓴다
