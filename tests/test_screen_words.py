@@ -27,7 +27,7 @@ def test_data_shape():
     for e in d.get("code_exception", []):
         assert e["near"] and e["why"], e
     for s in d.get("scribe", []):
-        assert s["doc"] in sw.SCRIBE_DOCS, f"[[scribe]]는 {sw.SCRIBE_DOCS}만 적습니다: {s}"
+        assert sw.scribe_owned(s["doc"]), f"[[scribe]]는 {sw.SCRIBE_DOCS}와 원고({sw.MANUSCRIPT_DIRS})만 적습니다: {s}"
     for p in d.get("promise", []):
         assert {"file", "tip", "acts", "test"} <= p.keys(), p
         assert not p["test"] or (ROOT / p["test"]).exists(), f"[[promise]] test 파일이 없습니다: {p['test']}"

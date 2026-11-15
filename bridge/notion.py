@@ -54,21 +54,25 @@ class Ctx:
     """링크를 풀 때 쓰는 것 — 원본 경로와 게시한 커밋. links=False(포트폴리오)면 커밋 · 파일 · 저장소 안 링크를 글자로만 둔다 —
     저장소가 비공개라 읽는 사람에게는 404다(11-06 사용자 결정)."""
     def __init__(self, path: str = "", commit: str = "HEAD", gh: str = GH, links: bool = True, heading_md: bool = False,
-                 h1_title: bool = False) -> None:
+                 h1_title: bool = False, manuscript: bool = False) -> None:
         self.path, self.commit, self.gh, self.links = path, commit, gh, links
+        # 원고(11-15, notion/ · portfolio/) — 노션 판에서 머리 주석(HTML 주석)과 근거 표시([c:…] [log:…] [docs:…] [code:…] [t:…])를
+        # 뗀다. git 원고에는 남는다(근거 확인기가 본다, bridge/evidence.py)
+        self.manuscript = manuscript
         self.h1_title = h1_title        # title = "h1"(11-12) — 제목 줄을 first_h1()로 고르고 그 줄만 본문에서 뺀다
         # 제목 단계 — 기본은 ## → heading_1(첫 # 는 페이지 제목). heading_md면 마크다운 단계 그대로 ## → 2 · ### → 3 · #### 이상 → 4
         # (11-09 펫퍼민트 — 사람이 옮긴 페이지가 이 모양이라 새 페이지 · 끼우는 블록도 같게)
         self.heading_md = heading_md
+        # 원고 → 게시된 Notion 페이지(11-15 사용자 목차 결정 4 — 포트폴리오 편 끝에 노션 편 링크 한 줄). 저장소 경로 → Notion url.
+        # 원고가 `../notion/02_x.md`로 가리키면 비공개 저장소 링크 대신 그 Notion 페이지로 건다(Publisher.publish가 채운다)
+        self.pages: dict[str, str] = {}
 
     def blob(self, rel: str) -> str:
         return f"{self.gh}/blob/{self.commit}/{rel}"
 
-    def resolve(self, href: str) -> str | None:
-        """상대 링크(../log/a.md) → 게시한 커밋의 GitHub 파일. http(s)는 그대로. 그 밖(#앵커 등)은 None."""
-        if re.match(r"https?://", href):
-            return href
-        if href.startswith("#") or not href:
+    def rel(self, href: str) -> str | None:
+        """상대 링크(../log/a.md) → 저장소 맨 위 기준 경로. http(s) · #앵커 · 빈 것은 None."""
+        if re.match(r"https?://", href) or href.startswith("#") or not href:
             return None
         base = PurePosixPath(self.path).parent
         parts: list[str] = []
@@ -78,13 +82,25 @@ class Ctx:
                     parts.pop()
             elif p not in (".", ""):
                 parts.append(p)
-        return self.blob("/".join(parts)) if parts else None
+        return "/".join(parts) or None
 
+    def resolve(self, href: str) -> str | None:
+        """상대 링크(../log/a.md) → 게시한 커밋의 GitHub 파일. 게시된 원고면 그 Notion 페이지. http(s)는 그대로. 그 밖(#앵커 등)은 None."""
+        if re.match(r"https?://", href):
+            return href
+        r = self.rel(href)
+        if r and r in self.pages:
+            return self.pages[r]
+        return self.blob(r) if r else None
+
+
+EVIDENCE_STRIP = r"\s*\[(?:c|t|log|docs|code):[^\]\s]+\]"     # 원고의 노션 판에서 떼는 근거 표시(이웃 공백까지)
+SOURCES = ("log/", "docs/", "portfolio/", "notion/")         # 게시할 수 있는 원본 폴더(notion/ = 노션 기술문서 원고, 11-15)
 
 _INLINE = re.compile(
     r"(?P<code>`[^`\n]+`)"
     r"|(?P<bold>\*\*(?P<btext>[^*\n]+)\*\*)"
-    r"|(?P<ev>\[(?P<evk>c|log|docs|t):(?P<evv>[^\]\s]+)\])"
+    r"|(?P<ev>\[(?P<evk>c|log|docs|code|t):(?P<evv>[^\]\s]+)\])"
     r"|(?P<link>\[(?P<ltext>[^\]\n]+)\]\((?P<lhref>[^)\s]+)\))")
 
 
@@ -105,8 +121,8 @@ def _rt(content: str, *, bold: bool = False, code: bool = False, link: str | Non
 
 
 def inline(text: str, ctx: Ctx) -> list[dict[str, Any]]:
-    """한 줄 글 → rich_text. 근거 표시 [t:…]는 빼고 이웃 공백을 하나로."""
-    text = re.sub(r"\s*\[t:[^\]\s]+\]", "", text)
+    """한 줄 글 → rich_text. 근거 표시 [t:…]는 빼고 이웃 공백을 하나로. 원고(ctx.manuscript)는 근거 표시를 모두 뗀다."""
+    text = re.sub(EVIDENCE_STRIP if ctx.manuscript else r"\s*\[t:[^\]\s]+\]", "", text)
     out: list[dict[str, Any]] = []
     pos = 0
     for m in _INLINE.finditer(text):
@@ -120,13 +136,16 @@ def inline(text: str, ctx: Ctx) -> list[dict[str, Any]]:
             k, v = m["evk"], m["evv"]
             if k == "c":
                 out += _rt(v, code=True, link=f"{ctx.gh}/commit/{v}" if ctx.links else None)
-            else:                                   # log · docs — 파일(줄 범위 · 절은 떼고 파일만 잇는다)
+            elif k == "code":                       # 코드 경로(11-15) — 파일 · 폴더 그대로(줄 범위는 떼고)
+                f = re.split(r"[:#]", v)[0]
+                out += _rt(f, code=True, link=ctx.blob(f) if ctx.links else None)
+            else:                                 # log · docs — 파일(줄 범위 · 절은 떼고 파일만 잇는다)
                 f = re.split(r"[:#]", v)[0]
                 out += _rt(f"{k}/{f}", code=True, link=ctx.blob(f"{k}/{f}") if ctx.links else None)
         elif m["link"]:
             href = ctx.resolve(m["lhref"])
             if href and not ctx.links and href.startswith(ctx.gh):
-                href = None                         # 저장소 안 파일 링크 — 포트폴리오에서는 글자만
+                href = None                         # 저장소 안 파일 링크 — 포트폴리오에서는 글자만(게시된 원고는 Notion 페이지로 걸린다)
             out += _rt(m["ltext"], link=href)
         pos = m.end()
     if pos < len(text):
@@ -190,8 +209,12 @@ def first_h1(md: str) -> tuple[int | None, str | None]:
 def md_to_blocks(md: str, ctx: Ctx | None = None) -> tuple[str | None, list[dict[str, Any]]]:
     """(제목, 블록들). 첫 `# 제목`은 페이지 제목으로 빼고 블록에 넣지 않는다.
     ctx.h1_title(`title = "h1"`)면 first_h1()이 고른 줄이 제목이고 그 줄만 본문에서 빠진다(앞에 다른 블록이 있어도 —
-    본문 heading으로 한 번 더 들어가지 않는다, headings = "md"여도). 다른 `#` 줄은 평소처럼 본문 heading이다."""
+    본문 heading으로 한 번 더 들어가지 않는다, headings = "md"여도). 다른 `#` 줄은 평소처럼 본문 heading이다.
+    원고(ctx.manuscript, 11-15)는 HTML 주석(머리 주석)을 먼저 뗀다 — 노션에 「다루는 곳」 · 「읽은 커밋」이 글로 나가지 않게."""
     ctx = ctx or Ctx()
+    if ctx.manuscript:
+        from bridge.manuscript import strip_comments
+        md = strip_comments(md)
     lines = md.replace("\r\n", "\n").split("\n")
     h1_at = first_h1(md)[0] if ctx.h1_title else None
     title = None
@@ -475,7 +498,7 @@ def section_of(path: str) -> str:
 
 def portfolio_title(path: str, title: str) -> str:
     """포트폴리오는 루트 바로 아래에 번호 붙은 제목으로(11-06 사용자 결정) — portfolio/00_overview.md → "00 한눈에 — …".
-    번호는 파일 이름 앞(config/portfolio.toml의 slug)."""
+    번호는 파일 이름 앞(11-15부터 portfolio/ 파일 이름이 편 목록이다)."""
     num = PurePosixPath(path).stem.split("_", 1)[0]
     return f"{num} {title}" if num.isdigit() and not title.startswith(num + " ") else title
 
@@ -483,8 +506,8 @@ def portfolio_title(path: str, title: str) -> str:
 def git_show(repo: str, path: str, ref: str = "HEAD") -> tuple[str, str]:
     """(본문, 그 파일을 마지막으로 바꾼 커밋 짧은 해시) — ref(FOREMAN은 main HEAD, 다른 프로젝트는 push된 origin/main)에 있는 것만."""
     p = PurePosixPath(path)
-    if p.is_absolute() or ".." in p.parts or p.suffix != ".md" or not str(p).startswith(("log/", "docs/", "portfolio/")):
-        raise OutOfScope("log/ · docs/ · portfolio/ 아래 .md만 게시합니다")
+    if p.is_absolute() or ".." in p.parts or p.suffix != ".md" or not str(p).startswith(SOURCES):
+        raise OutOfScope("log/ · docs/ · portfolio/ · notion/ 아래 .md만 게시합니다")
     r = subprocess.run(["git", "-C", repo, "show", f"{ref}:{path}"], capture_output=True, text=True, timeout=15)
     if r.returncode != 0:
         where = "main" if ref == "HEAD" else ref
@@ -495,14 +518,18 @@ def git_show(repo: str, path: str, ref: str = "HEAD") -> tuple[str, str]:
 
 
 def header_block(path: str, commit: str, ctx: Ctx, when: str) -> dict[str, Any]:
-    rich = (_rt("이 페이지는 사본입니다 — 원본 ") + _rt(path, code=True, link=ctx.blob(path)) + _rt(" · 커밋 ")
-            + _rt(commit, code=True, link=f"{ctx.gh}/commit/{commit}") + _rt(f" · 게시 {when}. 고칠 때는 git에서 고치고 다시 게시합니다."))
+    rich = (_rt("이 페이지는 사본입니다 — 원본 ") + _rt(path, code=True, link=ctx.blob(path) if ctx.links else None) + _rt(" · 커밋 ")
+            + _rt(commit, code=True, link=f"{ctx.gh}/commit/{commit}" if ctx.links else None)
+            + _rt(f" · 게시 {when}. 고칠 때는 git에서 고치고 다시 게시합니다."))
     return {"object": "block", "type": "callout", "callout": {"rich_text": rich, "icon": {"type": "emoji", "emoji": "📄"}, "color": "gray_background"}}
 
 
-def footer_block(path: str, commit: str, ctx: Ctx, when: str) -> dict[str, Any]:
-    """맨 아래 회색 한 줄(11-09 펫퍼민트 — 사본 상자 대신 "마지막 갱신 커밋은 작게"). Notion API엔 글자 크기가 없어 회색으로."""
-    rich = _rt("마지막 갱신 — ") + _rt(commit, code=True, link=f"{ctx.gh}/commit/{commit}") + _rt(f" · {when}")
+def footer_block(path: str, commit: str, ctx: Ctx, when: str, read: str | None = None) -> dict[str, Any]:
+    """맨 아래 회색 한 줄(11-09 펫퍼민트 — 사본 상자 대신 "마지막 갱신 커밋은 작게"). Notion API엔 글자 크기가 없어 회색으로.
+    read — 원고 머리 주석의 읽은 커밋(11-15): 이 글이 어느 코드 판을 보고 쓴 것인지. 저장소가 비공개면(ctx.links 꺼짐) 링크 없이 글자만."""
+    rich = _rt("마지막 갱신 — ") + _rt(commit, code=True, link=f"{ctx.gh}/commit/{commit}" if ctx.links else None) + _rt(f" · {when}")
+    if read:
+        rich += _rt(" · 읽은 커밋 ") + _rt(read, code=True)
     for r in rich:
         r.setdefault("annotations", {})["color"] = "gray"
     return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rich}}
@@ -916,8 +943,8 @@ def content_digest(repo: str, path: str, body: str, ref: str = "HEAD") -> str:
 
 def git_bytes(repo: str, path: str, ref: str = "HEAD") -> bytes:
     p = PurePosixPath(path)
-    if p.is_absolute() or ".." in p.parts or p.suffix.lower() not in CTYPES or not str(p).startswith(("portfolio/", "docs/", "log/")):
-        raise OutOfScope(f"그림은 저장소 안 portfolio/ · docs/ · log/의 PNG · JPG · GIF · WebM만 올립니다: {path}")
+    if p.is_absolute() or ".." in p.parts or p.suffix.lower() not in CTYPES or not str(p).startswith(SOURCES):
+        raise OutOfScope(f"그림은 저장소 안 portfolio/ · docs/ · log/ · notion/의 PNG · JPG · GIF · WebM만 올립니다: {path}")
     r = subprocess.run(["git", "-C", repo, "show", f"{ref}:{path}"], capture_output=True, timeout=15)
     if r.returncode != 0:
         raise FileNotFoundError(f"main에 커밋된 그림 {path}가 없습니다")
@@ -951,6 +978,10 @@ async def resolve_uploads(client: Any, repo: str, blocks: list[dict[str, Any]], 
                 b = {**b, t: {**b[t], "children": await resolve_uploads(client, repo, kids, limit, ref)}}
         out.append(b)
     return out
+
+
+SRC_DIRS = ("docs/", "notion/")             # 기술문서 원고 폴더로 쓸 수 있는 것(config/notion.toml · .foreman/notion.toml의 src)
+MANUSCRIPTS = ("notion/", "portfolio/")     # 원고 — 노션 판에서 머리 주석 · 근거 표시를 떼고 저장소 링크를 걸지 않는다(비공개 저장소)
 
 
 def file_order(path: str) -> tuple[int, int] | None:
@@ -999,11 +1030,24 @@ class Publisher:
         self.heading_md = o.get("headings") == "md"                # 제목 단계를 마크다운 그대로(## → heading_2) — 사람이 옮긴 페이지 모양
         self.new_parent = o.get("new_parent")                      # "folder": 하위 폴더 새 문서는 같은 폴더 형제들의 부모 페이지 아래
         self.new_title = o.get("new_title")                        # "numbered": 새 페이지 제목 "00. 모델 준비"(번호 + 상위 문서 목록의 이름)
+        # 11-15 기술문서 원고 폴더 — docs/(런슈즈 · 펫퍼민트 · 인프라: docs를 그대로 올린다) · notion/(FOREMAN: 사람이 읽는 원고를
+        # 따로 쓴다. 폴더 나무가 곧 [기술문서] 아래 페이지 나무 — tree_parent, 링크 · 머리 주석 · 근거 표시 없이)
+        sv = o.get("src") or "docs/"
+        if sv not in SRC_DIRS:
+            logging.getLogger("foreman.notion").warning("notion.toml src = %r을 모릅니다(%s만) — docs/로 돌립니다: %s",
+                                                        sv, " · ".join(SRC_DIRS), project)
+            sv = "docs/"
+        self.src = sv
+
+    @property
+    def tree(self) -> bool:
+        """폴더 나무가 페이지 나무인가(notion/ 원고) — `NN_이름/` 아래 글은 `NN_이름.md` 페이지 아래."""
+        return self.src == "notion/"
 
     def _ctx(self, path: str, commit: str, links: bool = True) -> Ctx:
-        # h1_title는 기술문서(docs/)만 — 포트폴리오는 portfolio_title 방식 그대로
+        # h1_title는 기술문서(원고 폴더 src)만 — 포트폴리오는 portfolio_title 방식 그대로
         return Ctx(path, commit, self.gh, links=links, heading_md=self.heading_md,
-                   h1_title=self.h1_title and path.startswith("docs/"))
+                   h1_title=self.h1_title and path.startswith(self.src), manuscript=path.startswith(MANUSCRIPTS))
 
     async def new_page_plan(self, path: str) -> tuple[str, str | None]:
         """새 페이지의 (부모 페이지, 정한 제목 또는 None). 정할 수 없으면 OutOfScope — 만들지 않는다(짐작으로 엉뚱한 자리 · 제목에 만들지 않게).
@@ -1051,11 +1095,20 @@ class Publisher:
         return parent, title
 
     async def parent_for(self, path: str) -> str:
-        """글이 놓일 페이지 — 포트폴리오는 [포트폴리오](없으면 루트 바로 아래, 11-06 방식), docs/는 [기술문서], 그 밖은 묶음 페이지."""
+        """글이 놓일 페이지 — 포트폴리오는 [포트폴리오](없으면 루트 바로 아래, 11-06 방식), 원고 폴더(src)는 [기술문서], 그 밖은 묶음 페이지.
+        notion/ 원고(11-15)는 나무 규칙: `notion/02_x/01_y.md`는 `notion/02_x.md` 페이지 아래. 부모 글이 아직 Notion에 없으면 만들지 않는다
+        (맞추기는 나무 차례로 올려 부모가 먼저 올라간다)."""
         if path.startswith("portfolio/"):
             return self.portfolio_page or self.root
-        if path.startswith("docs/") and self.docs_page:
-            return self.docs_page
+        if path.startswith(self.src) and self.docs_page:
+            from bridge.manuscript import tree_parent
+            up = tree_parent(path, self.src) if self.tree else None
+            if up is None:
+                return self.docs_page
+            row = await self._row(up)
+            if not row or row["status"] != "published" or not row["notion_page_id"]:
+                raise OutOfScope(f"부모 글 {up}이 Notion에 없습니다. 폴더 {up[:-3]}/ 아래 글은 그 글 페이지 아래에 놓습니다: {path}")
+            return norm(row["notion_page_id"])
         return await self._section(section_of(path))
 
     async def _row(self, path: str) -> dict[str, Any] | None:
@@ -1064,6 +1117,19 @@ class Publisher:
             r = (await c.execute(text("SELECT * FROM doc_publish WHERE project = :p AND path = :f"),
                                  {"p": self.project, "f": path})).mappings().first()
         return dict(r) if r else None
+
+    async def _page_urls(self) -> dict[str, str]:
+        """게시된 원고(notion/ · portfolio/)의 경로 → Notion url — 원고끼리 상대 링크를 Notion 페이지로 잇는다(11-15).
+        아직 안 올린 원고를 가리키면 글자만 남는다(노션 원고를 먼저 올린 뒤 포트폴리오를 올린다)."""
+        from sqlalchemy import text
+        out: dict[str, str] = {}
+        async with self.e.connect() as c:
+            for pre in MANUSCRIPTS:
+                rows = (await c.execute(text(
+                    "SELECT path, url FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' AND path LIKE :pre"),
+                    {"p": self.project, "pre": pre + "%"})).all()
+                out.update({r[0]: r[1] for r in rows if r[1]})
+        return out
 
     async def _save(self, path: str, **kw: Any) -> None:
         from sqlalchemy import text
@@ -1146,7 +1212,10 @@ class Publisher:
         body, commit = git_show(self.repo, path, self.ref)
         digest = content_digest(self.repo, path, body, self.ref)
         portfolio = path.startswith("portfolio/")      # 바깥 사람이 읽는 글 — 저장소 링크 없이, 맨 위 "사본" 안내 없이(11-06)
-        ctx = self._ctx(path, commit or "HEAD", links=not portfolio)
+        # 원고(notion/ · portfolio/, 11-15)는 비공개 저장소 링크를 걸지 않는다(읽는 사람에게 404). 머리 주석 · 근거 표시는 _ctx가 뗀다
+        ctx = self._ctx(path, commit or "HEAD", links=not path.startswith(MANUSCRIPTS))
+        if ctx.manuscript:
+            ctx.pages = await self._page_urls()
         title, blocks = md_to_blocks(body, ctx)
         h1 = ctx.h1_title and bool(title)               # title = "h1": 첫 H1이 있으면 그것이 제목(docsync가 준 README 표 제목보다 앞선다)
         if ctx.h1_title and not title:
@@ -1155,7 +1224,9 @@ class Publisher:
         if portfolio:
             title = portfolio_title(path, title)
         elif self.footer:
-            blocks = blocks + [footer_block(path, commit or "HEAD", ctx, when)]     # 11-09 펫퍼민트 — 포트폴리오로 보여 줄 문서
+            from bridge.manuscript import parse_head
+            read = (parse_head(body) or {}).get("read") if ctx.manuscript else None
+            blocks = blocks + [footer_block(path, commit or "HEAD", ctx, when, read)]     # 11-09 펫퍼민트 — 포트폴리오로 보여 줄 문서
         else:
             blocks = [header_block(path, commit or "HEAD", ctx, when)] + blocks
         row = await self._row(path)
@@ -1166,7 +1237,7 @@ class Publisher:
                     title = row["title"]
                 # 정해진 자리([포트폴리오] · [기술문서])가 아니면 옮긴다(옮긴 순서대로 쌓인다). keep_order면 사람이 둔 자리 그대로
                 want = await self.parent_for(path)
-                if not self.keep_order and (portfolio or path.startswith("docs/")) and norm(row["parent_page_id"] or "") != want:
+                if not self.keep_order and (portfolio or path.startswith(self.src)) and norm(row["parent_page_id"] or "") != want:
                     await self.c.move_page(pid, want)
                     await self._save(path, parent_page_id=want)
                 if not self.keep_title and row["title"] != title:
@@ -1269,8 +1340,8 @@ class Publisher:
         root 아래 페이지만(root · [기술문서] · [포트폴리오] 자체는 안 됨), 제목 · 부모 · url은 Notion에서 읽은 그대로,
         content_hash · commit_sha는 비운다(처음 짝 — 사람 수정 판정은 보수적으로). 같은 경로 짝 · 같은 페이지의 다른 짝이 있으면 거부."""
         from sqlalchemy import text
-        if not path.startswith(("docs/", "portfolio/")):
-            raise OutOfScope(f"docs/ · portfolio/ 아래 문서만 짝지을 수 있습니다: {path}")
+        if not path.startswith(("docs/", "portfolio/", "notion/")):
+            raise OutOfScope(f"docs/ · portfolio/ · notion/ 아래 문서만 짝지을 수 있습니다: {path}")
         git_show(self.repo, path, self.ref)                 # 경로 검사 + push한 판에 있는지(없으면 FileNotFoundError)
         pid = norm(page_id.strip())
         if not re.fullmatch(r"[0-9a-f]{32}", pid):
@@ -1385,5 +1456,22 @@ class Publisher:
                     changed = None
             out.append({"path": f, "title": r["title"] if r else None, "status": r["status"] if r else "new",
                         "url": r["url"] if r else None, "commit": r["commit_sha"] if r else None, "changed": changed,
+                        # 원본이 git에서 사라졌는데 Notion에는 아직 있다(11-15 — 새 판을 올린 뒤 옛 편을 내릴 자리)
+                        "gone": bool(r and r["status"] == "published" and f not in files),
                         "updated_at": r["updated_at"].isoformat() + "Z" if r and r["updated_at"] else None})
         return out
+
+    async def prune_portfolio(self) -> dict[str, Any]:
+        """원본 없는 포트폴리오 페이지 내리기(11-15) — git에서 사라진 portfolio/*.md의 Notion 페이지를 휴지통으로(30일 안에 되살린다).
+        화면 축 새 판을 올린 뒤 옛 편을 치우는 길이다. 원본이 남은 글 · 기록 없는(사람이 만든) 페이지는 건드리지 않는다.
+        한 편이 막혀도 나머지는 내리고 막힌 것을 돌려준다."""
+        done, failed = [], []
+        for d in await self.list():
+            if not d["gone"]:
+                continue
+            try:
+                await self.archive(d["path"])
+                done.append(d["path"])
+            except (OutOfScope, NotionError) as e:
+                failed.append({"path": d["path"], "error": str(e)[:200]})
+        return {"action": "prune", "done": done, "failed": failed}

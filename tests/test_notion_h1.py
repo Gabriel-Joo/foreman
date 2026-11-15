@@ -142,7 +142,7 @@ def test_publish_without_h1_option_keeps_old_title_logic(patched):
 
 def test_docsync_status_uses_h1_and_flags_changes_and_missing(monkeypatch):
     files = {"docs/a.md": "# 새 H1\n본문", "docs/b.md": "H1 없음", "docs/README.md": "| 파일 | 설명 |\n|---|---|\n| `a.md` | 에이 — 길게 |\n"}
-    monkeypatch.setattr(ds, "docs_files", lambda repo, ref, skip=(): ["docs/a.md", "docs/b.md"])
+    monkeypatch.setattr(ds, "docs_files", lambda repo, ref, skip=(), src="docs/": ["docs/a.md", "docs/b.md"])
     monkeypatch.setattr(ds, "_git", lambda repo, *a: files["docs/README.md"] if a[:1] == ("show",) else "")
     monkeypatch.setattr(ds, "git_show", lambda repo, f, ref: (files[f], "c"))
     monkeypatch.setattr(ds, "content_digest", lambda repo, f, body, ref: "d")

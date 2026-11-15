@@ -4,8 +4,11 @@
 - 뒤처짐을 센다(LLM 없음): 파일마다 지문(content_digest) ↔ 게시 기록, 커밋 수는 마지막으로 다 맞춘 커밋(@docs-sync 행) ↔ ref
 - docs_mode = "auto"면 docs 커밋 뒤 quiet_min분 조용해지면 바뀐 파일만 갈아 끼운다. 실패하거나 사람이 Notion에서 고친 블록이 있으면
   덮지 않고 알린다(텔레그램 · 서기 할 일) — 뒤처짐은 그대로 남아 보인다(조용히 낡지 않게)
-- docs/ 바로 아래 .md만. 하위 폴더(docs/archive/ — 런슈즈 docs/README "노션 · 발표 자료에 옮기지 않는다")는 올리지 않는다
+- docs/ 아래 .md(하위 폴더까지). docs/archive/(런슈즈 docs/README "노션 · 발표 자료에 옮기지 않는다")는 올리지 않는다
 - 차례: docs/README.md 표에 나온 순서(README가 맨 앞), 표에 없는 파일은 이름순으로 뒤에
+- 11-15 원고 폴더를 프로젝트 칸으로(`src`, 기본 docs/). FOREMAN은 notion/ — docs를 그대로 옮기지 않고 사람이 읽을 원고를 따로 쓴다.
+  notion/은 폴더 나무가 곧 페이지 나무(`NN_이름/` 아래 글은 `NN_이름.md` 페이지 아래, bridge/notion.py parent_for), 차례는 파일 번호,
+  차례는 부모 페이지마다 세운다. 편마다 머리 주석(bridge/manuscript.py)으로 「읽은 커밋 뒤 다루는 코드가 바뀐 편」을 센다(막지는 않는다)
 """
 
 from __future__ import annotations
@@ -31,9 +34,18 @@ DOCS_SPEC = ":(glob)docs/**/*.md"
 ALWAYS_SKIP = ("docs/archive/",)
 
 
-def skipped(path: str, skip: Any = ()) -> bool:
-    """대상이 아닌가 — 파일 이름 그대로 또는 "…/"로 끝나는 폴더 아래."""
-    rules = (*ALWAYS_SKIP, *(skip or ()))
+def src_of(pub: Any) -> str:
+    """게시기의 원고 폴더(11-15 src) — 없으면 docs/(가짜 게시기 · 옛 칸)."""
+    return getattr(pub, "src", None) or "docs/"
+
+
+def spec(src: str = "docs/") -> str:
+    return f":(glob){src}**/*.md"
+
+
+def skipped(path: str, skip: Any = (), src: str = "docs/") -> bool:
+    """대상이 아닌가 — 파일 이름 그대로 또는 "…/"로 끝나는 폴더 아래. 원고 폴더의 archive/는 늘 뺀다."""
+    rules = (*ALWAYS_SKIP, f"{src}archive/", *(skip or ()))
     return any(path == r or (r.endswith("/") and path.startswith(r)) for r in rules)
 
 
@@ -42,12 +54,16 @@ def _git(repo: str, *args: str) -> str:
     return r.stdout if r.returncode == 0 else ""
 
 
-def docs_files(repo: str, ref: str, skip: Any = ()) -> list[str]:
-    """ref에 있는 docs/ 아래 .md(하위 폴더 포함, docs/archive/ · skip 빼고), docs/README.md 표 순서로."""
-    raw = subprocess.run(["git", "-C", repo, "ls-tree", "-r", "-z", "--name-only", ref, "docs/"],
+def docs_files(repo: str, ref: str, skip: Any = (), src: str = "docs/") -> list[str]:
+    """ref에 있는 원고 폴더 아래 .md(하위 폴더 포함, archive/ · skip 빼고). docs/는 docs/README.md 표 순서로,
+    notion/은 나무 차례로(파일 번호, 부모 글이 그 폴더 글보다 앞 — bridge/manuscript.tree_order)."""
+    if src == "notion/":
+        from bridge.manuscript import files as tree_files
+        return [f for f in tree_files(repo, src, ref) if not skipped(f, skip, src)]
+    raw = subprocess.run(["git", "-C", repo, "ls-tree", "-r", "-z", "--name-only", ref, src],
                          capture_output=True, timeout=20).stdout.decode("utf-8", "replace")
-    files = [f for f in raw.split("\0") if f.endswith(".md") and not skipped(f, skip)]
-    return order(files, _git(repo, "show", f"{ref}:docs/README.md"))
+    files = [f for f in raw.split("\0") if f.endswith(".md") and not skipped(f, skip, src)]
+    return order(files, _git(repo, "show", f"{ref}:{src}README.md"))
 
 
 def table_rows(readme: str) -> list[tuple[str, str]]:
@@ -94,28 +110,35 @@ def ref_sha(repo: str, ref: str) -> str | None:
     return _git(repo, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").strip() or None
 
 
-def last_docs_commit(repo: str, ref: str) -> datetime | None:
-    ts = _git(repo, "log", "-1", "--format=%ct", ref, "--", DOCS_SPEC).strip()
+def last_docs_commit(repo: str, ref: str, src: str = "docs/") -> datetime | None:
+    ts = _git(repo, "log", "-1", "--format=%ct", ref, "--", spec(src)).strip()
     return datetime.fromtimestamp(int(ts), UTC).replace(tzinfo=None) if ts.isdigit() else None
 
 
-def commits_behind(repo: str, synced: str | None, ref: str) -> int | None:
-    """마지막으로 다 맞춘 커밋 뒤로 docs를 바꾼 커밋 수. 맞춘 적이 없으면 None."""
+def commits_behind(repo: str, synced: str | None, ref: str, src: str = "docs/") -> int | None:
+    """마지막으로 다 맞춘 커밋 뒤로 원고 폴더를 바꾼 커밋 수. 맞춘 적이 없으면 None."""
     if not synced:
         return None
-    n = _git(repo, "rev-list", "--count", f"{synced}..{ref}", "--", DOCS_SPEC).strip()
+    n = _git(repo, "rev-list", "--count", f"{synced}..{ref}", "--", spec(src)).strip()
     return int(n) if n.isdigit() else None
 
 
 async def status(pub: Any) -> dict[str, Any]:
-    """한 프로젝트의 기술 문서 상태 — new · changed · deleted 파일, 뒤처진 커밋 수, 마지막 docs 커밋 시각."""
-    files = docs_files(pub.repo, pub.ref, getattr(pub, "skip", ()))     # 대상이 아닌 파일 · 폴더(11-09 펫퍼민트)
-    names = titles(files, _git(pub.repo, "show", f"{pub.ref}:docs/README.md"))
+    """한 프로젝트의 기술 문서 상태 — new · changed · deleted 파일, 뒤처진 커밋 수, 마지막 원고 커밋 시각.
+    원고(notion/, 11-15)는 편마다 머리 주석으로 「읽은 커밋 뒤 다루는 코드가 바뀐 편」(code_changed)과 셀 수 없는 편(code_unknown)도."""
+    from bridge.manuscript import code_commits, parse_head
+    from bridge.notion import MANUSCRIPTS
+    src = src_of(pub)
+    files = docs_files(pub.repo, pub.ref, getattr(pub, "skip", ()), src=src)     # 대상이 아닌 파일 · 폴더(11-09 펫퍼민트)
+    names = titles(files, _git(pub.repo, "show", f"{pub.ref}:{src}README.md"))
     async with pub.e.connect() as c:
         rows = {r["path"]: dict(r) for r in (await c.execute(text(
             "SELECT path, status, title, content_hash, commit_sha, notion_page_id, url FROM doc_publish "
-            "WHERE project = :p AND (path LIKE 'docs/%' OR path = :m)"), {"p": pub.project, "m": MARK})).mappings().all()}
+            "WHERE project = :p AND (path LIKE :pre OR path = :m)"), {"p": pub.project, "pre": f"{src}%", "m": MARK})).mappings().all()}
     new, changed, broken, h1_missing = [], [], [], []
+    code_changed: list[dict[str, Any]] = []
+    code_unknown: list[str] = []
+    ref_sha_now = ref_sha(pub.repo, pub.ref)
     for f in files:
         r = rows.get(f)
         try:
@@ -124,6 +147,13 @@ async def status(pub: Any) -> dict[str, Any]:
         except (FileNotFoundError, OutOfScope) as e:
             broken.append({"path": f, "error": str(e)})
             continue
+        if src in MANUSCRIPTS:
+            h = parse_head(body) or {}
+            n = code_commits(pub.repo, h.get("read"), h.get("covers") or [], pub.ref, ref_sha_now)
+            if n is None:
+                code_unknown.append(f)
+            elif n:
+                code_changed.append({"path": f, "commits": n})
         if getattr(pub, "h1_title", False):                          # title = "h1"(11-12): 제목 = 첫 H1. 없으면 README 표 제목 그대로
             h1 = first_h1(body)[1]
             if h1:
@@ -137,13 +167,14 @@ async def status(pub: Any) -> dict[str, Any]:
             new.append(f)
         elif r["content_hash"] != dg or r["title"] != names[f]:      # 제목만 바뀌어도(README 표 설명) 맞춘다
             changed.append(f)
-    deleted = [p for p, r in rows.items() if p.startswith("docs/") and r["status"] == "published" and p not in files]
+    deleted = [p for p, r in rows.items() if p.startswith(src) and r["status"] == "published" and p not in files]
     mark = rows.get(MARK) or {}
-    return {"project": pub.project, "mode": pub.docs_mode, "ref": pub.ref, "ref_sha": ref_sha(pub.repo, pub.ref),
+    return {"project": pub.project, "mode": pub.docs_mode, "ref": pub.ref, "ref_sha": ref_sha_now, "src": src,
             "files": files, "titles": names, "new": new, "changed": changed, "deleted": deleted, "broken": broken,
             "h1_missing": h1_missing,      # title = "h1"인데 첫 H1이 없어 README 표 제목을 쓴 파일(서기 할 일에 한 줄)
-            "synced": mark.get("commit_sha"), "behind_commits": commits_behind(pub.repo, mark.get("commit_sha"), pub.ref),
-            "last_commit_at": last_docs_commit(pub.repo, pub.ref)}
+            "code_changed": code_changed, "code_unknown": code_unknown,
+            "synced": mark.get("commit_sha"), "behind_commits": commits_behind(pub.repo, mark.get("commit_sha"), pub.ref, src),
+            "last_commit_at": last_docs_commit(pub.repo, pub.ref, src)}
 
 
 def behind(st: dict[str, Any]) -> int:
@@ -168,7 +199,14 @@ async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset
             failed.append({"path": f, "error": str(e)[:200]})
         except Exception as e:  # noqa: BLE001 — 파일 하나가 막혀도 나머지는 올린다
             failed.append({"path": f, "error": f"{type(e).__name__}: {str(e)[:200]}"})
+    src = st.get("src") or src_of(pub)
+    tree = src == "notion/"
     for f in st["deleted"]:
+        if tree and any(x.startswith(f"{f[:-3]}/") for x in st["files"]):
+            # 11-15 나무 — 부모 페이지를 휴지통으로 보내면 Notion이 그 아래 페이지까지 함께 보낸다. 아래 글이 남아 있으면 내리지 않는다
+            failed.append({"path": f, "error": f"원고가 사라졌지만 그 아래 글({f[:-3]}/)이 남아 있어 내리지 않습니다. "
+                                               "아래 글을 옮기거나 지운 뒤 맞춥니다"})
+            continue
         if not getattr(pub, "create", True) or not getattr(pub, "archive_ok", True):
             # 11-09 — 사람이 옮겨 둔 페이지에 맞추는 프로젝트는 원본이 사라져도 휴지통으로 보내지 않는다(create = false 또는
             # archive = false — 사용자: 새 페이지 만들기와 옛 페이지 지우기는 다른 기능, 지운 문서는 실패로만 남기고 사람이 판단).
@@ -184,13 +222,25 @@ async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset
     failed += [{"path": b["path"], "error": b["error"]} for b in st["broken"]]
     if done and pub.docs_page and not getattr(pub, "keep_order", False):   # 차례가 이미 맞으면 reorder가 옮기지 않는다. keep_order면 사람 차례 그대로
         async with pub.e.connect() as c:
-            pages = {r[0]: r[1] for r in (await c.execute(text(
-                "SELECT path, notion_page_id FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' "
-                "AND path LIKE 'docs/%'"), {"p": pub.project})).all()}
-        try:
-            await pub.reorder([(f, pages[f]) for f in st["files"] if f in pages], pub.docs_page)
-        except Exception as e:  # noqa: BLE001 — 차례가 틀려도 내용은 맞다
-            failed.append({"path": "(차례)", "error": f"{type(e).__name__}: {str(e)[:200]}"})
+            got = (await c.execute(text(
+                "SELECT path, notion_page_id, parent_page_id FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' "
+                "AND path LIKE :pre"), {"p": pub.project, "pre": f"{src}%"})).all()
+        pages = {r[0]: r[1] for r in got}
+        if tree:
+            # 11-15 나무 — 부모 페이지마다 그 아래 글을 파일 번호 차례로(reorder는 부모 하나씩 세운다)
+            groups: dict[str, list[tuple[str, str]]] = {}
+            parent_of = {r[0]: (r[2] or pub.docs_page) for r in got}
+            for f in st["files"]:
+                if f in pages:
+                    groups.setdefault(parent_of[f], []).append((f, pages[f]))
+            plan = list(groups.items())
+        else:
+            plan = [(pub.docs_page, [(f, pages[f]) for f in st["files"] if f in pages])]
+        for parent, rows_ in plan:
+            try:
+                await pub.reorder(rows_, parent)
+            except Exception as e:  # noqa: BLE001 — 차례가 틀려도 내용은 맞다
+                failed.append({"path": "(차례)", "error": f"{type(e).__name__}: {str(e)[:200]}"})
     if not held and not failed and st["ref_sha"]:
         await pub._save(MARK, kind="mark", title="기술문서 맞춘 커밋", commit_sha=st["ref_sha"], status="published", error=None)
     return {"project": pub.project, "ref_sha": st["ref_sha"], "done": done, "held": held, "failed": failed}
@@ -247,7 +297,7 @@ class DocSync:
         """한 쪽 게시(POST /api/publish action=publish)가 사람 수정으로 멈췄을 때(11-12) — [지금 맞추기]로 멈춘 것과 같은 꼴로
         last["held"]에 남기고(같은 파일은 한 줄) 텔레그램 ✋을 보낸다(같은 파일 · 같은 커밋이면 한 번). docs/ 문서만(서기 할 일의 덮기 줄 자리)."""
         pub = self.pubs.get(name)
-        if pub is None or pub.docs_mode == "off" or not path.startswith("docs/"):
+        if pub is None or pub.docs_mode == "off" or not path.startswith(src_of(pub)):
             return False
         sha = ref_sha(pub.repo, pub.ref)
         res = self.last.setdefault(name, {"project": name, "ref_sha": sha, "done": [], "held": [], "failed": [], "at": time.time()})
@@ -293,9 +343,12 @@ async def summary(pub: Any, last: dict[str, Any] | None) -> dict[str, Any]:
     st = await status(pub)
     files = len(st["files"])
     out: dict[str, Any] = {
-        "project": pub.project, "mode": st["mode"], "total": files,
+        "project": pub.project, "mode": st["mode"], "total": files, "src": st.get("src", "docs/"),
         "published": files - len(st["new"]) - len(st["broken"]),     # Notion에 올라 있는 것(바뀜 포함)
         "new": len(st["new"]), "changed": len(st["changed"]), "deleted": len(st["deleted"]), "broken": len(st["broken"]),
+        # 원고(notion/, 11-15) — 읽은 커밋 뒤 다루는 코드가 바뀐 편 · 셀 수 없는 편(머리 주석 없음 등). 게시 확인 창이 보인다(막지 않는다)
+        "code_changed": len(st.get("code_changed", [])), "code_unknown": len(st.get("code_unknown", [])),
+        "code_changed_paths": [x["path"] for x in st.get("code_changed", [])][:10],
         "behind_commits": st["behind_commits"], "synced": st["synced"],
         "last": None,
     }
@@ -326,6 +379,8 @@ async def todo_items(pub: Any, last: dict[str, Any] | None) -> list[dict[str, An
             why = f"자동 게시 실패, {last['failed'][0]['path']}: {last['failed'][0]['error'][:80]}"
         elif pub.docs_mode == "auto":
             why = f"push 뒤 {int(pub.quiet_min)}분 조용하면 바뀐 파일만 자동으로 올립니다"
+        elif st.get("src") == "notion/":
+            why = "자동 게시가 없습니다. 서기실 [Notion에 올리기]를 눌러야만 올라갑니다"
         else:
             why = "자동 게시가 꺼져 있습니다. [지금 맞추기]로 올립니다"
         out.append({"kind": "publish", "act": "docsync", "project": pub.project,

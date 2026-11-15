@@ -1,7 +1,10 @@
 """12b 근거 확인기 · 고친 양(11-06, docs/12_scribe.md 「4. 수준을 어떻게 담보하나」) — LLM 없이.
 
 - 근거 표시 확인: 서기 브랜치에서 바뀐 .md의 `[c:sha]`(커밋이 있나) · `[log:파일]` · `[docs:파일(:줄-줄)]`(파일 · 줄 범위가 있나) ·
-  `[t:턴]`(DB에 있나). 틀린 것은 합치기 전에 패널에 띄운다 — 포트폴리오로 나갈 글은 근거가 틀리면 안 된다(11-06 사용자)
+  `[code:경로(:줄-줄)]`(저장소 맨 위 기준 파일 · 폴더가 있나, 11-15) · `[t:턴]`(DB에 있나). 틀린 것은 합치기 전에 패널에 띄운다 —
+  포트폴리오로 나갈 글은 근거가 틀리면 안 된다(11-06 사용자)
+- 원고 머리 주석(11-15, bridge/manuscript.py): 「읽은 커밋」이 저장소에 있나, 「다루는 곳」 경로가 있나. 서기가 틀리게 적으면
+  「코드가 바뀐 편」 셈이 조용히 틀린다
 - 근거 없는 줄(의심): 숫자나 인용이 있는데 근거 표시가 없는 본문 줄. 표 · 제목 · 인용 블록 · 코드는 빼고 센다 — 판단은 사람이
 - 고친 양: 서기의 첫 초안(사람이 두 번째로 말하기 전의 커밋)과 그 뒤 고친 커밋의 줄 수. 줄어드는지가 서기 글 수준의 지표다(12d 하루 끝 자동 초안은 11-15에 회고와 함께 뺐다)
 """
@@ -11,12 +14,12 @@ from __future__ import annotations
 import asyncio
 import re
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from sqlalchemy import text
 
-MARK = re.compile(r"\[(?P<k>c|t|log|docs):(?P<v>[^\]\s]+)\]")
+MARK = re.compile(r"\[(?P<k>c|t|log|docs|code):(?P<v>[^\]\s]+)\]")
 CLAIM = re.compile(r"\d|“|”|\"[^\"]{4,}\"|「[^」]{2,}」")      # 숫자 · 인용이 있는 줄 — 근거가 있어야 할 줄
 # 사진 줄(![설명](경로))도 뺀다 — 설명의 근거는 사진 자체다(11-06 「한눈에」 의심 2개가 둘 다 사진 설명이었고 사진과 맞았다)
 SKIP_LINE = re.compile(r"^\s*(#|>|\||```|---|!\[|\s*$)")
@@ -34,9 +37,15 @@ def _file_problem(root: Path, kind: str, v: str) -> str | None:
     m = re.match(r"^(?P<f>[^:#]+?)(?::(?P<a>\d+)(?:-(?P<b>\d+))?)?(?:#.*)?$", v)
     if not m:
         return "모양을 알아보지 못했습니다"
-    f = root / kind / m["f"]
+    rel = PurePosixPath(m["f"])
+    if rel.is_absolute() or ".." in rel.parts:
+        return "저장소 밖을 가리킵니다"
+    f = root / m["f"] if kind == "code" else root / kind / m["f"]
+    shown = m["f"] if kind == "code" else f"{kind}/{m['f']}"
+    if kind == "code" and f.is_dir() and not m["a"]:
+        return None                                   # 폴더 — [code:bridge/static/js/]
     if not f.is_file():
-        return f"{kind}/{m['f']} 파일이 없습니다"
+        return f"{shown} 파일이 없습니다"
     if m["a"]:
         n = len(f.read_text(encoding="utf-8", errors="replace").splitlines())
         a, b = int(m["a"]), int(m["b"] or m["a"])
@@ -47,14 +56,19 @@ def _file_problem(root: Path, kind: str, v: str) -> str | None:
 
 async def check_text(body: str, root: str, engine: Any = None) -> dict[str, Any]:
     """한 글의 근거 표시를 확인한다 — {total, ok, bad:[{line, mark, why}], unsupported:[{line, text}]}."""
+    from bridge.manuscript import COVERS, READ, bad_covers, parse_head
     marks: list[tuple[int, str, str]] = []
     unsupported = []
     in_code = False
+    in_comment = False
     for i, ln in enumerate(body.splitlines(), 1):
         if ln.strip().startswith("```"):
             in_code = not in_code
             continue
         if in_code:
+            continue
+        if in_comment or ln.strip().startswith("<!--"):       # HTML 주석(원고 머리 주석) — 노션에 나가지 않는다. 아래에서 따로 본다
+            in_comment = "-->" not in ln
             continue
         found = [(m["k"], m["v"]) for m in MARK.finditer(ln)]
         marks += [(i, k, v) for k, v in found]
@@ -83,7 +97,30 @@ async def check_text(body: str, root: str, engine: Any = None) -> dict[str, Any]
             why = _file_problem(Path(root), k, v)
         if why:
             bad.append({"line": i, "mark": f"[{k}:{v}]", "why": why})
-    return {"total": len(marks), "ok": len(marks) - len(bad), "bad": bad, "unsupported": unsupported}
+    total = len(marks)
+    head = parse_head(body)
+    if head is not None:
+        # 머리 주석도 근거다 — 읽은 커밋이 있어야 「코드가 바뀐 편」을 셀 수 있고, 다루는 곳이 있어야 그 셈이 뜻이 있다
+        at = head["line"]
+        total += 1 + max(1, len(head["covers"]))
+        read = head["read"]
+        if not read:
+            bad.append({"line": at, "mark": f"머리 주석 {READ}", "why": "적혀 있지 않습니다"})
+        else:
+            rc, _ = await _git(root, "cat-file", "-e", f"{read}^{{commit}}")
+            if rc != 0 or not re.fullmatch(r"[0-9a-f]{6,40}", read):
+                bad.append({"line": at, "mark": f"머리 주석 {READ} {read}", "why": "그 커밋이 저장소에 없습니다"})
+        if not head["covers"]:
+            bad.append({"line": at, "mark": f"머리 주석 {COVERS}", "why": "적혀 있지 않습니다"})
+        for c in head["covers"]:
+            p = Path(root, c.rstrip("/")) if not any(ch in c for ch in "*?[") else None
+            if c in bad_covers([c]):
+                bad.append({"line": at, "mark": f"머리 주석 {COVERS} {c}", "why": "저장소 밖을 가리킵니다"})
+            elif p is not None and not p.exists():
+                bad.append({"line": at, "mark": f"머리 주석 {COVERS} {c}", "why": "그 경로가 없습니다"})
+            elif p is None and not list(Path(root).glob(c)):
+                bad.append({"line": at, "mark": f"머리 주석 {COVERS} {c}", "why": "그 글롭에 맞는 파일이 없습니다"})
+    return {"total": total, "ok": total - len(bad), "bad": bad, "unsupported": unsupported}
 
 
 async def revision(repo: str, base: str, branch: str, feedback_at: datetime | None) -> dict[str, Any]:

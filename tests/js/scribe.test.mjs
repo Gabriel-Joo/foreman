@@ -1,11 +1,11 @@
 // 서기 화면(D2, 11-11) — 한 목록 · 밀린 수 옆 표시 · 받은 할 일 숫자만 · 게시 둘로 · 못 읽으면 「읽지 못했습니다」
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createScribe, behindText, pubCounts, ORDER } from '../../bridge/static/js/scribe.js';
+import { createScribe, behindText, pubCounts, piecesText, techdocAsk, ORDER } from '../../bridge/static/js/scribe.js';
 
 const TASKS = { doccheck: { title: '문서 점검', desc: 'd' },
   trim: { title: 'CLAUDE.md 정리', desc: 't' }, later: { title: '알려진 한계 쓰기', desc: 'l' }, docfix: { title: '문서 고치기', desc: 'f' },
-  portfolio: { title: '포트폴리오 쓰기', desc: 'p' } };
+  portfolio: { title: '포트폴리오 쓰기', desc: 'p' }, techdoc: { title: '기술문서 쓰기', desc: 'k' } };
 
 function mk(projects, pub, { todoOk = true, pubOk = true } = {}) {
   globalThis.fetch = async (u) => {
@@ -18,10 +18,11 @@ function mk(projects, pub, { todoOk = true, pubOk = true } = {}) {
 const settle = () => new Promise((r) => setTimeout(r, 5));
 
 const PJ = {
-  items: [], open: [], blocked: {}, nudge: null, topics: [
-    { slug: 'a', title: '글 A', about: 'x', written: true, blocked: null, last_at: '2026-11-08T08:00:00+09:00', since: 208 },
-    { slug: 'b', title: '글 B', about: 'y', written: true, blocked: null, last_at: '2026-11-09T08:00:00+09:00', since: 12 }],
-  portfolio: { written: 2, total: 2, last_at: '2026-11-09T08:00:00+09:00', since: 12, unread: null },
+  items: [], open: [], blocked: {}, nudge: null, techdoc: null, topics: [
+    { slug: '01_a', title: '글 A', written: true, blocked: null, commits: 3, why: null, read: 'abc1234' },
+    { slug: '02_b', title: '글 B', written: true, blocked: null, commits: 0, why: null, read: 'abc1234' },
+    { slug: '03_c', title: '글 C', written: true, blocked: null, commits: null, why: '머리 주석이 없습니다', read: null }],
+  portfolio: { total: 3, changed: 1, unknown: 1, written: 3, blocked: null, unread: null },
   behind: { doccheck: { n: 0, stale: false }, trim: { n: 0, stale: false }, later: { n: 13, stale: true, unit: '건', why: '' } },
   inbox: { n: 3, oldest_days: 2 }, report: { name: 'doccheck_20261110.md', fixed: false },
   docs_pub: { total: 16, published: 14, new: 1, changed: 1, deleted: 0, broken: 0, behind_commits: 4, last: { at: 1.7e9, done: 2, held: 0, failed: 1, failed_first: 'docs/a.md: 거부' } },
@@ -43,8 +44,9 @@ test('한 목록 — 메뉴 셋이 한 줄씩이고 「문서 할 일」 · 「�
   const sc = mk({ foreman: PJ }, { enabled: true, docs: [{ path: 'portfolio/a.md', status: 'published', changed: false }] });
   sc.html('foreman', 'FOREMAN'); await settle();
   const h = sc.html('foreman', 'FOREMAN');
-  assert.deepEqual(ORDER, ['doccheck', 'later', 'trim']);     // 회고 쓰기와 README 갱신은 11-15에 뺐다
-  for (const k of ORDER) assert.ok(h.includes(`data-sc-task="${k}"`), k);
+  assert.deepEqual(ORDER, ['doccheck', 'later', 'trim', 'techdoc']);     // 회고 쓰기와 README 갱신은 11-15에 뺐다
+  for (const k of ['doccheck', 'later', 'trim']) assert.ok(h.includes(`data-sc-task="${k}"`), k);
+  assert.ok(!h.includes('data-sc-task="techdoc"'));            // 원고 폴더가 notion/이 아니면(techdoc 없음) 기술문서 쓰기 줄이 없다
   assert.ok(!h.includes('회고') && !h.includes('README 갱신'));
   assert.ok(!h.includes('문서 할 일') && !h.includes('<b>시킬 일</b>'));
   assert.match(h, /알려진 한계 쓰기<\/b> <span class="warn"[^>]*>13개 밀림/);
@@ -70,23 +72,54 @@ test('포스트잇(11-15) — 받은 할 일 숫자 줄 대신 머리 탭과 같
   assert.ok(h.includes('data-pi-row="3"') && h.includes('data-pi-save="1"') && h.includes('data-pi-refresh="1"'));
 });
 
-test('포트폴리오 쓰기 — 마지막 쓴 시각 · 그 뒤 커밋 수 · [갱신]은 가장 옛 글을 고른다', async () => {
+test('포트폴리오 쓰기(11-15) — 「글 N편 가운데 코드가 바뀐 편 M」, [갱신]은 코드가 가장 많이 바뀐 편, 편 없이 [시키기]', async () => {
   const sc = mk({ foreman: PJ }, { enabled: true, docs: [] });
   sc.html('foreman', 'F'); await settle();
   const h = sc.html('foreman', 'F');
-  assert.match(h, /2\/2 씀/);
-  assert.match(h, /그 뒤 커밋 <\/span><span class="muted">12개/);
-  assert.match(h, /data-sc-task="portfolio" data-topic="a"[^>]*title="갱신 — 가장 옛 글 「글 A」\(그 뒤 커밋 208개\)/);
+  assert.match(h, /<b>포트폴리오 쓰기<\/b> <span class="warn">글 3편 가운데 코드가 바뀐 편 1, 머리 주석을 읽지 못한 편 1/);
+  assert.match(h, /data-sc-task="portfolio" data-topic="01_a"[^>]*title="갱신 — 코드가 가장 많이 바뀐 편 「글 A」\(코드 바뀐 커밋 3개\)/);
+  assert.match(h, /data-sc-task="portfolio" data-name=""[^>]*>시키기</);         // 편 없이 — 서기가 편 목록을 정한다
+  assert.ok(h.includes('코드 바뀐 커밋 3') && h.includes('그대로') && h.includes('셀 수 없음'));
+  assert.ok(!h.includes('본 판') && !h.includes('그 뒤 커밋 '));
+  assert.equal(piecesText({ total: 2, changed: 0, unknown: 0 }).cls, 'muted');
+  assert.equal(piecesText({ total: 0 }).text, '아직 쓴 글이 없습니다');
+  assert.equal(piecesText({ total: 10, written: 10, since: 485 }).cls, 'bad');      // 옛 서버 응답 — undefined가 아니라 읽지 못했습니다
 });
 
-test('포트폴리오 읽기 실패는 0이 아니라 읽지 못했습니다', async () => {
-  const pj = { ...PJ, portfolio: { written: 2, total: 2, last_at: null, since: null, unread: '커밋 기록을 읽지 못했습니다' },
-    topics: PJ.topics.map((t) => ({ ...t, since: null })) };
+test('포트폴리오 읽기 실패는 0이 아니라 읽지 못했습니다, 바뀐 편이 없으면 [갱신]이 꺼진다', async () => {
+  const pj = { ...PJ, portfolio: { ...PJ.portfolio, unread: '커밋 기록을 읽지 못했습니다' }, topics: PJ.topics.map((t) => ({ ...t, commits: 0 })) };
   const sc = mk({ foreman: pj }, { enabled: true, docs: [] });
   sc.html('foreman', 'F'); await settle();
   const h = sc.html('foreman', 'F');
   assert.ok(h.includes('커밋 기록을 읽지 못했습니다'));
-  assert.ok(h.includes("disabled title=\"갱신 — 지금 고쳐 쓰게 할 글이 없습니다"));        // [갱신]은 고를 글이 없어 꺼진다
+  assert.ok(h.includes("disabled title=\"갱신 — 지금 고쳐 쓰게 할 편이 없습니다"));
+});
+
+test('기술문서(11-15) — notion/ 원고면 [Notion에 올리기]와 코드가 바뀐 편을 보이는 확인 창, 기술문서 쓰기 줄', async () => {
+  const td = { total: 5, changed: 2, unknown: 1, need: 3, due: true, why: '글 5편 가운데 코드가 바뀐 편 2, 머리 주석을 읽지 못한 편 1. 마지막으로 합친 지 3일' };
+  const pj = { ...PJ, techdoc: td, behind: { ...PJ.behind, techdoc: { n: 3, stale: true, why: td.why } },
+    docs_pub: { src: 'notion/', total: 5, published: 3, new: 2, changed: 0, deleted: 0, broken: 0, code_changed: 2, code_unknown: 1, behind_commits: null, last: null } };
+  const sc = mk({ foreman: pj }, { enabled: true, docs: [] });
+  sc.html('foreman', 'F'); await settle();
+  const h = sc.html('foreman', 'F');
+  assert.match(h, /<b>기술문서 쓰기<\/b> <span class="warn"[^>]*>코드가 바뀐 편 3<\/span> <span class="muted">글 5편 가운데/);
+  assert.ok(h.includes('data-sc-task="techdoc"'));
+  assert.match(h, /data-pub="docsync"[^>]*data-ask="[^"]*코드가 바뀐 편이 2편[^"]*"[^>]*>Notion에 올리기</);
+  assert.ok(h.includes('글 5편 가운데 코드가 바뀐 편 2, 머리 주석을 읽지 못한 편 1') && !h.includes('지금 맞추기'));
+  const ask = techdocAsk('FOREMAN', { new: 1, changed: 2, deleted: 0, code_changed: 0, code_unknown: 0 });
+  assert.ok(ask.startsWith('FOREMAN의 notion/ 원고를 Notion [기술문서]에 올립니다(새 1, 바뀜 2)') && !ask.includes('코드가 바뀐 편'));
+});
+
+test('원본 없는 포트폴리오 페이지(11-15) — 숫자와 [원본 없는 페이지 내리기]', async () => {
+  const docs = [{ path: 'portfolio/00_old.md', status: 'published', changed: null, gone: true }, { path: 'portfolio/01_a.md', status: 'published', changed: false }];
+  const sc = mk({ foreman: PJ }, { enabled: true, docs });
+  sc.html('foreman', 'F'); await settle();
+  const h = sc.html('foreman', 'F');
+  assert.match(h, /<b>포트폴리오 게시<\/b> <span class="warn">게시됨 2, 원본 없음 1/);
+  assert.ok(h.includes('data-pub="prune"') && h.includes('원본 없음</span>'));
+  const none = mk({ foreman: PJ }, { enabled: true, docs: [docs[1]] });
+  none.html('foreman', 'F'); await settle();
+  assert.ok(!none.html('foreman', 'F').includes('data-pub="prune"'));
 });
 
 test('Notion 게시는 둘 — 포트폴리오 게시(접힘, 게시됨 N)와 기술문서 게시(숫자 · 마지막 맞춤)', async () => {

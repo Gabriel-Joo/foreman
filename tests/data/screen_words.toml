@@ -328,6 +328,36 @@ why = "알림 글 꼴의 자리 표시([접두] = 프로젝트 접두)"
 # docs/operations.md · docs/style_guide.md는 코더가 고치지 않는다. 거기서 걸린 것만 doc · text(걸린 글)로 적으면 통과.
 # 서기가 맞추면 시험이 「이 줄을 지웁니다」로 실패하니 그때 지운다.
 # (11-15 처음 돌렸을 때 그 둘에서 낡은 이름은 걸리지 않았다 — 「웹 터미널」 줄은 「전에는」 이력 표시로 빠진다)
+# 11-15 원고(notion/ · portfolio/)도 서기 몫이다 — 시험이 원고를 읽기 시작했을 때 옛 포트폴리오(화면 축으로 다시 쓸 10편)에서
+# 걸린 것. 서기가 화면 축 새 판을 쓰면 「이 줄을 지웁니다」로 실패하니 그때 지운다
+
+[[scribe]]
+doc = "portfolio/02_ui.md"
+text = "따로 작업"
+
+[[scribe]]
+doc = "portfolio/06_scribe.md"
+text = "따로 작업"
+
+[[scribe]]
+doc = "portfolio/02_ui.md"
+text = "끝내고 합치기"
+
+[[scribe]]
+doc = "portfolio/02_ui.md"
+text = "끝내고 버리기"
+
+[[scribe]]
+doc = "portfolio/02_ui.md"
+text = "그냥 끝내기(나중에 정함)"
+
+[[scribe]]
+doc = "portfolio/02_ui.md"
+text = "더보기 ▾"
+
+[[scribe]]
+doc = "portfolio/02_ui.md"
+text = "요약을 확인했습니다 — 세션 끝내기"
 
 # ── 안 D. 호버 약속 ─────────────────────────────────────────
 # 호버 설명이 더블클릭 · 두 번 누르 · 끌어 · ↑↓ · Esc · Enter · Ctrl · 휠을 말하면 한 줄.

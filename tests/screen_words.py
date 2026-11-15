@@ -2,7 +2,7 @@
 
 세 가지를 본다. 목록은 tests/data/screen_words.toml 하나에 있다.
 - 안 A 바꾼 이름: 화면 말을 바꿨으면 옛 이름이 코드 문자열(주석 · 로그 글 · docstring 뺌)에 남으면 안 된다.
-  범위가 「화면과 문서 인용」이면 문서(docs/*.md · README.md)의 인용(「…」 · "…" · […]) 안에도 남으면 안 된다
+  범위가 「화면과 문서 인용」이면 문서(docs/*.md · README.md · 원고 notion/**/*.md · portfolio/*.md)의 인용(「…」 · "…" · […]) 안에도 남으면 안 된다
 - 안 B 문서 [버튼]: 문서가 [버튼 이름]으로 인용한 글은 지금 코드에 있어야 한다
 - 안 D 호버 약속: 호버 설명이 끌기 · 더블클릭 · 키 · 휠 같은 조작을 약속하면 약속 목록에 있어야 한다
 
@@ -25,6 +25,11 @@ from pathlib import Path
 
 DATA = "tests/data/screen_words.toml"
 SCRIBE_DOCS = ("docs/operations.md", "docs/style_guide.md")   # 코더가 건드리지 않는 문서(사람 승인 카드)
+MANUSCRIPT_DIRS = ("notion/", "portfolio/")                    # 원고(11-15) — 서기가 쓴다. 코더는 고치지 않고 서기 몫에 적는다
+
+
+def scribe_owned(path: str) -> bool:
+    return path in SCRIBE_DOCS or path.startswith(MANUSCRIPT_DIRS)
 SCOPES = ("화면", "화면과 문서 인용")
 
 # 이력 표시 — 421 제안 그대로에 「전에는」 · 「전 [」 · 「11-NN 전」을 더했다(log/foreman-4_screen_words_test_20261115.md)
@@ -231,9 +236,12 @@ def load_code(root: Path) -> Code:
 # ── 문서 줄 ─────────────────────────────────────────────────
 
 def doc_files(root: Path) -> list[Path]:
+    """docs/*.md · README.md · 원고(11-15 — notion/ 아래 모든 .md, portfolio/*.md). 원고에 옛 화면 이름이 남으면 사람이 읽는
+    노션 · 포트폴리오에 그대로 나간다."""
     fs = sorted((root / "docs").glob("*.md"))
     if (root / "README.md").exists():
         fs.append(root / "README.md")
+    fs += sorted((root / "notion").rglob("*.md")) + sorted((root / "portfolio").glob("*.md"))
     return fs
 
 
@@ -416,7 +424,7 @@ def check(root: Path) -> Report:
     scribe = data.get("scribe", [])
     used_sc: set[int] = set()
     for h in found:
-        if h.kind in ("rename-doc", "button") and h.file in SCRIBE_DOCS:
+        if h.kind in ("rename-doc", "button") and scribe_owned(h.file):
             k = next((k for k, s in enumerate(scribe) if s["doc"] == h.file and s["text"] == h.text), None)
             if k is not None:
                 used_sc.add(k)
@@ -450,8 +458,8 @@ def explain(rep: Report) -> str:
             continue
         out.append(f"■ {kind} {len(hs)}곳 — 고치는 법: {HOW[kind]}")
         out += [f"  {h.where}  「{h.text}」  {h.detail}" for h in hs]
-        if kind in ("rename-doc", "button") and any(h.file in SCRIBE_DOCS for h in hs):
-            out.append(f"  ※ {' · '.join(SCRIBE_DOCS)}는 코더가 고치지 않습니다 — {DATA} [[scribe]]에 "
+        if kind in ("rename-doc", "button") and any(scribe_owned(h.file) for h in hs):
+            out.append(f"  ※ {' · '.join(SCRIBE_DOCS)} · 원고({' · '.join(MANUSCRIPT_DIRS)})는 코더가 고치지 않습니다 — {DATA} [[scribe]]에 "
                        "한 줄(doc · text = 걸린 글)을 적으면 통과하고, 서기가 맞춘 뒤 지웁니다")
     if rep.stale:
         out.append("■ 지금은 쓸모없는 목록 줄 — 지웁니다")
@@ -460,7 +468,7 @@ def explain(rep: Report) -> str:
 
 
 def summary(rep: Report) -> str:
-    return (f"화면 말 시험: 서기 몫 {len(rep.scribe)}줄 남음(docs/operations.md · style_guide.md), "
+    return (f"화면 말 시험: 서기 몫 {len(rep.scribe)}줄 남음(docs/operations.md · style_guide.md · 원고 notion/ · portfolio/), "
             f"호버 약속 {rep.promises}곳 중 시험 없음 {rep.untested} · 일부만 {rep.partial}, {rep.seconds:.2f}초")
 
 

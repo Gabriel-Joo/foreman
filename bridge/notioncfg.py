@@ -55,6 +55,7 @@ REPO_KEYS: dict[str, tuple[type, ...]] = {
     "keep_notion": (list,),     # inline_code · image · heading · shape
     "new_parent": (str,),       # folder
     "new_title": (str,),        # numbered
+    "src": (str,),              # 기술문서 원고 폴더 docs/ · notion/(11-15 — FOREMAN은 notion/, bridge/notion.py SRC_DIRS)
 }
 # Publisher opts로 넘기는 칸(docs · quiet_min은 따로 받는다) — 옛 bridge/main.py 목록과 같다
 OPT_KEYS = tuple(k for k in REPO_KEYS if k not in ("docs", "quiet_min"))
@@ -123,6 +124,8 @@ def parse_repo_file(text: str) -> tuple[dict[str, Any], list[str]]:
             raise ValueError(f"docs = {v!r}을 모릅니다(off · manual · auto)")
         if k == "quiet_min" and v < 0:
             raise ValueError("quiet_min은 0 이상이어야 합니다")
+        if k == "src" and v not in ("docs/", "notion/"):
+            raise ValueError(f"src = {v!r}을 모릅니다(docs/ · notion/)")
         out[k] = v
     return out, warns
 

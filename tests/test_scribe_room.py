@@ -76,26 +76,116 @@ def test_blocked_sees_plan_scribe_by_files():
     assert sr.blocked("portfolio", [{"session_id": 1, "task": "plan", "title": "t", "files": ["portfolio/00_a.md"]}], "00_a")
 
 
-def test_portfolio_topics_and_blocked_per_topic(tmp_path):
-    """포트폴리오 쓰기(12c) — 주제는 config/portfolio.toml 순서, 같은 주제만 막고 다른 주제는 같이 연다."""
-    (tmp_path / "config").mkdir()
-    (tmp_path / "config/portfolio.toml").write_text(
-        '[[topic]]\nslug = "00_overview"\ntitle = "한눈에 — 무엇"\nabout = "A"\nsources = ["README.md"]\nscreenshots = true\n\n'
-        '[[topic]]\nslug = "01_loss"\ntitle = "압축 손실"\nabout = "B"\n\n[[topic]]\nslug = "../bad"\ntitle = "x"\n', encoding="utf-8")
-    (tmp_path / "portfolio").mkdir()
-    (tmp_path / "portfolio/01_loss.md").write_text("# x\n", encoding="utf-8")
-    tps = sr.topics(str(tmp_path))
-    assert [t["slug"] for t in tps] == ["00_overview", "01_loss"]                 # 이상한 slug는 버린다
-    assert [t["written"] for t in tps] == [False, True] and tps[0]["screenshots"]
-    assert sr.topics(str(tmp_path / "없음")) == []
+def test_portfolio_pieces_from_folder_and_blocked_per_piece(tmp_path):
+    """포트폴리오(11-15 화면 축) — 정해진 주제 목록 없이 portfolio/ 파일이 편이다. 머리 주석의 읽은 커밋 뒤 다루는 코드를 바꾼
+    feat · fix 커밋만 센다(docs 커밋 · 다른 파일 커밋은 세지 않는다). 머리 주석이 없으면 0이 아니라 셀 수 없음."""
+    r = tmp_path / "repo"
+    (r / "portfolio" / "img").mkdir(parents=True)
+    (r / "bridge").mkdir()
+    g = lambda *a: subprocess.run(["git", "-C", str(r), *a], check=True, capture_output=True, text=True).stdout.strip()  # noqa: E731
+    g("init", "-q", "-b", "main"), g("config", "user.email", "t@t"), g("config", "user.name", "t")
+    (r / "bridge" / "scribe.js").write_text("a\n", encoding="utf-8")
+    (r / "bridge" / "other.py").write_text("a\n", encoding="utf-8")
+    g("add", "."), g("commit", "-qm", "feat: 처음")
+    base = g("rev-parse", "--short", "HEAD")
+    from bridge.manuscript import head_text
+    (r / "portfolio" / "01_room.md").write_text(head_text(["bridge/scribe.js"], base) + "\n# 서기실\n본문\n", encoding="utf-8")
+    (r / "portfolio" / "00_overview.md").write_text("# 한눈에\n머리 주석 없음\n", encoding="utf-8")
+    (r / "portfolio" / "img" / "x.md").write_text("# 그림 설명은 편이 아니다\n", encoding="utf-8")
+    g("add", "."), g("commit", "-qm", "docs: 포트폴리오")
+    for i, msg in enumerate(["fix: 서기실 고침", "docs: 서기실 문서 맞춤", "feat(scope): 서기실 더함"]):
+        (r / "bridge" / "scribe.js").write_text(f"{i}\n", encoding="utf-8")
+        g("add", "."), g("commit", "-qm", msg)
+    (r / "bridge" / "other.py").write_text("b\n", encoding="utf-8")
+    g("add", "."), g("commit", "-qm", "feat: 다른 파일")
+    tps = sr.topics(str(r))
+    assert [t["slug"] for t in tps] == ["00_overview", "01_room"]                 # 번호 차례, img/ 아래는 편이 아니다
+    assert tps[1]["title"] == "서기실" and tps[1]["commits"] == 2                  # fix 하나 + feat 하나(docs · 다른 파일 뺌)
+    assert tps[0]["commits"] is None and "머리 주석" in tps[0]["why"]
+    assert sr.topics(str(tmp_path / "없음")) == [] and sr.has_portfolio(str(r))
     a = {"session_id": 1, "task": "portfolio", "topic": "00_overview", "title": "서기"}
     assert "이미 열려" in sr.blocked("portfolio", [a], "00_overview")
-    assert sr.blocked("portfolio", [a], "01_loss") is None                       # 다른 주제 — 다른 파일
+    assert sr.blocked("portfolio", [a], "01_room") is None                        # 다른 편 — 다른 파일
+    assert "portfolio/" in sr.blocked("portfolio", [a])                           # 편 없이(폴더 통째로)는 열린 편과 겹친다
+    assert sr.touches("portfolio") == ["portfolio/"]
     assert sr.blocked("later", [a]) is None
-    p = sr.task_prompt("portfolio", "foreman", "/repo", {"slug": "00_overview", "title": "한눈에", "about": "A",
-                                                         "sources": "`README.md`", "screenshots": "1", "siblings": ""})
-    assert "portfolio/00_overview.md" in p and "> 이 글은" in p and "tools/screen.py" in p and "[t:턴]" in p
-    assert "tools/screen.py" not in sr.task_prompt("portfolio", "foreman", "/repo", {"slug": "01_loss", "title": "t", "about": "B", "sources": ""})
+    one = sr.task_prompt("portfolio", "foreman", "/repo", {"slug": "01_room", "title": "서기실", "covers": "`bridge/scribe.js`",
+                                                           "commits": "2개", "siblings": ""})
+    whole = sr.task_prompt("portfolio", "foreman", "/repo", {"siblings": "「한눈에」"})
+    for p in (one, whole):
+        assert "tools/screen.py" in p and "경어체" in p and "화면 축" in p and "다루는 곳:" in p and "읽은 커밋:" in p
+        assert "본 판" not in p and "config/portfolio.toml" not in p and "portfolio: " not in p
+    assert "portfolio/01_room.md" in one and "정해진 주제 목록은 없다" in whole
+    assert "../notion/" in whole and "무엇을 해 주나" in whole and "덧붙인 요청" not in whole
+    assert "16편" in sr.task_prompt("portfolio", "foreman", "/repo", {"note": "포트폴리오 16편, 합치지 않는다"})
+
+
+def test_techdoc_task_prompt_and_two_days():
+    """기술문서 쓰기(11-15) — 목차는 서기가, 편마다 서브에이전트. 쓰는 법 · 나무 규칙 · 머리 주석이 일감에 든다.
+    마지막으로 합친 뒤 이틀이 지났고 다루는 코드가 바뀐 편이 있을 때만 할 일에 올린다."""
+    from datetime import datetime, timedelta
+    p = sr.task_prompt("techdoc", "foreman", "/repo", {"changed": "`notion/02_x.md`(3개)", "tree": "`notion/02_x.md`", "note": "브리지 편도"})
+    for want in ("notion/", "서브에이전트", "평서체", "날짜", "[code:경로]", "NN_이름/", "다루는 곳:", "읽은 커밋:", "docs를 그대로 옮기기",
+                 "notion/02_x.md`(3개)", "브리지 편도", "Notion에 올리기",
+                 "읽는 사람은 비개발자도 포함된다. 쉬운 말로 쓰되 깊이는 줄이지 마라. 어려운 말을 쓸 때는 그 자리에서 무엇인지 한 줄로 풀어라."):
+        assert want in p, want
+    assert "본 판" not in p
+    assert sr.touches("techdoc") == ["notion/"] and "techdoc" in sr.TASKS
+    now = datetime(2026, 11, 15, 12)
+    changed = [{"commits": 2}, {"commits": 0}]
+    assert sr.techdoc_state(changed, now - timedelta(days=3), now)["due"] is True
+    assert sr.techdoc_state(changed, now - timedelta(days=1), now)["due"] is False            # 이틀이 안 지남
+    assert sr.techdoc_state([{"commits": 0}], now - timedelta(days=9), now)["due"] is False   # 코드가 그대로면 이틀이 지나도 안 올린다
+    unk = sr.techdoc_state([{"commits": None}], now - timedelta(days=3), now)
+    assert unk["due"] is True and "머리 주석을 읽지 못한 편 1" in unk["why"]                 # 셀 수 없는 편은 조용히 「그대로」가 되지 않는다
+    assert sr.techdoc_state([], None, now)["due"] is False                                     # 첫 목차는 사람이 정한다
+    st = sr.techdoc_state(changed, now - timedelta(days=3), now)
+    assert st["why"].startswith("글 2편 가운데 코드가 바뀐 편 1")
+
+
+def test_techdoc_and_portfolio_start_refusals(tmp_path):
+    """기술문서 쓰기는 원고 폴더가 notion/인 프로젝트만, 포트폴리오는 portfolio/ 폴더가 있는 저장소만(세션을 띄우기 전에 거절)."""
+    import asyncio
+    from bridge.inject import Refused
+    r = _repo(tmp_path)
+
+    class _Pub:
+        def __init__(self, src):
+            self.src = src
+    eng = _FakeEngine({"foreman": str(r)})
+    for pubs in (None, {"foreman": _Pub("docs/")}):
+        with pytest.raises(Refused, match="notion/"):
+            asyncio.run(sr.start(None, eng, "foreman", "techdoc", publishers=pubs))
+    with pytest.raises(Refused, match="portfolio/ 폴더가 없습니다"):
+        asyncio.run(sr.start(None, eng, "foreman", "portfolio"))
+    (r / "portfolio").mkdir()
+    with pytest.raises(Refused, match="편을 찾지 못했습니다"):
+        asyncio.run(sr.start(None, eng, "foreman", "portfolio", "09_없음"))
+
+
+class _FakeEngine:
+    """start가 저장소 경로만 읽는다."""
+
+    def __init__(self, repos):
+        self.repos = repos
+
+    def connect(self):
+        eng = self
+
+        class _C:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def execute(self, q, params=None):
+                class _R:
+                    def first(self_inner):
+                        p = (params or {}).get("p")
+                        return (eng.repos[p],) if p in eng.repos else None
+                return _R()
+        return _C()
 
 
 def test_later_task_is_known_limits():

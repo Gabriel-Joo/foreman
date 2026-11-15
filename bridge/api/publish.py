@@ -18,7 +18,8 @@ router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
 class PublishIn(BaseModel):
     path: str = Field(default="docs/", min_length=4, max_length=255)
     # reorder — 포트폴리오를 번호순으로 다시 세움(path는 "portfolio/"). docsync — 기술문서 지금 맞추기(11-09, path 무시)
-    action: Literal["publish", "archive", "move", "reorder", "docsync"] = "publish"
+    # prune — 원본이 git에서 사라진 포트폴리오 페이지를 휴지통으로(11-15, path 무시 — 새 판을 올린 뒤 옛 편 치우기)
+    action: Literal["publish", "archive", "move", "reorder", "docsync", "prune"] = "publish"
     section: str | None = Field(default=None, max_length=100)   # move — 루트 아래 묶음 페이지 이름(없으면 만든다)
     project: str = Field(default="foreman", max_length=64)       # 11-09 — 프로젝트마다 게시기(config/notion.toml)
     force: bool = False   # Notion에서 사람이 고친 블록이 있어도 git 원본으로 덮는다([Notion 수정 버리고 덮기])
@@ -110,7 +111,7 @@ async def publish_do(body: PublishIn, request: Request) -> JSONResponse:
         # 범위 판정(bridge/scopetoken.py)이 날 본문으로 이미 보았다 — 검증된 본문으로 한 번 더(칸막이가 새지 않게, 11-12)
         if body.project != scope:
             raise HTTPException(403, f"프로젝트 토큰({scope})으로는 이 프로젝트 문서만 게시할 수 있습니다 — 받은 project: {body.project}")
-        if body.force or body.action == "docsync":
+        if body.force or body.action in ("docsync", "prune"):
             raise HTTPException(403, f"프로젝트 토큰({scope})으로는 할 수 없습니다 — force · 한꺼번에 맞추기는 FOREMAN 관리자에게 부탁합니다")
     p = _pub(request, body.project)
     if (stop := _halted(p)) is not None:
@@ -127,6 +128,8 @@ async def publish_do(body: PublishIn, request: Request) -> JSONResponse:
             r = {"action": "docsync", **{k: r[k] for k in ("done", "held", "failed")}}
         elif body.action == "reorder":
             r = await p.reorder_portfolio()
+        elif body.action == "prune":
+            r = await p.prune_portfolio()
         elif body.action == "archive" and body.path.startswith("@section/"):     # 묶음 페이지(비었을 때만, 11-06)
             r = await p.archive_section(body.path.split("/", 1)[1])
         else:
