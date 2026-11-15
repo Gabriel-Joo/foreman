@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/transcript/, bridge/assembler.py, bridge/bus.py, bridge/store.py, bridge/api/hooks.py
-읽은 커밋: e5d584b
+읽은 커밋: 9a7c22d
 -->
 # 02 기록 모으기
 

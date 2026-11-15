@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/roleguard.py, bridge/reposcope.py, bridge/schemalock.py, bridge/pgrep_guard.py, scripts/korean-check.py, .claude/settings.json, config/roles.toml
-읽은 커밋: e5d584b
+읽은 커밋: 9a7c22d
 -->
 
 # 글이 아니라 권한으로
@@ -159,7 +159,9 @@ inspector-write = true
 
 ### 판정이 실패하면
 
-판정 코드에서 예외가 나면 막지 않고 통과시킨다. 판정 실패로 모든 세션이 묶이는 것이 더 나쁘다. 대신 로그 error와 텔레그램을 보낸다. 같은 오류로 텔레그램이 쏟아지지 않게 한 시간에 한 번만 보낸다 [code:bridge/roleguard.py].
+판정 코드에서 예외가 나면 막지 않고 통과시킨다. 판정 실패로 모든 세션이 묶이는 것이 더 나쁘다. 대신 로그 error와 텔레그램을 보낸다. 같은 오류로 텔레그램이 쏟아지지 않게 한 시간에 한 번만 보낸다 [code:bridge/roleguard.py]. 텔레그램은 한 시간에 한 번이라 그 사이 몇 번이나 판정 없이 지났는지는 알 수 없었다. 그래서 예외가 날 때마다 「판정 없이 지났다」는 한 줄을 판정 없는 통과 기록 파일에 따로 남긴다. 줄에는 오류 종류, 세션 id, 도구 이름만 들어가고 명령 글은 들어가지 않는다 [code:bridge/roleguard.py] [code:bridge/hookmiss.py].
+
+스키마 잠금, 다른 저장소 막기, `pgrep -f` 막기도 같다. 판정 중 예외가 나면 통과시키고 어느 장치에서 났는지를 같은 파일에 남긴다. 전에는 이 예외가 브리지의 서버 오류로 나가 스크립트가 아무 흔적 없이 통과시켰다 [code:bridge/approvals.py]. 이 기록 파일의 갈래와 꼴은 → 기다리는 길: hook 두 개 편이 다룬다.
 
 ### 역할 권한을 hook으로 한 까닭
 

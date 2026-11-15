@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/approval.py, bridge/approvals.py, bridge/approval_summary.py, bridge/api/approvals.py, config/approval.toml
-읽은 커밋: e5d584b
+읽은 커밋: 9a7c22d
 -->
 # 04 승인
 
@@ -16,7 +16,7 @@ FOREMAN이 다루는 Claude Code(CC) 세션은 대부분 사람이 지켜보지 
 | `allow` | 되돌릴 수 있는 것과 읽기. Read, Grep, Glob, 파일 편집과 쓰기, `git status`, `log`, `diff`, `kubectl apply`, `rollout`, `git push`(강제 아님), `docker restart`, `systemctl restart` | 승인 창 없이 통과 |
 | `pass` | 그 밖 전부. `/tmp`나 작업 트리 밖의 평범한 삭제, 비밀 파일 읽기, 로컬 개발 DB, `kubectl delete pod`, `docker rm` 등 | 브리지는 아무것도 돌려주지 않는다. CC가 원래대로 정한다 |
 
-규칙 목록은 `config/approval.toml` 한 파일에 정규식과 경로 목록으로 적혀 있고, 판정 순서는 이렇다. ask 규칙이 하나라도 걸리면 ask, Bash 명령을 `&&`, `||`, `;`, `|`로 나눈 조각이 모두 allow 규칙에 들어맞으면 allow, 나머지는 `unmatched` 값(지금 `pass`)이다 [code:config/approval.toml]. allow는 조각마다 증명해야 해서 리다이렉트, 명령 치환, 환경 변수 앞붙임처럼 무엇을 할지 확실하지 않은 것이 하나라도 섞이면 allow가 되지 못한다. 반대로 ask 정규식은 따옴표 안까지 명령 전체에서 찾는다. 이 서버에서는 `vagrant ssh … -c 'kubectl …'`처럼 다른 명령 안에 넣어 운영 명령을 실행하는 모양이 흔하기 때문이다 [log:stage5_approval_result.md].
+규칙 목록은 `config/approval.toml` 한 파일에 정규식과 경로 목록으로 적혀 있고, 판정 순서는 이렇다. ask 규칙이 하나라도 걸리면 ask, Bash 명령을 `&&`, `||`, `;`, `|`로 나눈 조각이 모두 allow 규칙에 들어맞으면 allow, 나머지는 `unmatched` 값(지금 `pass`)이다 [code:config/approval.toml]. allow는 조각마다 증명해야 해서 리다이렉트, 명령 치환, 환경 변수 앞붙임처럼 무엇을 할지 확실하지 않은 것이 하나라도 섞이면 allow가 되지 못한다. 반대로 ask 정규식은 따옴표 안까지 명령 전체에서 찾는다. 이 서버에서는 `vagrant ssh … -c 'kubectl …'`처럼 다른 명령 안에 넣어 운영 명령을 실행하는 모양이 흔하기 때문이다 [log:stage5_approval_result.md]. 같은 까닭으로 다른 명령 안에서 실행되는 글, 곧 `bash -c` 안쪽, 셸이 받아 실행하는 여러 줄 본문, 실행하는 스크립트 파일의 본문은 바깥 명령과 똑같이 처음부터 다시 판정한다. 홈이나 프로젝트를 통째로 지우는지도 그 안에서 본다 [code:bridge/approval.py] [c:7ccb55f].
 
 판정은 모든 도구 호출 앞에서 불리므로 메모리 안에서 끝낸다. DB 기록은 뒤에서 따로 한다. 판정 왕복은 약 25ms였다 [log:stage5_approval_result.md]. 한 명령이 실제로 지우는 것인지 그 글자를 적어 두기만 하는 것인지 가르는 법(커밋 메시지나 heredoc 속 `rm -rf`)은 → 「규칙: 실행과 글자」.
 
@@ -36,13 +36,13 @@ FOREMAN이 다루는 Claude Code(CC) 세션은 대부분 사람이 지켜보지 
 
 좁히면서 뺀 것은 주로 이런 것이다. `/tmp`나 mktemp로 만든 것을 지우기, 작업 트리 밖의 평범한 삭제, 변수가 든 경로 지우기, 비밀 파일 읽기와 복사, 규칙 파일 고치기, 다시 생기는 `kubectl delete pod`, 로컬 개발 DB 다시 만들기 [code:config/approval.toml]. 하나하나가 이력에서 「같은 성격으로 수없이 걸려 전부 Yes」였던 것들이다. 예를 들어 `/tmp/claude-1000` 아래 지우기가 16번, 토큰 파일 다루기가 13번, 규칙 파일을 Edit 도구로 고치기가 11번, 승인 정책을 시험하는 코드의 문자열이 9번 걸렸다 [log:stage5_approval_result.md].
 
-이론적 위험을 버린 것은 아니다. 승인 창이 아닌 다른 층이 맡는다. 비밀값을 화면에 내지 않는 것은 작업 규칙(CLAUDE.md와 메모리)이 맡고, 안전 규칙 파일(`approval.toml`, `notify.toml`)을 고치는 것은 묻지 않고 통과시키되 텔레그램으로 🛡 알림을 보낸다(같은 파일은 10분에 한 번) [code:bridge/approvals.py]. 게이트 자신을 통째로 끌 수 있는 파일(`~/.claude/settings.json`, hook 스크립트, `~/.claude.json`)은 Edit 도구로 고쳐도 계속 묻는다 [code:config/approval.toml].
+이론적 위험을 버린 것은 아니다. 승인 창이 아닌 다른 층이 맡는다. 비밀값을 화면에 내지 않는 것은 작업 규칙(CLAUDE.md와 메모리)이 맡고, 안전 규칙 파일(`approval.toml`, `notify.toml`)과 게이트 자신을 끌 수 있는 파일(`~/.claude/settings.json`, hook 스크립트, `~/.claude.json` 등)을 고치는 것은 지금 설정(`protect_mode = "notify"`)에서 묻지 않고 통과시키되 텔레그램으로 🛡 알림을 보낸다(같은 파일은 10분에 한 번) [code:bridge/approval.py] [code:bridge/approvals.py] [code:config/approval.toml]. 작업방(worktree, 같은 저장소를 다른 폴더에 펼쳐 따로 일하는 곳) 안의 규칙 파일 사본을 고칠 때도 같은 알림이 가고, 작업방을 원본에 합칠 때 규칙 파일이 바뀌었으면 합치기 결과와 카드에 그 사실을 표시한다. 표시만 하고 합치기를 막지는 않는다 [log:foreman-7_silent_delete_fix_20261115.md] [c:7ccb55f].
 
 엄격한 규칙의 장치는 코드에서 지우지 않았다. `[sensitive] mode = "read"`, `protect_mode = "ask"`, `[ask] delete_outside_worktree = true`, `scan_interpreter_heredocs = true`로 되돌리면 예전처럼 동작한다 [code:config/approval.toml]. 시험도 두 벌이다. 엄격한 규칙은 `tests/test_approval.py`가, 지금 기준은 `tests/test_approval_now.py`가 맡는다 [code:README.md].
 
 ### 「애매하면 묻는다」는 어디까지 남았나
 
-처음 원칙의 셋째 마디 「애매하면 묻는다」는 지금 아주 좁게만 남았다. 위험한 운영 명령의 동사 자리가 변수인 것(`kubectl $VERB`)을 묻던 규칙은 1번 걸려 Yes였고, 지금은 빈 값으로 꺼 두었다(`[ask.ambiguous] verb_re = ""`) [code:config/approval.toml]. 남은 것은 지울 경로가 비면 `/`가 되는 꼴(`rm -rf $X/`)이다. 이 경우 변수가 비었을 때 무엇이 지워지는지 그 명령 안에서 확인할 수 없으므로 묻는다. `${X:?}`로 빈 값을 막았으면 통과한다 [code:config/approval.toml].
+처음 원칙의 셋째 마디 「애매하면 묻는다」는 지금 아주 좁게만 남았다. 위험한 운영 명령의 동사 자리가 변수인 것(`kubectl $VERB`)을 묻던 규칙은 1번 걸려 Yes였고, 지금은 빈 값으로 꺼 두었다(`[ask.ambiguous] verb_re = ""`) [code:config/approval.toml]. 남은 것은 지울 경로가 비면 `/`가 되는 꼴(`rm -rf $X/`)이다. 이 경우 변수가 비었을 때 무엇이 지워지는지 그 명령 안에서 확인할 수 없으므로 묻는다. `${X:?}`로 빈 값을 막았으면 통과한다 [code:config/approval.toml]. 지울 경로가 고정 부분 없이 명령 치환(다른 명령의 출력을 그 자리에 넣는 셸 문법)으로 시작하는 것도 묻는다. 무엇을 지울지 글만으로는 전혀 알 수 없기 때문이다. 다만 작업 폴더나 저장소 뿌리를 내는 명령 치환은 실제 경로로 풀어, 통째로 지우는 경우에만 묻는다 [code:bridge/approval.py] [c:7ccb55f]. 판정 세부는 → 「규칙: 실행과 글자」.
 
 반대로 규칙에 없는 모든 것을 묻게 하지는 않는다(`unmatched = "pass"`). 그렇게 하면 자동 모드가 통과시키던 평범한 작업이 모두 승인 창이 된다. 실측으로 20일에 약 9,700건이다 [code:config/approval.toml]. 값을 `"ask"`로 바꿀 수는 있지만 지금은 어느 프로젝트도 그렇게 쓰지 않는다.
 
@@ -61,7 +61,7 @@ FOREMAN 승인은 CC의 권한 체계를 대신하지 않는다. 그 위에 얹�
 | `pass` | 아무것도 없음(본문 없는 204) | CC가 원래 흐름대로 정한다. 자동 모드 분류기와 사용자 설정이 판단한다 |
 | 브리지가 꺼짐, 오류 | 아무것도 없음 | `pass`와 같다. 허용 쪽으로 새지 않는다 |
 
-hook 스크립트 `scripts/foreman-decide.sh`는 브리지가 응답하지 않거나 오류를 내면 아무것도 출력하지 않고 `exit 0`으로 끝난다. 그러면 CC는 hook이 없었던 것처럼 원래대로 정한다 [code:scripts/foreman-decide.sh]. 브리지가 멈췄다고 모든 것이 허용되지도, 모든 것이 막히지도 않는다. 이것이 pass를 지금보다 넓히지 않는 까닭이기도 하다. 브리지가 정하지 않으면 CC의 원래 판단이 그대로 살아 있다.
+hook 스크립트 `scripts/foreman-decide.sh`는 브리지가 응답하지 않거나 오류를 내면 아무것도 출력하지 않고 `exit 0`으로 끝난다. 그러면 CC는 hook이 없었던 것처럼 원래대로 정한다 [code:scripts/foreman-decide.sh]. 다만 이렇게 판정 없이 지나간 사실은 조용히 묻히지 않게 기록 파일에 한 줄씩 남는다(명령 글은 빼고 시각, 갈래, 까닭, 세션, 도구 이름만) [code:bridge/hookmiss.py] [log:foreman-6_bridge_alert_20261115.md]. 브리지가 멈췄다고 모든 것이 허용되지도, 모든 것이 막히지도 않는다. 이것이 pass를 지금보다 넓히지 않는 까닭이기도 하다. 브리지가 정하지 않으면 CC의 원래 판단이 그대로 살아 있다.
 
 ### CC 자체 권한 거부는 승인 카드로 오지 않는다
 
@@ -71,7 +71,7 @@ hook 스크립트 `scripts/foreman-decide.sh`는 브리지가 응답하지 않�
 
 ### 승인 정책과 상관없이 막는 것
 
-PreToolUse는 승인 판정만 하는 자리가 아니다. 같은 hook에서 승인 정책보다 먼저 네 가지를 거부(`deny`)한다. 다른 세션이 스키마를 바꾸는 중일 때(스키마 잠금), 다른 저장소를 고치려 할 때, `pgrep -f`나 `pkill -f`가 자기 셸에 걸릴 때, 그리고 역할 규칙에 어긋날 때다 [code:bridge/approvals.py]. 이 넷은 프로젝트가 observe여도 막는다. 승인이 「물어볼 일」이라면 이쪽은 「묻지 않고 막을 일」이라 성격이 다르다. → 「글이 아니라 권한으로」(05 역할과 권한의 하위 편).
+PreToolUse는 승인 판정만 하는 자리가 아니다. 같은 hook에서 승인 정책보다 먼저 네 가지를 거부(`deny`)한다. 다른 세션이 스키마를 바꾸는 중일 때(스키마 잠금), 다른 저장소를 고치려 할 때, `pgrep -f`나 `pkill -f`가 자기 셸에 걸릴 때, 그리고 역할 규칙에 어긋날 때다 [code:bridge/approvals.py]. 이 넷은 프로젝트가 observe여도 막는다. 이 검사 자체가 예외로 실패하면 예전에는 브리지가 오류(500)를 냈고 hook 스크립트가 그것을 통과로 받았다. 지금은 브리지가 예외를 잡아 판정 없이 통과시키되, 어느 검사가 무슨 예외로 실패했는지를 위의 기록 파일에 남긴다 [code:bridge/approvals.py] [c:cd14ed6]. 승인이 「물어볼 일」이라면 이쪽은 「묻지 않고 막을 일」이라 성격이 다르다. → 「글이 아니라 권한으로」(05 역할과 권한의 하위 편).
 
 ## 프로젝트마다 observe와 enforce
 

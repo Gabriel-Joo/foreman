@@ -1,6 +1,6 @@
 <!--
-다루는 곳: scripts/foreman-hook.sh, deploy/hooks/foreman-hooks.json, bridge/api/hooks.py
-읽은 커밋: e5d584b
+다루는 곳: scripts/foreman-hook.sh, deploy/hooks/foreman-hooks.json, bridge/api/hooks.py, scripts/foreman-decide.sh, bridge/hookmiss.py
+읽은 커밋: 9a7c22d
 -->
 
 # CC hook 받기
@@ -129,10 +129,16 @@ sequenceDiagram
 
 ## 같은 길을 타는 PreToolUse와 PermissionRequest
 
-여덟 hook 가운데 PreToolUse와 PermissionRequest는 성격이 다르다. 앞의 여섯은 "이런 일이 있었다"고 알리기만 하면 되지만, 이 둘은 브리지의 답을 받아 CC에 돌려줘야 한다. 그래서 출력을 모두 버리는 `foreman-hook.sh` 대신 `scripts/foreman-decide.sh`를 부르고, 브리지의 `/hooks/pre`와 `/hooks/permission`으로 간다. 받는 곳은 같은 파일(`bridge/api/hooks.py`)에 있고, 같은 hook 토큰과 같은 거절 로그 규칙(`_authed_body`)을 쓴다 [code:bridge/api/hooks.py]. 다른 점은 바로 202를 돌리지 않고 판정을 기다려 돌려준다는 것이다. PreToolUse는 메모리 안에서 곧바로 판정해 허용, 묻기, 거부 가운데 하나를 JSON으로 돌려주고, 판정하지 않을 때는 본문 없는 204로 "CC가 스스로 정하라"고 답한다. 이 판정 안에서 역할 막기도 함께 일어난다. 브리지는 세션의 역할(코더, 조사 등)을 읽어 그 역할이 해서는 안 되는 도구 사용이면 `deny`로 막고, 스키마 잠금, 다른 저장소 쓰기, `pgrep -f` 자기 걸림 같은 막기도 같은 자리에서 한다 [code:bridge/approvals.py]. PermissionRequest는 CC가 승인 창을 띄운 순간 불려, 사람이 화면에서 결정을 내릴 때까지 기다린다. 이 둘도 "CC를 막지 않는다"는 바탕은 같아서, 브리지가 꺼져 있거나 오류면 아무것도 출력하지 않고 `exit 0`으로 끝나 CC가 평소처럼 스스로 정한다(허용 쪽으로 새지 않는다) [code:scripts/foreman-decide.sh]. 다만 일부러 기다리는 hook이라 제한 시간이 훨씬 길다. 판정 시간, 승인 창 기다리기, 먼저 온 결정이 이기는 규칙은 → 04 승인에서, 역할마다 무엇을 막는지는 → 05 역할과 권한에서 다룬다.
+여덟 hook 가운데 PreToolUse와 PermissionRequest는 성격이 다르다. 앞의 여섯은 "이런 일이 있었다"고 알리기만 하면 되지만, 이 둘은 브리지의 답을 받아 CC에 돌려줘야 한다. 그래서 출력을 모두 버리는 `foreman-hook.sh` 대신 `scripts/foreman-decide.sh`를 부르고, 브리지의 `/hooks/pre`와 `/hooks/permission`으로 간다. 받는 곳은 같은 파일(`bridge/api/hooks.py`)에 있고, 같은 hook 토큰과 같은 거절 로그 규칙(`_authed_body`)을 쓴다 [code:bridge/api/hooks.py]. 다른 점은 바로 202를 돌리지 않고 판정을 기다려 돌려준다는 것이다. PreToolUse는 메모리 안에서 곧바로 판정해 허용, 묻기, 거부 가운데 하나를 JSON으로 돌려주고, 판정하지 않을 때는 본문 없는 204로 "CC가 스스로 정하라"고 답한다. 이 판정 안에서 역할 막기도 함께 일어난다. 브리지는 세션의 역할(코더, 조사 등)을 읽어 그 역할이 해서는 안 되는 도구 사용이면 `deny`로 막고, 스키마 잠금, 다른 저장소 쓰기, `pgrep -f` 자기 걸림 같은 막기도 같은 자리에서 한다 [code:bridge/approvals.py]. PermissionRequest는 CC가 승인 창을 띄운 순간 불려, 사람이 화면에서 결정을 내릴 때까지 기다린다. 이 둘도 "CC를 막지 않는다"는 바탕은 같아서, 브리지가 꺼져 있거나 오류면 아무것도 출력하지 않고 `exit 0`으로 끝나 CC가 평소처럼 스스로 정한다(허용 쪽으로 새지 않는다) [code:scripts/foreman-decide.sh]. 다만 일부러 기다리는 hook이라 제한 시간이 훨씬 길다.
+
+판정 없이 통과하는 것은 그대로 두되, 통과했다는 사실은 남긴다. 판정을 받아야 할 PreToolUse가 브리지가 꺼졌거나, 답이 늦었거나, 판정 도중 오류가 나서 판정 없이 지나가면 그 일이 아무 데도 남지 않았다. 막기가 꺼진 채 돌아도 아무도 모르는 조용한 고장이다. 그래서 스크립트와 브리지가 같은 기록 파일(저장소 안 `.run/hook_miss.log`, 저장소에 올리지 않는 폴더)에 한 줄씩 쓴다. 한 줄에는 시각, 어느 쪽이 썼는지, 어떤 갈래로 통과했는지와 그 까닭(오류 종류 이름, 걸린 시간처럼 코드가 만든 값), 세션 id, 도구 이름만 들어간다. 명령 글이나 입력 값은 비밀값이 섞일 수 있어 쓰지 않는다. 판정이 정상으로 오간 호출에서는 아무것도 쓰지 않고, 파일이 1MB를 넘으면 한 벌만 옮겨 두고 새로 시작해 끝없이 커지지 않는다. 기록 쓰기가 실패해도 판정은 막지 않는다 [code:scripts/foreman-decide.sh][code:bridge/hookmiss.py][code:bridge/api/hooks.py][c:cd14ed6]. 브리지 쪽에서는 판정을 내는 데 스크립트가 기다리는 4초보다 오래 걸린 경우도 「늦은 응답」으로 남긴다. 스크립트가 이미 끊었으니 그 판정은 버려진 것이다 [code:bridge/api/hooks.py].
+
+이 기록을 더하면서 한 번 사고가 났다. 처음 판은 스크립트가 세션 id와 도구 이름을 뽑으려고 hook 입력 전체를 셸 변수에 담았는데, 실행 환경에 따라 그 입력을 제대로 읽지 못해 빈 본문이 브리지로 갔다. 브리지는 그 호출을 판정하지 못했고, 그 호출들은 판정 없이 지나갔다. 통과를 기록하려던 장치가 통과를 만든 셈이다. 바로 스크립트 한 파일을 되돌린 뒤 다시 고쳤다 [c:1d303b9][c:58f9f03]. 지금 스크립트는 입력을 변수에 담지 않는다. `tee`가 표준 입력을 한 바이트도 바꾸지 않고 그대로 `curl`에 흘리고, 곁가지로 앞 4KB만 떼어 세션 id와 도구 이름만 뽑는다. 입력 꼴 여러 가지를 두 가지 실행 환경으로 보내 브리지가 받은 바이트가 원래와 같은지 보는 시험이 이 약속을 지킨다 [code:scripts/foreman-decide.sh][log:foreman-4_hook_bytes_20261115.md].
+
+판정 시간, 승인 창 기다리기, 먼저 온 결정이 이기는 규칙은 → 04 승인에서, 역할마다 무엇을 막는지는 → 05 역할과 권한에서 다룬다.
 
 ## 알아 둘 것
 
-hook 설정의 원본은 저장소의 `deploy/hooks/foreman-hooks.json`이지만, CC가 실제로 읽는 것은 사용자 설정 파일이다. 저장소 파일을 고친다고 바로 반영되지 않고, 사용자 설정에 손으로 옮겨야 한다. 둘 사이에 어긋난 값이 하나 있었다. PermissionRequest의 제한 시간이 저장소 파일에는 900초로, 실제 사용자 설정에는 3660초로 적혀 있었다. `foreman-decide.sh`의 주석과 기다림 시간(3630초)은 3660초를 기준으로 짜여 있으니 실제로 도는 쪽이 맞고 저장소 파일이 뒤처진 것이었다 [code:scripts/foreman-decide.sh]. 그대로 새 PC에 설치하면 승인 창이 15분 만에 CC 쪽에서 끊겼을 것이다. 11-15에 저장소 파일을 3660초로 맞췄고, 이제 시험이 세 값의 순서를 지킨다 [code:tests/test_hook_timeouts.py]. 또 설정 파일 안의 스크립트 경로는 원본 폴더의 절대 경로다. worktree(화면에서는 작업방)에서 스크립트를 고쳐도 합치기 전까지는 도는 hook에 반영되지 않는다.
+hook 설정의 원본은 저장소의 `deploy/hooks/foreman-hooks.json`이지만, CC가 실제로 읽는 것은 사용자 설정 파일이다. 저장소 파일을 고친다고 바로 반영되지 않고, 사용자 설정에 손으로 옮겨야 한다. 그래서 둘이 어긋날 수 있고, 실제로 한 번 어긋났다. PermissionRequest의 제한 시간이 저장소 파일에는 900초로, 실제 사용자 설정에는 3660초로 적혀 있었다. 그대로 새 PC에 설치했다면 승인 창이 15분 만에 CC 쪽에서 끊겼을 것이다. 지금은 저장소 파일도 3660초다 [code:deploy/hooks/foreman-hooks.json][c:883c4c9]. 이 값은 혼자 정해지지 않는다. 브리지가 사람의 결정을 기다리는 시간이 3600초, 스크립트의 `curl`이 브리지 답을 기다리는 시간이 3630초, CC가 hook을 끊는 시간이 3660초로, 안쪽부터 30초씩 길게 겹쳐 있다. 안쪽이 먼저 끝나야 바깥이 그 답을 받을 수 있기 때문이다. 이 세 값의 순서가 어긋나면 시험이 깨진다 [code:scripts/foreman-decide.sh][code:tests/test_hook_timeouts.py]. 다만 시험은 저장소 안의 값끼리만 맞대고, 각 PC의 사용자 설정 값은 보지 않는다 [log:foreman-7_hook_timeout_20261115.md]. 또 설정 파일 안의 스크립트 경로는 원본 폴더의 절대 경로다. worktree(화면에서는 작업방)에서 스크립트를 고쳐도 합치기 전까지는 도는 hook에 반영되지 않는다.
 
 hook이 잘 오고 있는지는 DB의 `event` 표에서 `source='hook'`인 행으로 본다. 세션마다 hook 이벤트가 프롬프트 수만큼 쌓이고 있으면 길이 열려 있는 것이다. hook이 한동안 하나도 오지 않는데 트랜스크립트 쪽 적재는 계속된다면, 토큰이 바뀌었거나 브리지 주소가 바뀌어 스크립트가 조용히 버리고 있는 것이니 브리지 로그의 "hook 거절" 줄을 먼저 본다.

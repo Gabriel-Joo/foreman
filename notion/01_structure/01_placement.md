@@ -1,6 +1,6 @@
 <!--
-다루는 곳: deploy/systemd/foreman-bridge.service, deploy/mysql/, docs/02_cloudflare_tunnel.md
-읽은 커밋: e5d584b
+다루는 곳: deploy/systemd/foreman-bridge.service, deploy/systemd/foreman-bridge-alert.service, scripts/foreman-bridge-alert.sh, deploy/mysql/, docs/02_cloudflare_tunnel.md
+읽은 커밋: 9a7c22d
 -->
 # 어디에 두었나
 
@@ -112,6 +112,7 @@ tmux는 더 단단히 막혀 있다. 브리지는 tmux 서버와 유닉스 소�
 | `Restart` | `on-failure` | 비정상으로 끝나면 다시 띄운다 |
 | `RestartSec` | `5` | 다시 띄우기 전 5초 쉰다 |
 | `StartLimitIntervalSec`, `StartLimitBurst` | `300`, `10` | 300초 안에 10번까지 다시 시도한다 |
+| `OnFailure` | `foreman-bridge-alert.service` | 다시 띄우기를 포기하면 브리지 밖 알림 유닛을 부른다 |
 | `Environment=PATH` | 사용자 npm 폴더, `~/.local/bin`, 시스템 폴더 | tmux와 claude 실행 파일을 찾게 한다 |
 | `KillMode` | `mixed` | 끌 때 본 프로세스에 먼저 신호를 보내고, 남은 자식은 나중에 거둔다 |
 | `TimeoutStopSec` | `20` | 20초 안에 안 꺼지면 강제로 끈다 |
@@ -136,6 +137,16 @@ systemd로 옮기고 나서 숨은 고장이 하나 생겼다. 손으로 띄울 
 사용자 매니저는 도커 데몬(시스템 쪽)이 다 떴는지 기다려 주지 않는다. 그래서 부팅 때 브리지가 DB보다 먼저 뜰 수 있다. 브리지는 뜨는 길에 DB를 읽으니(기존 세션과 턴을 불러온다) DB가 없으면 기동이 실패하고 프로세스가 끝난다. 그러면 `Restart=on-failure`가 5초 뒤 다시 띄운다. 이 되풀이로 DB를 기다린다 [code:deploy/systemd/foreman-bridge.service]. 정전 뒤 실제 부팅에서는 도커 컨테이너가 먼저 올라왔고 브리지는 그 몇 분 뒤에 떴다 [log:infra_20261106_systemd-bridge.md].
 
 `After=docker.service` 같은 순서 지정은 쓸 수 없다. 사용자 매니저는 시스템 유닛과 순서를 맞추지 못한다. 그래서 순서 대신 재시도로 풀었다.
+
+### 포기하면 브리지 밖에서 알린다
+
+다시 띄우기에도 끝이 있다. 300초 안에 10번을 넘게 실패하면 systemd는 더 띄우지 않고 유닛을 실패(failed) 상태로 둔다. 이때는 브리지가 꺼져 있으니 브리지가 보내는 텔레그램 알림도 나가지 않는다. 감시하는 쪽이 조용히 죽는 셈이다. 그래서 브리지 유닛에 `OnFailure=foreman-bridge-alert.service`를 걸었다. `OnFailure`는 유닛이 실패했을 때 systemd가 대신 띄워 줄 다른 유닛을 적는 설정이다 [code:deploy/systemd/foreman-bridge.service][c:cd14ed6].
+
+알림 유닛은 한 번 돌고 끝나는(`Type=oneshot`) 유닛으로, `scripts/foreman-bridge-alert.sh`를 부른다 [code:deploy/systemd/foreman-bridge-alert.service]. 이 스크립트는 브리지 코드도, 파이썬 가상환경도, 알림 설정 파일(`config/notify.toml`)도 읽지 않고 curl과 텔레그램 토큰 파일만 쓴다. 브리지가 죽은 까닭이 코드나 설정이 깨진 것이라면, 같은 것을 읽는 알림도 함께 죽기 때문이다. 백업 스크립트가 실패를 알릴 때 브리지에 기대지 않는 것과 같은 생각인데, 한 걸음 더 나가 파이썬에도 기대지 않는다. 그래서 알림 글 맨 앞의 프로젝트 표시도 설정 파일에서 읽지 않고 스크립트에 적어 두었다 [code:scripts/foreman-bridge-alert.sh]. 알림 유닛도 브리지 유닛처럼 `systemctl --user link`로 저장소 파일을 가리키게 설치했다 [log:foreman-6_bridge_alert_20261115.md].
+
+만들면서 예상과 다른 점이 하나 나왔다. systemd는 포기할 때만이 아니라 `Restart`로 다시 띄우기 전의 실패마다 OnFailure 유닛을 불렀다. 그대로 두면 브리지가 한 번 죽었다 바로 다시 떠도 「포기했다」는 알림이 간다. 그래서 스크립트가 먼저 유닛 상태를 읽고, 정말 실패 상태에 머물러 있을 때만 보낸다. 상태를 읽지 못하면 보내는 쪽을 고른다. 조용히 지나가는 것보다 한 번 더 울리는 편이 낫다고 보았다 [code:scripts/foreman-bridge-alert.sh][log:foreman-6_bridge_alert_20261115.md].
+
+알림 글에는 유닛 이름, 상태, 다시 띄운 횟수, 끝난 결과, 그리고 journal 마지막 50줄에 나온 오류 종류(예외 이름과 그 횟수)만 싣는다. journal 줄을 그대로 싣지 않는 것은 그 안에 비밀값이 섞일 수 있어서다. 토큰은 명령줄에 싣지 않고, 텔레그램 보내기가 실패하면 까닭을 journal에 남기고 실패 코드로 끝난다 [code:scripts/foreman-bridge-alert.sh]. 이 알림이 잡지 못하는 경우는 아래 「남은 빈틈」에 적는다.
 
 ### 배포는 곧 다시 띄우기
 
@@ -266,7 +277,7 @@ WebSocket도 따로 확인하게 했다. FOREMAN 화면은 WebSocket이 핵심�
 
 실제 재부팅으로 확인한 적이 없다. 브리지 유닛이 부팅 때 정말 뜨는지, linger와 `Restart`의 되풀이가 실제 부팅 순서에서 맞물리는지는 재부팅을 해 봐야 안다. 재부팅은 사람이 시킬 때만 하는 규칙이라 아직 하지 않았다 [log:infra_20261106_systemd-bridge.md]. 정전 뒤 부팅 때는 브리지가 아직 유닛이 아니었으므로 그 부팅이 검증이 되지 못했다.
 
-브리지가 아예 뜨지 못하면 알려 줄 주체가 없다. 유닛은 300초 안에 10번까지 다시 시도하고, 그래도 실패하면 systemd가 포기한다 [code:deploy/systemd/foreman-bridge.service]. DB가 그보다 늦게 뜨거나, 코드가 깨져 import부터 실패하면 브리지는 꺼진 채로 남는다. 텔레그램 알림은 브리지가 보내는 것이라, 브리지가 꺼지면 「브리지가 꺼졌다」는 알림도 나가지 않는다. 백업 스크립트가 브리지 없이 직접 알리는 것과 대조된다. 지금은 사람이 화면을 열었을 때 안 뜨는 것으로 알게 된다. 이 프로젝트가 잡으려는 「조용한 고장」의 모양을 FOREMAN 자신이 하나 갖고 있는 셈이다.
+브리지가 죽었는데도 알림이 가지 않는 경우가 아직 둘 남아 있다. systemd가 다시 띄우기를 포기한 경우는 이제 브리지 밖 알림 유닛이 알린다(위 「포기하면 브리지 밖에서 알린다」). 그러나 그 알림은 유닛이 실패 상태에 머물 때만 간다. 첫째 빈틈은 포기하지 않는 느린 되풀이다. 띄울 때마다 한동안 살다가 죽기를 되풀이하면 300초 창에 10번이 차지 않아 systemd가 끝없이 다시 띄우고, 유닛이 실패 상태에 머물지 않으니 알림 스크립트는 매번 보내지 않고 끝난다. 둘째 빈틈은 멈춤이다. 프로세스는 살아 있지만 아무 답도 하지 않으면 systemd는 정상으로 본다 [code:deploy/systemd/foreman-bridge-alert.service][log:foreman-6_bridge_alert_20261115.md]. 이 둘은 브리지 밖에서 주기적으로 들여다보는 감시가 맡아야 하는데, 그 감시는 아직 없다(미해결). 그 사이에는 사람이 화면을 열었을 때 안 뜨는 것으로 알게 된다. 이 프로젝트가 잡으려는 「조용한 고장」의 모양이 FOREMAN 자신에게 조금 남아 있는 셈이다.
 
 호스트가 죽으면 모든 것이 같이 죽는다. 위에서 말했듯 물리 서버가 한 대라 피할 수 없고, 백업도 같은 디스크에 있다.
 
