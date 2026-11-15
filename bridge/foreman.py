@@ -159,6 +159,8 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
    - 여럿은 사람이 개수를 말했거나("둘 띄워"), 큰 일을 맡을 파일이 겹치지 않게 나눠 동시에 하는 것이 분명히 나을 때만
    - files — 그 세션이 맡을 파일(저장소 기준 경로, 폴더는 끝에 /, 글롭 * 가능). 고칠 파일을 알면 하나여도 적는다 —
      띄울 때 브리지가 살아 있는 세션 · 다른 계획과 겹치는지 본다. 모르면 []
+   - task — role "scribe"일 때만, 서기실 일 이름(readme, later, trim, doccheck, docfix, portfolio) 중 맞는 것. 브리지가 서기실과 같은 일이
+     열려 있는지 함께 센다. 맞는 것이 없으면 쓰지 않는다(plan으로 적힌다)
    - 여럿이면 세션끼리 files가 겹치지 않게 나눈다. 겹칠 수밖에 없으면 merge_order(1부터, 먼저 합칠 것이 작다)로 순서를 정하고 reasons에 까닭을
    - 여럿이면 각 first_prompt에 맡을 파일과 "맡은 파일 밖은 고치기 전에 멈추고 묻는다"를 적는다
    - mode "attach"는 세션 하나만(보낼 곳이 하나다)
@@ -176,7 +178,8 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
 # 옛 카드는 위쪽 칸만 고쳐 보내므로, sessions_edit가 없으면 위쪽 칸이 sessions[0]을 이긴다. 세션별로 고치는 카드는 sessions_edit: true를 보낸다
 MAX_SESSIONS = 6
 ROLE_KO = {"coder": "코더", "inspector": "점검", "scribe": "서기", "manager": "관리자", "designer": "디자이너"}
-S_FIELDS = ("role", "model", "title", "first_prompt", "read_only", "worktree", "files", "merge_order")
+S_FIELDS = ("role", "model", "title", "first_prompt", "read_only", "worktree", "files", "merge_order", "task")
+TASK_RE = re.compile(r"[a-z][a-z0-9_-]{0,19}")   # 서기 일 종류(11-15) — scribe_room.TASKS의 키 꼴. 띄울 때 session_action scribe-task로 남는다
 
 
 def norm_files(v: Any) -> list[str]:
@@ -226,6 +229,7 @@ def sessions_of(plan: dict[str, Any]) -> list[dict[str, Any]]:
                     "worktree": s["worktree"] if isinstance(s.get("worktree"), bool) else None,
                     "files": norm_files(s.get("files")),
                     "merge_order": _int(s.get("merge_order")) or i + 1,
+                    "task": t if isinstance(t := s.get("task"), str) and TASK_RE.fullmatch(t) else None,
                     "on": s.get("on") is not False})
     return out
 
@@ -271,6 +275,18 @@ def files_overlap(a: list[str], b: list[str]) -> list[str]:
                 if w not in out:
                     out.append(w)
     return sorted(out)
+
+
+# 「열려 있다」(11-15 사용자) — 합치거나 버리기 전. 서기실 열린 일 · 겹침 막기와 계획 겹침(file_conflicts)이 같은 판단을 쓴다.
+# UNMERGED_SQL은 character_session 별칭 cs에 붙인다. worktree 세션은 그 폴더가 남아 있는 동안만(합치기 기록 없이 지운 worktree가
+# 영영 열린 채로 남았다 — 11-15 지금 DB에서 296 · 311 · 펫퍼민트 260), 원본 폴더 세션은 끝나기(detached) 전까지
+UNMERGED_SQL = ("NOT EXISTS (SELECT 1 FROM session_action m WHERE m.session_id = cs.id "
+                "AND m.action IN ('wt-merge', 'wt-discard') AND m.ok)")
+
+
+def still_open(worktree_path: str | None, detached: bool) -> bool:
+    return Path(worktree_path).is_dir() if worktree_path else not detached
+
 
 WAKE_HINT = """
 # 이번 요청은 사람이 아니라 실패 이벤트가 불렀다(자동 기상 2단계)
@@ -644,11 +660,17 @@ class ForemanDispatcher:
         live = {k: v for k, v in live_sessions(self.sessions_dir).items() if v.state != "T"}
         try:
             async with self.engine.connect() as c:
+                # 살아 있는 세션(14일 안) + 합치지 않은 worktree(11-15 — 「열려 있다」 = 합치거나 버리기 전, 서기실과 같은 판단)
                 rows = (await c.execute(text(
-                    "SELECT ds.session_id, ds.files, cs.cc_session_id, COALESCE(cs.custom_title, cs.title) FROM dispatch_session ds "
+                    "SELECT ds.session_id, ds.files, cs.cc_session_id, COALESCE(cs.custom_title, cs.title), cs.worktree_path, "
+                    f"cs.detached_at IS NOT NULL, NOT ({UNMERGED_SQL}) FROM dispatch_session ds "
                     "JOIN dispatch d ON d.id = ds.dispatch_id JOIN character_session cs ON cs.id = ds.session_id "
-                    "WHERE d.project = :p AND ds.status = 'started' AND ds.dispatch_id <> :d AND ds.created_at > NOW(3) - INTERVAL 14 DAY"),
+                    "WHERE d.project = :p AND ds.status = 'started' AND ds.dispatch_id <> :d "
+                    f"AND (ds.created_at > NOW(3) - INTERVAL 14 DAY OR (cs.worktree_path IS NOT NULL AND {UNMERGED_SQL})) "
+                    "ORDER BY ds.id"),
                     {"p": project, "d": dispatch_id or 0})).all()
+                from bridge import scribe_room as sr        # 서기실로 띄운 일(0030 기록이 없던 11-15 전 것도) — 같은 겹침에 넣는다
+                scribes = await sr.open_tasks(self.engine, project)
                 plans = (await c.execute(text(
                     "SELECT id, COALESCE(edited, plan) FROM dispatch WHERE project = :p AND status = 'planned' AND id <> :d "
                     "AND plan IS NOT NULL AND created_at > NOW(3) - INTERVAL 1 DAY ORDER BY id DESC LIMIT 20"),
@@ -662,15 +684,22 @@ class ForemanDispatcher:
         except Exception as e:  # noqa: BLE001 — 0030 전 DB 등. 겹침 없음으로 보이지 않게 경고로
             log.warning("맡을 파일 겹침 확인 실패: %s", type(e).__name__)
             return out, [f"맡을 파일이 살아 있는 세션 · 다른 계획과 겹치는지 보지 못했습니다({type(e).__name__})"]
-        claimed: set[int] = set()
-        for sid, files, cc, title in rows:
-            if cc not in live or sid == exclude_session:
+        claimed: dict[int, tuple[list[str], str, str]] = {}      # 세션 → (맡을 파일, 이름, 어떤 세션)
+        for sid, files, cc, title, wpath, detached, merged in rows:
+            if sid is None or int(sid) == exclude_session:
                 continue
-            fs = norm_files(json.loads(files) if isinstance(files, str) else files)
-            claimed.add(int(sid))
+            alive = cc in live
+            if not alive and not (wpath and not merged and still_open(wpath, bool(detached))):
+                continue
+            claimed[int(sid)] = (norm_files(json.loads(files) if isinstance(files, str) else files), title or "",
+                                 "살아 있는 세션" if alive else "합치지 않은 세션")
+        for o in scribes:
+            if o["session_id"] not in claimed and o["session_id"] != exclude_session:
+                claimed[o["session_id"]] = (o["files"], o["title"] or "", "열려 있는 서기 세션")
+        for sid, (fs, title, kind) in claimed.items():
             for i, a in mine:
                 if hit := files_overlap(a["files"], fs):
-                    add(i, "claimed", int(sid), hit, f"살아 있는 세션 {sid}「{title or ''}」이 맡은 파일")
+                    add(i, "claimed", sid, hit, f"{kind} {sid}「{title}」이 맡은 파일")
         for did, pj in plans:
             try:
                 other = sessions_of(json.loads(pj) if isinstance(pj, str) else pj)
@@ -735,7 +764,8 @@ class ForemanDispatcher:
                 try:
                     r = await self.handoff.spawn_new(plan["repo"], plan.get("summary_id") if plan["mode"] == "handoff" and not done else None,
                                                      s["title"] or None, first_prompt=s["first_prompt"], read_only=s["read_only"],
-                                                     role=s["role"], worktree=bool(s["worktree"]), model=s["model"])
+                                                     role=s["role"], worktree=bool(s["worktree"]), model=s["model"],
+                                                     scribe_task=s.get("task"))
                 except Exception as e:  # noqa: BLE001
                     if not done:
                         raise

@@ -45,6 +45,7 @@ KEEP_FULL = ("진행", "미완", "다음", "주의")      # 분량을 줄일 때
 # 세션이 가질 수 있는 역할이 이것뿐이다 — foreman은 감독실 캐릭터(세션 없음) 몫이라 넣지 않는다
 ROLE_KO = {"coder": "코더", "inspector": "점검", "scribe": "서기", "manager": "관리자", "designer": "디자이너"}
 ROLE_ACT = "role"                 # session_action — 역할 바꾸기(11-09). detail "옛 → 새"
+SCRIBE_TASK_ACT = "scribe-task"   # session_action — 서기 세션이 무슨 일인지(detail "일 [토픽]", 11-15부터 spawn_new 한 곳에서). scribe_room.TASK_ACT
 REST_ACT = "rest"                 # session_action — [쉬게 하기](11-09). 합치기 · 버리기 전까지 그 worktree는 "합치기 기다림"
 REST_RESUME_ACT = "rest-resume"   # session_action — [이어서]. 'resume'(일시정지 되살리기)과 섞이지 않게 따로
 
@@ -484,6 +485,14 @@ class HandoffManager:
                 {"s": sid, "a": action, "p": pid, "o": ok, "d": (detail or "")[:512] or None})
         log.info("세션 조작 %s session=%s pid=%s %s %s", action, sid, pid, "ok" if ok else "실패", detail or "")
 
+    async def _scribe_task_of(self, sid: int | None) -> str | None:
+        """옮기기 — 옛 서기 세션의 일 종류를 물려준다(새 세션이 같은 일을 잇는다)."""
+        if not sid:
+            return None
+        async with self.engine.connect() as c:
+            return (await c.execute(text("SELECT detail FROM session_action WHERE session_id = :s AND action = :a AND ok "
+                                         "ORDER BY id DESC LIMIT 1"), {"s": sid, "a": SCRIBE_TASK_ACT})).scalar()
+
     async def _new_summary(self, row: SessionRow, kind: str, source: str, status: str, **kw: Any) -> tuple[int, str]:
         req = new_req()
         # 인계 검증(11-06) — 만들 때의 git · 잠금 상태. 고친 요약은 원본의 상태를 물려받는다(내용이 그때 기준이다)
@@ -800,13 +809,17 @@ class HandoffManager:
     async def spawn_new(self, cwd: str, summary_id: int | None, title: str | None,
                         src_session: int | None = None, first_prompt: str | None = None,
                         read_only: bool = False, role: str | None = None, worktree: bool | None = None,
-                        model: str | None = None, exclude_cc: str | None = None, note: str | None = None) -> dict[str, Any]:
+                        model: str | None = None, exclude_cc: str | None = None, note: str | None = None,
+                        scribe_task: str | None = None) -> dict[str, Any]:
         """+ 버튼 · [새로 띄우기] — tmux 세션을 만들고 그 안에서 claude(resume 아님). 세션 행을 바로 만들어(이름도) 첫 입력 전에도
         화면에 캐릭터가 선다. 인계 요약을 고르면 입력 칸이 뜬 뒤 넣는다. 폴더 신뢰 창이 뜨면 사람이 터미널에서 답할 때까지
         뒤에서 기다렸다가(5분) 이어 한다.
         worktree — None이면 그 프로젝트에 살아 있는 세션이 있을 때만 따로 작업 자리(git worktree)에서 띄운다(11-05). True · False는 강제.
         model — config/models.toml의 id. 없으면 역할 기본값, 그것도 없으면 CC 설정(--model 없이).
-        exclude_cc — worktree=None 판단에서 세지 않을 세션(옮기기의 옛 세션)."""
+        exclude_cc — worktree=None 판단에서 세지 않을 세션(옮기기의 옛 세션).
+        scribe_task — 역할 scribe면 무슨 서기 일인지(session_action scribe-task의 detail, 「일 토픽」). 띄우는 길이 셋(서기실 [시키기],
+        계획 [시작], 직접 띄우기)이어도 여기 한 곳에서 남겨 서기실 열린 일 · 겹침 막기가 모두를 본다(11-15). 없으면 옮기기는 옛 세션의 것,
+        아니면 plan."""
         cwd = os.path.realpath(os.path.expanduser(cwd or ""))
         if not cwd or not Path(cwd).is_dir():
             raise Refused(f"폴더가 없습니다: {cwd}")
@@ -847,7 +860,7 @@ class HandoffManager:
                                "pid": None, "session_id": None, "note": None, "injected": False, "worktree": wt_info,
                                "model": model}
         extra = {"first_prompt": first_prompt, "role": role, "worktree_path": wt_info["path"] if wt_info else None,
-                 "model": model, "note": note}
+                 "model": model, "note": note, "scribe_task": scribe_task}
         cc, pid, trust = await self._wait_ready(pane, 45)
         if trust:
             out["note"] = "처음 쓰는 폴더라 신뢰 확인 창이 떴습니다. 터미널(tmux " + name + ")에서 답하면 이어서 " + ("첫 글을 넣습니다." if (summary_id or first_prompt) else "화면에 뜹니다.")
@@ -929,7 +942,8 @@ class HandoffManager:
     async def _finish_spawn(self, name: str, pane: str, cwd: str, summary_id: int | None, title: str | None,
                             src_session: int | None, cc: str | None = None, pid: int | None = None,
                             wait: float = 0, first_prompt: str | None = None, role: str | None = None,
-                            worktree_path: str | None = None, model: str | None = None, note: str | None = None) -> dict[str, Any]:
+                            worktree_path: str | None = None, model: str | None = None, note: str | None = None,
+                            scribe_task: str | None = None) -> dict[str, Any]:
         if cc is None:                                    # 신뢰 창 — 사람이 답하기를 기다린다
             loop = asyncio.get_running_loop()
             end = loop.time() + wait
@@ -948,6 +962,8 @@ class HandoffManager:
                                      "character_id = COALESCE(:ch, character_id), model = COALESCE(:m, model) WHERE id = :i"),
                                 {"r": role[:16] if role else None, "w": worktree_path, "ch": ch, "m": model, "i": sid})
         await self._act(src_session or sid, "spawn", pid, True, f"{name} {pane} cc={cc} 새 세션 행 {sid}")
+        if role == "scribe":
+            await self._act(sid, SCRIBE_TASK_ACT, pid, True, scribe_task or await self._scribe_task_of(src_session) or "plan")
         if self.on_change:
             self.on_change()
         out: dict[str, Any] = {"cc_session_id": cc, "pid": pid, "session_id": sid}

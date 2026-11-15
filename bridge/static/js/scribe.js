@@ -116,7 +116,7 @@ export function createScribe(store) {
     const tasks = (todo && todo.tasks) || {};
     const pj = (todo && todo.projects && todo.projects[room]) || {};
     const items = pj.items || [], opened = pj.open || [], blocked = pj.blocked || {}, behind = pj.behind || {};
-    // 동시에 시키기(11-06) — 같은 일 · 같은 파일 · 둘 넘게는 막는다. 막힌 버튼은 끄고 까닭을 호버로(서버도 같은 판단)
+    // 동시에 시키기(11-06, 11-15 개수 상한을 뺐다) — 같은 일 · 같은 파일만 막는다. 막힌 버튼은 끄고 까닭을 호버로(서버도 같은 판단)
     const go = (k, label = '시키기', pri = false) => {
       const why = blocked[k];
       return `<button type="button" class="small${pri && !why ? ' primary' : ''}" data-sc-task="${esc(k)}"${busy || why ? ' disabled' : ''} title="${esc(why ? `${(tasks[k] || {}).title || k} — 지금은 시킬 수 없습니다. ${why}` : `${(tasks[k] || {}).title || k} — 서기 세션을 작업방으로 띄워 맡깁니다. 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다.`)}">${label}</button>`;
@@ -143,8 +143,8 @@ export function createScribe(store) {
     }).join('');
     // 받은 할 일 — 할 일이 아니라 상태다. 단추 없이 숫자만(정리는 「나중에 할 일 정리」 줄이 한다)
     const inboxRow = pj.inbox ? `<div class="small sc-line" title="받은 할 일 — 머리줄 [＋ 할 일]로 받은 글입니다. 「나중에 할 일 정리」가 README 표로 옮깁니다."><b>받은 할 일 ${pj.inbox.n}개</b> <span class="muted">${pj.inbox.oldest_days >= 1 ? `(가장 오래된 것 ${pj.inbox.oldest_days}일째)` : '(오늘 받음)'}</span></div>` : '';
-    const openHtml = opened.length ? `<div class="small"><b>열려 있는 일 ${opened.length}</b> <span class="muted">합치거나 버리기 전까지(동시에 2개까지, 같은 파일을 고치는 일은 하나씩)</span>${
-      opened.map((o) => `<div class="sc-row"><div class="small">· ${esc((tasks[o.task] || {}).title || o.task)}${o.topic ? `: ${esc(o.topic)}` : ''} <span class="muted">세션 ${o.session_id}</span></div>
+    const openHtml = opened.length ? `<div class="small"><b>열려 있는 일 ${opened.length}</b> <span class="muted">합치거나 버리기 전까지(같은 일, 같은 파일을 고치는 일은 하나씩. 계획으로 띄운 서기 세션도 셉니다)</span>${
+      opened.map((o) => `<div class="sc-row"><div class="small">· ${esc((tasks[o.task] || {}).title || o.title || '서기 세션')}${o.topic && tasks[o.task] ? `: ${esc(o.topic)}` : ''} <span class="muted">세션 ${o.session_id}</span></div>
         <button type="button" class="small" data-sc-open="${o.session_id}" title="세션 열기 — 이 서기 세션의 [세션 정리] 탭을 엽니다. 「작업방」에서 diff를 보고 합치거나 버립니다(끝난 세션은 화면에서 사라져도 여기서 엽니다).">세션 열기</button></div>`).join('')}</div>` : '';
     const nudge = pj.nudge;
     const pickHead = pick && tasks[pick] ? `<div class="small warn">정리할까요? 받은 할 일이 쌓였습니다(${esc(nudge ? nudge.why : '')}). 「${esc(tasks[pick].title)}」을 골라 두었습니다. [시키기]를 눌러야 서기 세션이 뜹니다.</div>` : '';

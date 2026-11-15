@@ -53,16 +53,32 @@ def test_task_prompts(task):
         sr.task_prompt("publish", "foreman", "/repo")
 
 
-def test_blocked_same_task_same_file_and_cap():
-    """동시에 시키기(11-06) — 같은 일 · 같은 파일 · 둘 넘게는 막고, 파일이 다른 일은 같이 둔다."""
+def test_blocked_same_task_same_file_no_cap():
+    """동시에 시키기(11-06) — 같은 일 · 같은 파일만 막고, 파일이 다른 일은 몇 개든 같이 둔다(11-15 상한 없앰)."""
     trim = {"session_id": 194, "task": "trim", "title": "서기 — CLAUDE.md 정리"}
     later = {"session_id": 193, "task": "later", "title": "서기 — 나중에 할 일 정리"}
     assert sr.blocked("later", [trim]) is None                                # CLAUDE.md · docs/ ↔ README.md — 겹치지 않는다
     assert "이미 열려" in sr.blocked("trim", [trim])
     assert "README.md" in sr.blocked("readme", [later])                       # README 갱신 ↔ 나중에 할 일 — 같은 파일
-    assert "동시에 2개까지" in sr.blocked("doccheck", [trim, later])
+    assert sr.blocked("doccheck", [trim, later]) is None                      # 둘 열려 있어도 파일이 다르면 셋째를 막지 않는다
+    many = [trim, later] + [{"session_id": 300 + i, "task": "portfolio", "topic": f"0{i}_x", "title": "서기"} for i in range(4)]
+    assert sr.blocked("doccheck", many) is None and sr.blocked("portfolio", many, "09_y") is None
     assert sr.blocked("doccheck", []) is None
+    assert not hasattr(sr, "MAX_OPEN")
     assert "retro" not in sr.TASKS and "retro" not in sr.TOUCHES             # 회고 쓰기는 11-15에 뺐다
+
+
+def test_blocked_sees_plan_scribe_by_files():
+    """계획 길로 띄운 서기(일 종류 plan)는 맡을 파일로 막는다 — 같은 plan끼리는 같은 일로 보지 않는다(11-15 두 길 합치기)."""
+    plan = {"session_id": 437, "task": "plan", "title": "CLAUDE.md 정리 서기", "files": ["CLAUDE.md", "docs/operations.md"]}
+    assert "CLAUDE.md" in sr.blocked("trim", [plan]) and "CLAUDE.md 정리 서기" in sr.blocked("trim", [plan])
+    assert "docs/operations.md" in sr.blocked("docfix", [plan], None)          # docs/ 폴더 ↔ 그 안의 파일
+    assert sr.blocked("readme", [plan]) is None                                # README는 안 맡았다
+    assert sr.blocked("plan", [plan]) is None                                  # plan끼리는 같은 일이 아니다
+    dc = {"session_id": 9, "task": "doccheck", "title": "서기", "files": sr.touches("doccheck")}
+    assert "이미 열려" in sr.blocked("doccheck", [dc])
+    assert sr.touches("portfolio", "00_a") == ["portfolio/00_a*"]
+    assert sr.blocked("portfolio", [{"session_id": 1, "task": "plan", "title": "t", "files": ["portfolio/00_a.md"]}], "00_a")
 
 
 def test_portfolio_topics_and_blocked_per_topic(tmp_path):

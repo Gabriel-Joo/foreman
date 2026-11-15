@@ -8,6 +8,8 @@ Notion 게시는 세션 없이 [게시] 버튼(bridge/notion.py)이고, 나머�
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 import subprocess
 from datetime import UTC, datetime, timedelta
@@ -15,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
+
+log = logging.getLogger("foreman.scribe_room")
 
 KST = timedelta(hours=9)
 README_STALE = 10            # README가 바뀐 뒤 커밋이 이만큼 쌓이면 "README 갱신"
@@ -238,54 +242,69 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
 
 
 LATER_ACT = "scribe-later"     # session_action — 나중에 할 일 정리를 띄울 때 "어디까지 봤나"(detail: until ISO)
-TASK_ACT = "scribe-task"       # session_action — 서기 일을 띄울 때 무슨 일인지(detail: task). 합치거나 버리기 전까지 "열려 있다"
+TASK_ACT = "scribe-task"       # session_action — 서기 세션이 무슨 일인지(detail: 일 [토픽]). 합치거나 버리기 전까지 "열려 있다"
+PLAN_TASK = "plan"             # 계획 [시작] · 직접 띄우기로 일 종류 없이 띄운 서기 세션(handoff.spawn_new가 남긴다)
 
-# 동시에 시키기(11-06 판단) — 허용하되 셋을 막는다: 같은 일 · 같은 파일 · 프로젝트당 둘 넘게.
+# 동시에 시키기(11-06 판단, 11-15 상한을 뺐다) — 막는 것은 둘: 같은 일 · 같은 파일. 개수 상한은 두지 않는다(11-15 사용자).
 # worktree는 서로를 못 봐서 충돌은 합칠 때 난다 — 같은 파일을 고치는 두 일이 열려 있으면 뒤의 합치기가 rebase 충돌.
-# 둘까지인 이유: 문서 초안은 사람이 diff를 하나씩 보고 합친다(검토 빚, docs/12_scribe.md 「2.」), 각각 Opus 세션이다
-TOUCHES = {"doccheck": {"log/doccheck_"}, "readme": {"README.md"}, "later": {"README.md"},
-           "trim": {"CLAUDE.md", "docs/"}, "docfix": {"README.md", "CLAUDE.md", "docs/"}}
-MAX_OPEN = 2
+# 파일 겹침은 계획 겹침과 같은 판단(foreman.files_overlap — 폴더는 끝에 /, 글롭 *)을 쓴다
+TOUCHES = {"doccheck": ["log/doccheck_*"], "readme": ["README.md"], "later": ["README.md"],
+           "trim": ["CLAUDE.md", "docs/"], "docfix": ["README.md", "CLAUDE.md", "docs/"]}
 
 
 async def open_tasks(engine: Any, project: str) -> list[dict[str, Any]]:
-    """열려 있는 서기 일 — 띄웠고 아직 합치지도 버리지도 않은 것(세션이 끝났어도 합치기를 기다리면 열려 있다)."""
+    """열려 있는 서기 일 — 역할 scribe로 띄웠고 아직 합치지도 버리지도 않은 것(세션이 끝났어도 합치기를 기다리면 열려 있다).
+    띄운 길은 묻지 않는다(11-15 두 길 합치기): 서기실 [시키기] · 계획 [시작] · 직접 띄우기 모두 scribe-task(11-15 뒤) 또는
+    dispatch_session(계획 · 직접, 11-15 전)이 있다. 맡을 파일은 dispatch_session의 files, 없으면 일 종류의 TOUCHES.
+    「열려 있다」는 계획 겹침과 같은 판단(foreman.still_open — worktree 폴더가 없어지면 닫힘)."""
+    from bridge.foreman import UNMERGED_SQL, norm_files, still_open
     async with engine.connect() as c:
         rows = (await c.execute(text(
-            "SELECT sa.session_id, sa.detail, COALESCE(cs.custom_title, cs.title) FROM session_action sa "
-            "JOIN character_session cs ON cs.id = sa.session_id JOIN `character` ch ON ch.id = cs.character_id "
-            "JOIN project p ON p.id = ch.project_id WHERE p.name = :p AND sa.action = :a AND sa.ok AND NOT EXISTS ("
-            "  SELECT 1 FROM session_action m WHERE m.session_id = sa.session_id AND m.action IN ('wt-merge', 'wt-discard') AND m.ok) "
-            "ORDER BY sa.id"), {"p": project, "a": TASK_ACT})).all()
+            "SELECT cs.id, COALESCE(cs.custom_title, cs.title), cs.worktree_path, cs.detached_at IS NOT NULL, "
+            "  (SELECT sa.detail FROM session_action sa WHERE sa.session_id = cs.id AND sa.action = :a AND sa.ok ORDER BY sa.id DESC LIMIT 1), "
+            "  (SELECT ds.files FROM dispatch_session ds WHERE ds.session_id = cs.id AND ds.status = 'started' ORDER BY ds.id DESC LIMIT 1) "
+            "FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id JOIN project p ON p.id = ch.project_id "
+            f"WHERE p.name = :p AND cs.role = 'scribe' AND {UNMERGED_SQL} AND ("
+            "  EXISTS (SELECT 1 FROM session_action sa WHERE sa.session_id = cs.id AND sa.action = :a AND sa.ok) "
+            "  OR EXISTS (SELECT 1 FROM dispatch_session ds WHERE ds.session_id = cs.id AND ds.status = 'started')) "
+            "ORDER BY cs.id"), {"p": project, "a": TASK_ACT})).all()
     out = []
-    for sid, d, t in rows:
-        w = (d or "").split()
-        if w:
-            out.append({"session_id": sid, "task": w[0], "topic": w[1] if len(w) > 1 else None, "title": t})
+    for sid, t, wpath, detached, d, files in rows:
+        if not still_open(wpath, bool(detached)):
+            continue
+        w = (d or "").split() or [PLAN_TASK]
+        task, topic = w[0], (w[1] if len(w) > 1 else None)
+        fs = norm_files(json.loads(files) if isinstance(files, str) else files) if files else []
+        out.append({"session_id": int(sid), "task": task, "topic": topic, "title": t, "files": fs or sorted(touches(task, topic))})
     return out
 
 
-def touches(task: str, topic: str | None = None) -> set[str]:
-    """그 일이 고치는 파일(앞부분) — 포트폴리오는 주제마다 다르다(글 · 사진 모두 portfolio/<slug>로 시작)."""
+def touches(task: str, topic: str | None = None) -> list[str]:
+    """그 일이 고치는 파일(files_overlap 꼴) — 포트폴리오는 주제마다 다르다(글 · 사진 모두 portfolio/<slug>로 시작)."""
     if task == "portfolio":
-        return {f"portfolio/{topic}"} if topic else {"portfolio/"}
-    return TOUCHES.get(task, set())
+        return [f"portfolio/{topic}*"] if topic else ["portfolio/"]
+    return list(TOUCHES.get(task, []))
+
+
+def _what(o: dict[str, Any]) -> str:
+    if o["task"] in TASKS:
+        return TASKS[o["task"]]["title"] + (f": {o['topic']}" if o["task"] == "portfolio" and o.get("topic") else "")
+    return o.get("title") or "서기 세션"
 
 
 def blocked(task: str, opened: list[dict[str, Any]], topic: str | None = None) -> str | None:
     """이 일을 지금 시킬 수 없는 까닭(없으면 None) — 화면 버튼과 서버가 같은 판단을 쓴다.
-    포트폴리오는 주제가 다르면 다른 일이다(서로 다른 파일) — 같은 주제만 막는다."""
+    포트폴리오는 주제가 다르면 다른 일이다(서로 다른 파일) — 같은 주제만 막는다. 일 종류 없는 서기 세션(plan)은 맡을 파일로만 본다."""
+    from bridge.foreman import files_overlap
     for o in opened:
-        if o["task"] == task and (task != "portfolio" or o.get("topic") == topic):
-            what = TASKS[task]["title"] + (f": {topic}" if task == "portfolio" else "")
-            return f"「{what}」이 이미 열려 있습니다(세션 {o['session_id']}). 합치거나 버린 뒤에 시켜 주세요"
+        if o["task"] == task and task != PLAN_TASK and (task != "portfolio" or o.get("topic") == topic):
+            return f"「{_what(o)}」이 이미 열려 있습니다(세션 {o['session_id']}). 합치거나 버린 뒤에 시켜 주세요"
+    mine = touches(task, topic)
     for o in opened:
-        common = sorted(touches(task, topic) & touches(o["task"], o.get("topic")))
+        common = files_overlap(mine, o.get("files") or touches(o["task"], o.get("topic")))
         if common:
-            return (f"「{TASKS.get(o['task'], {}).get('title', o['task'])}」(세션 {o['session_id']})와 같은 파일({', '.join(common)})을 "
+            return (f"「{_what(o)}」(세션 {o['session_id']})와 같은 파일({', '.join(common)})을 "
                     "고칩니다. 합칠 때 충돌합니다. 그 일을 합치거나 버린 뒤에 시켜 주세요")
-    if len(opened) >= MAX_OPEN:
-        return f"서기 일이 이미 {len(opened)}개 열려 있습니다(동시에 {MAX_OPEN}개까지). 하나를 합치거나 버린 뒤에 시켜 주세요"
     return None
 
 
@@ -524,6 +543,17 @@ NOTE_MAX = 4000
 REPORT_RE = re.compile(r"doccheck_[0-9A-Za-z_]{1,40}\.md")
 
 
+async def _record(engine: Any, project: str, name: str, task: str, topic: str | None, res: dict[str, Any]) -> None:
+    """서기실 [시키기]도 계획 · 직접 띄우기와 같은 dispatch 기록(origin scribe, 맡을 파일 = 그 일의 TOUCHES)을 남긴다(11-15).
+    그래야 계획 겹침(file_conflicts)이 서기실 세션을 안다. 실패해도 띄우기는 되돌리지 않는다(open_tasks는 scribe-task로도 센다)."""
+    from bridge.foreman import record_spawn
+    try:
+        await record_spawn(engine, "scribe", project, {"role": "scribe", "title": name, "files": touches(task, topic), "worktree": True},
+                           res, None, f"(서기실) {name}")
+    except Exception as e:  # noqa: BLE001 — 0030 전 DB 등
+        log.warning("서기실 띄우기 기록(dispatch) 실패: %s", type(e).__name__)
+
+
 async def start(m: Any, engine: Any, project: str, task: str, topic: str | None = None, note: str | None = None) -> dict[str, Any]:
     """서기 일을 worktree 세션으로 띄운다(handoff.spawn_new). 포트폴리오는 주제(topic)가 있어야 한다.
     문서 고치기(docfix, D2)는 고칠 목록이 있어야 한다 — topic에 문서 점검 결과 이름(log/doccheck_*.md) 또는 note에 물어보기 답."""
@@ -584,10 +614,10 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
             extra["stages"] = ", ".join(stages_without_result(repo)) or "(없음)"
         prompt = task_prompt(task, project, repo, extra)
     name = f"서기 — {TASKS[task]['title']}" + (f": {tp['title'].split(' — ')[0]}" if tp else "")
-    res = await m.spawn_new(repo, None, name, role="scribe", worktree=True, first_prompt=prompt)
-    if res.get("session_id"):
-        await m._act(res["session_id"], TASK_ACT, res.get("pid"), True,
-                     f"{task} {tp['slug']}" if tp else f"docfix {fix_src}" if fix_src else task)
+    # 일 종류(scribe-task)는 spawn_new가 남긴다(11-15 — 세 길이 같은 기록). 맡을 파일은 계획 길과 같은 dispatch_session으로
+    detail = f"{task} {tp['slug']}" if tp else f"docfix {fix_src}" if fix_src else task
+    res = await m.spawn_new(repo, None, name, role="scribe", worktree=True, first_prompt=prompt, scribe_task=detail)
+    await _record(engine, project, name, task, tp["slug"] if tp else None, res)
     if task == "later" and res.get("session_id"):
         # 어디까지 봤나 — 이 세션이 합쳐지면 다음 정리의 기준점이 된다(later_since)
         await m._act(res["session_id"], LATER_ACT, res.get("pid"), True, f"{now.isoformat()} 미룬 말 {len(rows)}개 받은 할 일 {len(inbox)}개")

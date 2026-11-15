@@ -290,6 +290,8 @@ class NewIn(BaseModel):
     first_prompt: str | None = Field(default=None, max_length=20000)   # 첫 입력(12a 서기 일감 등). 인계 요약과 같이 줄 수 없다
     files: list[str] | None = Field(default=None, max_length=40)       # 11-11 맡을 파일 — dispatch 기록 · 겹침 알림(교장 ④ · 일곱)
     request: str | None = Field(default=None, max_length=4000)         # 11-11 무엇을 하려는지(기록용). 없으면 이름으로
+    # 11-15 역할 scribe면 서기 일 종류(scribe_room.TASKS의 키, 예 readme). 서기실 열린 일 · 같은 일 막기가 센다. 없으면 plan
+    task: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_-]{0,19}$")
 
 
 class WorktreeIn(BaseModel):
@@ -354,12 +356,13 @@ async def list_dirs(path: str = "~", hidden: bool = False) -> dict[str, Any]:
 async def spawn_new(body: NewIn, request: Request) -> JSONResponse:
     from bridge.api.foreman import record_direct     # 11-11 교장 ④ — 계획 없이 띄워도 dispatch 기록
     sess = {"role": body.role, "model": body.model, "title": body.title, "first_prompt": body.first_prompt,
-            "worktree": body.worktree, "files": body.files}
+            "worktree": body.worktree, "files": body.files, "task": body.task}
     try:
         if body.first_prompt and body.summary_id is not None:
             raise Refused("첫 입력과 옮기기용 요약은 같이 줄 수 없습니다. 하나만 골라 주세요")
         r = await _mgr(request).spawn_new(body.cwd, body.summary_id, body.title, worktree=body.worktree,
-                                          role=body.role, model=body.model or None, first_prompt=body.first_prompt or None)
+                                          role=body.role, model=body.model or None, first_prompt=body.first_prompt or None,
+                                          scribe_task=body.task if body.role == "scribe" else None)
     except Refused as e:
         await record_direct(request, "spawn", body.cwd, sess, None, str(e), body.request, body.summary_id)
         return _refused(e)
