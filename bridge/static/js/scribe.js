@@ -152,8 +152,8 @@ export function createScribe(store) {
     const pickHead = pick && tasks[pick] ? `<div class="small warn">「${esc(tasks[pick].title)}」을 골라 두었습니다. [시키기]를 눌러야 서기 세션이 뜹니다.</div>` : '';
     // 포스트잇(11-15) — 쌓여 말풍선으로 열었으면(pick 'postit') 편 채로
     const pst = pj.postit;
-    const pstHead = !pst ? '' : `<span class="${pst.nudge ? 'warn' : 'muted'}">열린 것 ${pst.open}${pst.unconfirmed ? `, 확인 전 ${pst.unconfirmed}` : ''}${pst.likely_done ? `, 끝난 것 같음 ${pst.likely_done}` : ''}</span>`;
-    const postitHtml = `<details class="hand"${pick === 'postit' ? ' open' : keep(`scribe:${room}:postit`)}><summary title="포스트잇 — 열린 할 일입니다. 머리줄 포스트잇과 같은 목록입니다."><b>포스트잇</b> ${pstHead}</summary>
+    const pstHead = !pst ? '' : `<span class="${pst.nudge ? 'warn' : 'muted'}">할 일 ${pst.open}${pst.unconfirmed ? `, 확인 전 ${pst.unconfirmed}` : ''}${pst.likely_done ? `, 끝난 것 같음 ${pst.likely_done}` : ''}</span>`;
+    const postitHtml = `<details class="hand"${pick === 'postit' ? ' open' : keep(`scribe:${room}:postit`)}><summary title="포스트잇 — 할 일을 적어 두는 종이입니다. 머리줄 포스트잇과 같은 목록입니다."><b>포스트잇</b> ${pstHead}</summary>
       ${pick === 'postit' && nudge ? `<div class="small warn">포스트잇이 쌓였습니다: ${esc(nudge.why)}.</div>` : ''}${postit.html(room, label)}</details>`;
     const nAlert = items.filter((x) => x.kind === 'publish' && x.act === 'force').length;
     const bad = todoBad ? ` <span class="bad">· 지금 값을 ${UNREAD}(지난 값입니다)</span>` : '';

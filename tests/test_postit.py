@@ -84,7 +84,7 @@ def test_nudge_of(tmp_path):
     cf = {"open_max": 20, "stale_days": 7, "refresh_days": 7}
     assert pi.nudge_of(0, None, None, cf, now) is None
     assert pi.nudge_of(3, now - timedelta(days=1), None, cf, now) is None
-    assert "열린 것 20개" in pi.nudge_of(20, now - timedelta(days=1), None, cf, now)["why"]
+    assert "할 일 20장" in pi.nudge_of(20, now - timedelta(days=1), None, cf, now)["why"]
     n = pi.nudge_of(2, now - timedelta(days=8), None, cf, now)
     assert "8일째" in n["why"] and "한 번도" in n["why"]
     n = pi.nudge_of(2, now - timedelta(days=3), now - timedelta(days=9), cf, now)

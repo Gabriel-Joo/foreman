@@ -57,14 +57,14 @@ test('포스트잇(11-15) — 받은 할 일 숫자 줄 대신 머리 탭과 같
   globalThis.fetch = async (u) => {
     if (u === '/api/scribe/todo') return { ok: true, json: async () => ({ tasks: TASKS, projects: { foreman: pj } }) };
     if (u.startsWith('/api/postit')) return { ok: true, json: async () => ({ project: 'foreman', summary: {}, closed: [], readme_checks: [],
-      items: [{ id: 3, body: '질문 카드 접기', source_label: '[＋ 할 일]', created_at: '2026-11-14T00:00:00Z', confirmed: true, state: 'new', label: '열림' }] }) };
+      items: [{ id: 3, body: '질문 카드 접기', source_label: '포스트잇에 적음', created_at: '2026-11-14T00:00:00Z', confirmed: true, state: 'new', label: '열림' }] }) };
     return { ok: true, json: async () => ({ enabled: true, docs: [] }) };
   };
   const sc = createScribe({ headers: () => ({}), touch() {} });
   sc.html('foreman', 'F', 'postit'); await settle();
   const h = sc.html('foreman', 'F', 'postit');
   assert.ok(!h.includes('받은 할 일'));
-  assert.match(h, /<details class="hand" open><summary[^>]*><b>포스트잇<\/b> <span class="warn">열린 것 2, 확인 전 1/);
+  assert.match(h, /<details class="hand" open><summary[^>]*><b>포스트잇<\/b> <span class="warn">할 일 2, 확인 전 1/);
   assert.ok(h.includes('data-pi-row="3"') && h.includes('data-pi-save="1"') && h.includes('data-pi-refresh="1"'));
 });
 

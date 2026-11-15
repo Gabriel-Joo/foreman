@@ -3,7 +3,7 @@
 바탕 설계: log/foreman-6_postit_proposal_20261115.md(3절 「만들 사람이 알 것」), 결과: log/foreman-5_postit_20261115.md.
 들어오는 길(셋 다 포스트잇으로, source 칸):
   note    포스트잇에 바로 적음([저장])
-  todo    머리줄 [＋ 할 일]
+  todo    옛 머리줄 [＋ 할 일](11-15 단추와 창을 뺐다 — 포스트잇 창이 같은 일을 한다. 옛 길 POST /api/scribe/inbox와 이미 든 줄에 남는다)
   said    대화에서 사람이 「포스트잇에 올려라」 · 「나중에 할 일에 넣어라」 — 관리자가 그 턴에서 POST /api/postit(session)를 부른다
   chat    브리지 그물(sweep) — 사람이 미루자고 했는데 포스트잇이 안 생긴 턴. 확인 전(confirmed 0, 화면에 흐리게)
   promote 옮기기 「문서에 넣을 것 고르기」의 미완(bridge/promote.py dest "postit") — 세션이 쓰지 않고 브리지가 넣는다
@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 
 MAX = 8000
 SOURCES = ("note", "todo", "said", "chat", "promote")
-SOURCE_KO = {"note": "포스트잇에 적음", "todo": "[＋ 할 일]", "said": "대화에서 올림", "chat": "대화에서 찾음", "promote": "옮기기 미완"}
+SOURCE_KO = {"note": "포스트잇에 적음", "todo": "포스트잇에 적음", "said": "대화에서 올림", "chat": "대화에서 찾음", "promote": "옮기기 미완"}
 CLOSE = ("drop", "limit", "done")
 README_LIMIT = "알려진 한계"        # README 절 제목(이 글이 든 머리줄) — 아직 없을 수 있다(관리자가 「나중에 할 일」 표를 옮기기 전)
 CHECK_ACT = "postit-run"            # session_action(칸 12자) — [갱신] 점검 세션을 띄움(detail: "<프로젝트> <req> p<N> L<N>")
@@ -121,7 +121,7 @@ def nudge_of(n_open: int, oldest: datetime | None, last_check: datetime | None, 
     since = (now - (last_check or oldest)).days
     why = []
     if n_open >= cf["open_max"]:
-        why.append(f"열린 것 {n_open}개")
+        why.append(f"할 일 {n_open}장")
     if days >= cf["stale_days"]:
         why.append(f"가장 오래된 것 {days}일째")
     if since >= cf["refresh_days"]:

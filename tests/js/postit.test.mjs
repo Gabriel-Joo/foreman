@@ -1,43 +1,52 @@
 // 포스트잇(11-15) — 머리 탭 종이 숫자 · 목록(확인 전 흐리게, 끝난 것 같음, 코더 추천 [띄우기]) · 동작이 부르는 API
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { badgeOf, listHtml, planText, act, firstLine } from '../../bridge/static/js/postit.js';
+import { badgeOf, listHtml, planText, act, firstLine, mmddhm } from '../../bridge/static/js/postit.js';
 
 const P = {
   foreman: { open: 3, oldest_at: '2026-11-13T01:00:00Z', nudge: null, likely_done: 1 },
   runshoes: { open: 1, oldest_at: '2026-11-10T01:00:00Z', nudge: { why: '가장 오래된 것 8일째' }, likely_done: 0 },
 };
 
-test('머리 탭 종이 — 지금 방 숫자와 가장 오래된 날, 방이 아니면 모두 합, 못 읽으면 읽지 못했습니다', () => {
+test('머리 탭 종이 — 지금 방 숫자(N장, 가장 오래된 날은 뺐다), 방이 아니면 모두 합, 못 읽으면 읽지 못했습니다', () => {
   const b = badgeOf(P, 'foreman');
-  assert.equal(b.text, '포스트잇 3, 11/13부터');
+  assert.equal(b.text, '포스트잇 3장');
   assert.equal(b.cls, '');
-  assert.match(b.tip, /^포스트잇 — 열린 할 일 3개.*끝난 것 같음 1/);
+  assert.match(b.tip, /^포스트잇 — 할 일 3장, 끝난 것 같음 1\. 누르면 펼칩니다\.$/);
   const all = badgeOf(P, null);
-  assert.equal(all.text, '포스트잇 4, 11/10부터');
+  assert.equal(all.text, '포스트잇 4장');
   assert.equal(all.cls, 'warn');                                   // 한 방이라도 쌓이면
+  assert.match(all.tip, /쌓였습니다\(runshoes 가장 오래된 것 8일째\)\./);   // 주황의 까닭은 호버에(단추 글에서 날짜를 뺐다)
   assert.match(all.tip, /방마다: foreman 3, runshoes 1/);
+  assert.match(badgeOf(P, 'runshoes').tip, /쌓였습니다\(가장 오래된 것 8일째\)\./);
+  assert.ok(!all.text.includes('부터') && !all.tip.includes('11/10'));
   assert.match(badgeOf(null, 'foreman').tip, /읽지 못했습니다/);
   assert.deepEqual([badgeOf(null, 'foreman').text, badgeOf(null, 'foreman').cls], ['포스트잇 ?', 'warn']);   // 0처럼 보이지 않게
-  assert.equal(badgeOf({ x: { open: 0 } }, 'x').text, '포스트잇 0');
+  assert.equal(badgeOf({ x: { open: 0 } }, 'x').text, '포스트잇 0장');
 });
 
 test('새 화면 글에 가운뎃점 · em dash가 없다(툴팁 첫 줄의 「제목 — 설명」 나눔만)', () => {
-  const view = { project: 'foreman', summary: { oldest_at: '2026-11-13T01:00:00Z', oldest_days: 2, nudge: { why: '열린 것 20개' } },
-    items: [{ id: 1, body: 'a', source_label: '[＋ 할 일]', created_at: '2026-11-13T01:00:00Z', confirmed: false, state: 'new', label: '열림', source_ref: 't:5' }],
+  const view = { project: 'foreman', summary: { oldest_at: '2026-11-13T01:00:00Z', oldest_days: 2, nudge: { why: '할 일 20장' } },
+    items: [{ id: 1, body: 'a', source_label: '포스트잇에 적음', created_at: '2026-11-13T01:00:00Z', confirmed: false, state: 'new', label: '열림', source_ref: 't:5' }],
     closed: [{ id: 2, body: 'b', label: '삭제', state: 'drop' }], readme_checks: [] };
   const visible = listHtml(view).replace(/title="[^"]*"|data-tip="[^"]*"/g, '').replace(/<[^>]+>/g, ' ');
   assert.ok(!visible.includes('·') && !visible.includes('—'), visible);
   assert.ok(!badgeOf(P, 'foreman').text.includes('·'));
+  // 11-15 포스트잇에 맞는 말 — 옛 말이 보이는 글에도 호버에도 남지 않는다
+  const all = listHtml(view) + listHtml({ ...view, items: [] });
+  for (const old of ['열린 것', '닫은 것', '열린 포스트잇', '가장 오래된 것', '여기에 바로 적습니다']) assert.ok(!all.includes(old), old);
+  assert.match(all, /placeholder="할 일을 메모합니다"/);
+  assert.match(all, /끝낸 것 1<\/summary>/);
+  assert.match(all, /할 일이 없습니다\./);
 });
 
 test('목록 — 확인 전은 흐리게, 끝난 것 같음은 근거와 [닫기] · [남기기], 코더 추천은 [띄우기], 줄마다 [x] · [→]', () => {
   const view = {
     project: 'foreman',
-    summary: { oldest_at: '2026-11-13T01:00:00Z', oldest_days: 2, check: { state: 'done', at: '2026-11-15T01:00:00Z', session_id: 9 } },
+    summary: { oldest_at: '2026-11-13T01:00:00Z', oldest_days: 2, last_check_at: '2026-11-15T07:30:00Z', check: { state: 'done', at: '2026-11-15T07:30:00Z', session_id: 9 } },
     items: [
       { id: 1, body: '그물이 찾음', source_label: '대화에서 찾음', source_ref: 't:77', created_at: '2026-11-13T01:00:00Z', confirmed: false, state: 'new', label: '열림' },
-      { id: 2, body: '질문 카드 접기', source_label: '[＋ 할 일]', created_at: '2026-11-14T01:00:00Z', confirmed: true, state: 'new', label: '열림',
+      { id: 2, body: '질문 카드 접기', source_label: '포스트잇에 적음', created_at: '2026-11-14T01:00:00Z', confirmed: true, state: 'new', label: '열림',
         check: { id: 31, session_id: 9, verdict: 'done', label: '끝난 것 같음', evidence: 'bridge/static/js/opanel.js:120', reason: '접힌다' } },
       { id: 3, body: '시험 DB 나누기', source_label: '대화에서 올림', created_at: '2026-11-14T02:00:00Z', confirmed: true, state: 'new', label: '열림',
         recommend: true, check: { id: 32, verdict: 'left', label: '남음', reason: '반만 됐다', coder: true } },
@@ -46,7 +55,8 @@ test('목록 — 확인 전은 흐리게, 끝난 것 같음은 근거와 [닫기
     closed: [],
   };
   const h = listHtml(view, { label: 'FOREMAN' });
-  assert.match(h, /열린 것 3, 확인 전 1, 가장 오래된 것 11\/13\(2일째\)/);
+  assert.match(h, /<b>포스트잇<\/b> FOREMAN <b class="pi-n">3장<\/b><span class="muted">, 확인 전 1<\/span>/);
+  assert.match(listHtml({ ...view, items: view.items.slice(1) }, { label: 'FOREMAN' }).replace(/<[^>]+>/g, ''), /^포스트잇 FOREMAN 2장끝난 것 같음/);   // 확인 전이 없으면 「포스트잇 FOREMAN 2장」만
   assert.match(h, /class="pi-row pi-unconf" data-pi-row="1"/);
   assert.match(h, /\(대화에서 찾음, 11\/13, t:77\)/);
   assert.match(h, /<b>끝난 것 같음 2<\/b>/);
@@ -55,7 +65,19 @@ test('목록 — 확인 전은 흐리게, 끝난 것 같음은 근거와 [닫기
   assert.ok(h.includes('data-pi-launch="3"') && !h.includes('data-pi-launch="2"'));
   for (const id of [1, 2, 3]) assert.ok(h.includes(`data-pi-close="${id}" data-reason="drop"`) && h.includes(`data-pi-close="${id}" data-reason="limit"`));
   assert.match(h, /저장 \(확인 전 1\)/);
-  assert.match(h, /마지막 \[갱신\]/);
+  assert.ok(h.includes(`<span class="muted">마지막 갱신: ${mmddhm('2026-11-15T07:30:00Z')}</span>`));
+});
+
+test('[갱신] 옆 글 — 마지막으로 갱신한 때(월/일 시:분), 한 적이 없으면 「없음」', () => {
+  assert.match(mmddhm('2026-11-15T07:30:00Z'), /^11\/1[56] \d\d:30$/);       // 보는 사람의 시각(시험 기계의 시간대에 따라 날 · 시가 다르다)
+  assert.equal(mmddhm('x'), '');
+  const base = { project: 'foreman', items: [], closed: [], readme_checks: [] };
+  assert.match(listHtml({ ...base, summary: { check: null, last_check_at: null } }), /<span class="muted">마지막 갱신: 없음<\/span>/);
+  assert.match(listHtml(base), /마지막 갱신: 없음/);
+  assert.ok(!listHtml(base).includes('아직 하지 않았습니다'));
+  // 지난 것이 실패였어도 그 전에 결과를 받은 때가 있으면 실패 글이 먼저다(조용히 가려지지 않게)
+  const failed = listHtml({ ...base, summary: { last_check_at: '2026-11-14T07:30:00Z', check: { state: 'failed', session_id: 6 } } });
+  assert.ok(failed.includes('결과 없이 끝났습니다') && !failed.includes('마지막 갱신:'));
 });
 
 test('[갱신] 상태 — 보는 중이면 단추가 꺼지고, 결과 없이 끝났으면 그렇게 보인다(조용히 사라지지 않게)', () => {
@@ -75,6 +97,14 @@ test('계획 창 글 — 번호 · 날 · 본문, 점검 까닭을 덧붙인다'
   assert.match(planText([{ id: 1, body: 'a' }, { id: 2, body: 'b' }]), /^포스트잇 2개를 묶어/);
   assert.equal(planText([]), '');
   assert.equal(firstLine('━━━\n질문 카드\n━━━'), '질문 카드');
+});
+
+// 11-09 todoinbox.test.mjs에서 옮김(11-15 [＋ 할 일] 창을 빼며) — 사용자 지시서는 ━━━ 줄로 시작하는 일이 많다
+test('목록 한 줄 — 구분선은 건너뛰고 첫 글 줄, 길면 자른다', () => {
+  assert.equal(firstLine('━━━━━━━━\n질문 카드 — 답한 뒤에도 자리를 먹는다\n━━━━'), '질문 카드 — 답한 뒤에도 자리를 먹는다');
+  assert.equal(firstLine('\n\n  터미널 입력 칸  \n둘째'), '터미널 입력 칸');
+  assert.equal(firstLine('가'.repeat(80), 10), '가'.repeat(9) + '…');
+  assert.equal(firstLine(''), '');
 });
 
 test('동작 — [x] · [→] · [저장](확인 전 함께) · 판정 닫기가 부르는 API', async () => {

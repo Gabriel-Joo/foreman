@@ -127,6 +127,31 @@ new = "main에 새 커밋 N개(rebase)"
 scope = "화면과 문서 인용"
 commit = "cc/foreman-4 11-15"
 
+# 11-15 포스트잇 화면 손보기(cc/foreman-5, 450). 포스트잇에 맞는 말로, [＋ 할 일] 단추와 창은 뺌
+[[rename]]
+old = "열린 것"
+new = "할 일"
+scope = "화면"
+commit = "cc/foreman-5 11-15"
+
+[[rename]]
+old = "닫은 것"
+new = "끝낸 것"
+scope = "화면과 문서 인용"
+commit = "cc/foreman-5 11-15"
+
+[[rename]]
+old = "열린 포스트잇"
+new = "할 일"
+scope = "화면"
+commit = "cc/foreman-5 11-15"
+
+[[rename]]
+old = "＋ 할 일"
+new = "(화면에서 뺌) 머리 탭 포스트잇 창의 글 칸과 [저장]"
+scope = "화면과 문서 인용"
+commit = "cc/foreman-5 11-15"
+
 # 11-15 모델 창 글을 두 문단으로 고침(cc/foreman-4). style_guide 4-1 89줄이 옛 글을 인용 중이라
 # 관리자가 맞춘 뒤 scope를 "화면과 문서 인용"으로 올린다
 [[rename]]
@@ -191,6 +216,24 @@ file = "bridge/handoff.py"
 old = "따로 작업"
 near = "이 세션은 원본 폴더가 아니라 **따로 작업(worktree)"
 why = "worktree 세션 첫 글 앞에 붙는 「이 세션이 뜬 자리」 안내(세션에 넣는 글)"
+
+[[code_exception]]
+file = "bridge/postit.py"
+old = "열린 것"
+near = "## 포스트잇(열린 것"
+why = "[갱신] 점검 세션에 주는 재료 파일의 머리줄(세션에 넣는 글, 화면에 나가지 않음)"
+
+[[code_exception]]
+file = "bridge/scribe_room.py"
+old = "닫은 것"
+near = "뺄 줄([갱신]에서 끝났다고 닫은 것)"
+why = "서기 세션 「알려진 한계 쓰기」 지시문(세션에 넣는 글). 판정 줄의 [닫기] 단추를 누른 것을 가리킨다"
+
+[[code_exception]]
+file = "bridge/foreman.py"
+old = "닫은 것"
+near = "이미 다른 세션이 가져갔거나 닫은 것이라"
+why = "계획 시작 결과 글. 목록 이름 「끝낸 것」이 아니라 「닫혔다」는 상태를 말한다. 11-15 같은 시각 다른 코더(445)가 foreman.py를 고치는 중이라 건드리지 않음"
 
 [[code_exception]]
 file = "bridge/scribe_room.py"
@@ -295,12 +338,6 @@ test = ""
 file = "bridge/static/js/postit.js"
 tip = "저장 — 적은 글을 포스트잇에 바로 올립니다"
 acts = "Ctrl+Enter로 저장(mountPostit keydown)"
-test = ""
-
-[[promise]]
-file = "bridge/static/js/todoinbox.js"
-tip = "적기 — 포스트잇에 적습니다"
-acts = "Ctrl+Enter로 적기"
 test = ""
 
 [[promise]]

@@ -1,5 +1,6 @@
-// 포스트잇(11-15 사용자, 서기 구조 다시 짜기 2번) — 머리 탭 [＋ 할 일] 옆 종이와 서기실이 같은 목록을 본다(/api/postit).
-// 들어오는 것: 포스트잇에 바로 적음 · [＋ 할 일] · 대화에서 사람이 미룬 것(관리자가 올림 · 브리지 그물은 「확인 전」으로 흐리게) ·
+// 포스트잇(11-15 사용자, 서기 구조 다시 짜기 2번) — 머리 탭 종이와 서기실이 같은 목록을 본다(/api/postit).
+// 11-15 늦게: 머리 탭 [＋ 할 일] 단추와 그 창(todoinbox.js)을 뺐다 — 이 창이 적기와 프로젝트 고르기를 다 한다(사용자).
+// 들어오는 것: 포스트잇에 바로 적음 · 대화에서 사람이 미룬 것(관리자가 올림 · 브리지 그물은 「확인 전」으로 흐리게) ·
 // 옮기기 「문서에 넣을 것 고르기」의 미완. 줄마다 [x] 삭제 · [→] 알려진 한계, 전체 [저장] · [갱신](점검 세션이 코드를 보고 판정).
 // 판정은 제안이다 — 「끝난 것 같음」은 사람이 줄마다 닫는다. 코더에게 맡길 만한 것은 [띄우기]로 계획 창을 바로 연다.
 // 조용한 고장 금지: 못 읽으면 0이 아니라 「읽지 못했습니다」, [갱신]이 결과 없이 끝나면 그렇게 보인다.
@@ -13,27 +14,35 @@ export const mmdd = (iso) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? '' : `${d.getMonth() + 1}/${d.getDate()}`;
 };
+// 「11/15 16:30」 — 보는 사람의 시각으로
+export const mmddhm = (iso) => {
+  const d = new Date(iso);
+  const p2 = (n) => String(n).padStart(2, '0');
+  return Number.isNaN(d.getTime()) ? '' : `${mmdd(iso)} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+};
 // 첫 줄만, 길면 자른다(구분선 줄은 건너뛴다)
 export const firstLine = (s, n = 70) => {
   const t = String(s || '').split('\n').map((x) => x.trim()).find((x) => x && !/^[━─=\-]{3,}$/.test(x)) || '';
   return t.length > n ? t.slice(0, n - 1) + '…' : t;
 };
 
-// 머리 탭 종이 — 지금 보는 방(없으면 모든 방 합)의 열린 수와 가장 오래된 날. 쌓임 기준을 넘으면 warn
+// 머리 탭 종이 — 지금 보는 방(없으면 모든 방 합)의 할 일 수. 쌓임 기준을 넘으면 warn이고 까닭은 호버에
+// (11-15 「가장 오래된 날」을 뺐다 — 무엇을 하라는 것인지 알 수 없고 줄마다 날짜가 붙어 있다. 주황의 까닭이 사라지지 않게 호버에 적는다)
 export function badgeOf(projects, room) {
   if (!projects) return { text: '포스트잇 ?', cls: 'warn', tip: `포스트잇 — 개수를 ${UNREAD}. 누르면 펼쳐 다시 읽습니다.` };
-  const names = room && projects[room] ? [room] : Object.keys(projects);
+  const one = !!(room && projects[room]);
+  const names = one ? [room] : Object.keys(projects);
   const xs = names.map((n) => [n, projects[n] || {}]);
   const open = xs.reduce((a, [, p]) => a + (p.open || 0), 0);
-  const oldest = xs.map(([, p]) => p.oldest_at).filter(Boolean).sort()[0] || null;
-  const nudge = xs.some(([, p]) => p.nudge);
+  const piled = xs.filter(([, p]) => p.nudge);
   const done = xs.reduce((a, [, p]) => a + (p.likely_done || 0), 0);
   const per = xs.filter(([, p]) => p.open).map(([n, p]) => `${n} ${p.open}`).join(', ');
+  const why = piled.map(([n, p]) => (p.nudge.why ? `${one ? '' : `${n} `}${p.nudge.why}` : '')).filter(Boolean).join(' / ');
   return {
-    text: `포스트잇 ${open}${oldest ? `, ${mmdd(oldest)}부터` : ''}`,
-    cls: nudge ? 'warn' : '',
-    tip: `포스트잇 — 열린 할 일 ${open}개${oldest ? `, 가장 오래된 것 ${mmdd(oldest)}` : ''}${done ? `, 끝난 것 같음 ${done}` : ''}.`
-      + `${room && projects[room] ? '' : per ? ` 방마다: ${per}.` : ''} 누르면 펼칩니다.`,
+    text: `포스트잇 ${open}장`,
+    cls: piled.length ? 'warn' : '',
+    tip: `포스트잇 — 할 일 ${open}장${done ? `, 끝난 것 같음 ${done}` : ''}.`
+      + `${piled.length ? ` 쌓였습니다${why ? `(${why})` : ''}.` : ''}${one ? '' : per ? ` 방마다: ${per}.` : ''} 누르면 펼칩니다.`,
   };
 }
 
@@ -75,10 +84,11 @@ function rowHtml(x, busy) {
 
 function checkState(s) {
   const c = s && s.check;
-  if (!c) return '<span class="muted">[갱신]을 아직 하지 않았습니다.</span>';
-  if (c.state === 'running') return `<span class="warn">점검 세션 ${c.session_id}이 코드를 보는 중입니다(${ago(c.at)} 시작).</span>`;
-  if (c.state === 'failed') return `<span class="bad">지난 [갱신]이 결과 없이 끝났습니다(점검 세션 ${c.session_id}). 다시 [갱신]을 누릅니다.</span>`;
-  return `<span class="muted">마지막 [갱신] ${ago(c.at)}</span>`;
+  // 도는 중 · 실패는 그대로 보인다(조용히 사라지지 않게). 그 밖에는 마지막으로 결과를 받은 [갱신]의 때(요약 last_check_at)
+  if (c && c.state === 'running') return `<span class="warn">점검 세션 ${c.session_id}이 코드를 보는 중입니다(${ago(c.at)} 시작).</span>`;
+  if (c && c.state === 'failed') return `<span class="bad">지난 [갱신]이 결과 없이 끝났습니다(점검 세션 ${c.session_id}). 다시 [갱신]을 누릅니다.</span>`;
+  const at = (s && s.last_check_at) || (c && c.at) || null;
+  return `<span class="muted">마지막 갱신: ${at ? esc(mmddhm(at) || String(at)) : '없음'}</span>`;
 }
 
 // 머리 탭 창과 서기실이 같이 쓰는 목록(순수 — view = GET /api/postit 응답)
@@ -89,13 +99,13 @@ export function listHtml(view, { busy = false, draft = '', note = null, label = 
   const unconf = items.filter((x) => !x.confirmed);
   const done = items.filter((x) => x.check && x.check.verdict === 'done');
   const lim = (view.readme_checks || []).filter((k) => k.verdict === 'done');
-  const head = `<div class="pi-head small"><b>포스트잇</b> ${esc(label || view.project)} <span class="muted">열린 것 ${items.length}${unconf.length ? `, 확인 전 ${unconf.length}` : ''}${s.oldest_at ? `, 가장 오래된 것 ${mmdd(s.oldest_at)}(${s.oldest_days}일째)` : ''}</span>${bad ? ` <span class="bad">(지금 값을 ${UNREAD}. 지난 값입니다)</span>` : ''}</div>`;
+  const head = `<div class="pi-head small"><b>포스트잇</b> ${esc(label || view.project)} <b class="pi-n">${items.length}장</b>${unconf.length ? `<span class="muted">, 확인 전 ${unconf.length}</span>` : ''}${bad ? ` <span class="bad">(지금 값을 ${UNREAD}. 지난 값입니다)</span>` : ''}</div>`;
   const nudge = s.nudge ? `<div class="small warn">쌓였습니다: ${esc(s.nudge.why)}. 끝난 것은 [갱신]으로 찾고, 안 할 것은 [x]로 지웁니다.</div>` : '';
   const doneHtml = done.length + lim.length ? `<div class="pi-sec"><div class="small"><b>끝난 것 같음 ${done.length + lim.length}</b> <span class="muted">근거가 코드 자리인 것만입니다. 사람이 줄마다 닫습니다.</span></div>
     ${done.map((x) => checkHtml(x.check, x.body)).join('')}${lim.map((k) => checkHtml(k, `README 「알려진 한계」 ${k.item}: ${k.item_text || ''}`)).join('')}</div>` : '';
-  const rows = items.length ? items.map((x) => rowHtml(x, busy)).join('') : '<p class="small muted">열린 포스트잇이 없습니다.</p>';
+  const rows = items.length ? items.map((x) => rowHtml(x, busy)).join('') : '<p class="small muted">할 일이 없습니다.</p>';
   const closed = view.closed || [];
-  const closedHtml = closed.length ? `<details class="pi-closed"><summary class="small muted" title="닫은 것 — 최근 닫은 포스트잇을 다시 봅니다.">닫은 것 ${closed.length}</summary>${
+  const closedHtml = closed.length ? `<details class="pi-closed"><summary class="small muted" title="끝낸 것 — 최근에 끝내거나 지운 포스트잇을 다시 봅니다.">끝낸 것 ${closed.length}</summary>${
     closed.map((x) => `<div class="small muted pi-crow">${esc(x.label)}: ${esc(firstLine(x.body, 60))}${x.closed_note ? ` <span title="${esc(x.closed_note)}">(근거)</span>` : ''}</div>`).join('')}</details>` : '';
   const saveTip = unconf.length
     ? `저장 — 적은 글을 포스트잇에 올리고, 확인 전 ${unconf.length}줄도 받아들입니다. 아닌 줄은 먼저 [x]로 지웁니다.`
@@ -103,7 +113,7 @@ export function listHtml(view, { busy = false, draft = '', note = null, label = 
   const running = s.check && s.check.state === 'running';
   return `<div class="postit paper" data-pi-project="${esc(view.project)}">${head}${nudge}${doneHtml}
     <div class="pi-list">${rows}</div>
-    <textarea class="pi-draft" rows="2" maxlength="${MAX}" placeholder="여기에 바로 적습니다(붙여 넣어도 됩니다)"${busy ? ' disabled' : ''}>${esc(draft)}</textarea>
+    <textarea class="pi-draft" rows="2" maxlength="${MAX}" placeholder="할 일을 메모합니다"${busy ? ' disabled' : ''}>${esc(draft)}</textarea>
     <div class="pi-foot"><span class="small">${checkState(s)}</span>
       <button type="button" class="small primary" data-pi-save="1"${busy ? ' disabled' : ''} title="${esc(saveTip)}">저장${unconf.length ? ` (확인 전 ${unconf.length})` : ''}</button>
       <button type="button" class="small" data-pi-refresh="1"${busy || running ? ' disabled' : ''} title="${esc(running ? '갱신 — 점검 세션이 이미 보는 중입니다.' : '갱신 — 점검 세션을 띄워 코드를 보고 이미 끝난 것을 찾습니다. 포스트잇과 README 「알려진 한계」를 함께 봅니다. 지우는 것은 사람이 합니다.')}">갱신</button></div>
@@ -212,8 +222,12 @@ export function mountPostit(store, btn, { room = () => null, onChanged } = {}) {
   function draw() {
     const names = store.state.projects.map((p) => p.name).filter(Boolean);
     const lab = (n) => (store.state.projects.find((p) => p.name === n) || {}).label || n;
-    pop.innerHTML = `<div class="pi-bar"><select class="pi-proj" aria-label="프로젝트">${names.map((n) => `<option value="${esc(n)}"${n === project ? ' selected' : ''}>${esc(lab(n))}</option>`).join('')}</select>
-      <button type="button" class="small ghost" data-pi-x="1" title="닫기 — 포스트잇을 접습니다. 적던 글은 남습니다.">닫기</button></div>${listHtml(view, { draft, note, label: lab(project), bad: badRead })}`;
+    // 창 전체가 종이 한 장이다(panel.css .pi-pop — 종이 · 접힌 모서리 · 그림자는 창의 ::before · ::after). 글은 .pi-sheet 안에서만 구른다
+    const keep = pop.querySelector('.pi-sheet');
+    const top = keep ? keep.scrollTop : 0;
+    pop.innerHTML = `<div class="pi-sheet"><div class="pi-bar"><select class="pi-proj" aria-label="프로젝트" title="프로젝트 — 어느 프로젝트의 포스트잇을 보고 적을지 고릅니다.">${names.map((n) => `<option value="${esc(n)}"${n === project ? ' selected' : ''}>${esc(lab(n))}</option>`).join('')}</select>
+      <button type="button" class="small ghost" data-pi-x="1" title="닫기 — 포스트잇을 접습니다. 적던 글은 남습니다.">닫기</button></div>${listHtml(view, { draft, note, label: lab(project), bad: badRead })}</div>`;
+    if (top) pop.querySelector('.pi-sheet').scrollTop = top;
   }
   async function reload() {
     try { view = await fetchView(store, project); badRead = false; } catch { badRead = true; }

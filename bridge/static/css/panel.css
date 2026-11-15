@@ -258,26 +258,15 @@ button.rolebadge.fixed:hover { background:color-mix(in srgb, var(--rc) 16%, tran
 .ns .ns-opt.off { opacity:.55; cursor:default; }
 .ns-act { justify-content:flex-end; margin-top:6px; }
 /* 역할 · 모델 두 칸(11-05) — 좁으면 위아래로 */
-/* [＋ 할 일](11-09, todoinbox.js) — [＋ 세션] 창 모양을 따른다 */
-.ti textarea { width:100%; min-height:8em; resize:vertical; font:inherit; }
-.ti-to { gap:14px; justify-content:flex-start; }
-.ti-list { border-top:1px solid var(--line); padding-top:6px; margin-top:4px; }
-.ti-list #tiList { display:grid; gap:4px; max-height:32vh; overflow:auto; margin-top:4px; }
-.ti-item { display:flex; gap:8px; align-items:flex-start; }
-.ti-item .ti-st { flex:none; min-width:5.5em; }
-.ti-item .ti-body { flex:1; min-width:0; }
-.ti-item .ti-body summary { cursor:pointer; overflow-wrap:anywhere; }
-.ti-item .ti-body pre { max-height:24vh; margin:4px 0 0; white-space:pre-wrap; }
-.ti-item.st-new .ti-st { color:var(--warn); font-weight:600; }
-.ti-item.st-moved .ti-st { color:var(--ok); }
-.ti-item.st-dropped { opacity:.6; }
-/* 포스트잇(11-15, postit.js) — 머리 탭 종이 · 펼친 창 · 서기실이 같은 노란 종이. 색 변수는 종이 안에서만 덮는다 */
+/* 포스트잇(11-15, postit.js) — 머리 탭 종이 · 펼친 창 · 서기실이 같은 노란 종이. 색 변수는 종이 안에서만 덮는다.
+   머리 탭 [＋ 할 일]과 그 창(.ti)은 11-15에 뺐다 — 포스트잇 창이 적기와 프로젝트 고르기를 다 한다 */
 .opostit { background:#f3d76b; color:#2a2410; border-color:#d9b94a; font-weight:600; box-shadow:1px 2px 0 rgba(0,0,0,.35); transform:rotate(-1.5deg); white-space:nowrap; }
 .opostit.warn { background:#f5b04a; border-color:#c77c12; }
-.postit.paper { --bg:#fdf3b8; --fg:#2a2410; --muted:#6b6040; --line:#d9c77a; --card:#fff8d6; --code:#f3e7a0;
-  --warn:#9a5b00; --ok:#2f7a3a; --bad:#b3261e; --act:#1f5fb8;
-  background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:3px; padding:8px 10px;
+.postit.paper, .pi-pop { --bg:#fdf3b8; --fg:#2a2410; --muted:#6b6040; --line:#d9c77a; --card:#fff8d6; --code:#f3e7a0;
+  --warn:#9a5b00; --ok:#2f7a3a; --bad:#b3261e; --act:#1f5fb8; }
+.postit.paper { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:3px; padding:8px 10px;
   box-shadow:2px 3px 0 rgba(0,0,0,.28); display:flex; flex-direction:column; gap:6px; min-width:0; }
+.postit .pi-head .pi-n { font-weight:700; }
 .postit .pi-list { display:grid; max-height:42vh; overflow:auto; }
 .postit .pi-row { display:flex; gap:8px; align-items:flex-start; border-bottom:1px dashed var(--line); padding:3px 0; }
 .postit .pi-row.pi-unconf { opacity:.55; }
@@ -296,11 +285,34 @@ button.rolebadge.fixed:hover { background:color-mix(in srgb, var(--rc) 16%, tran
 .postit button { color:var(--fg); background:var(--card); border-color:var(--line); }
 .postit button.ghost { background:transparent; }
 .postit code { background:var(--code); overflow-wrap:anywhere; }
-.pi-pop { position:fixed; z-index:60; width:min(560px, calc(100vw - 16px)); max-height:80vh; overflow:auto; display:none;
-  background:var(--card); border:1px solid var(--line); border-radius:8px; padding:6px; box-shadow:0 6px 24px rgba(0,0,0,.45); }
+/* 펼친 창 = 포스트잇 한 장(11-15 사용자 「창 전체를 포스트잇처럼」. 줄마다 종이를 만들지 않는다 — 안의 목록은 그대로).
+   종이(::after)만 아주 살짝 기울이고 글 · 입력 칸 · 단추는 반듯하게 둔다 — 글까지 기울이면 글씨가 흐려지고 호버 자리가 어긋난다.
+   ::after = 종이: 위쪽은 풀 바른 띠(조금 짙다), 오른쪽 아래는 모서리를 잘라(clip-path) 접힌 날개를 그린다(배경 그림 둘).
+   ::before = 바닥 그림자: 종이와 반대로 조금 틀어 아래쪽이 들뜬 것처럼. clip-path가 box-shadow를 자르므로 따로 둔다.
+   창 자신은 넘침을 자르지 않고(그림자 · 기울기가 잘린다) 글은 .pi-sheet 안에서 구른다 */
+.pi-pop { --pi-fold:26px; --line:#cfb650; --card:rgba(255,255,255,.46); --code:rgba(255,255,255,.38);
+  position:fixed; z-index:60; width:min(560px, calc(100vw - 16px)); display:none; color:var(--fg); }
 .pi-pop.on { display:block; }
-.pi-pop .pi-bar { display:flex; gap:6px; justify-content:space-between; align-items:center; margin-bottom:6px; }
-.pi-pop .pi-proj { width:auto; }
+.pi-pop::before { content:""; position:absolute; inset:18px 2px -7px 12px; z-index:-2; border-radius:2px;
+  background:rgba(0,0,0,.55); filter:blur(9px); transform:rotate(.8deg); transform-origin:0 100%; pointer-events:none; }
+.pi-pop::after { content:""; position:absolute; inset:0; z-index:-1; pointer-events:none; transform:rotate(-.6deg);
+  clip-path:polygon(0 0, 100% 0, 100% calc(100% - var(--pi-fold)), calc(100% - var(--pi-fold)) 100%, 0 100%);
+  background:
+    linear-gradient(to bottom right, #d6bc4c 0, #efdc7e 34%, #fff8c2 49.5%, transparent 50%) no-repeat right bottom / var(--pi-fold) var(--pi-fold),
+    radial-gradient(circle at 100% 100%, rgba(110,84,0,.24) 0, rgba(110,84,0,.09) 42%, transparent 68%) no-repeat right bottom / calc(var(--pi-fold) * 1.9) calc(var(--pi-fold) * 1.9),
+    linear-gradient(180deg, rgba(176,138,12,.20) 0, rgba(176,138,12,.13) 40px, transparent 47px),
+    linear-gradient(172deg, #fff4a3 0, #fbea8a 55%, #f6e077 100%); }
+.pi-pop .pi-sheet { position:relative; max-height:min(80vh, calc(100vh - 70px)); overflow:auto; padding:9px 16px 20px; scrollbar-width:thin; scrollbar-color:#c9ae45 transparent; }
+.pi-pop .pi-bar { display:flex; gap:6px; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.pi-pop .pi-proj { width:auto; font:inherit; font-weight:700; color:var(--fg); background:transparent; border:0; border-bottom:1px dashed #a88e2a; border-radius:0; padding:2px 2px; cursor:pointer; }
+.pi-pop .pi-proj option { background:#fff8d6; color:#2a2410; }
+.pi-pop .pi-bar button { color:var(--fg); background:transparent; border-color:transparent; }
+.pi-pop .pi-bar button:hover { border-color:#a88e2a; }
+.pi-pop .postit.paper { background:none; border:0; box-shadow:none; padding:0; border-radius:0; }
+.pi-pop .pi-head { font-size:18px; }
+.pi-pop .pi-list { max-height:38vh; }
+.pi-pop .pi-draft { border-style:dashed; }
+.pi-pop .pi-closed { margin-right:var(--pi-fold); }
 .ns-two { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
 .ns-two label { display:flex; flex-direction:column; gap:2px; }
 @media (max-width:480px) { .ns-two { grid-template-columns:1fr; } }
@@ -347,7 +359,9 @@ button.rolebadge.fixed:hover { background:color-mix(in srgb, var(--rc) 16%, tran
 /* 11-09 사용자 — 잘리지 않고 길면 상자가 커진다. 폭 상한(440px × 배율)은 한 줄이 너무 길면 읽기 어려워서 — 높이 상한은 없고,
    화면보다 높으면 tip.js가 폭을 화면 폭까지 넓힌다. 줄은 뜻이 끊기지 않게: 설명은 문장마다 줄(.tip-d > div), 낱말 단위(keep-all),
    마지막 줄에 한두 낱말만 남지 않게(text-wrap: pretty). 낱말 하나가 폭보다 길 때만 낱말 안에서 끊는다(overflow-wrap) — tipAudit가 센다 */
-.tip { --tz:var(--ui-zoom); position:fixed; z-index:50; max-width:min(calc(440px * var(--tz)), calc(100vw - 16px)); pointer-events:none; padding:7px 11px 8px; border-radius:6px;
+/* z-index 70(11-15, 전 50) — 포스트잇 창(.pi-pop) · 모델 고르기(.mdl-menu)가 60이라 그 안 단추의 호버가 창 뒤로 들어가 가려졌다.
+   호버는 어느 창보다 위에 온다(창을 새로 만들면 70보다 낮게) */
+.tip { --tz:var(--ui-zoom); position:fixed; z-index:70; max-width:min(calc(440px * var(--tz)), calc(100vw - 16px)); pointer-events:none; padding:7px 11px 8px; border-radius:6px;
        word-break:keep-all; overflow-wrap:anywhere; text-wrap:pretty;
        background:var(--tip-bg, var(--card)); color:var(--tip-fg, var(--fg)); border:1px solid var(--tip-border, var(--line));
        box-shadow:0 4px 14px rgba(0,0,0,.35); font:var(--tip-font, 16px/1.45 system-ui, sans-serif); font-size:calc(16px * var(--tz)); line-height:1.45;

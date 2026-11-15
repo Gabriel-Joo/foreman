@@ -6,7 +6,6 @@ import { resolveAction, infraAction, groupSubagents, tokenRate, viewState } from
 import { loadSprites } from './sprites.js';
 import { createSidePanel } from './opanel.js';
 import { mountNewSession } from './newsession.js';
-import { mountTodoInbox } from './todoinbox.js';
 import { mountPostit } from './postit.js';
 import { coderJobs, coderBubble, isCoder, REST_DAYS } from './coder.js';
 import { roleTag, sessionName, needMark, mergeWaits, roleNameInk, bgLine, bgTip, nowDoing } from './render.js';
@@ -65,8 +64,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         <button id="oAll" class="ghost" title="전체 — 모든 현장을 한 화면에 봅니다.">전체</button>
         <nav id="oProj" class="oproj" aria-label="프로젝트"></nav>
         <button id="oNew" class="ghost onew" title="새 세션 — 프로젝트나 폴더를 골라 새 세션을 띄웁니다.">＋ 세션</button>
-        <button id="oTodo" class="ghost onew" title="할 일 — 세션을 띄우지 않고 할 일을 적어 둡니다. 적은 것은 옆 포스트잇에 붙습니다.">＋ 할 일</button>
-        <button id="oPostit" class="opostit" title="포스트잇 — 열린 할 일입니다. 누르면 펼칩니다.">포스트잇</button>
+        <button id="oPostit" class="opostit" title="포스트잇 — 할 일을 적어 두는 종이입니다. 누르면 펼칩니다.">포스트잇</button>
         <span id="oAlerts" class="oalerts"></span>
       </div>
       <div class="otop-row otop-sub">
@@ -3835,12 +3833,10 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   // + 새 세션(11-05) — 지금 보고 있는 현장을 기본 프로젝트로. 띄우면 그 세션을 골라 패널에 연다
   const newSession = mountNewSession(store, { onCreated: (sid) => setTimeout(() => openSession(sid), 300) });
   $('oNew').onclick = () => newSession.open(view !== 'hq' && view !== 'map' && view !== '_lounge' ? view : null);
-  // 11-15 포스트잇 — [＋ 할 일] 옆 종이(개수 · 가장 오래된 날). 서기실 창도 같은 목록이다(postit.js)
+  // 11-15 포스트잇 — [＋ 세션] 옆 종이(할 일 수). 서기실 창도 같은 목록이다(postit.js)
+  // 11-09 [＋ 할 일] 단추와 그 창(todoinbox.js)은 11-15에 뺐다 — 포스트잇 창이 적기와 프로젝트 고르기를 다 한다(사용자)
   const roomNow = () => (view !== 'hq' && view !== 'map' && view !== '_lounge' ? view : null);
   const postit = mountPostit(store, $('oPostit'), { room: roomNow, onChanged: () => { loadScribeTodo(); loadCoderTodo(); } });
-  // 11-09 [＋ 할 일] — 받는 함(= 포스트잇)에 적는다(세션 없음). 적으면 포스트잇 · 서기 할 일을 다시 센다
-  const todoInbox = mountTodoInbox(store, { onSaved: () => { loadScribeTodo(); loadCoderTodo(); postit.reload(); } });
-  $('oTodo').onclick = () => todoInbox.open(roomNow());
   window.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Escape') return;
     if (ev.target.closest && ev.target.closest('input, textarea, select')) return;   // 입력 칸에서 친 Esc는 칸이 처리
@@ -3889,7 +3885,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   return { go, view: () => view, theme, outside: () => (OUTSIDE ? { ...OUTSIDE } : null),
            // 보고 있는 방의 화면 칸(캔버스 px, [x0, y0, x1, y1]) — 방 아래 빈 높이 재기(11-11)
            roomBox: () => { const q = view === 'hq' || view === 'map' ? null : roomByView(); if (!q) return null;
-             const [x0, y0] = toScreen(q.x * T, q.y * T), [x1, y1] = toScreen((q.x + q.w) * T, (q.y + q.h) * T); return [x0, y0, x1, y1].map(Math.round); }, openSession, panel, actors, newSession: (p) => newSession.open(p), openTodo: (p) => todoInbox.open(p), openPostit: (p) => postit.open(p), postitChanged: () => postit.reload(), foremanName: FM_NAME,
+             const [x0, y0] = toScreen(q.x * T, q.y * T), [x1, y1] = toScreen((q.x + q.w) * T, (q.y + q.h) * T); return [x0, y0, x1, y1].map(Math.round); }, openSession, panel, actors, newSession: (p) => newSession.open(p), openTodo: (p) => postit.open(p), openPostit: (p) => postit.open(p), postitChanged: () => postit.reload(), foremanName: FM_NAME,
            probeMode: () => PROBE,       // 점검 화면인가(?probe=1, 11-11) — screen.py가 확인한다. 아니면 읽음 같은 사람 흔적이 남는다
            audit: () => audit(), propAudit: () => propAudit(), propSheet: (z, f) => propSheet(z, f), probe: (x, y) => probe(x, y), rects: (w) => decorRects(w), layoutAudit: (o) => layoutAudit(o), labelAudit: () => labelAudit(), gridAudit: () => gridAudit(), camScale: () => ({ cam: cam.s, room: roomViewScale() }), roomLabels: (name) => roomLabels(world.rooms.find((r) => r.name === name) || null).map((l) => ({ ...l, box: labelBox(l) })),furnRects: (w) => furnRects(w), standSpots: () => standSpots(), bannerAudit: () => bannerAudit(), cardAudit: () => cardAudit(), tipAudit: () => tipAudit(), tagRects: (w) => tagRects(w), bodySize: () => bodySize(), bubbleAudit: () => bubbleAudit(), stackAudit: () => stackAudit(), walkAudit: () => walkAudit(),
            jumpWatch: () => { JUMP_LOG = { last: new Map(), name: { walk: 0, jump: 0, who: {} }, stack: { walk: 0, jump: 0, who: {} } }; return true; },

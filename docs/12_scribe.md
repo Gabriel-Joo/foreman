@@ -204,12 +204,12 @@
 
 ## 11. 포스트잇 (11-09 받는 함 → 11-15 포스트잇) [log:foreman-5_postit_20261115.md] [log:foreman-6_postit_proposal_20261115.md]
 
-**열린 할 일 목록 그 자체다. 서기가 README로 옮기는 단계는 없다.** 「받은 할 일」(11-09 받는 함, `todo_inbox`)과 포스트잇은 같은 것이다(11-15 사용자). 머리줄 [＋ 할 일] 옆 종이와 서기실 「포스트잇」이 같은 목록이다(화면은 `docs/10_office_design.md` 「머리 탭 포스트잇」). 받는 함을 만든 까닭(11-09 관리자에게 온 "할 일에 넣어라"가 맥락을 쌓아 두 번 인계했다 [log:dispatch_flow_decision_20261109.md])은 그대로다.
+**열린 할 일 목록 그 자체다. 서기가 README로 옮기는 단계는 없다.** 「받은 할 일」(11-09 받는 함, `todo_inbox`)과 포스트잇은 같은 것이다(11-15 사용자). 머리줄 종이 단추와 서기실 「포스트잇」이 같은 목록이다(11-15 머리줄 단추 [＋ 할 일]과 그 창은 뺐다, 포스트잇 창이 적기와 프로젝트 고르기를 다 한다. 화면은 `docs/10_office_design.md` 「머리 탭 포스트잇」). 받는 함을 만든 까닭(11-09 관리자에게 온 "할 일에 넣어라"가 맥락을 쌓아 두 번 인계했다 [log:dispatch_flow_decision_20261109.md])은 그대로다.
 
 ### 11-1. 저장(`todo_inbox`, `migrations/0027`, `0028`, `0031`, `0033`)
 
 - 칸: id, project, body(8,000자까지), assignee, source, source_ref, confirmed, created_at, edited_at, taken_by, taken_at, closed_reason, closed_at, closed_note(옛 dropped_at도 남는다)
-- source(어디서 왔나): `note` 포스트잇에 바로 적음, `todo` [＋ 할 일], `said` 대화에서 사람이 말해 관리자가 올림, `chat` 브리지 그물(확인 전), `promote` 옮기기 「문서에 넣을 것 고르기」의 미완
+- source(어디서 왔나): `note` 포스트잇에 바로 적음, `todo` 옛 머리줄 단추 [＋ 할 일](11-15 뺐다. 이미 든 줄과 옛 길에 남고 화면 출처 글은 `note`와 같은 「포스트잇에 적음」), `said` 대화에서 사람이 말해 관리자가 올림, `chat` 브리지 그물(확인 전), `promote` 옮기기 「문서에 넣을 것 고르기」의 미완
 - source_ref(근거): `t:<턴>`(said, chat), `pr:<promotion>:<항목>`(promote). 같은 근거는 두 번 들어가지 않는다. 그물이 먼저 올린 확인 전 줄에 관리자가 같은 턴으로 올리면 그 줄이 확인된 줄(said)이 된다
 - confirmed: 그물에서 온 것만 0. 화면에 흐리게 뜨고 사람이 [저장]으로 받거나 [x]로 지운다
 - 0033이 지난 줄을 맞췄다: 버린 것은 drop, 서기가 README로 옮긴 것(옛 「옮김」)과 코더가 끝낸 것은 done(closed_note에 「포스트잇 전」). 11-15 FOREMAN 23줄은 열린 것 4, 끝남 17, 삭제 2가 된다
@@ -230,7 +230,7 @@
 | 길 | 어떻게 |
 |---|---|
 | 포스트잇에 바로 적음 | 펼친 창이나 서기실의 글 칸 → [저장](`POST /api/postit/save`) |
-| [＋ 할 일] | `POST /api/scribe/inbox`(source todo). 11-15 「누구에게(코더에게)」를 없앴다 |
+| 옛 길(화면에서 부르는 곳 없음) | `POST /api/scribe/inbox`(source todo). 11-09 머리줄 단추 [＋ 할 일]이 부르던 길이다. 11-15 「누구에게(코더에게)」를 없앴고, 같은 날 단추와 창도 뺐다(포스트잇 창이 같은 일을 한다). 길은 지우지 않았다 |
 | 대화: 사람 표시 | 사람이 「포스트잇에 올려라」 「나중에 할 일에 넣어라」라고 하면 관리자가 그 턴에서 `POST /api/postit {project, body, session: <자기 세션 id>}`(CLAUDE.md 「작업 규칙」). 근거는 그 세션의 마지막 사람 턴 |
 | 대화: 그물 | 브리지가 2분마다(`postit.run`) 사람 턴을 문장 꼴(`NET`, LLM 없음)로 훑어 확인 전으로 올린다. 아래 11-4 |
 | 옮기기 미완 | `bridge/promote.py` dest `postit`. 2/2에서 세션이 쓰지 않고 브리지가 넣는다 → `docs/11_handoff_v2.md` |
@@ -255,7 +255,7 @@
 
 ### 11-6. 조용히 쌓이지 않게
 
-- 머리 탭 단추에 열린 수와 가장 오래된 날. **쌓임 기준**(`config/scribe.toml [postit]`, 없으면 코드 기본값 `open_max` 20, `stale_days` 7, `refresh_days` 7): 열린 것 20개 이상, 가장 오래된 것 7일, 마지막 [갱신] 뒤(한 번도 안 했으면 가장 오래된 것부터) 7일 중 하나면 서기 자리 말풍선 「포스트잇 쌓임」과 단추 주황. **말풍선만, 21시 묶음 보고에는 넣지 않는다**(사용자 답 4)
+- 머리 탭 단추에 할 일 수(「포스트잇 4장」, 11-15 전에는 가장 오래된 날도 적었다). 쌓인 까닭은 단추 호버와 펼친 창의 「쌓였습니다: …」 줄에 적힌다. **쌓임 기준**(`config/scribe.toml [postit]`, 없으면 코드 기본값 `open_max` 20, `stale_days` 7, `refresh_days` 7): 열린 것 20개 이상, 가장 오래된 것 7일, 마지막 [갱신] 뒤(한 번도 안 했으면 가장 오래된 것부터) 7일 중 하나면 서기 자리 말풍선 「포스트잇 쌓임」과 단추 주황. **말풍선만, 21시 묶음 보고에는 넣지 않는다**(사용자 답 4)
 - [갱신]이 결과 없이 세션이 끝나면 `postit-done`(ok 0)을 남기고 화면 「지난 [갱신]이 결과 없이 끝났습니다」, 서기 할 일 줄 「포스트잇 [갱신] 실패」
 - README에 아직 안 쓴 [→] 줄과 뺄 줄은 서기 할 일 「알려진 한계 쓰기: 쓸 줄 N, 뺄 줄 M」
 - 그물이 깨져 늘 0이 되면 `tests/test_postit.py`의 실제 예문 시험이 걸린다
@@ -266,7 +266,7 @@
 - `POST /api/postit {project, body, session?}` 201(새로) 또는 200(같은 근거가 이미 있음). 프로젝트 토큰은 자기 프로젝트만(`bridge/scopetoken.py`)
 - `POST /api/postit/save {project, body?, confirm?}`, `POST /api/postit/{id}/close {reason: drop|limit|done, note?}`, `POST /api/postit/refresh {project}`, `POST /api/postit/check/{cid} {action: close|keep}`
 - 옛 길은 그대로 돈다: `POST /api/scribe/inbox`(= source todo), `GET /api/scribe/inbox`, `POST /api/scribe/inbox/{id}/drop`(= [x]), `PUT /api/todo/{id}`(열린 것 고치기)
-- 남은 것: 텔레그램으로 적기는 하지 않았다. 노션 「이것도 써라」는 [＋ 할 일]에 넣지 않는다(관리자에게 말한다, 사용자 답 11)
+- 남은 것: 텔레그램으로 적기는 하지 않았다. 노션 「이것도 써라」는 포스트잇에 넣지 않는다(관리자에게 말한다, 사용자 답 11)
 
 ## 12. 물어보기 (11-10) [log:scribe_ask_20261110.md]
 
