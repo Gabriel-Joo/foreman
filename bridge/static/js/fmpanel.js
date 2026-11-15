@@ -90,7 +90,7 @@ export function createForemanPanel(store) {
     if (x) {
       ev.preventDefault();
       const restore = 'fmRestore' in x.dataset;
-      if (restore && !confirm('끝나지 않았으면 되돌립니다. 이 줄을 다시 진행 중인 일로 두고, 다시 자동으로 내리지 않습니다. 되살릴까요?')) return;
+      if (restore && !confirm('끝나지 않았으면 되돌립니다. 이 줄을 다시 진행 중인 일로 두고, 다시 자동으로 내리지 않습니다.\n\n되살릴까요?')) return;
       const res = await fetch(`/api/foreman/notes/${restore ? x.dataset.fmRestore : x.dataset.fmTouch}/${restore ? 'restore' : 'touch'}`,
         { method: 'POST', headers: store.headers(true) });
       const j = await res.json().catch(() => ({}));
@@ -101,7 +101,7 @@ export function createForemanPanel(store) {
     }
     if (!r) return;
     ev.preventDefault();
-    if (!confirm('이 줄을 진행 중인 일에서 내립니다. 다음 계획부터 들어가지 않습니다(기록은 남습니다). 내릴까요?')) return;
+    if (!confirm('이 줄을 진행 중인 일에서 내립니다. 다음 계획부터 들어가지 않습니다(기록은 남습니다).\n\n내릴까요?')) return;
     const res = await fetch(`/api/foreman/notes/${r.dataset.fmRetire}/retire`, { method: 'POST', headers: store.headers(true) });
     const j = await res.json().catch(() => ({}));
     note = res.ok ? { msg: '내렸습니다.' } : { bad: true, msg: `내리지 못했습니다: ${j.refused || j.detail || res.status}` };

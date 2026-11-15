@@ -122,7 +122,7 @@ export function createTerminal(store, { getProject } = {}) {
       if (!j.cleared) {
         const b = j.busy || {};
         const what = b.cmd ? `돌고 있는 명령(${b.cmd})의 지난 출력이 지워집니다. 명령은 그대로 돕니다.` : `입력 줄에 친 글(${b.typed})이 지워집니다.`;
-        if (!confirm(`${plabel(p)} 셸을 비웁니다. ${what} 계속할까요?`)) return;
+        if (!confirm(`${plabel(p)} 셸을 비웁니다. ${what}\n\n계속할까요?`)) return;
         j = await store.terminalClear(p, true);
       }
       shown = j; drawProj();

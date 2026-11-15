@@ -194,7 +194,7 @@ export function createScribe(store) {
   async function start(room, label, k, topic, nameExtra, noteText) {
     const title = ((todo && todo.tasks) || {})[k]?.title || k;
     const name = title + (nameExtra ? `: ${nameExtra}` : '');
-    if (!confirm(`${label}의 서기에게 「${name}」을 맡깁니다. 서기 세션이 작업방으로 뜨고(Opus), 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다. 진행할까요?`)) return;
+    if (!confirm(`${label}의 서기에게 「${name}」을 맡깁니다. 서기 세션이 작업방으로 뜨고(Opus), 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다.\n\n진행할까요?`)) return;
     busy = true; note = { msg: `「${name}」: 서기 세션을 띄우는 중입니다…` }; store.touch('panel');
     const body = { project: room, task: k, topic: topic || null };
     if (noteText) body.note = noteText;
@@ -227,8 +227,8 @@ export function createScribe(store) {
       return;
     }
     const act = p.dataset.pub, path = p.dataset.path || 'docs/', project = p.dataset.proj || 'foreman', force = !!p.dataset.force;
-    if (act === 'archive' && !confirm(`${path}의 Notion 페이지를 휴지통으로 보냅니다(30일 안에 Notion에서 되살릴 수 있습니다). 내릴까요?`)) return;
-    if (force && !confirm(`${path}\nNotion에서 사람이 고친 곳을 버리고 git 원본으로 덮습니다.\n살릴 수정이면 먼저 git에 옮겨 주세요.\n덮을까요?`)) return;
+    if (act === 'archive' && !confirm(`${path}의 Notion 페이지를 휴지통으로 보냅니다(30일 안에 Notion에서 되살릴 수 있습니다).\n\n내릴까요?`)) return;
+    if (force && !confirm(`${path}\nNotion에서 사람이 고친 곳을 버리고 git 원본으로 덮습니다. 살릴 수정이면 먼저 git에 옮겨 주세요.\n\n덮을까요?`)) return;
     note = { msg: `${act === 'archive' ? '내리는' : act === 'docsync' ? '기술문서를 맞추는' : '올리는'} 중입니다…` }; store.touch('panel');
     // 덮기는 그 파일만 force로 맞춘다(자동 맞추기와 같은 길 — 차례 · 기록이 같이 맞는다)
     const body = act === 'docsync' || force ? { path, action: 'docsync', project, force } : { path, action: act, project };

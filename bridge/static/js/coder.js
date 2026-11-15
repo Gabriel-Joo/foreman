@@ -120,7 +120,7 @@ export function createCoder(store) {
     ev.preventDefault();
     if (cl) {
       const name = cl.dataset.cdName;
-      if (!window.confirm(`빈 작업방 ${name}를 버립니다. 커밋은 모두 원본에 들어 있고 변경이 없습니다. 계속합니까?`)) return;
+      if (!window.confirm(`빈 작업방 ${name}를 버립니다. 커밋은 모두 원본에 들어 있고 변경이 없습니다.\n\n계속합니까?`)) return;
       cl.disabled = true;
       const r = await fetch(`/api/sessions/${cl.dataset.cdClean}/worktree`, { method: 'POST', headers: store.headers(true), body: JSON.stringify({ action: 'discard', confirm: name }) });
       note = r.ok ? { msg: `빈 작업방 ${name}를 버렸습니다.` } : { bad: true, msg: `버리지 못했습니다(HTTP ${r.status}).` };

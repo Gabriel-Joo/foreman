@@ -89,7 +89,8 @@ export function humanFiles(c) {
   return out;
 }
 // 합친 뒤 초록 안내(11-14 사용자 「알아야 할 것은 합쳤다는 것과 push가 아직인지 둘뿐」) — 서버 갈래(merge_result · pushed)로
-// 「main에 커밋 N개를 하나로 합쳤습니다. push는 아직입니다.」 + 「해시 「제목」」. squash 설명 · 원래 커밋 명령 · note 원문은 「자세히」 안.
+// 「main에 커밋 N개를 하나로 합쳤습니다. push는 아직입니다.」 + 「해시 「제목」」. squash 설명 · 원래 커밋 명령은 「자세히」 안.
+// 11-15 사용자 — 같은 말이 세 번(이 줄, [합치기] 결과 글, 「자세히」의 note 원문) 떠서 note 원문은 그리지 않는다. 관리자에게 못 알린 것만 「자세히」에 남긴다.
 // 갈래가 없는 옛 카드면 null(전처럼 note 원문을 그린다). { top: 위 두 줄, more: 카드 「자세히」 맨 앞에 넣을 글 }
 export function mergedNote(c) {
   const m = c && c.merge_result;
@@ -100,14 +101,12 @@ export function mergedNote(c) {
   const pushTip = c.pushed ? `push까지 함 — 이 커밋이 origin/${base}에 들어가 있습니다.`
     : c.pushed === false ? `push 아직 — 이 커밋이 origin/${base}에 아직 없습니다. push는 관리자가 합니다. push하면 1분 안에 바뀝니다.`
       : 'push 아직 — 원격(origin) 기록이 없어 확인하지 못했습니다. 합치기는 push하지 않습니다.';
-  const told = c.manager_told === false ? ' 관리자 세션에는 알리지 못했습니다(텔레그램으로 남김).' : c.manager_told ? ' 관리자 세션에 알렸습니다.' : '';
   return {
     top: `<div class="small ok mp-merged">${head} <span title="${esc(pushTip)}">${push}</span></div>
     <div class="small mp-merged-commit"><code class="sha">${esc(String(m.commit).slice(0, 8))}</code>${m.title ? ` 「${esc(m.title)}」` : ''}</div>`,
     more: `${m.squash ? '<div class="small muted">squash로 묶었습니다. 새 커밋 본문에 원래 커밋의 날짜, 해시, 제목이 들어 있습니다.</div>' : ''}
       ${m.orig_ref ? `<div class="small muted">원래 커밋은 <code class="sha">git log ${esc(m.orig_ref)}</code>로 봅니다.</div>` : ''}
-      ${c.note ? `<div class="small muted">합치기 결과 원문: ${esc(c.note)}${told}</div>` : ''}
-      <div class="small muted">시험, push, 브리지 다시 띄우기는 관리자가 합니다.</div>`,
+      ${c.manager_told === false ? '<div class="small warn">관리자 세션에는 알리지 못했습니다(텔레그램으로 남김).</div>' : ''}`,
   };
 }
 export function mpSection(mp, b, sid) {
@@ -117,8 +116,8 @@ export function mpSection(mp, b, sid) {
   if (!c) return h ? `<section class="hand mp-card"><div class="hand-h"><b>합치기 승인</b></div>${h}</section>` : '';
   const conf = c.conflict && c.conflict.length;
   const how = conf ? `<span class="bad" title="충돌 — 합치면 ${esc(c.base)}와 같은 줄을 서로 고친 곳이 있습니다. 승인하면 합치지 않고 그 세션(끝났으면 관리자)에게 풀라고 보냅니다.">충돌 ${c.conflict.length}개</span>`
-    : c.ff ? '<span class="ok" title="ff 가능 — main이 그대로라 그대로 앞으로 옮깁니다(fast-forward).">충돌 없음 · ff 가능</span>'
-      : `<span class="ok" title="main이 앞섬 — 이 브랜치를 만든 뒤 ${esc(c.base)}에 커밋 ${c.behind}개가 들어왔습니다. 합칠 때 그 위로 다시 얹습니다(rebase).">충돌 없음 · ${esc(c.base)}에 새 커밋 ${c.behind}개(rebase)</span>`;
+    : c.ff ? '<span class="ok" title="충돌 없음 — 합칠 때 같은 줄을 서로 고친 곳이 없습니다.">충돌 없음</span>'
+      : `<span class="ok" title="main이 앞섬 — 이 브랜치를 만든 뒤 ${esc(c.base)}에 커밋 ${c.behind}개가 들어왔습니다. 합칠 때 그 위로 다시 얹습니다(rebase).">충돌 없음, ${esc(c.base)}에 새 커밋 ${c.behind}개(rebase)</span>`;
   const d = c.docs || {};
   // 11-11 2물결 「넷」 — 근거(세션 기록 「README에서 뺄 줄」 · 근거 칸 기록 · 받은 할 일 번호)가 있는 것을 앞에, 낱말만 겹친 것(weak)은 접어 둔다
   const rLine = (x) => `<div class="small${x.weak ? ' muted' : ''}">README:${x.line} ${esc(x.text)} <span class="muted">(${esc((x.why && x.why.length ? x.why : [...(x.files || []), ...(x.words || [])]).slice(0, 5).join(' · '))})</span></div>`;
@@ -138,19 +137,29 @@ export function mpSection(mp, b, sid) {
   const done = c.status === 'merged' ? mergedNote(c) : null, merged = done ? done.top : '';
   const hf = humanFiles(c);
   const hfRows = hf.length ? `<div class="small mp-hf"><b>승인해야 할 파일 ${hf.length}개</b>${hf.map((x) => x.path
-    ? `<div class="mp-hf-row" title="${esc(`${x.path} — ${x.why}`)}">${esc(x.path.split('/').pop())}</div>`
+    ? `<div class="mp-hf-row" title="${esc(x.why.startsWith('늘 사람 경로') ? x.path : `${x.path} — ${x.why}`)}">${esc(x.path.split('/').pop())}</div>`
     : `<div class="mp-hf-row" title="${esc(x.why)}">${esc(x.why.length > 60 ? x.why.slice(0, 59) + '…' : x.why)}</div>`).join('')}</div>` : '';
-  const more = `<details class="mp-more"${keep(`hand:${sid}:mp-more`)}><summary class="small muted" title="자세히 — 합치는 방법(ff · rebase), 세션이 끝낸 까닭, 사람 승인 까닭, 커밋 · 바뀐 파일, 정리 후보를 봅니다.">자세히</summary>
+  // 사람에게 올린 까닭(11-15 사용자) — 「늘 사람 경로」 말 대신 「늘 사람이 승인해야 하는 파일입니다.」 아래 파일 이름만 줄마다(전체 경로는 호버).
+  // 파일은 humanFiles로 뽑는다. 다른 까닭(지우기 등)의 파일은 그 까닭 글을 머리로, 파일이 없는 까닭은 글 한 줄 그대로(서버 글)
+  const hwGroups = [];
+  for (const x of hf) {
+    const head = !x.path ? null : x.why.startsWith('늘 사람 경로') ? '늘 사람이 승인해야 하는 파일입니다.' : x.why;
+    const g = head && hwGroups.find((y) => y.head === head);
+    if (g) g.paths.push(x.path); else hwGroups.push({ head: head || x.why, paths: x.path ? [x.path] : [] });
+  }
+  const hwRows = hwGroups.map((g) => `<div class="small muted mp-hw">${esc(g.head)}${g.paths.map((p) =>
+    `<div class="mp-hf-row" title="${esc(p)}">${esc(p.split('/').pop())}</div>`).join('')}</div>`).join('');
+  const more = `<details class="mp-more"${keep(`hand:${sid}:mp-more`)}><summary class="small muted" title="자세히 — 합치는 방법, 세션이 끝낸 까닭, 사람 승인 까닭, 커밋과 바뀐 파일, 정리 후보를 봅니다.">자세히</summary>
       ${done ? done.more : ''}
       <div class="small">합치는 방법: ${how}</div>
       ${c.why ? `<div class="small muted">${esc(c.why)}</div>` : ''}
-      ${c.human_why && c.human_why.length ? `<div class="small muted">사람에게 올린 까닭: ${c.human_why.map(esc).join('; ')}</div>` : ''}
+      ${hwRows}
       ${c.status === 'ready' ? note : ''}
       <details${keep(`hand:${sid}:mp-commits`)}><summary class="small muted">커밋 ${c.commits.length} · 바뀐 파일 ${c.files.length}</summary><pre class="hand-body">${esc(c.commits.join('\n'))}\n\n${esc(c.files.join('\n'))}</pre></details>
       ${docs}
     </details>`;
   return `<section class="hand mp-card"><div class="hand-h mp-head"><b>합치기 승인</b> <span class="mp-badge mp-${badge}">${esc(MP_STATUS[c.status] || c.status)}</span><code class="mp-branch" title="브랜치 — 이 카드가 합칠 작업방 브랜치입니다.">${esc(c.branch)}</code></div>${h}
-    <div class="small">커밋 <b>${c.ahead}</b>개 · 바뀐 파일 ${c.files.length}개 · ${conf ? how : '<span class="ok" title="충돌 없음 — 합칠 때 같은 줄을 서로 고친 곳이 없습니다. ff · rebase 여부는 「자세히」에 있습니다.">충돌 없음</span>'}</div>
+    <div class="small">커밋 <b>${c.ahead}</b>개 · 바뀐 파일 ${c.files.length}개 · ${conf ? how : '<span class="ok" title="충돌 없음 — 합칠 때 같은 줄을 서로 고친 곳이 없습니다. main이 앞섰는지는 「자세히」에 있습니다.">충돌 없음</span>'}</div>
     ${c.asks && c.status === 'ready' ? `<div class="small warn mp-asks" title="묻는 말 — 일을 마친 보고 끝에 사람에게 묻는 말이 있습니다. 합치기 전에 답할지 정합니다.">❓ 세션이 묻는 말이 있습니다. 패널에서 답하십시오: ${esc(c.asks.tail || '')}</div>` : ''}
     ${conf ? `<div class="small bad">충돌 파일: ${c.conflict.map(esc).join(', ')}</div>` : ''}
     ${hfRows}
@@ -233,7 +242,8 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
   }
   async function run(label, fn) {
     note = { msg: `${label}…` }; draw();
-    try { const r = await fn(); note = r && r.msg ? r : { ok: true, msg: `${label}: 마쳤습니다.` }; }
+    // quiet — 결과를 카드가 이미 그리면 결과 글을 따로 띄우지 않는다(11-15 사용자 — 합친 뒤 같은 말이 세 번 떴다)
+    try { const r = await fn(); note = r && r.quiet ? null : r && r.msg ? r : { ok: true, msg: `${label}: 마쳤습니다.` }; }
     catch (e) { note = { bad: true, msg: `${label}: ${e.message}` }; }
     // 11-13 승인 · 버리기 등 뒤 사무실 스냅샷도 곧바로 — 승인 막대 「🔀 합치기 대기 N」 · 머리 위 말풍선은 스냅샷(merge_waits)에서 온다.
     // 전엔 패널만 다시 받아 막대는 15초 주기(store.js RESNAP_MS)를 기다렸다 — 잰 값 2.0 · 3.1 · 13.2 · 11.2초(log/screen_api_error_bar_20261113.md)
@@ -535,7 +545,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
         r.summary_id ? `(요약 #${r.summary_id}의 「문서와 다른 지금」도 같이 넣었습니다)` : r.loss_check_id ? `(잃은 것 점검 #${r.loss_check_id}의 사라짐 · 약해짐도 같이 넣었습니다)` : ''}.` })));
     }
     if (act === 'loss-run') {
-      if (!confirm('압축으로 잊은 것을 찾습니다.\n압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다.\n내가 보낸 말 20개당 약 0.4달러, 1.5분이 듭니다.\n끝나면 알림이 갑니다.\n진행할까요?')) return;
+      if (!confirm('압축으로 잊은 것을 찾습니다. 압축 구간마다 사람이 한 말을 뽑아 claude -p로 판정합니다. 내가 보낸 말 20개당 약 0.4달러, 1.5분이 듭니다. 끝나면 알림이 갑니다.\n\n진행할까요?')) return;
       return run('압축으로 잊은 것 찾기', () => post(`/api/sessions/${id}/losscheck`).then((r) => ({ msg: `점검을 시작했습니다(#${r.loss_check_id}, ${r.model}). 끝나면 알림이 갑니다.` })));
     }
     if (act === 'loss-use') {
@@ -551,7 +561,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (act === 'prom-write') {
       const p = prom(), n = p.items.filter((x) => x.state === 'approved').length;
       if (promoteEdits(p.items, promDraft).length) { note = { bad: true, msg: '고친 것이 저장되지 않았습니다. 먼저 [고친 것 저장]을 눌러 주세요.' }; draw(); return; }
-      if (!confirm(`승인한 ${n}개를 세션이 문서에 쓰고 커밋합니다. 브리지가 커밋을 확인합니다. 진행할까요?`)) return;
+      if (!confirm(`승인한 ${n}개를 세션이 문서에 쓰고 커밋합니다. 브리지가 커밋을 확인합니다.\n\n진행할까요?`)) return;
       return run('고른 것을 문서에 쓰기', () => post(`/api/promotions/${p.id}/write`).then(() => ({ msg: '보냈습니다. 세션이 쓰고 커밋하는 중입니다.' })));
     }
     if (act === 'hand-more') { handMore = !handMore; draw(); return; }
@@ -579,7 +589,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (act === 'summary') return run('요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'snapshot', mode: 'live', fmt }).then(() => ({ msg: '요청을 보냈습니다. 세션이 요약을 쓰는 중입니다.' })));
     if (act === 'summary-end') return run('인계 요약 요청', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'live', fmt }).then(() => ({ msg: '요청을 보냈습니다. 요약이 오면 확인한 뒤 [세션 끝내기]를 눌러 주세요.' })));
     if (act === 'headless') {
-      if (!confirm('끝난 세션을 잠깐 불러 요약을 받습니다. 그 세션의 맥락을 다시 읽느라 토큰을 씁니다. 진행할까요?')) return;
+      if (!confirm('끝난 세션을 잠깐 불러 요약을 받습니다. 그 세션의 맥락을 다시 읽느라 토큰을 씁니다.\n\n진행할까요?')) return;
       return run('죽은 세션 요약', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'headless', fmt }).then(() => ({ msg: '요약을 받는 중입니다. 몇 분 걸릴 수 있습니다.' })));
     }
     if (act === 'reads-resend') return run('안 읽은 곳 다시 보내기', () => post(`/api/sessions/${id}/reads/resend`).then((r) => ({ ok: true, msg: `${r.missing.length}곳을 다시 보냈습니다${r.queued ? '(작업이 끝나면 전달됩니다)' : ''}.` })));
@@ -619,13 +629,13 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     }
     if (act === 'wt-preview-off') {
       // 미리보기 탭 안에서 누르면 이 탭을 띄운 서버가 꺼진다(11-06 — 끊긴 채로 남았다). 먼저 알린다
-      if (window.FOREMAN_PREVIEW && !confirm('지금 이 탭이 미리보기입니다. 미리보기를 닫으면 이 탭은 끊깁니다(메인 브리지는 그대로입니다). 닫을까요?')) return;
+      if (window.FOREMAN_PREVIEW && !confirm('지금 이 탭이 미리보기입니다. 미리보기를 닫으면 이 탭은 끊깁니다(메인 브리지는 그대로입니다).\n\n닫을까요?')) return;
       return run('미리보기 닫기', () => api('DELETE', `/api/sessions/${id}/preview`).then(() => ({ ok: true, msg: '미리보기를 껐습니다.' })));
     }
     // 쉬게 하기 · 이어서(11-09) — 실패하면 까닭(커밋 실패 · 뒤에서 도는 일 · 끝내기 확인 창 · resume 실패)을 그대로 띄운다
     if (act === 'rest') {
       const w = data.controls.worktree;
-      if (!confirm(`지금까지를 ${w.branch}에 커밋하고 세션만 끝냅니다.\n커밋 안 한 변경은 ${w.dirty.length}개입니다.${w.dirty.length ? ' .env와 .venv 링크는 넣지 않습니다.' : ''}\n작업방은 남습니다. 나중에 [이어서], [합치기], [버리기] 중에서 고릅니다.\n쉬게 할까요?`)) return;
+      if (!confirm(`지금까지를 ${w.branch}에 커밋하고 세션만 끝냅니다. 커밋 안 한 변경은 ${w.dirty.length}개입니다.${w.dirty.length ? ' .env와 .venv 링크는 넣지 않습니다.' : ''} 작업방은 남습니다. 나중에 [이어서], [합치기], [버리기] 중에서 고릅니다.\n\n쉬게 할까요?`)) return;
       return run('커밋만 하고 끝내기', () => post(`/api/sessions/${id}/rest`).then((r) => ({ ok: !!r.ok, bad: !r.ok, msg: r.note || (r.ok ? '쉬게 했습니다.' : '쉬게 하지 못했습니다.') })));
     }
     if (act === 'rest-resume') {
@@ -637,11 +647,13 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       if (!card) return;
       if (act === 'mp-skip') return run('나중에', () => post(`/api/sessions/${id}/merge-prep`, { action: 'skip' }).then((r) => ({ ok: true, msg: r.note })));
       const ask = card.conflict && card.conflict.length
-        ? `${card.branch}가 ${card.base}와 충돌합니다(${card.conflict.join(', ')}). 합치지 않고 ${card.live ? '그 세션에 main을 가져와 풀라고 보냅니다' : '관리자에게 풀라고 넘깁니다'}. 진행할까요?`
-        : `${card.live ? '세션을 끝내고 ' : ''}${card.branch}의 커밋 ${card.ahead}개를 ${card.base}에 합칩니다${card.ff ? '' : '(rebase 뒤)'}. push는 하지 않습니다.\n시험과 push는 관리자가 합니다.\n합칠까요?`;
+        ? `${card.branch}가 ${card.base}와 충돌합니다(${card.conflict.join(', ')}). 합치지 않고 ${card.live ? '그 세션에 main을 가져와 풀라고 보냅니다' : '관리자에게 풀라고 넘깁니다'}.\n\n진행할까요?`
+        : `${card.live ? '세션을 끝내고 ' : ''}${card.branch}의 커밋 ${card.ahead}개를 ${card.base}에 합칩니다${card.ff ? '' : '(rebase 뒤)'}. push는 하지 않습니다. 시험과 push는 관리자가 합니다.\n\n합칠까요?`;
       if (!confirm(ask)) return;
       return run('합치기 승인', () => post(`/api/sessions/${id}/merge-prep`, { action: 'merge' })
-        .then((r) => ({ ok: !!r.ok, bad: !r.ok && r.status === 'failed', msg: r.note || (r.ok ? '합쳤습니다.' : '합치지 않았습니다.') })));
+        // 합쳤고 카드가 짧은 안내(mergedNote)를 그리면 서버 note 원문은 띄우지 않는다. 갈래 없는 옛 결과면 전처럼 note
+        .then((r) => (r.ok && r.card && mergedNote(r.card) ? { quiet: true }
+          : { ok: !!r.ok, bad: !r.ok && r.status === 'failed', msg: r.note || (r.ok ? '합쳤습니다.' : '합치지 않았습니다.') })));
     }
     if (act === 'wt-merge' || act === 'wt-discard' || act === 'wt-end-merge' || act === 'wt-end-discard') {
       const w = data.controls.worktree;
@@ -649,17 +661,19 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       const kind = end ? act.slice(7) : act.slice(3);
       let confirmName = '';
       // 서기 글의 근거가 틀렸으면 합치기 전에 한 번 더(12b) — 막지는 않는다, 사람이 정한다
-      const rvWarn = w.review && w.review.bad ? `\n\n주의: 근거 표시 ${w.review.bad}개가 틀렸습니다(없는 커밋 · 파일 · 턴). 「작업방」의 「자세히」에서 봅니다. 그래도 합칠까요?` : '';
+      // 확인 창 꼴(11-15 사용자) — 설명은 한 문단, 빈 줄 하나 뒤에 묻는 말만. 주의도 문단 안에 넣고 묻는 말을 「그래도 …」로
+      const rvWarn = w.review && w.review.bad ? ` 주의: 근거 표시 ${w.review.bad}개가 틀렸습니다(없는 커밋, 파일, 턴). 「작업방」의 「자세히」에서 봅니다.` : '';
+      const rvAsk = (q) => `\n\n${rvWarn ? '그래도 합칠까요?' : q}`;
       if (end && kind === 'merge') {
-        if (!confirm(`세션을 끝내고 ${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 커밋 안 된 변경이 있으면 끝내지 않고 알립니다. 충돌이 나면 되돌리고 멈춥니다(세션은 이미 끝난 뒤입니다). push는 하지 않습니다. 진행할까요?${rvWarn}`)) return;
+        if (!confirm(`세션을 끝내고 ${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 커밋 안 된 변경이 있으면 끝내지 않고 알립니다. 충돌이 나면 되돌리고 멈춥니다(세션은 이미 끝난 뒤입니다). push는 하지 않습니다.${rvWarn}${rvAsk('진행할까요?')}`)) return;
         return run('합치고 끝내기', () => post(`/api/sessions/${id}/worktree`, { action: 'merge', end: true })
           .then((r) => (r.ok ? { ok: true, msg: '세션을 끝내고 ' + r.note + (r.schema_unlocked ? ' 스키마 잠금도 풀었습니다.' : '') }
             : { bad: true, msg: '세션은 끝냈습니다. ' + r.note + (r.conflict && r.conflict.length ? ` 충돌 파일: ${r.conflict.join(', ')}` : '') + ' 아래 「브랜치 이름」 칸에서 다시 합치거나 버립니다.' })));
       }
       if (act === 'wt-merge') {
-        if (!confirm(`${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다. 합칠까요?${rvWarn}`)) return;
+        if (!confirm(`${w.branch}의 커밋 ${w.ahead}개를 ${w.base}에 합칩니다(rebase → fast-forward). 충돌이 나면 되돌리고 멈춥니다. push는 하지 않습니다.${rvWarn}${rvAsk('합칠까요?')}`)) return;
       } else {
-        confirmName = prompt(`${end ? '세션을 끝내고 ' : ''}작업방과 브랜치 ${w.branch}를 지웁니다. 합치지 않은 커밋 ${w.ahead}개${w.dirty.length ? `와 커밋 안 된 변경 ${w.dirty.length}개` : ''}도 사라집니다. 지우려면 이름 "${w.name}"을 적어 주세요.`) || '';
+        confirmName = prompt(`${end ? '세션을 끝내고 ' : ''}작업방과 브랜치 ${w.branch}를 지웁니다. 합치지 않은 커밋 ${w.ahead}개${w.dirty.length ? `와 커밋 안 된 변경 ${w.dirty.length}개` : ''}도 사라집니다.\n\n지우려면 이름 "${w.name}"을 적어 주세요.`) || '';
         if (!confirmName) return;
       }
       return run(kind === 'merge' ? '합치기' : end ? '끝내고 버리기' : '버리기', () => post(`/api/sessions/${id}/worktree`, { action: kind, confirm: confirmName, end })
@@ -669,13 +683,14 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     const ACT = { exit: '세션 끝내기', 'exit-after': '세션 끝내기', stop: '일시정지', resume: '다시 시작', interrupt: '작업 중단' };
     const DONE = { exit: '세션을 끝냈습니다.', 'exit-after': '세션을 끝냈습니다.', stop: '일시정지했습니다.', resume: '다시 시작했습니다.', interrupt: '작업을 중단했습니다.' };
     if (ACT[act]) {
-      const ask = { exit: '이 세션을 완전히 끝냅니다(/exit). 새 세션으로 옮기지 않고 끝내면 대화는 기록으로만 남습니다. 끝낼까요?',
-                    'exit-after': '요약을 확인했으면 이 세션을 완전히 끝냅니다(/exit). 끝낼까요?',
-                    stop: '이 세션을 일시정지합니다(Ctrl+Z). [다시 시작]을 누르기 전까지 입력을 받지 않습니다. 멈출까요?' }[act];
+      // [설명, 묻는 말] — 확인 창 꼴(11-15 사용자): 설명 한 문단(주의도 그 안에), 빈 줄 하나 뒤 묻는 말
+      const ask = { exit: ['이 세션을 완전히 끝냅니다(/exit). 새 세션으로 옮기지 않고 끝내면 대화는 기록으로만 남습니다.', '끝낼까요?'],
+                    'exit-after': ['요약을 확인했으면 이 세션을 완전히 끝냅니다(/exit).', '끝낼까요?'],
+                    stop: ['이 세션을 일시정지합니다(Ctrl+Z). [다시 시작]을 누르기 전까지 입력을 받지 않습니다.', '멈출까요?'] }[act];
       const w = data.controls.worktree;
       const dirtyWarn = (act === 'exit' || act === 'exit-after') && w && w.exists && w.dirty && w.dirty.length
-        ? `\n\n주의: 작업방(${w.branch})에 커밋 안 된 변경이 ${w.dirty.length}개 있습니다. 끝내면 합칠 수 없고 버리기만 됩니다. 먼저 세션에게 커밋을 시키는 것이 좋습니다.` : '';
-      if (ask && !confirm(ask + dirtyWarn)) return;
+        ? ` 주의: 작업방(${w.branch})에 커밋 안 된 변경이 ${w.dirty.length}개 있습니다. 끝내면 합칠 수 없고 버리기만 됩니다. 먼저 세션에게 커밋을 시키는 것이 좋습니다.` : '';
+      if (ask && !confirm(`${ask[0]}${dirtyWarn}\n\n${ask[1]}`)) return;
       const action = act === 'exit-after' ? 'exit' : act;
       return run(ACT[act], () => post(`/api/sessions/${id}/action`, { action }).then((r) => (r.ok
         ? { ok: true, msg: DONE[act] + (r.tmux_closed ? ' tmux 창도 닫았습니다.' : '') }
@@ -689,10 +704,10 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
   // ── 한 흐름(11-11, moveflow.js) — 잊은 것 찾기 → 문서 후보 → 고르기 → 쓰기 → 요약 → 새 세션 → 옛 세션 끝내기 ──
   let moveBusy = false;
   async function startMove() {
-    if (!confirm('지금 세션을 끝내고 같은 자리에 새 세션을 띄웁니다.\n'
-      + '먼저 압축으로 잊은 것을 찾아 문서에 넣을 후보를 보여드리니\n'
-      + '고르기만 하면 됩니다. 나머지는 알아서 이어서 합니다.\n'
-      + '찾는 데 내가 보낸 말 20개당 약 0.4달러, 1.5분 걸립니다.\n'
+    if (!confirm('지금 세션을 끝내고 같은 자리에 새 세션을 띄웁니다. '
+      + '먼저 압축으로 잊은 것을 찾아 문서에 넣을 후보를 보여드리니 '
+      + '고르기만 하면 됩니다. 나머지는 알아서 이어서 합니다. '
+      + '찾는 데 내가 보낸 말 20개당 약 0.4달러, 1.5분 걸립니다.\n\n'
       + '진행할까요?')) return;
     note = null; promDraft = {};
     try {
@@ -763,7 +778,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (!c) return;
     if (c.move_flow && c.live && c.can.summary) return startMove();     // 11-11 한 흐름(끝난 세션은 옛 흐름 — 문서에 쓸 세션이 없다)
     const live = c.live && c.can.summary;
-    if (!live && !(c.can.headless && confirm('끝난 세션입니다. 잠깐 불러 요약을 받습니다.\n그 세션의 맥락을 다시 읽느라 토큰을 씁니다(식은 맥락은 비쌉니다).\n진행할까요?'))) {
+    if (!live && !(c.can.headless && confirm('끝난 세션입니다. 잠깐 불러 요약을 받습니다. 그 세션의 맥락을 다시 읽느라 토큰을 씁니다(식은 맥락은 비쌉니다).\n\n진행할까요?'))) {
       if (!live && !c.can.headless) { note = { bad: true, msg: `옮기기를 시작할 수 없습니다. ${c.why || '지금은 요약을 받을 수 없습니다'}` }; draw(); }
       return;
     }

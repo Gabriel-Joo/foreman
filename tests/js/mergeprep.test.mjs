@@ -18,7 +18,8 @@ test('꺼져 있거나 카드가 없으면 그리지 않는다 — 준비가 멈
 test('깨끗한 카드: ff · 정리 후보 · 승인 단추, 살아 있으면 끝낸다고 알린다', () => {
   const h = mpSection({ card: card(), health: { ok: true } }, b, 7);
   assert.match(h, /합치기 승인/);
-  assert.match(h, /충돌 없음 · ff 가능/);
+  assert.match(h, /합치는 방법: <span class="ok"[^>]*>충돌 없음<\/span>/);
+  assert.ok(!h.includes('ff 가능'));                                              // 11-15 사용자 — 「충돌 없음」만
   assert.match(h, /README:9 할 일 줄/);
   assert.match(h, /data-act="mp-merge" title="합치기 — 승인하면 세션을 끝내고[^"]*충돌이면 끝내지 않습니다/);   // 11-14 안내는 [합치기] 호버로
   assert.match(h, /data-act="mp-skip"/);
@@ -33,14 +34,23 @@ test('카드 줄이기: 배지 · 한 줄 수 · 승인해야 할 파일 · 자�
   const h = mpSection({ card: c }, b, 7);
   assert.match(h, /<b>합치기 승인<\/b> <span class="mp-badge mp-wait">승인 기다림<\/span><code class="mp-branch"[^>]*>cc\/w<\/code>/);
   assert.match(h, /커밋 <b>6<\/b>개 · 바뀐 파일 3개 · <span class="ok"[^>]*>충돌 없음<\/span><\/div>/);
-  assert.match(h, /승인해야 할 파일 2개<\/b><div class="mp-hf-row" title="backend\/src\/main\/resources\/db\/migration\/V19__chatbot_turns\.sql — 늘 사람 경로\(\*db\/migration\/\*\)">V19__chatbot_turns\.sql<\/div>/);
+  assert.match(h, /승인해야 할 파일 2개<\/b><div class="mp-hf-row" title="backend\/src\/main\/resources\/db\/migration\/V19__chatbot_turns\.sql">V19__chatbot_turns\.sql<\/div>/);
   const [top, rest] = h.split('<details class="mp-more"');
-  for (const s of ['ff 가능', '보고 옴', '사람 승인 카드입니다', '정리 후보', '커밋 2 · 바뀐 파일 3']) {
+  for (const s of ['합치는 방법', '보고 옴', '사람 승인 카드입니다', '정리 후보', '커밋 2 · 바뀐 파일 3']) {
     assert.ok(!top.includes(s), `위에 ${s}`);
     assert.ok(rest.includes(s), `자세히에 ${s}`);
   }
   assert.ok(!h.includes('— 승인하면 세션을 끝냅니다'));                       // 카드 글에서는 빠지고 호버에만
   assert.match(h, /data-act="mp-merge"/);
+  // 11-15 사용자 — 「자세히」의 사람에게 올린 까닭: 머리 한 줄 + 파일 이름만 줄마다(전체 경로는 호버), 「늘 사람 경로」 말은 안 보인다
+  assert.match(rest, /<div class="small muted mp-hw">늘 사람이 승인해야 하는 파일입니다\.<div class="mp-hf-row" title="backend\/src\/main\/resources\/db\/migration\/V19__chatbot_turns\.sql">V19__chatbot_turns\.sql<\/div><div class="mp-hf-row" title="[^"]*V20__summary_batch_runs\.sql">V20__summary_batch_runs\.sql<\/div><\/div>/);
+  assert.ok(!rest.includes('사람에게 올린 까닭'));
+  assert.ok(!h.replace(/사람 승인 카드입니다[^<]*/, '').includes('늘 사람 경로'));     // 서버 note(ready 카드) 원문만 예외
+  // 파일이 없는 까닭은 글 그대로 한 줄, 다른 까닭의 파일은 그 까닭이 머리
+  const k2 = mpSection({ card: card({ files: ['x/a.sql', 'd.txt'], human_why: ['늘 사람 경로(*.sql): x/a.sql', '지우기(파일 1개를 지움): d.txt', '이력 다시 쓰기 · force push(커밋 글에 「force」)'] }) }, b, 7);
+  assert.match(k2, /mp-hw">늘 사람이 승인해야 하는 파일입니다\.<div class="mp-hf-row" title="x\/a\.sql">a\.sql<\/div><\/div>/);
+  assert.match(k2, /mp-hw">지우기\(파일 1개를 지움\)<div class="mp-hf-row" title="d\.txt">d\.txt<\/div><\/div>/);
+  assert.match(k2, /mp-hw">이력 다시 쓰기 · force push\(커밋 글에 「force」\)<\/div>/);
   // 관리자 승인 카드(사람에게 안 걸림)는 걸린 파일 줄이 없다
   assert.doesNotMatch(mpSection({ card: card({ approver: 'manager', human_why: [] }) }, b, 7), /승인해야 할 파일/);
   // 충돌 카드 — 배지는 빨강, 둘째 줄에 충돌 수
@@ -118,9 +128,12 @@ test('합친 뒤 안내: 두 줄, push 아직 · push까지, 옛 카드는 원�
   const [top, rest] = h.split('<details class="mp-more"');
   assert.match(top, /main에 커밋 6개를 하나로 합쳤습니다\. <span[^>]*>push는 아직입니다\.<\/span>/);
   assert.match(top, /<code class="sha">663d945e<\/code> 「feat: 관측 바닥과 대시보드」/);
-  for (const s of ['git log refs/foreman/squashed/0cc3633e66ca', '원래 커밋의 날짜, 해시, 제목', '합치기 결과 원문: main에 커밋 6개', '관리자 세션에 알렸습니다']) {
+  for (const s of ['git log refs/foreman/squashed/0cc3633e66ca', '원래 커밋의 날짜, 해시, 제목']) {
     assert.ok(!top.includes(s) && rest.includes(s), s);
   }
+  // 11-15 사용자 — 같은 말이 세 번 떴다. 서버 note 원문 · 「합치기 결과 원문」은 새 카드에서 그리지 않는다
+  for (const s of ['합치기 결과 원문', '본문에 원래 날짜', '관리자 세션에 알렸습니다']) assert.ok(!h.includes(s), s);
+  assert.match(mpSection({ card: { ...c, manager_told: false } }, b, 7), /관리자 세션에는 알리지 못했습니다/);   // 못 알린 것은 남긴다
   assert.equal((h.match(/<details class="mp-more"/g) || []).length, 1);          // 「자세히」는 하나
   assert.match(mpSection({ card: { ...c, pushed: true } }, b, 7), /push까지 했습니다\./);
   assert.match(mpSection({ card: { ...c, pushed: null } }, b, 7), /push는 아직입니다\./);    // 알 길이 없으면 「아직」
