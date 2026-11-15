@@ -46,6 +46,13 @@ export function auraStyle(themeName, themeAura, override) {
 // 그래서 가운데를 발 점보다 0.12칸 아래(AURA_LIFT 음수 = 내림)로, 납작함 0.30 — 위 끝이 발 점보다 0.225칸 위, 아래 끝은 0.465칸 아래.
 export const AURA_RX = 1.15, AURA_FLAT = 0.30, AURA_LIFT = -0.12;
 
+// 자세 때문에 그림이 발 점보다 내려앉는 px(캐릭터 배율 K 곱) — 11-15 사용자 「조사 캐릭터만 발밑 원이 허리에 떠 있다」.
+// 마법학교 쉬는 자세 sleep(엎드려 자기)은 머리를 탁자 위로 대려고 그림만 4K px 내려 그렸는데 원은 발 점에 그대로 있어, 그 자세로 가장 자주 보이는
+// 조사(늘 대기)만 원이 그림 바닥보다 6px 위, 곧 허리 쪽에 떴다. 그림을 내리는 값과 원을 내리는 값이 따로 있으면 어긋나므로 이 한 함수를 둘 다 쓴다
+// (office.js drawActorS가 그림에, eachAura가 원에). 새 자세가 그림을 내리거나 올리면 여기에 더한다 — 역할과는 상관없다(자세로만)
+export const POSE_DROP = { sleep: 4 };
+export const poseDrop = (anim, K = 1) => Math.round((POSE_DROP[anim] || 0) * K);
+
 const hexA = (hex, a) => {                 // '#rrggbb' + 알파 → rgba()
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${Math.max(0, Math.min(1, a)).toFixed(3)})`;

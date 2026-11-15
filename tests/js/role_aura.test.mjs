@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ROLE_COLOR, roleColorCss, SESSION_ROLES } from '../../bridge/static/js/render.js';
-import { auraOf, auraStyle, AURA_STYLES, AURA_REST, AURA_OFF } from '../../bridge/static/js/aura.js';
+import { auraOf, auraStyle, AURA_STYLES, AURA_REST, AURA_OFF, poseDrop } from '../../bridge/static/js/aura.js';
 
 test('색은 한 곳 — 세션 역할 모두와 감독에 색이 있고, 배지 CSS도 같은 값에서 만든다', () => {
   for (const r of [...SESSION_ROLES, 'foreman']) assert.match(ROLE_COLOR[r] || '', /^#[0-9a-f]{6}$/, r);
@@ -45,4 +45,19 @@ test('꼴 — 테마 기본 · theme.json · 주소 ?aura= 순서, 모르는 꼴
   assert.equal(auraStyle('site', null, 'rune'), AURA_STYLES.site[0]);   // 다른 테마 꼴은 안 받는다
   assert.equal(auraStyle('site', null, 'off'), 'off');
   assert.equal(auraStyle('nope', null, null), 'glow');
+});
+
+// 11-15 사용자 「조사 캐릭터만 발밑 원이 허리에 떠 있다」 — 원인은 역할이 아니라 자세: 마법학교 sleep(엎드려 자기)은 그림만 내려 그려 원이 6px 위에 떴다.
+test('원 높이는 역할이 아니라 자세로만 — 그림을 내리는 값과 원을 내리는 값이 한 함수(poseDrop)', () => {
+  assert.equal(poseDrop('sleep', 1.5), 6);                              // 마법학교 K 1.5에서 어긋났던 px
+  assert.equal(poseDrop('sleep', 1), 4);
+  for (const anim of ['idle', 'walk', 'work', 'stand', 'read', 'lie', undefined]) assert.equal(poseDrop(anim, 1.5), 0, String(anim));
+  const src = readFileSync(new URL('../../bridge/static/js/office.js', import.meta.url), 'utf8');
+  assert.ok(/py \+= drop/.test(src) && /poseDrop\(anim, K\)/.test(src), '그림은 poseDrop으로 내린다');
+  assert.ok(/a\.y \* T \+ \(\(s && s\.drop\) \|\| 0\)/.test(src), '원도 그림이 내려앉은 만큼(SILS drop) 내린다');
+  assert.ok(!/anim === 'sleep'\) py \+=/.test(src), '자세 내림 값을 office.js에 다시 따로 적지 않는다');
+  // 원 높이 상수는 역할 이름으로 갈리지 않는다 — aura.js에 역할 이름이 없다(새 역할이 생겨도 같은 자리)
+  const aura = readFileSync(new URL('../../bridge/static/js/aura.js', import.meta.url), 'utf8').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+  // (auraOf의 kind === 'scribe' · 'coder'는 역할이 아니라 캐릭터 종류 — 세션 없는 서기 · 쉬는 코더 — 라 뺀다)
+  for (const r of ['designer', 'inspector', 'manager', 'cicd']) assert.ok(!new RegExp(`['"]${r}['"]`).test(aura), `aura.js에 역할 ${r}`);
 });

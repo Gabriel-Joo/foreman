@@ -15,7 +15,7 @@ import { buildGrid, findPath, footprint, nearestFree, RES } from './walk.js';
 import { uiScale } from './uiscale.js';
 import { wrapWords } from './wrap.js';
 import { applyGrid, INFRA_STAGES, gridProblems } from './grid.js';
-import { auraOf, auraStyle, drawAura } from './aura.js';
+import { auraOf, auraStyle, drawAura, poseDrop } from './aura.js';
 import { STACK_GAP, column, stackCandidates, stackCover, pickStack, overTop, liftsOver, leapOver, nearBoxes, seatHost, isSide, freeColumn } from './overhead.js';
 
 // 픽셀 화면 글씨(화면 좌표로 그리는 것 — 구역 · 캐릭터 이름표, 말풍선, 방 카드, 단계 이름) 배율(11-09 사용자:
@@ -761,7 +761,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const au = auraOf(a, MINI);
       if (!au) continue;
       // 원 가운데 — 발 점(월드 px). 누운 그림(현장 쉬는 관리자)은 자리 점이 침대 아래 끝이라 누운 몸 가운데에(11-14)
-      const s = SILS.get(a.key), [x, y] = s && s.rot ? [s.cx, s.cy] : [a.x * T, a.y * T];
+      // 그림이 자세 때문에 발 점보다 내려앉았으면(엎드려 자기) 원도 같이 — 어느 역할이든 같은 값(aura.js poseDrop)
+      const s = SILS.get(a.key), [x, y] = s && s.rot ? [s.cx, s.cy] : [a.x * T, a.y * T + ((s && s.drop) || 0)];
       fn(a, au, x, y);
       AURAS.push({ key: a.key, role: a.role, color: au.color, k: au.k, x: +a.x.toFixed(2), y: +a.y.toFixed(2), moving: !!a.moving,
                    at: toScreen(x, y).map(Math.round), lie: !!(s && s.rot) });       // at = 원 가운데(화면 px)
@@ -1969,7 +1970,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     let px = Math.round(a.x * T - c.width / 2), py = Math.round(a.y * T - c.height);
     a.drawH = c.height;
     if (c.static && walking && !mode) py -= Math.round(Math.abs(Math.sin(a.phase * 1.3)) * 2 * K);   // 정면 한 장 — 출렁여서 걷는 흉내
-    if (anim === 'sleep') py += Math.round(4 * K);                               // 엎드려 잔다 — 머리를 탁자 위로
+    const drop = poseDrop(anim, K);                                              // 엎드려 잔다 — 머리를 탁자 위로(발밑 원도 같은 값만큼, aura.js poseDrop)
+    py += drop;
     if (mode === 'ghost') py += Math.round((Math.sin(a.phase * 0.6) * 1.5 - 2) * K);  // 유령은 떠 있다
     ctx.globalAlpha = act.alpha != null ? act.alpha : 1;
     if (anim === 'lie' && !a.moving) {
@@ -1989,7 +1991,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       return;
     }
     ctx.drawImage(c.img, px, py, c.width, c.height);
-    SILS.set(a.key, { img: c.img, x: px, y: py, w: c.width, h: c.height });   // 발밑 원에서 이 몸을 지운다(drawAurasOver)
+    SILS.set(a.key, { img: c.img, x: px, y: py, w: c.width, h: c.height, drop });   // 발밑 원에서 이 몸을 지운다(drawAurasOver). drop = 그림이 발 점보다 내려앉은 px
     if (!a.moving) BODIES.set(a.key, { a, box: [px, py, c.width, c.height] });   // 이름표가 사람을 덮나(labelAudit · drawName, 11-10)
     // 역할 표시 — 오피스는 사원증 끈, 현장은 안전모 색(마법학교는 위에서 로브 색을 바꿨다). 원본 픽셀 단위로 그리고 K배
     const rc = !mode && roleColor(a.role);
