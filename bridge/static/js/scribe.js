@@ -149,10 +149,10 @@ export function createScribe(store) {
       opened.map((o) => `<div class="sc-row"><div class="small">· ${esc((tasks[o.task] || {}).title || o.title || '서기 세션')}${o.topic && tasks[o.task] ? `: ${esc(o.topic)}` : ''} <span class="muted">세션 ${o.session_id}</span></div>
         <button type="button" class="small" data-sc-open="${o.session_id}" title="세션 열기 — 이 서기 세션의 [세션 정리] 탭을 엽니다. 「작업방」에서 diff를 보고 합치거나 버립니다(끝난 세션은 화면에서 사라져도 여기서 엽니다).">세션 열기</button></div>`).join('')}</div>` : '';
     const pickHead = pick && tasks[pick] ? `<div class="small warn">「${esc(tasks[pick].title)}」을 골라 두었습니다. [시키기]를 눌러야 서기 세션이 뜹니다.</div>` : '';
-    // 포스트잇(11-15) — 쌓여 말풍선으로 열었으면(pick 'postit') 편 채로
+    // 포스트잇(11-15) — 서기실에 들어가면 늘 접힌 채(11-15 사용자). 사람이 펼친 것만 keep이 기억한다
     const pst = pj.postit;
     const pstHead = !pst ? '' : `<span class="${pst.nudge ? 'warn' : 'muted'}">${pst.open}장${pst.unconfirmed ? `, 확인 전 ${pst.unconfirmed}` : ''}${pst.likely_done ? `, 끝난 것 같음 ${pst.likely_done}` : ''}</span>`;
-    const postitHtml = `<details class="hand"${pick === 'postit' ? ' open' : keep(`scribe:${room}:postit`)}><summary title="포스트잇 — 할 일을 적어 두는 종이입니다. 머리줄 포스트잇과 같은 목록입니다."><b>포스트잇</b> ${pstHead}</summary>
+    const postitHtml = `<details class="hand"${keep(`scribe:${room}:postit`)}><summary title="포스트잇 — 할 일을 적어 두는 종이입니다. 머리줄 포스트잇과 같은 목록입니다."><b>포스트잇</b> ${pstHead}</summary>
       ${postit.html(room, label, { noHead: true })}</details>`;
     const nAlert = items.filter((x) => x.kind === 'publish' && x.act === 'force').length;
     const bad = todoBad ? ` <span class="bad">· 지금 값을 ${UNREAD}(지난 값입니다)</span>` : '';
@@ -170,7 +170,7 @@ export function createScribe(store) {
       ${askHtml}
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}"${note.tip ? ` title="${esc(note.tip)}"` : ''}>${esc(note.msg)}</div>` : ''}
       ${postitHtml}
-      <details class="hand"${pick && pick !== 'postit' ? ' open' : keep(`scribe:${room}:list`, true)}><summary title="할 일 — 서기에게 시킬 일 한 목록입니다. 이름 옆 숫자는 밀린 정도이고, 숫자가 없으면 지금 밀린 것이 없습니다."><b>할 일</b> ${sumCount}${bad}</summary>${listBody}</details>
+      <details class="hand"${pick ? ' open' : keep(`scribe:${room}:list`, true)}><summary title="할 일 — 서기에게 시킬 일 한 목록입니다. 이름 옆 숫자는 밀린 정도이고, 숫자가 없으면 지금 밀린 것이 없습니다."><b>할 일</b> ${sumCount}${bad}</summary>${listBody}</details>
       <div class="hand">${portfolioBlock(room, pj, tasks)}${portPubBlock(room, pj)}${docsPubBlock(room, pj)}</div>
       ${pubBad && pub ? `<div class="small bad">게시 목록을 ${UNREAD}(지난 값입니다).</div>` : ''}`;
   }

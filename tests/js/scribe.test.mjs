@@ -52,7 +52,7 @@ test('한 목록 — 메뉴 셋이 한 줄씩이고 「문서 할 일」 · 「�
   assert.ok(h.includes('밀린 것 1'));
 });
 
-test('포스트잇(11-15) — 받은 할 일 숫자 줄 대신 머리 탭과 같은 포스트잇 목록, 쌓여서 열면 편 채로', async () => {
+test('포스트잇(11-15) — 받은 할 일 숫자 줄 대신 머리 탭과 같은 포스트잇 목록, pick이 있어도 접힌 채', async () => {
   const pj = { ...PJ, postit: { open: 2, unconfirmed: 1, likely_done: 0, nudge: { why: '열린 것 20개' } }, nudge: { why: '열린 것 20개' } };
   globalThis.fetch = async (u) => {
     if (u === '/api/scribe/todo') return { ok: true, json: async () => ({ tasks: TASKS, projects: { foreman: pj } }) };
@@ -64,7 +64,8 @@ test('포스트잇(11-15) — 받은 할 일 숫자 줄 대신 머리 탭과 같
   sc.html('foreman', 'F', 'postit'); await settle();
   const h = sc.html('foreman', 'F', 'postit');
   assert.ok(!h.includes('받은 할 일'));
-  assert.match(h, /<details class="hand" open><summary[^>]*><b>포스트잇<\/b> <span class="warn">2장, 확인 전 1/);
+  assert.match(h, /<details class="hand"[^>]*><summary[^>]*><b>포스트잇<\/b> <span class="warn">2장, 확인 전 1/);
+  assert.ok(!/<details class="hand"[^>]* open[^>]*><summary[^>]*><b>포스트잇<\/b>/.test(h));      // 쌓여도 pick이 있어도 접힌 채
   assert.ok(!h.includes('쌓였습니다') && !h.includes('pi-head'));   // 11-15 서기실은 머리줄과 쌓임 줄을 그리지 않는다
   assert.ok(h.includes('data-pi-row="3"') && h.includes('data-pi-save="1"') && h.includes('data-pi-refresh="1"'));
 });
