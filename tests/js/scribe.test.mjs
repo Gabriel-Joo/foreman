@@ -64,7 +64,8 @@ test('포스트잇(11-15) — 받은 할 일 숫자 줄 대신 머리 탭과 같
   sc.html('foreman', 'F', 'postit'); await settle();
   const h = sc.html('foreman', 'F', 'postit');
   assert.ok(!h.includes('받은 할 일'));
-  assert.match(h, /<details class="hand" open><summary[^>]*><b>포스트잇<\/b> <span class="warn">할 일 2, 확인 전 1/);
+  assert.match(h, /<details class="hand" open><summary[^>]*><b>포스트잇<\/b> <span class="warn">2장, 확인 전 1/);
+  assert.ok(!h.includes('쌓였습니다') && !h.includes('pi-head'));   // 11-15 서기실은 머리줄과 쌓임 줄을 그리지 않는다
   assert.ok(h.includes('data-pi-row="3"') && h.includes('data-pi-save="1"') && h.includes('data-pi-refresh="1"'));
 });
 

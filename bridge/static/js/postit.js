@@ -92,14 +92,15 @@ function checkState(s) {
 }
 
 // 머리 탭 창과 서기실이 같이 쓰는 목록(순수 — view = GET /api/postit 응답)
-export function listHtml(view, { busy = false, draft = '', note = null, label = '', bad = false } = {}) {
+export function listHtml(view, { busy = false, draft = '', note = null, label = '', bad = false, noHead = false } = {}) {
   if (!view) return `<div class="postit paper"><p class="small ${bad ? 'bad' : 'muted'}">${bad ? `포스트잇을 ${UNREAD}.` : '포스트잇을 읽는 중입니다.'}</p></div>`;
   const s = view.summary || {};
   const items = view.items || [];
   const unconf = items.filter((x) => !x.confirmed);
   const done = items.filter((x) => x.check && x.check.verdict === 'done');
   const lim = (view.readme_checks || []).filter((k) => k.verdict === 'done');
-  const head = `<div class="pi-head small"><b>${esc(label || view.project)}</b> 할 일 <b class="pi-n">${items.length}장</b>${unconf.length ? `<span class="muted">, 확인 전 ${unconf.length}</span>` : ''}${bad ? ` <span class="bad">(지금 값을 ${UNREAD}. 지난 값입니다)</span>` : ''}</div>`;
+  // noHead: 서기실은 프로젝트 이름과 장수가 이미 위에 있어 머리줄을 안 그린다(읽지 못한 경고만 남김)
+  const head = noHead ? (bad ? `<div class="pi-head small bad">지금 값을 ${UNREAD}. 지난 값입니다.</div>` : '') : `<div class="pi-head small"><b>${esc(label || view.project)}</b> 할 일 <b class="pi-n">${items.length}장</b>${unconf.length ? `<span class="muted">, 확인 전 ${unconf.length}</span>` : ''}${bad ? ` <span class="bad">(지금 값을 ${UNREAD}. 지난 값입니다)</span>` : ''}</div>`;
   const doneHtml = done.length + lim.length ? `<div class="pi-sec"><div class="small"><b>끝난 것 같음 ${done.length + lim.length}</b> <span class="muted">근거가 코드 자리인 것만입니다. 사람이 줄마다 닫습니다.</span></div>
     ${done.map((x) => checkHtml(x.check, x.body)).join('')}${lim.map((k) => checkHtml(k, `README 「알려진 한계」 ${k.item}: ${k.item_text || ''}`)).join('')}</div>` : '';
   const rows = items.length ? items.map((x) => rowHtml(x, busy)).join('') : '<p class="small muted">할 일이 없습니다.</p>';
@@ -185,9 +186,9 @@ export function createPostitBlock(store) {
     try { views.set(room, await fetchView(store, room)); bad.set(room, false); } catch { bad.set(room, true); }
     store.touch('panel');
   }
-  function html(room, label) {
+  function html(room, label, { noHead = false } = {}) {
     load(room);
-    return listHtml(views.get(room) || null, { busy, draft: drafts.get(room) || '', note: notes.get(room) || null, label, bad: !!bad.get(room) });
+    return listHtml(views.get(room) || null, { busy, draft: drafts.get(room) || '', note: notes.get(room) || null, label, bad: !!bad.get(room), noHead });
   }
   function onInput(ev, room) { if (ev.target && ev.target.classList && ev.target.classList.contains('pi-draft')) drafts.set(room, ev.target.value); }
   async function onClick(ev, room) {
