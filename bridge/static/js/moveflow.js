@@ -116,6 +116,18 @@ export function chooseFinal(items, draft) {
   return out;
 }
 
+// 새 세션에 넣을 요약 id(11-15 관리자 410) — [고치기]는 옛 판을 두고 parent_id를 단 새 판으로 저장한다(PUT /api/summaries/{id}).
+// 흐름은 처음 잡은 id(flow.sumId)를 들고 있어, 고친 본을 저장해도 [다시 시도]가 옛 판을 보내 같은 「읽을 곳이 틀렸습니다」가 났다.
+// 그 판에서 이어 고친 판 중 가장 새 것(저장이 끝난 것만)을 따라간다. 고친 적이 없으면 그대로. 순수 함수(시험)
+export function retrySummaryId(summaries, id) {
+  let cur = id;
+  for (;;) {
+    const kids = (summaries || []).filter((s) => s.parent_id === cur && s.status === 'ok' && s.id > cur);
+    if (!kids.length) return cur;
+    cur = Math.max(...kids.map((s) => s.id));
+  }
+}
+
 // [고른 것을 문서에 쓰고 옮기기] 단추 글 — 고른 것이 없으면 쓰지 않고 바로 옮긴다
 export function writeLabel(n) {
   return n ? `고른 ${n}개를 문서에 쓰고 옮기기` : '문서에 넣지 않고 옮기기';

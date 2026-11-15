@@ -1,10 +1,11 @@
 """인계 2판의 「읽을 곳」(11-05, docs/11_handoff_v2.md 2장 ②③) — 풀기 · 기계 확인 · 새 세션이 실제로 읽었나.
 
 한 줄 모양(인계를 쓰는 세션에게 이 모양으로 쓰라고 시킨다):
-  - `docs/01a_catalog_sources.md:40-60` — 스펙 출처 우선순위(다음 할 일 2에 필요)
   - CLAUDE.md 「작업 규칙」 — 금지 항목 다시 확인
   - log/runshoes_compaction_loss_20261105.md — 사라진 지시 목록
-경로는 저장소 맨 위 기준(절대 경로도 받는다). 줄 범위(:a-b)나 절 이름(「…」)은 있어도 없어도 된다."""
+경로는 저장소 맨 위 기준(절대 경로도 받는다). 절 이름(「…」)은 있어도 없어도 된다.
+줄 범위(:a-b)는 옛 인계 · 사람이 쓴 것을 위해 계속 받지만 쓰라고 시키지 않는다(11-15 사용자 — 문서가 조금만 짧아져도 깨진다).
+줄 범위가 틀리면 거부 글이 그 자리의 절 제목을 알려 준다(section_hint)."""
 
 from __future__ import annotations
 
@@ -80,6 +81,25 @@ async def _git(repo: str, *args: str) -> str:
     return out.decode(errors="replace").strip()
 
 
+_HEADING = re.compile(r"^#{1,6}\s+(?P<t>.+?)\s*#*\s*$")
+
+
+def section_hint(lines: list[str], start: int | None) -> str | None:
+    """줄 범위가 틀렸을 때 대신 쓸 절 제목 — 가리키던 시작 줄(파일보다 길면 끝 줄) 위로 가장 가까운 제목. 없으면 None."""
+    at = min(start or len(lines), len(lines))
+    found, fence = None, False
+    for ln in lines[:at]:                     # 코드 울타리(```) 안의 「## …」(형식 예시)는 절이 아니다
+        if ln.lstrip().startswith("```"):
+            fence = not fence
+            continue
+        m = None if fence else _HEADING.match(ln)
+        if m:
+            found = m["t"]
+    # 긴 제목은 첫 덧말(「 — 」 · 「 (」 · 「 [」) 앞까지 — 절 확인은 부분 맞춤(p.section in 줄)이라 앞부분으로도 맞다.
+    # 화면에 뜨는 거부 글이라 em dash도 여기서 빠진다
+    return re.split(r"\s+[—–(\[]", found, maxsplit=1)[0].strip() or found if found else None
+
+
 def _problem(p: Pointer, repo: str) -> str | None:
     """그 저장소(폴더)에서 이 읽을 곳이 맞나 — 틀리면 까닭, 맞으면 None."""
     f = _resolve(repo, p.path)
@@ -90,7 +110,10 @@ def _problem(p: Pointer, repo: str) -> str | None:
     except OSError:
         return "읽을 수 없습니다"
     if p.start is not None and (p.start < 1 or (p.end or p.start) > len(lines) or (p.end or p.start) < p.start):
-        return f"줄 범위가 맞지 않습니다(파일은 {len(lines)}줄)"
+        # 11-15 사용자 — 줄 번호는 문서가 조금만 짧아져도 깨진다. 절 제목으로 고치게 그 자리의 제목을 알려 준다
+        h = section_hint(lines, p.start)
+        tail = f"(예: `{p.path}` 「{h}」)" if h else ""
+        return f"줄 범위가 맞지 않습니다(파일은 {len(lines)}줄). 줄 번호 대신 절 제목으로 가리켜 주세요{tail}"
     if p.section and not any(p.section in ln for ln in lines):
         return f"「{p.section}」을(를) 찾지 못했습니다"
     return None

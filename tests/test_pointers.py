@@ -39,6 +39,8 @@ def test_check_and_reads(tmp_path):
     ps = asyncio.run(ptr.check(ptr.parse(BODY), str(repo)))
     assert [p.ok for p in ps] == [True, True, True, False, False, False, False]
     assert ps[3].problem == "파일이 없습니다" and "줄 범위" in ps[4].problem and "찾지 못했습니다" in ps[5].problem
+    # 11-15 줄 범위가 틀리면 절 제목으로 가리키라고 알린다(docs/a.md에는 제목이 없어 예시는 붙지 않는다)
+    assert ps[4].problem == "줄 범위가 맞지 않습니다(파일은 3줄). 줄 번호 대신 절 제목으로 가리켜 주세요"
     assert ps[0].commits_since == 0 and not ps[0].stale
     r = ptr.reads(ps[:3], str(repo), [str(repo / "docs" / "a.md"), "/tmp/다른것"])
     # 맨 위 CLAUDE.md는 Read 없이도 세션에 들어가 있다 — 읽음으로 세고 auto로 따로 보인다
@@ -47,6 +49,31 @@ def test_check_and_reads(tmp_path):
     # 11-09 확인에 실패한 곳은 열었어도 읽음으로 세지 않는다("6/6 읽음"에 ✗가 섞였다)
     r = ptr.reads(ps[:6], str(repo), [str(repo / "docs" / "a.md")])
     assert r["read"] == 3 and r["missing"] == [] and [f["path"] for f in r["failed"]] == ["docs/없음.md", "docs/a.md", "CLAUDE.md"]
+
+
+def test_bad_range_suggests_section(tmp_path):
+    """11-15 관리자 410 — docs/11_worktree.md:224-260이 239줄 파일에서 깨졌다. 거부 글이 그 자리의 절 제목을 알려 준다."""
+    lines = ["# 제목"] + ["x"] * 9 + ["## 5. 끝내기"] + ["x"] * 9 + ["## 6. 합치기"] + ["x"] * 9   # 30줄, 6절은 21줄
+    (tmp_path / "w.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    ps = asyncio.run(ptr.check(ptr.parse("## 읽을 곳\n- `w.md:24-40` — 합치기\n- `w.md:12-50` — 끝내기\n"), str(tmp_path)))
+    assert ps[0].problem == "줄 범위가 맞지 않습니다(파일은 30줄). 줄 번호 대신 절 제목으로 가리켜 주세요(예: `w.md` 「6. 합치기」)"
+    assert ps[1].problem.endswith("(예: `w.md` 「5. 끝내기」)")       # 시작 줄 위로 가장 가까운 제목
+    assert "—" not in ps[0].problem                                    # 화면에 뜨는 거부 글(em dash 금지)
+    assert ptr.section_hint(["x", "y"], 1) is None
+    # 긴 제목은 덧말 앞까지(em dash 없이), 코드 울타리 안 「## …」은 절이 아니다
+    long = ["## 8. 화면 말을 바꿀 때 — 화면 말 시험 (11-15) [log:x.md]", "x", "```", "## 지금 상태", "```", "y"]
+    assert ptr.section_hint(long, 99) == "8. 화면 말을 바꿀 때"
+    (tmp_path / "l.md").write_text("\n".join(long) + "\n", encoding="utf-8")
+    ok = asyncio.run(ptr.check(ptr.parse("## 읽을 곳\n- `l.md` 「8. 화면 말을 바꿀 때」 — x\n"), str(tmp_path)))
+    assert ok[0].ok                                                     # 알려 준 제목을 그대로 쓰면 통과한다
+
+
+def test_request_prompt_no_line_numbers():
+    """11-15 — 인계 요청 글이 줄 번호 꼴(`경로:시작-끝`)을 권하지 않는다. 절 제목과 경로만."""
+    import re
+    p = request_prompt("abc123")
+    assert "시작-끝" not in p and not re.search(r"\.md:\d+", p)
+    assert "`경로` 「절 이름」" in p and "절 제목" in p
 
 
 def test_check_notes_other_side(tmp_path):

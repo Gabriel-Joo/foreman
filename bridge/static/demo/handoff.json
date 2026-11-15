@@ -207,7 +207,7 @@
      "status": "ok",
      "created_at": "@-5280000",
      "chars": 161,
-     "body": "## 지금 상태\n- worktree foreman-2에서 c를 만들었다. 아직 합치지 않았다\n## 다음 할 일\n1. 합친 뒤 첫 실제 사례로 확인\n## 문서와 다른 지금\n- 순서는 c → d → 12a\n## 읽을 곳\n- `docs/11_handoff_v2.md:115-138` — d 설계",
+     "body": "## 지금 상태\n- worktree foreman-2에서 c를 만들었다. 아직 합치지 않았다\n## 다음 할 일\n1. 합친 뒤 첫 실제 사례로 확인\n## 문서와 다른 지금\n- 순서는 c → d → 12a\n## 읽을 곳\n- `docs/11_handoff_v2.md` 「압축 손실 점검을 버튼으로」 — d 설계",
      "raw": null,
      "error": null,
      "injected_at": null,
@@ -222,7 +222,7 @@
   },
   "/api/summaries/77/injection": {
    "summary_id": 77,
-   "text": "[FOREMAN 인계 r=690cec] 직전 세션의 인계다. 너는 이 일을 이어받는 새 세션이다.\n**먼저 아래 「읽을 곳」을 모두 Read로 읽어라** …\n\n## 인계 뒤 바뀐 것 (브리지가 git · 잠금으로 확인)\n- 인계를 쓴 지 1시간 28분 지났습니다.\n- worktree `foreman-2`(브랜치 `cc/foreman-2`)는 지금 없습니다 — 인계 때 커밋 edcd41a은 `main`에 합쳐졌습니다.\n- `main`에 인계 뒤 커밋이 7개 생겼습니다: 겹침 알림 / 사람이 붙인 세션 이름이 항상 이기게 / 글씨 한 번 더 키움 외 4개\n- 스키마 잠금이 세션 65d05e2c(worktree foreman-2)에서 세션 5a3b93e0로 바뀌었습니다.\n\n## 지금 상태\n- worktree foreman-2에서 c를 만들었다. 아직 합치지 않았다\n## 다음 할 일\n1. 합친 뒤 첫 실제 사례로 확인\n## 문서와 다른 지금\n- 순서는 c → d → 12a\n## 읽을 곳\n- `docs/11_handoff_v2.md:115-138` — d 설계",
+   "text": "[FOREMAN 인계 r=690cec] 직전 세션의 인계다. 너는 이 일을 이어받는 새 세션이다.\n**먼저 아래 「읽을 곳」을 모두 Read로 읽어라** …\n\n## 인계 뒤 바뀐 것 (브리지가 git · 잠금으로 확인)\n- 인계를 쓴 지 1시간 28분 지났습니다.\n- worktree `foreman-2`(브랜치 `cc/foreman-2`)는 지금 없습니다 — 인계 때 커밋 edcd41a은 `main`에 합쳐졌습니다.\n- `main`에 인계 뒤 커밋이 7개 생겼습니다: 겹침 알림 / 사람이 붙인 세션 이름이 항상 이기게 / 글씨 한 번 더 키움 외 4개\n- 스키마 잠금이 세션 65d05e2c(worktree foreman-2)에서 세션 5a3b93e0로 바뀌었습니다.\n\n## 지금 상태\n- worktree foreman-2에서 c를 만들었다. 아직 합치지 않았다\n## 다음 할 일\n1. 합친 뒤 첫 실제 사례로 확인\n## 문서와 다른 지금\n- 순서는 c → d → 12a\n## 읽을 곳\n- `docs/11_handoff_v2.md` 「압축 손실 점검을 버튼으로」 — d 설계",
    "cut": false,
    "full_path": null,
    "chars": 161,
@@ -230,9 +230,9 @@
    "pointers": [
     {
      "path": "docs/11_handoff_v2.md",
-     "start": 115,
-     "end": 138,
-     "section": null,
+     "start": null,
+     "end": null,
+     "section": "압축 손실 점검을 버튼으로",
      "why": "d 설계",
      "raw": "",
      "ok": true,

@@ -818,7 +818,7 @@ async def test_ingest_monitor_alerts_once_and_recovers(env):
 
 
 # ── 11-05 세션 인계 — 요청 → 세션이 쓴 표지 → 저장 · 고치기 · 넣을 글, 되살리기는 FOREMAN이 멈춘 것만 ─────────
-async def test_handoff_request_extract_edit_inject_preview(env, monkeypatch):
+async def test_handoff_request_extract_edit_inject_preview(env, monkeypatch, tmp_path):
     from bridge import handoff as h
     from bridge.liveness import LiveSession
     s, main = env
@@ -870,6 +870,25 @@ async def test_handoff_request_extract_edit_inject_preview(env, monkeypatch):
     inj = await mgr.injection(e["summary_id"], "/r/proj/.worktrees/proj-2")
     t = inj["text"]
     assert "브랜치 `cc/proj-2`" in t and t.index("이 세션이 뜬 자리") < t.index("고친 것") and inj["worktree_next"] is False
+
+    # 11-15 관리자 410 — 읽을 곳 줄 범위가 틀린 판 → 고친 본 저장 → 고친 판 id로 다시 검사하면 넣을 수 있다. 옛 판은 그대로 막힌다
+    # (화면 [다시 시도]가 옛 판 id를 다시 보내 같은 글이 났다 — moveflow.js retrySummaryId가 고친 판을 고른다)
+    doc = tmp_path / "w.md"
+    doc.write_text("# w\n## 6. 합치기\nx\n", encoding="utf-8")
+    bad = await mgr.edit(e["summary_id"], f"## 다음 할 일\n- 이어서\n## 읽을 곳\n- `{doc}:224-260` — 합치기")
+    inj = await mgr.injection(bad["summary_id"])
+    assert inj["blocked"].startswith("읽을 곳이 틀렸습니다.") and "파일은 3줄" in inj["blocked"] and "「6. 합치기」" in inj["blocked"]
+    good = await mgr.edit(bad["summary_id"], f"## 다음 할 일\n- 이어서\n## 읽을 곳\n- `{doc}` 「6. 합치기」 — 합치기")
+    assert (await mgr.injection(good["summary_id"]))["blocked"] is None
+    assert (await mgr.injection(bad["summary_id"]))["blocked"]                     # 옛 판은 여전히 막힘
+    try:
+        await mgr.ensure_injectable(bad["summary_id"])
+        raise AssertionError("옛 판이 넣어졌다")
+    except h.Refused as e3:
+        assert "줄 범위가 맞지 않습니다" in str(e3)
+    # 고친 판도 틀리면 지금처럼 멈추고 까닭을 보인다
+    worse = await mgr.edit(good["summary_id"], f"## 다음 할 일\n- 이어서\n## 읽을 곳\n- `{doc}` 「없는 절」 — x")
+    assert "「없는 절」을(를) 찾지 못했습니다" in (await mgr.injection(worse["summary_id"]))["blocked"]
 
     # 되살리기 — FOREMAN이 멈춘 기록이 없으면 거부(사람이 멈춘 CC는 건드리지 않는다)
     monkeypatch.setattr(h, "live_sessions", lambda d: {SID: LiveSession(4242, SID, "/x", "T")})

@@ -1,7 +1,7 @@
 // 새 세션으로 옮기기 한 흐름(11-11 C 2물결 일곱) — 사람이 멈추는 곳은 고르기 하나, 나머지는 저절로
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { moveStep, MOVE_STEPS, chooseCount, writeLabel, STALL_MS, lossNote, chooseAll, chooseFinal, chosen } from '../../bridge/static/js/moveflow.js';
+import { moveStep, MOVE_STEPS, chooseCount, writeLabel, STALL_MS, lossNote, chooseAll, chooseFinal, chosen, retrySummaryId } from '../../bridge/static/js/moveflow.js';
 import { edits } from '../../bridge/static/js/promote.js';
 
 test('11-13 잊은 것 찾기 — 없음 · 볼 것 없음 · 일부 · 실패를 다른 줄로', () => {
@@ -92,4 +92,23 @@ test('고른 수 · 단추 글', () => {
   assert.equal(chooseCount(items, { 1: { state: 'approved' }, 2: { state: 'dropped' } }), 1);
   assert.equal(writeLabel(2), '고른 2개를 문서에 쓰고 옮기기');
   assert.equal(writeLabel(0), '문서에 넣지 않고 옮기기');
+});
+
+// 11-15 관리자 410 — 「읽을 곳이 틀렸습니다」에서 [고치기]로 고친 본을 저장해도 [다시 시도]가 같은 글을 냈다.
+// 흐름이 처음 잡은 요약 id(옛 판)를 그대로 보냈다. 재현: 옛 판 11 → 고친 판 12(parent 11) → 다시 시도는 12로
+test('다시 시도는 고친 판으로 이어 간다', () => {
+  const old = { id: 11, status: 'ok', parent_id: null, body: '## 읽을 곳\n- `docs/11_worktree.md:224-260` — x' };
+  assert.equal(retrySummaryId([old], 11), 11);                                   // 고친 적 없으면 그대로
+  const fixed = { id: 12, status: 'ok', parent_id: 11, source: 'edited', body: '## 읽을 곳\n- `docs/11_worktree.md` 「6. 합치기」 — x' };
+  const sums = [fixed, old];                                                    // 서버는 새 것부터(id 내림차순)
+  assert.equal(retrySummaryId(sums, 11), 12);
+  // 고친 판을 다시 고치면 가장 새 판까지 따라간다. 다른 요약(parent 없음) · 저장 안 끝난 판은 따라가지 않는다
+  const again = { id: 14, status: 'ok', parent_id: 12 }, other = { id: 15, status: 'ok', parent_id: null }, bad = { id: 16, status: 'failed', parent_id: 14 };
+  assert.equal(retrySummaryId([bad, other, again, fixed, old], 11), 14);
+  // 한 판에서 두 번 고쳤으면 나중 것
+  assert.equal(retrySummaryId([{ id: 13, status: 'ok', parent_id: 11 }, fixed, old], 11), 13);
+  assert.equal(retrySummaryId(null, 11), 11);
+  // 흐름은 고친 판 id로 「요약」 단계를 다시 보면 저절로 띄우기로 간다(읽을 곳은 서버가 그 판으로 다시 검사)
+  const f = { v: 2, stage: 'summary', sumId: retrySummaryId(sums, 11), at: Date.now() };
+  assert.equal(moveStep(f, { summaries: sums, controls: { live: true } }).auto, 'spawn');
 });

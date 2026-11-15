@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { flowStep, FLOW_STEPS, autoNote, endMenu, END_ITEMS, showMove, FLOW_TIP } from '../../bridge/static/js/handoff.js';
+import { flowStep, FLOW_STEPS, autoNote, endMenu, END_ITEMS, showMove, FLOW_TIP, chooseCountText, writeTip } from '../../bridge/static/js/handoff.js';
+
+// 11-15 — 고르기 체크는 줄만 고친다(chooseSync). 그 수 줄 · 쓰기 단추 호버는 전부 그리기와 같은 함수에서 나온다
+test('고르기 수 줄 · 쓰기 단추 호버', () => {
+  assert.equal(chooseCountText(10, 1), '후보 10개 중 1개 고름');
+  assert.match(writeTip(2), /^고른 2개를 문서에 쓰고 옮기기 — 고른 2개를 세션이/);
+  assert.match(writeTip(0), /^문서에 넣지 않고 옮기기 — /);
+});
 import { MOVE_TIP } from '../../bridge/static/js/moveflow.js';
 
 // 11-14 사용자 — 「세션」 [끝내기 ▾] 셋, 「끝내고 버리기」 없음, 설명은 줄 아래, 할 수 없는 것은 꺼진 버튼 + 까닭 호버

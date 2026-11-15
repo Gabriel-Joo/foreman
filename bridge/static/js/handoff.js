@@ -7,7 +7,7 @@
 import { esc, ago, keep, clock } from './render.js';
 import { promoteGroup, edits as promoteEdits, counts as promoteCounts, DOCS_GUIDE } from './promote.js';
 import { lossGroup } from './losscheck.js';
-import { moveStep, MOVE_STEPS, MOVE_TIP, chooseCount, writeLabel, chosen, selectable, chooseAll, chooseFinal, lossOutcome } from './moveflow.js';
+import { moveStep, MOVE_STEPS, MOVE_TIP, chooseCount, writeLabel, chosen, selectable, chooseAll, chooseFinal, lossOutcome, retrySummaryId } from './moveflow.js';
 
 const SOURCE = { self: '세션이 씀', self_headless: '끝난 세션을 잠깐 불러 씀', compact: '자동 압축 요약에서', edited: '사람이 고침' };
 const STATUS = { requested: '기다리는 중…', ok: '저장됨', failed: '실패', timeout: '시간 초과' };
@@ -184,6 +184,11 @@ export function mpSection(mp, b, sid) {
   </section>`;
 }
 
+// ③ 고르기의 수 줄 · 쓰기 단추 호버 — 전부 그리기(chooseHtml)와 줄만 고치기(chooseSync)가 같은 글을 쓰게 한 곳에. 순수 함수(시험)
+export const chooseCountText = (total, n) => `후보 ${total}개 중 ${n}개 고름`;
+export const writeTip = (n) => (n ? `${writeLabel(n)} — 고른 ${n}개를 세션이 문서에 쓰고 커밋합니다. 브리지가 커밋을 확인하면 요약 · 새 세션 · 옛 세션 끝내기까지 이어서 합니다.`
+  : '문서에 넣지 않고 옮기기 — 아무것도 쓰지 않고 요약 · 새 세션 · 옛 세션 끝내기로 갑니다.');
+
 export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
   let sid = null, data = null, mode = null, preview = null, note = null, open = open0;
   let flow = null, flowPrev = null, flowPrevAsk = false, handMore = false;    // 흐름 · ② 확인에 보여 줄 넣을 글 · 드문 버튼 펼침
@@ -207,7 +212,8 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
   };
   el.addEventListener('change', (ev) => {
     const mv = ev.target.dataset && ev.target.dataset.mvItem;      // 한 흐름 ③ 고르기(11-11)
-    if (mv) { promDraft[Number(mv)] = { ...(promDraft[Number(mv)] || {}), state: ev.target.checked ? 'approved' : 'dropped' }; draw(); return; }
+    // 11-15 바뀐 줄만 고친다(목록 스크롤 · 포커스 · 펼친 칸을 그대로). 고를 화면이 아니면 전처럼 다시 그린다
+    if (mv) { promDraft[Number(mv)] = { ...(promDraft[Number(mv)] || {}), state: ev.target.checked ? 'approved' : 'dropped' }; if (!chooseSync()) draw(); return; }
     if (ev.target.id === 'promIn') promIn = ev.target.value;
     // 상태를 고르면 개수 · 버튼을 다시 센다. 글칸은 그리지 않는다(blur 때 다시 그리면 바로 누른 버튼의 click이 사라진다)
     else if (promField(ev.target) && ev.target.tagName === 'SELECT') draw();
@@ -366,9 +372,12 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     const steps = `<ol class="flow-steps">${MOVE_STEPS.map((n, k) => `<li class="${k < m.i ? 'done' : k === m.i ? (m.bad ? 'bad' : 'now') : ''}">${k < m.i ? '✓' : k + 1} ${n}</li>`).join('')}</ol>`;
     const stop = b('flow-stop', '멈추기', true, 'ghost', '멈추기 — 옮기기를 그만둡니다. 이미 쓴 문서와 받은 요약은 남습니다.');
     const skip = (label) => b('mv-skip-find', label, true, 'ghost', `${label} — 잊은 것 찾기를 기다리지 않고 세션에게 바로 문서 후보를 묻습니다.`);
+    // 11-15 사용자 — 새 세션을 못 띄웠을 때(읽을 곳이 틀림 등) [고치기]를 [다시 시도] 왼쪽에: 고친 다음에 다시 시도하는 차례.
+    // 다시 시도는 고친 판으로 이어 간다(flowGo → retrySummaryId)
+    const fix = m.i === 5 && latest() ? b('edit', '고치기', true, 'ghost', '고치기 — 넣을 요약을 직접 고칩니다. 원본은 두고 고친 본을 새 판으로 저장하며, [다시 시도]는 고친 본으로 이어 갑니다.') : '';
     let body;
     if (m.done) body = `<div class="small ok">새 세션으로 옮겼습니다. 새 캐릭터를 확인해주세요.</div><div class="row">${b('flow-close', '닫기', true, 'ghost', '닫기 — 이 안내를 치웁니다.')}</div>`;
-    else if (m.bad) body = `<div class="small bad">${esc(m.msg)}</div><div class="row flow-act">${b('mv-retry', '다시 시도', true, 'primary', '다시 시도 — 이 단계부터 다시 합니다.')}${m.i <= 1 ? skip('문서 후보 없이 묻기') : ''}${m.i === 6 ? b('flow-end', '옛 세션 다시 끝내기', c.can.exit, 'danger', '옛 세션 다시 끝내기 — 새 세션은 이미 이어받았습니다. 옛 세션만 /exit로 끝냅니다.') : ''}${stop}</div>`;
+    else if (m.bad) body = `<div class="small bad">${esc(m.msg)}</div><div class="row flow-act">${fix}${b('mv-retry', '다시 시도', true, 'primary', '다시 시도 — 이 단계부터 다시 합니다.')}${m.i <= 1 ? skip('문서 후보 없이 묻기') : ''}${m.i === 6 ? b('flow-end', '옛 세션 다시 끝내기', c.can.exit, 'danger', '옛 세션 다시 끝내기 — 새 세션은 이미 이어받았습니다. 옛 세션만 /exit로 끝냅니다.') : ''}${stop}</div>`;
     else if (m.wait) body = chooseHtml(m, b) + stop + '</div>';
     else if (m.i === 0) body = `<div class="small muted">${esc(m.msg)}… 끝나면 문서에 넣을 후보를 보여 드립니다.</div><div class="row">${skip('잊은 것 찾기 건너뛰기')}${stop}</div>`;
     else if (m.i === 6 && !m.busy) body = `<div class="small">새 세션이 이어받았습니다. 옛 세션 끝내기만 남았습니다.</div><div class="row flow-act">${b('flow-end', '옛 세션 끝내기', c.can.exit, 'primary danger', '옛 세션 끝내기 — 이 세션을 /exit로 끝냅니다.')}${stop}</div>`;
@@ -395,17 +404,60 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
           ${sel ? '' : `<span class="mv-meta small ${ck.ok === false ? 'bad' : 'muted'}">${ck.ok === false ? '✗ ' : ''}${esc(why)}</span>`}
         </span></label>`;
     }).join('');
-    const tip = n ? `${writeLabel(n)} — 고른 ${n}개를 세션이 문서에 쓰고 커밋합니다. 브리지가 커밋을 확인하면 요약 · 새 세션 · 옛 세션 끝내기까지 이어서 합니다.`
-      : '문서에 넣지 않고 옮기기 — 아무것도 쓰지 않고 요약 · 새 세션 · 옛 세션 끝내기로 갑니다.';
     return `${m.msg ? `<div class="small bad">${esc(m.msg)}</div>` : ''}
       <div class="small"><b>문서에 넣을 것을 골라주세요.</b> 사용자가 고르는 곳은 여기 하나입니다.<br>고른 것만 세션이 문서에 쓰고 커밋한 뒤 이어서 옮깁니다.</div>
-      <div class="mv-bar"><span class="small"><b>후보 ${items.length}개 중 ${n}개 고름</b>${can < items.length ? ` <span class="muted">(고를 수 없는 것 ${items.length - can}개)</span>` : ''}</span>
+      <div class="mv-bar"><span class="small"><b class="mv-count">${chooseCountText(items.length, n)}</b>${can < items.length ? ` <span class="muted">(고를 수 없는 것 ${items.length - can}개)</span>` : ''}</span>
         ${b('mv-all', '전부 고르기', can > 0 && n < can, 'ghost', '전부 고르기 — 고를 수 있는 후보를 모두 고릅니다.')}${b('mv-none', '전부 풀기', n > 0, 'ghost', '전부 풀기 — 고른 것을 모두 풉니다.')}</div>
-      <div class="mv-items">${rows}</div><div class="row flow-act mv-act">${b('mv-write', writeLabel(n), true, 'primary', tip)}`;
+      <div class="mv-items">${rows}</div><div class="row flow-act mv-act">${b('mv-write', writeLabel(n), true, 'primary', writeTip(n))}`;
+  }
+  // 11-15 사용자 — 체크 한 번에 패널 전체를 다시 그리면 목록 상자(.mv-items, 제 높이 안에서 따로 스크롤)가 맨 위로 돌아갔다.
+  // 열 개 중 여덟째를 고르면 다시 내려와야 했다. 체크 · [전부 고르기] · [전부 풀기]는 바뀐 줄 · 수 · 단추만 고친다.
+  // 고친 DOM은 chooseHtml이 그릴 것과 같아야 한다 — 그래서 끝에 lastHtml을 지금 상태로 맞춰 다음 draw가 같은 것을 다시 그리지 않게 한다.
+  // 고를 화면이 아니거나 줄을 못 찾으면 false(부른 쪽이 draw)
+  function chooseSync() {
+    const m = moveStep(flow, data), box = el.querySelector('.mv-items');
+    if (!m || !m.wait || !box || mode != null) return false;
+    const items = m.p.items || [];
+    for (const it of items) {
+      const inp = box.querySelector(`input[data-mv-item="${it.id}"]`), row = inp && inp.closest('label.mv-item');
+      if (!row) return false;
+      const on = chosen(it, promDraft);
+      inp.checked = on;
+      row.classList.toggle('on', on);
+    }
+    const n = chooseCount(items, promDraft), can = items.filter(selectable).length;
+    const cnt = el.querySelector('.mv-count'), all = el.querySelector('[data-act="mv-all"]'), none = el.querySelector('[data-act="mv-none"]'), w = el.querySelector('[data-act="mv-write"]');
+    if (!cnt || !all || !none || !w) return false;
+    cnt.textContent = chooseCountText(items.length, n);
+    all.disabled = !(can > 0 && n < can);
+    none.disabled = !(n > 0);
+    w.textContent = writeLabel(n);
+    w.title = writeTip(n);
+    lastHtml = build();
+    return true;
   }
 
   function draw() {
-    if (sid == null || !data) { el.innerHTML = ''; lastHtml = ''; return; }
+    const html = build();
+    if (html == null) { el.innerHTML = ''; lastHtml = ''; return; }
+    if (html === lastHtml) return;
+    // 11-09 사용자 — "스크롤이 자동으로 맨 위로 되돌아가 끝까지 볼 수 없다". 다시 그려도 글 상자(.hand-body)와 패널 스크롤을 지킨다.
+    // 11-15 사용자 — 「문서에 넣을 것 고르기」 목록(.mv-items)도 제 스크롤이 있어 같이 지킨다(전엔 빠져 있어 다시 그리면 맨 위로 갔다)
+    const KEEP_SCROLL = ['pre.hand-body', '.mv-items'];
+    const saved = KEEP_SCROLL.map((q) => [...el.querySelectorAll(q)].map((p) => p.scrollTop));
+    const box = el.closest('.oside-body'), top = box ? box.scrollTop : 0;
+    el.innerHTML = html;
+    lastHtml = html;
+    KEEP_SCROLL.forEach((q, k) => el.querySelectorAll(q).forEach((p, i) => { if (saved[k][i]) p.scrollTop = saved[k][i]; }));
+    if (box && box.scrollTop !== top) box.scrollTop = top;
+    // 그릴 때 open으로 그려도 toggle이 난다 — 그린 상태와 달라질 때만 사람이 바꾼 것으로 기억한다
+    const docsOn = docsOpen ?? false;
+    el.querySelector('details.hand-docs').addEventListener('toggle', (ev) => { if (ev.target.open !== docsOn) docsOpen = ev.target.open; });
+  }
+
+  // 그릴 글(데이터가 없으면 null). 그리기(draw)와 줄만 고치기(chooseSync)가 같은 글을 본다
+  function build() {
+    if (sid == null || !data) return null;
     const c = data.controls, can = c.can, s0 = data.summaries[0], ok = latest();
     const b = (act, label, on, cls = '', tip = '') => `<button data-act="${act}" class="small ${cls}"${tip ? ` title="${esc(tip)}"` : ''}${on ? '' : ' disabled'}>${label}</button>`;
     const sumCard = (x) => !x ? '<p class="small muted">아직 요약이 없습니다.</p>' : `
@@ -481,7 +533,8 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     const docsOn = docsOpen ?? false;
     const wtLive = !!(c.worktree && c.worktree.exists && c.worktree.live);   // 살아 있는 따로 작업 — 끝내기를 세 갈래로
     // 요약 카드 머리의 작은 [고치기] — 자주 안 쓰므로 버튼 줄에서 뺐다(11-06, 이력 1번)
-    const editLink = ok && mode == null && !st ? b('edit', '고치기', true, 'ghost', '요약 고치기 — 저장된 요약을 직접 고칩니다. 원본은 두고 새 판으로 저장합니다.') : '';
+    // 새 세션 띄우기가 막힌 한 흐름은 멈춤 줄에 [고치기]가 있다(moveBody) — 머리에 또 두지 않는다
+    const editLink = ok && mode == null && !st && !(mst && mst.bad && mst.i === 5) ? b('edit', '고치기', true, 'ghost', '요약 고치기 — 저장된 요약을 직접 고칩니다. 원본은 두고 새 판으로 저장합니다.') : '';
     // 11-14 사용자 — 작업방(worktree)이 있는 세션은 「새 세션으로 옮기기」 묶음(제목 · 버튼 · 더보기 · 까닭 · 요약 카드)을 뺀다.
     // 넘겨받은 글 · 읽을 곳은 받은 세션이 볼 것이라 남긴다(머리 없는 칸). 서버 기능은 그대로
     const moveOn = showMove(c, st || mst);
@@ -522,16 +575,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
         ${lossGroup(lc0, can.losscheck !== false && !!data.losschecks && !data.losschecks_error, data.losschecks_error)}
         ${promoteGroup(p0, !!can.promote, promDraft, data.promotions_error, data.promote_inputs, promIn, promOpen)}
       </details>`;
-    if (html === lastHtml) return;
-    // 11-09 사용자 — "스크롤이 자동으로 맨 위로 되돌아가 끝까지 볼 수 없다". 다시 그려도 글 상자(.hand-body)와 패널 스크롤을 지킨다
-    const pres = [...el.querySelectorAll('pre.hand-body')].map((p) => p.scrollTop);
-    const box = el.closest('.oside-body'), top = box ? box.scrollTop : 0;
-    el.innerHTML = html;
-    lastHtml = html;
-    el.querySelectorAll('pre.hand-body').forEach((p, i) => { if (pres[i]) p.scrollTop = pres[i]; });
-    if (box && box.scrollTop !== top) box.scrollTop = top;
-    // 그릴 때 open으로 그려도 toggle이 난다 — 그린 상태와 달라질 때만 사람이 바꾼 것으로 기억한다
-    el.querySelector('details.hand-docs').addEventListener('toggle', (ev) => { if (ev.target.open !== docsOn) docsOpen = ev.target.open; });
+    return html;
   }
 
   el.addEventListener('click', async (ev) => {
@@ -578,7 +622,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (act === 'mv-write') return moveWrite();
     if (act === 'mv-all' || act === 'mv-none') {
       const m = moveStep(flow, data);
-      if (m && m.wait) { promDraft = chooseAll(m.p.items, promDraft, act === 'mv-all'); draw(); }
+      if (m && m.wait) { promDraft = chooseAll(m.p.items, promDraft, act === 'mv-all'); if (!chooseSync()) draw(); }
       return;
     }
     if (act === 'mv-retry') return moveRetry();
@@ -606,9 +650,14 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     if (act === 'compact') return run('압축 요약에서 만들기', () => post(`/api/sessions/${id}/summary`, { kind: 'handoff', mode: 'compact' }));
     if (act === 'edit') { mode = 'edit'; editDraft = null; draw(); return; }
     if (act === 'edit-save') {
-      const body = el.querySelector('#hEdit').value;
+      const body = el.querySelector('#hEdit').value, from = latest().id;
       mode = null; editDraft = null;
-      return run('고친 본 저장', () => api('PUT', `/api/summaries/${latest().id}`, { body }));
+      // 11-15 — 도는 흐름이 고친 요약을 들고 있었으면 고친 판으로 바꿔 든다(다시 시도 · ② 확인 미리보기가 옛 판을 쓰지 않게)
+      return run('고친 본 저장', async () => {
+        const r = await api('PUT', `/api/summaries/${from}`, { body });
+        if (flow && flow.sumId === from && r && r.summary_id) { setFlow({ ...flow, sumId: r.summary_id }); flowPrev = null; }
+        return r;
+      });
     }
     if (act === 'spawn') {
       mode = 'spawn'; preview = null;
@@ -806,7 +855,9 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
     draw();
   }
   async function flowGo(extra) {                 // ③ 새 세션 → ④ 옛 세션 끝내기. extra — [덧붙여서 보내기]의 말
-    const id = sid, f = flow;
+    const id = sid;
+    // 11-15 관리자 410 — 고친 본을 저장했으면 그 판으로(다른 탭에서 고쳤어도). 전엔 처음 잡은 옛 판을 다시 보내 같은 거부가 났다
+    const f = flow && flow.sumId != null ? { ...flow, sumId: retrySummaryId(data && data.summaries, flow.sumId) } : flow;
     // 실패 뒤 [다시 시도](flow-go)도 덧붙일 말 칸이 열려 있으면 그 말을 같이 보낸다
     const add = extra != null ? extra : (noteOpen && noteDraft.trim() ? noteDraft : null);
     setFlow({ ...f, err: null, errAt: null, phase: 'spawning' }); draw();
