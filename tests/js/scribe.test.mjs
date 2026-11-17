@@ -102,7 +102,9 @@ test('기술문서(11-15) — notion/ 원고면 [Notion에 올리기]와 코드�
   const sc = mk({ foreman: pj }, { enabled: true, docs: [] });
   sc.html('foreman', 'F'); await settle();
   const h = sc.html('foreman', 'F');
-  assert.match(h, /<b>기술문서 쓰기<\/b> <span class="warn"[^>]*>코드가 바뀐 편 3<\/span> <span class="muted">글 5편 가운데/);
+  // 11-17 앞의 「코드가 바뀐 편 3」은 뒤 줄과 같은 말이라 뒤만 남긴다(색은 밀림 표시를 따른다)
+  assert.match(h, /<b>기술문서 쓰기<\/b> <span class="warn">글 5편 가운데 코드가 바뀐 편 2/);
+  assert.ok(!h.includes('>코드가 바뀐 편 3<'));
   assert.ok(h.includes('data-sc-task="techdoc"'));
   assert.match(h, /data-pub="docsync"[^>]*data-ask="[^"]*코드가 바뀐 편이 2편[^"]*"[^>]*>Notion에 올리기</);
   assert.ok(h.includes('글 5편 가운데 코드가 바뀐 편 2, 머리 주석을 읽지 못한 편 1') && !h.includes('지금 맞추기'));

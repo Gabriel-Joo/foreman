@@ -767,7 +767,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       if (!all.length) continue;
       // 종료된 세션은 접어 둔다 — 자리가 모자라 캐릭터가 없는 세션도 여기서 고를 수 있다
       rows.push(`<div class="small muted plist-h">${esc(p.label)}</div>` + ss.map(btn).join('') +
-        (dd.length ? `<details class="small" data-k="${esc(p.name)}"><summary class="muted">종료된 세션 ${dd.length}개</summary>${dd.map(btn).join('')}</details>` : ''));
+        (dd.length ? `<details class="small"${keep(`plist:${p.name}:dormant`)}><summary class="muted">종료된 세션 ${dd.length}개</summary>${dd.map(btn).join('')}</details>` : ''));
     }
     if (!names && st.hiddenDormant) rows.push(`<p class="small muted">48시간 넘게 활동이 없는 세션 ${st.hiddenDormant}개는 숨겼습니다.</p>`);
     return rows.join('') || '<p class="small muted">세션이 없습니다.</p>';
@@ -823,10 +823,8 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     if (target && target.kind === 'session') { $('pClear').hidden = false; drawSession(st); return; }
     sessionMode(false);
     hand.setSession(null);
-    // 목록은 이벤트마다 다시 그린다 — 펴 둔 "종료된 세션"은 펴진 채로
-    const keys = [...$('pSel').querySelectorAll('details[open][data-k]')].map((d) => d.dataset.k);
+    // 목록은 이벤트마다 다시 그린다 — 펴 둔 "종료된 세션"은 keep이 기억한다(11-17, 전에는 이 자리에서 열린 칸을 따로 읽어 되살렸다)
     drawHint(st);
-    for (const d of $('pSel').querySelectorAll('details[data-k]')) if (keys.includes(d.dataset.k)) d.open = true;
   }
 
   // office.js가 고를 때마다 부른다 — 같은 대상이면 다시 그리지 않는다(입력 칸 · 스크롤 유지)

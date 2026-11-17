@@ -351,17 +351,46 @@ if (typeof document !== 'undefined') {
   document.addEventListener('toggle', (ev) => {        // "중간 글" 펼침도 다시 그릴 때 유지(toggle은 버블링하지 않아 capture로)
     const d = ev.target;
     if (d && d.dataset && d.dataset.mid) { if (d.open) OPEN_MSG.add(d.dataset.mid); else OPEN_MSG.delete(d.dataset.mid); }
-    if (d && d.dataset && d.dataset.keep) DETAILS.set(d.dataset.keep, d.open);
+    if (d && d.dataset && d.dataset.keep) keepToggle(d.dataset.keep, d.open, d.dataset.dflt === '1');
   }, true);
 }
 
 // 접고 펴는 칸(<details>)의 상태 기억(11-06) — 패널은 몇 초마다 · 이벤트마다 innerHTML로 다시 그려서, 사람이 접은 칸이
 // 처음값(open)으로 되돌아갔다(서기실 창 · 요약 고치기). 칸마다 이름(key)을 주면 사람이 바꾼 상태로 다시 그린다.
 // 쓰는 법: `<details class="hand"${keep('scribe:todo', true)}>` — 처음값은 dflt, 사람이 한 번 바꾸면 그 뒤로는 그 상태
+// 11-17 디자이너: (1) 새로고침 뒤에도 유지(localStorage, 막혀도 이 탭에서는 된다) (2) 그릴 때 브라우저가 쏘는 toggle(처음값 그대로)을
+// 사람의 선택으로 적지 않는다. 안 그러면 처음값이 사람 선택으로 굳어, 나중에 처음값이 바뀌어도(예: 새 글이면 펼침) 따라가지 못한다
 const DETAILS = new Map();
+const KEEP_LS = 'foremanDetails', KEEP_MAX = 200;
+let keepLoaded = false;
+function keepLoad() {
+  if (keepLoaded) return;
+  keepLoaded = true;
+  try {
+    const o = JSON.parse(localStorage.getItem(KEEP_LS) || '{}');
+    for (const [k, v] of Object.entries(o)) if (typeof v === 'boolean' && !DETAILS.has(k)) DETAILS.set(k, v);
+  } catch { /* 읽지 못해도 이 탭에서는 된다 */ }
+}
+function keepSave() {
+  while (DETAILS.size > KEEP_MAX) DETAILS.delete(DETAILS.keys().next().value);      // 가장 오래 안 만진 것부터 버린다
+  try { localStorage.setItem(KEEP_LS, JSON.stringify(Object.fromEntries(DETAILS))); } catch { /* 저장 못 해도 이 탭에서는 된다 */ }
+}
+export function keepSet(key, open) {
+  keepLoad();
+  DETAILS.delete(key); DETAILS.set(key, !!open);
+  keepSave();
+}
+// toggle 이벤트 한 번. dflt는 그릴 때 준 처음값. 기록이 없는데 처음값 그대로면 그릴 때 난 것이라 적지 않는다
+export function keepToggle(key, open, dflt = false) {
+  keepLoad();
+  if (!DETAILS.has(key) && !!open === !!dflt) return;
+  keepSet(key, open);
+}
+export function keepReset() { DETAILS.clear(); keepLoaded = false; }      // 시험용
 export function keep(key, dflt = false) {
+  keepLoad();
   const open = DETAILS.has(key) ? DETAILS.get(key) : dflt;
-  return ` data-keep="${esc(key)}"${open ? ' open' : ''}`;
+  return ` data-keep="${esc(key)}" data-dflt="${dflt ? 1 : 0}"${open ? ' open' : ''}`;
 }
 export function oneLine(s, n) {
   s = promptText(s).replace(/\s+/g, ' ');

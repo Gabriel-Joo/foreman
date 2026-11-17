@@ -13,6 +13,12 @@ scope = "화면"
 commit = "11-17 서기실 마지막으로 올림을 DB에서 읽음"
 
 [[rename]]
+old = "아직 올린 기록 없음"
+new = "Notion에 올린 기록이 없습니다"
+scope = "화면"
+commit = "11-17 디자이너 410 무엇이 없는지 말하게 함"
+
+[[rename]]
 old = "CC 화면"
 new = "세션 화면"
 scope = "화면과 문서 인용"

@@ -4,7 +4,7 @@
 // 시킬 일은 worktree 서기 세션을 띄운다(합치기가 사람의 검토). Notion 게시는 세션 없이 [게시] 버튼(bridge/notion.py).
 // 조용한 고장 금지: 못 읽은 수는 0이 아니라 「읽지 못했습니다」로 보인다.
 
-import { esc, ago, keep } from './render.js';
+import { esc, ago, keep, keepSet } from './render.js';
 import { createPostitBlock } from './postit.js';
 
 // 메뉴 순서 — 문서 점검이 앞이다(찾기 → 고치기가 핵심 흐름). 문서 고치기(docfix)는 메뉴에 없고 결과에서만 뜬다.
@@ -54,7 +54,7 @@ export function createScribe(store) {
   // 11-17 포트폴리오 게시는 프로젝트마다: 고른 프로젝트(room)의 게시 목록을 따로 들고, 읽은 시각도 따로 센다
   const pubs = {}, pubBad = {}, at = {};
   let todoBad = false;          // 마지막으로 읽기에 실패했나. 지난 것을 보이되 「읽지 못했습니다」를 함께 보인다
-  let askText = '', asking = false, answer = null;
+  let askText = '', asking = false, answer = null, pickOpened = '';
   const postit = createPostitBlock(store);        // 11-15 머리 탭 포스트잇과 같은 목록 · 같은 동작
 
   async function load(force = false, room = cur) {
@@ -110,7 +110,7 @@ export function createScribe(store) {
   function lastPublishedText(d) {
     if (d.last_error) return `마지막으로 올린 때를 ${UNREAD}`;
     const l = d.last;
-    if (!l) return '아직 올린 기록 없음';
+    if (!l) return 'Notion에 올린 기록이 없습니다';      // 11-17: 게시 기록(DB)에 이 원고 폴더의 글이 한 편도 없다는 뜻
     return `마지막으로 올림 ${l.at ? ago(new Date(l.at * 1000).toISOString()) : ''}: 올림 ${l.done}${l.held ? `, 사람이 고쳐 멈춤 ${l.held}` : ''}${l.failed ? `, 실패 ${l.failed}` : ''}`;
   }
 
@@ -179,6 +179,9 @@ export function createScribe(store) {
   function html(room, label, pick = null) {
     cur = room;
     load(false, room);
+    // 고른 일이 있으면 할 일 칸을 한 번만 펼친다. 전에는 다시 그릴 때마다 펼쳐서 사람이 접어도 도로 풀렸다(11-17)
+    if (!pick) pickOpened = '';
+    else if (pickOpened !== `${room}:${pick}`) { pickOpened = `${room}:${pick}`; keepSet(`scribe:${room}:list`, true); }
     const tasks = (todo && todo.tasks) || {};
     const pj = (todo && todo.projects && todo.projects[room]) || {};
     const items = pj.items || [], opened = pj.open || [], blocked = pj.blocked || {}, behind = pj.behind || {};
@@ -205,7 +208,11 @@ export function createScribe(store) {
           : `<div class="sc-row"><div class="small">· 점검 결과 <code>${esc(r.name)}</code> <span class="muted">(합쳐진 결과의 어긋남을 고칩니다)</span></div>
             <button type="button" class="small" data-sc-task="docfix" data-topic="${esc(r.name)}" data-name="${esc(r.name)}"${busy || blocked.docfix ? ' disabled' : ''} title="${esc(blocked.docfix ? `문서 고치기 — 지금은 시킬 수 없습니다. ${blocked.docfix}` : `문서 고치기 — ${r.name}에 적힌 어긋남을 서기가 문서에서 고칩니다. 코드는 건드리지 않고, 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다.`)}">바로 고치기</button></div>`;
       }
-      return `<div class="sc-row${k === pick ? ' sc-pick' : ''}"><div class="small"><b>${esc(tasks[k].title)}</b>${bt.text ? ` <span class="${bt.cls}"${bt.tip ? ` title="${esc(bt.tip)}"` : ''}>${esc(bt.text)}</span>` : ''} <span class="muted">${esc(sub)}</span></div>
+      // 기술문서 쓰기는 뒤 한 줄(sub)이 「글 N편 가운데 코드가 바뀐 편 M」이라 앞의 「코드가 바뀐 편 M」은 같은 말이다(11-17). 뒤만 남기되
+      // 색은 앞의 것을 따른다. 읽지 못했을 때와 막힌 까닭이 뒤 줄을 대신할 때는 앞 표시를 그대로 둔다(조용히 사라지지 않게)
+      const dup = k === 'techdoc' && !blocked[k] && !(behind[k] && behind[k].unread) && sub === pj.techdoc.why;
+      const showBt = bt.text && !dup;
+      return `<div class="sc-row${k === pick ? ' sc-pick' : ''}"><div class="small"><b>${esc(tasks[k].title)}</b>${showBt ? ` <span class="${bt.cls}"${bt.tip ? ` title="${esc(bt.tip)}"` : ''}>${esc(bt.text)}</span>` : ''} <span class="${dup && bt.text ? bt.cls : 'muted'}">${esc(sub)}</span></div>
         ${go(k, '시키기', k === pick)}</div>${extra}`;
     }).join('');
     // 11-15 받은 할 일 숫자 줄은 없앴다 — 아래 포스트잇이 그 목록이다(머리 탭 포스트잇과 같은 것)
@@ -224,9 +231,12 @@ export function createScribe(store) {
     const sumCount = !todo ? '' : (nBehind + nAlert ? `<span class="warn">밀린 것 ${nBehind + nAlert}</span>` : '<span class="muted">밀린 것 없음</span>');
     const listBody = !todo ? (todoBad ? `<p class="small bad">할 일을 ${UNREAD}.</p>` : '<p class="small muted">할 일을 읽는 중입니다.</p>') : pickHead + alerts + rows + inboxRow + openHtml;
     // 물어보기(11-10) — 세션 없이 읽기 전용으로 한 번 묻는다. 답만 하고 파일은 고치지 않는다(고치는 일은 아래 [문서 고치기])
-    const fixBtn = answer && !answer.bad && answer.text
-      ? `<div class="hand-btns"><button type="button" class="small" data-sc-fix="ask"${busy || blocked.docfix ? ' disabled' : ''} title="${esc(blocked.docfix ? `문서 고치기 — 지금은 시킬 수 없습니다. ${blocked.docfix}` : '문서 고치기 — 위 답을 고칠 목록으로 서기에게 맡깁니다. 서기가 저장소와 다시 맞는지 확인한 뒤 문서만 고치고, 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다.')}">이 답대로 문서 고치기</button></div>` : '';
-    const askHtml = `<details class="hand" open><summary title="물어보기 — 서기 세션을 띄우지 않고 문서 · 기록에 대해 한 번 묻습니다. 읽기만 하고 파일은 고치지 않습니다."><b>물어보기</b></summary>
+    // 답 닫기(11-17 사용자): 답은 화면에만 있고(서버에 남기지 않는다) 닫으면 이 화면에서만 사라진다. 물은 글은 칸에 그대로 둔다
+    const fixOne = answer && !answer.bad && answer.text
+      ? `<button type="button" class="small" data-sc-fix="ask"${busy || blocked.docfix ? ' disabled' : ''} title="${esc(blocked.docfix ? `문서 고치기 — 지금은 시킬 수 없습니다. ${blocked.docfix}` : '문서 고치기 — 위 답을 고칠 목록으로 서기에게 맡깁니다. 서기가 저장소와 다시 맞는지 확인한 뒤 문서만 고치고, 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다.')}">이 답대로 문서 고치기</button>` : '';
+    const closeOne = answer ? `<button type="button" class="small ghost" data-sc-close="ask" title="답 닫기 — 위 답을 화면에서 닫습니다. 서버에는 아무것도 남기지 않고, 물은 글은 칸에 그대로 둡니다.">답 닫기</button>` : '';
+    const fixBtn = fixOne || closeOne ? `<div class="hand-btns">${fixOne}${closeOne}</div>` : '';
+    const askHtml = `<details class="hand"${keep(`scribe:${room}:ask`, true)}><summary title="물어보기 — 서기 세션을 띄우지 않고 문서 · 기록에 대해 한 번 묻습니다. 읽기만 하고 파일은 고치지 않습니다."><b>물어보기</b></summary>
       <textarea id="scAskText" rows="3" maxlength="2000" placeholder="문서나 기록에 대해 물어봅니다 (Ctrl+Enter로 보냅니다)"${asking ? ' disabled' : ''}>${esc(askText)}</textarea>
       <div class="hand-btns"><button type="button" class="small primary" data-sc-ask="1"${asking ? ' disabled' : ''} title="물어보기 — 답만 받습니다. 답에서 찾은 어긋남은 아래 [이 답대로 문서 고치기]로 시킵니다.">${asking ? '묻는 중…' : '물어보기'}</button></div>
       ${asking ? '<div class="small muted">서기가 문서를 읽고 있습니다… 보통 20초쯤 걸립니다.</div>' : ''}
@@ -235,7 +245,7 @@ export function createScribe(store) {
       ${askHtml}
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}"${note.tip ? ` title="${esc(note.tip)}"` : ''}>${esc(note.msg)}</div>` : ''}
       ${postitHtml}
-      <details class="hand"${pick ? ' open' : keep(`scribe:${room}:list`, true)}><summary title="할 일 — 서기에게 시킬 일 한 목록입니다. 이름 옆 숫자는 밀린 정도이고, 숫자가 없으면 지금 밀린 것이 없습니다."><b>할 일</b> ${sumCount}${bad}</summary>${listBody}</details>
+      <details class="hand"${keep(`scribe:${room}:list`, true)}><summary title="할 일 — 서기에게 시킬 일 한 목록입니다. 이름 옆 숫자는 밀린 정도이고, 숫자가 없으면 지금 밀린 것이 없습니다."><b>할 일</b> ${sumCount}${bad}</summary>${listBody}</details>
       <div class="hand">${portfolioBlock(room, pj, tasks)}${portPubBlock(room, pj)}${docsPubBlock(room, pj, label)}</div>
       ${pubBad[room] && pubs[room] ? `<div class="small bad">게시 목록을 ${UNREAD}(지난 값입니다).</div>` : ''}`;
   }
@@ -287,6 +297,7 @@ export function createScribe(store) {
     if (o) { ev.preventDefault(); if (openSession) openSession(Number(o.dataset.scOpen)); return; }
     if (await postit.onClick(ev, room)) { await load(true, room); return; }      // 포스트잇 줄 · [저장] · [갱신]
     if (ev.target.closest('[data-sc-ask]')) { ev.preventDefault(); await ask(room); return; }
+    if (ev.target.closest('[data-sc-close]')) { ev.preventDefault(); if (!asking) { answer = null; store.touch('panel'); } return; }
     if (ev.target.closest('[data-sc-fix]')) {        // 물어보기 답으로 바로 고치기
       ev.preventDefault();
       if (answer && !answer.bad && answer.text) await start(room, label, 'docfix', null, '물어보기 답', answer.text);

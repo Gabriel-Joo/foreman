@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/static/js/opanel.js, bridge/static/js/render.js, bridge/static/js/md.js, bridge/static/js/tip.js, bridge/static/js/uiscale.js, bridge/static/js/grip.js, tests/js/grip.test.mjs, tests/js/md.test.mjs, tests/js/render.test.mjs, tests/js/uiscale_range.test.mjs, tests/js/term_cell.test.mjs, tests/js/api_stop.test.mjs, tests/js/appr_place.test.mjs, tests/js/bg_line.test.mjs, tests/js/escalate_unseen.test.mjs, tests/js/now_doing.test.mjs
+다루는 곳: bridge/static/js/opanel.js, bridge/static/js/render.js, bridge/static/js/md.js, bridge/static/js/tip.js, bridge/static/js/uiscale.js, bridge/static/js/grip.js, tests/js/grip.test.mjs, tests/js/md.test.mjs, tests/js/render.test.mjs, tests/js/uiscale_range.test.mjs, tests/js/term_cell.test.mjs, tests/js/api_stop.test.mjs, tests/js/appr_place.test.mjs, tests/js/bg_line.test.mjs, tests/js/escalate_unseen.test.mjs, tests/js/now_doing.test.mjs, tests/js/fold_keep.test.mjs
 읽은 커밋: fb7121b
 -->
 
@@ -157,7 +157,7 @@ flowchart TB
 
 긴 글을 접을 때도 흐름을 지킨다. 펼쳐 읽다가 [접기]를 누르면 글이 짧아지면서 화면이 엉뚱한 곳으로 간다. 그 글의 머리가 화면 위로 사라졌으면 머리로 데려온다. 펼칠 때는 자리를 그대로 둔다.
 
-같은 생각을 다른 칸에도 썼다. 사람이 펼치거나 접은 칸(`<details>`)은 다시 그려도 그 상태로 돌아온다. 패널을 다시 그리면 접는 칸이 처음값으로 돌아가는 일이 서기실 창과 요약 고치기에서 있었다 [log:portfolio_publish_20261106.md]. 그래서 칸마다 이름을 주고(`keep(이름, 처음값)`), 사람이 바꾼 상태를 이름별로 기억해 다시 그릴 때 그 상태로 넣는다 [code:bridge/static/js/render.js]. 펼친 긴 글, 펼친 중간 글, 펼친 활동 줄도 같은 식으로 기억한다. 제목을 고치는 중이거나 역할 고르기 칸이 열려 있는 동안에는 그 자리를 다시 그리지 않는다. 승인 카드의 글 칸에 치던 글도 다시 그려도 남는다(아래 승인 카드 절).
+같은 생각을 다른 칸에도 썼다. 사람이 펼치거나 접은 칸(`<details>`)은 다시 그려도 그 상태로 돌아온다. 패널을 다시 그리면 접는 칸이 처음값으로 돌아가는 일이 서기실 창과 요약 고치기에서 있었다 [log:portfolio_publish_20261106.md]. 그래서 칸마다 이름을 주고(`keep(이름, 처음값)`), 사람이 바꾼 상태를 이름별로 기억해 다시 그릴 때 그 상태로 넣는다 [code:bridge/static/js/render.js]. 기억은 새로고침 뒤에도 남는다. 브라우저 저장소에 적어 두고(최근 200칸까지, 막혀 있으면 그 탭에서만), 그릴 때 브라우저가 스스로 쏘는 열림 신호는 사람이 한 선택으로 적지 않는다. 적으면 처음값이 사람의 선택으로 굳어서, 나중에 처음값이 바뀌어도(새 글이면 펼침처럼) 따라가지 못한다. 서기실의 물어보기 칸과 할 일 칸, 패널 목록의 「종료된 세션」 칸도 이 길을 쓴다. 전에는 물어보기 칸이 그릴 때마다 펼쳐졌고, 정리할까요를 눌러 연 할 일 칸은 접어도 다시 그릴 때 도로 펼쳐졌다. 펼친 긴 글, 펼친 중간 글, 펼친 활동 줄도 같은 식으로 기억한다. 제목을 고치는 중이거나 역할 고르기 칸이 열려 있는 동안에는 그 자리를 다시 그리지 않는다. 승인 카드의 글 칸에 치던 글도 다시 그려도 남는다(아래 승인 카드 절).
 
 ## 작은 마크다운
 
