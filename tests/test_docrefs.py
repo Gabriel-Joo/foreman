@@ -139,8 +139,9 @@ def test_range_fixed_unfixed_and_line_overlap(repo):
     assert d["notion/07_merge.md"]["fixed"] is True and d["docs/11_x.md"]["fixed"] is False
     assert res["total"] == 3 and res["unfixed"] == 2
     assert res["docs"][-1]["doc"] == "notion/07_merge.md"     # 안 고친 것 먼저
-    mark = [h for h in d["notion/07_merge.md"]["hits"] if h["range"]][0]
-    assert mark["range"] == [3, 4] and mark["overlap"] is False          # 바뀐 줄은 10
+    # 바뀐 줄은 10. 줄 번호 3-4 근거 표시는 겹치지 않아 걸지 않는다(2단계, 인프라와 같다. 전에는 overlap False로 걸었다)
+    assert not [h for h in d["notion/07_merge.md"]["hits"] if h["range"]]
+    assert [h["how"] for h in d["notion/07_merge.md"]["hits"]] == ["covers"]   # 다루는 곳은 그대로 걸린다
     assert all(h["overlap"] is None for h in d["docs/11_x.md"]["hits"])  # 줄 번호 없는 가리킴
     put(repo, "bridge/mergeprep.py", "".join(f"line{i}\n" for i in range(1, 21)).replace("line3\n", "L3\n"))
     sh(repo, "commit", "-qam", "fix: 3")
@@ -167,8 +168,8 @@ def test_doc_folder_media_is_not_code(repo):
 def test_files_mode_line_ranges(repo):
     hit = [h for h in by_doc(dr.scan(repo, files=["bridge/mergeprep.py:4-6"]))["notion/07_merge.md"]["hits"] if h["range"]][0]
     assert hit["overlap"] is True
-    hit = [h for h in by_doc(dr.scan(repo, files=["bridge/mergeprep.py:9"]))["notion/07_merge.md"]["hits"] if h["range"]][0]
-    assert hit["overlap"] is False
+    hits = by_doc(dr.scan(repo, files=["bridge/mergeprep.py:9"]))["notion/07_merge.md"]["hits"]
+    assert not [h for h in hits if h["range"]] and [h["how"] for h in hits] == ["covers"]   # 안 겹치는 줄 번호는 걸지 않는다
 
 
 def test_src_from_foreman_config_and_default(repo, tmp_path):

@@ -1,42 +1,59 @@
-"""거꾸로 찾기(11-17 사용자 지시 21). 코드 파일을 주면 그 코드를 가리키는 문서(docs, 노션 원고, 포트폴리오)와 줄을 돌려준다.
+"""거꾸로 찾기(11-17 사용자 지시 21). 바뀐 코드나 문서를 주면 그것을 가리키는 문서(docs, 노션 원고, 포트폴리오)와 줄을 돌려준다.
 
-읽기만 한다. 저장소를 바꾸지 않는다(git은 ls-tree, cat-file, diff, merge-base, rev-parse만 부른다).
-명령은 `tools/docrefs.py`, 브리지는 `scan()`을 부른다(합치기 카드 「걸리는 문서」, `bridge/mergeprep.py`).
+읽기만 한다. 저장소를 바꾸지 않는다(git은 ls-tree, ls-files, cat-file, diff, merge-base, rev-parse만 부른다).
+명령은 `tools/docs.py refs`(`tools/docrefs.py`는 같은 결과를 내는 껍데기), 브리지는 `scan()`을 부른다
+(합치기 카드 「걸리는 문서」, `bridge/mergeprep.py`).
 
-가리키는 꼴 넷(`how`):
-- `mark`   원고의 근거 표시 `[code:bridge/x.py]`, 폴더 `[code:bridge/transcript/]`(그 아래 파일 모두), 줄 번호 `[code:bridge/x.py:10-20]`
-- `path`   백틱 안이나 맨글의 저장소 경로(`bridge/x.py`, 폴더 `bridge/static/js/`)
-- `name`   백틱 안의 파일 이름이나 경로 끝(`mergeprep.py`, `api/handoff.py`). 저장소에서 그 끝을 가진 파일이 하나뿐일 때만
+저장소마다 다른 것은 그 저장소 `.foreman/docs.toml`(`bridge/doctext/config.py`)에서 읽는다(11-17 문서 도구 합치기 2단계).
+파일이 없으면 FOREMAN 기본값이다. 설정은 작업 트리 판을 읽는다(범위 없이 `rev`를 주면 그 커밋 판).
+- `[sets]` 문서 묶음 폴더(docs, notion, portfolio). notion이 없으면 그 저장소 `.foreman/notion.toml` `src`, 그것도 없으면
+  FOREMAN `config/notion.toml`의 그 저장소 칸 `src`. docs와 같으면 따로 두지 않는다. 셋 다 `*.md`만
+- `records` 기록 폴더(FOREMAN `log/`, 인프라 `docs/history/`). 문서도 아니고 걸게 하지도 않는다
+- `not_code` 바뀌어도 코드로 세지 않는 확장자(`.md`)
+- `pair_numbers` docs의 `NN_*.md`가 바뀌면 같은 번호 원고 `NN_*.md`와 `NN_*/` 아래 글도 건다(인프라만 켬)
+
+걸게 하는 것(`triggers`, 종류 `code` 또는 `doc`)
+- code  문서 묶음 폴더 밖의 파일 가운데 기록 폴더가 아니고 `not_code` 확장자가 아닌 것
+- doc   docs 묶음 문서와 묶음 밖의 `*.md`(README.md, CLAUDE.md 등). 근거 표시와 다루는 곳으로 가리킬 때만 걸린다
+        (경로를 글에 적은 것만으로는 걸지 않는다). 원고와 포트폴리오, 기록은 걸게 하지 않는다
+
+가리키는 꼴(`how`, 결과에 그대로 남아 어느 자리에서 걸렸는지 보인다)
+- `mark`   근거 표시 `[code:경로]`, `[docs:경로]`(docs 묶음 폴더 기준), 폴더(끝이 /는 아래 모두), 줄 번호 `[code:경로:10-20]`
 - `covers` 원고와 포트폴리오 머리 주석 「다루는 곳」(파일, 끝이 /인 폴더, *가 든 글롭. 꼴은 `bridge/doctext/head.py`)
+- `path`   백틱 안이나 맨글의 저장소 경로(`bridge/x.py`, 폴더 `bridge/static/js/`). code만
+- `name`   백틱 안의 파일 이름이나 경로 끝(`mergeprep.py`). 저장소에서 그 끝을 가진 파일이 하나뿐일 때만. code만
+- `pair`   번호 짝(`pair_numbers`)
 
-근거 표시, 머리 주석, 코드 울타리와 HTML 주석 가르기는 문서 문법 묶음 `bridge/doctext` 한 곳을 쓴다(11-17 문서 도구 합치기 1단계).
+근거 표시, 머리 주석, 코드 울타리와 HTML 주석 가르기, 저장소 읽기는 문서 문법 묶음 `bridge/doctext` 한 곳을 쓴다.
 
-문서 묶음: `docs/`(docs), 원고 폴더(notion, 그 저장소 `.foreman/notion.toml`의 `src`, 없으면 FOREMAN `config/notion.toml`의
-그 저장소 칸 `src`. `docs/`면 docs와 같은 묶음이라 따로 두지 않는다), `portfolio/`(portfolio). 셋 다 `*.md`만.
-
-커밋 범위(`A..B`, `A...B`)를 주면 그 범위에서 바뀐 코드 파일로 찾고, 문서는 B 판을 읽는다. 그 문서가 같은 범위에서 바뀌었으면
+커밋 범위(`A..B`, `A...B`)를 주면 그 범위에서 바뀐 파일로 찾고, 문서는 B 판을 읽는다. 그 문서가 같은 범위에서 바뀌었으면
 `fixed` True(고침), 아니면 False(안 고침). 파일 목록만 주면 작업 트리(또는 `rev`)를 읽고 `fixed`는 None(모름)이다.
-근거 표시에 줄 번호가 있으면 바뀐 줄 범위(범위의 옛 쪽 줄)와 겹치는지 `overlap`으로 보인다(줄 번호가 없으면 None).
+근거 표시에 줄 번호가 있고 바뀐 줄을 알면(범위, 또는 `경로:줄-줄` 인자) 겹칠 때만 건다(`overlap` True). 바뀐 줄은 범위의
+옛 쪽 줄 번호다. 줄 번호 없는 표시, 다루는 곳, 경로는 늘 건다(`overlap` None).
 """
 
 from __future__ import annotations
 
 import fnmatch
 import re
-import subprocess
 import tomllib
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from bridge.doctext import config as dcfg
 from bridge.doctext.head import parse_head
 from bridge.doctext.lines import TEXT, walk
-from bridge.doctext.marks import CODE_MARK as MARK
+from bridge.doctext.marks import MARK as ANY_MARK
+from bridge.doctext.marks import REF_MARK as MARK
 from bridge.doctext.marks import split_range as _split_range
+from bridge.doctext.repo import RepoError as DocrefsError
+from bridge.doctext.repo import gits as _gits
+from bridge.doctext.repo import read_many as _read_many
+from bridge.doctext.repo import tree as _tree
 
 FOREMAN_ROOT = Path(__file__).resolve().parent.parent
-DOCS_DIR = "docs/"
-PORTFOLIO_DIR = "portfolio/"
-SKIP_CODE_DIRS = ("log/",)          # 범위에서 바뀐 파일 중 코드로 치지 않는 곳(결과 기록). 문서 묶음 아래 파일(사진 포함)과 *.md도 코드가 아니다
+DOCS_DIR = dcfg.DocsConfig().sets["docs"]
+PORTFOLIO_DIR = dcfg.DocsConfig().sets["portfolio"]
 
 TICK = re.compile(r"`([^`\n]+)`")
 TOKEN = re.compile(r"[A-Za-z0-9_./*-]+(?::\d+(?:-\d+)?)?")
@@ -46,25 +63,7 @@ LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s|^\s*\|")
 EXT = re.compile(r"\.[A-Za-z0-9]{1,6}$")
 
 
-class DocrefsError(RuntimeError):
-    """git을 읽지 못함, 범위를 모름 등. 화면과 카드는 이 글을 그대로 보인다."""
-
-
-def _git(repo: str | Path, *a: str, input_: bytes | None = None) -> bytes:
-    try:
-        r = subprocess.run(["git", "-C", str(repo), *a], capture_output=True, timeout=60, input=input_)
-    except (OSError, subprocess.SubprocessError) as e:
-        raise DocrefsError(f"git을 부르지 못했습니다({type(e).__name__})") from e
-    if r.returncode:
-        raise DocrefsError(f"git {a[0]} 실패: {r.stderr.decode(errors='replace').strip()[:200]}")
-    return r.stdout
-
-
-def _gits(repo: str | Path, *a: str) -> str:
-    return _git(repo, *a).decode(errors="replace")
-
-
-# ── 설정: 원고 폴더 ─────────────────────────────────────────
+# ── 설정: 원고 폴더와 문서 묶음 ─────────────────────────────
 def project_name(repo: str | Path) -> str:
     """저장소 이름. worktree면 원본 저장소 폴더 이름(`.worktrees/foreman-8` → foreman). FOREMAN `config/notion.toml` 칸 이름과 같다."""
     try:
@@ -97,18 +96,31 @@ def manuscript_src(repo: str | Path, config: str | Path | None = None) -> str | 
     return src_of(sec) if isinstance(sec, dict) else None
 
 
-def doc_sets(src: str | None, docs_dir: str = DOCS_DIR) -> dict[str, str]:
+def doc_sets(src: str | None, docs_dir: str = DOCS_DIR, portfolio: str | None = PORTFOLIO_DIR) -> dict[str, str]:
     """{묶음 이름: 폴더}. 원고 폴더가 docs와 같으면 docs 하나로."""
     d = docs_dir if docs_dir.endswith("/") else docs_dir + "/"
     out = {"docs": d}
     if src and src != d:
         out["notion"] = src
-    out["portfolio"] = PORTFOLIO_DIR
+    if portfolio:
+        out["portfolio"] = portfolio
     return out
 
 
-def kind_of(path: str, sets: dict[str, str]) -> str | None:
-    if not path.endswith(".md"):
+def resolve_sets(repo: str | Path, cfg: dcfg.DocsConfig, src: str | None = None, docs_dir: str | None = None,
+                 config: str | Path | None = None) -> dict[str, str]:
+    """docs.toml `[sets]`으로 문서 묶음을 정한다. 원고 폴더는 src 인자, docs.toml, notion.toml 차례. docs 폴더는 그 저장소에
+    docs.toml이 있으면 그 값, 없으면 docs_dir 인자(합치기 카드가 FOREMAN `config/handoff.toml` `docs_dir`를 넘긴다), 그것도 없으면 기본값."""
+    docs = cfg.sets.get("docs") or DOCS_DIR
+    if cfg.source == "default" and docs_dir:
+        docs = docs_dir
+    notion = src if src is not None else (cfg.sets.get("notion") or manuscript_src(repo, config))
+    return doc_sets(notion, docs, cfg.sets.get("portfolio"))
+
+
+def kind_of(path: str, sets: dict[str, str], records: list[str] | tuple[str, ...] = ()) -> str | None:
+    """문서 묶음 이름. 문서가 아니면(또는 기록 폴더면) None."""
+    if not path.endswith(".md") or (records and path.startswith(tuple(records))):
         return None
     for k, d in sorted(sets.items(), key=lambda x: -len(x[1])):
         if path.startswith(d):
@@ -116,40 +128,23 @@ def kind_of(path: str, sets: dict[str, str]) -> str | None:
     return None
 
 
-# ── 문서 읽기 ───────────────────────────────────────────────
-def _tree(repo: str, rev: str | None, dirs: list[str] | None = None) -> list[str]:
-    if rev:
-        out = _gits(repo, "ls-tree", "-r", "--name-only", rev, "--", *(dirs or []))
-    else:
-        out = _gits(repo, "ls-files", "--", *(dirs or []))
-    return [x for x in out.splitlines() if x]
+def trigger_kind(path: str, sets: dict[str, str], cfg: dcfg.DocsConfig | None = None) -> str | None:
+    """걸게 하는 파일의 종류: "code", "doc", 또는 None(원고, 포트폴리오, 기록, 문서 묶음 아래 사진 같은 것)."""
+    cfg = cfg or dcfg.DocsConfig()
+    if path.startswith(tuple(cfg.records)):
+        return None
+    inside = any(d and path.startswith(d) for d in sets.values())
+    if path.endswith(tuple(cfg.not_code)):
+        if path.endswith(".md") and (not inside or kind_of(path, sets, cfg.records) == "docs"):
+            return "doc"
+        return None
+    # 문서 묶음 폴더 아래 파일은 확장자와 상관없이 코드가 아니다(11-17 `portfolio/img/`의 png, gif, webm이 코드로 세어져
+    # 합치기 카드에 헛걸림이 생겼다)
+    return None if inside else "code"
 
 
-def _read_many(repo: str, rev: str | None, paths: list[str]) -> dict[str, str]:
-    """여러 문서를 한 번에. rev면 `git cat-file --batch`, 아니면 작업 트리."""
-    if not paths:
-        return {}
-    if not rev:
-        out = {}
-        for p in paths:
-            try:
-                out[p] = (Path(repo) / p).read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-        return out
-    raw = _git(repo, "cat-file", "--batch", input_="".join(f"{rev}:{p}\n" for p in paths).encode())
-    out: dict[str, str] = {}
-    i = 0
-    for p in paths:
-        nl = raw.index(b"\n", i)
-        head = raw[i:nl].decode(errors="replace").split()
-        i = nl + 1
-        if len(head) >= 2 and head[1] == "missing":
-            continue
-        size = int(head[2])
-        out[p] = raw[i:i + size].decode(errors="replace")
-        i += size + 1
-    return out
+def is_code(path: str, sets: dict[str, str], cfg: dcfg.DocsConfig | None = None) -> bool:
+    return trigger_kind(path, sets, cfg) == "code"
 
 
 # ── 문서 안의 가리킴(근거 표시, 머리 주석, 울타리와 주석 가르기는 bridge/doctext) ──
@@ -171,8 +166,9 @@ def _pathlike(tok: str) -> bool:
     return True
 
 
-def refs_in(md: str) -> list[dict[str, Any]]:
-    """한 문서의 가리킴 [{line, target, range, how, ref}]. 코드 울타리와 HTML 주석 안은 보지 않는다(머리 주석은 따로 covers로)."""
+def refs_in(md: str, docs_dir: str = DOCS_DIR) -> list[dict[str, Any]]:
+    """한 문서의 가리킴 [{line, target, range, how, ref}]. 코드 울타리와 HTML 주석 안은 보지 않는다(머리 주석은 따로 covers로).
+    `[docs:x]`의 target은 docs 묶음 폴더 기준 경로(`docs/x`)다."""
     out: list[dict[str, Any]] = []
     head = parse_head(md)
     if head:
@@ -193,8 +189,8 @@ def refs_in(md: str) -> list[dict[str, Any]]:
 
         for mk in MARK.finditer(ln):
             p, rng = _split_range(_clean(mk["v"]))
-            add(p, rng, "mark", mk.group(0))
-        rest = MARK.sub(" ", ln)
+            add(p if mk["k"] == "code" else docs_dir + p, rng, "mark", mk.group(0))
+        rest = ANY_MARK.sub(" ", ln)
         for tk in TICK.finditer(rest):
             for t in TOKEN.findall(tk.group(1)):
                 p, rng = _split_range(_clean(t))
@@ -244,9 +240,11 @@ def _glob(p: str) -> bool:
     return any(ch in p for ch in "*?[")
 
 
-def matches(target: str, how: str, code: str, names: dict[str, list[str]]) -> bool:
-    """가리킴 하나가 코드 파일 하나를 덮나. 폴더(끝이 /)는 그 아래 모두, 글롭은 fnmatch(*가 /도 넘는다),
-    `name`은 저장소에서 그 끝을 가진 파일이 하나뿐일 때 그 파일만."""
+def matches(target: str, how: str, code: str, names: dict[str, list[str]], kind: str = "code") -> bool:
+    """가리킴 하나가 걸게 하는 파일 하나를 덮나. 폴더(끝이 /)는 그 아래 모두, 글롭은 fnmatch(*가 /도 넘는다),
+    `name`은 저장소에서 그 끝을 가진 파일이 하나뿐일 때 그 파일만. 문서(kind doc)는 근거 표시와 다루는 곳만 본다."""
+    if kind == "doc" and how not in ("mark", "covers"):
+        return False
     if target.endswith("/"):
         return code.startswith(target)
     if _glob(target):
@@ -282,7 +280,9 @@ def changed_lines(repo: str, a: str, b: str, files: list[str]) -> dict[str, list
             m = re.match(r"^@@ -(\d+)(?:,(\d+))? ", ln)
             if m:
                 s, n = int(m[1]), int(m[2] if m[2] is not None else 1)
-                out.setdefault(cur, []).append((s, s + max(n, 1) - 1))
+                # 줄을 넣기만 한 덩어리(-s,0)는 옛 줄을 바꾸지 않는다. s와 s+1 사이로 적어(s+1, s) 근거 범위 안쪽에 끼어들 때만
+                # 겹치게 한다(인프라 11-17 고장: CLAUDE.md 34줄 뒤에 넣은 줄이 34줄을 건 근거를 헛걸었다)
+                out.setdefault(cur, []).append((s + 1, s) if n == 0 else (s, s + n - 1))
     return out
 
 
@@ -305,27 +305,35 @@ def parse_range(repo: str, rng: str) -> tuple[str, str]:
     return a2, b2
 
 
-def is_code(path: str, sets: dict[str, str]) -> bool:
-    """범위에서 바뀐 파일 가운데 코드인가. 문서 묶음 폴더 아래 파일은 확장자와 상관없이 코드가 아니다
-    (11-17 `portfolio/img/`의 png, gif, webm이 코드로 세어져 합치기 카드에 헛걸림이 생겼다)."""
-    if path.endswith(".md") or path.startswith(SKIP_CODE_DIRS):
-        return False
-    return not any(d and path.startswith(d) for d in sets.values())
+def _pair_hits(trigger: str, doc_paths: list[str], sets: dict[str, str], records: list[str]) -> list[str]:
+    """docs 묶음의 `NN_*.md` → 같은 번호 원고 `NN_*.md`, `NN_*/` 아래 글(바로 docs 묶음 폴더 아래 것만)."""
+    src = sets.get("notion")
+    m = re.match(rf"^{re.escape(sets['docs'])}(\d{{2}})_[^/]*\.md$", trigger)
+    if not m or not src:
+        return []
+    return [p for p in doc_paths if kind_of(p, sets, records) == "notion" and re.match(rf"^{m.group(1)}_", p[len(src):])]
 
 
 def scan(repo: str | Path, files: list[str] | None = None, rng: str | None = None, rev: str | None = None,
-         src: str | None = None, docs_dir: str = DOCS_DIR, config: str | Path | None = None,
-         para_cap: int = 400) -> dict[str, Any]:
-    """거꾸로 찾기 한 번. files(`경로` 또는 `경로:시작-끝`) 또는 rng 중 하나는 있어야 한다. 둘 다 주면 범위의 코드 파일 중 files만.
+         src: str | None = None, docs_dir: str | None = None, config: str | Path | None = None,
+         para_cap: int = 400, cfg: dcfg.DocsConfig | None = None) -> dict[str, Any]:
+    """거꾸로 찾기 한 번. files(`경로`, `폴더/`, 글롭, `경로:시작-끝`) 또는 rng 중 하나는 있어야 한다. 둘 다 주면 범위의 파일 중 files만.
+    cfg를 주지 않으면 그 저장소 `.foreman/docs.toml`(작업 트리, 범위 없이 rev를 주면 그 판)을 읽는다.
 
-    돌려주는 것: {repo, range, rev, sets, code, docs: [{doc, kind, fixed, files, hits: [{line, heading, para_from, para_to,
-    para, how, ref, code, range, overlap}]}], total, unfixed, warnings}. docs는 안 고친 것, 걸린 수가 많은 것 먼저."""
+    돌려주는 것: {repo, range, rev, sets, config, code, triggers, docs: [{doc, kind, fixed, files, hits: [{line, heading,
+    para_from, para_to, para, how, ref, code, range, overlap}]}], total, unfixed, warnings}. `code`는 걸게 한 코드 파일,
+    `triggers`는 코드와 문서 모두, 걸린 줄의 `code`는 그 줄이 가리킨 걸게 한 파일(문서일 수도 있다).
+    docs는 안 고친 것, 걸린 수가 많은 것 먼저."""
     repo = str(Path(repo).resolve())
     if not files and not rng:
         raise DocrefsError("코드 파일이나 커밋 범위를 주어야 합니다")
-    src = src if src is not None else manuscript_src(repo, config)
-    sets = doc_sets(src, docs_dir)
-    warnings: list[str] = []
+    if cfg is None:
+        try:
+            cfg = dcfg.load(repo, None if rng else rev)
+        except dcfg.DocsConfigError as e:
+            raise DocrefsError(f"문서 설정을 읽지 못했습니다: {e}") from e
+    sets = resolve_sets(repo, cfg, src, docs_dir, config)
+    warnings: list[str] = list(cfg.warnings)
     given: dict[str, list[tuple[int, int]]] = {}
     for f in files or []:
         p, r = _split_range(_clean(f))
@@ -338,62 +346,130 @@ def scan(repo: str | Path, files: list[str] | None = None, rng: str | None = Non
     if rng:
         a, b = parse_range(repo, rng)
         changed = set(_gits(repo, "diff", "--name-only", "--no-renames", a, b).splitlines())
-        code = sorted(p for p in changed if is_code(p, sets))
+        trig = sorted(p for p in changed if trigger_kind(p, sets, cfg))
         if given:
-            code = [p for p in code if p in given or any(matches(g, "path", p, {}) for g in given)]
+            trig = [p for p in trig if p in given or any(matches(g, "path", p, {}) for g in given)]
         rev = b
+        tracked = _tree(repo, rev)
     else:
-        code = sorted(given)
-        lines_of = {p: r for p, r in given.items() if r}
-    if not code:
-        return {"repo": repo, "range": rng, "rev": rev, "sets": sets, "code": [], "docs": [], "total": 0, "unfixed": 0,
-                "warnings": warnings}
-    tracked = _tree(repo, rev)
-    names = _names(sorted(set(tracked) | set(code)))
-    doc_paths = [p for p in _tree(repo, rev, list(sets.values())) if kind_of(p, sets)]
+        tracked = _tree(repo, rev)
+        trig = []
+        for g, r in given.items():
+            if g.endswith("/") or _glob(g):
+                under = [p for p in tracked if matches(g, "covers", p, {}) and trigger_kind(p, sets, cfg)]
+                if not under:
+                    warnings.append(f"{g}: 아래에 걸게 하는 파일이 없습니다")
+                trig += under
+            elif trigger_kind(g, sets, cfg):
+                trig.append(g)
+                if r:
+                    lines_of[g] = r
+            else:
+                warnings.append(f"{g}: 코드도 docs 문서도 아니라 찾지 않습니다(원고, 포트폴리오, 기록 폴더는 걸게 하지 않습니다)")
+        trig = sorted(set(trig))
+    kinds = {p: trigger_kind(p, sets, cfg) or "code" for p in trig}
+    code = [p for p in trig if kinds[p] == "code"]
+    empty = {"repo": repo, "range": rng, "rev": rev, "sets": sets, "config": cfg.source, "code": code, "triggers": trig,
+             "docs": [], "total": 0, "unfixed": 0, "warnings": warnings}
+    if not trig:
+        return empty
+    names = _names(sorted(set(tracked) | set(trig)))
+    doc_paths = [p for p in _tree(repo, rev, list(sets.values())) if kind_of(p, sets, cfg.records)]
     bodies = _read_many(repo, rev, doc_paths)
     raw_hits: dict[str, list[dict[str, Any]]] = {}
     for path in doc_paths:
         body = bodies.get(path)
         if body is None:
             continue
-        refs = refs_in(body)
+        refs = refs_in(body, sets["docs"])
         if not refs:
             continue
         lines = body.splitlines()
         heads = None
         for r in refs:
-            hit = [c for c in code if matches(r["target"], r["how"], c, names)]
+            hit = [t for t in trig if t != path and matches(r["target"], r["how"], t, names, kinds[t])]
             if not hit:
                 continue
             if heads is None:
                 heads = _headings(lines)
             pa, pb, ptxt = paragraph(lines, r["line"], para_cap) if r["how"] != "covers" else (r["line"], r["line"], r["ref"])
-            for c in hit:
+            for t in hit:
                 raw_hits.setdefault(path, []).append({
                     "line": r["line"], "heading": "(머리 주석)" if r["how"] == "covers" else heads[r["line"] - 1],
-                    "para_from": pa, "para_to": pb, "para": ptxt, "how": r["how"], "ref": r["ref"], "code": c,
+                    "para_from": pa, "para_to": pb, "para": ptxt, "how": r["how"], "ref": r["ref"], "code": t,
                     "range": list(r["range"]) if r["range"] else None, "overlap": None})
-    # 줄 번호가 있는 근거 표시만 바뀐 줄과 맞댄다
-    want = sorted({h["code"] for hs in raw_hits.values() for h in hs if h["range"]})
+    if cfg.pair_numbers:
+        for t in trig:
+            for p in _pair_hits(t, doc_paths, sets, cfg.records):
+                raw_hits.setdefault(p, []).append({
+                    "line": 1, "heading": "(번호 짝)", "para_from": 1, "para_to": 1, "para": "", "how": "pair",
+                    "ref": f"번호 짝 {t}", "code": t, "range": None, "overlap": None})
+    # 줄 번호가 있는 근거 표시만 바뀐 줄과 맞댄다. 바뀐 줄을 알고 겹치지 않으면 걸린 것으로 치지 않는다
+    want = sorted({h["code"] for hs in raw_hits.values() for h in hs if h["range"] and h["how"] == "mark"})
     if want and rng and a and b:
         try:
             lines_of = changed_lines(repo, a, b, want)
         except DocrefsError as e:
-            warnings.append(f"바뀐 줄을 읽지 못했습니다: {e}")
-    for hs in raw_hits.values():
-        for h in hs:
-            if h["range"] and (rng or h["code"] in lines_of):
-                spans = lines_of.get(h["code"], [])
-                h["overlap"] = any(s <= h["range"][1] and h["range"][0] <= e for s, e in spans)
+            warnings.append(f"바뀐 줄을 읽지 못해 줄 번호를 보지 않았습니다: {e}")
     docs = []
     for path, hs in raw_hits.items():
-        hs.sort(key=lambda h: (h["line"], h["code"]))
+        keep = []
+        for h in hs:
+            if h["range"] and h["how"] == "mark" and h["code"] in lines_of:
+                h["overlap"] = any(s <= h["range"][1] and h["range"][0] <= e for s, e in lines_of[h["code"]])
+                if not h["overlap"]:
+                    continue
+            keep.append(h)
+        if not keep:
+            continue
+        keep.sort(key=lambda h: (h["line"], h["code"]))
         docs.append({"doc": path, "kind": kind_of(path, sets), "fixed": (path in changed) if rng else None,
-                     "files": sorted({h["code"] for h in hs}), "hits": hs})
+                     "files": sorted({h["code"] for h in keep}), "hits": keep})
     docs.sort(key=lambda d: (d["fixed"] is True, -len(d["hits"]), d["doc"]))
-    return {"repo": repo, "range": rng, "rev": rev, "sets": sets, "code": code, "docs": docs, "total": len(docs),
-            "unfixed": sum(1 for d in docs if d["fixed"] is False), "warnings": warnings}
+    return {**empty, "docs": docs, "total": len(docs), "unfixed": sum(1 for d in docs if d["fixed"] is False)}
+
+
+# ── 글 모양(tools/docs.py refs, tools/docrefs.py) ───────────
+KIND_KO = {"docs": "docs", "notion": "노션 원고", "portfolio": "포트폴리오"}
+HOW_KO = {"mark": "근거 표시", "path": "경로", "name": "파일 이름", "covers": "다루는 곳", "pair": "번호 짝"}
+
+
+def fixed_ko(v: bool | None) -> str:
+    return "고침" if v is True else "안 고침" if v is False else "모름"
+
+
+def render(res: dict[str, Any], brief: bool = False, unfixed: bool = False) -> str:
+    out = []
+    n_doc = len(res.get("triggers", res["code"])) - len(res["code"])
+    what = f"코드 파일 {len(res['code'])}개" + (f", 문서 {n_doc}개" if n_doc else "")
+    head = f"걸리는 문서 {res['total']}"
+    if res["range"]:
+        head += f", 안 고침 {res['unfixed']} (범위 {res['range']}, 바뀐 {what})"
+    else:
+        head += f" ({what}, 고쳤는지는 범위를 주어야 압니다)"
+    out.append(head)
+    for w in res.get("warnings") or []:
+        out.append(f"⚠ {w}")
+    for d in res["docs"]:
+        if unfixed and d["fixed"] is not False:
+            continue
+        lines = sorted({h["line"] for h in d["hits"]})
+        out.append(f"\n[{fixed_ko(d['fixed'])}] {d['doc']} ({KIND_KO.get(d['kind'], d['kind'])}) 줄 {', '.join(map(str, lines[:12]))}"
+                   + (" …" if len(lines) > 12 else "") + f" ← {', '.join(d['files'])}")
+        if brief:
+            continue
+        last = None
+        for h in d["hits"]:
+            key = (h["para_from"], h["code"], h["how"] == "pair")
+            if key == last:
+                continue
+            last = key
+            rng = f" 줄 {h['range'][0]}-{h['range'][1]}" + (" (바뀐 줄과 겹침)" if h["overlap"] else "") if h["range"] else ""
+            out.append(f"  {h['line']}: 「{h['heading'] or '(제목 없음)'}」 {HOW_KO.get(h['how'], h['how'])} {h['ref']} → {h['code']}{rng}")
+            if h["how"] not in ("covers", "pair"):
+                span = f"{h['para_from']}-{h['para_to']}" if h["para_to"] != h["para_from"] else str(h["para_from"])
+                out.append(f"     ({span}) {h['para']}")
+    return "\n".join(out)
 
 
 # ── 합치기 카드 모양 ────────────────────────────────────────

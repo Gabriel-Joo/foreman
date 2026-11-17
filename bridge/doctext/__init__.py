@@ -6,7 +6,8 @@
 - `marks`   근거 표시 `[c:]` `[t:]` `[log:]` `[docs:]` `[code:]`와 경로 뒤 `:줄` `:줄-줄`
 - `head`    머리 주석 「다루는 곳」 「읽은 커밋」
 - `titles`  편 제목(첫 # 줄), 번호 뗀 제목, 편 사이 참조 `→ 「제목」`
-- `config`  저장소마다 다른 것 `.foreman/docs.toml`(뼈대)
+- `config`  저장소마다 다른 것 `.foreman/docs.toml`(2단계부터 거꾸로 찾기가 쓴다)
+- `repo`    저장소 읽기(추적 파일 목록, 여러 파일을 작업 트리나 커밋에서 한 번에, 2단계에 `bridge/docrefs.py`에서 옮김)
 
 쓰는 곳: 근거 확인기(bridge/evidence.py), 게시기(bridge/notion.py), 거꾸로 찾기(bridge/docrefs.py),
 원고 셈(bridge/manuscript.py), 명령 tools/docs.py. 표준 라이브러리만 쓴다(다른 저장소에서 FOREMAN 명령으로 부를 수 있게).
@@ -14,9 +15,12 @@
 
 from bridge.doctext.head import COVERS, READ, bad_covers, head_text, parse_head, strip_comments
 from bridge.doctext.lines import comments, text_lines, walk
-from bridge.doctext.marks import CODE_MARK, KINDS, MARK, STRIP, STRIP_TURN, mark_file, mark_re, marks, split_range, target
+from bridge.doctext.marks import (CODE_MARK, KINDS, MARK, REF_MARK, STRIP, STRIP_TURN, mark_file, mark_re, marks,
+                                  split_range, target)
+from bridge.doctext.repo import RepoError, read_many, tree
 from bridge.doctext.titles import XREF, bare_title, first_h1, xref_index, xref_lookup
 
-__all__ = ["CODE_MARK", "COVERS", "KINDS", "MARK", "READ", "STRIP", "STRIP_TURN", "XREF", "bad_covers", "bare_title",
+__all__ = ["CODE_MARK", "COVERS", "KINDS", "MARK", "READ", "REF_MARK", "RepoError", "STRIP", "STRIP_TURN", "XREF",
+           "bad_covers", "bare_title", "read_many", "tree",
            "comments", "first_h1", "head_text", "mark_file", "mark_re", "marks", "parse_head", "split_range",
            "strip_comments", "target", "text_lines", "walk", "xref_index", "xref_lookup"]

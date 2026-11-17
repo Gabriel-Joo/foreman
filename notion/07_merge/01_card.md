@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/mergeprep.py, bridge/docrefs.py, tools/docrefs.py, bridge/inspector_close.py, bridge/coder_room.py, bridge/api/coder.py, bridge/static/js/coder.js, bridge/static/js/handoff.js, migrations/0032_merge_card.sql
+다루는 곳: bridge/mergeprep.py, bridge/docrefs.py, tools/docrefs.py, tools/docs.py, bridge/doctext/config.py, bridge/inspector_close.py, bridge/coder_room.py, bridge/api/coder.py, bridge/static/js/coder.js, bridge/static/js/handoff.js, migrations/0032_merge_card.sql
 읽은 커밋: fb7121b
 -->
 
@@ -91,13 +91,13 @@ flowchart TD
 
 ### 걸리는 문서
 
-카드는 이 브랜치가 바꾼 코드를 가리키는 문서도 함께 찾는다. 이름은 「걸리는 문서」이고, 전에는 「정리 후보」였다 [log:foreman-8_docrefs_20261117.md]. 찾는 일은 거꾸로 찾기 도구(`bridge/docrefs.py`, 명령으로는 `tools/docrefs.py`)가 한다 [code:bridge/docrefs.py] [code:bridge/mergeprep.py]. 바탕에서 갈라진 곳부터 브랜치 끝까지 바뀐 파일 가운데 코드만 고르고(문서, `log/`, `.md` 파일은 뺀다. docs, 원고, 포트폴리오 폴더 아래 사진 같은 파일도 확장자와 상관없이 뺀다. 포트폴리오 사진이 코드로 세어져 「안 고침」이 헛걸린 뒤 고쳤다 [log:foreman-4_fail_notify_docrefs_20261117.md]), 그 코드를 가리키는 docs, 노션 원고, 포트폴리오를 브랜치 판으로 읽어 줄을 찾는다. 가리키는 꼴은 넷이다. 원고의 코드 근거 표시(대괄호 안에 `code:`와 경로를 적은 것, 폴더를 적었으면 그 아래 파일 모두), 원고와 포트폴리오 머리 주석의 「다루는 곳」, 백틱이나 맨글로 적은 저장소 경로, 그리고 백틱 안에 파일 이름만 적은 것이다. 이름만 적은 것은 저장소에 그 이름의 파일이 하나뿐일 때만 건다. `bridge/`처럼 맨 위 폴더 하나만 적은 백틱은 「그 폴더 전체」라는 뜻이라 모든 파일에 걸려 버려서 치지 않는다.
+카드는 이 브랜치가 바꾼 코드를 가리키는 문서도 함께 찾는다. 이름은 「걸리는 문서」이고, 전에는 「정리 후보」였다 [log:foreman-8_docrefs_20261117.md]. 찾는 일은 거꾸로 찾기 도구(`bridge/docrefs.py`, 명령으로는 `tools/docs.py refs`와 같은 결과를 내는 `tools/docrefs.py`)가 한다 [code:bridge/docrefs.py] [code:bridge/mergeprep.py] [code:tools/docs.py]. 바탕에서 갈라진 곳부터 브랜치 끝까지 바뀐 파일 가운데 걸게 하는 것을 고른다. 코드가 먼저다. `log/` 같은 기록 폴더와 `.md` 파일은 코드가 아니고, docs, 원고, 포트폴리오 폴더 아래 사진 같은 파일도 확장자와 상관없이 뺀다. 포트폴리오 사진이 코드로 세어져 「안 고침」이 헛걸린 뒤 고쳤다 [log:foreman-4_fail_notify_docrefs_20261117.md]. 그다음은 docs 문서와 README.md, CLAUDE.md처럼 문서 묶음 밖에 있는 `.md` 파일이다. 원고가 이런 문서를 근거 표시나 「다루는 곳」으로 가리키고 있으면 그 문서가 바뀔 때 원고도 걸린다. docs가 바뀌면 원고가 밀리는 사슬의 가운데 고리라서, 인프라 저장소가 먼저 이렇게 찾던 것을 FOREMAN 도구로 합치면서 함께 들였다 [log:foreman-4_docrefs_config_20261117.md]. 문서는 경로를 글에 적기만 한 줄로는 걸지 않는다. 고른 파일을 가리키는 docs, 노션 원고, 포트폴리오를 브랜치 판으로 읽어 줄을 찾는다. 어느 폴더가 기록이고 원고인지처럼 저장소마다 다른 것은 그 저장소의 `.foreman/docs.toml`이 정하고, 없으면 FOREMAN 꼴을 쓴다 [code:bridge/doctext/config.py]. 가리키는 꼴은 넷이다. 원고의 코드 근거 표시(대괄호 안에 `code:`와 경로를 적은 것, 폴더를 적었으면 그 아래 파일 모두), 원고와 포트폴리오 머리 주석의 「다루는 곳」, 백틱이나 맨글로 적은 저장소 경로, 그리고 백틱 안에 파일 이름만 적은 것이다. 이름만 적은 것은 저장소에 그 이름의 파일이 하나뿐일 때만 건다. `bridge/`처럼 맨 위 폴더 하나만 적은 백틱은 「그 폴더 전체」라는 뜻이라 모든 파일에 걸려 버려서 치지 않는다.
 
 문서마다 이 브랜치에서 그 문서도 고쳤는지를 본다. 고쳤으면 「고침」, 아니면 「안 고침」이다. 카드 위 줄에 「📄 걸리는 문서 N, 안 고침 M」이 보이고, 「자세히」 안에 문서마다 줄과 고침 여부가 있다. 같은 수가 「합치기 준비됨」 텔레그램과 관리자에게 가는 카드 글, 합친 뒤 글에도 들어간다 [code:bridge/static/js/handoff.js]. 찾다가 git이 실패하면 0으로 두지 않고 「걸리는 문서를 찾지 못했습니다」와 까닭을 위 줄에 보인다. 아무것도 안 걸린 것과 찾지 못한 것이 같은 모양이면 조용한 고장이 되기 때문이다.
 
 이렇게 바꾼 까닭은 문서가 밀리는 사슬이다. 코더가 코드를 고치면 docs가 밀리고, 서기가 docs를 고치면 원고가 밀리고, 다른 서기가 원고를 고치는 사이 코드가 또 바뀐다. 서기는 코더가 왜 그렇게 고쳤는지 다시 알아내야 했다. 그래서 이제 코드를 고친 코더가 그 코드를 가리키는 문서도 같은 브랜치에서 함께 고친다(→ 05 역할). 카드의 「안 고침」은 그 규칙이 지켜졌는지를 승인하는 사람이 바로 보게 하는 자리다. 옛 정리 후보는 바뀐 파일 이름이 나오는 docs 줄만 맞대고 원고와 포트폴리오는 보지 않아, 사슬의 뒤쪽이 카드에 보이지 않았다.
 
-한계도 있다. 근거 표시가 모두 파일이나 폴더 단위라서 걸린 문단이 이번 고침과 상관없어도 걸린다. 「안 고침」은 「낡았다」가 아니라 「보라」라는 뜻이다. 근거 표시의 경로 뒤에 코드 줄 번호가 붙으면(`:10-20`처럼) 도구가 바뀐 줄과 겹치는지도 보여 준다. 처음에는 README의 할 일 표 줄도 후보로 찾았지만, 그 표 자체가 없어지면서 함께 뺐다 [log:foreman-4_readme_cleanup_20261115.md]. 옛 카드 모양과 맞추려고 카드 JSON의 README 칸은 늘 빈 목록으로 남아 있다.
+한계도 있다. 근거 표시가 모두 파일이나 폴더 단위라서 걸린 문단이 이번 고침과 상관없어도 걸린다. 「안 고침」은 「낡았다」가 아니라 「보라」라는 뜻이다. 근거 표시의 경로 뒤에 코드 줄 번호가 붙으면(`:10-20`처럼) 도구는 바뀐 줄과 겹칠 때만 그 줄을 건다. FOREMAN 원고에는 아직 그런 표시가 없고, 줄 번호를 붙여 쓰는 인프라 원고에서 쓰인다 [code:bridge/docrefs.py]. 처음에는 README의 할 일 표 줄도 후보로 찾았지만, 그 표 자체가 없어지면서 함께 뺐다 [log:foreman-4_readme_cleanup_20261115.md]. 옛 카드 모양과 맞추려고 카드 JSON의 README 칸은 늘 빈 목록으로 남아 있다.
 
 ### 규칙 파일
 

@@ -231,7 +231,7 @@ API는 기능별 라우터(주소 묶음)로 나뉘어 있고, `main.py`는 그�
 | 서기와 문서 | `scribe_room.py`, `scribe.py` | → 10 서기와 문서의 서기실과 일감 |
 | | `postit.py` | → 10 서기와 문서의 포스트잇 |
 | | `evidence.py`, `scribe_ask.py` | → 10 서기와 문서의 근거 확인과 물어보기 |
-| | `doctext/`(근거 표시, 머리 주석, 편 제목과 참조를 읽는 문법 묶음) | → 10 서기와 문서의 근거 확인과 물어보기 |
+| | `doctext/`(근거 표시, 머리 주석, 편 제목과 참조를 읽는 문법 묶음, 저장소 읽기와 저장소마다 다른 문서 설정도 여기) | → 10 서기와 문서의 근거 확인과 물어보기 |
 | | `notion.py`, `docsync.py`, `notioncfg.py`, `manuscript.py` | → 10 서기와 문서의 노션 게시 |
 | 알림 | `notify.py`, `telegram.py` | → 11 알림 |
 | CI/CD | `pipeline.py` | → 12 CI/CD 인과 체인 |

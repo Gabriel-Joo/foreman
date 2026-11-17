@@ -25,6 +25,7 @@ def mark_re(kinds: Iterable[str] = KINDS) -> re.Pattern[str]:
 
 MARK = mark_re()
 CODE_MARK = mark_re(("code",))
+REF_MARK = mark_re(("code", "docs"))                        # 거꾸로 찾기가 따라가는 종류(c, t, log는 걸게 하는 파일을 가리키지 않는다)
 KINDS_RE = "|".join(KINDS)                                  # 다른 정규식 안에 끼울 때(bridge/notion.py 줄 안 꾸밈)
 STRIP = re.compile(rf"\s*\[(?:{KINDS_RE}):[^\]\s]+\]")      # 노션 판에서 떼는 근거 표시(앞 공백까지)
 STRIP_TURN = re.compile(r"\s*\[t:[^\]\s]+\]")               # 턴 표지만(원고가 아닌 글, 제목 줄)

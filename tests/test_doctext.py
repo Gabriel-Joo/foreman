@@ -132,7 +132,8 @@ def test_users_share_one_definition():
     from bridge import docrefs, evidence, manuscript, notion
     from tests import screen_words
     assert evidence.MARK is dt.MARK and screen_words.MARK is dt.MARK
-    assert docrefs.MARK is dt.CODE_MARK and docrefs.parse_head is dt.parse_head
+    assert docrefs.MARK is dt.REF_MARK and docrefs.parse_head is dt.parse_head
+    assert docrefs._tree is dt.tree and docrefs._read_many is dt.read_many and docrefs.DocrefsError is dt.RepoError   # 2단계
     assert manuscript.parse_head is dt.parse_head and manuscript.head_text is dt.head_text
     assert notion.first_h1 is dt.first_h1 and notion.xref_index is dt.xref_index
 

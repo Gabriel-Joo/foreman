@@ -6,8 +6,12 @@
     .venv/bin/python tools/docs.py config                     # 그 저장소 .foreman/docs.toml을 읽은 값(없으면 기본값)
     .venv/bin/python tools/docs.py --repo <다른 저장소> head   # 다른 저장소를 읽기만 한다
     .venv/bin/python tools/docs.py --repo <다른 저장소> --rev origin/main marks
+    .venv/bin/python tools/docs.py refs bridge/mergeprep.py   # 거꾸로 찾기: 이 파일을 가리키는 문서와 줄
+    .venv/bin/python tools/docs.py refs --range main...HEAD --unfixed
+    .venv/bin/python tools/docs.py --repo <다른 저장소> --json refs --range origin/main~20..origin/main
 
-문법은 bridge/doctext 한 곳이다. 2단계에서 refs(거꾸로 찾기), 3단계에서 check(문서 점검)가 붙는다.
+문법과 저장소 읽기는 bridge/doctext 한 곳, 거꾸로 찾기 판정은 bridge/docrefs.py(합치기 카드와 같다). 3단계에서 check(문서 점검)가 붙는다.
+tools/docrefs.py는 `refs`와 같은 결과를 내는 껍데기다(코더 지시문과 합치기 카드 안내가 그 이름을 쓴다).
 
 종료 코드: 0(읽음), 2(인자, 저장소, git, 설정 문제). FOREMAN 저장소 밖으로 이 파일만 옮겨 부르거나 파이썬이 3.11보다 낮으면
 조용히 넘지 않고 2로 끝난다. 부르는 쪽도 이 명령이 없거나 실패한 것을 `|| true`로 덮지 않는다(조용한 고장이 된다).
@@ -25,8 +29,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 try:
-    from bridge.docrefs import DocrefsError, _read_many, _tree, manuscript_src
+    from bridge import docrefs
+    from bridge.docrefs import DocrefsError
     from bridge.doctext import config as dcfg
+    from bridge.doctext.repo import read_many as _read_many
+    from bridge.doctext.repo import tree as _tree
     from bridge.doctext.head import parse_head
     from bridge.doctext.lines import text_lines
     from bridge.doctext.marks import marks, target
@@ -54,15 +61,8 @@ def repo_root(repo: str) -> str:
 
 
 def resolve_sets(repo: str, cfg: dcfg.DocsConfig) -> dict[str, str]:
-    """{묶음: 폴더}. 원고 폴더가 docs.toml에 없으면 notion.toml src(거꾸로 찾기와 같은 길). 원고 폴더가 없거나 docs와 같으면 뺀다."""
-    sets = {k: v for k, v in cfg.sets.items() if v}
-    if cfg.sets.get("notion") is None:
-        src = manuscript_src(repo)
-        if src:
-            sets["notion"] = src
-    if sets.get("notion") == sets.get("docs"):
-        sets.pop("notion", None)
-    return sets
+    """{묶음: 폴더}. 거꾸로 찾기와 같은 길(`bridge.docrefs.resolve_sets`). 원고 폴더가 없거나 docs와 같으면 뺀다."""
+    return docrefs.resolve_sets(repo, cfg)
 
 
 def doc_files(repo: str, rev: str | None, sets: dict[str, str], records: list[str], only: list[str] | None) -> dict[str, list[str]]:
@@ -158,7 +158,18 @@ def main(argv: list[str] | None = None) -> int:
     m.add_argument("files", nargs="*", help="이 문서만(저장소 맨 위 기준 경로)")
     m.add_argument("--set", action="append", choices=list(SET_KO), help="이 묶음만")
     sub.add_parser("config", help=".foreman/docs.toml을 읽은 값")
+    r = sub.add_parser("refs", help="거꾸로 찾기: 바뀐 코드나 문서를 가리키는 문서와 줄")
+    r.add_argument("files", nargs="*", help="코드 파일(경로, 끝이 /인 폴더, 글롭, 경로:시작-끝). docs 문서도 된다")
+    r.add_argument("--range", dest="rng", help="커밋 범위 A..B 또는 A...B(갈라진 곳부터). 바뀐 파일로 찾고 고침 / 안 고침을 보인다")
+    r.add_argument("--src", help="원고 폴더(기본: docs.toml [sets] notion, 그 저장소 .foreman/notion.toml, FOREMAN config/notion.toml 차례)")
+    r.add_argument("--unfixed", action="store_true", help="안 고친 문서만")
+    r.add_argument("--brief", action="store_true", help="문서와 줄 번호만")
+    # refs 뒤에 써도 받는다(다른 저장소 껍데기가 옛 인자를 그대로 넘긴다). SUPPRESS라 앞에 쓴 값을 지우지 않는다
+    r.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="JSON으로(앞에 써도 같다)")
+    r.add_argument("--rev", default=argparse.SUPPRESS, help="범위 없이 찾을 때 문서를 읽을 커밋(앞에 써도 같다)")
     a = ap.parse_args(argv)
+    if a.cmd == "refs" and not a.files and not a.rng:
+        r.error("코드 파일이나 --range 중 하나는 주어야 합니다")
     try:
         repo = repo_root(a.repo)
         cfg = dcfg.load(repo, a.rev)
@@ -171,14 +182,20 @@ def main(argv: list[str] | None = None) -> int:
         elif a.cmd == "head":
             res = cmd_head(repo, a.rev, cfg, sets, a.set)
             text = render_head(res)
+        elif a.cmd == "refs":
+            res = docrefs.scan(repo, files=a.files or None, rng=a.rng, rev=a.rev, src=a.src, cfg=cfg)
+            text = docrefs.render(res, a.brief, a.unfixed)
+            if a.unfixed:
+                res = {**res, "docs": [d for d in res["docs"] if d["fixed"] is False]}
         else:
             res = cmd_marks(repo, a.rev, cfg, sets, a.set, a.files)
             text = render_marks(res)
     except (Fail, DocrefsError, dcfg.DocsConfigError) as e:
-        print(f"문서 도구 실패: {e}", file=sys.stderr)
+        print(f"{'거꾸로 찾기' if a.cmd == 'refs' else '문서 도구'} 실패: {e}", file=sys.stderr)
         return 2
-    for w in cfg.warnings:
-        print(f"⚠ {w}", file=sys.stderr)
+    if a.cmd != "refs":          # refs는 설정 경고를 결과 warnings에 담아 글과 JSON에 보인다
+        for w in cfg.warnings:
+            print(f"⚠ {w}", file=sys.stderr)
     print(json.dumps(res, ensure_ascii=False, indent=1) if a.json else text)
     return 0
 

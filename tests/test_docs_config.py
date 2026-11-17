@@ -12,7 +12,9 @@ def test_config_defaults_are_foreman_behavior(tmp_path):
     c = dcfg.load(tmp_path)
     assert c.source == "default" and c.warnings == []
     assert c.sets == {"docs": docrefs.DOCS_DIR, "notion": None, "portfolio": docrefs.PORTFOLIO_DIR}
-    assert tuple(c.records) == docrefs.SKIP_CODE_DIRS
+    assert c.records == ["log/"]                     # 1단계 전 docrefs SKIP_CODE_DIRS. 2단계부터 docrefs가 이 값을 쓴다
+    sets = docrefs.doc_sets(None)
+    assert docrefs.trigger_kind("log/x.py", sets, c) is None and docrefs.trigger_kind("bridge/x.py", sets, c) == "code"
     assert (c.pair_numbers, c.read_commit, c.allowed_domains, c.not_code) == (False, "piece", [], [".md"])
 
 
