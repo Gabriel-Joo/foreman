@@ -1314,9 +1314,10 @@ async def test_later_since_counts_only_merged_runs(env):
     assert await sr.later_since(engine, proj) == datetime(2026, 11, 6, 6, 5)  # 합쳤다(커밋 0개여도) → 그 뒤부터
 
 
-async def test_postit_states_close_and_limit(env):
+async def test_postit_states_close_and_limit(env, tmp_path):
     """포스트잇(11-15, 0033) — 받는 함이 곧 포스트잇. 적으면 열림, [x] 삭제, [→] 알려진 한계(서기 「알려진 한계 쓰기」가 가져가
-    합치면 README에 씀, 버리면 다시 쓸 줄), 같은 근거는 두 번 안 들어가고 그물의 확인 전 줄은 관리자가 올리면 확인된 줄이 된다."""
+    합치면 README에 씀, 버리면 다시 쓸 줄), 같은 근거는 두 번 안 들어가고 그물의 확인 전 줄은 관리자가 올리면 확인된 줄이 된다.
+    README가 생성물인 저장소([readme] 표)에서는 [→]가 분명히 거부된다(11-17 사용자, bridge/postit.py LIMIT_GONE)."""
     from sqlalchemy import text as T
     from bridge import postit as pi
     from bridge import scribe_room as sr
@@ -1328,6 +1329,13 @@ async def test_postit_states_close_and_limit(env):
     sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
     proj = q(s, "SELECT p.name FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
                 "JOIN project p ON p.id = ch.project_id WHERE cs.id = %s", sid)[0][0]
+    # 시드의 저장소 경로(실제 원본 폴더)에 기대지 않는다. 임시 저장소로 바꾸고 [readme] 표를 넣었다 뺐다 한다
+    repo = tmp_path / "repo"
+    (repo / ".foreman").mkdir(parents=True)
+    import subprocess
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    async with engine.begin() as c:
+        await c.execute(T("UPDATE project SET repo_path = :r WHERE name = :p"), {"r": str(repo), "p": proj})
     for bad in ("  ", "x" * (sr.INBOX_MAX + 1)):
         with pytest.raises(Refused):
             await sr.inbox_add(engine, proj, bad)
@@ -1387,6 +1395,16 @@ async def test_postit_states_close_and_limit(env):
     assert await sr.inbox_take_pick(engine, k, sid) is True and await sr.inbox_take_pick(engine, k, sid) is False
     assert (await state())[k] == "merged" and k in [x["id"] for x in await pi.items(engine, proj)]
     assert q(s, "SELECT assignee FROM todo_inbox WHERE id = %s", k)[0][0] == "coder"
+    # README가 생성물인 저장소에서는 [→]가 분명히 거부되고 포스트잇은 열린 채 남는다
+    gen = await sr.inbox_add(engine, proj, "생성물 README에 보낼 한계")
+    (repo / ".foreman" / "docs.toml").write_text('[readme]\ntitle = "가짜"\n', encoding="utf-8")
+    with pytest.raises(Refused, match="README 한계 절이 없어졌습니다"):
+        await pi.close(engine, gen, "limit")
+    assert (await state())[gen] == "new"
+    (repo / ".foreman" / "docs.toml").write_text("[readme\n", encoding="utf-8")
+    with pytest.raises(Refused, match="문서 설정을 읽지 못해"):
+        await pi.close(engine, gen, "limit")
+    assert await pi.close(engine, gen, "done") is True                          # 다른 닫기는 설정과 상관없다
 
 
 async def test_postit_net_sweep(env):

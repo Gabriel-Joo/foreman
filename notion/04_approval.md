@@ -38,7 +38,7 @@ FOREMAN이 다루는 Claude Code(CC) 세션은 대부분 사람이 지켜보지 
 
 이론적 위험을 버린 것은 아니다. 승인 창이 아닌 다른 층이 맡는다. 비밀값을 화면에 내지 않는 것은 작업 규칙(CLAUDE.md와 메모리)이 맡고, 안전 규칙 파일(`approval.toml`, `notify.toml`)과 게이트 자신을 끌 수 있는 파일(`~/.claude/settings.json`, hook 스크립트, `~/.claude.json` 등)을 고치는 것은 지금 설정(`protect_mode = "notify"`)에서 묻지 않고 통과시키되 텔레그램으로 🛡 알림을 보낸다(같은 파일은 10분에 한 번) [code:bridge/approval.py] [code:bridge/approvals.py] [code:config/approval.toml]. 작업방(worktree, 같은 저장소를 다른 폴더에 펼쳐 따로 일하는 곳) 안의 규칙 파일 사본을 고칠 때도 같은 알림이 가고, 작업방을 원본에 합칠 때 규칙 파일이 바뀌었으면 합치기 결과와 카드에 그 사실을 표시한다. 표시만 하고 합치기를 막지는 않는다 [log:foreman-7_silent_delete_fix_20261115.md] [c:7ccb55f].
 
-엄격한 규칙의 장치는 코드에서 지우지 않았다. `[sensitive] mode = "read"`, `protect_mode = "ask"`, `[ask] delete_outside_worktree = true`, `scan_interpreter_heredocs = true`로 되돌리면 예전처럼 동작한다 [code:config/approval.toml]. 시험도 두 벌이다. 엄격한 규칙은 `tests/test_approval.py`가, 지금 기준은 `tests/test_approval_now.py`가 맡는다 [code:README.md].
+엄격한 규칙의 장치는 코드에서 지우지 않았다. `[sensitive] mode = "read"`, `protect_mode = "ask"`, `[ask] delete_outside_worktree = true`, `scan_interpreter_heredocs = true`로 되돌리면 예전처럼 동작한다 [code:config/approval.toml]. 시험도 두 벌이다. 엄격한 규칙은 `tests/test_approval.py`가, 지금 기준은 `tests/test_approval_now.py`가 맡는다 [docs:00_design.md].
 
 ### 「애매하면 묻는다」는 어디까지 남았나
 
@@ -50,7 +50,7 @@ FOREMAN이 다루는 Claude Code(CC) 세션은 대부분 사람이 지켜보지 
 
 FOREMAN 승인은 CC의 권한 체계를 대신하지 않는다. 그 위에 얹혀, 되돌릴 수 없는 몇 가지만 사람에게 끌어올리고 나머지는 CC에 그대로 맡긴다. 두 체계가 어떻게 겹치는지를 아는 것이 이 장치를 이해하는 열쇠다.
 
-설계 전체가 기대는 사실은 하나다. **PreToolUse hook이 `ask`를 돌려주면 자동 모드에서도 승인 창이 뜬다.** CC 공식 문서는 자동 모드에서 hook의 ask가 도구 호출을 승인 창으로 보내고 분류기가 결정하지 않는다고 적는다. 이 세션에서도 트랜스크립트의 `permissionMode`가 모두 `auto`인 상태에서 우리 `ask` 26건이 모두 승인 창으로 떴다 [code:README.md]. 그래서 프로젝트를 자동 모드로 두면서도 되돌릴 수 없는 것만은 사람이 본다. 11-02 조사 때는 세 프로젝트였고, 11-10에 붙은 인프라까지 지금 네 프로젝트가 모두 자동 모드다 [log:foreman-4_notion_judgment_20261117.md].
+설계 전체가 기대는 사실은 하나다. **PreToolUse hook이 `ask`를 돌려주면 자동 모드에서도 승인 창이 뜬다.** CC 공식 문서는 자동 모드에서 hook의 ask가 도구 호출을 승인 창으로 보내고 분류기가 결정하지 않는다고 적는다. 이 세션에서도 트랜스크립트의 `permissionMode`가 모두 `auto`인 상태에서 우리 `ask` 26건이 모두 승인 창으로 떴다 [docs:00_design.md]. 그래서 프로젝트를 자동 모드로 두면서도 되돌릴 수 없는 것만은 사람이 본다. 11-02 조사 때는 세 프로젝트였고, 11-10에 붙은 인프라까지 지금 네 프로젝트가 모두 자동 모드다 [log:foreman-4_notion_judgment_20261117.md].
 
 판정별로 CC 쪽에서 무슨 일이 일어나는지 정리하면 이렇다.
 
@@ -84,7 +84,7 @@ PreToolUse는 승인 판정만 하는 자리가 아니다. 같은 hook에서 승
 
 지금 값은 기본과 FOREMAN, 인프라가 `enforce`, 런슈즈, 펫퍼민트가 `observe`다 [code:config/approval.toml] [c:12c07f6].
 
-observe가 있는 까닭은 hook이 실행 중인 세션에 곧바로 걸리기 때문이다. 설정을 바꾸면 다음 도구 호출부터 새 판정이 적용된다. 처음 규칙을 만들 무렵 모의 실험으로는 런슈즈와 펫퍼민트에 하루 11~18건의 승인 창이 갑자기 생길 판이었다 [log:stage5_approval_result.md]. 다른 프로젝트 세션은 그 프로젝트 사람이 돌리는 일이라 FOREMAN이 하루아침에 흐름을 끊을 수 없다. 그래서 observe로 시작해 판정을 쌓고, 쌓인 판정(「걸렸을 것」)을 보고 사람이 enforce로 바꾸게 했다. observe 기록은 실제로 쓸모가 있었다. 펫퍼민트 세션이 파일을 이력에서 지우려고 `git filter-branch`, `reflog expire --expire=now --all`, `gc --prune`을 차례로 실행한 것이 observe 기록에 남았고, 그때는 어느 규칙에도 걸리지 않았다는 것을 알게 되어 `git-이력파괴` 규칙을 새로 만들었다 [code:README.md]. 인프라는 클러스터 작업 묶음 동안 사람이 승인 카드를 풀어 달라고 해서 임시로 observe에 두었다가, 그 묶음이 끝난 뒤 enforce로 올렸다 [code:config/approval.toml] [c:12c07f6].
+observe가 있는 까닭은 hook이 실행 중인 세션에 곧바로 걸리기 때문이다. 설정을 바꾸면 다음 도구 호출부터 새 판정이 적용된다. 처음 규칙을 만들 무렵 모의 실험으로는 런슈즈와 펫퍼민트에 하루 11~18건의 승인 창이 갑자기 생길 판이었다 [log:stage5_approval_result.md]. 다른 프로젝트 세션은 그 프로젝트 사람이 돌리는 일이라 FOREMAN이 하루아침에 흐름을 끊을 수 없다. 그래서 observe로 시작해 판정을 쌓고, 쌓인 판정(「걸렸을 것」)을 보고 사람이 enforce로 바꾸게 했다. observe 기록은 실제로 쓸모가 있었다. 펫퍼민트 세션이 파일을 이력에서 지우려고 `git filter-branch`, `reflog expire --expire=now --all`, `gc --prune`을 차례로 실행한 것이 observe 기록에 남았고, 그때는 어느 규칙에도 걸리지 않았다는 것을 알게 되어 `git-이력파괴` 규칙을 새로 만들었다 [log:design_history_20261117.md]. 인프라는 클러스터 작업 묶음 동안 사람이 승인 카드를 풀어 달라고 해서 임시로 observe에 두었다가, 그 묶음이 끝난 뒤 enforce로 올렸다 [code:config/approval.toml] [c:12c07f6].
 
 ## 결정은 먼저 온 쪽이 정한다
 
@@ -122,7 +122,7 @@ FOREMAN 화면에는 「지금 눌러야 하는 버튼은 `primary`(채운 색, 
 
 이 기록 위에 승인 이력(`GET /api/approvals/history?days=1|7|30`)이 있다. 규칙별로 몇 번 걸렸고 몇 번 승인, 거부, 모름이었는지, observe 프로젝트에서 「걸렸을 것」이 몇 번인지 센다 [code:bridge/api/approvals.py]. **3번 이상 걸렸는데 한 번도 거부하지 않은 규칙은 「늘 Yes」로 표시한다** [code:bridge/api/approvals.py]. 묻는 의미가 없으면 규칙을 고칠 후보라는 뜻이다. 시간이 초과되었거나 브리지가 다시 뜬 뒤 터미널에서 답한 것은 승인 행만으로 결과를 알 수 없으므로, 그 도구의 결과(`tool_result`)가 오류 없이 왔는지로 거꾸로 짐작한다 [code:bridge/api/approvals.py].
 
-이 표가 실제로 규칙을 바꿨다. 처음 본 7일에 45건 가운데 승인 44, 거부 1이었고, 늘 Yes로 `보호-설정파일` 10건과 `민감한-경로` 8건이 떴다 [code:README.md]. 보호-설정파일 10건은 모두 Edit 도구로 `approval.toml`을 고친 것이어서, 도구 편집은 통과시키고 알림만 보내도록 바꿨다. 규칙을 바꿀 때 지난 도구 호출 전체에 옛 규칙과 새 규칙을 다시 돌려 하루 ask 수가 어떻게 달라지는지 보는 방법(`scripts/approval-replay.py`)은 → 「규칙: 실행과 글자」.
+이 표가 실제로 규칙을 바꿨다. 처음 본 7일에 45건 가운데 승인 44, 거부 1이었고, 늘 Yes로 `보호-설정파일` 10건과 `민감한-경로` 8건이 떴다 [docs:00_design.md]. 보호-설정파일 10건은 모두 Edit 도구로 `approval.toml`을 고친 것이어서, 도구 편집은 통과시키고 알림만 보내도록 바꿨다. 규칙을 바꿀 때 지난 도구 호출 전체에 옛 규칙과 새 규칙을 다시 돌려 하루 ask 수가 어떻게 달라지는지 보는 방법(`scripts/approval-replay.py`)은 → 「규칙: 실행과 글자」.
 
 ## 전체 흐름
 

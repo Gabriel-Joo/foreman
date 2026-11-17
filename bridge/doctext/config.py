@@ -31,6 +31,9 @@
     [readme]                    # README 생성(tools/docs.py readme, 점검 9번, 문서 정리 B). 이 표가 있어야 켜진다.
     title = "FOREMAN"           # README 제목. 없으면 project
     project = "foreman"         # 게시 기록(doc_publish)의 프로젝트 이름. 없으면 origin 주소의 저장소 이름, 그것도 없으면 폴더 이름
+    docs = true                 # README에 docs 차례(문서, 제목, 요약)를 넣는다. 기본 false. 상태 칸은 없다
+    docs_summary = "para"       # 요약을 읽는 곳: para(첫 # 줄 뒤 첫 문단), heading:<글>(그 글이 든 절 아래 첫 문단), none
+    docs_skip = ["상태:"]        # 이 머리로 시작하는 인용 문단은 요약으로 쓰지 않는다
 
 모르는 칸은 경고로 알리고 쓰지 않는다. 깨진 파일이나 틀린 값은 기본값으로 떨어지지 않고 DocsConfigError로 멈춘다
 (조용히 FOREMAN 기본값으로 돌면 다른 저장소의 기록 폴더가 코드로 세어지는 것처럼 틀린 결과가 알림 없이 나온다).
@@ -144,7 +147,7 @@ class DocsConfig:
     allowed_domains: list[str] = field(default_factory=list)
     not_code: list[str] = field(default_factory=lambda: [".md"])
     check: CheckConfig = field(default_factory=CheckConfig)
-    readme: dict[str, str] | None = None    # [readme] 표(title, project). None이면 README 생성과 점검 9번이 꺼져 있다
+    readme: dict[str, Any] | None = None    # [readme] 표(title, project, docs, docs_summary, docs_skip). None이면 README 생성과 점검 9번이 꺼져 있다
     source: str = "default"                # "default" 또는 읽은 파일(`.foreman/docs.toml`, rev가 있으면 `rev:.foreman/docs.toml`)
     warnings: list[str] = field(default_factory=list)
 
@@ -185,10 +188,18 @@ def parse(text: str, source: str = PATH) -> DocsConfig:
             raise DocsConfigError(f"{source}: readme는 표([readme])여야 합니다")
         cfg.readme = {}
         for k, v in rd.items():
-            if k not in ("title", "project"):
+            if k == "docs":
+                if not isinstance(v, bool):
+                    raise DocsConfigError(f"{source}: readme.docs는 true 또는 false여야 합니다")
+                cfg.readme[k] = v
+            elif k == "docs_skip":
+                cfg.readme[k] = _strs(v, f"{source}: readme.docs_skip") if v != [] else []
+            elif k not in ("title", "project", "docs_summary"):
                 cfg.warnings.append(f"{source}: 모르는 칸 readme.{k}는 쓰지 않습니다")
             elif not isinstance(v, str) or not v.strip() or "\n" in v:
                 raise DocsConfigError(f"{source}: readme.{k}는 한 줄 글이어야 합니다: {v!r}")
+            elif k == "docs_summary" and not (v in ("para", "none") or (v.startswith("heading:") and v[8:].strip())):
+                raise DocsConfigError(f"{source}: readme.docs_summary는 para, none, heading:<글> 가운데 하나여야 합니다: {v!r}")
             else:
                 cfg.readme[k] = v.strip()
     if "check" in raw:

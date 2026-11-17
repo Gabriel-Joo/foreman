@@ -32,4 +32,4 @@ def test_check_public_url_quiet_when_resolves_or_local():
 def test_shipped_wake_toml_is_local():
     from pathlib import Path
     r = load_wake(Path(__file__).resolve().parent.parent / "config" / "wake.toml")
-    assert is_local_url(link_base(r))      # 터널을 열지 않으므로 바깥 이름을 두지 않는다(README 3.13)
+    assert is_local_url(link_base(r))      # 터널을 열지 않으므로 바깥 이름을 두지 않는다(docs/00_design.md 3.13)

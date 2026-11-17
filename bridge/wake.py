@@ -1,6 +1,6 @@
 """자동 기상 2단계(11-08, docs/14_dispatcher_note_wake.md) — 실패 이벤트가 오면 디스패처가 계획만 만들고 사람에게 [시작]?을 묻는다.
 
-README 3.5 "자동 기상"을 한 번에 자동으로 가지 않는다(docs/11_foreman_dispatch.md 7절):
+docs/00_design.md 3.5 "자동 기상"을 한 번에 자동으로 가지 않는다(docs/11_foreman_dispatch.md 7절):
   1단계 사람이 말하고 → 계획 → 승인(11-05) · **2단계 실패가 부르고 → 계획 → 텔레그램 · 화면에서 사람이 [시작]** · 3단계 묻지 않고 띄우기(보류)
 조용한 고장이 되지 않게: 계획을 못 세우면 그것도 알리고, 하루 상한에 닿으면 그날 한 번 알린다. 알림을 보내는 쪽(파이프라인 · 적재 감시)은
 이 모듈이 실패해도 아무 영향이 없다(콜백은 바로 돌아오고 일은 뒤에서).
@@ -56,7 +56,7 @@ def load_wake(path: str | Path) -> WakeRules:
                      kinds=[k for k in raw.get("kinds", list(KINDS)) if k in KINDS])
 
 
-LOCAL_URL = "http://localhost:8000"   # 화면은 서버 PC나 ssh -L로만 열린다(README 접속 · 3.13). public_url이 비면 이 주소
+LOCAL_URL = "http://localhost:8000"   # 화면은 서버 PC나 ssh -L로만 열린다(docs/00_design.md 접속 · 3.13). public_url이 비면 이 주소
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 

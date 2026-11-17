@@ -74,7 +74,11 @@ def hunks(repo: str | Path, base: str, rev: str | None = None, doc_dirs: tuple[s
     out: list[Hunk] = []
     old: str | None = None
     cur: str | None = None
-    diff = ["diff", "--no-color", "--no-ext-diff", "-U0", "-M", "--diff-filter=AMR", base, *([rev] if rev else [])]
+    # -C: 옮긴 뒤 옛 자리에 새 파일이 생겨도(11-17 README.md를 docs/00_design.md로 옮기고 README를 생성물로 만듦) 옮긴 파일을
+    # 옛 파일의 복사로 알아본다. -M만 쓰면 옛 경로가 남아 있어 이름 바꿈이 아니게 되고, 옮긴 파일 전체가 새 줄로 세어진다.
+    # 문턱 40%: 옮긴 뒤 절반 넘게 줄이면(같은 날 설계 문서 943줄을 595줄로, 유사도 42%) 기본 50%로는 복사로 못 알아봐
+    # 손대지 않은 옛 줄까지 새 줄로 걸렸다. 복사의 출처는 같은 diff에서 바뀐 파일뿐이라 문턱을 낮춰도 엉뚱한 짝은 드물다
+    diff = ["diff", "--no-color", "--no-ext-diff", "-U0", "-M", "-C40%", "--diff-filter=AMRC", base, *([rev] if rev else [])]
     for line in _git(repo, *diff).splitlines():
         if line.startswith("--- "):
             p = line[4:]

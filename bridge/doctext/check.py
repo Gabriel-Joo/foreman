@@ -11,7 +11,7 @@
     8. 새 줄의 em dash와 가운뎃점(4단계, `bridge/doctext/dashdot.py`): check.dashdot_base 뒤에 더한 문서 줄과 코드 주석.
        칸이 없으면 검사하지 않고 결과 notes에 알린다(틀림으로 세지 않는다)
     9. README(문서 정리 B, `bridge/doctext/readme.py`): `[readme]` 표가 있는 저장소만. 맨 위 README.md가 지금 원고로 만든 글
-       (제목, 포트폴리오 00편 첫 문단, 두 묶음 편 목록, 노션 링크)과 한 글자라도 다르면 틀림. 노션 주소는 부르는 쪽이 게시 기록에서
+       (제목, 포트폴리오 00편 첫 문단, 두 묶음 편 목록, 노션 링크, `[readme] docs`면 docs 차례)과 한 글자라도 다르면 틀림. 노션 주소는 부르는 쪽이 게시 기록에서
        읽어 넘긴다(links). 넘기지 못하면 README에 걸린 주소를 그대로 두고 나머지만 맞대며 결과 notes에 알린다.
        표가 없으면 검사하지 않고 notes에 알린다
     + 의심(틀림이 아니다): 숫자나 인용이 있는데 근거 표시가 없는 본문 줄(check.claim, check.claim_min)
@@ -191,8 +191,18 @@ def readme_build(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, st
     s = {k: sets[k] for k in readme.ORDER if sets.get(k)}
     pieces = {k: pieces_of(repo, rev, d, False, cfg.records) for k, d in s.items()}
     bodies = read_many(repo, rev, sorted({p for ps in pieces.values() for p in ps}))
-    title = (cfg.readme or {}).get("title") or readme_project(repo, cfg)
-    return readme.build(title, s, pieces, bodies, links)
+    rd = cfg.readme or {}
+    title = rd.get("title") or readme_project(repo, cfg)
+    docs = None
+    if rd.get("docs"):
+        folder = sets.get("docs")
+        if not folder:
+            b = readme.Built(errors=["docs 묶음 폴더가 없습니다(.foreman/docs.toml [sets] docs). [readme] docs를 켤 수 없습니다"])
+            return b
+        paths = pieces_of(repo, rev, folder, False, cfg.records)
+        docs = readme.doc_rows(folder, paths, read_many(repo, rev, paths), rd.get("docs_summary", "para"),
+                               tuple(rd.get("docs_skip", [])))
+    return readme.build(title, s, pieces, bodies, links, docs)
 
 
 def readme_check(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],

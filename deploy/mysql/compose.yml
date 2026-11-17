@@ -1,4 +1,4 @@
-# FOREMAN 전용 MySQL (README 3.12) — 호스트 도커, 127.0.0.1:3308
+# FOREMAN 전용 MySQL (docs/00_design.md 3.12) — 호스트 도커, 127.0.0.1:3308
 #   띄우기: docker compose -f deploy/mysql/compose.yml up -d
 # 비밀값은 저장소 맨 위 .env.db(600, 커밋 안 함). 견본은 .env.db.example
 # 데이터는 bind mount라 docker volume prune 에 지워지지 않는다. 백업은 backup.sh(사용자 crontab)

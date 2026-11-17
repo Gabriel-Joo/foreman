@@ -1018,7 +1018,7 @@ class HandoffManager:
         return out
 
     async def _character_for(self, cwd: str, role: str) -> int | None:
-        """이 세션을 붙일 캐릭터(11-05 재배치, README 2.3 · 2.4 · 3.4) — 포먼이 채용한다(부모 = 그 프로젝트의 포먼).
+        """이 세션을 붙일 캐릭터(11-05 재배치, docs/00_design.md 2.3 · 2.4 · 3.4) — 포먼이 채용한다(부모 = 그 프로젝트의 포먼).
         원본 폴더면 역할 캐릭터("코더" · "조사" · "서기"), worktree면 그 자리의 일꾼("코더 foreman-2" — 합치기 · 버리기 때 퇴장).
         같은 이름이 퇴장해 있으면 되살린다(이름은 프로젝트 안에서 고유). 프로젝트 밖(떠돌이)은 그대로 둔다."""
         name0 = ROLE_KO.get(role)

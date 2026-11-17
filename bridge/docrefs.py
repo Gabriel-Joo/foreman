@@ -135,6 +135,10 @@ def trigger_kind(path: str, sets: dict[str, str], cfg: dcfg.DocsConfig | None = 
     cfg = cfg or dcfg.DocsConfig()
     if path.startswith(tuple(cfg.records)):
         return None
+    # [readme] 표가 켜진 저장소의 맨 위 README.md는 생성물이다(tools/docs.py readme). 사람이 고치는 글이 아니라 걸지 않는다.
+    # 새 칸을 두지 않는다: 두 설정을 늘 맞춰야 하고 한쪽만 켜진 상태가 생긴다(11-17 사용자)
+    if cfg.readme is not None and path == "README.md":
+        return None
     inside = any(d and path.startswith(d) for d in sets.values())
     if dcfg.not_code_match(path, cfg.not_code):
         if path.endswith(".md") and (not inside or kind_of(path, sets, cfg.records) == "docs"):

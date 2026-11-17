@@ -565,7 +565,7 @@ class ForemanDispatcher:
             await self._finish(did, None, "failed", rec, t0)
             raise Refused(f"{why}. 다시 물어보거나 직접 골라 주세요")
         if self._origin.get(did) == "wake":
-            plan["wake"] = True      # 자동 기상 계획 — 조사도 읽기 전용 그대로(README 「자는 사이에 커밋이 쌓이면 안 된다」, check)
+            plan["wake"] = True      # 자동 기상 계획 — 조사도 읽기 전용 그대로(docs/00_design.md 3.5 「자는 사이에 커밋이 쌓이면 안 된다」, check)
         plan = await self.check(adopt_sessions(plan), did)
         await self._finish(did, plan, "planned", None, t0)
         return {"dispatch_id": did, "plan": plan, "ms": round((time.monotonic() - t0) * 1000), "context_chars": ctx_chars}
@@ -591,7 +591,7 @@ class ForemanDispatcher:
             if s["role"] == "inspector" and not s["read_only_set"]:
                 # 조사는 읽고 알아보는 일(11-15). 브리지가 log만 쓰게 막는 프로젝트면 보통 모드로 — 결과 log를 승인 없이 쓰고 커밋한다.
                 # 막지 못하는 프로젝트면 예전처럼 읽기 전용(plan 모드, 고치기 전에 승인). 카드에서 바꾸면 read_only_set.
-                # 자동 기상 계획(plan["wake"])은 막는 프로젝트여도 읽기 전용 — 사람이 없는 사이에 log 커밋도 쌓이지 않게(README 「자동 기상」)
+                # 자동 기상 계획(plan["wake"])은 막는 프로젝트여도 읽기 전용 — 사람이 없는 사이에 log 커밋도 쌓이지 않게(docs/00_design.md 「3.5 자동 기상」)
                 if log_only and not plan.get("wake") and s["read_only"]:
                     s["read_only"] = False
                 elif (not log_only or plan.get("wake")) and not s["read_only"]:

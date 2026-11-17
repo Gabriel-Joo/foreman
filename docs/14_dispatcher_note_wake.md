@@ -49,7 +49,7 @@
 
 ## 4. 자동 기상 2단계
 
-README 3.5 "자동 기상"을 한 번에 자동으로 가지 않는다(`docs/11_foreman_dispatch.md` 7절).
+`docs/00_design.md` 「3.5」 "자동 기상"을 한 번에 자동으로 가지 않는다(`docs/11_foreman_dispatch.md` 7절).
 
 ```mermaid
 flowchart LR
@@ -62,7 +62,7 @@ flowchart LR
   SC --> H
 ```
 
-- 알림 링크(11-15): `public_url`은 `http://localhost:8000`(비우면 같은 주소). 터널을 열지 않아(README 3.13) 화면은 서버 PC나 `ssh -L 8000:localhost:8000`에서만 열리므로, 글에 「서버 PC 화면이나 ssh -L 8000:localhost:8000으로 엽니다」를 함께 쓴다. 이전 `https://foreman.ronanlab.dev`는 이름이 없어 링크가 한 번도 열리지 않았는데 알림 없이 그대로였다. 그래서 브리지가 뜰 때 이름이 풀리는지 한 번 보고(`bridge/wake.py check_public_url`), 안 풀리면 로그 error와 텔레그램 한 번(`log/wake_link_20261115.md`)
+- 알림 링크(11-15): `public_url`은 `http://localhost:8000`(비우면 같은 주소). 터널을 열지 않아(`docs/00_design.md` 「3.13」) 화면은 서버 PC나 `ssh -L 8000:localhost:8000`에서만 열리므로, 글에 「서버 PC 화면이나 ssh -L 8000:localhost:8000으로 엽니다」를 함께 쓴다. 이전 `https://foreman.ronanlab.dev`는 이름이 없어 링크가 한 번도 열리지 않았는데 알림 없이 그대로였다. 그래서 브리지가 뜰 때 이름이 풀리는지 한 번 보고(`bridge/wake.py check_public_url`), 안 풀리면 로그 error와 텔레그램 한 번(`log/wake_link_20261115.md`)
 - 설정 `config/wake.toml`: 켜기 · 하루 상한 5 · 같은 실패 12시간 · 공개 주소 · 종류. 교장 노트는 `[note]` 따로(`stale_days = 3` · `stale_commits = 150` · `manager_spawn_done = false`, 위 3절)
 - 조용한 고장이 되지 않게: 계획을 못 세우면 그것도 텔레그램으로(「⚠ {종류} — 살펴볼 계획을 세우지 못했습니다(…). 실패 알림을 직접 봐 주세요」, `bridge/wake.py` `_wake`, `_wake_inner`. 11-09 바뀜 → 앞의 「디스패처가」를 뺐다, `bdcd0cd`), 하루 상한에 닿으면 그날 한 번. 알림을 보내는 쪽은 콜백이 바로 돌아와 영향이 없다
 - 적재 막힘 중 DB 끊김 · 시간 초과(`transient`)는 계획하지 않는다 — 기다리면 돌아온다

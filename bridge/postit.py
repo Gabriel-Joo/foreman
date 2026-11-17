@@ -34,6 +34,19 @@ DUP_REASON = "같은 근거에 같은 글이 이미 있어 새로 만들지 않�
 SOURCE_KO = {"note": "포스트잇에 적음", "todo": "포스트잇에 적음", "said": "대화에서 올림", "chat": "대화에서 찾음", "promote": "옮기기 미완"}
 CLOSE = ("drop", "limit", "done")
 README_LIMIT = "알려진 한계"        # README 절 제목(이 글이 든 머리줄) — 아직 없을 수 있다(관리자가 「나중에 할 일」 표를 옮기기 전)
+# README가 생성물인 저장소(.foreman/docs.toml [readme] 표가 켜짐)에는 한계 절을 둘 곳이 없다. 옛 길([→], 서기 「알려진 한계 쓰기」)은
+# 문서 정리 E 단계의 [한계로]로 바뀔 때까지 조용히 두지 않고 이 글로 거부한다(11-17 사용자)
+LIMIT_GONE = "README 한계 절이 없어졌습니다. E 단계의 [한계로]가 생기면 그것을 써야 합니다"
+
+
+def readme_generated(repo: str | Path) -> bool:
+    """그 저장소의 README.md가 생성물인가([readme] 표). 설정이 깨졌으면 그 까닭으로 거부한다(모르는 채 옛 길로 가지 않는다)."""
+    from bridge.doctext import config as dcfg
+    from bridge.inject import Refused
+    try:
+        return dcfg.load(repo).readme is not None
+    except dcfg.DocsConfigError as e:
+        raise Refused(f"문서 설정을 읽지 못해 알려진 한계로 보낼 수 없습니다: {e}") from e
 CHECK_ACT = "postit-run"            # session_action(칸 12자) — [갱신] 조사 세션을 띄움(detail: "<프로젝트> <req> p<N> L<N>")
 CHECK_DONE_ACT = "postit-done"      # 결과를 받음(ok) · 결과 없이 끝남(ok 0)
 CHECK_TAG = "FOREMAN-POSTIT-CHECK"
@@ -214,6 +227,12 @@ async def close(engine: Any, iid: int, reason: str, note: str | None = None) -> 
     from bridge.inject import Refused
     if reason not in CLOSE:
         raise Refused(f"닫는 까닭은 {', '.join(CLOSE)} 중 하나입니다: {reason}")
+    if reason == "limit":
+        async with engine.connect() as c:
+            row = (await c.execute(text("SELECT p.repo_path FROM todo_inbox i JOIN project p ON p.name = i.project "
+                                        "WHERE i.id = :i"), {"i": iid})).first()
+        if row and row[0] and readme_generated(row[0]):
+            raise Refused(LIMIT_GONE)
     async with engine.begin() as c:
         r = await c.execute(text(
             "UPDATE todo_inbox SET closed_reason = :r, closed_at = UTC_TIMESTAMP(3), closed_note = :n, "

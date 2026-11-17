@@ -223,7 +223,7 @@ export class Store {
     };
     clearInterval(this.watchdog);
     this.lastSeen = Date.now();
-    // 하트비트 두 번을 놓치면 끊긴 것으로 본다 — 서버가 멈췄는데 소켓은 안 닫힌 경우(README 3.10)
+    // 하트비트 두 번을 놓치면 끊긴 것으로 본다 — 서버가 멈췄는데 소켓은 안 닫힌 경우(docs/00_design.md 3.10)
     this.watchdog = setInterval(() => {
       if (this.ws === sock && sock.readyState === 1 && Date.now() - this.lastSeen > this.hb * 2000 + 2000) sock.close(4000, 'heartbeat');
     }, 1000);

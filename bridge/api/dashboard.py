@@ -3,7 +3,7 @@
 화면은 이 스냅샷을 한 번 받고, 그 뒤로는 WS(이벤트 · 턴 · 승인 · 세션 상태)로 고친다. 스냅샷은 몇 초마다 다시 받아
 어긋난 것을 맞춘다. 그리는 쪽(static/js/render.js)은 이 모양만 안다 — 테마 렌더러로 바꿔도 여기는 그대로.
 
-상태(README 2.1):
+상태(docs/00_design.md 2.1):
   SUSPENDED  프로세스가 정지(T)
   DORMANT    살아 있는 프로세스가 없다
   ACTIVE     CC가 일하는 중(sessions json status = busy) 또는 열린 턴이 있다
@@ -317,7 +317,7 @@ async def api_stops(c: Any, in_ids: str) -> dict[int, dict[str, Any]]:
     """API 오류로 멈춘 세션(11-13, log/screen_api_error_bar_20261113.md) — 마지막 턴이 stop_failure로
     끝났고 그 뒤 새 턴이 없다. 다음 턴이 시작되면(사람 입력 · 다른 세션 메시지 등 어떤 출처든) 마지막 턴이 바뀌어 저절로 풀린다.
     빨간 「…」(stuck_turn)은 끝 신호가 안 온 **열린** 턴이고, 이것은 **닫힌** 턴이라 서버 상태는 IDLE이다 — 상태 값은 늘리지 않고
-    (README 3.11) 이 칸으로 가른다. 까닭은 대화 패널과 같은 bridge/api_error.py로(글이 있는 트랜스크립트 쪽을 먼저).
+    (docs/00_design.md 3.11) 이 칸으로 가른다. 까닭은 대화 패널과 같은 bridge/api_error.py로(글이 있는 트랜스크립트 쪽을 먼저).
     {세션: {turn_id, at(턴이 끝난 시각), kind, label, action, request_id, detail, reset, line}}"""
     rows = (await c.execute(text(
         f"SELECT t.session_id, t.id, t.ended_at FROM turn t JOIN (SELECT session_id, MAX(seq) ms FROM turn "
@@ -738,7 +738,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "merge_wait": mwait.get(sid),
             "subagents_running": len(subs.get(sid, [])),
             "subagent_descs": [d for d in subs.get(sid, []) if d][:10],
-            # 턴이 끝나도 도는 일 — 백그라운드 Bash · Monitor. 상태 값은 늘리지 않고(README 3.11) 화면이 "기다림"으로 그린다
+            # 턴이 끝나도 도는 일 — 백그라운드 Bash · Monitor. 상태 값은 늘리지 않고(docs/00_design.md 3.11) 화면이 "기다림"으로 그린다
             "background": background_running(bgs.get(sid, []), _started(s.sessions_dir, ls.pid) if ls else None, cc)[:10],
             "tokens": {"input": int(tk[0] or 0) + int(tk[2] or 0) + int(tk[3] or 0), "output": int(tk[1] or 0),
                        "today_output": int(tk[4] or 0), "today_input": int(tk[5] or 0),

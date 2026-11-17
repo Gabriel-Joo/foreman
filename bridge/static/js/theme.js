@@ -1,4 +1,4 @@
-// 테마 매핑 — 상태 · 도구 · 플래그 → 동작(10단계, README 3.8). DOM도 Canvas도 모른다(node --test로 시험).
+// 테마 매핑 — 상태 · 도구 · 플래그 → 동작(10단계, docs/00_design.md 3.8). DOM도 Canvas도 모른다(node --test로 시험).
 // 판정 순서: 상태(바탕) → ACTIVE일 때만 도구(첫 번째로 맞는 규칙) → 플래그(우선순위가 가장 높은 것 하나)가 위에 덮는다.
 // 테마를 바꾸면 이 파일은 그대로, theme.json만 바뀐다.
 
@@ -33,7 +33,7 @@ export function bgCount(s) {
   return s ? (s.subagents_running || 0) + ((s.background || []).length) : 0;
 }
 
-// 화면에 그릴 상태 — 서버 상태 값은 늘리지 않고(README 3.11), IDLE인데 자식 일이 돌면 WAITING(기다림)으로 그린다.
+// 화면에 그릴 상태 — 서버 상태 값은 늘리지 않고(docs/00_design.md 3.11), IDLE인데 자식 일이 돌면 WAITING(기다림)으로 그린다.
 // 11-06: 백그라운드 판정이 도는데 캐릭터가 엎드려 자고 있었다
 export function viewState(s) {
   return s && s.state === 'IDLE' && bgCount(s) > 0 ? 'WAITING' : s && s.state;
@@ -78,7 +78,7 @@ export function infraAction(theme, status) {
 }
 
 export function groupSubagents(descs, cap = 10) {
-  // 설명의 공통 앞부분으로 묶음 이름 — "Wide yes/no search wn1" · "… wn2" → "Wide yes/no search"(README 3.8)
+  // 설명의 공통 앞부분으로 묶음 이름 — "Wide yes/no search wn1" · "… wn2" → "Wide yes/no search"(docs/00_design.md 3.8)
   const list = (descs || []).filter(Boolean);
   const shown = list.slice(0, cap);
   const hidden = Math.max(0, list.length - cap);

@@ -4,7 +4,7 @@
   클라이언트 → {"type": "auth", "token": "<FOREMAN_API_TOKEN>"}   연결 뒤 ws_auth_timeout_s 안에. 틀리면 close 1008
   서버 → {"type": "hello", "heartbeat_s": N, "ui": "<화면 코드 지문>"}
   서버 → {"type": "event", "event": {...}}                          적재가 끝난 이벤트(id 포함)
-  서버 → {"type": "ping", "ts": "..."}                              N초 동안 보낼 것이 없을 때. 끊김 감지용(README 3.10)
+  서버 → {"type": "ping", "ts": "..."}                              N초 동안 보낼 것이 없을 때. 끊김 감지용(docs/00_design.md 3.10)
   서버 → {"type": "resync"}                                         밀려서 버렸다 — 빠진 것은 DB에서 다시 읽는다
   서버 → {"type": "batch", "items": [...]}                          50ms 안에 쌓인 메시지 묶음(6단계)
   서버 → {"type": "session_state", ...}                             프로세스 · CC status가 바뀜(6단계)

@@ -183,6 +183,17 @@ def test_techdoc_and_portfolio_start_refusals(tmp_path):
         asyncio.run(sr.start(None, eng, "foreman", "portfolio", "09_없음"))
 
 
+def test_later_refused_when_readme_generated(tmp_path):
+    """README가 생성물인 저장소([readme] 표)에는 한계 절이 없다. 「알려진 한계 쓰기」는 세션을 띄우기 전에 분명히 거부한다(11-17 사용자)."""
+    import asyncio
+    from bridge.inject import Refused
+    r = _repo(tmp_path)
+    (r / ".foreman").mkdir(exist_ok=True)
+    (r / ".foreman" / "docs.toml").write_text('[readme]\ntitle = "가짜"\n', encoding="utf-8")
+    with pytest.raises(Refused, match="README 한계 절이 없어졌습니다"):
+        asyncio.run(sr.start(None, _FakeEngine({"foreman": str(r)}), "foreman", "later"))
+
+
 class _FakeEngine:
     """start가 저장소 경로만 읽는다."""
 

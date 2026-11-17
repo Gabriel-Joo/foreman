@@ -290,15 +290,15 @@ ArgoCD 알림을 시험할 때 클러스터 안에서 알림을 한 번 보내 �
 
 ## 10. FOREMAN 자신은 CI에 태우지 않는다
 
-FOREMAN 저장소에는 CI가 없다. GitHub에 push만 하고, 시험은 관리자가 합친 뒤 pytest와 node로 손수 돌리며, 배포는 사람이 systemd 유닛을 다시 띄우는 것이다(→ 16 시험과 배포) [code:README.md].
+FOREMAN 저장소에는 CI가 없다. GitHub에 push만 하고, 시험은 관리자가 합친 뒤 pytest와 node로 손수 돌리며, 배포는 사람이 systemd 유닛을 다시 띄우는 것이다(→ 16 시험과 배포) [docs:00_design.md].
 
-우리 Jenkins에 태우지 않는 까닭은 FOREMAN에 이미지가 없어서다. 그 Jenkins는 이미지를 만들어 Harbor에 올리는 서비스용 공장이다. FOREMAN의 브리지는 작업 폴더에서 바로 돌고, 화면은 번들러 없는 순수 자바스크립트라 빌드할 것이 없다. 그 공장에 태우면 Jenkinsfile, 시험 DB, 인프라 저장소 수정이 새로 생기고 얻는 것이 없다. 통일을 위한 통일이 된다. 그래서 시험 자동 실행만 GitHub Actions로 하기로 정했는데, 아직 만들지 않았다. 워크플로 파일이 없다 [code:README.md].
+우리 Jenkins에 태우지 않는 까닭은 FOREMAN에 이미지가 없어서다. 그 Jenkins는 이미지를 만들어 Harbor에 올리는 서비스용 공장이다. FOREMAN의 브리지는 작업 폴더에서 바로 돌고, 화면은 번들러 없는 순수 자바스크립트라 빌드할 것이 없다. 그 공장에 태우면 Jenkinsfile, 시험 DB, 인프라 저장소 수정이 새로 생기고 얻는 것이 없다. 통일을 위한 통일이 된다 [docs:00_design.md]. 시험 자동 실행도 GitHub Actions로 돌리지 않는다(→ 16 시험과 배포).
 
 FOREMAN이 클러스터 안이 아니라 호스트에 있다는 것도 이 편의 설계와 맞물린다. 브리지는 세션 프로세스, tmux, 트랜스크립트 파일을 직접 봐야 해서 호스트에 있고(→ 01 전체 구조), 그 때문에 클러스터 웹훅을 받으려면 8001 포트라는 따로 난 문이 필요했다.
 
 ## 11. 지금 없는 것
 
-README의 구조 그림에는 받는 웹훅이 「GitLab, Jenkins, Harbor, ArgoCD」로 적혀 있다 [code:README.md]. 실제와 다르다. GitLab은 돌고 있지 않고 원격 저장소는 GitHub 하나다. 커밋 단계는 GitLab 웹훅이 아니라 로컬 저장소 폴링(`git_commit`)이 맡는다 [code:migrations/0012_pipeline.sql]. GitHub에서 FOREMAN으로 오는 웹훅도 없다. 운영 도구가 바깥 인증 관문 뒤에 있어 GitHub가 직접 닿지 못하고, FOREMAN은 같은 서버의 로컬 저장소를 보면 되므로 필요하지 않다.
+README의 구조 그림에는 받는 웹훅이 「GitLab, Jenkins, Harbor, ArgoCD」로 적혀 있다 [docs:00_design.md]. 실제와 다르다. GitLab은 돌고 있지 않고 원격 저장소는 GitHub 하나다. 커밋 단계는 GitLab 웹훅이 아니라 로컬 저장소 폴링(`git_commit`)이 맡는다 [code:migrations/0012_pipeline.sql]. GitHub에서 FOREMAN으로 오는 웹훅도 없다. 운영 도구가 바깥 인증 관문 뒤에 있어 GitHub가 직접 닿지 못하고, FOREMAN은 같은 서버의 로컬 저장소를 보면 되므로 필요하지 않다.
 
 README 설계 글의 「캐릭터가 작업을 마치고 파이프라인 구역으로 걸어간다」는 배송 담당 한 명의 모양으로 바뀌었다(9절). 인프라 캐릭터 행은 DB에 프로젝트마다 있고 생존 폴링도 그 행을 기준으로 한다.
 

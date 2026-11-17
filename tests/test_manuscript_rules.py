@@ -221,6 +221,35 @@ def test_readme_new_lines_only(tmp_path):
     assert hits == {("README.md", 4, "가운뎃점"), ("CLAUDE.md", 1, "em dash")}
 
 
+def test_moved_file_with_new_file_in_old_place(tmp_path):
+    """옮긴 뒤 옛 자리에 새 파일을 만들어도(11-17 README를 docs/00_design.md로 옮기고 README를 생성물로) 옮긴 파일의 옛 줄은
+    새 줄이 아니다(-C로 복사를 알아본다). 옛 자리의 새 파일과 옮긴 파일에 더한 줄은 그대로 건다."""
+    g, base = _repo_with_base(tmp_path)
+    subprocess.run([*g, "mv", "README.md", "docs/00_design.md"], check=True)
+    (tmp_path / "docs/00_design.md").write_text("# 제목\n\n옛 소개 — 그대로 둔다\n더한 줄 · 하나\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("# 새 안내\n\n생성물 · 소개\n", encoding="utf-8")
+    subprocess.run([*g, "add", "-A"], check=True)
+    hits = {(p, r, n) for p, r, n, _ in dashdot.scan(tmp_path, base)}
+    assert hits == {("docs/00_design.md", 4, "가운뎃점"), ("README.md", 3, "가운뎃점")}
+
+
+def test_moved_file_cut_by_more_than_half(tmp_path):
+    """옮긴 뒤 절반 넘게 줄여도(같은 날 설계 문서 943줄을 595줄로, 유사도 42%) 남은 옛 줄은 새 줄이 아니다(복사 문턱 40%)."""
+    g = ["git", "-C", str(tmp_path)]
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    old = [f"옛 줄 {i:02d} 그대로 두는 설계 문장입니다" + (" — 옛 기호" if i == 1 else "") for i in range(20)]
+    (tmp_path / "README.md").write_text("\n".join(old) + "\n", encoding="utf-8")
+    subprocess.run([*g, "add", "-A"], check=True)
+    subprocess.run([*g, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a"], check=True)
+    base = subprocess.run([*g, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    (tmp_path / "docs").mkdir()
+    subprocess.run([*g, "mv", "README.md", "docs/00_design.md"], check=True)
+    (tmp_path / "docs/00_design.md").write_text("\n".join(old[:9]) + "\n", encoding="utf-8")   # 20줄 가운데 9줄만 남김
+    (tmp_path / "README.md").write_text("# 새 안내\n", encoding="utf-8")
+    subprocess.run([*g, "add", "-A"], check=True)
+    assert dashdot.scan(tmp_path, base) == []
+
+
 def test_check_runs_dashdot_with_repo_base(tmp_path):
     """문서 점검 8번: 칸이 있으면 새 줄을 틀림으로 세고, 커밋 판(rev, 합치기 카드)도 그 판으로 본다."""
     g, base = _repo_with_base(tmp_path)

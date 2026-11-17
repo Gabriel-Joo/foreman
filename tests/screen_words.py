@@ -242,9 +242,13 @@ def load_code(root: Path) -> Code:
 
 def doc_files(root: Path) -> list[Path]:
     """docs/*.md · README.md · 원고(11-15 — notion/ 아래 모든 .md, portfolio/*.md). 원고에 옛 화면 이름이 남으면 사람이 읽는
-    노션 · 포트폴리오에 그대로 나간다."""
+    노션 · 포트폴리오에 그대로 나간다.
+    README.md는 손으로 쓰는 저장소만 본다. `.foreman/docs.toml` [readme] 표가 켜졌으면 생성물이고(11-17), 글은 모두 원고에서
+    옮긴 것이다(포트폴리오 00편 첫 문단, 원고 첫 # 줄). 거기서 걸면 원고 제목을 링크 글([…])로 옮긴 것까지 인용으로 걸리는데,
+    고칠 곳은 README가 아니라 원고다."""
+    from bridge.doctext import config as dcfg
     fs = sorted((root / "docs").glob("*.md"))
-    if (root / "README.md").exists():
+    if (root / "README.md").exists() and dcfg.load(root).readme is None:
         fs.append(root / "README.md")
     fs += sorted((root / "notion").rglob("*.md")) + sorted((root / "portfolio").glob("*.md"))
     return fs

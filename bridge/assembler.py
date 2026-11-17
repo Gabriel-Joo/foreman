@@ -6,7 +6,7 @@
   message message.id PK — content 블록마다 줄이 쪼개져도 usage는 한 번만
   turn    prompt_id UNIQUE — CC의 promptId(한 턴의 user 줄이 모두 같은 값을 갖는다, 0003 머리말)
 
-턴 경계(README 3.2) — 먼저 온 신호가 닫는다(closed_by에 출처):
+턴 경계(docs/00_design.md 3.2) — 먼저 온 신호가 닫는다(closed_by에 출처):
   열기  새 promptId를 가진 user 줄(프롬프트 · task-notification · 다른 세션 메시지). hook UserPromptSubmit
   닫기  system/turn_duration → stop · '[Request interrupted by user…]' → interrupted · API 오류 → stop_failure
         hook Stop/StopFailure/SessionEnd · 프로세스가 사라짐(sweep) → session_end(hook을 한 번도 못 받은 세션) / process_lost
@@ -14,7 +14,7 @@
         없었으면 merged(응답 없이 다음 입력과 함께 처리 — 실측 54건 전부 이쪽: task-notification 46 · 다른 세션 메시지 5 · 사람 3)
   순서  파일 기록 순서. timestamp로 정렬하지 않는다(역전 실측)
 
-서브에이전트(README 3.11): 부모의 Agent tool_result(toolUseResult.agentId)에서 행을 만들고 그 턴을 spawn_turn으로.
+서브에이전트(docs/00_design.md 3.11): 부모의 Agent tool_result(toolUseResult.agentId)에서 행을 만들고 그 턴을 spawn_turn으로.
   자식 파일의 메시지 · 이벤트는 spawn_turn에 귀속. 출력 토큰은 output_tokens_reliable=false.
   <task-notification>의 subagent_tokens 등은 reported_*에 보조 검증용으로만 남긴다
 tool_result 본문은 저장하지 않는다(길이 · 오류 여부만, 오류면 앞 300자) — 형식을 모르는 비밀이 섞일 수 있다(mask.py)

@@ -33,7 +33,7 @@ ingress = "http://192.168.122.240"   # ingress-nginx VIP(MetalLB) — 호스트�
 vagrant_dir = "~/k8s-cluster"
 vm = "m-k8s"
 namespace = "argocd"
-# 인프라 캐릭터 — 첫 웹훅을 받으면 프로젝트마다 등장한다(README 2.2). 생존은 이 주소를 폴링한다(Host 헤더로 ingress에)
+# 인프라 캐릭터 — 첫 웹훅을 받으면 프로젝트마다 등장한다(docs/00_design.md 2.2). 생존은 이 주소를 폴링한다(Host 헤더로 ingress에)
 [infra.jenkins]
 name = "Jenkins"
 host = "jenkins.ronanlab.dev"

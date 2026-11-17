@@ -2,7 +2,7 @@
   "name": "plain",
   "label": "도형(기본)",
   "foreman": { "name": "감독" },
-  "_comment": "테마 = 이 파일 하나. 렌더러는 상태(state) · 도구(tool) · 플래그(flags)만 보고 여기서 동작을 고른다(README 3.8). 다른 테마는 같은 키에 다른 값.",
+  "_comment": "테마 = 이 파일 하나. 렌더러는 상태(state) · 도구(tool) · 플래그(flags)만 보고 여기서 동작을 고른다(docs/00_design.md 3.8). 다른 테마는 같은 키에 다른 값.",
 
   "palette": {
     "floor": "#2b2f3a", "floorAlt": "#30343f", "wall": "#4a5063", "wallTop": "#5d6479",

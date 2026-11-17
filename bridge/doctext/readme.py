@@ -4,12 +4,21 @@
 1. 제목: 저장소 이름(`.foreman/docs.toml` `[readme] title`, 없으면 그 저장소의 게시 프로젝트 이름)
 2. 소개 문단: 포트폴리오 00편(`portfolio/00_*.md`)의 첫 문단. 첫 # 줄 뒤에서 처음 나오는 본문 문단이다. 인용(`>`),
    절 제목, 그림, 표, 목록 줄은 건너뛴다. 글은 그대로 두고 근거 표시만 뗀다(노션 판과 같은 `STRIP`)
-3. 포트폴리오와 기술문서 원고 편 목록: 표 칸은 번호와 제목(편 파일 링크). 번호는 첫 # 줄 앞 번호(`03 `, `02-01 `),
-   없으면 파일 이름 번호(`03_x.md`는 03, `01_a/02_b.md`는 01-02). 제목은 번호를 뗀 첫 # 줄. 하위 편도 한 줄씩 넣는다
-   (노션에서도 따로 페이지이고, 제목이 바뀌면 점검이 걸어야 한다). 번호가 없는 파일은 표에 넣지 않고 알린다
+3. 포트폴리오와 기술문서 원고 편 목록: 표 칸은 번호, 제목(편 파일 링크), 하위. 번호는 첫 # 줄 앞 번호(`03 `, `02-01 `),
+   없으면 파일 이름 번호(`03_x.md`는 03, `01_a/02_b.md`는 01-02). 제목은 번호를 뗀 첫 # 줄. 표에는 맨 위 편만 넣고,
+   하위 편이 있는 편은 「하위 N」을 하위 칸에 적는다(11-17 사용자: README는 길 안내라 50줄이면 목차가 된다. 하위 편은
+   노션에서 본다). 맨 위 편이 없는 하위 편과 번호가 없는 파일은 표에 넣지 않고 알린다
 4. 노션 링크: 묶음마다 맨 위 편(번호가 가장 앞인 편)의 게시 주소를 「노션에서 보기」로 건다. 주소는 부르는 쪽이 넘긴다
    (`tools/docs.py`가 게시 기록 `doc_publish`에서 읽는다). 주소가 없으면 링크를 걸지 않고 「아직 노션에 올라가지 않았습니다」를
    쓰고 알린다(빈 주소를 걸거나 조용히 넘어가지 않는다)
+5. docs 차례(`[readme] docs = true`인 저장소만, 11-17 사용자): docs 묶음 폴더(`[sets] docs`) 바로 아래 `*.md`(그 폴더의
+   `README.md`와 하위 폴더는 빼고) 한 줄씩, 칸은 문서(파일 링크), 제목, 요약. **상태 칸은 두지 않는다**(손으로 쓴 차례의 상태 칸이
+   늘 낡았다). 제목은 첫 # 줄, 없으면 파일 이름. 요약은 저장소마다 꼴이 달라 `[readme] docs_summary`로 고른다:
+   `"para"`(기본, 첫 # 줄 뒤 다음 절 제목 전의 첫 문단), `"heading:<글>"`(그 글이 든 절 제목 아래 첫 문단, 런슈즈 「한 줄 요약」),
+   `"none"`. `docs_skip`에 적은 머리(예: `"상태:"`)로 시작하는 인용 문단은 건너뛴다. 문단의 첫 문장만, 120자까지
+
+README 칸에 옮기는 제목과 요약에서는 em dash와 가운뎃점을 쉼표로 바꾼다(백틱 안은 그대로). README 새 줄도 줄표 검사를 받는데
+원본 문서의 옛 기호를 그대로 옮기면 생성물이 그 검사에 걸린다. 원본 문서는 바꾸지 않는다.
 
 빼는 것: 구조 그림(포트폴리오 00편에 있다), 띄우는 법(기술문서 원고 01~03편). 둘 다 노션 링크로 보낸다.
 파일 맨 위 주석이 「손으로 고치면 다음에 만들 때 날아간다」고 알린다. 문서 점검 9번(`bridge/doctext/check.py`)이
@@ -36,6 +45,13 @@ LINK = re.compile(r"^\[노션에서 보기\]\((?P<u>[^)\s]+)\)$")
 TOP = ("<!-- 이 파일은 `tools/docs.py readme`가 만든다. 손으로 고치면 다음에 만들 때 날아간다. "
        "소개는 포트폴리오 00편 첫 문단, 편 목록은 원고 첫 # 줄, 노션 주소는 게시 기록에서 온다 -->")
 NO_LINK = "아직 노션에 올라가지 않았습니다."
+DOCS_HEAD = "문서"                                      # docs 차례 절 제목
+SUMMARY_MAX = 120
+HEADING = re.compile(r"^#{1,6}\s")
+SKIP_LINE = re.compile(r"^\s*(!\[|\||[-*+]\s|\d+\.\s|---|<)")
+SENTENCE = re.compile(r"^(.+?[.!?](?:\*\*|[)」\"'])*)(?=\s|$)")
+TICKS = re.compile(r"(`[^`]*`)")
+DASHDOT = re.compile(r"\s*[—·]\s*")
 
 
 @dataclass
@@ -87,15 +103,98 @@ def intro(md: str) -> str | None:
     return " ".join(para) or None
 
 
+def cell(s: str) -> str:
+    """README 표 칸 글: em dash와 가운뎃점을 쉼표로(백틱 안은 그대로), `|`는 `\\|`로."""
+    parts = TICKS.split(s)
+    parts = [p if p.startswith("`") else DASHDOT.sub(", ", p) for p in parts]
+    return "".join(parts).strip(" ,").replace("|", "\\|")
+
+
+def doc_summary(md: str, mode: str = "para", skip: tuple[str, ...] = ()) -> str:
+    """docs 문서 한 편의 한 줄 요약(첫 문장, SUMMARY_MAX자). 찾지 못하면 빈 글.
+    para: 첫 # 줄 뒤(없으면 맨 앞부터) 다음 절 제목 전의 첫 문단. heading:<글>: 그 글이 든 절 제목 아래 첫 문단.
+    인용 문단은 `>`를 떼고 본문으로 읽되, skip 머리로 시작하는 인용 문단과 인용 안 절 제목 줄은 건너뛴다."""
+    if mode == "none":
+        return ""
+    lines = split(md)
+    if mode.startswith("heading:"):
+        want = mode[len("heading:"):]
+        start = next((i for i, k in walk(lines) if k == TEXT and HEADING.match(lines[i].strip()) and want in lines[i]), None)
+        if start is None:
+            return ""
+    else:
+        h, _ = first_h1(md)
+        start = -1 if h is None else h
+    para: list[str] = []
+    skipping = False
+    for i, kind in walk(lines, start + 1):
+        s = lines[i].strip()
+        if kind != TEXT or not s:
+            if para:
+                break
+            skipping = False
+            continue
+        if HEADING.match(s):
+            break
+        quoted = s.startswith(">")
+        body = s.lstrip(">").strip() if quoted else s
+        if not para and (skipping or (quoted and any(body.startswith(p) for p in skip))):
+            skipping = True
+            continue
+        if not body or body.startswith("#") or SKIP_LINE.match(body):
+            if para:
+                break
+            continue
+        para.append(STRIP.sub("", body).strip())
+    text = re.sub(r"\s+", " ", " ".join(para)).strip()
+    if (m := SENTENCE.match(text)):
+        text = m.group(1)
+    if len(text) > SUMMARY_MAX:
+        text = text[:SUMMARY_MAX - 1].rstrip() + "…"
+    return text
+
+
+def doc_rows(folder: str, paths: list[str], bodies: dict[str, str], mode: str = "para",
+             skip: tuple[str, ...] = ()) -> list[tuple[str, str, str]]:
+    """docs 차례 줄 [(경로, 제목, 요약)]: 폴더 바로 아래 `*.md`(그 폴더의 README.md는 뺀다), 파일 이름 차례."""
+    out: list[tuple[str, str, str]] = []
+    for p in sorted(paths):
+        rel = p[len(folder):]
+        if "/" in rel or not rel.endswith(".md") or rel == "README.md":
+            continue
+        md = bodies.get(p, "")
+        title = STRIP.sub("", first_h1(md)[1] or "").strip() or rel[:-3]
+        out.append((p, title, doc_summary(md, mode, skip)))
+    return out
+
+
 def top_piece(rs: list[tuple[str, str, str]]) -> str | None:
     """묶음 맨 위 편: 하위 편이 아닌 것 가운데 번호가 가장 앞인 편."""
     tops = [r for r in rs if "-" not in r[0]]
     return min(tops)[2] if tops else None
 
 
+def top_rows(rs: list[tuple[str, str, str]]) -> tuple[list[tuple[str, str, str, int]], list[str]]:
+    """(맨 위 편 [(번호, 제목, 경로, 하위 편 수)], 맨 위 편이 없어 셀 곳이 없는 하위 편 경로)."""
+    tops = [(n, t, p, 0) for n, t, p in rs if "-" not in n]
+    idx = {n: i for i, (n, _, _, _) in enumerate(tops)}
+    orphans: list[str] = []
+    for n, _, p in rs:
+        if "-" not in n:
+            continue
+        i = idx.get(n.split("-")[0])
+        if i is None:
+            orphans.append(p)
+            continue
+        a, b, c, k = tops[i]
+        tops[i] = (a, b, c, k + 1)
+    return tops, orphans
+
+
 def build(title: str, sets: dict[str, str], pieces: dict[str, list[str]], bodies: dict[str, str],
-          links: dict[str, str | None]) -> Built:
-    """README 글 전체. sets는 {묶음: 폴더}(없는 묶음은 빠진다), pieces는 {묶음: 편 경로}, links는 {편 경로: 노션 주소}."""
+          links: dict[str, str | None], docs: list[tuple[str, str, str]] | None = None) -> Built:
+    """README 글 전체. sets는 {묶음: 폴더}(없는 묶음은 빠진다), pieces는 {묶음: 편 경로}, links는 {편 경로: 노션 주소}.
+    docs는 docs 차례 줄(doc_rows). None이면 그 절을 넣지 않는다(`[readme] docs`가 꺼진 저장소)."""
     b = Built()
     tables: dict[str, list[tuple[str, str, str]]] = {}
     for k in ORDER:
@@ -127,8 +226,19 @@ def build(title: str, sets: dict[str, str], pieces: dict[str, list[str]], bodies
         else:
             out.append(NO_LINK)
             b.notes.append(f"{NAME_KO[k]}: 맨 위 편 {b.tops.get(k)}의 노션 주소가 게시 기록에 없어 링크를 걸지 않았습니다")
-        out += ["", "| 번호 | 제목 |", "|---|---|"]
-        out += [f"| {n} | [{t.replace('|', chr(92) + '|')}]({p}) |" for n, t, p in tables[k]]
+        tops, orphans = top_rows(tables[k])
+        if orphans:
+            b.notes.append(f"{NAME_KO[k]}: 맨 위 편이 없어 하위로 세지 못한 편 {len(orphans)}개({', '.join(orphans[:5])})")
+        out += ["", "| 번호 | 제목 | 하위 |", "|---|---|---|"]
+        out += [f"| {n} | [{cell(t)}]({p}) | {f'하위 {c}' if c else ''} |" for n, t, p, c in tops]
+    if docs is not None:
+        if not docs:
+            b.notes.append("docs 차례에 넣을 문서가 없습니다")
+        out += ["", f"## {DOCS_HEAD}", "", "| 문서 | 제목 | 요약 |", "|---|---|---|"]
+        out += [f"| [{p.rsplit('/', 1)[-1]}]({p}) | {cell(t)} | {cell(s)} |" for p, t, s in docs]
+        empty = [p for p, _, s in docs if not s]
+        if empty:
+            b.notes.append(f"docs 차례: 요약을 찾지 못한 문서 {len(empty)}개({', '.join(empty[:5])})")
     b.text = "\n".join(out) + "\n"
     return b
 
@@ -159,5 +269,5 @@ def diff(have: str, want: str) -> str | None:
     return "끝 줄바꿈이 다릅니다"
 
 
-__all__ = ["Built", "NAME_KO", "NO_LINK", "ORDER", "PATH", "TOP", "build", "diff", "intro", "links_in", "number", "rows",
-           "top_piece"]
+__all__ = ["Built", "DOCS_HEAD", "NAME_KO", "NO_LINK", "ORDER", "PATH", "TOP", "build", "cell", "diff", "doc_rows",
+           "doc_summary", "intro", "links_in", "number", "rows", "top_piece", "top_rows"]

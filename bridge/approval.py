@@ -71,7 +71,7 @@ class Policy:
     protect_tool_ok: list[re.Pattern[str]] = field(default_factory=list)  # 그중 Edit · Write 도구 편집은 통과(Bash 쓰기는 여전히 ask)
     secret_readers: set[str] = field(default_factory=set)            # Bash에서 비밀 파일을 찍거나 옮기는 명령
     cc_own: list[re.Pattern[str]] = field(default_factory=list)      # CC 자신의 계획 · 메모리 — 안쪽으로 친다
-    # ── 11-05 "실제로 거부할 만한 것만" — 설정으로 켠다(README 3.3, log/stage5) ──
+    # ── 11-05 "실제로 거부할 만한 것만" — 설정으로 켠다(docs/00_design.md 3.3, log/stage5) ──
     delete_protect: bool = False                                      # 홈 · 프로젝트 · 데이터 폴더를 통째로 지울 때만 ask
     delete_containers: list[str] = field(default_factory=list)       # 이 폴더 자체와 바로 아래 것들이 "통째로"다(펼친 절대 경로)
     secret_mode: str = "read"                                         # read: 찍기 · 옮기기도 ask / send: 밖으로 보낼 때만

@@ -11,7 +11,7 @@
   - Harbor: 태그 = 커밋 12자리(두 저장소 Jenkinsfile 규칙) → 로컬 저장소에서 전체 SHA로 푼다
   - ArgoCD: 동기화한 앱의 이미지 태그(같은 12자리)로 빌드를 찾는다. 리비전은 ronanlab-infra 커밋(태그를 바꾼 커밋)
 
-인프라 캐릭터(README 2.2) — 첫 웹훅을 받으면 프로젝트마다 Jenkins · Harbor · ArgoCD 캐릭터가 등장하고, 생존은 폴링한다
+인프라 캐릭터(docs/00_design.md 2.2) — 첫 웹훅을 받으면 프로젝트마다 Jenkins · Harbor · ArgoCD 캐릭터가 등장하고, 생존은 폴링한다
   (응답 없음 N번 → STALE, 오래 STALE → 퇴장, 응답 · 웹훅이 오면 돌아온다).
 실패는 텔레그램으로(실패로 바뀔 때 한 번).
 """

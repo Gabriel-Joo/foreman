@@ -711,7 +711,7 @@ class TerminalManager:
             delay = min(delay * 2, 30.0)
 
     async def _shell_session(self) -> None:
-        """셸 세션 행(type='shell', role helper) — 떠돌이 '미분류'에 붙인다(0017: 포먼은 자기 세션을 갖지 않는다, README 2.4).
+        """셸 세션 행(type='shell', role helper) — 떠돌이 '미분류'에 붙인다(0017: 포먼은 자기 세션을 갖지 않는다, docs/00_design.md 2.4).
         카드로 보이지 않는다(대시보드는 type='agent'만)."""
         assert self.engine is not None
         async with self.engine.begin() as c:

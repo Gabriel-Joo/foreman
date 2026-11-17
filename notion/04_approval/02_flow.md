@@ -56,7 +56,7 @@ PreToolUse는 위험한 명령에만 불리는 것이 아니다. 파일 하나 �
 
 그래서 시간 제한을 두 겹으로 걸었다. `foreman-decide.sh pre`는 curl을 `-m 4`, 즉 4초 제한으로 부르고, CC의 hook 설정은 그보다 조금 긴 6초다 [code:scripts/foreman-decide.sh] [code:deploy/hooks/foreman-hooks.json]. 스크립트가 먼저 포기해야 CC가 hook을 강제로 끊는 일 없이, 「판정 없음」이라는 깔끔한 결과로 끝난다. 4초는 판정이 걸리는 시간이 아니라 「브리지가 아무리 늦어도 이 이상은 세션을 붙잡지 않는다」는 상한이다. 실제 판정은 메모리 안에서 끝나 왕복 약 25ms였다 [log:stage5_approval_result.md].
 
-이 제한은 판정에 덧붙는 일에도 걸린다. 승인 창에 「무엇을 대상으로」 한 줄 요약을 붙이는데(→ 승인 요약 편), 요약을 만들 때 지울 디렉토리의 파일 수를 세는 일은 0.3초 안에서만 한다. PreToolUse가 4초 안에 답해야 하기 때문이다 [code:README.md].
+이 제한은 판정에 덧붙는 일에도 걸린다. 승인 창에 「무엇을 대상으로」 한 줄 요약을 붙이는데(→ 승인 요약 편), 요약을 만들 때 지울 디렉토리의 파일 수를 세는 일은 0.3초 안에서만 한다. PreToolUse가 4초 안에 답해야 하기 때문이다 [docs:00_design.md].
 
 ### 판정은 메모리에서, 기록은 뒤에서
 
@@ -109,7 +109,7 @@ PreToolUse는 판정하면서 한 가지를 기억해 둔다. 「세션 id, 도�
 
 이 설계 전체가 기대는 사실이 하나 있다. 네 프로젝트 모두 자동 모드인데, PreToolUse가 `ask`를 돌려주면 분류기가 아니라 사람이 본다는 것이다. 이것이 거짓이면 FOREMAN의 승인 규칙은 자동 모드에서 아무 효과가 없다.
 
-CC 공식 문서(permission-modes)는 「자동 모드에서 PreToolUse hook의 ask는 그 도구 호출을 권한 창으로 보내고, 분류기는 그것을 정하지 않는다」고 적는다 [code:README.md]. 그래도 문서만 믿지 않고 시험용 세션(probe)을 따로 띄워 CC 2.1.316, 자동 모드에서 직접 확인했다 [log:stage5_approval_result.md].
+CC 공식 문서(permission-modes)는 「자동 모드에서 PreToolUse hook의 ask는 그 도구 호출을 권한 창으로 보내고, 분류기는 그것을 정하지 않는다」고 적는다 [docs:00_design.md]. 그래도 문서만 믿지 않고 시험용 세션(probe)을 따로 띄워 CC 2.1.316, 자동 모드에서 직접 확인했다 [log:stage5_approval_result.md].
 
 | 시험 | 결과 |
 |---|---|
@@ -121,9 +121,9 @@ CC 공식 문서(permission-modes)는 「자동 모드에서 PreToolUse hook의 
 
 셋째 줄은 일부러 확인한 것이다. CC 실행 파일 안에 「자동 모드에서는 hook이 승인할 수 없다」는 문구가 있어서 `allow`가 무시될까 걱정했는데, 실제로는 적용됐다. 그 문구는 별칭 맞추기 같은 특정 조건에 걸리는 것으로 보았다. 넷째, 다섯째 줄이 이 편의 나머지 설계를 정했다. 승인 창은 hook이 결정을 돌려주기 전부터 이미 떠 있고, 사람이 그 창에서 먼저 답하면 hook은 결정권을 잃는다.
 
-실제로 쓰면서도 같은 결과가 나왔다. FOREMAN을 만드는 세션 하나(트랜스크립트 461줄 모두 `permissionMode`가 `auto`)에서 FOREMAN의 `ask` 26건이 모두 승인 창으로 떴다 [code:README.md].
+실제로 쓰면서도 같은 결과가 나왔다. FOREMAN을 만드는 세션 하나(트랜스크립트 461줄 모두 `permissionMode`가 `auto`)에서 FOREMAN의 `ask` 26건이 모두 승인 창으로 떴다 [docs:00_design.md].
 
-문서에 없는 것은 기대지 않기로 했다. bypassPermissions, acceptEdits 모드에서 `ask`가 어떻게 되는지, hook의 `allow`가 자동 모드 분류기를 건너뛰는지, `claude -p`에서 `ask`가 어떻게 되는지는 확인하지 않았다. 또 공식 문서(permissions)에 따르면 hook의 `allow`는 사용자 설정의 deny, ask 규칙을 넘지 못한다. FOREMAN의 허용은 「사람 설정이 막은 것까지 열어 주는」 힘이 없다 [code:README.md].
+문서에 없는 것은 기대지 않기로 했다. bypassPermissions, acceptEdits 모드에서 `ask`가 어떻게 되는지, hook의 `allow`가 자동 모드 분류기를 건너뛰는지, `claude -p`에서 `ask`가 어떻게 되는지는 확인하지 않았다. 또 공식 문서(permissions)에 따르면 hook의 `allow`는 사용자 설정의 deny, ask 규칙을 넘지 못한다. FOREMAN의 허용은 「사람 설정이 막은 것까지 열어 주는」 힘이 없다 [docs:00_design.md].
 
 ## 둘째 hook: PermissionRequest, 기다리는 동안 창은 이미 떠 있다
 
@@ -252,9 +252,9 @@ hook은 아무것도 돌려주지 않고 끝난다. 이것이 중요하다. 시�
 
 대부분의 도구는 화면 [승인]을 `{"behavior": "allow"}` 하나로 돌려주면 된다. 사람에게 무언가를 입력받는 창을 띄우는 도구 둘은 그것만으로는 끝나지 않는다 [code:bridge/approvals.py].
 
-질문(AskUserQuestion)은 승인이 아니지만 같은 길로 받는다. CC가 질문 창을 띄울 때도 PermissionRequest가 불리기 때문이다. 규칙 이름은 「질문」, 카드는 「❓ 세션이 묻습니다」, 텔레그램은 질문과 선택지를 그대로 보낸다. 패널에서 고르면 `answer()`가 원래 입력 전체에 `answers`(질문 글 → 고른 선택지 이름, 여러 개는 쉼표로 이음)를 붙여 `updatedInput`으로 돌려준다. 답과 함께 쓴 글은 `annotations`의 `notes`로 들어간다. 이 질문을 정책에서 빼지 않은 까닭은, 빼면 질문이 대화창에만 떠서 알림이 없고 턴도 끝나지 않아 세션이 조용히 멈추기 때문이다 [code:README.md].
+질문(AskUserQuestion)은 승인이 아니지만 같은 길로 받는다. CC가 질문 창을 띄울 때도 PermissionRequest가 불리기 때문이다. 규칙 이름은 「질문」, 카드는 「❓ 세션이 묻습니다」, 텔레그램은 질문과 선택지를 그대로 보낸다. 패널에서 고르면 `answer()`가 원래 입력 전체에 `answers`(질문 글 → 고른 선택지 이름, 여러 개는 쉼표로 이음)를 붙여 `updatedInput`으로 돌려준다. 답과 함께 쓴 글은 `annotations`의 `notes`로 들어간다. 이 질문을 정책에서 빼지 않은 까닭은, 빼면 질문이 대화창에만 떠서 알림이 없고 턴도 끝나지 않아 세션이 조용히 멈추기 때문이다 [docs:00_design.md].
 
-계획 승인(ExitPlanMode)은 `updatedInput` 없는 `allow`를 CC가 결정으로 받지 않는다. 패널이 허용해도 대화창 계획 승인 창이 그대로 남아, 브리지는 「허용됨」으로 카드를 닫는데 세션은 멈춰 있는 일이 실제로 세 번 있었다 [log:silent_finish_20261114.md] [code:README.md]. 그래서 `allow_decision()`은 이 도구에 원래 입력과 함께 모드를 자동 모드로 되돌리는 `setMode`를 붙인다. 대화창의 기본 선택 「1. Yes, and use auto mode」와 같은 결과다. 그 경위는 승인 흐름보다 세션 지켜보기 쪽 이야기라 → 03 세션 지켜보기와 글 넣기가 이어서 다룬다.
+계획 승인(ExitPlanMode)은 `updatedInput` 없는 `allow`를 CC가 결정으로 받지 않는다. 패널이 허용해도 대화창 계획 승인 창이 그대로 남아, 브리지는 「허용됨」으로 카드를 닫는데 세션은 멈춰 있는 일이 실제로 세 번 있었다 [log:silent_finish_20261114.md] [docs:00_design.md]. 그래서 `allow_decision()`은 이 도구에 원래 입력과 함께 모드를 자동 모드로 되돌리는 `setMode`를 붙인다. 대화창의 기본 선택 「1. Yes, and use auto mode」와 같은 결과다. 그 경위는 승인 흐름보다 세션 지켜보기 쪽 이야기라 → 03 세션 지켜보기와 글 넣기가 이어서 다룬다.
 
 ## 승인 기록이 DB에 남는 모양
 

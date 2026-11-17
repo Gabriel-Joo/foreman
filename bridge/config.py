@@ -42,7 +42,7 @@ class Settings(BaseSettings):
         extra="ignore",  # MYSQL_ROOT_PASSWORD 등 브리지가 쓰지 않는 키는 버린다
     )
 
-    # DB — 호스트 도커 FOREMAN 전용 MySQL (README 3.12)
+    # DB — 호스트 도커 FOREMAN 전용 MySQL (docs/00_design.md 3.12)
     mysql_host: str = "127.0.0.1"
     mysql_port: int = 3308
     mysql_database: str = "foreman"

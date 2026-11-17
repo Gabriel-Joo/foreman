@@ -2737,7 +2737,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     // 11-10 사용자(받은 할 일 #9) — 캐릭터 아래는 수만("뒤에서 도는 일 2"). 무슨 일인지는 호버(세션 호버에 하나씩 적는다).
     // 전에는 "· 세 테마 × 세 폭 × 다섯 화면 다시…"처럼 설명이 붙어 이름표가 길게 깔렸다
     if (n) lines.push([`서브에이전트 ${n}`, P.act]);
-    // 백그라운드 Bash · Monitor — "IDLE + 백그라운드 n개"(README 3.11). 일꾼 줄이 있으면 그 아래
+    // 백그라운드 Bash · Monitor — "IDLE + 백그라운드 n개"(docs/00_design.md 3.11). 일꾼 줄이 있으면 그 아래
     const bg = a.kind === 'session' && a.s ? a.s.background || [] : [];
     if (bg.length) { const bl = bgLine(bg); lines.push([bl.text, bl.stalled ? P.warn : P.act]); }   // 11-14 오래 되면 「· 2시간째 · 출력 멈춤」
     // 구역 이름표 · 앞서 그린 이름과 겹치면 비켜 그린다(11-06 — 글씨를 키우자 오피스 1024에서 서버룸 사람 이름이 「서버룸」을 덮었다).

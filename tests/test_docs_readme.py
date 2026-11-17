@@ -99,11 +99,12 @@ def test_build_whole_file(tmp_path, capsys):
     assert "다음 문단" not in text and "안내입니다" not in text
     assert text.index("## 포트폴리오") < text.index("## 기술문서")
     assert f"[노션에서 보기]({URL_P})" in text and f"[노션에서 보기]({URL_N})" in text
-    assert "| 01 | [화면 \\| 하나](portfolio/01_screen.md) |" in text
-    assert "| 00 | [들어가며](notion/00_intro.md) |" in text
-    # 하위 편: 제목에 번호가 없으면 파일 번호, 있으면 제목 번호. 부모 편이 하위 편보다 앞
-    assert text.index("| 01 | [구조]") < text.index("| 01-01 | [어디에 두었나](notion/01_parts/01_place.md) |")
-    assert "| 01-02 | [뜨는 차례](notion/01_parts/02_start.md) |" in text
+    assert "| 번호 | 제목 | 하위 |" in text
+    assert "| 01 | [화면 \\| 하나](portfolio/01_screen.md) |  |" in text
+    assert "| 00 | [들어가며](notion/00_intro.md) |  |" in text
+    # 맨 위 편만 넣고 하위 편은 「하위 N」 한 칸(11-17 사용자). 제목에 번호가 든 하위 편(01-02)도 부모 01로 센다
+    assert "| 01 | [구조](notion/01_parts.md) | 하위 2 |" in text
+    assert "어디에 두었나" not in text and "뜨는 차례" not in text and "01-0" not in text
     assert "TODO" not in text and "번호가 없어 표에 넣지 않은 파일 1개(notion/TODO.md)" in out
     assert text.endswith("|\n")
 
@@ -120,7 +121,7 @@ def test_twice_same_and_check_passes(tmp_path, capsys):
 
 @pytest.mark.parametrize("change,where", [
     (lambda r: put(r, "portfolio/02_new.md", "# 새 편\n"), "새 편"),                        # 편이 늘었다
-    (lambda r: put(r, "notion/01_parts/01_place.md", "# 어디에 놓았나\n"), "어디에"),         # 하위 편 제목이 바뀌었다
+    (lambda r: put(r, "notion/01_parts/03_more.md", "# 더\n"), "하위 3"),                    # 하위 편이 늘었다
     (lambda r: (r / "notion/01_parts.md").unlink(), "구조"),                                  # 편이 줄었다
     (lambda r: put(r, "portfolio/00_overview.md", "# 한눈에 보는 가짜\n\n바뀐 소개입니다.\n"), "소개"),
     (lambda r: put(r, "README.md", (r / "README.md").read_text(encoding="utf-8") + "\n손으로 더한 줄\n"), "손으로"),
@@ -213,6 +214,10 @@ def test_project_from_origin(tmp_path):
     ("readme = 1\n", "표"),
     ('[readme]\ntitle = ""\n', "한 줄 글"),
     ('[readme]\nproject = "a\\nb"\n', "한 줄 글"),
+    ('[readme]\ndocs = "yes"\n', "true 또는 false"),
+    ('[readme]\ndocs_summary = "first"\n', "docs_summary"),
+    ('[readme]\ndocs_summary = "heading:"\n', "docs_summary"),
+    ('[readme]\ndocs_skip = "상태:"\n', "글자 목록"),
 ])
 def test_config_errors(body, why):
     with pytest.raises(dcfg.DocsConfigError, match=why):
@@ -222,3 +227,58 @@ def test_config_errors(body, why):
 def test_config_unknown_key_warns():
     c = dcfg.parse('[readme]\ntitel = "x"\n')
     assert c.readme == {} and any("readme.titel" in w for w in c.warnings)
+
+
+# ── docs 차례(11-17 사용자: 상태 칸 없이 제목과 한 줄 요약. 저장소마다 요약 꼴이 다르다) ──
+DOCS_FOREMAN = {   # FOREMAN 꼴: 첫 # 줄, 「> 상태:」 인용, 그다음 문단
+    "docs/00_design.md": "# 설계 — 전체\n\n> 상태: 11-17 ✓ 끝남\n\n설계 전체다. 둘째 문장은 들어가지 않는다 [log:x.md].\n",
+    "docs/01_brief.md": "# BRIEF 01 · 검토\n\n## 1. 절\n\n절 아래 문단은 요약이 아니다.\n",
+    "docs/README.md": "# 옛 손 차례\n",
+    "docs/history/old.md": "# 하위 폴더\n",
+}
+DOCS_RUNSHOES = {  # 런슈즈 꼴: 첫 # 줄 없음, 「> 상태:」 뒤 「#### 0. 한 줄 요약」 절
+    "docs/01a_sources.md": "> 상태: 운영 310켤레(11-05)\n\n#### 0. 한 줄 요약\n\n사실 값만 모은다. 둘째 문장.\n\n## 1. 자세히\n",
+}
+
+
+def test_docs_toc_foreman_shape(tmp_path, capsys):
+    files = dict(FILES) | DOCS_FOREMAN
+    files[".foreman/docs.toml"] = '[readme]\ntitle = "가짜"\nproject = "fake"\ndocs = true\ndocs_skip = ["상태:"]\n'
+    r = make(tmp_path, files)
+    rc, out, _ = cli(capsys, "--repo", str(r), "--links", links_file(tmp_path), "readme")
+    assert rc == 0
+    text = (r / "README.md").read_text(encoding="utf-8")
+    sec = text[text.index(f"## {rd.DOCS_HEAD}"):]
+    assert "| 문서 | 제목 | 요약 |" in sec and "상태" not in sec                       # 상태 칸도 상태 인용도 없다
+    assert "| [00_design.md](docs/00_design.md) | 설계, 전체 | 설계 전체다. |" in sec   # 첫 문장, 근거 표시 뗌, 줄표는 쉼표로
+    assert "| [01_brief.md](docs/01_brief.md) | BRIEF 01, 검토 |  |" in sec            # 절 제목 전에 문단이 없으면 빈 요약
+    assert "옛 손 차례" not in sec and "하위 폴더" not in sec                           # docs/README.md와 하위 폴더는 뺀다
+    assert "요약을 찾지 못한 문서 1개(docs/01_brief.md)" in out
+    assert check9(r)[0] == []
+    put(r, "docs/02_new.md", "# 새 문서\n\n새 요약.\n")                                  # 편이 늘면 점검 9번이 건다
+    errs, _ = check9(r)
+    assert len(errs) == 1 and "다릅니다" in errs[0]
+
+
+def test_docs_toc_other_shape(tmp_path, capsys):
+    """런슈즈 꼴: 첫 # 줄이 없으면 제목은 파일 이름, 요약은 「한 줄 요약」 절 아래 첫 문장. docs가 꺼진 저장소는 절이 없다."""
+    files = dict(FILES) | DOCS_RUNSHOES
+    files[".foreman/docs.toml"] = ('[readme]\ntitle = "가짜"\nproject = "fake"\ndocs = true\n'
+                                   'docs_summary = "heading:한 줄 요약"\ndocs_skip = ["상태:"]\n')
+    r = make(tmp_path, files)
+    cli(capsys, "--repo", str(r), "--links", links_file(tmp_path), "readme")
+    text = (r / "README.md").read_text(encoding="utf-8")
+    assert "| [01a_sources.md](docs/01a_sources.md) | 01a_sources | 사실 값만 모은다. |" in text
+    put(r, "docs/01a_sources.md", DOCS_RUNSHOES["docs/01a_sources.md"].replace("사실 값만", "사실만"))
+    assert len(check9(r)[0]) == 1                                                       # 요약이 바뀌어도 건다
+    r2 = make(tmp_path, dict(FILES) | DOCS_RUNSHOES, name="off")                         # [readme]에 docs가 없으면 차례 없음
+    cli(capsys, "--repo", str(r2), "--links", links_file(tmp_path), "readme")
+    assert f"## {rd.DOCS_HEAD}" not in (r2 / "README.md").read_text(encoding="utf-8")
+
+
+def test_doc_summary_modes():
+    md = "<!--\n다루는 곳: x\n-->\n# 제목\n\n> ## ⏸ 보류\n> **열지 않는다.** 남겨 둔다.\n\n## 1.\n"
+    assert rd.doc_summary(md) == "**열지 않는다.**"                                    # 인용 안 절 제목 줄은 건너뛴다
+    assert rd.doc_summary(md, "none") == ""
+    assert rd.doc_summary("# t\n\n" + "가" * 200 + "\n").endswith("…")
+    assert rd.cell("a — b · `c · d` | e") == "a, b, `c · d` \\| e"                         # 백틱 안은 그대로

@@ -55,7 +55,7 @@ delete_outside_worktree = true
 "helm-삭제" = '''\bhelm\s+(uninstall|delete)\b'''
 "argocd-삭제" = '''\bargocd\s+(app\s+delete|repo\s+rm|cluster\s+rm)\b'''
 "DB-파괴" = '''(?i)\b(drop\s+(database|table|schema)|truncate\s+table)\b|\bdelete\s+from\s+[\w.`"]+\s*(;|"|'|$)|\bflush(all|db)\b|\bdropdb\b|\bmysqladmin\b[^|;&\n]*\sdrop\b'''
-# ── 11-03 보강 — 다른 게이트 구현에서 가져온 위험 패턴(우리 환경에 있는 것만, README 3.3 "다른 구현과 비교") ──
+# ── 11-03 보강 — 다른 게이트 구현에서 가져온 위험 패턴(우리 환경에 있는 것만, log/design_history_20261117.md 5절 "다른 구현과 비교") ──
 "git-기록파괴" = '''\bgit\b[^|;&\n]*?\s(filter-branch|filter-repo|reflog\s+expire|gc\b[^|;&\n]*--prune=(now|all))\b'''
 "find-삭제" = '''\bfind\b[^|;&\n]*?\s(-delete\b|-exec(dir)?\s+(rm|shred|mv)\b)'''
 "권한-대량변경" = '''\bchmod\b[^|;&\n]*\s0?777\b|\b(chmod|chown)\s+(-\w+\s+)*-\w*R\w*\b[^|;&\n]*\s(/|~|\$HOME)/?(\s|$|;)'''

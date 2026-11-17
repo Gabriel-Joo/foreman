@@ -197,6 +197,21 @@ def test_config_records_and_not_code(foreman):
     assert dr.trigger_kind("bridge/a.js", sets, cfg) == "code" and dr.trigger_kind("README.md", sets, cfg) == "doc"
 
 
+def test_generated_readme_is_not_trigger(foreman):
+    """[readme] 표가 켜지면 맨 위 README.md는 생성물이라 걸지 않는다. 다른 폴더의 README.md는 그대로 문서 트리거다."""
+    put(foreman, "README.md", "# 손으로 쓴 README\n")
+    put(foreman, "notion/20_r.md", "# 20 읽기\n\n안내를 따른다 [code:README.md].\n")
+    commit(foreman, "readme")
+    assert dr.trigger_kind("README.md", dr.resolve_sets(foreman, dcfg.load(foreman)), dcfg.load(foreman)) == "doc"
+    assert "notion/20_r.md" in by_doc(dr.scan(foreman, files=["README.md"]))
+    put(foreman, ".foreman/docs.toml", '[readme]\ntitle = "가짜"\n')
+    cfg = dcfg.load(foreman)
+    sets = dr.resolve_sets(foreman, cfg)
+    assert dr.trigger_kind("README.md", sets, cfg) is None
+    assert dr.trigger_kind("bridge/README.md", sets, cfg) == "doc"
+    assert by_doc(dr.scan(foreman, files=["README.md"])) == {}
+
+
 def test_broken_config_fails(foreman):
     put(foreman, ".foreman/docs.toml", "records = [\n")
     with pytest.raises(dr.DocrefsError, match="docs.toml"):

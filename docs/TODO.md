@@ -7,8 +7,8 @@
 ## 1. 바탕과 기록 모으기
 
 - **foreman-1** 재시작 추세 감시 (2026-11-15)
-  호스트 systemd 유닛과 docker 컨테이너의 재시작 추세를 폴링해 `restart_loop` 이벤트를 내는 감시가 없다. 이벤트 이름만 정의돼 있다. FOREMAN을 만든 계기(`milvus-port-forward` 재시작)와 같은 모양의 고장을 아직 못 잡는다.
-  나온 곳: `notion/00_foreman.md` 61, `notion/01_structure.md` 249(546과 겹쳐 원고에 남김)
+  호스트 systemd 유닛과 docker 컨테이너의 재시작 추세를 폴링해 `restart_loop` 이벤트를 내는 감시가 없다. 이벤트 이름만 정의돼 있다. FOREMAN을 만든 계기(`milvus-port-forward` 재시작)와 같은 모양의 고장을 아직 못 잡는다. 처음 설계의 계획: 상태보다 재시작 추세를 본다(systemd `NRestarts`, docker `RestartCount`). 유닛과 컨테이너는 캐릭터로 만들지 않고, 프로젝트에 연결된 것(`character.watch_targets`)은 그 인프라 캐릭터 상태에, 어디에도 속하지 않는 것은 포먼 경고 목록에 띄운다.
+  나온 곳: `notion/00_foreman.md` 61, 96, `notion/01_structure.md` 249, `docs/00_design.md` 「2.2」(옮기기 전 판 `527d841`, 원문은 `log/design_history_20261117.md` 2절)
 - **foreman-2** 백업을 다른 디스크에 한 벌 더 (2026-11-15)
   DB 백업 폴더가 DB와 같은 서버 디스크에 있어 디스크가 통째로 죽으면 함께 잃는다.
   나온 곳: `notion/01_structure/01_placement.md` 226
@@ -113,6 +113,9 @@
 - **foreman-111** PreToolUse 앞단 검사 예외가 뒤 판정까지 건너뜀 (2026-11-15)
   스키마 잠금, 다른 저장소, pgrep 검사에서 예외가 나면 역할 막기와 승인 판정(ask 포함)까지 건너뛴다. 통과 기록에만 남는다.
   나온 곳: p:61
+- **foreman-119** Claude Code와 Codex 같이 쓰기 (2026-11-03)
+  쓸 데는 두 가지(양이 많은 반복 일감 떠넘기기 등)로 정했고, 후보 다섯을 조사해 `codex exec -s read-only`와 `/etc/codex/requirements.toml` 잠금으로 방향을 정했다. 설치하지 않았다. 「설치는 나중」은 안 하는 까닭이 아니라 미룬 것이라 여기 둔다. 글을 써야 하는 일감과 읽기 전용 잠금이 부딪히는 것은 할 때 정한다.
+  나온 곳: `log/later_codex_bridge.md`, `docs/00_design.md` 「문서」 기록 표(옮기기 전 판 `527d841`, 원문은 `log/design_history_20261117.md` 11절)
 
 ## 3. 역할, 작업방, 합치기
 
@@ -185,6 +188,9 @@
 - **foreman-49** 자동 기상 3단계 (2026-11-15)
   실패 이벤트가 묻지 않고 읽기 전용 조사 세션을 띄우는 단계. 2단계 제안이 실제 실패에서 몇 주 맞는지 보고 정한다.
   나온 곳: `notion/09_dispatcher/02_note_wake.md` 173(결정 절), 262
+- **foreman-118** 자동 기상 남은 상한 셋 (2026-11-02)
+  처음 설계의 동시 ACTIVE 최대 3(넘으면 대기열), 자동 세션 30분 뒤 강제 IDLE, 야간 자동 기상 끔이 코드에 없다. 지금 있는 것은 실패 이벤트만, 하루 상한, 같은 실패 다시 안 함, 읽기 전용, 사람이 [시작]을 누름이다(`config/wake.toml`).
+  나온 곳: `docs/00_design.md` 「3.5」(옮기기 전 판 `527d841`, 표 원문은 `log/design_history_20261117.md` 6절)
 - **foreman-50** 겹침을 캐릭터 머리 위에 (2026-11-15)
   겹침이 옆 패널 띠와 텔레그램으로만 보인다.
   나온 곳: `notion/09_dispatcher/03_overlap.md` 288
@@ -312,6 +318,9 @@
 - **foreman-113** Fable 가격 출처 (2026-11-17)
   `config/usage.toml [prices.fable]`을 비워 두었다. 실제 가격을 확인하면 출처와 함께 넣는다.
   나온 곳: p:78
+- **foreman-117** LLM 지표와 프로메테우스 캐릭터 (2026-11-02)
+  프로메테우스가 긁은 LLM 지표(큐 대기, TTFT, tok/s, VRAM, GPU 점유)를 브리지가 쿼리해 캐릭터로 보이는 것, 「포먼에게 프로메테우스를 붙여 달라고 하면 코더가 manifest를 쓰고 프로메테우스 캐릭터가 등장한다」는 시연이 모두 코드에 없다. 인프라에는 11-11부터 Prometheus가 있다(`log/foreman-6_access_policy_20261117.md`).
+  나온 곳: `docs/00_design.md` 「3.7」, 「4.」, 「7.」(옮기기 전 판 `527d841`, 원문은 `log/design_history_20261117.md` 8절), `notion/01_structure.md` 249
 
 ## 8. 화면
 

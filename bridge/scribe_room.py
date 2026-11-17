@@ -666,6 +666,8 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
     repo = r[0] if r else None
     if not repo or not Path(repo, ".git").exists():
         raise Refused("이 프로젝트의 저장소를 찾지 못했습니다")
+    if task == "later" and _pi.readme_generated(repo):
+        raise Refused(_pi.LIMIT_GONE)       # README가 생성물이면 쓸 절이 없다(11-17 사용자, bridge/postit.py LIMIT_GONE)
     tp = None
     tps: list[dict[str, Any]] = []
     if task == "portfolio":

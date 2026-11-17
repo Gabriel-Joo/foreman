@@ -2,7 +2,7 @@
 
 json에 sessionId · pid · procStart · cwd가 있다. procStart를 /proc/<pid>/stat의 starttime과 맞춰
 PID 재사용을 걸러 낸다. 프로세스가 끝나면 json이 사라지거나 /proc이 없어진다.
-상태 문자(R S T …)도 돌려준다 — T(정지)는 SUSPENDED 판정 근거(README 2.1, 폴링은 뒤 단계)
+상태 문자(R S T …)도 돌려준다 — T(정지)는 SUSPENDED 판정 근거(docs/00_design.md 2.1, 폴링은 뒤 단계)
 """
 
 import json

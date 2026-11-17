@@ -1,4 +1,4 @@
-"""CC 세션에 입력 주입 — 방법 C (README 3.1)
+"""CC 세션에 입력 주입 — 방법 C (docs/00_design.md 3.1)
 
     tmux load-buffer -b <buf> -                 # 텍스트를 버퍼에(stdin)
     tmux paste-buffer -p -r -d -b <buf> -t <pane>   # 괄호 붙여넣기, LF 유지, 버퍼 지움
