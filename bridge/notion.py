@@ -1370,6 +1370,10 @@ class Publisher:
                 continue
             if t == "code" and (b.get("code") or {}).get("language") == "mermaid":
                 continue
+            # 글이 없는 블록(빈 문단, 공백만 있는 문단, 11-17)은 사람 수정으로 세지 않는다 — 노션은 페이지를 열거나 스크롤만 해도
+            # 끝에 빈 블록을 만든다. 글 블록 종류(rich_text 칸이 있는 것)만 본다. 그림 · 표 · 구분선은 글이 없는 게 본디라 그대로 센다
+            if "rich_text" in (b.get(t) or {}) and not plain((b.get(t) or {}).get("rich_text") or []).strip():
+                continue
             if _sig(b) not in sigs:
                 out.append(plain((b.get(t) or {}).get("rich_text") or [])[:60] or f"({t})")
         return out

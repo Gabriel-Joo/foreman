@@ -99,6 +99,37 @@ def test_human_edits_only_people_and_differing_text():
     assert asyncio.run(pub.human_edits("pg", new)) == []
 
 
+def _human_pub(blocks):
+    f = FakeNotion(see_all=True)
+    f.blocks["pg"] = [{**b, "_id": str(i)} for i, b in enumerate(blocks)]
+    pub = nt.Publisher(None, f, "root", "/repo")
+    pub._me_id = "bot"
+    return pub, f
+
+
+def test_human_edits_ignores_empty_blocks_only():
+    """11-17 — 사람이 만든 빈 문단 · 공백만 있는 문단은 고침으로 세지 않는다. 글이 있는 블록이 바뀌었으면 섞여 있어도 멈춘다.
+    그림 · 구분선처럼 글이 없는 게 본디인 블록은 지금처럼 센다."""
+    new = [_para("원본")]
+    pub, _ = _human_pub([_para("원본", "bot"), _para("", "human"), _para("   ", "human"), _para("", "human", "bulleted_list_item")])
+    assert asyncio.run(pub.human_edits("pg", new)) == []                       # 빈 블록만
+    pub, _ = _human_pub([_para("원본", "bot"), _para("사람이 고침", "human")])
+    assert asyncio.run(pub.human_edits("pg", new)) == ["사람이 고침"]            # 글 블록 바뀜
+    pub, _ = _human_pub([_para("원본", "bot"), _para("", "human"), _para("사람이 고침", "human"), _para(" \n", "human")])
+    assert asyncio.run(pub.human_edits("pg", new)) == ["사람이 고침"]            # 섞임
+    div = {"object": "block", "type": "divider", "divider": {}, "last_edited_by": {"id": "human"}}
+    pub, _ = _human_pub([_para("원본", "bot"), div])
+    assert asyncio.run(pub.human_edits("pg", new)) == ["(divider)"]            # 글 없는 블록 종류는 그대로
+
+
+def test_trailing_empty_block_does_not_hold_and_is_removed_on_overwrite():
+    """04_approval 꼴(11-17) — 페이지 맨 끝에 사람이 만든 빈 문단 하나: 멈추지 않고, 올릴 때 git 판에 맞춰 지워진다."""
+    pub, f = _human_pub([_para("원본", "bot"), _para("", "human")])
+    assert asyncio.run(pub.human_edits("pg", [_para("원본")])) == []
+    asyncio.run(nt.sync_children(f, "pg", [_para("원본")]))
+    assert [nt.plain(b["paragraph"]["rich_text"]) for b in f.blocks["pg"]] == ["원본"]
+
+
 class _Pub:
     """sync가 부르는 것만 — publish · archive · _save. status는 시험마다 바꿔 끼운다."""
 
