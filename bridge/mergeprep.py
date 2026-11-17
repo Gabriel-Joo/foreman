@@ -6,7 +6,8 @@ worktree 세션이 「일을 마침」이 되면 merge-tree를 돌려 **합치�
   그리고 worktree에 합칠 커밋이 있고(ahead > 0) 커밋 안 한 변경이 0. 마지막 응답이 묻는 말이어도 일을 마친 것으로 보고, 카드에
   「세션이 묻는 말이 있습니다」를 함께 싣는다(답 기다림과 일을 마침은 따로 — D2 281은 보고 끝 확인 부탁 때문에 카드가 안 떴다)
   (「보고 옴」(대시보드 human_needs의 report)은 사람이 패널을 열면 읽음으로 사라진다 — 읽었든 아니든 일을 마친 것은 같아 묻지 않는다)
-- 카드: 브랜치 · 커밋 · 바뀐 파일 · 충돌 여부(`git merge-tree --write-tree`) · ff 가능 / main이 앞섬 · 정리 후보(넷)
+- 카드: 브랜치 · 커밋 · 바뀐 파일 · 충돌 여부(`git merge-tree --write-tree`) · ff 가능 / main이 앞섬 · 걸리는 문서(11-17,
+  바뀐 코드를 가리키는 docs, 원고, 포트폴리오와 이 브랜치에서 고쳤는지. bridge/docrefs.py)
 - [합치기]: 다시 잰다(카드 뒤 커밋이 바뀌었으면 거절하고 카드를 새로). 충돌 없고 깨끗하면 HandoffManager.worktree_act(merge,
   end=살아 있음) — 살아 있는 세션은 끝내고 합친다. main이 앞섰으면 worktree.merge가 rebase한다(살아 있으면 끝내기 전에 임시
   worktree에서 rebase가 되는지 먼저 본다 — 끝낸 뒤 충돌이면 풀 세션이 없다, docs/11_worktree.md 「6.」).
@@ -44,6 +45,7 @@ from typing import Any
 
 from sqlalchemy import text
 
+from bridge import docrefs
 from bridge import worktree as wt
 from bridge.inject import Refused, _status, deliver
 from bridge.liveness import live_sessions
@@ -260,54 +262,13 @@ def parse_merge_tree(rc: int, out: str) -> list[str] | None:
     raise Refused(f"git merge-tree 실패(종료 코드 {rc}): {out[-300:]}")
 
 
-_STOP = {"main", "index", "config", "test", "tests", "api", "init", "readme", "md", "py", "js", "toml", "the", "and", "for",
-         "합침", "기록", "고침", "더함", "뺌", "그대로", "있으면", "없으면", "때", "것", "뒤", "전", "수", "줄"}
-
-
-def _file_keys(files: list[str]) -> dict[str, str]:
-    """바뀐 파일 → 찾을 글자(전체 경로 · 파일 이름 · 이름 줄기). 줄기는 4자 이상만(짧은 줄기는 헛걸림)."""
-    keys: dict[str, str] = {}
-    for f in files:
-        keys[f] = f
-        base = os.path.basename(f)
-        keys.setdefault(base, f)
-        stem = os.path.splitext(base)[0].removeprefix("test_")
-        if len(stem) >= 4 and stem.lower() not in _STOP:
-            keys.setdefault(stem, f)
-    return keys
-
-
-def _has_key(line: str, key: str) -> bool:
-    """낱말 경계로만 — `handoff`가 `stage11_handoff_result`에, 줄기가 다른 확장자(`handoff.js`)에 걸리지 않게(11-11 라이브 점검).
-    경로 · 파일 이름 앞의 `/`는 같은 파일이라 허용한다."""
-    stem = "." not in key and "/" not in key
-    tail = r"(?![\w.-])" if stem else r"(?![\w-])"
-    return re.search(r"(?<![\w.-])" + re.escape(key) + tail, line) is not None
-
-
-def doc_candidates(docs: dict[str, str], files: list[str], limit: int = 12) -> dict[str, Any]:
-    """이번 작업으로 맞출 수 있는 docs 줄 **후보**(고르기 · 고치기는 승인 뒤 관리자 — 승인자가 사람인 프로젝트는 사람
-    승인 뒤, 관리자인 프로젝트는 관리자가 혼자(11-12)). 브리지는 맞대기만 한다.
-    바뀐 파일의 경로나 이름을 적은 줄을 문서마다 묶는다. 이번에 그 문서를 고치지 않았으면 `stale`이고, 설계가 바뀌었으면 맞출 후보다.
-    README 「나중에 할 일」 표 줄 후보는 11-15에 뺐다(사용자가 표를 없앴다. 할 일은 포스트잇, 알려진 한계는 사람이 포스트잇에서 보낸다.
-    합치기나 옮기기가 README에 할 일을 넣거나 그 줄을 세는 길은 없다). 옛 카드 모양과 맞게 "readme"는 늘 빈 목록이다."""
-    keys = _file_keys(files)
-    changed = set(files)
-    dgroups: list[dict[str, Any]] = []
-    fkeys = {k: v for k, v in keys.items() if "/" in k or "." in k}       # docs는 경로 · 파일 이름만(줄기는 헛걸림이 많다)
-    for path, body in sorted(docs.items()):
-        lines = []
-        hit: set[str] = set()
-        for i, ln in enumerate(body.splitlines(), 1):
-            h = {fkeys[k] for k in fkeys if _has_key(ln, k)}
-            if h:
-                lines.append(i)
-                hit |= h
-        if lines:
-            dgroups.append({"where": path, "lines": lines[:8], "count": len(lines), "files": sorted(hit),
-                            "stale": path not in changed})
-    dgroups.sort(key=lambda x: -x["count"])
-    return {"readme": [], "docs": dgroups[:limit]}
+def doc_candidates(repo: str, base: str, branch: str, docs_dir: str = "docs", limit: int = 12) -> dict[str, Any]:
+    """「걸리는 문서」(11-17 사용자 지시 21, 전 이름 정리 후보). 이 브랜치가 바꾼 코드를 가리키는 docs, 노션 원고, 포트폴리오와 그 줄.
+    판정은 거꾸로 찾기 `bridge/docrefs.py` 한 곳(명령 `tools/docrefs.py`와 같다). 문서는 브랜치 판을 읽고, 그 문서를 이 브랜치에서
+    고쳤으면 고침, 아니면 `stale`(안 고침)이다. 코드를 고친 세션이 문서도 함께 고친다는 규칙이라, 안 고친 것은 사람이 승인할 때 본다.
+    전에는 바뀐 파일의 경로나 이름이 나오는 docs 줄만 맞댔다(원고, 포트폴리오, 근거 표시, 머리 주석 「다루는 곳」은 보지 않았다).
+    옛 카드 모양을 이어 "readme"는 늘 빈 목록이다(README 「나중에 할 일」 줄 후보는 11-15에 뺐다). total, unfixed는 목록을 자르기 전 수."""
+    return docrefs.card_docs(docrefs.scan(repo, rng=f"{base}...{branch}", docs_dir=docs_dir), limit)
 
 
 # ── 카드 ─────────────────────────────────────────────────
@@ -487,7 +448,7 @@ class MergePrep:
                         rows = (await cn.execute(text("SELECT session_id, card FROM merge_card"))).all()
             except Exception as e:  # noqa: BLE001 — 못 읽어도 브리지 · 훑기는 돈다(카드는 다시 만든다)
                 self._store_bad(f"합치기 카드를 DB에서 되살리지 못했습니다({type(e).__name__}: {str(e)[:160]}). 카드는 다시 "
-                                "만들지만 정리 후보 · 「오래됨」 시각 · 합친 카드가 사라졌을 수 있습니다", "load")
+                                "만들지만 걸리는 문서 · 「오래됨」 시각 · 합친 카드가 사라졌을 수 있습니다", "load")
                 self._restored = True
                 return 0
             n = 0
@@ -820,15 +781,7 @@ class MergePrep:
 
     async def _docs(self, repo: str, base: str, branch: str, st: dict[str, Any]) -> dict[str, Any]:
         d = self.cfg.docs
-        _, files = await wt.git(repo, "diff", "--name-only", f"{base}...{branch}")
-        rc2, names = await wt.git(repo, "ls-tree", "-r", "--name-only", base, "--", d.docs_dir, check=False)
-        docs: dict[str, str] = {}
-        for n in (names.splitlines() if rc2 == 0 else [])[:200]:
-            if n.endswith(".md"):
-                r3, body = await wt.git(repo, "show", f"{base}:{n}", check=False)
-                if r3 == 0:
-                    docs[n] = body
-        return doc_candidates(docs, files.splitlines(), d.max)
+        return await asyncio.to_thread(doc_candidates, repo, base, branch, d.docs_dir, d.max)
 
     async def prep(self, r: tuple[Any, ...], live: dict[str, Any], via: str = "sweep") -> Card | None:
         """한 세션 — 일을 마쳤고 합칠 것이 있으면 카드(같은 커밋이면 있던 카드 그대로). 아니면 None(있던 ready 카드는 치운다)."""
@@ -857,8 +810,9 @@ class MergePrep:
         conflict = await self._conflict(repo, st["base"], st["branch"])
         try:
             docs = await self._docs(repo, st["base"], st["branch"], st)
-        except Exception as e:  # noqa: BLE001 — 후보를 못 뽑아도 카드는 낸다(사유를 붙여)
-            docs = {"error": f"정리 후보를 뽑지 못했습니다({type(e).__name__})", "readme": [], "docs": []}
+        except Exception as e:  # noqa: BLE001, 걸리는 문서를 못 찾아도 카드는 낸다(사유를 붙여. 0으로 보이면 조용한 고장)
+            why = str(e)[:160] if isinstance(e, docrefs.DocrefsError) else type(e).__name__
+            docs = {"error": f"걸리는 문서를 찾지 못했습니다({why})", "readme": [], "docs": []}
         _, files = await wt.git(repo, "diff", "--name-only", f"{st['base']}...{st['branch']}")
         now = _iso(_now())
         # 같은 커밋(main만 앞섬 · live만 바뀜)이면 처음 만든 시각을 잇는다 — 「오래됨」은 사람이 기다린 시간이다(11-13)
@@ -907,6 +861,8 @@ class MergePrep:
                              + (f"충돌 {len(conflict)}개" if conflict else ("충돌 없음 · ff 가능" if card.ff else f"충돌 없음 · {card.base}에 새 커밋 {card.behind}개(rebase)"))
                              + (f"\n❓ 세션이 묻는 말이 있습니다 — 패널에서 답하십시오: {asks.get('tail') or ''}" if asks else "")
                              + (f"\n🛡 {rule_line(card)}" if rule_urgent(card) else "")
+                             + (f"\n📄 {docrefs.count_line(docs)}" if docrefs.count_line(docs) else "")
+                             + (f"\n⚠ {docs['error']}" if docs.get("error") else "")
                              + ("\n▶ 관리자 세션이 승인합니다(사람 승인 필요 없음)" if card.approver == "manager"
                                 else (f"\n⚠ 사람 승인 — {'; '.join(card.human_why)}" if card.human_why else "")
                                 + "\n▶ 그 세션 패널의 「합치기 승인」에서 승인합니다"))
@@ -964,7 +920,8 @@ class MergePrep:
         """카드가 생겼을 때 관리자에게(승인자 = 관리자인 프로젝트만)."""
         how = (f"충돌 {len(c.conflict)}개({', '.join(c.conflict[:5])})" if c.conflict
                else ("충돌 없음 · ff 가능" if c.ff else f"충돌 없음 · {c.base}에 새 커밋 {c.behind}개(rebase)"))
-        dn = len((c.docs or {}).get("docs") or [])
+        cl = docrefs.count_line(c.docs)     # 11-17 「걸리는 문서 N, 안 고침 M」
+        derr = (c.docs or {}).get("error")
         sq = (" 이 프로젝트는 squash로 합친다(커밋 하나, 본문에 원래 날짜 · 해시 · 제목). 제목은 세션 제목으로 기계가 만든다 — "
               "묶은 일을 더 잘 말하는 제목이 있으면 승인할 때 \"title\": \"…\"로 넘긴다(그 저장소 커밋 꼴로)."
               if self.cfg.rule(c.project).squash and c.ahead >= 2 else "")
@@ -972,8 +929,10 @@ class MergePrep:
                 f"{' 세션이 살아 있다 — 승인하면 끝낸다.' if c.live else ''}"
                 f"{' 세션이 묻는 말이 있다: ' + str((c.asks or {}).get('tail') or '') if c.asks else ''}"
                 f"{' 조사 세션이지만 브리지가 스스로 끝내고 합치지 않았다: ' + c.auto_why + '.' if c.auto_why else ''}"
-                f"{' 🛡 ' + rule_line(c) if c.rule_files or c.rule_files_error else ''}")
-        see = f" 카드 전부: GET /api/merge-prep?project={c.project}(커밋 · 바뀐 파일 · 정리 후보 {dn}개)."
+                f"{' 🛡 ' + rule_line(c) if c.rule_files or c.rule_files_error else ''}"
+                f"{' ' + cl + '(바뀐 코드를 가리키는 문서, 안 고침은 이 브랜치에서 고치지 않은 것).' if cl else ''}"
+                f"{' ⚠ ' + derr + '.' if derr else ''}")
+        see = f" 카드 전부: GET /api/merge-prep?project={c.project}(커밋, 바뀐 파일, 걸리는 문서와 줄)."
         if c.human_why:
             return (head + " 이 카드는 **사람 승인**이다 — 승인자는 관리자지만 늘 사람에게 올릴 것에 걸렸다: " + "; ".join(c.human_why)
                     + ". 관리자는 승인하지 않는다(API가 거부한다). 브리지가 이 카드를 관리자 머리 위 「사용자 답 기다림」으로 올린다"
@@ -981,7 +940,7 @@ class MergePrep:
         return (head + " 이 프로젝트 합치기 승인자는 관리자다 — 커밋 · 바뀐 파일 · 시험을 보고 합칠지 정한다. 합치기: "
                 f"POST /api/sessions/{c.sid}/merge-prep {{\"action\":\"merge\",\"by\":\"manager\"}}(프로젝트 토큰이면 by는 저절로 관리자). "
                 "미루기: {\"action\":\"skip\",\"by\":\"manager\"}(새 커밋이 생기면 다시 뜬다). 판단이 안 서면 사람에게 묻는다."
-                + sq + see + " 합친 뒤 시험 · push · 정리 후보 고르기는 관리자 몫이다.")
+                + sq + see + " 합친 뒤 시험, push, 걸리는 문서 보기는 관리자 몫이다.")
 
     async def _tell_manager_card(self, c: Card, mgr: tuple[str, str]) -> None:
         ok = await self._deliver(mgr[0], mgr[1], self._card_msg(c))
@@ -1153,20 +1112,20 @@ class MergePrep:
         return {"ok": True, "note": "카드를 치웠습니다. 이 세션이 새로 커밋하면 다시 만듭니다."}
 
     async def docs_done(self, sid: int, by: str = "human") -> dict[str, Any]:
-        """정리 후보를 다 골랐다(11-13 사용자) — 합친 카드를 바로 치운다(DB merge_card에서도). 안 부르면 지금처럼 keep_docs_h 뒤 치운다.
-        합친 카드만 — 대기 · 충돌 카드는 skip(나중에)으로 치운다."""
+        """걸리는 문서(11-17 전 이름 정리 후보)를 다 봤다(11-13 사용자) — 합친 카드를 바로 치운다(DB merge_card에서도). 안 부르면 지금처럼
+        keep_docs_h 뒤 치운다. 합친 카드만 — 대기 · 충돌 카드는 skip(나중에)으로 치운다."""
         c = self.cards.get(sid)
         if not c:
             raise Refused("치울 합치기 카드가 없습니다. 이미 치웠거나 시간이 지나 사라졌습니다")
         if c.status != "merged":
-            raise Refused(f"합친 카드가 아닙니다(지금 {c.status}). 정리 후보는 합친 뒤에 고릅니다. 대기 카드를 치우려면 skip")
+            raise Refused(f"합친 카드가 아닙니다(지금 {c.status}). 걸리는 문서는 합친 뒤에 봅니다. 대기 카드를 치우려면 skip")
         dn = len((c.docs or {}).get("docs") or [])
-        await self.h._act(sid, ACT_DOCS, None, True, f"{c.name} {c.head[:8]} 정리 후보 {dn}개 · {by}")
+        await self.h._act(sid, ACT_DOCS, None, True, f"{c.name} {c.head[:8]} 걸리는 문서 {dn}개 · {by}")
         del self.cards[sid]
         await self.sync()
         if self.on_change:
             self.on_change()
-        return {"ok": True, "note": f"정리 후보를 다 골랐다고 보고 합친 카드를 치웠습니다(정리 후보 {dn}개)."}
+        return {"ok": True, "note": f"걸리는 문서를 다 봤다고 보고 합친 카드를 치웠습니다(걸리는 문서 {dn}개)."}
 
     async def approve(self, sid: int, by: str = "human", title: str | None = None) -> dict[str, Any]:
         """[합치기] — 사람(패널) 또는 관리자(by=manager, 11-12 — 그 프로젝트 승인자가 관리자이고 늘-사람에 안 걸린 카드만).
@@ -1311,23 +1270,25 @@ class MergePrep:
         mgr_picks = self.cfg.approver_of(c.project) == "manager" and not c.human_why
         ended = " 세션은 끝냈다." if res.get("ended") is not None else ""
         docs = (c.docs or {})
-        dn = len(docs.get("docs") or [])      # README 「나중에 할 일」 후보는 11-15에 뺐다(doc_candidates)
+        dn = len(docs.get("docs") or [])      # README 「나중에 할 일」 후보는 11-15에 뺐다
+        cl = docrefs.count_line(docs)         # 11-17 「걸리는 문서 N, 안 고침 M」(bridge/docrefs.py)
         stale = [x["where"] for x in docs.get("docs") or [] if x.get("stale")][:5]
         extra = ""
         if stale:
-            extra += f" 이번에 바뀐 파일을 적었는데 고치지 않은 문서: {', '.join(stale)} — 설계가 바뀌었으면 맞출 후보."
+            extra += (f" 바뀐 코드를 가리키는데 이 브랜치에서 고치지 않은 문서: {', '.join(stale)}. 낡았으면 코더(원고와 포트폴리오는 서기)에게 "
+                      "맡긴다. 확인은 tools/docrefs.py --range로 한다.")
         # 11-13 다 골랐으면 카드를 바로 치운다(안 부르면 keep_docs_h 뒤 치운다 — 다 고르고도 카드가 남지 않게)
-        done = (f" 다 골랐으면 POST /api/sessions/{c.sid}/merge-prep {{\"action\":\"docs_done\",\"by\":\"manager\"}}로 카드를 치운다"
+        done = (f" 다 봤으면 POST /api/sessions/{c.sid}/merge-prep {{\"action\":\"docs_done\",\"by\":\"manager\"}}로 카드를 치운다"
                 f"(안 부르면 {self.cfg.keep_docs_h}시간 뒤 치운다).")
         if not dn:
             pick = ""
-        elif mgr_picks:     # 11-12 — 승인자가 관리자인 프로젝트는 정리 후보 고르기 · 지우기도 관리자
-            pick = (f" docs 정리 후보 {dn}개는 카드에 있다(GET /api/merge-prep?project={c.project} 의 card.docs, "
-                    f"{self.cfg.keep_docs_h}시간 남는다 — 브리지를 다시 띄워도 DB에서 되살린다) — "
-                    "관리자가 골라 지운다. 판단이 안 서는 줄만 사람에게 묻는다." + done)
+        elif mgr_picks:     # 11-12 승인자가 관리자인 프로젝트는 걸리는 문서 보기도 관리자
+            pick = (f" {cl}. 목록은 카드에 있다(GET /api/merge-prep?project={c.project} 의 card.docs, "
+                    f"{self.cfg.keep_docs_h}시간 남는다, 브리지를 다시 띄워도 DB에서 되살린다). "
+                    "관리자가 보고 맡길 곳을 정한다. 판단이 안 서는 것만 사람에게 묻는다." + done)
         else:
-            pick = (f" docs 정리 후보 {dn}개는 그 세션 패널 카드에 있다 — 고르고 지우는 것은 사람 승인 뒤"
-                    "(판단이 필요하면 사람에게 묻고, 혼자 지우지 않는다)." + done)
+            pick = (f" {cl}. 목록은 그 세션 패널 카드에 있다. 맡길 곳은 사람 승인 뒤 정한다"
+                    "(판단이 필요하면 사람에게 묻고, 혼자 정하지 않는다)." + done)
         return (f"[FOREMAN 합치기] {who} 승인해 세션 {c.sid} 「{c.title or ''}」의 {c.branch}(커밋 {res.get('merged', c.ahead)}개)를 "
                 f"{c.base}에 합쳤다({how}).{ended} 1단계라 브리지는 합치기까지만 했다 — 시험 · push · 브리지 다시 띄우기 · 화면 점검은 "
                 f"관리자가 한다." + pick + extra)

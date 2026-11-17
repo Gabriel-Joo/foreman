@@ -122,12 +122,25 @@ def test_parse_merge_tree():
         mp.parse_merge_tree(128, "fatal: bad")
 
 
-def test_doc_candidates_docs_only():
-    """정리 후보는 docs 줄만이다. README 「나중에 할 일」 표 줄 후보는 11-15에 뺐다(사용자가 표를 없앰, readme_section 키도 지움)."""
-    d = mp.doc_candidates({"docs/11_x.md": "설명\n`bridge/mergeprep.py`가 한다\n관계없음\n"},
-                          ["bridge/mergeprep.py", "tests/test_mergeprep.py"])
-    assert d["readme"] == []                                                     # README는 세지 않는다(옛 카드 모양만 맞춤)
-    assert d["docs"] == [{"where": "docs/11_x.md", "lines": [2], "count": 1, "files": ["bridge/mergeprep.py"], "stale": True}]
+async def test_doc_candidates_from_docrefs(repo):
+    """걸리는 문서(11-17, 전 이름 정리 후보)는 거꾸로 찾기(bridge/docrefs.py) 결과다. README 「나중에 할 일」 표 줄 후보는 11-15에 뺐다."""
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    (p / "bridge").mkdir(); (p / "bridge" / "mergeprep.py").write_text("x\n")
+    (p / "README.md").write_text(README + "\n`bridge/mergeprep.py`\n")          # README는 걸리는 문서 묶음이 아니다
+    sh(p, "add", "."); sh(p, "commit", "-qm", "고침")
+    d = mp.doc_candidates(str(repo), "main", "cc/w")
+    assert d["readme"] == []                                                     # 옛 카드 모양만 맞춤
+    assert d["total"] == 1 and d["unfixed"] == 1 and d["code"] == 1
+    [g] = d["docs"]
+    assert {k: g[k] for k in ("where", "kind", "lines", "count", "files", "stale")} == {
+        "where": "docs/11_x.md", "kind": "docs", "lines": [2], "count": 1, "files": ["bridge/mergeprep.py"], "stale": True}
+    assert g["hits"][0]["line"] == 2 and "`bridge/mergeprep.py`가 한다" in g["hits"][0]["text"]
+    # 이 브랜치에서 그 문서도 고치면 고침(stale False), 안 고친 수가 준다
+    (p / "docs" / "11_x.md").write_text("설명\n`bridge/mergeprep.py`가 새로 한다\n")
+    sh(p, "add", "."); sh(p, "commit", "-qm", "문서도")
+    d2 = mp.doc_candidates(str(repo), "main", "cc/w")
+    assert d2["total"] == 1 and d2["unfixed"] == 0 and d2["docs"][0]["stale"] is False
+    assert "새로 한다" in d2["docs"][0]["hits"][0]["text"]                       # 문서는 브랜치 판을 읽는다
     assert not hasattr(mp, "readme_rows") and not hasattr(mp, "log_drop_lines")
     assert not hasattr(mp.DocsCfg(), "readme_section")
     assert mp.Card.has_docs(SimpleNamespace(docs={"readme": [{"line": 9}], "docs": []})) is False   # 옛 카드의 README 후보는 세지 않는다
@@ -679,7 +692,33 @@ async def test_merged_msg_docs_pick_follows_approver(repo, monkeypatch):
     _mgr_mode(m)
     c.approved_by = "manager"
     s = m._merged_msg(c, {"merged": 2, "squash": "abcdef123456"})
-    assert "관리자가 골라 지운다" in s and "squash" in s and "abcdef12" in s and s.startswith("[FOREMAN 합치기] 관리자가")
+    assert "관리자가 보고 맡길 곳을 정한다" in s and "squash" in s and "abcdef12" in s and s.startswith("[FOREMAN 합치기] 관리자가")
+    assert "걸리는 문서 1, 안 고침 0" in s                                       # 11-17 수 한 줄
+    c.docs = {"readme": [], "total": 3, "unfixed": 1, "docs": [{"where": "notion/a.md", "lines": [1], "count": 1, "files": ["a.py"], "stale": True}]}
+    s = m._merged_msg(c, {"merged": 2})
+    assert "걸리는 문서 3, 안 고침 1" in s and "이 브랜치에서 고치지 않은 문서: notion/a.md" in s and "tools/docrefs.py --range" in s
+
+
+async def test_card_msg_and_ready_notice_show_doc_count(repo, monkeypatch):
+    """11-17 관리자 카드 글과 「합치기 준비됨」 알림에 「걸리는 문서 N, 안 고침 M」, 찾지 못했으면 그 까닭."""
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    (p / "bridge").mkdir(); (p / "bridge" / "mergeprep.py").write_text("x\n")
+    sh(p, "add", "."); sh(p, "commit", "-qm", "고침")
+    m, h, sent, row, _ = _mk(repo, monkeypatch)
+    notes = []
+    m.cfg.notify_ready = True
+    monkeypatch.setattr(m, "_notify", lambda c, key, msg=None, later=None, **kw: notes.append(msg))
+    card = await m.prep(row, {})
+    assert docrefs_line(card) == "걸리는 문서 1, 안 고침 1"
+    assert any("📄 걸리는 문서 1, 안 고침 1" in (n or "") for n in notes)
+    assert "걸리는 문서 1, 안 고침 1(바뀐 코드를 가리키는 문서" in m._card_msg(card)
+    card.docs = {"error": "걸리는 문서를 찾지 못했습니다(OSError)", "readme": [], "docs": []}
+    assert "⚠ 걸리는 문서를 찾지 못했습니다(OSError)." in m._card_msg(card)
+
+
+def docrefs_line(card):
+    from bridge.docrefs import count_line
+    return count_line(card.docs)
 
 
 async def test_squash_for_repo_reads_project_table(repo, monkeypatch):

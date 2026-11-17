@@ -19,7 +19,7 @@ class RoleInfo(NamedTuple):
 
 # 순서는 화면 역할 고르기 칸의 순서다(첫째가 기본값)
 ROLE_INFO: dict[str, RoleInfo] = {
-    "coder": RoleInfo("코더", "코드를 고치거나 만듭니다"),
+    "coder": RoleInfo("코더", "코드를 고치거나 만듭니다. 그 코드를 가리키는 문서도 함께 고칩니다"),
     "designer": RoleInfo("디자이너", "화면을 고칩니다. js, css, 테마, 캐릭터, 호버 글"),
     "manager": RoleInfo("관리자", "합치고 시험하고 push하고 기록합니다"),
     "scribe": RoleInfo("서기", "문서를 쓰고 맞춥니다"),
@@ -27,6 +27,13 @@ ROLE_INFO: dict[str, RoleInfo] = {
 }
 
 SESSION_ROLES: tuple[str, ...] = tuple(ROLE_INFO)
+
+# 11-17 사용자 지시 21 「문서가 밀리는 사슬 끊기」. 코드를 고치는 세션이 그 코드를 설명하는 문서도 함께 고친다. 사용자 문장 그대로.
+# 코더 역할만(디자이너, 조사에는 넣지 않는다, 사용자). 브리지가 코더 첫 글 끝에 붙이고(bridge/docrefs.py prompt_block,
+# bridge/handoff.py _finish_spawn), 교장 지시문 「3. role」에도 한 줄(bridge/foreman.py)
+CODER_DOCS_RULE = ("네가 고친 코드를 가리키는 문서가 있으면 그 문서도 함께 고친다. 어느 문서가 걸리는지는 거꾸로 찾는 도구로 확인한다. "
+                   "문서를 고칠 수 없는 이유가 있으면 무엇이 걸리는지 보고한다.")
+DOCS_RULE_ROLES: frozenset[str] = frozenset({"coder"})
 ROLE_KO: dict[str, str] = {r: i.ko for r, i in ROLE_INFO.items()}
 ROLE_DESC: dict[str, str] = {r: i.desc for r, i in ROLE_INFO.items()}
 ROLE_OLD_KO: dict[str, str] = {"inspector": "점검"}   # 바꾸기 전 화면 이름(11-15 점검 → 조사) — 그 이름의 캐릭터(DB)를 새 이름으로(handoff._character_for)

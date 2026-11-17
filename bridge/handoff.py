@@ -21,6 +21,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from bridge import docrefs
 from bridge import handoff_state as hs
 from bridge import pointers as ptr
 from bridge import roles
@@ -793,12 +794,13 @@ class HandoffManager:
         p.write_text(body + "\n", encoding="utf-8")
         p.chmod(0o600)
 
-    async def inject(self, summary_id: int, cc_session_id: str, cwd: str, note: str | None = None) -> dict[str, Any]:
+    async def inject(self, summary_id: int, cc_session_id: str, cwd: str, note: str | None = None, rule: str = "") -> dict[str, Any]:
+        """rule: 역할 규칙 절(11-17, 코더의 「고친 코드의 문서도 함께」). 인계 글 뒤, 사람이 덧붙인 말 앞에 붙는다."""
         inj = await self.ensure_injectable(summary_id, cwd)
         s = await self.summary(summary_id)
         if inj["cut"]:
             self._write_full(s["req"], s["body"])
-        res = await deliver(cc_session_id, inj["text"] + note_block(note), sessions_dir=self.sessions_dir,
+        res = await deliver(cc_session_id, inj["text"] + rule + note_block(note), sessions_dir=self.sessions_dir,
                             transcript=transcript_path(cwd, cc_session_id), verify_s=15.0)
         if res.get("delivered"):
             async with self.engine.begin() as c:
@@ -983,9 +985,11 @@ class HandoffManager:
         if self.on_change:
             self.on_change()
         out: dict[str, Any] = {"cc_session_id": cc, "pid": pid, "session_id": sid}
+        # 11-17 사용자 지시 21. 코더는 고친 코드를 가리키는 문서도 함께 고친다. 브리지가 첫 글 끝에 붙인다(코더만, bridge/docrefs.py)
+        rule = await asyncio.to_thread(docrefs.prompt_block, cwd, role)
         if first_prompt:
             # 포먼이 쓴 첫 글(+ 고른 인계 요약) — 사람이 계획 카드에서 확인 · 고친 글 그대로
-            body = first_prompt
+            body = first_prompt + rule
             if summary_id is not None:
                 inj = await self.ensure_injectable(summary_id, cwd, confirm=False)   # 계획 카드에서 이미 봤다(11-10)
                 s = await self.summary(summary_id)
@@ -1003,7 +1007,7 @@ class HandoffManager:
             return out
         if summary_id is not None:
             await asyncio.sleep(1.0)
-            r = await self.inject(summary_id, cc, cwd, note)
+            r = await self.inject(summary_id, cc, cwd, note, rule=rule)
             out["injected"] = r["delivered"]
             if not r["delivered"]:
                 out["note"] = "인계 글을 보냈지만 제출을 확인하지 못했습니다. 입력 칸을 확인해 주세요."

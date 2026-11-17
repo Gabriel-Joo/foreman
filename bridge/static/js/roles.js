@@ -8,7 +8,7 @@ export const SESSION_ROLES = ['coder', 'designer', 'manager', 'scribe', 'inspect
 export const ROLE_LABEL = { coder: '코더', designer: '디자이너', manager: '관리자', scribe: '서기', inspector: '조사', foreman: '감독', helper: '도우미', infra: '인프라' };
 // 한 줄 설명 — bridge/roles.py ROLE_DESC와 같은 글(CLAUDE.md 「역할을 가르는 기준」). 역할 고르기 칸 · 교장 지시문
 export const ROLE_DESC = {
-  coder: '코드를 고치거나 만듭니다',
+  coder: '코드를 고치거나 만듭니다. 그 코드를 가리키는 문서도 함께 고칩니다',
   designer: '화면을 고칩니다. js, css, 테마, 캐릭터, 호버 글',
   manager: '합치고 시험하고 push하고 기록합니다',
   scribe: '문서를 쓰고 맞춥니다',

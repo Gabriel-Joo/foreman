@@ -46,7 +46,8 @@
     - 이 파일을 읽어 알리거나 화면에 올리는 것은 아직 없다. 브리지를 다시 띄우는 틈에 남는 줄은 정상이다
   - **브리지를 다시 띄워야 하는 것은 파이썬(브리지) 변경뿐**이다. js · css · html은 재시작 없이 바로 나간다(`cache-control: no-cache`). 열린 탭은 화면 코드 지문(`bridge/uiver.py` — static 아래 파일 이름 · 크기 · 수정 시각, WS `hello` · `/api/dashboard`의 `ui`)이 바뀌면 맨 위 노란 띠 "화면 코드가 바뀌었습니다. 새로 고쳐야 바뀐 기능이 보입니다."와 [새로 고침] 버튼이 뜬다(저절로 고치지 않는다 — 입력 칸 글이 날아간다) [log:pixel_bigger_question_card_20261109.md] [log:screen_mismatch_waits_20261109.md]
 - 브리지 주소는 `127.0.0.1:8000`이다(API 시험 때)
-- pytest 끝 요약의 「화면 말 시험: 서기 몫 N줄 남음 …」은 화면 말 시험(`tests/test_screen_words.py`)이 남긴 수다. 서기 몫이 0이 아니면 서기가 이 문서와 `docs/style_guide.md`를 맞추고 `tests/data/screen_words.toml`의 `[[scribe]]` 줄을 지운다. 상세는 `docs/11_worktree.md` 「8.」
+- pytest 끝 요약의 「화면 말 시험: 서기 몫 N줄 남음 …」은 화면 말 시험(`tests/test_screen_words.py`)이 남긴 수다. 서기 몫이 0이 아니면 서기가 이 문서와 `docs/style_guide.md`를 맞추고 `tests/data/screen_words.toml`의 `[[scribe]]` 줄을 지운다. 상세는 `docs/11_worktree.md` 「8.」. 11-17부터 서기 몫은 이름을 바꾼 코더가 고칠 수 없었던 줄만이다(코더가 먼저 고친다, 사용자 지시 21)
+- 코드가 바뀌어 밀린 문서는 거꾸로 찾기로 본다: `.venv/bin/python tools/docrefs.py --range <A>..<B> --unfixed`(읽기만, `docs/11_worktree.md` 「9.」). 합치기 카드에도 「걸리는 문서 N, 안 고침 M」으로 보인다
 - **시험 DB는 세션마다 따로다**(11-11, 합친 뒤부터 [log:test_db_per_session_20261111.md]). 그래서 "다른 pytest가 도는지 보고 기다린다 / 혼자 돌린다"는 이제 필요 없다(pgrep 확인도 하지 않는다)
   - 이름: `foreman_test_<자리>_<pid>` — `<자리>`는 `.worktrees/<이름>`이면 그 이름(소문자 · 24자까지), 원본 폴더면 `main`. pid는 pytest 프로세스 것이라 같은 worktree에서 둘을 같이 돌려도 겹치지 않는다. 마이그레이션도 그 DB에 이 폴더의 `migrations/`를 올려서 세션마다 갈린다
   - 시작 머리글에 `시험 DB: <이름>`이 찍힌다. 끝나면 지우고(Ctrl+C도 같다), 죽어서(`kill -9` · 세션 종료) 남은 것은 **다음 pytest가 뜰 때** 이름 끝 pid가 죽은 것만 치운다(자리 이름은 보지 않는다 — 다른 세션의 살아 있는 시험은 안 지운다)

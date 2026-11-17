@@ -118,6 +118,29 @@ export function ruleNote(c) {
   if (!fs.length) return '';
   return `<div class="small warn mp-rule" title="${esc(`규칙 파일 — 승인 규칙이나 게이트 파일이 바뀝니다. 합친 뒤 브리지를 다시 띄우면 반영됩니다.\n${fs.join('\n')}`).replace(/\n/g, '&#10;')}">🛡 규칙 파일이 바뀝니다: ${esc(fs.map((p) => p.split('/').pop()).join(', '))}</div>`;
 }
+// 11-17 걸리는 문서(bridge/docrefs.py, 사용자 지시 21). 이 브랜치가 바꾼 코드를 가리키는 docs, 노션 원고, 포트폴리오.
+// 승인할 때 밀린 것을 바로 보게 수는 위 줄에(목록은 호버), 문서마다 줄은 「자세히」에. 옛 카드(total 없음)는 목록으로 센다.
+// 찾지 못했으면(error) 위 줄에 경고로(0으로 보이면 조용한 고장)
+const DOC_KIND = { docs: 'docs', notion: '원고', portfolio: '포트폴리오' };
+export function docsNote(c) {
+  const d = (c && c.docs) || {};
+  if (d.error) return { top: `<div class="small warn mp-docs" title="걸리는 문서 — 바뀐 코드를 가리키는 문서를 찾지 못했습니다.">📄 ${esc(d.error)}</div>`, rows: '' };
+  const list = d.docs || [];
+  const total = d.total ?? list.length;
+  if (!total) return { top: '', rows: '' };
+  const unfixed = d.unfixed ?? list.filter((x) => x.stale).length;
+  const names = list.filter((x) => x.stale).concat(list.filter((x) => !x.stale)).map((x) => `${x.stale ? '안 고침' : '고침'} ${x.where}`);
+  const tip = `걸리는 문서 — 이 브랜치가 바꾼 코드를 가리키는 docs, 노션 원고, 포트폴리오입니다. 안 고침은 이 브랜치에서 고치지 않은 문서입니다. 줄은 「자세히」에 있습니다.${
+    names.slice(0, 10).map((s) => `\n${s}`).join('')}${total > 10 ? `\n외 ${total - 10}개` : ''}`;
+  const top = `<div class="small mp-docs ${unfixed ? 'warn' : 'muted'}" title="${esc(tip).replace(/\n/g, '&#10;')}">📄 걸리는 문서 ${total}, 안 고침 ${unfixed}</div>`;
+  const rows = list.map((x) => {
+    const hits = (x.hits || []).map((h) => `${h.line}: 「${h.heading || ''}」 ${h.text || ''}`).join('\n');
+    return `<div class="small mp-doc"${hits ? ` title="${esc(`${x.where}\n${hits}`).replace(/\n/g, '&#10;')}"` : ''}><code>${esc(x.where)}</code>${
+      x.kind && DOC_KIND[x.kind] && x.kind !== 'docs' ? ` <span class="muted">${DOC_KIND[x.kind]}</span>` : ''} 줄 ${x.lines.join(', ')}${x.count > x.lines.length ? ' …' : ''} <span class="muted">${esc(x.files.join(', '))}</span>${
+      x.stale ? ' <span class="warn">안 고침</span>' : ' <span class="ok">고침</span>'}</div>`;
+  }).join('');
+  return { top, rows };
+}
 export function mpSection(mp, b, sid) {
   if (!mp) return '';
   const h = mp.health && !mp.health.ok ? `<div class="small bad">⚠ ${esc(mp.health.error || '합치기 준비가 멈췄습니다')}</div>` : '';
@@ -125,11 +148,9 @@ export function mpSection(mp, b, sid) {
   if (!c) return h ? `<section class="hand mp-card"><div class="hand-h"><b>합치기 승인</b></div>${h}</section>` : '';
   const conf = c.conflict && c.conflict.length;
   const how = conf ? `<span class="bad" title="충돌 — 합치면 ${esc(c.base)}와 같은 줄을 서로 고친 곳이 있습니다. 승인하면 합치지 않고 그 세션(끝났으면 관리자)에게 풀라고 보냅니다.">충돌 ${c.conflict.length}개</span>` : '';
-  const d = c.docs || {};
-  // README 「나중에 할 일」 줄 후보는 11-15에 뺐다(표를 없앰). 옛 카드에 d.readme가 남아 있어도 그리지 않는다
-  const dRows = (d.docs || []).map((x) => `<div class="small"><code>${esc(x.where)}</code> ${x.count}줄(${x.lines.join(', ')}${x.count > x.lines.length ? ' …' : ''}) <span class="muted">${esc(x.files.join(', '))}</span>${x.stale ? ' <span class="warn" title="맞출 문서 — 이번에 바뀐 파일을 적고 있는데 이 문서는 고치지 않았습니다. 설계가 바뀌었으면 함께 맞춥니다.">이번에 안 고침</span>' : ''}</div>`).join('');
-  const docs = d.error ? `<div class="small warn">${esc(d.error)}</div>`
-    : dRows ? `<details${keep(`hand:${sid}:mp-docs`)}><summary class="small" title="정리 후보 — 이번에 바뀐 파일을 적은 docs 줄을 기계로 맞댄 것입니다. 고르고 고치는 것은 사람 승인 뒤 관리자가 합니다.">정리 후보: docs ${(d.docs || []).length}</summary>${dRows}</details>` : '';
+  // 걸리는 문서(11-17, 전 이름 정리 후보). 위 줄에 수, 「자세히」에 문서 목록. README 「나중에 할 일」 줄 후보는 11-15에 뺐다(옛 카드의 d.readme는 그리지 않는다)
+  const dn = docsNote(c);
+  const docs = dn.rows;
   const open = c.status === 'ready' || c.status === 'failed' || c.status.startsWith('conflict');
   // 11-14 사용자 — 승인하면 세션이 끝난다는 안내는 카드 글에서 [합치기] 호버로 옮겼다
   const tip = conf ? '합치기 — 충돌이 있어 합치지 않습니다. 세션이 살아 있으면 그 세션에 main을 가져와 풀라고 보내고, 끝났으면 관리자에게 넘깁니다.'
@@ -166,7 +187,7 @@ export function mpSection(mp, b, sid) {
   const rebase = !conf && !c.ff ? `<div class="small"><span class="ok" title="main이 앞섬 — 이 브랜치를 만든 뒤 ${esc(c.base)}에 커밋 ${c.behind}개가 들어왔습니다. 합칠 때 그 위로 다시 얹습니다(rebase).">${esc(c.base)}에 새 커밋 ${c.behind}개(rebase)</span></div>` : '';
   const inner = [done ? done.more : '', rebase, c.why ? `<div class="small muted">${esc(c.why)}</div>` : '', hwRows, c.status === 'ready' ? note : '', docs]
     .map((s) => s.trim()).filter(Boolean).join('\n      ');
-  const more = inner ? `<details class="mp-more"${keep(`hand:${sid}:mp-more`)}><summary class="small muted" title="자세히 — 세션이 끝낸 까닭, main이 앞섰는지, 정리 후보를 봅니다.">자세히</summary>
+  const more = inner ? `<details class="mp-more"${keep(`hand:${sid}:mp-more`)}><summary class="small muted" title="자세히 — 세션이 끝낸 까닭, main이 앞섰는지, 걸리는 문서를 봅니다.">자세히</summary>
       ${inner}
     </details>` : '';
   // 커밋 · 바뀐 파일 목록은 위 줄 「커밋 N개」 · 「바뀐 파일 N개」 호버로(길면 처음 10개 + 「외 N개」)
@@ -180,6 +201,7 @@ export function mpSection(mp, b, sid) {
     ${conf ? `<div class="small bad">충돌 파일: ${c.conflict.map(esc).join(', ')}</div>` : ''}
     ${hfRows}
     ${ruleNote(c)}
+    ${dn.top}
     ${merged}
     ${more}
     ${c.status === 'ready' || merged ? '' : note}

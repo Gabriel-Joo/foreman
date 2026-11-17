@@ -7,8 +7,9 @@
 - 안 D 호버 약속: 호버 설명이 끌기 · 더블클릭 · 키 · 휠 같은 조작을 약속하면 약속 목록에 있어야 한다
 
 문서 줄에 이력 표시(전 이름 · 바뀜 · → · ~~ 등)가 있으면 옛 이름을 적어도 된다(「무엇이 바뀌었는지」를 적는 줄이다).
-docs/operations.md · docs/style_guide.md는 코더가 고치지 않는다 — 거기서 걸린 것은 [[scribe]] 「서기 몫」에 적으면 통과하고,
-서기가 맞춘 뒤 그 줄을 지운다(남은 수는 pytest 요약에 찍힌다).
+걸린 문서는 이름을 바꾼 코더가 같은 브랜치에서 고친다(11-17 사용자 지시 21. 전에는 docs/operations.md, docs/style_guide.md, 원고를
+코더가 고치지 않고 서기 몫에 적었다). 고칠 수 없는 까닭이 있을 때만 [[scribe]] 「서기 몫」에 적으면 통과하고, 서기가 맞춘 뒤
+그 줄을 지운다(남은 수는 pytest 요약에 찍힌다).
 
 손으로 돌리기: .venv/bin/python tests/screen_words.py [저장소 뿌리]
 """
@@ -27,8 +28,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # 손으로 �
 from bridge.evidence import MARK  # noqa: E402
 
 DATA = "tests/data/screen_words.toml"
-SCRIBE_DOCS = ("docs/operations.md", "docs/style_guide.md")   # 코더가 건드리지 않는 문서(사람 승인 카드)
-MANUSCRIPT_DIRS = ("notion/", "portfolio/")                    # 원고(11-15) — 서기가 쓴다. 코더는 고치지 않고 서기 몫에 적는다
+# 서기 몫에 적을 수 있는 문서. 11-17부터 코더도 고친다(사용자 지시 21). 고칠 수 없는 까닭이 있을 때만 서기 몫에 적는다
+SCRIBE_DOCS = ("docs/operations.md", "docs/style_guide.md")   # 고치면 합치기 카드가 사람에게 간다(config/handoff.toml human_paths)
+MANUSCRIPT_DIRS = ("notion/", "portfolio/")                    # 원고(11-15)
 
 
 def scribe_owned(path: str) -> bool:
@@ -463,8 +465,9 @@ def explain(rep: Report) -> str:
         out.append(f"■ {kind} {len(hs)}곳 — 고치는 법: {HOW[kind]}")
         out += [f"  {h.where}  「{h.text}」  {h.detail}" for h in hs]
         if kind in ("rename-doc", "button") and any(scribe_owned(h.file) for h in hs):
-            out.append(f"  ※ {' · '.join(SCRIBE_DOCS)} · 원고({' · '.join(MANUSCRIPT_DIRS)})는 코더가 고치지 않습니다 — {DATA} [[scribe]]에 "
-                       "한 줄(doc · text = 걸린 글)을 적으면 통과하고, 서기가 맞춘 뒤 지웁니다")
+            out.append(f"  ※ {', '.join(SCRIBE_DOCS)}, 원고({', '.join(MANUSCRIPT_DIRS)})도 이름을 바꾼 코더가 같은 브랜치에서 고칩니다"
+                       f"(앞의 둘은 고치면 합치기 카드가 사람에게 갑니다). 고칠 수 없는 까닭이 있을 때만 {DATA} [[scribe]]에 "
+                       "한 줄(doc, text = 걸린 글)을 적고 그 까닭을 보고합니다. 서기가 맞춘 뒤 지웁니다")
     if rep.stale:
         out.append("■ 지금은 쓸모없는 목록 줄 — 지웁니다")
         out += [f"  {s}" for s in rep.stale]

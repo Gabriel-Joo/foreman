@@ -67,7 +67,7 @@ def test_js_matches_python(js):
         assert js["label"][r] == roles.ROLE_KO[r], r
         assert js["desc"][r] == roles.ROLE_DESC[r], r
     assert list(js["pick"]) == want                                    # 역할 고르기 칸([+ 세션] · 계획 카드)
-    assert js["pick"]["coder"] == "코더 — 코드를 고치거나 만듭니다"
+    assert js["pick"]["coder"] == "코더 — 코드를 고치거나 만듭니다. 그 코드를 가리키는 문서도 함께 고칩니다"
 
 
 def test_every_role_has_colors(js):

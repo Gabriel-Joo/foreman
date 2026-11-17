@@ -280,7 +280,7 @@ async def test_docs_done_clears_merged_card_and_db(env):
         with pytest.raises(Refused):
             await m.docs_done(99)
         r = await m.docs_done(7, by="manager")
-        assert r["ok"] and 7 not in m.cards and "정리 후보 1개" in r["note"]
+        assert r["ok"] and 7 not in m.cards and "걸리는 문서 1개" in r["note"]
         assert m.h.acts[-1][:3] == (7, mp.ACT_DOCS, True)
         with conn.cursor() as c:
             c.execute("SELECT session_id FROM merge_card")

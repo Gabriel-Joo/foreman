@@ -26,12 +26,12 @@ test('꺼져 있거나 카드가 없으면 그리지 않는다 — 준비가 멈
   assert.match(h, /10분째/);
 });
 
-test('깨끗한 카드: ff · 정리 후보 · 승인 단추, 살아 있으면 끝낸다고 알린다', () => {
+test('깨끗한 카드: ff · 걸리는 문서 · 승인 단추, 살아 있으면 끝낸다고 알린다', () => {
   const h = mpSection({ card: card(), health: { ok: true } }, b, 7);
   assert.match(h, /합치기 승인/);
   assert.match(h, /<span class="ok"[^>]*>충돌 없음<\/span><\/div>/);
   assert.ok(!h.includes('ff 가능') && !h.includes('합치는 방법'));                // 11-15 사용자 — 「충돌 없음」은 둘째 줄에 한 번만
-  assert.match(h, /정리 후보: docs 1/);
+  assert.match(h, /📄 걸리는 문서 1, 안 고침 0/);
   assert.match(h, /data-act="mp-merge" title="합치기 — 승인하면 세션을 끝내고[^"]*충돌이면 끝내지 않습니다/);   // 11-14 안내는 [합치기] 호버로
   assert.match(h, /data-act="mp-skip"/);
 });
@@ -53,10 +53,11 @@ test('카드 줄이기: 배지 · 한 줄 수 · 승인해야 할 파일 · 자�
   assert.ok(!many.includes('h10 t10'));
   assert.match(h, /승인해야 할 파일 2개<\/b><div class="mp-hf-row" title="backend\/src\/main\/resources\/db\/migration\/V19__chatbot_turns\.sql">V19__chatbot_turns\.sql<\/div>/);
   const [top, rest] = h.split('<details class="mp-more"');
-  for (const s of ['보고 옴', '정리 후보']) {
+  for (const s of ['보고 옴', 'class="small mp-doc"']) {
     assert.ok(!top.includes(s), `위에 ${s}`);
     assert.ok(rest.includes(s), `자세히에 ${s}`);
   }
+  assert.ok(top.includes('걸리는 문서 1') && !rest.includes('걸리는 문서 1'));   // 수는 위 줄에만(11-17)
   // 11-15 사용자(410) — 위 줄과 겹치는 말은 「자세히」에 없다(커밋 목록 접는 칸도 없다)
   for (const s of ['합치는 방법', '사람 승인 카드입니다', '늘 사람이 승인해야 하는 파일', '커밋 2 · 바뀐 파일 3', 'V19__chatbot_turns', '관리자 세션에 알렸습니다', 'hand-body']) assert.ok(!rest.includes(s), `자세히에 없어야 ${s}`);
   assert.ok(!h.includes('— 승인하면 세션을 끝냅니다'));                       // 카드 글에서는 빠지고 호버에만
@@ -131,15 +132,34 @@ test('main이 앞섬 · 충돌 · 합친 뒤', () => {
   assert.doesNotMatch(m, /mp-merge/);                         // 합친 카드에는 단추가 없다
 });
 
-test('정리 후보는 docs 줄만, 안 고친 문서 표시. 옛 카드의 README 줄은 그리지 않는다(11-15 표를 없앰)', () => {
+test('걸리는 문서(옛 카드 모양): 안 고친 문서 표시. 옛 카드의 README 줄은 그리지 않는다(11-15 표를 없앰)', () => {
   const docs = { readme: [
     { line: 4, text: '권한 거부 줄', why: ['세션 기록(x.md)'], score: 105, weak: false }],
   docs: [{ where: 'docs/11.md', lines: [3], count: 1, files: ['bridge/a.py'], stale: true }] };
   const h = mpSection({ card: card({ docs }) }, b, 7);
   assert.doesNotMatch(h, /README:4|권한 거부 줄/);
-  assert.match(h, /정리 후보: docs 1/);
-  assert.match(h, /이번에 안 고침/);
-  assert.equal(mpSection({ card: card({ docs: { readme: docs.readme, docs: [] } }) }, b, 7).includes('정리 후보:'), false);
+  assert.match(h, /<div class="small mp-docs warn"[^>]*>📄 걸리는 문서 1, 안 고침 1<\/div>/);   // total 없는 옛 카드는 목록으로 센다
+  assert.match(h, /<span class="warn">안 고침<\/span>/);
+  assert.equal(mpSection({ card: card({ docs: { readme: docs.readme, docs: [] } }) }, b, 7).includes('mp-doc'), false);
+});
+
+// 11-17 사용자 지시 21. 바뀐 코드를 가리키는 문서를 위 줄에 수로, 「자세히」에 문서마다 줄. 호버에 안 고친 것 먼저
+test('걸리는 문서: 수는 위 줄, 목록은 자세히, 원고 표시, 찾지 못하면 경고', () => {
+  const docs = { readme: [], total: 14, unfixed: 2, docs: [
+    { where: 'docs/11_worktree.md', kind: 'docs', lines: [18], count: 1, files: ['bridge/mergeprep.py'], stale: false,
+      hits: [{ line: 18, heading: '6-1. 합치기 준비', text: '카드는 …', code: 'bridge/mergeprep.py' }] },
+    { where: 'notion/07_merge/01_card.md', kind: 'notion', lines: [1, 94], count: 2, files: ['bridge/mergeprep.py'], stale: true, hits: [] },
+    { where: 'portfolio/07_merge.md', kind: 'portfolio', lines: [1], count: 1, files: ['bridge/mergeprep.py'], stale: true }] };
+  const h = mpSection({ card: card({ docs }) }, b, 7);
+  const [top, rest] = h.split('<details class="mp-more"');
+  assert.match(top, /📄 걸리는 문서 14, 안 고침 2/);
+  assert.match(top, /title="걸리는 문서 — [^"]*&#10;안 고침 notion\/07_merge\/01_card\.md&#10;안 고침 portfolio\/07_merge\.md&#10;고침 docs\/11_worktree\.md&#10;외 4개"/);
+  assert.match(rest, /<code>notion\/07_merge\/01_card\.md<\/code> <span class="muted">원고<\/span> 줄 1, 94/);
+  assert.match(rest, /<code>portfolio\/07_merge\.md<\/code> <span class="muted">포트폴리오<\/span>/);
+  assert.match(rest, /title="docs\/11_worktree\.md&#10;18: 「6-1\. 합치기 준비」 카드는 …"/);
+  assert.match(rest, /<span class="ok">고침<\/span>/);
+  const e = mpSection({ card: card({ docs: { error: '걸리는 문서를 찾지 못했습니다(OSError)', readme: [], docs: [] } }) }, b, 7);
+  assert.match(e.split('<details')[0], /class="small warn mp-docs"[^>]*>📄 걸리는 문서를 찾지 못했습니다\(OSError\)/);
 });
 
 test('묻는 말이 있어도 카드는 뜬다 — 묻는 말을 함께 보인다(11-11 D2 281)', () => {

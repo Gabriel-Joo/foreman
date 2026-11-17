@@ -131,6 +131,7 @@
 - 하는 일: **코드를 고치지 않고 다른 세션의 일을 거둔다** — 교장 경로로 세션 띄우기 · 합치기 · 시험 · push · 브리지 다시 띄우기 · 화면 점검 · 기록. 직접 고쳐도 되는 것은 CLAUDE.md 「작업 규칙」의 셋뿐(11-09 사용자)
 - 교장 계획 프롬프트(`bridge/foreman.py`): "상주 세션이 아니다. 사람이 그런 일을 콕 집어 맡길 때만 고른다(코드를 고치는 일이면 coder)". 모델 기본 `claude-opus-5-5`(`config/models.toml`, 11-14 전 `opus` 별칭)
 - 역할 목록은 11-15부터 파이썬 `bridge/roles.py`, 화면 `bridge/static/js/roles.js` 두 한 곳이다(전에는 `ROLE_KO` 세 벌 · `ROLES` · `SessionRole` · `ROLE_PICK` · `ROLE_LABEL`에 따로). 교장 지시문 「3. role」의 역할 한 줄 설명도 `roles.py`에서 만든다(화면 역할 고르기 칸과 같은 글). 시험 `tests/test_roles_agree.py`가 둘과 `config/models.toml [defaults]`의 일치를 본다. 새 역할 더하는 순서는 `docs/roles.md` 「3.」
+- 교장 지시문 「3. role」의 코더 줄(11-17 사용자 지시 21): 고친 코드를 가리키는 문서도 그 코더 세션이 함께 고친다. 브리지가 코더 첫 글 끝에 규칙과 거꾸로 찾는 도구를 붙이니(`docrefs.prompt_block`) first_prompt에 옮기지 않고, 코드 고침 뒤 그 문서만 맞추는 서기 세션을 따로 내지 않는다. 상세는 `docs/11_worktree.md` 「9.」
 - 인계(새 세션으로 옮기기)는 역할을 물려준다 — 관리자 → 관리자
 - **관리자는 늘 원본 폴더, 하나**(11-11 아홉): `spawn_new`가 관리자를 worktree로 띄우는 것을 거절하고 `will_worktree(role="manager")`는 False, 계획 check도 관리자 세션의 따로 작업 기본값을 끈다(`bridge/handoff.py` · `bridge/foreman.py`). 원본 폴더에 관리자가 이미 살아 있으면 둘째를 거절한다(`manager_conflict`) [log:merge_misplaced_admin_20261111.md]
 - **역할 바꾸기 `PUT /api/sessions/{sid}/role {role}`**: 허용 값만(`foreman` · 모르는 값 · null은 422), 없는 세션 404, 거부 409 `{refused}`. `character_session.role`과 **그 역할 캐릭터도 같이 옮긴다**(원본 폴더 "관리자", worktree "관리자 <이름>") — 역할만 바꾸면 아래 줄이 "코더 foreman-3 · 관리자"처럼 엇갈린다. `session_action` `role` "옛 → 새 캐릭터 N". 같은 역할이면 아무것도 쓰지 않는다
