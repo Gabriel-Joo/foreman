@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/office.js, bridge/static/js/theme.js, bridge/static/js/grid.js, bridge/static/js/walk.js, bridge/static/js/sprites.js, bridge/static/js/aura.js, bridge/static/js/roles.js, bridge/static/js/tip.js, bridge/static/themes/
-읽은 커밋: 5e0f7c5
+읽은 커밋: fb7121b
 -->
 # 픽셀 지도와 방
 

@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/mergeprep.py, bridge/coder_room.py, bridge/inspector_close.py, bridge/worktree.py, bridge/api/coder.py, bridge/static/js/coder.js, bridge/static/js/handoff.js, bridge/static/js/render.js, config/handoff.toml
-읽은 커밋: 5e0f7c5
+읽은 커밋: fb7121b
 -->
 
 # 합치기 카드와 코더 창

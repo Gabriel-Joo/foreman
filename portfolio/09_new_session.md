@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/newsession.js, bridge/static/js/modelpick.js, bridge/static/js/roles.js, bridge/roles.py, bridge/model_choice.py, bridge/worktree.py, bridge/handoff.py, bridge/api/handoff.py, config/models.toml
-읽은 커밋: 5e0f7c5
+읽은 커밋: fb7121b
 -->
 
 # 새 세션 창
@@ -30,6 +30,8 @@
 | 관리자 | 합치고 시험하고 push하고 기록합니다 | Opus 5.5 |
 | 서기 | 문서를 쓰고 맞춥니다 | Opus 5.5 |
 | 조사 | 읽고 알아봅니다. 고치지 않고 결과 log만 씁니다. 조사와 제안은 모두 여기입니다 | Sonnet 5.5 |
+
+코더로 띄우면 브리지가 첫 입력 끝에 규칙 한 절을 저절로 붙입니다. 고친 코드를 가리키는 문서(설계 문서, 기술문서 원고, 포트폴리오)가 있으면 그 문서도 함께 고치고, 어느 문서가 걸리는지는 코드 경로에서 문서를 거꾸로 찾는 도구로 확인하라는 내용입니다. 옮기기용 요약을 넣고 시작할 때도 같은 절이 붙습니다. 디자이너와 조사에는 붙이지 않습니다. 코드를 고친 뒤 문서는 나중에 서기가 따라잡게 두면 그사이 문서가 낡기 때문에, 고친 사람이 그 자리에서 함께 고치게 한 것입니다.
 
 기본값은 설정 파일에 있습니다 [code:config/models.toml]. 모델 칸에는 Opus 5.5, Opus 5, Sonnet 5.5, Haiku 5.5, Fable 5.2가 있고, 맨 위 「CC 설정 따르기」를 고르면 모델을 정하지 않고 Claude Code의 설정대로 띄웁니다. 목록에 없는 모델 이름을 API로 보내면 서버가 거부합니다. 다만 예전에 쓰던 짧은 이름(opus, sonnet, haiku)은 거부하지 않고 목록의 모델로 바꿔 받습니다 [code:bridge/model_choice.py] [log:stage12_model_choice_result.md].
 
