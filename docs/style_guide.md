@@ -13,7 +13,7 @@
 | 규칙 | `CLAUDE.md` · 이 문서 | 꼭 지킬 것만 짧게. 상세는 docs를 가리킨다 | 사용자가 정할 때 |
 | 미룬 일 | README 「나중에 할 일 (정해 두고 미룬 것)」 표 | 정해 두고 아직 안 한 것 | 하면 줄을 지운다 |
 | 포트폴리오 | `portfolio/<NN>_<주제>.md`, 사진 `portfolio/img/<NN>_<주제>_*.png` | 저장소 밖 독자가 읽는 글. 주제 목록은 `config/portfolio.toml` (11-15 바뀜 → 그 파일은 지웠다. 편 목록은 `portfolio/` 폴더 파일이고 편 하나가 화면 하나다, `bridge/scribe_room.py` `topics`, `docs/12_scribe.md` 「7.」, `16dcb3a`. 사진과 영상은 `portfolio/img/<이름>_<무엇>.png`, `.gif`, `.webm`) | 다시 써도 같은 파일(다시 게시하면 Notion 페이지를 자리 지키며 고친다). 코드가 바뀐 편은 서기실이 머리 주석의 읽은 커밋으로 센다 |
-| 노션 원고(11-15, FOREMAN만) | `notion/<NN>_<이름>.md`, 아래 글은 `notion/<NN>_<이름>/` | 사람이 읽는 기술 문서(`docs/12_scribe.md` 「0.」, 평서체). docs를 옮기지 않고 따로 쓴다. 폴더 나무가 [기술문서] 아래 페이지 나무, 차례는 파일 번호. 맨 위 머리 주석(다루는 곳, 읽은 커밋)은 `bridge/manuscript.py` 꼴(`config/notion.toml` foreman `src = "notion/"`, `16dcb3a`) | 서기실 「기술문서 쓰기」로 고치고 [Notion에 올리기]로만 올린다(`docs/12_scribe.md` 「5.」) |
+| 노션 원고(11-15, FOREMAN만) | `notion/<NN>_<이름>.md`, 아래 글은 `notion/<NN>_<이름>/` | 사람이 읽는 기술 문서(`docs/12_scribe.md` 「0.」, 평서체). docs를 옮기지 않고 따로 쓴다. 폴더 나무가 [기술문서] 아래 페이지 나무, 차례는 파일 번호. 맨 위 머리 주석(다루는 곳, 읽은 커밋)은 `bridge/doctext/head.py` 꼴(`config/notion.toml` foreman `src = "notion/"`, `16dcb3a`) | 서기실 「기술문서 쓰기」로 고치고 [Notion에 올리기]로만 올린다(`docs/12_scribe.md` 「5.」) |
 
 - **HISTORY 파일은 따로 두지 않는다.** 결정의 역사는 결과 문서의 「설계와 다른 점」에 있다. 한 파일에 문제 · 결정 · 측정을 쌓으면 길어지기만 한다(펫퍼민트 `KNOWN_ISSUES.md` 477줄)
 - 프롬프트 원문 · 압축 요약 전문 · 비밀값은 저장소에 넣지 않는다. 판정 재료는 `~/.foreman/` 아래(700)에 둔다

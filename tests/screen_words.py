@@ -25,7 +25,7 @@ from functools import lru_cache
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # 손으로 돌릴 때도 bridge를 가져온다
-from bridge.evidence import MARK  # noqa: E402
+from bridge.doctext.marks import MARK  # noqa: E402
 
 DATA = "tests/data/screen_words.toml"
 # 서기 몫에 적을 수 있는 문서. 11-17부터 코더도 고친다(사용자 지시 21). 고칠 수 없는 까닭이 있을 때만 서기 몫에 적는다
@@ -279,7 +279,7 @@ def buttons_in(line: str) -> list[str]:
     out = []
     for m in _BUTTON.finditer(line):
         q = m.group(1).strip()
-        # 근거 표시 이름(c · t · log · docs · code)은 bridge/evidence.py의 MARK 한 곳에서 가져온다
+        # 근거 표시 이름(c, t, log, docs, code)은 bridge/doctext/marks.py의 MARK 한 곳에서 가져온다
         if not q or MARK.match(f"[{q}]") or q in ("x", "X", " "):
             continue
         out.append(q)

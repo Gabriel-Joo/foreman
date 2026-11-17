@@ -23,7 +23,8 @@ from typing import Any
 
 from sqlalchemy import text
 
-from bridge.notion import HumanEdited, OutOfScope, content_digest, first_h1, git_show
+from bridge.doctext.titles import first_h1
+from bridge.notion import HumanEdited, OutOfScope, content_digest, git_show
 
 log = logging.getLogger("foreman.docsync")
 
@@ -126,7 +127,8 @@ def commits_behind(repo: str, synced: str | None, ref: str, src: str = "docs/") 
 async def status(pub: Any) -> dict[str, Any]:
     """한 프로젝트의 기술 문서 상태 — new · changed · deleted 파일, 뒤처진 커밋 수, 마지막 원고 커밋 시각.
     원고(notion/, 11-15)는 편마다 머리 주석으로 「읽은 커밋 뒤 다루는 코드가 바뀐 편」(code_changed)과 셀 수 없는 편(code_unknown)도."""
-    from bridge.manuscript import code_commits, parse_head
+    from bridge.doctext.head import parse_head
+    from bridge.manuscript import code_commits
     from bridge.notion import MANUSCRIPTS
     src = src_of(pub)
     files = docs_files(pub.repo, pub.ref, getattr(pub, "skip", ()), src=src)     # 대상이 아닌 파일 · 폴더(11-09 펫퍼민트)

@@ -488,8 +488,8 @@ def later_material(project: str, when: datetime | None, rows: list[dict[str, Any
 
 
 def _head_rule() -> str:
-    """노션 원고 · 포트폴리오 일감이 같이 쓰는 머리 주석 설명(꼴은 bridge/manuscript.py 한 곳)."""
-    from bridge.manuscript import COVERS, READ, head_text
+    """노션 원고, 포트폴리오 일감이 같이 쓰는 머리 주석 설명(꼴은 bridge/doctext/head.py 한 곳)."""
+    from bridge.doctext.head import COVERS, READ, head_text
     return ("```\n" + head_text(["bridge/docsync.py", "bridge/static/js/scribe.js", "config/notion.toml"], "1a2b3c4") + "\n```\n"
             f"- {COVERS}: 그 편이 설명하는 코드 경로(파일, 끝이 /인 폴더). 쉼표로 나눈다. 실제 있는 경로만. 이 경로를 바꾼 feat, fix 커밋이 생기면\n"
             "  서기실이 그 편을 「코드가 바뀐 편」으로 센다. 너무 넓게(bridge/ 통째로) 적으면 늘 바뀐 편이 되고, 빠뜨리면 낡아도 모른다\n"

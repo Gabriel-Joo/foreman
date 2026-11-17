@@ -22,7 +22,13 @@ import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-API = "https://api.notion.com/v1"
+from bridge.doctext.head import parse_head, strip_comments
+from bridge.doctext.marks import KINDS_RE as MARK_KINDS
+from bridge.doctext.marks import STRIP as MARK_STRIP
+from bridge.doctext.marks import STRIP_TURN, mark_file
+from bridge.doctext.titles import first_h1, xref_index, xref_lookup, xref_pattern
+
+API ="https://api.notion.com/v1"
 VERSION = "2022-06-28"
 TEXT_MAX = 2000             # rich_text 한 덩어리 상한(Notion)
 CHUNK = 100                 # 한 번에 붙이는 블록 수 상한(Notion)
@@ -106,9 +112,7 @@ class Ctx:
         """「→ 「제목」」의 제목 → 그 편의 Notion url. 못 풀면 None이고 까닭을 warnings(없음, 겹침) 또는 pending(아직 안 올림)에 남긴다.
         그대로 맞는 제목을 먼저 보고, 없으면 앞 번호를 뗀 제목으로 본다(xref_index). 자기 자신을 가리키면 링크 없이 둔다."""
         assert self.xref is not None
-        exact, bare = self.xref
-        key = re.sub(r"[`*]", "", title).strip()
-        hits = exact.get(key) or bare.get(key) or []
+        hits = xref_lookup(self.xref, title)
         if not hits:
             _note(self.warnings, f"→ 「{title}」: 이 제목을 가진 편이 없어 글자로 둡니다")
             return None
@@ -130,26 +134,7 @@ def _note(out: list[str], s: str) -> None:
         out.append(s)
 
 
-XREF_BARE = re.compile(r"^\d{2}(?:-\d{2})?\s+")     # H1 앞 번호(「00 」, 「02-01 」). 인프라 scripts/docs-check.py 5번 규칙과 같다
-
-
-def xref_index(titles: dict[str, str | None]) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
-    """같은 묶음 편들(경로 → 첫 # 줄 제목, first_h1)의 제목 색인. (그대로 제목 → 경로들, 앞 번호 뗀 제목 → 경로들).
-    FOREMAN 원고는 「→ 「03 세션 지켜보기와 글 넣기」」처럼 번호째 쓰고, 인프라 원고는 번호 없이 쓴다. 둘 다 받는다."""
-    exact: dict[str, list[str]] = {}
-    bare: dict[str, list[str]] = {}
-    for path in sorted(titles):
-        t = titles[path]
-        if not t:
-            continue
-        exact.setdefault(t, []).append(path)
-        b = XREF_BARE.sub("", t)
-        if b != t:
-            bare.setdefault(b, []).append(path)
-    return exact, bare
-
-
-EVIDENCE_STRIP = r"\s*\[(?:c|t|log|docs|code):[^\]\s]+\]"     # 원고의 노션 판에서 떼는 근거 표시(이웃 공백까지)
+# 편 사이 참조 색인(xref_index, 번호 뗀 제목 포함)과 첫 # 줄(first_h1), 근거 표시 문법은 bridge/doctext 한 곳이다(11-17 문서 도구 합치기 1단계)
 SOURCES = ("log/", "docs/", "portfolio/", "notion/")         # 게시할 수 있는 원본 폴더(notion/ = 노션 기술문서 원고, 11-15)
 
 # 굵게 안쪽(11-15): 코드 구간은 통째로, 혼자 있는 `*`(config/*.toml)는 글자로 받는다. 굵게 안쪽은 inline이 다시 해석한다
@@ -157,9 +142,9 @@ _INLINE = re.compile(
     r"(?P<code2>(?<!`)``(?!`)(?P<c2>[^\n]+?)(?<!`)``(?!`))"      # 이중 백틱 — `` ` `` 처럼 안에 백틱을 담는다(양쪽 공백 하나는 뗀다)
     r"|(?P<code>`[^`\n]+`)"
     r"|(?P<bold>\*\*(?P<btext>(?:`[^`\n]+`|[^*\n]|\*(?!\*))+?)\*\*)"
-    r"|(?P<ev>\[(?P<evk>c|log|docs|code|t):(?P<evv>[^\]\s]+)\])"
+    rf"|(?P<ev>\[(?P<evk>{MARK_KINDS}):(?P<evv>[^\]\s]+)\])"
     # 편 사이 참조(11-17). 코드 구간 안은 위 code가 먼저 먹는다. 제목에 백틱이 있으면 받지 않는다(안쪽 코드 구간을 깨지 않게)
-    r"|(?P<xref>(?P<xa>→[ \t]*)「(?P<xt>[^」\n`]+)」)"
+    rf"|(?P<xref>{xref_pattern('xa', 'xt')})"
     r"|(?P<link>\[(?P<ltext>[^\]\n]+)\]\((?P<lhref>[^)\s]+)\))")
 
 
@@ -181,7 +166,7 @@ def _rt(content: str, *, bold: bool = False, code: bool = False, link: str | Non
 
 def inline(text: str, ctx: Ctx) -> list[dict[str, Any]]:
     """한 줄 글 → rich_text. 근거 표시 [t:…]는 빼고 이웃 공백을 하나로. 원고(ctx.manuscript)는 근거 표시를 모두 뗀다."""
-    text = re.sub(EVIDENCE_STRIP if ctx.manuscript else r"\s*\[t:[^\]\s]+\]", "", text)
+    text = (MARK_STRIP if ctx.manuscript else STRIP_TURN).sub("", text)
     return _runs(text, ctx, False)
 
 
@@ -211,10 +196,10 @@ def _runs(text: str, ctx: Ctx, bold: bool) -> list[dict[str, Any]]:
             if k == "c":
                 out += _rt(v, code=True, bold=bold, link=f"{ctx.gh}/commit/{v}" if ctx.links else None)
             elif k == "code":                       # 코드 경로(11-15) — 파일 · 폴더 그대로(줄 범위는 떼고)
-                f = re.split(r"[:#]", v)[0]
+                f = mark_file(v)
                 out += _rt(f, code=True, bold=bold, link=ctx.blob(f) if ctx.links else None)
             else:                                 # log · docs — 파일(줄 범위 · 절은 떼고 파일만 잇는다)
-                f = re.split(r"[:#]", v)[0]
+                f = mark_file(v)
                 out += _rt(f"{k}/{f}", code=True, bold=bold, link=ctx.blob(f"{k}/{f}") if ctx.links else None)
         elif m["xref"]:
             out += _rt(m["xa"], bold=bold) + _rt(f"「{m['xt']}」", bold=bold, link=url)   # 화살표는 글자, 「제목」에 그 편 페이지
@@ -259,42 +244,6 @@ def _cells(line: str) -> list[str]:
     return [c.strip().replace("\\|", "|") for c in parts]
 
 
-def first_h1(md: str) -> tuple[int | None, str | None]:
-    """(줄 번호, 제목 글) — `title = "h1"`이 「첫 H1」로 보는 줄(11-12 사용자 지시). 없으면 (None, None).
-    - 첫 H1 앞에 무엇이 있든(빈 줄 · 일반 글 · 다른 제목 · 인용) 상관없이 문서에서 **처음 나오는 `# ` 줄**이다
-    - 단 H1로 세지 않는 곳: 코드 울타리(``` · ~~~) 안(셸 주석 `# …`), 맨 위 YAML 머리말(`---` … `---`), HTML 주석(`<!-- … -->`) 안
-    - `##` 이상은 H1이 아니다. 글은 앞뒤 공백 · 뒤쪽 `#`(닫는 표시) · `[t:…]` 표지 · 백틱 · `*`를 뗀 것(titles()와 같이)
-    - 빈 제목(`# `만)은 H1로 세지 않고 다음 후보를 찾는다"""
-    lines = md.replace("\r\n", "\n").split("\n")
-    i, n = 0, len(lines)
-    if n and lines[0].strip() == "---":                      # YAML 머리말
-        j = next((k for k in range(1, n) if lines[k].strip() in ("---", "...")), None)
-        if j is not None:
-            i = j + 1
-    fence = None
-    in_comment = False
-    while i < n:
-        s = lines[i].strip()
-        if fence:
-            if s.startswith(fence):
-                fence = None
-        elif in_comment:
-            if "-->" in s:
-                in_comment = False
-        elif (m := re.match(r"^(`{3,}|~{3,})", s)):
-            fence = m.group(1)
-        elif s.startswith("<!--"):
-            in_comment = "-->" not in s
-        elif (h := re.match(r"^#\s+(.*)$", s)):
-            text = re.sub(r"\s*\[t:[^\]\s]+\]", "", h.group(1))
-            text = re.sub(r"\s+#+$", "", text)
-            text = re.sub(r"[`*]", "", text).strip()
-            if text:
-                return i, text
-        i += 1
-    return None, None
-
-
 def md_to_blocks(md: str, ctx: Ctx | None = None) -> tuple[str | None, list[dict[str, Any]]]:
     """(제목, 블록들). 첫 `# 제목`은 페이지 제목으로 빼고 블록에 넣지 않는다.
     ctx.h1_title(`title = "h1"`)면 first_h1()이 고른 줄이 제목이고 그 줄만 본문에서 빠진다(앞에 다른 블록이 있어도 —
@@ -302,7 +251,6 @@ def md_to_blocks(md: str, ctx: Ctx | None = None) -> tuple[str | None, list[dict
     원고(ctx.manuscript, 11-15)는 HTML 주석(머리 주석)을 먼저 뗀다 — 노션에 「다루는 곳」 · 「읽은 커밋」이 글로 나가지 않게."""
     ctx = ctx or Ctx()
     if ctx.manuscript:
-        from bridge.manuscript import strip_comments
         md = strip_comments(md)
     lines = md.replace("\r\n", "\n").split("\n")
     h1_at = first_h1(md)[0] if ctx.h1_title else None
@@ -1411,7 +1359,6 @@ class Publisher:
         if portfolio:
             title = portfolio_title(path, title)
         elif self.footer:
-            from bridge.manuscript import parse_head
             read = (parse_head(body) or {}).get("read") if ctx.manuscript else None
             blocks = blocks + [footer_block(path, commit or "HEAD", ctx, when, read)]     # 11-09 펫퍼민트 — 포트폴리오로 보여 줄 문서
         else:

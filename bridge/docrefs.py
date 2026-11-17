@@ -7,7 +7,9 @@
 - `mark`   원고의 근거 표시 `[code:bridge/x.py]`, 폴더 `[code:bridge/transcript/]`(그 아래 파일 모두), 줄 번호 `[code:bridge/x.py:10-20]`
 - `path`   백틱 안이나 맨글의 저장소 경로(`bridge/x.py`, 폴더 `bridge/static/js/`)
 - `name`   백틱 안의 파일 이름이나 경로 끝(`mergeprep.py`, `api/handoff.py`). 저장소에서 그 끝을 가진 파일이 하나뿐일 때만
-- `covers` 원고와 포트폴리오 머리 주석 「다루는 곳」(파일, 끝이 /인 폴더, *가 든 글롭. 꼴은 `bridge/manuscript.py`)
+- `covers` 원고와 포트폴리오 머리 주석 「다루는 곳」(파일, 끝이 /인 폴더, *가 든 글롭. 꼴은 `bridge/doctext/head.py`)
+
+근거 표시, 머리 주석, 코드 울타리와 HTML 주석 가르기는 문서 문법 묶음 `bridge/doctext` 한 곳을 쓴다(11-17 문서 도구 합치기 1단계).
 
 문서 묶음: `docs/`(docs), 원고 폴더(notion, 그 저장소 `.foreman/notion.toml`의 `src`, 없으면 FOREMAN `config/notion.toml`의
 그 저장소 칸 `src`. `docs/`면 docs와 같은 묶음이라 따로 두지 않는다), `portfolio/`(portfolio). 셋 다 `*.md`만.
@@ -26,20 +28,20 @@ import tomllib
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from bridge.manuscript import parse_head
+from bridge.doctext.head import parse_head
+from bridge.doctext.lines import TEXT, walk
+from bridge.doctext.marks import CODE_MARK as MARK
+from bridge.doctext.marks import split_range as _split_range
 
 FOREMAN_ROOT = Path(__file__).resolve().parent.parent
 DOCS_DIR = "docs/"
 PORTFOLIO_DIR = "portfolio/"
 SKIP_CODE_DIRS = ("log/",)          # 범위에서 바뀐 파일 중 코드로 치지 않는 곳(결과 기록). 문서 묶음 아래 파일(사진 포함)과 *.md도 코드가 아니다
 
-MARK = re.compile(r"\[code:(?P<v>[^\]\s]+)\]")
 TICK = re.compile(r"`([^`\n]+)`")
 TOKEN = re.compile(r"[A-Za-z0-9_./*-]+(?::\d+(?:-\d+)?)?")
 # 맨글 경로: 슬래시가 있고 확장자로 끝나는 것만(URL의 // 뒤, 다른 경로 가운데는 빼려고 앞 글자를 본다)
 PLAIN = re.compile(r"(?<![\w./:-])((?:[\w.-]+/)+[\w.-]+\.[A-Za-z0-9]{1,6})(?::(\d+)(?:-(\d+))?)?(?![\w/-])")
-RANGE = re.compile(r"^(?P<p>.+?):(?P<a>\d+)(?:-(?P<b>\d+))?$")
-FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
 LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s|^\s*\|")
 EXT = re.compile(r"\.[A-Za-z0-9]{1,6}$")
 
@@ -150,15 +152,7 @@ def _read_many(repo: str, rev: str | None, paths: list[str]) -> dict[str, str]:
     return out
 
 
-# ── 문서 안의 가리킴 ────────────────────────────────────────
-def _split_range(tok: str) -> tuple[str, tuple[int, int] | None]:
-    m = RANGE.match(tok)
-    if not m:
-        return tok, None
-    a = int(m["a"])
-    return m["p"], (a, int(m["b"] or a))
-
-
+# ── 문서 안의 가리킴(근거 표시, 머리 주석, 울타리와 주석 가르기는 bridge/doctext) ──
 def _clean(tok: str) -> str:
     tok = tok.strip().strip(".,;")
     return tok[2:] if tok.startswith("./") else tok
@@ -184,20 +178,11 @@ def refs_in(md: str) -> list[dict[str, Any]]:
     if head:
         for c in head["covers"]:
             out.append({"line": head["line"], "target": _clean(c), "range": None, "how": "covers", "ref": f"다루는 곳: {c}"})
-    fence = None
-    in_comment = False
-    for i, ln in enumerate(md.splitlines(), 1):
-        m = FENCE.match(ln)
-        if fence:
-            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence):
-                fence = None
+    lines = md.splitlines()
+    for i0, kind in walk(lines):
+        if kind != TEXT:
             continue
-        if m:
-            fence = m.group(1)
-            continue
-        if in_comment or ln.lstrip().startswith("<!--"):
-            in_comment = "-->" not in ln
-            continue
+        i, ln = i0 + 1, lines[i0]
         seen: set[tuple[str, Any]] = set()
 
         def add(target: str, rng: tuple[int, int] | None, how: str, ref: str) -> None:
@@ -222,18 +207,12 @@ def refs_in(md: str) -> list[dict[str, Any]]:
 
 
 def _headings(lines: list[str]) -> list[str]:
-    """줄마다 그 줄이 든 제목(울타리 안 #은 제목이 아니다)."""
+    """줄마다 그 줄이 든 제목(울타리와 HTML 주석 안 #은 제목이 아니다)."""
     cur = ""
-    fence = None
     out = []
-    for ln in lines:
-        m = FENCE.match(ln)
-        if fence:
-            if m and m.group(1)[0] == fence[0]:
-                fence = None
-        elif m:
-            fence = m.group(1)
-        elif re.match(r"^#{1,6}\s", ln):
+    for i, kind in walk(lines):
+        ln = lines[i]
+        if kind == TEXT and re.match(r"^#{1,6}\s", ln):
             cur = ln.lstrip("#").strip()
         out.append(cur)
     return out

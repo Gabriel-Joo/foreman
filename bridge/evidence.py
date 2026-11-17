@@ -19,11 +19,13 @@ from typing import Any
 
 from sqlalchemy import text
 
-MARK = re.compile(r"\[(?P<k>c|t|log|docs|code):(?P<v>[^\]\s]+)\]")
+from bridge.doctext.lines import text_lines  # noqa: E402
+from bridge.doctext.marks import MARK, target  # noqa: E402,F401  (MARK는 tests/screen_words.py도 이 이름으로 읽었다)
+from bridge.doctext.titles import XREF  # noqa: E402
+
 CLAIM = re.compile(r"\d|“|”|\"[^\"]{4,}\"|「[^」]{2,}」")      # 숫자 · 인용이 있는 줄 — 근거가 있어야 할 줄
 # 사진 줄(![설명](경로))도 뺀다 — 설명의 근거는 사진 자체다(11-06 「한눈에」 의심 2개가 둘 다 사진 설명이었고 사진과 맞았다)
 SKIP_LINE = re.compile(r"^\s*(#|>|\||```|---|!\[|\s*$)")
-XREF = re.compile(r"→\s*「[^」]*」")
 
 
 async def _git(repo: str, *args: str) -> tuple[int, str]:
@@ -34,21 +36,22 @@ async def _git(repo: str, *args: str) -> tuple[int, str]:
 
 
 def _file_problem(root: Path, kind: str, v: str) -> str | None:
-    m = re.match(r"^(?P<f>[^:#]+?)(?::(?P<a>\d+)(?:-(?P<b>\d+))?)?(?:#.*)?$", v)
-    if not m:
+    t = target(v)
+    if not t:
         return "모양을 알아보지 못했습니다"
-    rel = PurePosixPath(m["f"])
+    name, ta, tb = t
+    rel = PurePosixPath(name)
     if rel.is_absolute() or ".." in rel.parts:
         return "저장소 밖을 가리킵니다"
-    f = root / m["f"] if kind == "code" else root / kind / m["f"]
-    shown = m["f"] if kind == "code" else f"{kind}/{m['f']}"
-    if kind == "code" and f.is_dir() and not m["a"]:
+    f = root / name if kind == "code" else root / kind / name
+    shown = name if kind == "code" else f"{kind}/{name}"
+    if kind == "code" and f.is_dir() and ta is None:
         return None                                   # 폴더 — [code:bridge/static/js/]
     if not f.is_file():
         return f"{shown} 파일이 없습니다"
-    if m["a"]:
+    if ta is not None:
         n = len(f.read_text(encoding="utf-8", errors="replace").splitlines())
-        a, b = int(m["a"]), int(m["b"] or m["a"])
+        a, b = ta, tb or ta
         if a < 1 or b > n or b < a:
             return f"줄 범위가 맞지 않습니다(파일은 {n}줄)"
     return None
@@ -56,20 +59,11 @@ def _file_problem(root: Path, kind: str, v: str) -> str | None:
 
 async def check_text(body: str, root: str, engine: Any = None) -> dict[str, Any]:
     """한 글의 근거 표시를 확인한다 — {total, ok, bad:[{line, mark, why}], unsupported:[{line, text}]}."""
-    from bridge.manuscript import COVERS, READ, bad_covers, parse_head
+    from bridge.doctext.head import COVERS, READ, bad_covers, parse_head
     marks: list[tuple[int, str, str]] = []
     unsupported = []
-    in_code = False
-    in_comment = False
-    for i, ln in enumerate(body.splitlines(), 1):
-        if ln.strip().startswith("```"):
-            in_code = not in_code
-            continue
-        if in_code:
-            continue
-        if in_comment or ln.strip().startswith("<!--"):       # HTML 주석(원고 머리 주석) — 노션에 나가지 않는다. 아래에서 따로 본다
-            in_comment = "-->" not in ln
-            continue
+    # 코드 울타리와 HTML 주석(원고 머리 주석) 밖 줄만. 머리 주석은 아래에서 따로 본다
+    for i, ln in text_lines(body.splitlines()):
         found = [(m["k"], m["v"]) for m in MARK.finditer(ln)]
         marks += [(i, k, v) for k, v in found]
         # "→ 「다른 글 제목」"은 글 안내라 주장이 아니다(11-06 포트폴리오 02 · 05의 의심이 둘 다 이것)
