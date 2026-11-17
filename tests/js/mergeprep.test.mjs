@@ -222,3 +222,23 @@ test('합친 뒤 안내: 두 줄, push 아직 · push까지, 옛 카드는 원�
   assert.ok(old.split('<details class="mp-more"')[1].includes('본문에 원래 날짜') && old.includes('시험 · push · 브리지 다시 띄우기는 관리자가'));
   assert.match(mpSection({ card: card({ status: 'merged', merge_result: { ...mr, squash: false, count: 1, orig_ref: null } }) }, b, 7), /main에 커밋 1개를 합쳤습니다\./);
 });
+
+// 11-17 문서 점검 한 줄: 새로 생긴 틀린 것은 노랑에 처음 몇 줄은 「자세히」, 없으면 흐린 글, 못 돌렸으면 0이 아니라 그 말
+test('문서 점검: 새로 생긴 틀린 것은 노랑과 줄, 없으면 흐린 글, 못 돌렸으면 경고', () => {
+  const withCheck = (check, docs = {}) => card({ docs: { readme: [], docs: [], ...docs, check } });
+  const bad = mpSection({ card: withCheck({ total: 3, new: 3, old: 0, lines: ['덮기 밖: tests/a.py가 notion 어느 편의 다루는 곳에도 들지 않습니다'] }) }, b, 7);
+  const [top, rest] = bad.split('<details class="mp-more"');
+  assert.match(top, /<div class="small mp-check warn" title="문서 점검 — [^"]*">📋 문서 점검, 이 브랜치로 새로 생긴 틀린 것 3<\/div>/);
+  assert.ok(rest.includes('mp-check-row') && rest.includes('덮기 밖: tests/a.py') && rest.includes('외 2개'));
+  assert.ok(!top.includes('mp-check-row'));
+  const old = mpSection({ card: withCheck({ total: 4, new: 0, old: 4, lines: [] }) }, b, 7);
+  assert.match(old, /class="small mp-check muted"[^>]*>📋 문서 점검, 이 브랜치로 새로 생긴 틀린 것 0, 원래 있던 것 4<\/div>/);
+  assert.ok(!old.includes('mp-check-row'));
+  const err = mpSection({ card: withCheck({ error: '점검을 돌리지 못했습니다(DocsConfigError)' }) }, b, 7);
+  assert.match(err, /class="small warn mp-check"[^>]*>📋 점검을 돌리지 못했습니다\(DocsConfigError\)<\/div>/);
+  assert.ok(!err.includes('틀린 것 0'));
+  // 걸리는 문서가 없어도, 문서를 찾지 못했어도 점검 줄은 보인다. 옛 카드(칸 없음)는 그리지 않는다
+  assert.match(mpSection({ card: withCheck({ total: 1, new: 1, old: 0, lines: ['x'] }, { total: 0 }) }, b, 7), /틀린 것 1<\/div>/);
+  assert.match(mpSection({ card: withCheck({ total: 1, new: 1, old: 0, lines: ['x'] }, { error: '걸리는 문서를 찾지 못했습니다(x)' }) }, b, 7), /걸리는 문서를 찾지 못했습니다[\s\S]*틀린 것 1<\/div>/);
+  assert.ok(!mpSection({ card: card() }, b, 7).includes('mp-check'));
+});

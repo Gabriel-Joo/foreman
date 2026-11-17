@@ -736,6 +736,23 @@ async def test_card_notes_branch_changed_docs_config(repo, monkeypatch):
     assert any(f"⚠ {want}" in (n or "") for n in notes) and f"⚠ {want}." in m._card_msg(card)
 
 
+async def test_card_has_doc_check_and_ready_notice_shows_it(repo, monkeypatch):
+    """11-17 카드 docs 칸에 문서 점검 결과(check)가 붙고 「합치기 준비됨」 알림에 한 줄이 간다(자세한 장면은 test_mergeprep_check.py)."""
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    (p / "bridge").mkdir(); (p / "bridge" / "mergeprep.py").write_text("x\n")
+    sh(p, "add", "."); sh(p, "commit", "-qm", "고침")
+    m, h, sent, row, _ = _mk(repo, monkeypatch)
+    notes = []
+    m.cfg.notify_ready = True
+    monkeypatch.setattr(m, "_notify", lambda c, key, msg=None, later=None, **kw: notes.append(msg))
+    card = await m.prep(row, {})
+    chk = card.docs["check"]
+    # 이 시험 저장소에는 원고가 없어 갈라진 곳에도 틀림이 있다(원래 있던 것). 브랜치가 더한 새 파일은 덮기 밖으로 새로 생긴 것 하나
+    assert chk["new"] == 1 and chk["old"] == chk["total"] - 1 and "mergeprep.py" in chk["lines"][0]
+    assert any(mp.check_line(chk) in (n or "") for n in notes)
+    assert mp.check_line(chk) in m._card_msg(card)
+
+
 def docrefs_line(card):
     from bridge.docrefs import count_line
     return count_line(card.docs)

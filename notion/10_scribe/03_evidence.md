@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/evidence.py, bridge/scribe_ask.py, bridge/doctext/, tools/docs.py, tests/test_evidence.py, tests/test_scribe_ask.py, tests/test_doctext.py, tests/test_techdoc.py, tests/test_docs_check.py
+다루는 곳: bridge/evidence.py, bridge/scribe_ask.py, bridge/doctext/, tools/docs.py, .foreman/docs.toml, tests/test_evidence.py, tests/test_scribe_ask.py, tests/test_doctext.py, tests/test_techdoc.py, tests/test_docs_check.py
 읽은 커밋: 5e0f7c5
 -->
 # 근거 확인과 물어보기
@@ -129,7 +129,7 @@ flowchart TD
 
 처음에는 빼는 목록을 시험 안에 따로 적어 두었고, 거기에는 log, c, docs, t 네 종류뿐이었다. code 종류는 근거 확인기에 나중에 더해졌고, 시험의 목록은 그때 함께 고쳐지지 않았다. 그래서 노션 원고를 처음 쓰자 code 표시를 단 줄마다 화면 말 시험이 그것을 「없는 버튼」으로 읽고 실패했다. 원고 쪽이 틀린 것이 아니라 시험 쪽이 새 종류를 몰랐던 것이다. 그 뒤 시험이 근거 확인기의 정규식(`MARK`)을 그대로 가져다 쓰게 바뀌었다 [c:e5d584b].
 
-이 일이 보여 주는 것은 근거 표시가 한 검사기의 약속이 아니라는 점이다. 근거 확인기, 노션 게시기의 표시 떼기, 거꾸로 찾기, 화면 말 시험이 모두 같은 대괄호 꼴을 읽는다. 처음에는 확인기와 게시기, 거꾸로 찾기가 저마다 정규식을 따로 적어 두어서, 종류를 하나 늘리면 여러 곳을 함께 고쳐야 했고 한 곳만 고치면 다른 쪽이 그 표시를 엉뚱하게 읽었다. 지금은 근거 표시의 종류와 정규식, 값에서 파일과 줄 범위를 나누는 규칙을 문서 문법 묶음 한 곳에서만 정하고, 넷이 모두 그것을 가져다 쓴다 [code:bridge/doctext/marks.py] [code:tests/screen_words.py]. 묶음은 파이썬 표준 라이브러리만 써서 다른 저장소도 FOREMAN의 같은 명령으로 읽을 수 있게 했다. 저장소를 읽는 일은 묶음 안의 한 파일이 맡는다. 작업 폴더나 커밋 하나에서 추적하는 파일 목록과 파일 내용을 읽기만 하고, git이 실패하면 그 까닭을 화면과 합치기 카드에 그대로 보이는 오류로 올린다 [code:bridge/doctext/repo.py]. 다른 저장소가 같은 문법을 제 스크립트에 다시 베껴 적던 것도 이 묶음으로 옮기고 있다. 인프라 저장소의 거꾸로 찾기와 문서 점검(머리 주석, 근거 표시, 덮기, 편 사이 참조, 금지어, 그림)이 FOREMAN 명령 `tools/docs.py`의 `refs`와 `check`로 옮겨 왔고, 저장소마다 다른 규칙은 그 저장소의 `.foreman/docs.toml` 한 파일에 적는다 [code:tools/docs.py] [code:bridge/doctext/check.py] [code:bridge/doctext/config.py]. 인프라 원고에 그 값을 넣어 옛 점검 스크립트와 맞대 보니 같은 틀림을 잡았다 [log:foreman-5_docs_check_20261117.md].
+이 일이 보여 주는 것은 근거 표시가 한 검사기의 약속이 아니라는 점이다. 근거 확인기, 노션 게시기의 표시 떼기, 거꾸로 찾기, 화면 말 시험이 모두 같은 대괄호 꼴을 읽는다. 처음에는 확인기와 게시기, 거꾸로 찾기가 저마다 정규식을 따로 적어 두어서, 종류를 하나 늘리면 여러 곳을 함께 고쳐야 했고 한 곳만 고치면 다른 쪽이 그 표시를 엉뚱하게 읽었다. 지금은 근거 표시의 종류와 정규식, 값에서 파일과 줄 범위를 나누는 규칙을 문서 문법 묶음 한 곳에서만 정하고, 넷이 모두 그것을 가져다 쓴다 [code:bridge/doctext/marks.py] [code:tests/screen_words.py]. 묶음은 파이썬 표준 라이브러리만 써서 다른 저장소도 FOREMAN의 같은 명령으로 읽을 수 있게 했다. 저장소를 읽는 일은 묶음 안의 한 파일이 맡는다. 작업 폴더나 커밋 하나에서 추적하는 파일 목록과 파일 내용을 읽기만 하고, git이 실패하면 그 까닭을 화면과 합치기 카드에 그대로 보이는 오류로 올린다 [code:bridge/doctext/repo.py]. 다른 저장소가 같은 문법을 제 스크립트에 다시 베껴 적던 것도 이 묶음으로 옮기고 있다. 인프라 저장소의 거꾸로 찾기와 문서 점검(머리 주석, 근거 표시, 덮기, 편 사이 참조, 금지어, 그림)이 FOREMAN 명령 `tools/docs.py`의 `refs`와 `check`로 옮겨 왔고, 저장소마다 다른 규칙은 그 저장소의 `.foreman/docs.toml` 한 파일에 적는다 [code:tools/docs.py] [code:bridge/doctext/check.py] [code:bridge/doctext/config.py]. 그 파일의 `not_code` 칸은 바뀌어도 코드로 세지 않는 파일을 적는 곳으로, 확장자뿐 아니라 파일 경로와 글롭도 받는다. FOREMAN은 근거를 달 문장이 없는 빈 패키지 표시 파일 넷과 `.gitignore`를 여기 넣어 「근거 표시가 없는 파일」 셈에서 뺐다 [code:.foreman/docs.toml]. 인프라 원고에 그 값을 넣어 옛 점검 스크립트와 맞대 보니 같은 틀림을 잡았다 [log:foreman-5_docs_check_20261117.md].
 
 ## 서기에게 물어보기
 

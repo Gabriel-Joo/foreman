@@ -134,13 +134,28 @@ function docsTop(list, total, unfixed, label, tipHead) {
     names.slice(0, 10).map((s) => `\n${s}`).join('')}${total > 10 ? `\n외 ${total - 10}개` : ''}`;
   return `<div class="small mp-docs ${unfixed ? 'warn' : 'muted'}" title="${esc(tip).replace(/\n/g, '&#10;')}">📄 ${label} ${total}, 안 고침 ${unfixed}</div>`;
 }
+// 11-17 문서 점검 한 줄(bridge/mergeprep.py doc_check). 이 브랜치 판으로 돌린 점검의 틀린 것 가운데 이 브랜치로 새로 생긴 수.
+// 새로 생긴 것이 있거나 돌리지 못했으면 노랑(0으로 보이면 조용한 고장), 없으면 흐린 글. 처음 몇 줄은 호버(전체는 tools/docs.py check). 옛 카드(칸 없음)는 안 그린다
+export function checkNote(d) {
+  const k = d && d.check;
+  if (!k) return { top: '', rows: '' };
+  if (k.error) return { top: `<div class="small warn mp-check" title="문서 점검 — 이 브랜치 판으로 문서 점검을 돌리지 못했습니다. 0이라는 뜻이 아닙니다.">📋 ${esc(k.error)}</div>`, rows: '' };
+  const old = k.old ? `, 원래 있던 것 ${k.old}` : '';
+  const lines = k.lines || [];
+  const tip = '문서 점검 — 이 브랜치 판으로 돌린 문서 점검에서 이 브랜치로 새로 생긴 틀린 것입니다. 원래 있던 것은 갈라진 곳에서 이미 틀렸던 것입니다. 전체는 tools/docs.py check로 봅니다.';
+  const top = `<div class="small mp-check ${k.new ? 'warn' : 'muted'}" title="${esc(tip)}">📋 문서 점검, 이 브랜치로 새로 생긴 틀린 것 ${k.new}${old}</div>`;
+  const rows = lines.map((s) => `<div class="small warn mp-check-row">${esc(s)}</div>`).join('')
+    + (k.new > lines.length ? `<div class="small muted">외 ${k.new - lines.length}개</div>` : '');
+  return { top, rows };
+}
 export function docsNote(c) {
   const d = (c && c.docs) || {};
-  if (d.error) return { top: `<div class="small warn mp-docs" title="걸리는 문서 — 바뀐 코드를 가리키는 문서를 찾지 못했습니다.">📄 ${esc(d.error)}</div>`, rows: '' };
+  const chk = checkNote(d);
+  if (d.error) return { top: `<div class="small warn mp-docs" title="걸리는 문서 — 바뀐 코드를 가리키는 문서를 찾지 못했습니다.">📄 ${esc(d.error)}</div>` + chk.top, rows: chk.rows };
   const list = d.docs || [];
   const total = d.total ?? list.length;
-  const cfg = d.config_note ? `<div class="small warn mp-docs-cfg" title="문서 설정 — 이 브랜치가 .foreman/docs.toml을 바꿨지만 카드는 합칠 곳의 설정으로 셌습니다. 합친 뒤에는 수가 달라질 수 있습니다.">⚠ ${esc(d.config_note)}</div>` : '';
-  if (!total) return { top: cfg, rows: '' };
+  const cfg = (d.config_note ? `<div class="small warn mp-docs-cfg" title="문서 설정 — 이 브랜치가 .foreman/docs.toml을 바꿨지만 카드는 합칠 곳의 설정으로 셌습니다. 합친 뒤에는 수가 달라질 수 있습니다.">⚠ ${esc(d.config_note)}</div>` : '') + chk.top;
+  if (!total) return { top: cfg, rows: chk.rows };
   let top;
   if (d.by) {
     top = ['code', 'doc'].filter((k) => d.by[k] && d.by[k].total).map((k) =>
@@ -156,7 +171,7 @@ export function docsNote(c) {
       d.by && x.by ? ` <span class="muted">${DOC_BY[x.by] ? DOC_BY[x.by].row : ''}</span>` : ''} 줄 ${x.lines.join(', ')}${x.count > x.lines.length ? ' …' : ''} <span class="muted">${esc(x.files.join(', '))}</span>${
       x.stale ? ' <span class="warn">안 고침</span>' : ' <span class="ok">고침</span>'}</div>`;
   }).join('');
-  return { top: top + cfg, rows };
+  return { top: top + cfg, rows: chk.rows + rows };
 }
 export function mpSection(mp, b, sid) {
   if (!mp) return '';

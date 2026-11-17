@@ -6,7 +6,7 @@
     pair_numbers = false        # docs/NN_*.md가 바뀌면 같은 번호 원고 notion/NN_*도 걸기(인프라만 true)
     read_commit = "piece"       # 읽은 커밋을 편마다 따로("piece", FOREMAN) 또는 묶음마다 하나("set", 인프라)
     allowed_domains = []        # 원고 금지어(도메인)에서 빼는 도메인
-    not_code = [".md"]          # 바뀌어도 코드로 세지 않는 확장자(문서 묶음 폴더 아래 파일은 확장자와 상관없이 코드가 아니다)
+    not_code = [".md"]          # 바뀌어도 코드로 세지 않는 확장자, 파일 경로, 글롭(문서 묶음 폴더 아래 파일은 확장자와 상관없이 코드가 아니다)
 
     [sets]                      # 문서 묶음 폴더(끝이 /). 표는 맨 위 칸들 뒤에 둔다(뒤에 쓴 칸은 TOML에서 이 표 안으로 들어간다)
     docs = "docs/"
@@ -33,6 +33,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import subprocess
 import tomllib
 from dataclasses import dataclass, field
@@ -190,12 +191,28 @@ def parse(text: str, source: str = PATH) -> DocsConfig:
     if "allowed_domains" in raw:
         cfg.allowed_domains = [d.lower() for d in _strs(raw["allowed_domains"], "allowed_domains")]
     if "not_code" in raw:
-        exts = _strs(raw["not_code"], "not_code")
-        bad = [e for e in exts if not e.startswith(".") or "/" in e]
+        pats = _strs(raw["not_code"], "not_code")
+        bad = [e for e in pats if not _not_code_ok(e)]
         if bad:
-            raise DocsConfigError(f"{source}: not_code는 .으로 시작하는 확장자여야 합니다: {bad}")
-        cfg.not_code = exts
+            raise DocsConfigError(f"{source}: not_code는 .으로 시작하는 확장자나 저장소 안 파일 경로, 글롭이어야 합니다: {bad}")
+        cfg.not_code = pats
     return cfg
+
+
+def _is_ext(p: str) -> bool:
+    return p.startswith(".") and "/" not in p and not any(ch in p for ch in "*?[")
+
+
+def _not_code_ok(p: str) -> bool:
+    if _is_ext(p):
+        return True
+    return ("/" in p or any(ch in p for ch in "*?[")) and not p.startswith("/") and ".." not in PurePosixPath(p).parts
+
+
+def not_code_match(path: str, patterns: list[str]) -> bool:
+    """`not_code` 칸에 드는 파일인가. `.`으로 시작하고 `/`가 없는 값은 확장자(끝 글자, 파일 이름 `.gitignore`도 같은 꼴),
+    그 밖은 저장소 맨 위 기준 경로나 글롭(`bridge/__init__.py`, `bridge/*/__init__.py`)이다. 글롭의 `*`는 `/`도 넘는다."""
+    return any(path.endswith(p) if _is_ext(p) else fnmatch.fnmatchcase(path, p) for p in patterns)
 
 
 def load(repo: str | Path, rev: str | None = None) -> DocsConfig:

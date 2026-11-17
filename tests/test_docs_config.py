@@ -48,7 +48,30 @@ def test_config_top_keys_after_table_are_warned():
     assert c.records == ["log/"] and "sets.records" in c.warnings[0]
 
 
+def test_not_code_takes_extension_path_and_glob():
+    """11-17 `not_code`는 확장자뿐 아니라 파일 경로, 글롭도 받는다(근거를 달 문장이 없는 `__init__.py`, `.gitignore`)."""
+    c = dcfg.parse("not_code = ['.md', '.gitignore', 'bridge/__init__.py', 'pkg/*/__init__.py']")
+    assert c.not_code == [".md", ".gitignore", "bridge/__init__.py", "pkg/*/__init__.py"]
+    m = lambda p: dcfg.not_code_match(p, c.not_code)  # noqa: E731
+    assert m("README.md") and m(".gitignore") and m("sub/.gitignore")            # 확장자 꼴(끝 글자)
+    assert m("bridge/__init__.py") and not m("xbridge/__init__.py") and not m("bridge/api/__init__.py")   # 경로는 통째로
+    assert m("pkg/a/__init__.py") and m("pkg/a/b/__init__.py") and not m("pkg/__init__.py")
+    assert not m("bridge/a.py")
+
+
+def test_not_code_decides_trigger():
+    from bridge import docrefs
+    c = dcfg.parse("not_code = ['.md', 'bridge/__init__.py', '.gitignore']")
+    sets = docrefs.doc_sets(None)
+    assert docrefs.trigger_kind("bridge/__init__.py", sets, c) is None and docrefs.trigger_kind(".gitignore", sets, c) is None
+    assert docrefs.trigger_kind("bridge/api/__init__.py", sets, c) == "code"      # 이름을 안 넣은 같은 이름 파일은 그대로 코드
+    assert docrefs.trigger_kind("README.md", sets, c) == "doc"
+
+
 @pytest.mark.parametrize("body,why", [
+    ("not_code = ['Makefile']", "확장자나 저장소 안 파일 경로"),
+    ("not_code = ['/abs/x.py']", "확장자나 저장소 안 파일 경로"),
+    ("not_code = ['../x.py']", "확장자나 저장소 안 파일 경로"),
     ("records = 'log/'", "글자 목록"),
     ("records = ['/abs/']", "저장소 안 폴더"),
     ("[sets]\ndocs = 'docs'", "저장소 안 폴더"),

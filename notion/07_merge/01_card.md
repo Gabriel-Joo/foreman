@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/mergeprep.py, bridge/docrefs.py, tools/docs.py, bridge/doctext/config.py, bridge/inspector_close.py, bridge/coder_room.py, bridge/api/coder.py, bridge/static/js/coder.js, bridge/static/js/handoff.js, migrations/0032_merge_card.sql, tests/js/coder.test.mjs, tests/js/mergeprep.test.mjs, tests/test_mergeprep.py, tests/test_mergeprep_db.py, tests/test_merge_remind_catchup.py, tests/test_docs_tool.py, tests/test_docs_config.py, tests/test_docrefs_config.py
+다루는 곳: bridge/mergeprep.py, bridge/docrefs.py, tools/docs.py, bridge/doctext/config.py, bridge/inspector_close.py, bridge/coder_room.py, bridge/api/coder.py, bridge/static/js/coder.js, bridge/static/js/handoff.js, migrations/0032_merge_card.sql, tests/js/coder.test.mjs, tests/js/mergeprep.test.mjs, tests/test_mergeprep.py, tests/test_mergeprep_check.py, tests/test_mergeprep_db.py, tests/test_merge_remind_catchup.py, tests/test_docs_tool.py, tests/test_docs_config.py, tests/test_docrefs_config.py
 읽은 커밋: fb7121b
 -->
 
@@ -80,6 +80,7 @@ flowchart TD
 | 바뀐 파일 | `git diff --name-only base...branch`, 60개까지 |
 | 충돌 | `git merge-tree --write-tree --name-only --no-messages base branch` |
 | 걸리는 문서 | 바뀐 코드를 가리키는 docs, 노션 원고, 포트폴리오의 줄과 이 브랜치에서 그 문서를 고쳤는지(옛 이름 정리 후보) |
+| 문서 점검 | 그 브랜치 판으로 돌린 문서 점검(`tools/docs.py check`)의 틀린 것 수. 이 브랜치로 새로 생긴 것과 갈라진 곳에 원래 있던 것을 가름 |
 | 규칙 파일 | 바뀐 파일 전부(60개에서 자르지 않음)를 지금 도는 승인 규칙의 보호 목록과 맞댐 |
 | 승인자, 사람에게 올린 까닭 | 프로젝트 설정과 늘 사람에게 올릴 것 판정 |
 
@@ -98,6 +99,8 @@ flowchart TD
 문서마다 이 브랜치에서 그 문서도 고쳤는지를 본다. 고쳤으면 「고침」, 아니면 「안 고침」이다. 카드 위 줄에는 수가 두 줄로 보인다. 「📄 코드로 걸린 문서 N, 안 고침 M」은 이 브랜치가 바꾼 코드를 가리키는 문서이고, 「📄 문서로만 걸린 문서 K, 안 고침 L」은 docs나 CLAUDE.md 같은 문서만 바뀌어 그것을 가리키는 원고가 걸린 것이다. 한쪽이 0이면 그 줄은 뺀다. 「자세히」 안에는 문서마다 「코드로」나 「문서로만」 표시, 줄, 고침 여부가 있다. 같은 수가 「합치기 준비됨」 텔레그램과 관리자에게 가는 카드 글, 합친 뒤 글에도 한 줄로 들어간다 [code:bridge/static/js/handoff.js] [code:bridge/docrefs.py]. 둘로 나눈 까닭은 문서를 걸게 하는 것을 들인 뒤 수가 크게 늘었기 때문이다. 최근 커밋 60개로 다시 세었더니 걸리는 문서가 407에서 600이 되었는데, 코드로 새로 걸린 것은 하나도 없었다. 두 성격이 섞인 수 하나를 보이면 사람은 둘 다 안 보게 된다 [log:foreman-4_docrefs_config_20261117.md].
 
 브랜치가 문서 설정 파일(`.foreman/docs.toml`)을 바꿨으면 카드에 「이 브랜치가 설정을 바꿨습니다. 이 셈은 main 설정 기준입니다」가 한 줄 더 붙는다. 카드는 원본 폴더에서 돌아 그 폴더의 설정, 곧 합치기 전 값으로 세기 때문이다. 조용히 옛 값으로 세면 나중에 왜 숫자가 달랐는지 찾을 수 없다 [code:bridge/mergeprep.py]. 찾다가 git이 실패하면 0으로 두지 않고 「걸리는 문서를 찾지 못했습니다」와 까닭을 위 줄에 보인다. 아무것도 안 걸린 것과 찾지 못한 것이 같은 모양이면 조용한 고장이 되기 때문이다.
+
+카드에는 문서 점검 한 줄도 있다. 그 브랜치 판 파일로 문서 점검(`bridge/doctext/check.py`)을 돌려 틀린 것을 세고, 갈라진 곳(`git merge-base`)에서 돌린 점검과 맞대어 「이 브랜치로 새로 생긴 틀린 것 N」과 「원래 있던 것 M」으로 가른다. 사람이 볼 것은 새로 생긴 쪽이다. 같은 틀림인지는 문서와 틀린 내용으로 보고 줄 번호는 보지 않는다(브랜치가 앞에 줄을 더하면 줄이 밀리기 때문이다). 새로 생긴 것이 있으면 노랑으로 보이고 처음 다섯 줄이 「자세히」에 나온다. 없으면 흐린 글로 「0」이라고만 보인다. 같은 줄이 「합치기 준비됨」 텔레그램과 관리자 카드 글에도 들어간다 [code:bridge/mergeprep.py] [code:bridge/static/js/handoff.js]. 의심(틀림은 아니고 근거 표시 없는 숫자나 인용이 있는 줄)은 FOREMAN에서 이백 줄이 넘고 틀림이 아니라서 세지 않는다. 점검을 돌리지 못했으면(설정이 깨졌거나 git이 실패했으면) 0으로 두지 않고 「점검을 돌리지 못했습니다」와 까닭을 노랑으로 보인다. 이 줄을 카드에 넣은 까닭은 새 시험 파일이 어느 편의 다루는 곳에도 들지 않았을 때 그 브랜치에서 바로 보이게 하려는 것이다. 문서를 낡게 만드는 쪽은 주로 코더라 서기 브랜치에만 거는 길은 고르지 않았다. 카드는 보이게만 할 뿐이라, 아무도 안 보면 조용히 낡는다. 깨지게 만드는 것은 시험뿐이어서 지금 못 푸는 참조가 풀린 뒤에는 pytest에 점검을 건다 [log:foreman-5_docs_check_20261117.md].
 
 이렇게 바꾼 까닭은 문서가 밀리는 사슬이다. 코더가 코드를 고치면 docs가 밀리고, 서기가 docs를 고치면 원고가 밀리고, 다른 서기가 원고를 고치는 사이 코드가 또 바뀐다. 서기는 코더가 왜 그렇게 고쳤는지 다시 알아내야 했다. 그래서 이제 코드를 고친 코더가 그 코드를 가리키는 문서도 같은 브랜치에서 함께 고친다(→ 05 역할). 카드의 「안 고침」은 그 규칙이 지켜졌는지를 승인하는 사람이 바로 보게 하는 자리다. 옛 정리 후보는 바뀐 파일 이름이 나오는 docs 줄만 맞대고 원고와 포트폴리오는 보지 않아, 사슬의 뒤쪽이 카드에 보이지 않았다.
 
@@ -123,7 +126,7 @@ flowchart TD
 
 이 판정은 기계로 가를 수 있는 것만 담았다. "사람이 직접 쓴 글은 사람이 승인한다" 같은 기준은 git으로 가를 수 없다. 커밋이 모두 같은 사용자 이름에 같은 공동 작성자 줄을 달고 있어서다 [log:merge_approver_20261112.md]. 그런 것은 경로로 더하거나 관리자 판단에 맡긴다. 판정 자체가 실패하면 사람 승인으로 둔다. 모를 때는 안전한 쪽으로 간다.
 
-관리자 승인 카드가 되려면 그 저장소 원본 폴더에 살아 있는 관리자 세션도 있어야 한다. 없으면 "살아 있는 관리자 세션이 없어 사람이 승인합니다"가 되고, 관리자에게 카드 글을 보내다 실패해도 사람 승인으로 돌린다. 관리자 승인 카드는 관리자 입력 칸에 "[FOREMAN 합치기 카드] …"로 시작하는 글이 들어간다. 그 글에는 커밋 수, 바뀐 파일 수, 충돌 여부, 걸리는 문서 수(코드로 걸린 것과 문서로만 걸린 것을 나눠서, 찾지 못했으면 그 까닭, 브랜치가 문서 설정을 바꿨으면 그 한 줄), 합치는 API와 미루는 API, squash로 합칠 때 제목을 넘기는 법, 카드 전부를 보는 주소가 들어 있다 [code:bridge/mergeprep.py]. 관리자가 늘 사람 카드를 승인하려 하면 API가 까닭을 적어 거부한다.
+관리자 승인 카드가 되려면 그 저장소 원본 폴더에 살아 있는 관리자 세션도 있어야 한다. 없으면 "살아 있는 관리자 세션이 없어 사람이 승인합니다"가 되고, 관리자에게 카드 글을 보내다 실패해도 사람 승인으로 돌린다. 관리자 승인 카드는 관리자 입력 칸에 "[FOREMAN 합치기 카드] …"로 시작하는 글이 들어간다. 그 글에는 커밋 수, 바뀐 파일 수, 충돌 여부, 걸리는 문서 수(코드로 걸린 것과 문서로만 걸린 것을 나눠서, 찾지 못했으면 그 까닭, 브랜치가 문서 설정을 바꿨으면 그 한 줄, 문서 점검 한 줄과 새 틀림 처음 몇 줄), 합치는 API와 미루는 API, squash로 합칠 때 제목을 넘기는 법, 카드 전부를 보는 주소가 들어 있다 [code:bridge/mergeprep.py]. 관리자가 늘 사람 카드를 승인하려 하면 API가 까닭을 적어 거부한다.
 
 세 번째 승인자 `auto`(브리지)는 조사 세션에만 있다. 아래 「조사 작업방은 승인 없이 합친다」 절에서 다룬다.
 
@@ -268,6 +271,7 @@ flowchart TD
 | 관리자 세션이 없거나 못 보냄 | 텔레그램으로 바로(21:00 묶음으로 미루지 않음), 카드에 경고. 관리자 몫 글은 같은 글을, 카드 알림은 「알리지 못했습니다」를 보내고 관리자 승인 카드면 승인자를 사람으로 바꾼다 |
 | 카드 DB 저장, 되살리기 실패 | 텔레그램 한 번, 목록에 사유, 카드는 메모리로 계속 |
 | 사람 승인 물음이 5일째 | 텔레그램 바로 한 번 |
+| 문서 점검을 돌리지 못함 | 0으로 두지 않고 카드 위 줄에 노랑으로 「점검을 돌리지 못했습니다」와 까닭, 텔레그램과 관리자 카드 글에도 같은 말 |
 | 걸리는 문서를 찾지 못함 | 0으로 두지 않고 카드 위 줄에 「걸리는 문서를 찾지 못했습니다」와 까닭, "합치기 준비됨" 텔레그램과 관리자 카드 글에도 까닭 |
 | 규칙 파일이 바뀌는지 확인하지 못함 | 카드와 "합치기 준비됨" 텔레그램에 「확인하지 못했습니다」와 까닭. 이 텔레그램은 묶음 없이 바로 |
 | 조사 세션을 스스로 합치지 않음 | 텔레그램 한 번, 관리자 카드 글에 까닭 |

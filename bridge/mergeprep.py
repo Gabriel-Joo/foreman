@@ -38,6 +38,7 @@ import os
 import re
 import tempfile
 import tomllib
+from collections import Counter
 from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -47,6 +48,8 @@ from sqlalchemy import text
 
 from bridge import docrefs
 from bridge import worktree as wt
+from bridge.doctext import check as dcheck
+from bridge.doctext import config as dcfg
 from bridge.inject import Refused, _status, deliver
 from bridge.liveness import live_sessions
 
@@ -274,11 +277,59 @@ def doc_candidates(repo: str, base: str, branch: str, docs_dir: str = "docs", li
     out = docrefs.card_docs(docrefs.scan(repo, rng=f"{base}...{branch}", docs_dir=docs_dir), limit)
     if docrefs.config_changed(repo, f"{base}...{branch}"):
         out["config_note"] = config_note(base)
+    out["check"] = doc_check(repo, base, branch, docs_dir)
     return out
 
 
 def config_note(base: str) -> str:
     return f"이 브랜치가 설정을 바꿨습니다. 이 셈은 {base} 설정 기준입니다"
+
+
+CHECK_SHOW = 5          # 카드 「자세히」에 보이는 새 틀림 줄 수
+
+
+def _check_at(repo: str, rev: str, docs_dir: str) -> list[dict[str, Any]]:
+    """그 커밋 판으로 돌린 문서 점검(`tools/docs.py check --rev`와 같다)의 틀린 것. 설정도 그 커밋 판."""
+    cfg = dcfg.load(repo, rev)
+    return dcheck.run(repo, rev, cfg, docrefs.resolve_sets(repo, cfg, docs_dir=docs_dir))["errors"]
+
+
+def doc_check(repo: str, base: str, branch: str, docs_dir: str = "docs") -> dict[str, Any]:
+    """합치기 카드의 「문서 점검」(11-17 사용자 결정, 3단계 정할 것 2번). 그 브랜치 판으로 문서 점검(`bridge/doctext/check.py`)을 돌려
+    틀린 것 수를 센다. 브랜치로 새로 생긴 것(`new`)과 갈라진 곳에 원래 있던 것(`old`)을 가른다(문서, 틀린 내용이 같으면 같은 것, 줄은 밀리니 안 본다).
+    사람이 볼 것은 `new`다. 의심(틀림이 아님, 근거 없는 숫자와 인용 줄)은 수백 줄이라 세지 않는다. 틀림은 오탐이 아니라 규칙 위반이다.
+    돌리지 못했으면 `{"error": …}`(0으로 보이면 조용한 고장). 점검은 읽기만 한다."""
+    try:
+        fork = (docrefs._gits(repo, "merge-base", base, branch) or "").strip() or base
+        mine = _check_at(repo, branch, docs_dir)
+        was = Counter((e["doc"], e["what"]) for e in _check_at(repo, fork, docs_dir))
+    except Exception as e:  # noqa: BLE001, 못 돌려도 카드는 낸다
+        why = str(e)[:120] if isinstance(e, (docrefs.DocrefsError, dcfg.DocsConfigError, dcheck.RepoError)) else type(e).__name__
+        return {"error": f"점검을 돌리지 못했습니다({why})"}
+    new = []
+    for e in mine:
+        k = (e["doc"], e["what"])
+        if was[k] > 0:
+            was[k] -= 1
+        else:
+            new.append(e)
+    shown = [(f"{e['doc']}:{e['line']}: " if e["doc"] and e["line"] else f"{e['doc']}: " if e["doc"] else "") + e["what"] for e in new[:CHECK_SHOW]]
+    return {"total": len(mine), "new": len(new), "old": len(mine) - len(new), "lines": shown}
+
+
+def _check_bad(chk: dict[str, Any] | None) -> bool:
+    """알림에서 경고로 보일 것: 돌리지 못했거나 새로 생긴 틀린 것이 있다."""
+    return bool(chk and (chk.get("error") or chk.get("new")))
+
+
+def check_line(chk: dict[str, Any] | None) -> str:
+    """카드 글, 관리자 글, 알림이 같이 쓰는 한 줄. 옛 카드(칸 없음)는 빈 글, 돌리지 못했으면 그 말."""
+    if not chk:
+        return ""
+    if chk.get("error"):
+        return str(chk["error"])
+    old = f", 원래 있던 것 {chk['old']}" if chk.get("old") else ""
+    return f"문서 점검, 이 브랜치로 새로 생긴 틀린 것 {chk.get('new', 0)}{old}"
 
 
 # ── 카드 ─────────────────────────────────────────────────
@@ -822,7 +873,8 @@ class MergePrep:
             docs = await self._docs(repo, st["base"], st["branch"], st)
         except Exception as e:  # noqa: BLE001, 걸리는 문서를 못 찾아도 카드는 낸다(사유를 붙여. 0으로 보이면 조용한 고장)
             why = str(e)[:160] if isinstance(e, docrefs.DocrefsError) else type(e).__name__
-            docs = {"error": f"걸리는 문서를 찾지 못했습니다({why})", "readme": [], "docs": []}
+            docs = {"error": f"걸리는 문서를 찾지 못했습니다({why})", "readme": [], "docs": [],
+                    "check": {"error": "점검을 돌리지 못했습니다(걸리는 문서를 찾는 데 실패했습니다)"}}
         _, files = await wt.git(repo, "diff", "--name-only", f"{st['base']}...{st['branch']}")
         now = _iso(_now())
         # 같은 커밋(main만 앞섬 · live만 바뀜)이면 처음 만든 시각을 잇는다 — 「오래됨」은 사람이 기다린 시간이다(11-13)
@@ -874,6 +926,7 @@ class MergePrep:
                              + (f"\n📄 {docrefs.count_line(docs)}" if docrefs.count_line(docs) else "")
                              + (f"\n⚠ {docs['config_note']}" if docs.get("config_note") else "")
                              + (f"\n⚠ {docs['error']}" if docs.get("error") else "")
+                             + (f"\n{'⚠' if _check_bad(docs.get('check')) else '📋'} {check_line(docs.get('check'))}" if docs.get("check") else "")
                              + ("\n▶ 관리자 세션이 승인합니다(사람 승인 필요 없음)" if card.approver == "manager"
                                 else (f"\n⚠ 사람 승인 — {'; '.join(card.human_why)}" if card.human_why else "")
                                 + "\n▶ 그 세션 패널의 「합치기 승인」에서 승인합니다"))
@@ -934,6 +987,7 @@ class MergePrep:
         cl = docrefs.count_line(c.docs)     # 11-17 「코드로 걸린 문서 N, 안 고침 M / 문서로만 걸린 문서 K, 안 고침 L」
         derr = (c.docs or {}).get("error")
         dnote = (c.docs or {}).get("config_note")
+        chk = (c.docs or {}).get("check")     # 11-17 문서 점검 한 줄(doc_check)
         sq = (" 이 프로젝트는 squash로 합친다(커밋 하나, 본문에 원래 날짜 · 해시 · 제목). 제목은 세션 제목으로 기계가 만든다 — "
               "묶은 일을 더 잘 말하는 제목이 있으면 승인할 때 \"title\": \"…\"로 넘긴다(그 저장소 커밋 꼴로)."
               if self.cfg.rule(c.project).squash and c.ahead >= 2 else "")
@@ -944,7 +998,9 @@ class MergePrep:
                 f"{' 🛡 ' + rule_line(c) if c.rule_files or c.rule_files_error else ''}"
                 f"{' ' + cl + '(바뀐 코드나 문서를 가리키는 문서, 안 고침은 이 브랜치에서 고치지 않은 것. 문서로만 걸린 것은 docs나 CLAUDE.md만 바뀌어 걸린 것).' if cl else ''}"
                 f"{' ⚠ ' + dnote + '.' if dnote else ''}"
-                f"{' ⚠ ' + derr + '.' if derr else ''}")
+                f"{' ⚠ ' + derr + '.' if derr else ''}"
+                f"{' ' + ('⚠ ' if _check_bad(chk) else '') + check_line(chk) + '.' if chk else ''}"
+                f"{' 새 틀림: ' + ' | '.join(chk['lines']) + '.' if chk and chk.get('new') and chk.get('lines') else ''}")
         see = f" 카드 전부: GET /api/merge-prep?project={c.project}(커밋, 바뀐 파일, 걸리는 문서와 줄)."
         if c.human_why:
             return (head + " 이 카드는 **사람 승인**이다 — 승인자는 관리자지만 늘 사람에게 올릴 것에 걸렸다: " + "; ".join(c.human_why)

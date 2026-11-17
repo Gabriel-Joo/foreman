@@ -12,7 +12,7 @@
 - `[sets]` 문서 묶음 폴더(docs, notion, portfolio). notion이 없으면 그 저장소 `.foreman/notion.toml` `src`, 그것도 없으면
   FOREMAN `config/notion.toml`의 그 저장소 칸 `src`. docs와 같으면 따로 두지 않는다. 셋 다 `*.md`만
 - `records` 기록 폴더(FOREMAN `log/`, 인프라 `docs/history/`). 문서도 아니고 걸게 하지도 않는다
-- `not_code` 바뀌어도 코드로 세지 않는 확장자(`.md`)
+- `not_code` 바뀌어도 코드로 세지 않는 확장자(`.md`), 파일 경로, 글롭(`bridge/__init__.py`)
 - `pair_numbers` docs의 `NN_*.md`가 바뀌면 같은 번호 원고 `NN_*.md`와 `NN_*/` 아래 글도 건다(인프라만 켬)
 
 걸게 하는 것(`triggers`, 종류 `code` 또는 `doc`)
@@ -136,7 +136,7 @@ def trigger_kind(path: str, sets: dict[str, str], cfg: dcfg.DocsConfig | None = 
     if path.startswith(tuple(cfg.records)):
         return None
     inside = any(d and path.startswith(d) for d in sets.values())
-    if path.endswith(tuple(cfg.not_code)):
+    if dcfg.not_code_match(path, cfg.not_code):
         if path.endswith(".md") and (not inside or kind_of(path, sets, cfg.records) == "docs"):
             return "doc"
         return None
