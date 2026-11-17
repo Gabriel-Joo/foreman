@@ -1,4 +1,4 @@
-"""문서 도구 명령(11-17 문서 도구 합치기). 다른 저장소도 이 명령 하나를 부른다. 읽기만 한다. 아무것도 고치지 않는다.
+"""문서 도구 명령(11-17 문서 도구 합치기). 다른 저장소도 이 명령 하나를 부른다. readme만 파일 하나(README.md)를 쓰고, 나머지는 읽기만 한다.
 
     .venv/bin/python tools/docs.py head                       # 원고와 포트폴리오 편마다 제목, 다루는 곳, 읽은 커밋
     .venv/bin/python tools/docs.py head --set notion --json
@@ -9,7 +9,14 @@
     .venv/bin/python tools/docs.py refs bridge/mergeprep.py   # 거꾸로 찾기: 이 파일을 가리키는 문서와 줄
     .venv/bin/python tools/docs.py refs --range main...HEAD --unfixed
     .venv/bin/python tools/docs.py --repo <다른 저장소> --json refs --range origin/main~20..origin/main
-    .venv/bin/python tools/docs.py check [-v]                  # 문서 점검: 머리 주석, 근거 표시, 덮기, 참조, 금지어, 그림(-v는 의심 줄까지)
+    .venv/bin/python tools/docs.py check [-v]                  # 문서 점검: 머리 주석, 근거 표시, 덮기, 참조, 금지어, 그림, README(-v는 의심 줄까지)
+    .venv/bin/python tools/docs.py readme                     # README.md 전체를 원고로 다시 만든다([readme] 표가 있는 저장소만)
+    .venv/bin/python tools/docs.py readme --dry               # 쓰지 않고 만들 글만 찍는다(표가 없어도, --rev와 함께도 된다)
+    .venv/bin/python tools/docs.py --links 주소.json readme --dry   # 노션 주소를 게시 기록 대신 파일({편 경로: 주소})에서
+
+README(문서 정리 B, bridge/doctext/readme.py): 제목, 포트폴리오 00편 첫 문단, 포트폴리오와 기술문서 편 목록, 묶음마다 맨 위 편의
+노션 주소. 노션 주소는 FOREMAN DB 게시 기록(doc_publish, 프로젝트 이름은 [readme] project 또는 origin 저장소 이름)에서 읽는다.
+readme는 게시 기록을 못 읽으면 쓰지 않고 2로 끝난다. check는 못 읽으면 README에 걸린 주소를 그대로 두고 나머지만 맞대며 알린다.
 
 문법과 저장소 읽기는 bridge/doctext 한 곳, 거꾸로 찾기 판정은 bridge/docrefs.py(합치기 카드와 같다), 문서 점검은 bridge/doctext/check.py.
 거꾸로 찾기는 근거 표시와 글 안 경로만 따라가고(밀림), 머리 주석 「다루는 곳」은 점검의 덮기 검사만 읽는다(11-17 3단계).
@@ -118,6 +125,64 @@ def cmd_marks(repo: str, rev: str | None, cfg: dcfg.DocsConfig, sets: dict[str, 
     return {"marks": out, "not_in_sets": missing}
 
 
+def notion_links(project: str, path: str | None) -> dict[str, str | None]:
+    """{편 경로: 노션 주소}. path(JSON 파일)가 있으면 그것, 없으면 FOREMAN DB 게시 기록(doc_publish, 게시된 doc 행)."""
+    if path:
+        try:
+            raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            raise Fail(f"노션 주소 파일을 읽지 못했습니다: {path} ({type(e).__name__})") from e
+        if not isinstance(raw, dict) or not all(isinstance(k, str) and (v is None or isinstance(v, str)) for k, v in raw.items()):
+            raise Fail("노션 주소 파일은 {\"편 경로\": \"주소\"} JSON이어야 합니다")
+        return raw
+    try:
+        from bridge.db.migrate import connect
+        con = connect()
+        try:
+            cur = con.cursor()
+            cur.execute("SELECT path, url FROM doc_publish WHERE project = %s AND kind = 'doc' AND status = 'published'",
+                        (project,))
+            return {p: u for p, u in cur.fetchall()}
+        finally:
+            con.close()
+    except Exception as e:     # 설정 없음, 연결 실패, 표 없음: 부르는 쪽이 정한다(readme는 멈추고 check는 알린다)
+        raise Fail(f"게시 기록(doc_publish)을 읽지 못했습니다({type(e).__name__})") from e
+
+
+def cmd_readme(repo: str, rev: str | None, cfg: dcfg.DocsConfig, sets: dict[str, str], links_file: str | None,
+               dry: bool) -> tuple[dict, int]:
+    if cfg.readme is None and not dry:
+        raise Fail("이 저장소는 README 생성이 꺼져 있습니다(.foreman/docs.toml [readme] 표가 없음). 미리 보려면 --dry")
+    if rev and not dry:
+        raise Fail("--rev와 함께는 쓰지 않습니다(작업 트리의 README만 씁니다). 미리 보려면 --dry")
+    project = dcheck.readme_project(repo, cfg)
+    links = notion_links(project, links_file)
+    b = dcheck.readme_build(repo, rev, cfg, sets, links)
+    res = {"project": project, "errors": b.errors, "notes": b.notes, "tops": b.tops, "written": False, "same": None}
+    if b.errors:
+        return res, 2
+    if dry:
+        res["text"] = b.text
+        return res, 0
+    f = Path(repo) / dcheck.readme.PATH
+    old = f.read_text(encoding="utf-8") if f.is_file() else None
+    res["same"] = old == b.text
+    if not res["same"]:
+        f.write_text(b.text, encoding="utf-8")
+        res["written"] = True
+    return res, 0
+
+
+def render_readme(res: dict) -> str:
+    if res["errors"]:
+        return "\n".join(f"README를 만들 수 없습니다: {w}" for w in res["errors"])
+    out = [f"알림  {n}" for n in res["notes"]]
+    if "text" in res:
+        return "\n".join([res["text"].rstrip("\n"), *out])
+    out.append("README.md가 이미 같습니다" if res["same"] else "README.md를 새로 썼습니다")
+    return "\n".join(out)
+
+
 def render_head(res: dict) -> str:
     out = []
     for k, s in res["sets"].items():
@@ -154,7 +219,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repo", default=".", help="저장소 경로(기본 지금 폴더). 다른 저장소도 읽기만 한다")
     ap.add_argument("--rev", help="읽을 커밋(기본 작업 트리)")
     ap.add_argument("--json", action="store_true", help="JSON으로")
+    ap.add_argument("--links", help="노션 주소 JSON 파일({편 경로: 주소}). readme와 check가 게시 기록 대신 쓴다(시험, 미리 보기)")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    rd = sub.add_parser("readme", help="README.md 전체를 원고로 다시 만든다(쓰는 명령은 이것 하나)")
+    rd.add_argument("--dry", action="store_true", help="쓰지 않고 만들 글을 찍는다")
     h = sub.add_parser("head", help="편마다 제목, 다루는 곳, 읽은 커밋")
     h.add_argument("--set", action="append", choices=list(SET_KO), help="이 묶음만(여러 번 줄 수 있다)")
     m = sub.add_parser("marks", help="근거 표시와 편 사이 참조")
@@ -194,8 +262,21 @@ def main(argv: list[str] | None = None) -> int:
             if a.unfixed:
                 res = {**res, "docs": [d for d in res["docs"] if d["fixed"] is False]}
         elif a.cmd == "check":
-            res = dcheck.run(repo, a.rev, cfg, sets)
+            links, why = None, None
+            if cfg.readme is not None:
+                try:
+                    links = notion_links(dcheck.readme_project(repo, cfg), a.links)
+                except Fail as e:
+                    if a.links:
+                        raise
+                    why = str(e)
+            res = dcheck.run(repo, a.rev, cfg, sets, links)
+            if why:
+                res["notes"].append(why)
             text = dcheck.render(res, a.verbose)
+        elif a.cmd == "readme":
+            res, code = cmd_readme(repo, a.rev, cfg, sets, a.links, a.dry)
+            text = render_readme(res)
         else:
             res = cmd_marks(repo, a.rev, cfg, sets, a.set, a.files)
             text = render_marks(res)
@@ -205,7 +286,9 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd != "refs":          # refs는 설정 경고를 결과 warnings에 담아 글과 JSON에 보인다
         for w in cfg.warnings:
             print(f"⚠ {w}", file=sys.stderr)
-    print(json.dumps(res, ensure_ascii=False, indent=1) if a.json else text)
+    print(json.dumps(res, ensure_ascii=False, indent=1) if a.json else text, file=sys.stderr if a.cmd == "readme" and res["errors"] else sys.stdout)
+    if a.cmd == "readme":
+        return code
     return 1 if a.cmd == "check" and res["errors"] else 0
 
 

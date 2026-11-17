@@ -49,6 +49,7 @@
 - pytest 끝 요약의 「화면 말 시험: 서기 몫 N줄 남음 …」은 화면 말 시험(`tests/test_screen_words.py`)이 남긴 수다. 서기 몫이 0이 아니면 서기가 이 문서와 `docs/style_guide.md`를 맞추고 `tests/data/screen_words.toml`의 `[[scribe]]` 줄을 지운다. 상세는 `docs/11_worktree.md` 「8.」. 11-17부터 서기 몫은 이름을 바꾼 코더가 고칠 수 없었던 줄만이다(코더가 먼저 고친다, 사용자 지시 21)
 - 코드가 바뀌어 밀린 문서는 거꾸로 찾기로 본다: `.venv/bin/python tools/docs.py refs --range <A>..<B> --unfixed`(읽기만, `docs/11_worktree.md` 「9.」). 합치기 카드에도 「코드로 걸린 문서 N, 안 고침 M」과 「문서로만 걸린 문서 K, 안 고침 L」로 나눠 보인다
 - 원고와 포트폴리오의 머리 주석, 근거 표시, 덮기, 참조는 문서 점검으로 본다: `.venv/bin/python tools/docs.py check [-v]`(읽기만, 틀린 것이 있으면 종료 코드 1, `docs/12_scribe.md` 「5.」 문서 문법 묶음). **pytest가 같은 점검을 돈다**(`tests/test_docs_selfcheck.py`, 11-17 사용자 결정): 틀린 것이 하나라도 있으면 pytest가 깨지고 실패 글에 틀린 줄이 나온다(의심은 실패시키지 않는다)
+- 맨 위 README.md를 원고로 다시 만드는 명령은 `.venv/bin/python tools/docs.py readme [--dry]`(문서 도구에서 파일을 쓰는 것은 이것 하나, `.foreman/docs.toml` `[readme]` 표가 있는 저장소만, `docs/12_scribe.md` 「5.」). 점검 9번이 README와 만들 글을 맞댄다. 11-17 FOREMAN은 표를 켜지 않았다(지금 README는 손으로 쓴 설계 문서이고, `docs/00_design.md`로 옮긴 뒤 켠다)
 - **시험 DB는 세션마다 따로다**(11-11, 합친 뒤부터 [log:test_db_per_session_20261111.md]). 그래서 "다른 pytest가 도는지 보고 기다린다 / 혼자 돌린다"는 이제 필요 없다(pgrep 확인도 하지 않는다)
   - 이름: `foreman_test_<자리>_<pid>` — `<자리>`는 `.worktrees/<이름>`이면 그 이름(소문자 · 24자까지), 원본 폴더면 `main`. pid는 pytest 프로세스 것이라 같은 worktree에서 둘을 같이 돌려도 겹치지 않는다. 마이그레이션도 그 DB에 이 폴더의 `migrations/`를 올려서 세션마다 갈린다
   - 시작 머리글에 `시험 DB: <이름>`이 찍힌다. 끝나면 지우고(Ctrl+C도 같다), 죽어서(`kill -9` · 세션 종료) 남은 것은 **다음 pytest가 뜰 때** 이름 끝 pid가 죽은 것만 치운다(자리 이름은 보지 않는다 — 다른 세션의 살아 있는 시험은 안 지운다)

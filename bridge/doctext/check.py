@@ -10,6 +10,10 @@
     7. 그림 `![…](경로)`: 파일이 있다
     8. 새 줄의 em dash와 가운뎃점(4단계, `bridge/doctext/dashdot.py`): check.dashdot_base 뒤에 더한 문서 줄과 코드 주석.
        칸이 없으면 검사하지 않고 결과 notes에 알린다(틀림으로 세지 않는다)
+    9. README(문서 정리 B, `bridge/doctext/readme.py`): `[readme]` 표가 있는 저장소만. 맨 위 README.md가 지금 원고로 만든 글
+       (제목, 포트폴리오 00편 첫 문단, 두 묶음 편 목록, 노션 링크)과 한 글자라도 다르면 틀림. 노션 주소는 부르는 쪽이 게시 기록에서
+       읽어 넘긴다(links). 넘기지 못하면 README에 걸린 주소를 그대로 두고 나머지만 맞대며 결과 notes에 알린다.
+       표가 없으면 검사하지 않고 notes에 알린다
     + 의심(틀림이 아니다): 숫자나 인용이 있는데 근거 표시가 없는 본문 줄(check.claim, check.claim_min)
 
 「다루는 곳」은 파일 단위 자리라 덮기 검사(4)만 읽는다. 밀림(바뀐 코드를 가리키는 줄)은 거꾸로 찾기(`bridge/docrefs.py`)가
@@ -26,7 +30,7 @@ import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from bridge.doctext import dashdot
+from bridge.doctext import dashdot, readme
 from bridge.doctext.config import DocsConfig
 from bridge.doctext.head import COVERS, READ, SHA, bad_covers, parse_head
 from bridge.doctext.lines import COMMENT, TEXT, walk
@@ -165,7 +169,56 @@ def pieces_of(repo: str, rev: str | None, folder: str, numbered: bool, records: 
     return sorted(out)
 
 
-def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str]) -> dict[str, Any]:
+README_OFF = "[readme] 표가 없어 README 생성 검사를 하지 않았습니다(.foreman/docs.toml)"
+
+
+def readme_project(repo: str, cfg: DocsConfig) -> str:
+    """게시 기록의 프로젝트 이름: [readme] project, 없으면 origin 주소의 저장소 이름, 그것도 없으면 저장소 폴더 이름."""
+    if cfg.readme and cfg.readme.get("project"):
+        return cfg.readme["project"]
+    try:
+        url = gits(repo, "remote", "get-url", "origin").strip()
+    except RepoError:
+        url = ""
+    name = re.split(r"[/:]", url.rstrip("/"))[-1] if url else ""
+    name = name[:-4] if name.endswith(".git") else name
+    return name or Path(gits(repo, "rev-parse", "--show-toplevel").strip()).name
+
+
+def readme_build(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
+                 links: dict[str, str | None]) -> readme.Built:
+    """지금 원고로 만든 README 글. links는 {편 경로: 노션 주소}."""
+    s = {k: sets[k] for k in readme.ORDER if sets.get(k)}
+    pieces = {k: pieces_of(repo, rev, d, False, cfg.records) for k, d in s.items()}
+    bodies = read_many(repo, rev, sorted({p for ps in pieces.values() for p in ps}))
+    title = (cfg.readme or {}).get("title") or readme_project(repo, cfg)
+    return readme.build(title, s, pieces, bodies, links)
+
+
+def readme_check(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
+                 links: dict[str, str | None] | None) -> tuple[list[str], list[str]]:
+    """(틀림, 알림). 점검 9번."""
+    if cfg.readme is None:
+        return [], [README_OFF]
+    md = read_many(repo, rev, [readme.PATH]).get(readme.PATH)
+    if md is None:
+        return ["README.md가 없습니다(tools/docs.py readme로 만듭니다)"], []
+    notes = []
+    if links is None:
+        b0 = readme_build(repo, rev, cfg, sets, {})
+        have = readme.links_in(md)
+        links = {b0.tops[k]: u for k, u in have.items() if k in b0.tops}
+        notes.append("게시 기록을 읽지 못해 README에 걸린 노션 주소는 맞대지 않았습니다(나머지는 맞댐)")
+    b = readme_build(repo, rev, cfg, sets, links)
+    if b.errors:
+        return [f"README를 만들 수 없습니다: {w}" for w in b.errors], notes
+    why = readme.diff(md, b.text)
+    errs = [f"README.md가 지금 원고로 만든 글과 다릅니다({why}). tools/docs.py readme로 다시 만듭니다"] if why else []
+    return errs, notes + b.notes
+
+
+def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
+        links: dict[str, str | None] | None = None) -> dict[str, Any]:
     """돌려주는 것: {errors: [{doc, line, what}], suspects: [...], sets: {묶음: 편 수}, marks, reads, cover: {target, covered}}.
     doc이 None인 틀림은 저장소 전체(읽은 커밋 묶음, 덮기)."""
     ck = cfg.check
@@ -312,9 +365,18 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str]) -> di
         err(None, None, f"줄표, 가운뎃점 검사를 돌리지 못했습니다: {dd['error']}")
     for p, i, name, s in dd["hits"]:
         err(p, i, f"새 줄의 {name}: {s}")
+    # 9. README
+    r_errs, r_notes = readme_check(repo, rev, cfg, sets, links)
+    for w in r_errs:
+        err(readme.PATH, None, w)
+    # 꺼진 것은 notes가 아니라 readme 칸으로(점검 8번의 dashdot 칸과 같은 꼴). render가 한 줄로 알린다
+    rd_on = r_notes != [README_OFF]
+    if rd_on:
+        notes += r_notes
     return {"errors": errors, "suspects": suspects, "sets": {k: len(ps) for k, ps in checked.items()},
             "marks": n_marks, "reads": reads, "cover": cover, "notes": notes,
-            "dashdot": {"base": dd["base"], "hits": len(dd["hits"]), "ran": bool(dd["base"]) and not dd["error"]}}
+            "dashdot": {"base": dd["base"], "hits": len(dd["hits"]), "ran": bool(dd["base"]) and not dd["error"]},
+            "readme": {"ran": rd_on}}
 
 
 def _mark_why(kind: str, v: str, kinds: list[str], view: FsView | GitView, docs_dir: str, log_dir: str, has) -> str | None:
@@ -338,6 +400,8 @@ def render(res: dict[str, Any], verbose: bool = False) -> str:
         out.append(f"줄표, 가운뎃점 검사: 기준 커밋 {dd['base'][:10]} 뒤 새 줄에서 {dd['hits']}건")
     for n in res.get("notes", []):
         out.append(f"알림  {n}")
+    if res.get("readme", {}).get("ran") is False:
+        out.append(f"알림  {README_OFF}")
     for e in res["errors"]:
         where = f"{e['doc']}:{e['line']}: " if e["doc"] and e["line"] else f"{e['doc']}: " if e["doc"] else ""
         out.append(f"틀림  {where}{e['what']}")
@@ -349,4 +413,4 @@ def render(res: dict[str, Any], verbose: bool = False) -> str:
 
 
 __all__ = ["BANNED", "FsView", "GitView", "IMG", "RepoError", "SKIP_LINE", "commit_exists", "cover_matches",
-           "covers_problem", "is_claim", "mark_problem", "render", "run"]
+           "covers_problem", "is_claim", "mark_problem", "readme_build", "readme_check", "readme_project", "render", "run"]

@@ -28,6 +28,10 @@
     cover_by = ["notion"]                 # 덮기 검사: 문서 묶음과 기록 밖 추적 파일은 이 묶음 어느 편의 다루는 곳에 들어야 한다
     dashdot_base = "648ac08…"             # 새 줄 em dash와 가운뎃점 검사의 기준 커밋(4단계). 없으면 검사하지 않고 점검 결과에 알린다
 
+    [readme]                    # README 생성(tools/docs.py readme, 점검 9번, 문서 정리 B). 이 표가 있어야 켜진다.
+    title = "FOREMAN"           # README 제목. 없으면 project
+    project = "foreman"         # 게시 기록(doc_publish)의 프로젝트 이름. 없으면 origin 주소의 저장소 이름, 그것도 없으면 폴더 이름
+
 모르는 칸은 경고로 알리고 쓰지 않는다. 깨진 파일이나 틀린 값은 기본값으로 떨어지지 않고 DocsConfigError로 멈춘다
 (조용히 FOREMAN 기본값으로 돌면 다른 저장소의 기록 폴더가 코드로 세어지는 것처럼 틀린 결과가 알림 없이 나온다).
 """
@@ -140,13 +144,15 @@ class DocsConfig:
     allowed_domains: list[str] = field(default_factory=list)
     not_code: list[str] = field(default_factory=lambda: [".md"])
     check: CheckConfig = field(default_factory=CheckConfig)
-    source: str = "default"                 # "default" 또는 읽은 파일(`.foreman/docs.toml`, rev가 있으면 `rev:.foreman/docs.toml`)
+    readme: dict[str, str] | None = None    # [readme] 표(title, project). None이면 README 생성과 점검 9번이 꺼져 있다
+    source: str = "default"                # "default" 또는 읽은 파일(`.foreman/docs.toml`, rev가 있으면 `rev:.foreman/docs.toml`)
     warnings: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {"sets": dict(self.sets), "records": list(self.records), "pair_numbers": self.pair_numbers,
                 "read_commit": self.read_commit, "allowed_domains": list(self.allowed_domains),
                 "not_code": list(self.not_code), "check": self.check.as_dict(),
+                "readme": dict(self.readme) if self.readme is not None else None,
                 "source": self.source, "warnings": list(self.warnings)}
 
 
@@ -169,10 +175,22 @@ def parse(text: str, source: str = PATH) -> DocsConfig:
     except tomllib.TOMLDecodeError as e:
         raise DocsConfigError(f"{source}를 읽지 못했습니다: {e}") from e
     cfg = DocsConfig(source=source)
-    known = {"sets", "records", "pair_numbers", "read_commit", "allowed_domains", "not_code", "check"}
+    known = {"sets", "records", "pair_numbers", "read_commit", "allowed_domains", "not_code", "check", "readme"}
     for k in raw:
         if k not in known:
             cfg.warnings.append(f"{source}: 모르는 칸 {k}는 쓰지 않습니다")
+    if "readme" in raw:
+        rd = raw["readme"]
+        if not isinstance(rd, dict):
+            raise DocsConfigError(f"{source}: readme는 표([readme])여야 합니다")
+        cfg.readme = {}
+        for k, v in rd.items():
+            if k not in ("title", "project"):
+                cfg.warnings.append(f"{source}: 모르는 칸 readme.{k}는 쓰지 않습니다")
+            elif not isinstance(v, str) or not v.strip() or "\n" in v:
+                raise DocsConfigError(f"{source}: readme.{k}는 한 줄 글이어야 합니다: {v!r}")
+            else:
+                cfg.readme[k] = v.strip()
     if "check" in raw:
         cfg.check = _check(raw["check"], source, cfg.warnings)
     if "sets" in raw:
