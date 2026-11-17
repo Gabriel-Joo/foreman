@@ -17,7 +17,7 @@ FOREMAN의 승인은 Claude Code(CC)가 도구를 부르기 직전마다 브리�
 
 `unmatched = "ask"`로 바꾸면 규칙에 없는 것도 묻게 할 수 있다 [code:config/approval.toml]. 프로젝트마다 따로 둘 수 있지만 지금은 어느 프로젝트도 그렇게 쓰지 않는다.
 
-프로젝트마다 `mode`도 있다. `enforce`는 판정을 CC에 돌려주고, `observe`는 기록만 하고 CC에는 아무것도 돌려주지 않는다. 실행 중인 세션에 hook이 다음 도구 호출부터 바로 걸리기 때문에, 새 프로젝트는 관찰로 시작해 쌓인 판정을 보고 바꾼다. 지금 설정은 FOREMAN이 `enforce`, 런슈즈, 펫퍼민트, 인프라가 `observe`다 [code:config/approval.toml]. 관찰 모드에서도 판정은 모두 기록되므로, 화면의 승인 이력에서 「걸렸을 것」으로 볼 수 있다.
+프로젝트마다 `mode`도 있다. `enforce`는 판정을 CC에 돌려주고, `observe`는 기록만 하고 CC에는 아무것도 돌려주지 않는다. 실행 중인 세션에 hook이 다음 도구 호출부터 바로 걸리기 때문에, 새 프로젝트는 관찰로 시작해 쌓인 판정을 보고 바꾼다. 지금 설정은 FOREMAN과 인프라가 `enforce`, 런슈즈, 펫퍼민트가 `observe`다. 인프라는 클러스터 작업 동안만 `observe`였다 [code:config/approval.toml] [c:12c07f6]. 관찰 모드에서도 판정은 모두 기록되므로, 화면의 승인 이력에서 「걸렸을 것」으로 볼 수 있다.
 
 ## 한 번의 판정이 지나는 차례
 

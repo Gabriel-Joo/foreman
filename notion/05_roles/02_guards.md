@@ -57,7 +57,7 @@ flowchart TD
 
 ### 승인 모드와 상관없이 도는 것
 
-승인 판정에는 프로젝트마다 모드가 있다. `enforce`는 판정을 CC에 돌려주고, `observe`는 기록만 하고 CC에는 아무것도 돌려주지 않는다. 지금 FOREMAN은 enforce, 런슈즈와 펫퍼민트와 인프라는 observe다 [code:config/approval.toml]. observe는 "새 프로젝트를 붙일 때 먼저 지켜보기만 한다"는 뜻이다.
+승인 판정에는 프로젝트마다 모드가 있다. `enforce`는 판정을 CC에 돌려주고, `observe`는 기록만 하고 CC에는 아무것도 돌려주지 않는다. 지금 FOREMAN과 인프라는 enforce, 런슈즈와 펫퍼민트는 observe다 [code:config/approval.toml] [c:12c07f6]. observe는 "새 프로젝트를 붙일 때 먼저 지켜보기만 한다"는 뜻이다.
 
 스키마 잠금, 다른 저장소 막기, `pgrep -f` 막기는 이 승인 모드를 보지 않는다. 런슈즈가 observe여도 두 세션이 동시에 런슈즈 마이그레이션을 만들려 하면 둘째를 막는다. 까닭은 이 셋이 "사람에게 물을 일"이 아니라 "어느 쪽으로 가도 망가지는 일"이기 때문이다. 스키마 충돌은 한쪽 코드를 깨뜨리고, 다른 저장소 쓰기는 그 저장소 세션의 일을 흐트러뜨리고, `pgrep -f`의 자기 걸림은 셸을 영원히 돌게 하거나 자기 자신을 죽인다. 지켜보기만 해서 얻을 것이 없다 [code:bridge/approvals.py] [docs:11_worktree.md].
 

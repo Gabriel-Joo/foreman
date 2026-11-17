@@ -82,9 +82,9 @@ PreToolUse는 승인 판정만 하는 자리가 아니다. 같은 hook에서 승
 | `enforce` | 판정(allow, ask)을 CC에 돌려준다. ask면 승인 창이 뜬다 |
 | `observe` | 판정을 기록만 하고 CC에는 아무것도 돌려주지 않는다. 판정이 ask였어도 세션은 모르고 지나간다 |
 
-지금 값은 기본과 FOREMAN이 `enforce`, 런슈즈, 펫퍼민트, 인프라가 `observe`다 [code:config/approval.toml].
+지금 값은 기본과 FOREMAN, 인프라가 `enforce`, 런슈즈, 펫퍼민트가 `observe`다 [code:config/approval.toml] [c:12c07f6].
 
-observe가 있는 까닭은 hook이 실행 중인 세션에 곧바로 걸리기 때문이다. 설정을 바꾸면 다음 도구 호출부터 새 판정이 적용된다. 처음 규칙을 만들 무렵 모의 실험으로는 런슈즈와 펫퍼민트에 하루 11~18건의 승인 창이 갑자기 생길 판이었다 [log:stage5_approval_result.md]. 다른 프로젝트 세션은 그 프로젝트 사람이 돌리는 일이라 FOREMAN이 하루아침에 흐름을 끊을 수 없다. 그래서 observe로 시작해 판정을 쌓고, 쌓인 판정(「걸렸을 것」)을 보고 사람이 enforce로 바꾸게 했다. observe 기록은 실제로 쓸모가 있었다. 펫퍼민트 세션이 파일을 이력에서 지우려고 `git filter-branch`, `reflog expire --expire=now --all`, `gc --prune`을 차례로 실행한 것이 observe 기록에 남았고, 그때는 어느 규칙에도 걸리지 않았다는 것을 알게 되어 `git-이력파괴` 규칙을 새로 만들었다 [code:README.md]. 인프라는 클러스터 작업 묶음 동안 사람이 승인 카드를 풀어 달라고 해서 임시로 observe에 두었다 [code:config/approval.toml].
+observe가 있는 까닭은 hook이 실행 중인 세션에 곧바로 걸리기 때문이다. 설정을 바꾸면 다음 도구 호출부터 새 판정이 적용된다. 처음 규칙을 만들 무렵 모의 실험으로는 런슈즈와 펫퍼민트에 하루 11~18건의 승인 창이 갑자기 생길 판이었다 [log:stage5_approval_result.md]. 다른 프로젝트 세션은 그 프로젝트 사람이 돌리는 일이라 FOREMAN이 하루아침에 흐름을 끊을 수 없다. 그래서 observe로 시작해 판정을 쌓고, 쌓인 판정(「걸렸을 것」)을 보고 사람이 enforce로 바꾸게 했다. observe 기록은 실제로 쓸모가 있었다. 펫퍼민트 세션이 파일을 이력에서 지우려고 `git filter-branch`, `reflog expire --expire=now --all`, `gc --prune`을 차례로 실행한 것이 observe 기록에 남았고, 그때는 어느 규칙에도 걸리지 않았다는 것을 알게 되어 `git-이력파괴` 규칙을 새로 만들었다 [code:README.md]. 인프라는 클러스터 작업 묶음 동안 사람이 승인 카드를 풀어 달라고 해서 임시로 observe에 두었다가, 그 묶음이 끝난 뒤 enforce로 올렸다 [code:config/approval.toml] [c:12c07f6].
 
 ## 결정은 먼저 온 쪽이 정한다
 

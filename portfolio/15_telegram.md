@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/notify.py, config/notify.toml, bridge/wake.py, config/wake.toml
+다루는 곳: bridge/notify.py, config/notify.toml, bridge/wake.py, config/wake.toml, scripts/foreman-bridge-alert.sh, deploy/systemd/foreman-bridge.service
 읽은 커밋: fb7121b
 -->
 # 텔레그램 알림
