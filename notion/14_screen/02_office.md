@@ -388,7 +388,4 @@ CC-BY의 출처 표시는 `LICENSES.md`에 작가 이름, 라이선스, 출처 �
 ## 남은 것
 
 - 오피스 사람(2dPig)은 정면 한 장뿐이라 뒤돌아 걷는 모습이 없다 [log:stage10_office_result.md].
-- 직접 그린 소품은 음영이 얕아 팩 그림 옆에서 평평하다 [log:stage10_office_result.md].
-- 서브에이전트는 길을 찾지 않아 가구 위를 지날 수 있다 [log:stage10_office_result.md].
-- 셸을 연 채로는 방이 아주 작아진다. 가장 작은 경우 이름표가 겹치지는 않지만 읽기 어렵다. 셸 높이를 줄일지, 그때 이름표를 숨기고 호버로 보일지는 아직 고르지 않았다 [log:designer_grid_20261110.md].
 - `plain`은 모눈, 길찾기, 머리 위 쌓기 틀, 자리 말풍선 밖이다 [code:bridge/static/js/office.js].

@@ -638,3 +638,10 @@
 - **진행 글 한 줄을 영어로 썼다.** 인프라 기술문서 묶음을 받은 뒤 「Line numbers match. Waiting for the two FOREMAN technical-doc batches.」를 썼다. CLAUDE.md 「항상 한국어로 답한다(진행 글까지)」 위반이다. 쓰기 전에 보지 않았다. 바로 다음 글에서 한국어로 다시 쓰고 위반이라고 밝혔다.
 - **인프라 저장소에 `git fetch`를 시도했다.** 일감은 「인프라 저장소는 읽기만」인데, fetch는 ref를 쓰는 명령이다. 다른 저장소 막기 훅이 거부해 실행되지 않았다. 받아 둔 origin/main을 읽고 `git ls-remote`로 원격 main과 같은 판인지 확인하는 것으로 바꿨다.
 - 위 둘 말고는 없다. `git branch --contains`가 조사 세션 훅에 한 번 막혔는데 읽기 명령이었고, `git merge-base --is-ancestor`로 바꿨다. 파일은 이 log 하나만 Write로 썼다. 서브에이전트 다섯도 파일을 만들지 않았다고 보고했다. `pgrep -f`는 쓰지 않았다. DB와 브리지 API는 읽기만 했다(토큰은 셸 변수로만 썼다).
+
+## 11-17 C가 찾은 정정
+
+위 줄은 고치지 않고 정정만 덧붙인다. 출처는 `log/foreman-6_limits_todo_recheck_20261117.md` 7절 첫 항목이다.
+
+- 6-2절 04_tunnel 41의 근거 `03_cloudflare_tunnel.md 697`은 인프라 origin/main에서 빈 줄이다. 까닭(앱이 늘어도 터널을 고치지 않고 Ingress만 더한다)은 같은 파일 153줄에 있다.
+- 6-1절 07_registry 51의 근거 `05_harbor.md 228~235`는 분산 저장소를 들이지 않은 이야기다. Harbor를 w3 한 노드에 둔 까닭(노드 이름으로 장애 범위를 말한다)은 `08_scale_out.md` 129줄이다.

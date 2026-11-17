@@ -316,5 +316,3 @@ claude -p --model <모델> --output-format json --no-session-persistence
 ## 아직 약한 곳
 
 기계 판정의 재현율은 0.71이다. 잃은 것 열 개 가운데 셋쯤은 놓친다 [log:handoff_v2_d_result.md]. 사람이 목록을 보다가 더하는 것을 전제로 받아들인 수치다. 뒤집힌 결정을 잃은 것으로 내는 위험은 판정 지시문과 세션의 재선별, 사람 승인 세 겹으로 막지만 판정 단계에서 없앤 것은 아니다.
-
-화면의 비용 어림값은 실측 한 번으로 정한 고정값이다. 점검이 쌓이면 DB의 실제 비용으로 다시 계산할 수 있지만 그 길은 아직 없다 [log:coder_loss_cost_const_20261115.md]. 창 크기는 Opus만 실측으로 확인했고 Haiku는 추정, Sonnet은 모른다 [code:config/models.toml]. 그래서 Sonnet 세션은 지금 %가 아니라 토큰 수로만 보이고, 비율 문턱도 걸리지 않는다. 추정이 틀리면 창 초과 알림이 알려 준다.
