@@ -60,7 +60,7 @@
     "infra": { "title": "봉인실", "jenkins": ["봉인 문양", "Jenkins 빌드"], "harbor": ["보물창고", "Harbor 이미지"], "argocd": ["전송 아치", "ArgoCD 배포"] }
   },
 
-  "aura": { "_": "발밑 역할 색 원(11-13, js/aura.js) — star 육망성 · rune 룬 고리 · glow 번짐만. 견주기 ?aura=<꼴>|off. 색은 render.js ROLE_COLOR(역할 배지와 같은 값)", "style": "star" },
+  "aura": { "_": "발밑 역할 색 원(11-13, js/aura.js) — star 육망성 · rune 룬 고리 · glow 번짐만. 견주기 ?aura=<꼴>|off. 색은 roles.js ROLE_COLOR(역할 배지와 같은 값)", "style": "star" },
   "roles": {
     "_": "역할 → 로브 색. 렌더러가 옷 픽셀의 색상만 바꾼다. 색은 js/roles.js ROLE_CLOTH 한 표(11-15), 이 테마만 다른 값이 있으면 colors에 적어 덮는다. 미리 보기 ?roles=demo",
     "colors": {},

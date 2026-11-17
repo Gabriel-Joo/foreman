@@ -147,7 +147,7 @@ export function stateBadge(s) {
 export function sessionName(s) { return s.custom_title || s.title || s.cc_name || s.short; }   // 사람이 붙인 이름이 먼저(11-05)
 export function sessionSub(s) {
   // 역할은 제목 앞 배지(roleBadge)가 맡는다(11-09). 여기는 캐릭터 이름에서 역할 이름을 뗀 나머지만 —
-  // "코더 foreman-3" → "따로 작업 foreman-3", "코더" → 없음. 역할 캐릭터가 아닌 이름(떠돌이 등)은 그대로
+  // "코더 foreman-3" → "작업방 foreman-3", "코더" → 없음. 역할 캐릭터가 아닌 이름(떠돌이 등)은 그대로
   const c = s.character || '';
   for (const l of Object.values(ROLE_LABEL)) {
     if (c === l) return '';

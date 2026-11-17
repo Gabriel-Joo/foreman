@@ -64,7 +64,7 @@
     "infra": { "title": "출하장", "jenkins": ["검수대", "Jenkins 빌드"], "harbor": ["팔레트", "Harbor 이미지"], "argocd": ["트럭", "ArgoCD 배포"] }
   },
 
-  "aura": { "_": "발밑 역할 색 원(11-13, js/aura.js) — hazard 끊긴 작업 구역 고리 · tape 바닥 테이프 모서리 · glow 번짐만. 견주기 ?aura=<꼴>|off. 색은 render.js ROLE_COLOR(역할 배지와 같은 값)", "style": "hazard" },
+  "aura": { "_": "발밑 역할 색 원(11-13, js/aura.js) — hazard 끊긴 작업 구역 고리 · tape 바닥 테이프 모서리 · glow 번짐만. 견주기 ?aura=<꼴>|off. 색은 roles.js ROLE_COLOR(역할 배지와 같은 값)", "style": "hazard" },
   "roles": {
     "_": "역할 → 안전모 색. 역할이 없으면 노란 안전모, 감독(foreman)은 흰 안전모. 색은 js/roles.js ROLE_CLOTH 한 표(11-15)이고 여기 colors는 현장만 다른 값(감독 흰색, 코더 짙은 파랑). 미리 보기 ?roles=demo",
     "mode": "helmet", "default": "#f2c14e", "foreman": "#f4f4f4",

@@ -15,6 +15,7 @@ import { buildGrid, findPath, footprint, nearestFree, RES } from './walk.js';
 import { uiScale } from './uiscale.js';
 import { wrapWords } from './wrap.js';
 import { applyGrid, INFRA_STAGES, gridProblems } from './grid.js';
+import { harborStatus, PUSH_STEP } from './shipstate.js';
 import { auraOf, auraStyle, drawAura, poseDrop } from './aura.js';
 import { themeCloth, clothColor } from './roles.js';
 import { STACK_GAP, column, stackCandidates, stackCover, pickStack, overTop, liftsOver, leapOver, nearBoxes, seatHost, isSide, freeColumn } from './overhead.js';
@@ -32,7 +33,11 @@ const sizeFont = (f) => String(f).replace(/(\d+(?:\.\d+)?)px/, (m, n) => `${fpx(
 const KNOWN = [['runshoes', '런슈즈'], ['petmint-rag-chatbot', '펫퍼민트'], ['foreman', 'FOREMAN'], ['ronanlab-infra', '인프라']];
 // 출하장(Jenkins → Harbor → ArgoCD)이 없는 현장(11-10) — 빌드하는 앱이 아니다(config/pipeline.toml에 없음). 모눈 칸은 같게 두고
 // 단계 칸 · 가구 · 화살표 · 배송 담당을 그리지 않는다. 이름표는 "<테마의 출하 이름> 없음"(출하장 · 봉인실 · 배포 파이프)
-const NO_SHIP = new Set(['ronanlab-infra']);
+// 값은 호버에 붙는 까닭 — 현장마다 왜 줄이 없는지가 다르다. FOREMAN은 이미지를 만들지 않아(작업 폴더에서 바로 돈다, 11-17) 세 칸이 늘 「기록 없음」이던 것을 없앴다
+const NO_SHIP = new Map([
+  ['ronanlab-infra', '빌드해 내보내는 앱이 아니라 빌드 → 이미지 → 배포 줄이 없습니다. 클러스터 · 서버 작업은 이 현장 세션에서 봅니다.'],
+  ['foreman', '이미지를 만들지 않고 작업 폴더에서 바로 도는 앱이라 빌드 → 이미지 → 배포 줄이 없습니다. 바뀐 코드는 저장소에 올려 두는 것으로 끝납니다.'],
+]);
 const KEEP_KEY = 'foremanKeepView';      // 테마를 바꿀 때 보던 화면 · 고른 세션(sessionStorage, 11-11)
 // 글자 색(11-11 사용자) — 테마마다 다르게 하지 않는다(글씨체만 테마 것). 캐릭터 이름은 움직이고 먼저 찾는 것이라 노랑,
 // 방 이름(감독실 이름표 포함)은 자리가 고정이라 흰색으로 가라앉힌다. 바탕은 둘 다 검정. 전엔 방 이름 = 테마 팀장 색(11-10)
@@ -178,8 +183,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   window.addEventListener('foreman-state', () => loadForeman());
   setTimeout(loadForeman, 500);
   setInterval(loadForeman, 60000);
-  // 사용량(11-08, docs/15) — 머리 칩 "5h 42% · 주 91%", 지난 30분 환산액 상위 셋의 열기, 한도 90% 넘으면 현황판 경고등.
-  // 못 읽으면 칩이 "⚠ 사용량"으로 바뀐다(조용히 옛 숫자를 보이지 않게)
+  // 사용량(11-08, docs/15) — 머리 칩 "한도: 5시간 42% · 주간 91%", 지난 30분 환산액 상위 셋의 열기, 한도 90% 넘으면 현황판 경고등.
+  // 못 읽으면 칩이 "⚠ 한도"로 바뀐다(조용히 옛 숫자를 보이지 않게)
   let usage = null;                              // /api/usage/brief
   const hotOf = new Map();                       // 세션 id → 달러/시간
   async function loadUsage() {
@@ -369,7 +374,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
   const HANDOFF_MS = 6000, DONE_LINGER_MS = 25000, FAIL_STAY_MS = 30 * 60000;
   function chainStage(ch) {
     const s = ch.stages || {}, j = s.jenkins || {}, a = s.argocd || {};
-    const pushy = /push|harbor|이미지/i.test(j.step || '');
+    const pushy = PUSH_STEP.test(j.step || '');
     if (a.status === 'running' || a.status === 'waiting') return { k: 'argocd', st: a.status, active: true };
     if (a.status === 'failed') return { k: 'argocd', st: 'failed', end: Date.parse(a.ended_at || ch.at) };
     if (a.status === 'success') return { k: 'argocd', st: 'success', end: Date.parse(a.ended_at || ch.at) };
@@ -646,9 +651,8 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
         const chain = (plan && plan.ch) || (pp && pp.chains && pp.chains[0]);
         const stages = (chain && chain.stages) || {};
         for (const kind of ['jenkins', 'harbor', 'argocd']) {
-          let status = stages[kind] && stages[kind].status;
-          if (kind === 'harbor' && !status && stages.jenkins && stages.jenkins.skipped) status = 'none';   // 문서만 — 이미지 없음(정상)
-          else if (kind === 'harbor' && !status && stages.jenkins) status = stages.jenkins.status === 'failed' && stages.jenkins.step !== '빌드·push' ? 'success' : stages.jenkins.status;
+          // Harbor 칸은 Jenkins 행에서 미루어 그린다(shipstate.js) — 그 빌드의 이미지가 실제로 올라갔는지가 기준
+          const status = kind === 'harbor' ? harborStatus(stages) : stages[kind] && stages[kind].status;
           room['st_' + kind] = status || 'none';
         }
         if (plan) {
@@ -1140,7 +1144,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     HITS = []; NAMES = []; MAP_BOXES = []; BOARD_NAMES = []; LABELS = [];
     if (LAMP) {                                     // 경고등 호버(11-09) — 왜 켜졌는지
       const [lx, ly] = toScreen(LAMP.x, LAMP.y), rr = Math.max(10, 8 * cam.s);
-      const head = LAMP.max >= 90 ? `사용량 경고등 — 구독 한도를 ${Math.round(LAMP.max)}% 썼습니다. 100%가 되면 리셋까지 모든 세션이 멈춥니다.`
+      const head = LAMP.max >= 90 ? `사용량 경고등 — 구독 한도를 ${Math.round(LAMP.max)}% 썼습니다. 한도에 닿으면 추가 요금으로 넘어가거나, 추가 사용이 꺼져 있으면 멈춥니다.`
         : `사용량 경고등 — 사용량을 읽지 못하고 있습니다. 한도 %가 낡았을 수 있습니다.${usageTipRows.why}`;
       HITS.push({ x: lx - rr, y: ly - rr, w: 2 * rr, h: 2 * rr, soft: true, tip: textTip([head, ...usageTipRows.lines].join('\n')) });
     }
@@ -1402,7 +1406,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
     const iz = L.zones.infra, it = (theme.tags && theme.tags.infra) || {};
     if (iz && iz.jenkins && room && room.noShip) {
       // 이름은 테마의 것(출하장 · 봉인실 · 배포 파이프 — tags.infra.title, 11-11). 전엔 "출하장 없음"이 세 테마 모두에 박혀 있었다
-      out.push({ zone: 'infra', text: `${it.title || '파이프라인'} 없음`, x: GRIDDEF ? iz.x : 1, y: GRIDDEF ? iz.y : iz.y - 0.9, role: 'ship', noShip: true });
+      out.push({ zone: 'infra', text: `${it.title || '파이프라인'} 없음`, x: GRIDDEF ? iz.x : 1, y: GRIDDEF ? iz.y : iz.y - 0.9, role: 'ship', noShip: true, why: NO_SHIP.get(room.name) });
     } else if (iz && iz.jenkins) {
       // 모눈이 없는 테마(도형 plain)는 출하 라인 위 한 줄에
       if (it.title) out.push({ zone: 'infra', text: it.title, x: GRIDDEF ? iz.x : 1, y: GRIDDEF ? iz.y : iz.y - 0.9, role: 'ship' });
@@ -2664,7 +2668,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       return `<div class="tip-h">${'①②③'[l.i]} ${esc(stageName(l.stage).name)}</div><div class="tip-b">${esc(l.what || INFRA_ROLE[l.stage].what)}</div><div>${INFRA_ROLE[l.stage].desc}</div>` +
         (st !== 'none' ? `<div class="tip-s">${esc(STATUS_KO[st] || st)}${st === 'waiting' ? '. ' + WAIT_TIP : ''}</div>` : '');
     }
-    if (l.noShip) return `<div class="tip-h">${esc(l.text)}</div><div class="tip-b">파이프라인 없음</div><div>빌드해 내보내는 앱이 아니라 빌드 → 이미지 → 배포 줄이 없습니다. 클러스터 · 서버 작업은 이 현장 세션에서 봅니다.</div>`;
+    if (l.noShip) return `<div class="tip-h">${esc(l.text)}</div><div class="tip-b">파이프라인 없음</div><div>${esc(l.why || '빌드 → 이미지 → 배포 줄이 없습니다.')}</div>`;
     if (l.zone === 'infra') return `<div class="tip-h">${esc(l.text)}</div><div class="tip-b">파이프라인</div><div>커밋이 빌드 → 이미지 → 배포 순서로 나가는 곳입니다. 바닥 화살표 ① ② ③이 그 순서입니다.</div>`;
     const role = ZONE_ROLE[l.role];
     return `<div class="tip-h">${esc(l.text)}</div>${role ? tipOf(role) : ''}`;
