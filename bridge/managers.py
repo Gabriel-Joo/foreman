@@ -73,7 +73,8 @@ def escalate_hint(manager_sid: int | None) -> str:
     """사람에게 올리는 법 한 줄(11-13) — 사람 화면 관리자 머리 위 · 알림이 이 API 하나로 뜬다(응답 글로는 뜨지 않는다)."""
     sid = manager_sid if manager_sid is not None else "{관리자 세션 id}"
     return (f'사람에게 올릴 때: `POST /api/sessions/{sid}/escalate` 본문 {{"kind": "report" 또는 "question", "text": "…"}}'
-            " — 응답 글만으로는 사람 화면에 뜨지 않습니다")
+            " — 응답 글만으로는 사람 화면에 뜨지 않습니다. 물음에는 번호(#id, 응답의 id)가 붙고, 사람이 그 번호를 넣어 답하면 끝납니다"
+            "(번호 없이 넘어가면 사람 화면에 「아직 안 본 물음」으로 남습니다)")
 
 
 def relay_text(kind: str, from_label: str, to_project: str, body: str, manager_sid: int | None = None) -> str:

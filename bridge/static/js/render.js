@@ -97,9 +97,17 @@ const ESC_TIP = {
   // 11-13 사람 승인 합치기 카드는 브리지가 관리자 머리 위로 올린다(merge_sid) — 답이 아니라 [합치기]를 눌러야 풀린다
   question: (e) => (e && e.merge_sid != null
     ? `사용자 답 기다림 — 세션 ${e.merge_sid}의 합치기 카드가 사람 승인을 기다립니다. 말풍선을 누르면 그 세션 패널의 「세션 정리」 탭에서 합치거나 나중으로 미룹니다. 합치거나 미루면 사라집니다.${e.text ? `\n${e.text}` : ''}`
-    : `사용자 답 기다림 — 관리자가 사람에게 물었습니다. 패널 입력 칸에 답하면 풀립니다.${e && e.text ? `\n${e.text}` : ''}`),
+    : `사용자 답 기다림 — 관리자가 사람에게 물었습니다(물음 #${e && e.id}). 패널 입력 칸에 #${e && e.id}를 넣어 답하면 끝납니다. 번호 없이 입력하면 「아직 안 본 물음」으로 남습니다.${e && e.text ? `\n${e.text}` : ''}`),
   report: (e) => `사용자에게 보고함 — 관리자가 사람에게 보고했습니다. 누르면 대화가 열리고, 읽으면 사라집니다.${e && e.text ? `\n${e.text}` : ''}`,
+  // 11-17(사용자 결정 (다)) 번호 없이 넘어간 물음. 사람이 [봤다]로 하나씩 지운다(관리자 패널)
+  unseen: (list) => `아직 안 본 물음 — 관리자가 올린 물음인데, 물음 번호 없이 다른 입력으로 넘어갔습니다. 관리자 패널에서 읽고 [봤다]를 누르면 하나씩 사라집니다.`
+    + list.map((u) => `\n#${u.id} ${u.text || ''}`).join(''),
 };
+// 아직 안 본 물음 목록(11-17). 관리자 머리 위와 관리자 패널이 같이 쓴다
+export function escUnseen(s) {
+  return (s && s.escalate && s.escalate.unseen) || [];
+}
+export function unseenTip(list) { return ESC_TIP.unseen(list); }
 // 캐릭터 머리 위 말풍선(11-11 사용자 — 답 기다림 · 보고가 캐릭터에 안 보였다). 답 기다림은 노랑(warn), 보고 옴은 초록(ok)으로 갈라
 // 「답해야 하는 것」과 「읽기만 하면 되는 것」을 한눈에. 보고 옴은 그 세션 패널을 열면 사라진다(opanel → store.reportRead)
 export function needMark(s) {
@@ -111,6 +119,8 @@ export function needMark(s) {
   if (s.asks) return { text: '답 기다림', tone: 'warn', tip: humanNeed(s).tip };
   const e = s.escalate || {};
   if (e.question) return { text: '사용자 답 기다림', tone: 'warn', tip: ESC_TIP.question(e.question), mergeSid: e.question.merge_sid ?? null };
+  // 11-17 번호 없이 넘어간 물음. 사용자 답 기다림 다음, 합치기 기다림과 보고보다 위(사람이 아직 읽지 않은 물음이다)
+  if (e.unseen && e.unseen.length) return { text: `아직 안 본 물음 ${e.unseen.length}`, tone: 'warn', tip: ESC_TIP.unseen(e.unseen) };
   // 겹치면(11-11): 권한 거부 > 답 기다림 > 합치기 기다림 > 보고 옴. 앞의 둘은 세션이 막혀 있어 지금 사람 손이 먼저 필요하고,
   // 합치기는 사람이 눌러야 끝나는 일이라 읽기만 하면 되는 보고보다 위다(합치기 카드가 떠 있으면 그 응답은 보고이기도 하다)
   // 11-13(사용자): 관리자 머리 위로 올렸으면(to_manager) 여기에는 안 띄운다 — 관리자가 없거나 못 올렸을 때만 남는다

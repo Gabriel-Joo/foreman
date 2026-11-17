@@ -128,15 +128,17 @@ async def test_merge_question_survives_human_input_and_does_not_hide_other_quest
         n = (await _needs(engine, m))["escalate"]
         assert n["question"]["id"] == q["id"] and "merges" not in n
         # 새 카드 물음 → 사람이 그 관리자에게 입력: 다른 물음은 풀리고 카드 물음은 남는다
+        # (11-17 번호 없이 넘어간 다른 물음은 「아직 안 본 물음」 목록으로, tests/test_escalate_number.py)
         mq2 = await escalate(engine, m, "question", "세션 8 합치기 카드", tag=merge_tag(8))
         with conn.cursor() as c:
             c.execute("UPDATE session_action SET created_at = %s WHERE action = 'escalate'", (_now() - timedelta(minutes=5),))
         _human_turn(conn, m, _now() - timedelta(minutes=1))
         n = (await _needs(engine, m))["escalate"]
         assert n["question"]["id"] == mq2["id"] and n["question"]["merge_sid"] == 8
+        assert [u["id"] for u in n["unseen"]] == [q["id"]]
         # 사람이 [답 안 해도 됨]을 누르면 그 카드 물음도 꺼진다
         assert (await asks_off(engine, m))["ok"]
-        assert "escalate" not in await _needs(engine, m)
+        assert "question" not in (await _needs(engine, m))["escalate"]
     finally:
         await engine.dispose()
 

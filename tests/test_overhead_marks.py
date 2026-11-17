@@ -2,7 +2,7 @@
 
 - 관리자: 출처 relay · manager_ask 턴의 응답으로는 「보고 옴」 · 「답 기다림」을 내지 않는다. human 턴은 그대로
 - 작업 세션: 알림이 관리자에게 넘긴 기록(relay-out ok, 같은 종류 · 같은 턴)이 있으면 relayed. 실패 · 기록 없음 · 중계 꺼짐이면 사람에게
-- escalate: 관리자만. 보고는 읽으면, 물음은 사람이 입력하거나 [답 안 해도 됨]이면 사라진다
+- escalate: 관리자만. 보고는 읽으면, 물음은 [답 안 해도 됨]이면 사라진다. 사람이 입력하면 「아직 안 본 물음」으로(11-17, tests/test_escalate_number.py)
 """
 
 import asyncio
@@ -187,7 +187,8 @@ async def test_escalate_manager_only_read_and_answer(env):
             c.execute("UPDATE session_action SET created_at = %s WHERE action = 'escalate'", (NOW - timedelta(minutes=5),))
         assert "question" in (await _needs(engine, m))["escalate"]
         _turn(conn, m, 1, "human", NOW - timedelta(minutes=1))
-        assert "escalate" not in await _needs(engine, m)
+        e = (await _needs(engine, m))["escalate"]                                # 11-17 번호 없이 입력: 아직 안 본 물음으로 남는다
+        assert "question" not in e and [u["text"] for u in e["unseen"]] == ["하나 더 묻습니다"]
     finally:
         await engine.dispose()
 

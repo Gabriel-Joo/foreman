@@ -11,6 +11,7 @@
 """
 
 import asyncio
+import logging
 import os
 import re
 import time
@@ -33,6 +34,7 @@ from bridge.roles import WORKER_ROLES
 from bridge.uiver import ui_version
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
+log = logging.getLogger(__name__)
 
 PROJECT_ORDER = ["runshoes", "petmint-rag-chatbot", "foreman", "ronanlab-infra"]
 LABEL = {"runshoes": "런슈즈", "petmint-rag-chatbot": "펫퍼민트", "foreman": "FOREMAN", "ronanlab-infra": "인프라", None: "미분류"}
@@ -262,12 +264,15 @@ async def human_needs(c: Any, in_ids: str, relay: dict[str, tuple[bool, bool]] |
             out.setdefault(sid, {})["asks"] = {"at": _iso(ts), "tail": line.strip()[-160:], "event_id": eid}
         else:
             out.setdefault(sid, {})["report"] = {"at": _iso(ts), "tail": last_paragraph(reply or "").strip()[-160:], "event_id": eid}
-    # 사람에게 올린 것(escalate, 관리자만) — 종류마다 마지막 하나. 보고는 읽으면(esc-read) · 물음은 사람이 그 관리자에게 입력하거나
-    # [답 안 해도 됨](esc-off)이면 사라진다. 사람이 입력하면 둘 다 사라진다(사람이 그 관리자 대화를 보고 있다)
+    # 사람에게 올린 것(escalate, 관리자만). 보고는 마지막 하나만, 읽거나(esc-read) 사람이 그 관리자에게 입력하면 사라진다.
+    # 물음은 11-17 사용자 결정 (다)로 바뀌었다(인프라 #3058이 다른 얘기를 입력해도 사라질 수 있었다). 사람이 그 관리자에게 입력한 뒤에
+    # 입력 글에 물음 번호(#id)가 있으면 끝난 것(띄우지 않는다. 기록은 그 사람 턴의 글과 escalate 행 자체),
+    # 번호 없이 넘어갔으면 「아직 안 본 것」(unseen)으로 남기고 사람이 [봤다](esc-seen)로 하나씩 지운다. 입력 전이면 지금처럼 question
     done = {r[0] for r in (await c.execute(text(
-        f"SELECT detail FROM session_action WHERE session_id IN {in_ids} AND action IN (:r, :o) AND ok"),
-        {"r": ESC_READ_ACT, "o": ESC_OFF_ACT})).all()}
+        f"SELECT detail FROM session_action WHERE session_id IN {in_ids} AND action IN (:r, :o, :s) AND ok"),
+        {"r": ESC_READ_ACT, "o": ESC_OFF_ACT, "s": ESC_SEEN_ACT})).all()}
     merges: dict[int, list[dict[str, Any]]] = {}
+    open_qs: list[tuple[int, int, datetime, str]] = []
     for aid, sid, detail, at in (await c.execute(text(
             f"SELECT id, session_id, detail, created_at FROM session_action WHERE session_id IN {in_ids} AND action = :a AND ok "
             f"AND created_at > :cut ORDER BY id"), {"a": ESC_ACT, "cut": now - ESC_KEEP})).all():
@@ -282,10 +287,20 @@ async def human_needs(c: Any, in_ids: str, relay: dict[str, tuple[bool, bool]] |
                 merges.setdefault(sid, []).append({"id": aid, "at": _iso(at), "text": body[m.end():][:300],
                                                    "merge_sid": int(m.group(1))})
             continue
+        if kind == "question":
+            if str(aid) not in done:
+                open_qs.append((aid, sid, at, body))
+            continue
         if str(aid) in done or (last_human.get(sid) and last_human[sid] > at):
             esc_.pop(kind, None)
         else:
             esc_[kind] = {"id": aid, "at": _iso(at), "text": body[:300]}
+    for sid, items in (await esc_question_states(c, open_qs)).items():
+        esc_ = out.setdefault(sid, {}).setdefault("escalate", {})
+        if items["pending"]:
+            esc_["question"] = items["pending"][-1]       # 머리 위에는 가장 최근 물음 하나(앞의 물음은 사람이 입력하면 unseen으로)
+        if items["unseen"]:
+            esc_["unseen"] = items["unseen"]
     for sid, ms in merges.items():
         esc_ = out.setdefault(sid, {}).setdefault("escalate", {})
         q = esc_.get("question")
@@ -335,8 +350,40 @@ RELAY_OUT_ACT = "relay-out"     # 작업 세션 session_action — 알림이 그
 # 대가: 넘기기 제한(60초)에 걸리는 드문 경우는 30초에 사람용 표시가 먼저 떴다가 넘기기가 성공하면 relayed로 바뀐다(잠깐 떴다 사라짐)
 RELAY_GRACE = timedelta(seconds=30)
 ESC_ACT, ESC_READ_ACT, ESC_OFF_ACT = "escalate", "esc-read", "esc-off"   # 관리자가 사람에게 올림 · 사람이 읽음 · 사람이 끔
+ESC_SEEN_ACT = "esc-seen"       # 11-17 번호 없이 넘어간 물음(아직 안 본 것)을 사람이 [봤다]로 지움. detail = escalate id
 ESC_KINDS = ("report", "question")
 ESC_KEEP = timedelta(days=7)
+# 사람 입력 글의 물음 번호, 예: 「#3058 승인」. 뒤에 숫자가 더 붙은 것(#30581)은 다른 번호다
+_ESC_NO = re.compile(r"#(\d+)(?!\d)")
+
+
+def esc_numbers(prompt: str | None) -> set[int]:
+    """사람 입력 글에 든 물음 번호들."""
+    return {int(x) for x in _ESC_NO.findall(prompt or "")}
+
+
+async def esc_question_states(c: Any, qs: list[tuple[int, int, datetime, str]]) -> dict[int, dict[str, list[dict[str, Any]]]]:
+    """관리자 escalate 물음(합치기 카드 물음, 사람이 끄거나 [봤다]로 지운 것은 뺀다)을 그 뒤의 사람 입력으로 가른다(11-17 사용자 결정 (다)).
+    qs = [(escalate id, 세션, 올린 시각 UTC, 글)]. 돌려줌 {세션: {"pending": [...], "unseen": [...], "answered": [...]}}, 각 항목 {id, at, text}.
+    - answered: 그 물음 뒤 사람 턴(origin human) 글 어디에든 #id가 있다. 끝난 것이라 화면에 띄우지 않는다
+    - unseen: 그 뒤 사람 턴이 있는데 #id가 없다(번호 없이 넘어감). 여러 물음이 있으면 번호가 든 것만 끝나고 나머지는 여기로
+    - pending: 그 뒤 사람 턴이 없다(지금처럼 「사용자 답 기다림」)
+    사람 턴 글(turn.prompt_text)은 DB에 들어갈 때 마스킹을 거친 글이다. 물음 번호는 마스킹에 걸리지 않는다"""
+    out: dict[int, dict[str, list[dict[str, Any]]]] = {}
+    if not qs:
+        return out
+    turns: dict[int, list[tuple[datetime, set[int]]]] = {}
+    for tsid, started, prompt in (await c.execute(text(
+            "SELECT session_id, started_at, prompt_text FROM turn WHERE session_id IN :sids AND origin = 'human' "
+            "AND started_at > :since").bindparams(bindparam("sids", expanding=True)),
+            {"sids": sorted({q[1] for q in qs}), "since": min(q[2] for q in qs)})).all():
+        turns.setdefault(tsid, []).append((started, esc_numbers(prompt)))
+    for aid, sid, at, body in qs:
+        after = [nums for started, nums in turns.get(sid, []) if started > at]
+        state = "answered" if any(aid in nums for nums in after) else ("unseen" if after else "pending")
+        d = out.setdefault(sid, {"pending": [], "unseen": [], "answered": []})
+        d[state].append({"id": aid, "at": _iso(at), "text": body[:300]})
+    return out
 # 11-13 사람 승인 합치기 카드를 브리지가 관리자 머리 위로 올린 물음 — detail 글 앞에 기계 표시(모델이 쓰는 글이 아니다).
 # 사람에게 보이는 글 · 알림에는 붙지 않는다(human_needs가 떼어 낸다)
 _MERGE_TAG = re.compile(r"#merge:(\d+)# ")
@@ -431,16 +478,19 @@ async def escalate(engine: Any, sid: int, kind: str, body: str, notifier: Any = 
         try:
             rule = notifier.rules.for_project(project) if getattr(notifier, "rules", None) else None
             prefix = (rule and rule.prefix) or f"[{project or '미분류'}]"
-            head = "❓ 관리자가 사용자 답을 기다립니다" if kind == "question" else "📋 관리자 보고"
+            head = f"❓ 관리자가 사용자 답을 기다립니다 #{aid}" if kind == "question" else "📋 관리자 보고"
             msg = f"{prefix} {head} · 세션 {sid}" + (f" 「{title}」" if title else "") + f"\n{body.strip()}"
+            if kind == "question" and not tag:      # 11-17 번호로 답하면 끝난다(합치기 카드 물음은 카드가 남는 동안 남으니 빼고)
+                msg += f"\n(답할 때 물음 번호 #{aid}도 함께 넣으면 이 물음이 끝납니다)"
             notifier.send_direct(project, "escalate", sid, msg[:3500], rule=f"escalate:{aid}",
                                  later=bool(kind == "report" and rule and rule.digest))
             notified = True
         except Exception:  # noqa: BLE001 — 알림 실패가 화면 표시를 막지 않는다(화면에는 이미 남았다)
             notified = False
     return {"ok": True, "id": aid, "kind": kind, "notified": notified,
-            "note": "사람 화면 관리자 머리 위에 「사용자 답 기다림」으로 띄웠습니다" if kind == "question"
-            else "사람 화면 관리자 머리 위에 「사용자에게 보고함」으로 띄웠습니다"}
+            "note": (f"사람 화면 관리자 머리 위에 「사용자 답 기다림」으로 띄웠습니다. 물음 번호는 #{aid}입니다. "
+                     "사람이 그 번호를 넣어 답하면 끝나고, 번호 없이 다른 얘기를 하면 「아직 안 본 물음」으로 남습니다")
+            if kind == "question" else "사람 화면 관리자 머리 위에 「사용자에게 보고함」으로 띄웠습니다"}
 
 
 @router.post("/sessions/{sid}/escalate")
@@ -467,6 +517,27 @@ async def escalate_read_api(sid: int, request: Request, id: int) -> dict[str, An
     if request.headers.get("x-foreman-probe"):
         return {"ok": False, "note": "점검 화면은 읽음으로 세지 않습니다"}
     return await escalate_read(request.app.state.store.engine, sid, id)
+
+
+async def escalate_seen(engine: Any, sid: int, esc_id: int) -> dict[str, Any]:
+    """「아직 안 본 물음」 하나를 사람이 [봤다]로 지운다(11-17). 번호 없이 넘어간 물음만 지울 수 있다."""
+    async with engine.begin() as c:
+        needs = await human_needs(c, f"({int(sid)})")
+        unseen = ((needs.get(sid) or {}).get("escalate") or {}).get("unseen") or []
+        if int(esc_id) not in {int(u["id"]) for u in unseen}:
+            return {"ok": False, "note": "아직 안 본 물음 목록에 그 번호가 없습니다"}
+        await c.execute(text("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, :a, 1, :d)"),
+                        {"s": sid, "a": ESC_SEEN_ACT, "d": str(int(esc_id))})
+    _cache["data"] = None
+    log.info("관리자 세션 %s의 물음 #%s를 사람이 봤다로 지웠다", sid, esc_id)
+    return {"ok": True, "id": int(esc_id), "note": f"봤다로 지웠습니다(물음 #{int(esc_id)})"}
+
+
+@router.post("/sessions/{sid}/escalate-seen")
+async def escalate_seen_api(sid: int, request: Request, id: int) -> dict[str, Any]:  # noqa: A002
+    if request.headers.get("x-foreman-probe"):
+        return {"ok": False, "note": "점검 화면은 봤다로 세지 않습니다"}
+    return await escalate_seen(request.app.state.store.engine, sid, id)
 
 
 def visible_rows(rows: list[Any], live: Any, cut: datetime, done: dict[int, tuple[str, datetime]],

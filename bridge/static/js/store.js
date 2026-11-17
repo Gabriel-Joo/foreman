@@ -468,6 +468,17 @@ export class Store {
     this.touch('grid', 'panel');
     return j;
   }
+  // 아직 안 본 물음을 [봤다]로 지움(11-17). 사람이 누를 때만 부른다(패널을 연 것만으로는 지우지 않는다)
+  async escalateSeen(id, escId) {
+    if (PROBE || this.demo) return { ok: false, note: '점검이나 시연 화면은 봤다로 세지 않습니다' };
+    const r = await fetch(`/api/sessions/${id}/escalate-seen?id=${encodeURIComponent(escId)}`, { method: 'POST', headers: this.headers() });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(j.note || j.detail || `HTTP ${r.status}`);
+    const s = this.state.sessions.get(id);
+    if (s && s.escalate && s.escalate.unseen) s.escalate = { ...s.escalate, unseen: s.escalate.unseen.filter((u) => u.id !== escId) };
+    this.touch('grid', 'panel');
+    return j;
+  }
   // 보고 옴 읽음(11-11) — 그 세션 패널을 열면 opanel이 부른다. 다음 응답이 오면 서버가 다시 띄운다
   async reportRead(id, eventId) {
     if (PROBE || this.demo) return { ok: false, note: '점검 · 시연 화면은 읽음으로 세지 않습니다' };

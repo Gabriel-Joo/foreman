@@ -8,7 +8,8 @@
 // 달라져 이름표 자리 고르기가 복잡해졌다. 끌기를 막고 두 값만). 손잡이는 두 번 누르면 오간다.
 
 import { approvalCard, handleApprovalClick, handleApprovalInput, restoreNotes, apprPlace, apprFoldLine, apprPeekLine, keep, sessionKv, modelChip, convoHtml, feedHtml, pipeBlock, mountApprovalHistory,
-         sessionName, sessionSub, sessionIds, worktreeTip, doingHtml, projectLabel, roleBadge, panelRole, ROLE_LABEL, SESSION_ROLES, ROLE_UNKNOWN_TIP, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed, stallChip } from './render.js';
+         sessionName, sessionSub, sessionIds, worktreeTip, doingHtml, projectLabel, roleBadge, panelRole, ROLE_LABEL, SESSION_ROLES, ROLE_UNKNOWN_TIP, why, oneLine, esc, ago, tok, STATE_LABEL, ORIGIN_LABEL, FEED_DETAIL, FEED_OPEN, stateBadge, humanNeed, stallChip,
+         escUnseen, unseenTip } from './render.js';
 import { stuckTurn } from './store.js';
 import { slashIntent } from './slash.js';
 import { hideTip } from './tip.js';
@@ -63,6 +64,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
       <div id="pSw" class="pcmp small switch" hidden></div>
       <div id="pCmp" class="pcmp small" hidden></div>
       <div id="pOvl" class="pcmp small" hidden></div>
+      <div id="pEsc" class="pcmp small esc-unseen" hidden></div>
       <section id="pAppr" class="papprs" aria-label="승인 대기"></section>
       <nav id="pTabs" class="ptabs" hidden>${TABS.map(([k, l]) => `<button data-tab="${k}"${TAB_TIP[k] ? ` data-tip="${TAB_TIP[k]}"` : ''}>${l}<span data-n="${k}"></span></button>`).join('')}<button type="button" id="pCcOpen" class="ptab-cc" data-tip="${CC_TIP}">세션 화면 ↗</button></nav>
       <div id="pBody" class="oside-body">
@@ -471,6 +473,25 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   window.foremanHandoff = { start: startHandoff };
   window.foremanHandoffTip = FLOW_TIP;
 
+  // 아직 안 본 물음 띠(11-17 사용자 결정 (다)). 관리자가 올린 물음인데 사람이 번호 없이 다른 입력으로 넘어간 것.
+  // 물음마다 [봤다]로 하나씩 지운다(목록이 쌓이지 않게). 번호로 답해 끝난 물음은 여기 오지 않는다
+  function drawEscUnseen(s) {
+    const list = escUnseen(s);
+    if (!list.length) { $('pEsc').hidden = true; return; }
+    const rows = list.map((u) => `<div class="esc-row"><span data-tip="${esc(`물음 #${u.id} — ${ago(u.at)} 관리자가 올렸습니다.\n${u.text || ''}`)}"><b>#${u.id}</b> ${esc(oneLine(u.text || '', 120))}</span>
+      <button type="button" class="small ghost" data-escseen="${u.id}" title="봤다 — 이 물음을 읽었다고 표시하고 목록에서 지웁니다. 답이 필요하면 입력 칸에 #${u.id}를 넣어 답합니다.">봤다</button></div>`).join('');
+    put('pEsc', 'escu', `<span data-tip="${esc(unseenTip(list))}">❔ 아직 안 본 물음 ${list.length}: 번호 없이 다른 입력으로 넘어간 물음입니다. 읽고 [봤다]를 누릅니다.</span>${rows}`);
+    $('pEsc').hidden = false;
+  }
+  $('pEsc').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-escseen]');
+    const s = store.state.sessions.get(store.state.selected);
+    if (!b || !s) return;
+    b.disabled = true;
+    try { await store.escalateSeen(s.id, Number(b.dataset.escseen)); }
+    catch (e) { b.disabled = false; b.title = `지우지 못했습니다: ${e.message}`; }
+  });
+
   // 겹침 알림 띠(11-06, bridge/overlap.py) — 방금 넣은 요청이 다른 살아 있는 세션의 최근 일과 겹친다. 막지 않는다.
   // [나중에]는 이 겹침(시각으로 기억)만 숨긴다 — 이 브라우저에만
   function drawOverlap(s) {
@@ -696,6 +717,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     drawSwitch(s);                   // 먼저 — 떠 있으면 쌓인 대화 띠는 숨긴다(같은 버튼, 까닭은 이쪽이 분명)
     drawCompact(s);
     drawOverlap(s);
+    drawEscUnseen(s);
     // 대화 — 바뀔 때만
     const c = $('pConvo');
     const follow = switched || nearBottom(c);

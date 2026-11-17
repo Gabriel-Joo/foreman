@@ -332,6 +332,9 @@ button.rolebadge.fixed:hover { background:color-mix(in srgb, var(--rc) 16%, tran
 .pcmp.switch { border-color:var(--accent, var(--warn)); }
 .pcmp[hidden] { display:none; }
 .pcmp > span { flex:1 1 200px; }
+/* 11-17 아직 안 본 물음 띠. 물음 한 줄마다 [봤다] */
+.pcmp.esc-unseen .esc-row { display:flex; align-items:center; gap:6px; flex:1 1 100%; }
+.pcmp.esc-unseen .esc-row > span { flex:1 1 auto; min-width:0; }
 .mdl.mdl-pre { border-style:dashed; }   /* 11-14 첫 응답 전 — 띄울 때 고른 모델(실제로 쓴 모델이 아직 없다) */
 .mdl-btn { background:none; cursor:pointer; font:inherit; font-size:11px; padding:0 5px; }
 .mdl-btn:hover { background:var(--line); }
