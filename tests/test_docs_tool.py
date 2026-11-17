@@ -151,5 +151,6 @@ def test_outside_foreman_fails(tmp_path):
     lone = tmp_path / "tools" / "docs.py"
     lone.parent.mkdir()
     lone.write_text((ROOT / "tools" / "docs.py").read_text(encoding="utf-8"), encoding="utf-8")
-    p = subprocess.run([sys.executable, "-I", str(lone), "config"], capture_output=True, text=True, cwd=tmp_path)
+    # -S: .venv의 편집 설치(.pth)가 원본 폴더 bridge를 어디서든 불러와 「밖」이 되지 않는다(11-17 합친 뒤 관리자)
+    p = subprocess.run([sys.executable, "-I", "-S", str(lone), "config"], capture_output=True, text=True, cwd=tmp_path)
     assert p.returncode == 2 and "불러오지 못했습니다" in p.stderr
