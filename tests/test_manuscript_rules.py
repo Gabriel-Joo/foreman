@@ -46,6 +46,25 @@ def test_user_criteria_are_in_the_doc():
         assert want in text, want
 
 
+def test_limit_and_todo_rules_are_in_the_doc():
+    """11-17 문서 정리 A단계: 한계는 안 하기로 한 것만 까닭과 함께, 할 일은 docs/TODO.md, 묶음마다 한계 편 하나."""
+    secs = manuscript_rules.sections(manuscript_rules.PATH.read_text(encoding="utf-8"))
+    for want in ("안 하기로 한 것만 쓴다", "까닭을 함께 적는다", "`docs/TODO.md`로 보낸다",
+                 "한계 절에 적지 않는다"):
+        assert want in " ".join(secs["1"]), want
+    sec2 = " ".join(secs["2"])
+    for want in ("「알려진 한계」 편을 하나 둔다", "한 번만 적고", "가리키는 한 줄로 바꾼다",
+                 "한 편에만 해당하는 한계는 그 편에 그대로 둔다"):
+        assert want in sec2, want
+    assert "할 일은 넣지 않고" in " ".join(secs["5"])     # 포트폴리오 「치른 값」은 한계와 같은 성격
+    # 지시문 셋이 모두 받는다(서기 둘은 1, 2절 전체, 코더는 1, 2절 전체)
+    for kind in ("techdoc", "portfolio", "coder"):
+        text = " ".join(manuscript_rules.lines(kind))
+        assert "안 하기로 한 것만 쓴다" in text and "「알려진 한계」 편을 하나 둔다" in text, kind
+    assert "할 일은 넣지 않고" in " ".join(manuscript_rules.lines("portfolio"))   # 포트폴리오 서기는 5절 전체
+    assert "할 일은 넣지 않고" not in " ".join(manuscript_rules.lines("coder"))   # 코더는 5절 첫 줄만
+
+
 def test_broken_doc_raises_and_block_says_so(monkeypatch, tmp_path):
     bad = tmp_path / "rules.md"
     bad.write_text("# 제목\n\n## 1. 모든 문서\n\n글머리 없는 문단\n", encoding="utf-8")
