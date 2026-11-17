@@ -178,7 +178,7 @@
 
 요약 줄을 만들 때 브리지는 그 세션 폴더의 지금 상태를 찍어 `summary.state`에 JSON으로 적는다 [code:bridge/handoff_state.py] [code:migrations/0024_summary_state.sql]. 찍는 것은 찍은 시각, 저장소 위치, 작업방 이름, 브랜치, HEAD 커밋, 기준 브랜치와 그 HEAD, 스키마 잠금 주인(세션 id 앞 8자와 작업방)이다. 저장소가 아니면 찍지 않는다. 찍기에 실패해도 요약은 만든다. 상태가 없을 뿐 요약 자체가 막힐 까닭은 없다.
 
-넣을 때(미리보기 포함) 그때 상태와 지금을 비교해 사람이 읽는 줄을 만든다(`handoff_state.drift`) [code:bridge/handoff_state.py]. 보는 것은 네 가지다.
+넣을 때(미리보기 포함) 그때 상태와 지금을 비교해 사람이 읽는 줄을 만든다(`handoff_state.drift`) [code:bridge/handoff_state.py]. 보는 것은 네 가지다. 아래 표는 첫째(작업방과 그 브랜치)를 두 줄로 나눠 적어 다섯 줄이다.
 
 | 무엇 | 나오는 줄의 예 |
 |---|---|

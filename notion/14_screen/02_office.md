@@ -85,7 +85,7 @@ flowchart LR
 
 세 테마의 방 자리가 정말 같은지는 두 곳에서 본다. `node` 시험 `tests/js/grid.test.mjs`가 세 `theme.json`에 `applyGrid`를 해서 방, 복도, 출하 단계 자리를 견주고, 화면 점검 도구가 테마마다 `gridAudit().rooms`를 모아 끝에서 견준다 [log:designer_grid_20261110.md].
 
-`plain`은 이 모눈 밖이다. `layout.grid`가 없고, 구역도 감독실, 책상, 서버랙, 창가, 전화 다섯뿐이다 [code:bridge/static/themes/plain/theme.json]. 시트 그림이 없으니 길찾기 격자도 만들지 않고, 머리 위 쌓기 틀과 자리 말풍선도 쓰지 않는다. 시트 테마가 생기기 전 뼈대를 그리던 렌더러를 기준점으로 남겨 둔 것이다.
+`plain`은 이 모눈 밖이다. `layout.grid`가 없고, 방 구역도 감독실, 책상, 서버랙, 창가, 전화 다섯뿐이다 [code:bridge/static/themes/plain/theme.json]. 같은 `layout.zones`에 키가 넷 더 있지만 방이 아니라 관리자 좌석, 디자이너 좌석, 쉼 좌석 묶음과 출하 줄(빌드, 이미지 창고, 배포 자리)이다. 시트 그림이 없으니 길찾기 격자도 만들지 않고, 머리 위 쌓기 틀과 자리 말풍선도 쓰지 않는다. 시트 테마가 생기기 전 뼈대를 그리던 렌더러를 기준점으로 남겨 둔 것이다.
 
 ### 복도
 
