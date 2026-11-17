@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/roles.py, config/roles.toml, bridge/static/js/roles.js, docs/roles.md, bridge/roleguard.py, bridge/hookmiss.py
-읽은 커밋: 5e0f7c5
+읽은 커밋: fb7121b
 -->
 
 # 05 역할과 권한

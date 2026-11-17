@@ -1,6 +1,6 @@
 <!--
 다루는 곳: README.md, CLAUDE.md, docs/01_kickoff.md
-읽은 커밋: e5d584b
+읽은 커밋: fb7121b
 -->
 
 # 00 FOREMAN이란

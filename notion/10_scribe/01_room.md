@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/scribe_room.py, bridge/scribe.py, bridge/api/scribe.py, config/scribe.toml, bridge/static/js/scribe.js, migrations/0023_scribe_review.sql
-읽은 커밋: 5e0f7c5
+읽은 커밋: fb7121b
 -->
 # 서기실과 일감
 
@@ -146,7 +146,7 @@ flowchart TB
 
 결과로 서기실의 열린 일과 막기는 계획 길 서기도 세고, 계획 겹침은 서기실 서기도 본다. 화면의 「열려 있는 일」 설명에 「계획으로 띄운 서기 세션도 셉니다」라고 적은 것이 이 뜻이다. 길이 넷째로 늘어도 `spawn_new`를 지나는 한 기록은 갈라지지 않는다 [code:bridge/static/js/scribe.js].
 
-남은 틈도 있다. 「알려진 한계 쓰기」의 기준점(지난 정리가 어디까지 봤나, `scribe-later`)과 [바로 고치기]로 고친 점검 결과 목록은 서기실 길에서만 쌓인다. 계획 길로 `later`를 띄우면 열린 일과 막기에는 잡히지만 기준점은 옮겨 가지 않는다 [log:foreman-4_scribe_two_paths_20261115.md]. 교장 지시문의 서기 일 이름은 11-17부터 손으로 적지 않고 `TASKS`에서 만든다. 그 전에는 지시문에 적은 목록이 없어진 `sync`, `loss`를 말하고 `techdoc`을 빠뜨려 있었다. 지금은 `TASKS`에서 세션이 아닌 버튼인 `publish`만 빼고 doccheck, trim, later, docfix, portfolio, techdoc을 모두 적는다 [code:bridge/foreman.py] [c:408e4ed]. 브리지는 지금도 꼴만 맞으면 어느 이름이든 받는다.
+남은 틈도 있다. 「알려진 한계 쓰기」의 기준점(지난 정리가 어디까지 봤나, `scribe-later`)과 [바로 고치기]로 고친 점검 결과 목록은 서기실 길에서만 쌓인다. 계획 길로 `later`를 띄우면 열린 일과 막기에는 잡히지만 기준점은 옮겨 가지 않는다 [log:foreman-4_scribe_two_paths_20261115.md]. 교장 지시문의 서기 일 이름은 이제 손으로 적지 않고 `TASKS`에서 만든다. 그 전에는 지시문에 적은 목록이 없어진 `sync`, `loss`를 말하고 `techdoc`을 빠뜨려 있었다. 지금은 `TASKS`에서 세션이 아닌 버튼인 `publish`만 빼고 doccheck, trim, later, docfix, portfolio, techdoc을 모두 적는다 [code:bridge/foreman.py] [c:408e4ed]. 브리지는 지금도 꼴만 맞으면 어느 이름이든 받는다.
 
 ## 재료는 저장소 밖에
 
@@ -221,13 +221,19 @@ flowchart TB
 
 할 일 아래에는 원고 묶음 셋이 있다. **포트폴리오 쓰기**는 「글 N편 가운데 코드가 바뀐 편 M」과 [갱신](코드가 가장 많이 바뀐 편 하나를 고쳐 쓰게 함), 폴더 통째로 시키는 버튼, 편마다 「코드 바뀐 커밋 N」, 「그대로」, 「셀 수 없음」을 보이는 글 목록이다. **포트폴리오 게시**와 **기술문서 게시**는 접힌 채 「게시됨 N · 새 K · 바뀜 M」 숫자만 보이고, 펼치면 파일마다 게시 상태와 버튼이 나온다. 이 두 묶음은 → 노션 게시가 다룬다.
 
+포트폴리오 게시 묶음은 서기실에서 고른 프로젝트의 상태를 보인다. 화면은 게시 목록을 프로젝트마다 따로 들고(`GET /api/publish?project=<고른 프로젝트>`), 못 읽었는지와 마지막으로 읽은 시각도 프로젝트마다 센다. [게시], [다시 게시], [내리기], [원본 없는 페이지 내리기]도 모두 그 프로젝트로 보낸다 [code:bridge/static/js/scribe.js]. 예전에는 화면이 FOREMAN 목록만 물었고, 다른 프로젝트를 고르면 「이 프로젝트는 포트폴리오를 게시하지 않습니다」 한 줄만 보였다. 게시기는 이미 프로젝트마다 하나씩 있었는데 화면이 그 길을 열지 않았던 것이다 [log:foreman-4_portfolio_per_project_20261117.md].
+
+상태는 세 가지로 갈린다. 그 프로젝트가 게시에 쓰는 판(`config/notion.toml`의 `ref`. FOREMAN은 이 저장소 main인 `HEAD`, 다른 프로젝트는 push된 `origin/main`)에 `portfolio/` 폴더가 없고 게시 기록도 없으면 「아직 없음. 이 프로젝트에는 portfolio/ 폴더가 없습니다」가 뜬다. 작업 브랜치에만 있고 main에 합쳐지지 않은 글도 아직 없음으로 센다. 그 판을 읽지 못하면 「원본 커밋 … 을 읽지 못했습니다」가 뜬다. 읽지 못한 것을 「없음」으로 삼키면 조용히 낡기 때문이다. 셋째로, Notion에 포트폴리오를 놓을 자리(`config/notion.toml`의 `portfolio_page`)가 정해지지 않은 프로젝트는 목록과 상태는 보이되 접힌 머리줄에 「Notion 자리 없음」이 붙고, 펼치면 「게시할 수 없습니다」와 함께 [게시], [다시 게시]가 꺼진다. 호버하면 까닭이 나온다 [code:bridge/static/js/scribe.js]. 내리기와 원본 없는 페이지 내리기는 자리가 필요 없어 그대로 된다.
+
+할 일 목록의 「Notion 포트폴리오: 파일 N개 뒤처짐」 줄도 같은 까닭으로 게시기가 있는 모든 프로젝트에서 센다. 자리가 없는 프로젝트면 줄 끝에 「Notion 자리가 정해지지 않아 아직 올릴 수 없습니다」가 붙는다. 포트폴리오 목록을 읽다 실패해도 기술문서 줄은 따로 세어 남는다 [code:bridge/scribe_room.py].
+
 [시키기]를 누르면 확인 창이 먼저 뜬다. 「서기 세션이 작업방으로 뜨고(Opus), 끝나면 합쳐서 검토합니다」라는 내용이다. 모델이 Opus라는 것을 굳이 보이는 것은 서기 세션 한 번이 출력 수천에서 수만 토큰, 캐시 읽기 수십만에서 수백만 토큰을 쓰는 일이기 때문이다 [log:foreman-4_scribe_structure_20261115.md]. 띄우면 「서기 세션을 띄웠습니다」가, 막히면 서버가 돌려준 까닭이 그 자리에 뜬다.
 
 ### 서기 자리의 말풍선
 
 서기실을 열지 않아도 오피스 화면의 서기 자리에 짧은 글이 뜬다. 할 일 줄이 있으면 「문서 할 일 N」, 포스트잇이 쌓였으면 「포스트잇 쌓임」이다. 이 글은 서기 캐릭터가 아니라 서기 자리에 붙어서, 서기 세션이 일하러 자리를 떠나도 남는다 [code:bridge/static/js/office.js]. 누르면 서기실이 열리고, 말풍선이 가리키는 일이 있으면 그 줄을 밝혀 [시키기]를 앞세운 채 연다. 이때도 세션은 뜨지 않는다. 화면 맨 위에 「골라 두었습니다. [시키기]를 눌러야 서기 세션이 뜹니다」가 보인다 [code:bridge/static/js/scribe.js]. 자동은 제안까지만 한다.
 
-「포스트잇 쌓임」 말풍선의 기준은 `config/scribe.toml`의 `[postit]` 표(`open_max = 20`, `stale_days = 7`, `refresh_days = 7`) 하나이고, `bridge/postit.py`의 `conf`, `nudge_of`가 이 표를 읽어 정한다 [code:config/scribe.toml] [code:bridge/postit.py]. 예전에는 같은 파일에 `[nudge]`(`new_min = 3`, `oldest_days = 3`)가 있었다. 서기 몫으로 받은 할 일이 셋 이상이거나 가장 오래된 것이 사흘이면 「정리할까요?」를 띄우던 서기실 쪽 기준인데, 포스트잇이 생긴 뒤로 그 값을 읽는 코드는 시험뿐이었다. 11-17에 그 표와 서기실 쪽 `nudge_conf`, `nudge_of`를 빼고, 이제는 파일에 읽지 않는 표나 칸이 있으면 브리지 로그에 경고가 남는다 [c:408e4ed] [code:bridge/scribe_room.py].
+「포스트잇 쌓임」 말풍선의 기준은 `config/scribe.toml`의 `[postit]` 표(`open_max = 20`, `stale_days = 7`, `refresh_days = 7`) 하나이고, `bridge/postit.py`의 `conf`, `nudge_of`가 이 표를 읽어 정한다 [code:config/scribe.toml] [code:bridge/postit.py]. 예전에는 같은 파일에 `[nudge]`(`new_min = 3`, `oldest_days = 3`)가 있었다. 서기 몫으로 받은 할 일이 셋 이상이거나 가장 오래된 것이 사흘이면 「정리할까요?」를 띄우던 서기실 쪽 기준인데, 포스트잇이 생긴 뒤로 그 값을 읽는 코드는 시험뿐이었다. 그래서 그 표와 서기실 쪽 `nudge_conf`, `nudge_of`를 빼고, 이제는 파일에 읽지 않는 표나 칸이 있으면 브리지 로그에 경고가 남는다 [c:408e4ed] [code:bridge/scribe_room.py].
 
 ## 왜 자동으로 돌리지 않나
 

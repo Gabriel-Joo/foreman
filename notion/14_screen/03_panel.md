@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/opanel.js, bridge/static/js/render.js, bridge/static/js/md.js, bridge/static/js/tip.js, bridge/static/js/uiscale.js, bridge/static/js/grip.js
-읽은 커밋: e5d584b
+읽은 커밋: fb7121b
 -->
 
 # 옆 패널

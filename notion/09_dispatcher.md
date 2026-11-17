@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/foreman.py, bridge/api/foreman.py, docs/11_foreman_dispatch.md, docs/14_dispatcher_note_wake.md
-읽은 커밋: e5d584b
+읽은 커밋: fb7121b
 -->
 # 09 교장과 관리자
 

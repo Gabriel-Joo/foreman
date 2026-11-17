@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/notion.py, bridge/docsync.py, bridge/notioncfg.py, bridge/manuscript.py, bridge/api/publish.py, config/notion.toml, migrations/0022_doc_publish.sql
-읽은 커밋: 5e0f7c5
+읽은 커밋: fb7121b
 -->
 
 # 노션 게시
@@ -144,6 +144,10 @@ mermaid 코드 블록은 이 검사에서 뺀다. 사람이 [미리보기]만 �
 
 지금 값은 프로젝트마다 다르다. 런슈즈는 `docs = "auto"`, `quiet_min = 30`으로 docs를 그대로 자동으로 올린다. 펫퍼민트도 자동이지만 사람이 옮겨 둔 페이지에 맞추는 선택을 거의 모두 켰다. FOREMAN은 `docs = "manual"`, `src = "notion/"`, `title = "h1"`, `header = "footer"`다 [code:config/notion.toml]. 인프라는 이 파일에 게시할 Notion 페이지 자리(`root`, `docs_page`, `portfolio_page`)와 저장소 주소, 읽을 브랜치(`github`, `ref`)만 두고, 게시 방식 칸(`docs`, `title`, `order` 등)은 자기 저장소의 `.foreman/notion.toml`에 둔다 [code:config/notion.toml].
 
+포트폴리오도 기술문서와 같은 꼴로 프로젝트마다 그 게시기가 올린다. 포트폴리오 글은 `portfolio_page`가 가리키는 [포트폴리오] 페이지 아래에 놓인다. 이 칸이 비어 있는 프로젝트는 게시와 차례 다시 세우기를 「포트폴리오 Notion 자리가 정해지지 않았습니다」로 거절한다(`Publisher.portfolio_place`). 예전에는 칸이 비면 프로젝트 페이지 바로 아래로 조용히 떨어졌다. FOREMAN 하나만 포트폴리오를 올리던 때의 방식인데, 프로젝트마다 열고 나니 자리를 정하지 않은 프로젝트가 아무 데나 페이지를 쌓을 수 있어 막았다 [code:bridge/notion.py] [log:foreman-4_portfolio_per_project_20261117.md]. 내리기는 이미 있는 페이지를 휴지통으로 보낼 뿐이라 자리 없이도 된다.
+
+게시할 포트폴리오 목록은 게시가 읽는 판(`ref`)에서 센다(`git ls-tree`로 그 판의 `portfolio/*.md`). 예전에는 작업 폴더의 색인을 보았는데, 그러면 `ref = "origin/main"`인 다른 프로젝트에서 아직 push하지 않은 글까지 목록에 섞일 수 있었다. 판을 읽지 못하면 빈 목록이 아니라 오류로 올린다. 빈 목록으로 삼키면 「글 없음」으로 보여 조용히 낡기 때문이다 [code:bridge/notion.py]. 한 프로젝트의 게시가 다른 프로젝트 페이지를 덮지 않는지는 쓰기 범위 확인이 그대로 지키고, 가짜 Notion 시험으로도 본다 [code:tests/test_portfolio_projects.py].
+
 ## 설정을 각 저장소로 옮긴 까닭
 
 처음에는 모든 프로젝트의 게시 설정이 FOREMAN의 `config/notion.toml` 한 파일에 있었다. 문제는 그 설정의 주인이 각 프로젝트라는 점이었다. 인프라 관리자 세션이 "우리 문서는 제목을 H1으로, 휴지통으로 보내지 말고"라고 바라면, FOREMAN 관리자가 그 요청을 받아 FOREMAN 설정 파일을 고쳐야 했다. 그런데 FOREMAN에는 다른 세션의 요청만으로 `config/*.toml`을 바꾸지 않고 사용자에게 먼저 묻는다는 규칙이 있다 [code:CLAUDE.md]. 설정 한 칸을 바꾸는 데 세션 사이 메시지와 사용자 확인이 매번 끼었다 [log:enable_c_wave2_20261111.md].
@@ -236,7 +240,7 @@ FOREMAN의 기술문서는 `docs/`를 그대로 올리지 않는다. `docs/`는 
 ```
 <!--
 다루는 곳: bridge/notion.py, bridge/docsync.py, …
-읽은 커밋: <서기가 읽은 main 커밋>
+읽은 커밋: fb7121b
 -->
 ```
 
@@ -260,7 +264,7 @@ FOREMAN의 기술문서는 `docs/`를 그대로 올리지 않는다. `docs/`는 
 
 포트폴리오는 "이 화면이 무엇을 해 주나"까지만 짧게 쓰고, 왜 그렇게 만들었는지와 버린 것, 막힌 것은 이 기술문서에 맡긴다. 그래서 포트폴리오 편 끝에 이 원고로 가는 링크 한 줄을 둔다. 원고에서는 `../notion/NN_이름.md`처럼 저장소 안 상대 경로로 적는다 [docs:12_scribe.md].
 
-원고는 저장소 링크를 걸지 않으니 그대로 올리면 이 줄도 글자만 남는다. 그래서 게시기는 원고를 올릴 때 게시 기록에서 이미 올라간 원고들의 경로와 Notion 주소를 모아 `Ctx.pages`에 담는다 [code:bridge/notion.py]. 상대 링크를 풀다가 그 경로가 여기 있으면 저장소 링크 대신 그 원고의 Notion 페이지 주소로 건다 [c:dc4944e]. 아직 올리지 않은 원고를 가리키면 글자만 남는다. 그래서 노션 원고를 먼저 올리고 포트폴리오를 그 뒤에 올려야 링크가 걸린다.
+원고는 저장소 링크를 걸지 않으니 그대로 올리면 이 줄도 글자만 남는다. 그래서 게시기는 원고를 올릴 때 게시 기록에서 이미 올라간 원고들의 경로와 Notion 주소를 모아 `Ctx.pages`에 담는다 [code:bridge/notion.py]. 상대 링크를 풀다가 그 경로가 여기 있으면 저장소 링크 대신 그 원고의 Notion 페이지 주소로 건다 [c:16dcb3a]. 아직 올리지 않은 원고를 가리키면 글자만 남는다. 그래서 노션 원고를 먼저 올리고 포트폴리오를 그 뒤에 올려야 링크가 걸린다.
 
 ## API
 
@@ -268,7 +272,7 @@ FOREMAN의 기술문서는 `docs/`를 그대로 올리지 않는다. `docs/`는 
 
 | 부르기 | 하는 일 | 프로젝트 토큰 |
 |---|---|---|
-| `GET /api/publish?project=` | 포트폴리오 게시 상태, 지금 설정의 출처(`repo`, `foreman`)와 경고, 멈춤 | 자기 프로젝트만 |
+| `GET /api/publish?project=` | 그 프로젝트의 포트폴리오 게시 목록과 `portfolio` 상태(`has_dir`: 원본 판에 `portfolio/`가 있나, 못 읽으면 null이고 목록은 비움, `place`: Notion 자리가 정해졌나, `ref`, `place_why`), 지금 설정의 출처(`repo`, `foreman`)와 경고, 멈춤. `project`를 빼면 FOREMAN | 자기 프로젝트만 |
 | `POST /api/publish` `action: "publish"` | 한 쪽 게시. 사람 수정이면 409와 덮기 줄 | 자기 프로젝트만 |
 | `POST /api/publish` `force: true` | 사람 수정을 버리고 덮기 | 안 됨 |
 | `POST /api/publish` `action: "docsync"` | 기술문서 한꺼번에 맞추기 | 안 됨 |
