@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/newsession.js, bridge/static/js/modelpick.js, bridge/static/js/roles.js, bridge/roles.py, bridge/model_choice.py, bridge/worktree.py, bridge/handoff.py, bridge/api/handoff.py, config/models.toml
-읽은 커밋: 9a7c22d
+읽은 커밋: 5e0f7c5
 -->
 
 # 새 세션 창
@@ -29,9 +29,9 @@
 | 디자이너 | 화면을 고칩니다. js, css, 테마, 캐릭터, 호버 글 | Opus 5.5 |
 | 관리자 | 합치고 시험하고 push하고 기록합니다 | Opus 5.5 |
 | 서기 | 문서를 쓰고 맞춥니다 | Opus 5.5 |
-| 조사 | 읽고 알아봅니다. 고치지 않고 결과 log만 씁니다 | Sonnet 5.5 |
+| 조사 | 읽고 알아봅니다. 고치지 않고 결과 log만 씁니다. 조사와 제안은 모두 여기입니다 | Sonnet 5.5 |
 
-기본값은 설정 파일에 있습니다 [code:config/models.toml]. 모델 칸에는 Opus 5.5, Opus 5, Sonnet 5.5, Haiku 5.5, Fable 5.2가 있고, 맨 위 「CC 설정 따르기」를 고르면 모델을 정하지 않고 Claude Code의 설정대로 띄웁니다. 목록에 없는 모델 이름을 API로 보내면 서버가 거부합니다 [code:bridge/model_choice.py] [log:stage12_model_choice_result.md].
+기본값은 설정 파일에 있습니다 [code:config/models.toml]. 모델 칸에는 Opus 5.5, Opus 5, Sonnet 5.5, Haiku 5.5, Fable 5.2가 있고, 맨 위 「CC 설정 따르기」를 고르면 모델을 정하지 않고 Claude Code의 설정대로 띄웁니다. 목록에 없는 모델 이름을 API로 보내면 서버가 거부합니다. 다만 예전에 쓰던 짧은 이름(opus, sonnet, haiku)은 거부하지 않고 목록의 모델로 바꿔 받습니다 [code:bridge/model_choice.py] [log:stage12_model_choice_result.md].
 
 ![역할을 「조사」로 바꾸자 모델 칸이 그 역할의 기본값 「Sonnet 5.5 (역할 기본)」으로 따라갔습니다 〔시연 재생〕](img/09_new_session_role_model.png)
 
@@ -45,7 +45,7 @@
 
 ## 옮기기용 요약 넣고 시작
 
-「시작」에서 「옮기기용 요약 넣고 시작」을 고르면, 다른 세션이 남긴 요약을 새 세션의 첫 입력으로 넣고 띄웁니다. 요약은 고른 프로젝트의 것만 세션별로 묶여 나오고, 가장 최근 것이 저절로 골라지지 않습니다. 사람이 세션을 직접 골라야 하고, 고르면 넣을 글 전체를 창 안에 먼저 보여 줍니다. 그 프로젝트에 넣을 요약이 하나도 없으면 이 칸은 꺼지고 「(넣을 요약이 없습니다)」가 붙습니다 [code:bridge/static/js/newsession.js]. 요약 속 「읽을 곳」이 틀렸으면 세션을 띄우기 전에 거부합니다. 요약을 만드는 쪽 이야기는 → 「세션 정리: 인계와 옮기기」.
+「시작」에서 「옮기기용 요약 넣고 시작」을 고르면, 다른 세션이 남긴 요약을 새 세션의 첫 입력으로 넣고 띄웁니다. 요약은 고른 프로젝트의 것만 세션별로 묶여 나오고, 가장 최근 것이 저절로 골라지지 않습니다. 사람이 세션을 직접 골라야 하고, 고르면 넣을 글을 창 안에 먼저 보여 줍니다. 글이 길면 일부 절을 줄여 넣고, 줄였다는 것과 전체 글이 있는 곳을 함께 알립니다. 그 프로젝트에 넣을 요약이 하나도 없으면 이 칸은 꺼지고 「(넣을 요약이 없습니다)」가 붙습니다 [code:bridge/static/js/newsession.js]. 요약 속 「읽을 곳」이 틀렸으면 세션을 띄우기 전에 거부합니다. 요약을 만드는 쪽 이야기는 → 「세션 정리: 인계와 옮기기」.
 
 ## 띄운 뒤
 

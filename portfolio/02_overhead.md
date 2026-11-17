@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/overhead.js, bridge/static/js/render.js, bridge/static/js/office.js, bridge/static/js/store.js, bridge/api/dashboard.py, bridge/uiver.py, bridge/ingest_health.py
-읽은 커밋: b97ff43
+읽은 커밋: 5e0f7c5
 -->
 # 머리 위 표시와 띠
 
@@ -66,6 +66,6 @@
 
 ![머리줄 오른쪽의 빨간 「⚠ 기록 못 읽는 세션 1」 〔시연 재생 — 숫자는 시연용〕](img/02_overhead_ingest.png)
 
-같은 신호가 텔레그램에도 갑니다. 물음은 바로, 보고는 묶음을 켠 프로젝트면 하루 한 번(21:00) 모아서 보냅니다(→ 「텔레그램 알림」).
+적재 막힘과 회복 알림은 하루 묶음을 기다리지 않고 바로 갑니다. 이 글 앞쪽의 머리 위 표시 가운데 관리자가 사람에게 올린 물음과 보고도 텔레그램에 갑니다. 물음은 바로, 보고는 묶음을 켠 프로젝트면 하루 한 번(21:00) 모아서 보냅니다(→ 「텔레그램 알림」).
 
 [기술문서: 화면](../notion/14_screen.md)
