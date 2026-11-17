@@ -511,12 +511,12 @@ def card_docs(res: dict[str, Any], limit: int = 12, hits: int = 5) -> dict[str, 
 
 
 # ── 코더 첫 글에 붙이는 묶음(11-17 사용자 지시 21) ─────────────
-# 글의 말투 규칙은 문서마다 다르다. 코더가 쓴 글도 다른 편과 같은 말투여야 한다(사용자). 상세는 그 규칙의 원천을 가리킨다
-TONE_FOREMAN = ("말투는 그 문서 쪽 규칙을 따른다. docs는 `docs/style_guide.md`(평서체, 세션이 읽는 글이라 얕고 짧게), "
-                "노션 원고(`notion/`)는 평서체에 깊고 쉽게, 문장 끝 근거 표시(`[code:경로]` 등), 포트폴리오(`portfolio/`)는 경어체(합니다, 해요)에 "
-                "화면 축, 문단으로(근거 표시는 git 원고에만 남고 노션 판에서는 떼어진다). 원고와 포트폴리오 머리 주석 「다루는 곳」이 바뀌면 함께 고친다. "
-                "네 문서의 역할은 `docs/12_scribe.md` 「0.」, 원고와 포트폴리오 쓰는 법은 `bridge/scribe_room.py` `task_prompt`")
-TONE_OTHER = "말투와 문서 자리는 이 저장소의 CLAUDE.md와 docs가 정한 것을 따른다"
+# 말투와 깊이 같은 원고 기준은 모든 저장소가 한 벌(`docs/manuscript_rules.md`, bridge/manuscript_rules.py)이고 아래 「원고 쓰는 기준」
+# 절로 붙는다(11-17 문서 도구 합치기 4단계). 여기 두 줄은 저장소마다 다른 것(근거 표시, 머리 주석, 문서 자리)만 가리킨다
+TONE_FOREMAN = ("FOREMAN만 다른 것은 `docs/style_guide.md`를 따른다. 노션 원고(`notion/`)와 포트폴리오(`portfolio/`)는 문장 끝 근거 표시"
+                "(`[code:경로]` 등, git 원고에만 남고 노션 판에서는 떼어진다)를 달고, 머리 주석 「다루는 곳」이 바뀌면 함께 고친다. "
+                "원고와 포트폴리오 쓰는 차례는 `bridge/scribe_room.py` `task_prompt`")
+TONE_OTHER = "이 저장소만 다른 것(문서 자리, 근거 표시, 차례, 금지값)은 이 저장소의 CLAUDE.md와 `docs/style_guide.md`가 정한 것을 따른다"
 
 
 def _same_repo(a: str | Path, b: str | Path) -> bool:
@@ -531,6 +531,7 @@ def _same_repo(a: str | Path, b: str | Path) -> bool:
 def prompt_block(cwd: str | Path, role: str | None) -> str:
     """코더 세션 첫 글 끝에 붙일 절. 코더가 아니면 빈 글(디자이너, 조사에는 넣지 않는다, 사용자). FOREMAN 저장소면 상대 경로 명령과
     FOREMAN 말투 규칙을, 다른 저장소면 FOREMAN 도구를 그 저장소에 대고 읽기만 하는 명령과 그 저장소 규칙을 따르라는 줄을 넣는다."""
+    from bridge import manuscript_rules
     from bridge.roles import CODER_DOCS_RULE, DOCS_RULE_ROLES
     if role not in DOCS_RULE_ROLES:
         return ""
@@ -547,7 +548,8 @@ def prompt_block(cwd: str | Path, role: str | None) -> str:
             "걸린 문단이 지금 코드와 맞으면 그대로 둔다\n"
             f"- {TONE_FOREMAN if own else TONE_OTHER}\n"
             "- 그 저장소 CLAUDE.md가 사람 승인으로 정한 문서(README.md, CLAUDE.md 등)는 고쳐도 합치기 카드가 사람에게 간다. "
-            "고치지 못한 문서는 마지막 보고에(결과 기록을 남기는 저장소면 거기에도) 「무엇이 걸리는지」로 적는다")
+            "고치지 못한 문서는 마지막 보고에(결과 기록을 남기는 저장소면 거기에도) 「무엇이 걸리는지」로 적는다"
+            "\n\n" + manuscript_rules.block("coder", own, "## 원고 쓰는 기준, 문서와 코드 주석을 쓸 때"))
 
 
 def split_line(d: dict[str, Any]) -> str:

@@ -27,7 +27,9 @@ def test_prompt_block_foreman_repo():
     assert USER in b and "`.venv/bin/python tools/docs.py refs --range main...HEAD --unfixed`" in b
     assert "docrefs.py" not in b and "코드로 걸린 문서 N, 안 고침 M" in b        # 3단계: 이름 하나, 카드 줄은 나눠 센다
     assert docrefs.TONE_FOREMAN in b and "docs/style_guide.md" in b and "경어체" in b
-    assert "—" not in b and "·" not in b                     # 새 글에 em dash, 가운뎃점을 쓰지 않는다
+    assert "docs/manuscript_rules.md" in b                    # 11-17 원고 쓰는 기준 한 벌
+    bare = b.replace("`—`", "").replace("`·`", "")            # 기준 줄이 이름을 대는 기호(백틱 안)만 뺀다
+    assert "—" not in bare and "·" not in bare                # 새 글에 em dash, 가운뎃점을 쓰지 않는다
 
 
 def test_prompt_block_other_repo(tmp_path):

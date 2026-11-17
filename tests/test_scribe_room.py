@@ -116,14 +116,14 @@ def test_portfolio_pieces_from_folder_and_blocked_per_piece(tmp_path):
         assert "tools/screen.py" in p and "경어체" in p and "화면 축" in p and "다루는 곳:" in p and "읽은 커밋:" in p
         assert "본 판" not in p and "config/portfolio.toml" not in p and "portfolio: " not in p
     assert "portfolio/01_room.md" in one and "정해진 주제 목록은 없다" in whole
-    assert "../notion/" in whole and "무엇을 해 주나" in whole and "덧붙인 요청" not in whole
+    assert "../notion/" in whole and "무엇을 해 주는지" in whole and "덧붙인 요청" not in whole
     assert "16편" in sr.task_prompt("portfolio", "foreman", "/repo", {"note": "포트폴리오 16편, 합치지 않는다"})
     for p in (one, whole):                                                        # 11-17 축 기준: 화면이 있으면 화면 축, 없으면 결정 중심
-        assert "보여줄 화면이 있으면 화면 축, 없으면 결정 중심" in p
-        assert "화면 축(보여줄 화면이 있을 때)" in p and "결정 중심(보여줄 화면이 없을 때)" in p
+        assert "보여줄 화면이 있으면 화면 축, 없으면 결정 중심" in p                   # 축 줄은 원고 쓰는 기준(docs/manuscript_rules.md 5절)에서 온다
+        assert "화면 축: 한 편이 화면 하나다" in p and "결정 중심: 한 편이 결정 하나다" in p
         assert "상황" in p and "고른 것" in p and "까닭" in p and "치른 값" in p
         assert "log/" in p and "본 근거" in p                                      # 어느 축을 골랐는지 기록하게 한다
-        assert p.index("축 고르기") < p.index("화면 축(보여줄")                       # 기준이 맨 앞(두 갈래보다 먼저)
+        assert p.index("축은 하나로 정한다") < p.index("화면 축: 한 편이")              # 기준이 맨 앞(두 갈래보다 먼저)
 
 
 def test_writing_prompts_keep_user_rules():
@@ -131,10 +131,10 @@ def test_writing_prompts_keep_user_rules():
     포트폴리오는 편마다 화면 사진과 움직이는 것은 영상."""
     port = sr.task_prompt("portfolio", "foreman", "/repo", {"siblings": "「한눈에」"})
     tech = sr.task_prompt("techdoc", "foreman", "/repo", {})
-    for p in (port, tech):
-        assert "목록이 아니라 문단" in p and "짧은 줄을 나열하지 않는다" in p
-        assert "비개발자도 포함된다" in p and "그 자리에서 무엇인지 한 줄로 풀어" in p
-    assert "다루는 범위가 좁다는 뜻이다. 문장을 짧게 끊으라는 뜻이 아니다" in port
+    for p in (port, tech):                                                        # 11-17부터 원고 쓰는 기준 한 벌(docs/manuscript_rules.md)에서 온다
+        assert "대부분 목록 없이 문단으로 쓴다" in p and "용어 풀이" in p
+        assert "비개발자도 읽는다" in p and "처음 나오는 자리에서 한 줄로 푼다" in p
+    assert "다루는 범위가 좁다는 뜻이지 문장을 짧게 끊으라는 뜻이 아니다" in port
     for want in ("편마다 그 화면 사진을 한 장 이상", "영상", "docs/13_demo_capture.md", "portfolio/img/", "--record", "?demo=", "bridge/static/demo/",
                  "5MB", "비밀값"):
         assert want in port, want
@@ -145,9 +145,9 @@ def test_techdoc_task_prompt_and_two_days():
     마지막으로 합친 뒤 이틀이 지났고 다루는 코드가 바뀐 편이 있을 때만 할 일에 올린다."""
     from datetime import datetime, timedelta
     p = sr.task_prompt("techdoc", "foreman", "/repo", {"changed": "`notion/02_x.md`(3개)", "tree": "`notion/02_x.md`", "note": "브리지 편도"})
-    for want in ("notion/", "서브에이전트", "평서체", "날짜", "[code:경로]", "NN_이름/", "다루는 곳:", "읽은 커밋:", "docs를 그대로 옮기기",
+    for want in ("notion/", "서브에이전트", "평서체", "날짜", "[code:경로]", "NN_이름/", "다루는 곳:", "읽은 커밋:", "docs를 그대로 옮기지 않고",
                  "notion/02_x.md`(3개)", "브리지 편도", "Notion에 올리기",
-                 "읽는 사람은 비개발자도 포함된다. 쉬운 말로 쓰되 깊이는 줄이지 마라. 어려운 말을 쓸 때는 그 자리에서 무엇인지 한 줄로 풀어라."):
+                 "비개발자도 읽는다. 쉬운 말로 쓰되 기술 설명을 빼지 않는다", "어려운 말은 처음 나오는 자리에서 한 줄로 푼다"):
         assert want in p, want
     assert "본 판" not in p
     assert sr.touches("techdoc") == ["notion/"] and "techdoc" in sr.TASKS
