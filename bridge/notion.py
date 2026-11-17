@@ -1,7 +1,8 @@
 """12c Notion 게시(11-06, docs/12_scribe.md 「5. Notion 연동」) — 원본은 git 마크다운, Notion은 게시판.
 
 - **길 B(사용자 결정 11-06)**: 브리지가 Notion API를 직접 부른다(내부 통합 토큰 `.env.notion` NOTION_TOKEN).
-  통합은 FOREMAN 페이지에만 연결돼 있어 **그 밖의 페이지는 Notion 권한이 막는다**(코드가 아니라 구조). LLM이 글을 옮겨 적지 않는다.
+  통합은 「프로젝트」 페이지에 연결돼 있다(11-09, config/notion.toml 머리). 그 밖의 페이지는 Notion 권한이 막고, 프로젝트마다 root
+  아래만 고치는 것은 아래 Scope가 막는다. LLM이 글을 옮겨 적지 않는다.
 - 코드에서도 한 번 더 막는다(`Scope`): 고치기 · 지우기 · 옮기기는 우리가 만든 페이지(doc_publish)만, 매번 Notion에서 부모를 따라
   올라가 루트에 닿는지 본다. 루트 자체는 못 건드린다. 지우기는 휴지통(archive — 30일 되살릴 수 있다).
 - 원본은 main에 커밋된 것만(`git show HEAD:<경로>`). 같은 원본은 같은 페이지에 내용을 갈아 끼운다(URL 그대로). 내용이 같으면 건너뛴다.
@@ -51,8 +52,8 @@ class OutOfScope(Exception):
 
 # ── 변환기(마크다운 → Notion 블록) ─────────────────────────────
 class Ctx:
-    """링크를 풀 때 쓰는 것 — 원본 경로와 게시한 커밋. links=False(포트폴리오)면 커밋 · 파일 · 저장소 안 링크를 글자로만 둔다 —
-    저장소가 비공개라 읽는 사람에게는 404다(11-06 사용자 결정)."""
+    """링크를 풀 때 쓰는 것. 원본 경로와 게시한 커밋. links=False(포트폴리오, 원고)면 커밋, 파일, 저장소 안 링크를 글자로만 둔다.
+    11-06 사용자 결정 때는 저장소가 비공개라 읽는 사람에게 404였다. 저장소는 지금 공개지만 링크 없이 두는 동작은 그대로다."""
     def __init__(self, path: str = "", commit: str = "HEAD", gh: str = GH, links: bool = True, heading_md: bool = False,
                  h1_title: bool = False, manuscript: bool = False) -> None:
         self.path, self.commit, self.gh, self.links = path, commit, gh, links
@@ -64,7 +65,7 @@ class Ctx:
         # (11-09 펫퍼민트 — 사람이 옮긴 페이지가 이 모양이라 새 페이지 · 끼우는 블록도 같게)
         self.heading_md = heading_md
         # 원고 → 게시된 Notion 페이지(11-15 사용자 목차 결정 4 — 포트폴리오 편 끝에 노션 편 링크 한 줄). 저장소 경로 → Notion url.
-        # 원고가 `../notion/02_x.md`로 가리키면 비공개 저장소 링크 대신 그 Notion 페이지로 건다(Publisher.publish가 채운다)
+        # 원고가 `../notion/02_x.md`로 가리키면 저장소 링크 대신 그 Notion 페이지로 건다(Publisher.publish가 채운다)
         self.pages: dict[str, str] = {}
 
     def blob(self, rel: str) -> str:
@@ -552,7 +553,7 @@ def header_block(path: str, commit: str, ctx: Ctx, when: str) -> dict[str, Any]:
 
 def footer_block(path: str, commit: str, ctx: Ctx, when: str, read: str | None = None) -> dict[str, Any]:
     """맨 아래 회색 한 줄(11-09 펫퍼민트 — 사본 상자 대신 "마지막 갱신 커밋은 작게"). Notion API엔 글자 크기가 없어 회색으로.
-    read — 원고 머리 주석의 읽은 커밋(11-15): 이 글이 어느 코드 판을 보고 쓴 것인지. 저장소가 비공개면(ctx.links 꺼짐) 링크 없이 글자만."""
+    read: 원고 머리 주석의 읽은 커밋(11-15). 이 글이 어느 코드 판을 보고 쓴 것인지. ctx.links가 꺼져 있으면(원고, 포트폴리오) 링크 없이 글자만."""
     rich = _rt("마지막 갱신 — ") + _rt(commit, code=True, link=f"{ctx.gh}/commit/{commit}" if ctx.links else None) + _rt(f" · {when}")
     if read:
         rich += _rt(" · 읽은 커밋 ") + _rt(read, code=True)
@@ -1007,7 +1008,7 @@ async def resolve_uploads(client: Any, repo: str, blocks: list[dict[str, Any]], 
 
 
 SRC_DIRS = ("docs/", "notion/")             # 기술문서 원고 폴더로 쓸 수 있는 것(config/notion.toml · .foreman/notion.toml의 src)
-MANUSCRIPTS = ("notion/", "portfolio/")     # 원고 — 노션 판에서 머리 주석 · 근거 표시를 떼고 저장소 링크를 걸지 않는다(비공개 저장소)
+MANUSCRIPTS = ("notion/", "portfolio/")     # 원고. 노션 판에서 머리 주석과 근거 표시를 떼고 저장소 링크를 걸지 않는다(Ctx 참고)
 
 
 def file_order(path: str) -> tuple[int, int] | None:
@@ -1238,7 +1239,7 @@ class Publisher:
         body, commit = git_show(self.repo, path, self.ref)
         digest = content_digest(self.repo, path, body, self.ref)
         portfolio = path.startswith("portfolio/")      # 바깥 사람이 읽는 글 — 저장소 링크 없이, 맨 위 "사본" 안내 없이(11-06)
-        # 원고(notion/ · portfolio/, 11-15)는 비공개 저장소 링크를 걸지 않는다(읽는 사람에게 404). 머리 주석 · 근거 표시는 _ctx가 뗀다
+        # 원고(notion/, portfolio/, 11-15)는 저장소 링크를 걸지 않는다(Ctx 참고). 머리 주석과 근거 표시는 _ctx가 뗀다
         ctx = self._ctx(path, commit or "HEAD", links=not path.startswith(MANUSCRIPTS))
         if ctx.manuscript:
             ctx.pages = await self._page_urls()

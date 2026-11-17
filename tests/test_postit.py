@@ -94,6 +94,29 @@ def test_nudge_of(tmp_path):
     assert pi.conf(tmp_path / "s.toml") == {**pi.CONF_DEFAULT, "open_max": 5}
 
 
+def test_scribe_toml_drives_nudge(tmp_path, monkeypatch, caplog):
+    """11-17. config/scribe.toml의 칸이 실제로 말풍선을 정한다(옛 [nudge]는 바꿔도 아무 일이 없었다)."""
+    import tomllib
+    real = tomllib.loads(pi.CONF_FILE.read_text(encoding="utf-8"))
+    assert set(real) == {"postit"}                                   # 읽는 코드가 없는 표를 두지 않는다
+    assert set(real["postit"]) == set(pi.CONF_DEFAULT)               # 모든 칸이 코드가 읽는 칸
+    assert pi.conf() == real["postit"] == pi.CONF_DEFAULT            # 파일 값 그대로, 11-17 화면 문턱(20, 7, 7) 그대로
+    now = datetime(2026, 11, 17, 12)
+    assert pi.nudge_of(2, now - timedelta(days=1), now, now=now) is None
+    # cf 없이 부르는 길(summary가 쓰는 길)이 설정 파일을 읽는다. 값을 바꾸면 말풍선이 바뀐다
+    f = tmp_path / "scribe.toml"
+    f.write_text("[postit]\nopen_max = 2\nstale_days = 7\nrefresh_days = 7\n", encoding="utf-8")
+    monkeypatch.setattr(pi, "CONF_FILE", f)
+    assert "할 일 2장" in pi.nudge_of(2, now - timedelta(days=1), now, now=now)["why"]
+    # 읽지 않는 표, 모르는 칸, 틀린 값은 조용히 넘기지 않고 경고한다
+    f.write_text("[nudge]\nnew_min = 3\n[postit]\nopen_max = \"x\"\nopen_mx = 4\n", encoding="utf-8")
+    pi._CONF_WARNED.clear()
+    with caplog.at_level("WARNING", logger=pi.log.name):
+        assert pi.conf() == pi.CONF_DEFAULT
+    text = caplog.text
+    assert "[nudge]" in text and "open_mx" in text and "open_max" in text
+
+
 def test_check_material_and_prompt():
     now = datetime(2026, 11, 15, 3)
     m = pi.check_material("foreman", [{"id": 7, "body": "질문 카드 접기", "created_at": now, "source": "chat", "confirmed": False}],

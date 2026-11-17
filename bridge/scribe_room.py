@@ -1,7 +1,8 @@
 """서기실(12a, 11-06) — 서기에게 시킬 일 · 할 일 세기(LLM 없음) · 일 시키기(worktree 서기 세션).
 
-시킬 일(사용자 11-06): 문서 점검 · CLAUDE.md 정리 · 알려진 한계 쓰기(11-15 전 「나중에 할 일 정리」) · Notion 게시. 회고 쓰기와 README 갱신은 11-15에 뺐다(docs/12_scribe.md 「0.」).
-Notion 게시는 세션 없이 [게시] 버튼(bridge/notion.py)이고, 나머지는 서기 세션을 worktree로 띄운다 — 합치기가 사람의 검토 관문이다.
+시킬 일은 아래 TASKS 한 곳이다(11-17 기준 문서 점검, 문서 고치기, CLAUDE.md 정리, 알려진 한계 쓰기, 포트폴리오 쓰기, 기술문서 쓰기,
+Notion 게시). 회고 쓰기와 README 갱신은 11-15에 뺐다(docs/12_scribe.md 「0.」).
+Notion 게시는 세션 없이 [게시] 버튼(bridge/notion.py)이고, 나머지는 서기 세션을 worktree로 띄운다. 합치기가 사람의 검토 관문이다.
 할 일(docs/12_scribe.md 「2. 언제 일하나」 2): 기계로 센다 — 서기 머리 위 "할 일 N", 누르면 목록. 자동으로 돌리지는 않는다.
 다른 저장소(런슈즈 · 펫퍼민트)는 읽기만 하고, 일은 사람이 그 방 서기를 눌렀을 때만 띄운다(그 저장소의 CLAUDE.md를 따르게 한다).
 """
@@ -43,30 +44,8 @@ TECHDOC_DIR = "notion/"        # 기술문서 원고 폴더(게시기 src가 이
 TECHDOC_DAYS = 2               # 마지막으로 기술문서 서기 세션을 합친 뒤 이만큼 지나고, 다루는 코드가 바뀐 편이 있으면 할 일에 올린다(11-15 사용자)
 
 
-NUDGE_FILE = Path(__file__).resolve().parent.parent / "config" / "scribe.toml"
-NUDGE_DEFAULT = {"new_min": 3, "oldest_days": 3}
-
-
-def nudge_conf(path: Path | None = None) -> dict[str, int]:
-    """서기 제안 기준(config/scribe.toml [nudge]) — 없거나 틀리면 기본값."""
-    import tomllib
-    try:
-        raw = tomllib.loads(Path(path or NUDGE_FILE).read_text(encoding="utf-8")).get("nudge") or {}
-    except (OSError, tomllib.TOMLDecodeError):
-        raw = {}
-    return {k: int(raw.get(k, v)) if str(raw.get(k, v)).isdigit() else v for k, v in NUDGE_DEFAULT.items()}
-
-
-def nudge_of(inbox: list[dict[str, Any]], conf: dict[str, int] | None = None, now: datetime | None = None) -> dict[str, Any] | None:
-    """[nudge] 기준 판단(11-09). 11-15 포스트잇 뒤로 서기 말풍선은 bridge/postit.py nudge_of(열린 포스트잇)가 정하고,
-    이것은 README에 아직 안 쓴 [→] 줄(「알려진 한계 쓰기」 몫)에만 쓴다."""
-    if not inbox:
-        return None
-    cf = conf or nudge_conf()
-    days = ((now or datetime.now(UTC).replace(tzinfo=None)) - inbox[0]["created_at"]).days
-    if len(inbox) >= cf["new_min"] or days >= cf["oldest_days"]:
-        return {"n": len(inbox), "days": days, "why": f"새로 {len(inbox)}개" + (f" · 가장 오래된 것 {days}일째" if days >= 1 else "")}
-    return None
+# 서기 말풍선 기준은 bridge/postit.py conf, nudge_of(config/scribe.toml [postit]) 한 곳이다. 11-09 받는 함 때의 [nudge] 기준
+# (nudge_conf, nudge_of)은 11-15 포스트잇 뒤로 부르는 곳이 시험뿐이라 11-17에 뺐다(설정을 바꿔도 아무 일이 없었다)
 
 
 SLUG = re.compile(r"[0-9a-z_]{1,40}")
@@ -718,7 +697,7 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
         rows = await later_prompts(engine, project, when)
         inbox = await inbox_new(engine, project)
         if not rows and not inbox:         # 빈손으로 Opus 세션을 띄우지 않는다(11-06 — 범위가 비어 사람 턴 0개로 떴다)
-            raise Refused(f"{'지난 정리 뒤로' if when else '지금까지'} \"나중에 · 미루\"라고 한 사람 말도, 받은 할 일도 없습니다. 띄우지 않았습니다")
+            raise Refused(f"{'지난 정리 뒤로' if when else '지금까지'} 포스트잇에서 [→]로 보낸 것도, [갱신]에서 끝났다고 닫은 한계 줄도 없습니다. 띄우지 않았습니다")
         from bridge.mask import Masker
         mat = sc.write(sc.OUT_ROOT / f"{project}_{day}" / "later.md", later_material(project, when, rows, inbox, Masker()))
         extra["materials"] = str(mat)
@@ -749,7 +728,7 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
     await _record(engine, project, name, task, tp["slug"] if tp else None, res)
     if task == "later" and res.get("session_id"):
         # 어디까지 봤나 — 이 세션이 합쳐지면 다음 정리의 기준점이 된다(later_since)
-        await m._act(res["session_id"], LATER_ACT, res.get("pid"), True, f"{now.isoformat()} 미룬 말 {len(rows)}개 받은 할 일 {len(inbox)}개")
+        await m._act(res["session_id"], LATER_ACT, res.get("pid"), True, f"{now.isoformat()} 뺄 줄 {len(rows)}개 쓸 줄 {len(inbox)}개")
         # 받은 할 일은 이 세션이 가져간다 — 합쳐지면 "옮김", 버려지면 다시 "새로"(상태는 계산, _INBOX_STATE)
         await _inbox_take(engine, [x["id"] for x in inbox], res["session_id"])
     return {"task": task, "project": project, "topic": tp["slug"] if tp else None, **{k: res.get(k) for k in ("tmux", "cc_session_id", "worktree", "note", "injected")}}

@@ -341,7 +341,7 @@ async def test_asks_card_shows_question_and_updates_in_place(repo, monkeypatch):
     monkeypatch.setattr(m, "_asks", a)
     m.cfg.notify_ready = True
     notes = []
-    monkeypatch.setattr(m, "_notify", lambda c, k, msg: notes.append(msg))
+    monkeypatch.setattr(m, "_notify", lambda c, k, msg, **kw: notes.append(msg))
 
     async def cands():
         return [row]
@@ -354,6 +354,57 @@ async def test_asks_card_shows_question_and_updates_in_place(repo, monkeypatch):
     m.on_change = lambda: changed.append(1)
     asks["v"] = None                                                            # 사람이 답 안 해도 됨 — 같은 카드, 표시만
     assert await m.check() == 1 and m.cards[7] is c and c.asks is None and changed and len(notes) == 1
+
+
+@pytest.mark.parametrize("rules, err, later", [
+    ([], None, None),                                              # 🛡 없음. 묶음 여부는 notifier가 정한다(지금처럼)
+    (["config/approval.toml"], None, False),                       # 규칙 파일이 바뀜. 바로
+    ([], "규칙 파일이 바뀌는지 확인하지 못했습니다(OSError)", False),  # 확인 못 함도 🛡. 바로
+])
+async def test_ready_notify_with_shield_is_not_digested(repo, monkeypatch, rules, err, later):
+    """11-17. 「⑂ 합치기 준비됨」에 🛡 줄이 붙으면 21:00 묶음으로 미루지 않는다(합친 뒤 rulefile 알림과 같은 기준)."""
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    (p / "b.txt").write_text("b\n"); sh(p, "add", "b.txt"); sh(p, "commit", "-qm", "b")
+    m, h, sent, row, lv = _mk(repo, monkeypatch, live=True)
+
+    async def rc(repo_, base, branch):
+        return list(rules), err
+    monkeypatch.setattr(wt, "rule_changes", rc)
+    m.cfg.notify_ready = True
+    notes = []
+    monkeypatch.setattr(m, "_notify", lambda c, k, msg, **kw: notes.append((k, msg, kw.get("later"))))
+
+    async def cands():
+        return [row]
+    monkeypatch.setattr(m, "_candidates", cands)
+    assert await m.check() == 1
+    (k, msg, lt), = [n for n in notes if n[0].startswith("mergeprep:ready:")]
+    assert lt is later and ("🛡" in msg) is (later is False)
+
+
+async def test_manager_unreachable_notify_is_not_digested(repo, monkeypatch):
+    """11-17. 관리자에게 못 전해 사람 몫이 된 알림(카드 전달 실패, 관리자 글을 텔레그램으로)은 묶음으로 미루지 않는다."""
+    m, h, sent, row, lv = _mk(repo, monkeypatch)
+    notes = []
+    monkeypatch.setattr(m, "_notify", lambda c, k, msg, **kw: notes.append((k, kw.get("later"))))
+
+    async def fail(cc, cwd, msg):
+        return False
+
+    async def none(repo_):
+        return None
+
+    async def nosync():
+        return None
+    monkeypatch.setattr(m, "_deliver", fail)
+    monkeypatch.setattr(m, "manager_of", none)
+    monkeypatch.setattr(m, "sync", nosync)
+    c = mp.Card(sid=7, title="t", project="proj", role="coder", repo=str(repo), name="w", branch="cc/w", base="main",
+                head="a" * 40, base_head="b" * 40, live=False, why="", ahead=1, behind=0, commits=[], files=[], conflict=[],
+                docs={}, asks=None, via="sweep", made_at="x", updated_at="x")
+    await m._tell_manager_card(c, ("e" * 8, str(repo)))
+    assert not await m._tell_manager(c, "합쳤다")
+    assert [(k.split(":")[1], lt) for k, lt in notes] == [("mcard", False), ("mgr", False)]
 
 
 async def test_turn_end_makes_card_without_sweep(repo, monkeypatch):

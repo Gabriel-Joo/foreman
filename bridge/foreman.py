@@ -30,6 +30,7 @@ from bridge.inject import Refused, _tmux_env, deliver
 from bridge.liveness import live_sessions
 from bridge.mask import Masker
 from bridge.roles import ROLE_KO, SESSION_ROLES, role_line
+from bridge.scribe_room import TASKS as SCRIBE_TASKS
 from bridge.usage import record_cli
 
 log = logging.getLogger("foreman.dispatch")
@@ -109,6 +110,11 @@ async def _git_checked(repo: str, *args: str) -> str:
 
 ALIASES ={"foreman": ("포먼", "FOREMAN", "Foreman")}   # 11-08 화면 이름표가 FOREMAN으로 — 사람은 여전히 "포먼"이라고 쓴다
 
+# 서기 일 이름은 bridge/scribe_room.py TASKS 한 곳에서 가져온다(11-17, 지시문에 손으로 적은 목록이 옛 sync, loss를 말하고
+# techdoc을 빠뜨렸다). publish는 세션이 아니라 버튼이라 뺀다(scribe_room.start가 거절한다)
+SCRIBE_SESSION_TASKS = tuple(k for k in SCRIBE_TASKS if k != "publish")
+SCRIBE_TASK_LINE = ", ".join(f"{SCRIBE_TASKS[k]['title']}({k})" for k in SCRIBE_SESSION_TASKS)
+
 INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는 일을 듣고, 어느 프로젝트에서 어떤 Claude Code 세션으로 할지 계획을 낸다.
 너는 계획만 낸다 — 세션을 띄우는 것은 사람이 계획을 승인한 뒤 브리지가 한다. 파일을 고치거나 명령을 실행하지 마라.
 필요하면 Read · Grep · Glob으로 아래 경로의 문서(CLAUDE.md · 메모리 · docs)를 더 읽어도 된다. 읽기는 꼭 필요한 만큼만.
@@ -121,7 +127,7 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
    - "new": 새 일
    - "ask": 모호하거나 위험해서 사람이 정해야 할 것이 있을 때(questions에 물을 것)
 3. role — {ROLE_LINE}
-   - scribe 일감(docs/12_scribe.md): 문서 맞추기(sync) · CLAUDE.md 정리(trim) · 압축 손실 반영(loss) · 포트폴리오
+   - scribe 일감(docs/12_scribe.md): {SCRIBE_TASKS}
    - 문서 정리 요청이면 scribe. 서기는 따로 작업(worktree)으로 띄우고, 합치기가 사람의 검토다
    - "manager"(관리자): 코드를 고치지 않고 다른 세션의 일을 거두는 일 — worktree 합친 뒤 시험 · push · 브리지 다시 띄우기 · 화면 점검 · log 기록.
      상주 세션이 아니다. 사람이 그런 일을 콕 집어 맡길 때만 고른다(코드를 고치는 일이면 coder)
@@ -161,7 +167,7 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
    - 여럿은 사람이 개수를 말했거나("둘 띄워"), 큰 일을 맡을 파일이 겹치지 않게 나눠 동시에 하는 것이 분명히 나을 때만
    - files — 그 세션이 맡을 파일(저장소 기준 경로, 폴더는 끝에 /, 글롭 * 가능). 고칠 파일을 알면 하나여도 적는다 —
      띄울 때 브리지가 살아 있는 세션 · 다른 계획과 겹치는지 본다. 모르면 []
-   - task — role "scribe"일 때만, 서기실 일 이름(later, trim, doccheck, docfix, portfolio) 중 맞는 것. 브리지가 서기실과 같은 일이
+   - task — role "scribe"일 때만, 서기실 일 이름({SCRIBE_TASK_KEYS}) 중 맞는 것. 브리지가 서기실과 같은 일이
      열려 있는지 함께 센다. 맞는 것이 없으면 쓰지 않는다(plan으로 적힌다)
    - 여럿이면 세션끼리 files가 겹치지 않게 나눈다. 겹칠 수밖에 없으면 merge_order(1부터, 먼저 합칠 것이 작다)로 순서를 정하고 reasons에 까닭을
    - 여럿이면 각 first_prompt에 맡을 파일과 "맡은 파일 밖은 고치기 전에 멈추고 묻는다"를 적는다
@@ -172,7 +178,8 @@ INSTRUCTIONS = """너는 FOREMAN의 디스패처(감독)다. 사람이 하려는
 {"project": "...", "mode": "new|handoff|attach|ask", "base_session": null, "summary_id": null, "attach_session": null,
  "sessions": [{"role": "coder", "read_only": false, "title": "...", "first_prompt": "...", "files": ["bridge/x.py"], "merge_order": 1}],
  "reasons": ["..."], "confidence": 0.8, "questions": [], "note_updates": []}
-```""".replace("{ROLE_LINE}", role_line())   # 역할 한 줄 설명은 bridge/roles.py 한 곳(11-15) — 화면 역할 고르기 칸과 같은 글
+```""".replace("{ROLE_LINE}", role_line()).replace(   # 역할 한 줄 설명은 bridge/roles.py 한 곳(11-15). 화면 역할 고르기 칸과 같은 글
+    "{SCRIBE_TASKS}", SCRIBE_TASK_LINE).replace("{SCRIBE_TASK_KEYS}", ", ".join(SCRIBE_SESSION_TASKS))
 
 # ── 한 계획에 여러 세션(11-11 교장 ①) ─────────────────────────
 # 계획 JSON의 sessions[]가 세션마다 역할 · 모델 · 이름 · 첫 글 · 읽기 전용 · worktree · 맡을 파일 · 합칠 순서 · 켬을 갖는다.

@@ -46,7 +46,7 @@
 | `publish` Notion 게시 | 세션 없이 서기실 [게시], [Notion에 올리기] 버튼으로 올린다(`bridge/notion.py`, 5절). `start`는 거절한다 | Notion 페이지 |
 
 - 11-05 설계의 `sync` 문서 맞추기, `loss` 압축 손실 반영, `polish` 인계 요약 다듬기는 코드에 들어간 적이 없다. 11-06 첫 서기실 코드(`549be68`)의 일감은 retro, doccheck, readme, trim, later, publish였다(retro, readme는 11-15에 뺐다, 0절). 문서 맞추기는 찾기(`doccheck`)와 고치기(`docfix`)로 나뉘었다. `loss`, `polish` 자리를 왜 두지 않았는지는 기록에 없다
-- 교장(계획)이 붙이는 서기 일 이름은 `bridge/foreman.py` 지시문에 따로 적혀 있다. 11-17 코드에서 그 목록은 `TASKS`와 다르다. task 칸 목록(later, trim, doccheck, docfix, portfolio)에 techdoc이 없고, role 칸 설명은 아직 옛 sync, loss를 말한다. 사람이 카드에서 넣는 일 이름은 꼴(`TASK_RE`)만 맞으면 받는다
+- 교장(계획)이 붙이는 서기 일 이름은 `bridge/foreman.py` 지시문이 `TASKS`에서 만든다(`SCRIBE_SESSION_TASKS`, `publish`만 뺀다). 11-17 전에는 지시문에 손으로 적어 task 칸 목록에 techdoc이 없고 role 칸 설명이 옛 sync, loss를 말했다. 시험 `test_instructions_scribe_tasks_follow_tasks`가 지킨다. 사람이 카드에서 넣는 일 이름은 꼴(`TASK_RE`)만 맞으면 받는다
 
 **띄우는 길은 셋, 기록은 하나(11-15 사용자 「한 곳으로 합쳐라」)** [log:foreman-4_scribe_two_paths_20261115.md]
 - 길: 서기실 [시키기](`scribe_room.start`), 계획 [시작](`ForemanDispatcher.start`), 직접 띄우기(`POST /api/spawn`). 셋 모두 `HandoffManager.spawn_new`로 간다
@@ -289,8 +289,9 @@
 
 ### 11-6. 조용히 쌓이지 않게
 
-- 머리 탭 단추에 할 일 수(「포스트잇 4장」, 11-15 전에는 가장 오래된 날도 적었다). 쌓인 까닭은 단추 호버에 적힌다(펼친 창에는 쌓임 안내 줄을 두지 않는다. 11-15 사용자: 「끝난 것은 [갱신]으로 찾고 안 할 것은 [x]로 지웁니다」는 [갱신] · [x] 호버에 이미 있다). **쌓임 기준**(`config/scribe.toml [postit]`, 없으면 코드 기본값 `open_max` 20, `stale_days` 7, `refresh_days` 7. 11-17 그 파일에 `[postit]`은 없어 기본값으로 돈다): 열린 것 20개 이상, 가장 오래된 것 7일, 마지막 [갱신] 뒤(한 번도 안 했으면 가장 오래된 것부터) 7일 중 하나면 서기 자리 말풍선 「포스트잇 쌓임」과 단추 주황. **말풍선만, 21시 묶음 보고에는 넣지 않는다**(사용자 답 4)
-- `config/scribe.toml`에 있는 칸은 `[nudge]`(`new_min` 3, `oldest_days` 3) 하나다. 11-09 받는 함 때 서기 몫 받은 할 일이 쌓이면 「정리할까요?」 말풍선을 띄우던 기준이다. 11-17 코드에서 이 값을 읽는 것은 `scribe_room.nudge_conf`, `nudge_of`뿐이고 브리지 안에서 부르는 곳이 없다(시험만 부른다). 말풍선은 위 `[postit]` 기준(`bridge/postit.py` `nudge_of`)이 정한다. 파일 머리 주석은 아직 옛 머리줄 [＋ 할 일]을 말한다
+- 머리 탭 단추에 할 일 수(「포스트잇 4장」, 11-15 전에는 가장 오래된 날도 적었다). 쌓인 까닭은 단추 호버에 적힌다(펼친 창에는 쌓임 안내 줄을 두지 않는다. 11-15 사용자: 「끝난 것은 [갱신]으로 찾고 안 할 것은 [x]로 지웁니다」는 [갱신] · [x] 호버에 이미 있다). **쌓임 기준**(`config/scribe.toml [postit]` `open_max` 20, `stale_days` 7, `refresh_days` 7. 파일이나 칸이 없으면 같은 값의 코드 기본값 `CONF_DEFAULT`): 열린 것 20개 이상, 가장 오래된 것 7일, 마지막 [갱신] 뒤(한 번도 안 했으면 가장 오래된 것부터) 7일 중 하나면 서기 자리 말풍선 「포스트잇 쌓임」과 단추 주황. **말풍선만, 21시 묶음 보고에는 넣지 않는다**(사용자 답 4)
+- 말풍선을 정하는 설정은 `[postit]` 하나다(`bridge/postit.py` `conf`, `nudge_of`). 서기실을 읽을 때마다 파일을 다시 읽어 브리지를 다시 띄우지 않아도 반영된다. 틀린 값(0 이상 정수가 아님)은 기본값으로 돌고, 모르는 칸과 `[postit]` 밖 표는 읽지 않는다. 셋 다 브리지 로그에 경고를 한 번 남긴다(조용히 무시하지 않게). 시험 `test_scribe_toml_drives_nudge`가 파일의 칸이 모두 코드가 읽는 칸인지, 값을 바꾸면 말풍선이 바뀌는지 본다
+- 11-09 받는 함 때의 `[nudge]`(`new_min` 3, `oldest_days` 3, 「정리할까요?」 말풍선)는 11-15 포스트잇 뒤로 읽는 곳이 시험뿐이어서 값을 바꿔도 아무 일이 없었다. 11-17에 그 표와 `scribe_room.nudge_conf`, `nudge_of`, `NUDGE_DEFAULT`를 뺐다. 화면 문턱은 그대로다(말풍선은 그 전부터 `[postit]` 기본값으로 돌았다)
 - [갱신]이 결과 없이 세션이 끝나면 `postit-done`(ok 0)을 남기고 화면 「지난 [갱신]이 결과 없이 끝났습니다」, 서기 할 일 줄 「포스트잇 [갱신] 실패」
 - README에 아직 안 쓴 [→] 줄과 뺄 줄은 서기 할 일 「알려진 한계 쓰기: 쓸 줄 N, 뺄 줄 M」
 - 그물이 깨져 늘 0이 되면 `tests/test_postit.py`의 실제 예문 시험이 걸린다

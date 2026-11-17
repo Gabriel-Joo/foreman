@@ -396,6 +396,11 @@ def _dt(s: str | None) -> datetime:
         return _now()
 
 
+def rule_urgent(c: Card) -> bool:
+    """🛡 줄이 붙는가. 안전 규칙 파일이 바뀌거나 바뀌는지 확인하지 못했다. 붙으면 알림을 묶음으로 미루지 않는다(11-17)."""
+    return bool(c.rule_files or c.rule_files_error)
+
+
 def rule_line(c: Card) -> str:
     """카드 · 알림 · 관리자 글의 「규칙 파일이 바뀝니다」 한 줄(11-15 D2)."""
     if c.rule_files_error:
@@ -895,11 +900,13 @@ class MergePrep:
                 self._notify(card, f"mergeprep:noauto:{sid}:{card.head[:12]}",
                              f"⚠ 조사 세션 {sid} 「{title or ''}」를 스스로 끝내고 합치지 않았습니다: {card.auto_why}. 합치기 카드로 남겼습니다")
             if self.cfg.notify_ready and card.approver != AUTO:
-                self._notify(card, f"mergeprep:ready:{sid}:{card.head[:12]}",
+                # 11-17 🛡(안전 규칙 파일이 바뀜, 확인 못 함)가 걸리면 묶음을 켠 프로젝트여도 바로. 합친 뒤 🛡 알림(rulefile)이
+                # 바로 가는 것과 같은 기준이다. 🛡는 [digest] urgent_marks에 없어 그대로 두면 승인자가 관리자일 때 21:00로 미뤄진다
+                self._notify(card, f"mergeprep:ready:{sid}:{card.head[:12]}", later=False if rule_urgent(card) else None, msg=
                              f"⑂ 합치기 준비됨 — 「{title or sid}」(세션 {sid}) {card.branch} 커밋 {card.ahead}개, "
                              + (f"충돌 {len(conflict)}개" if conflict else ("충돌 없음 · ff 가능" if card.ff else f"충돌 없음 · {card.base}에 새 커밋 {card.behind}개(rebase)"))
                              + (f"\n❓ 세션이 묻는 말이 있습니다 — 패널에서 답하십시오: {asks.get('tail') or ''}" if asks else "")
-                             + (f"\n🛡 {rule_line(card)}" if card.rule_files or card.rule_files_error else "")
+                             + (f"\n🛡 {rule_line(card)}" if rule_urgent(card) else "")
                              + ("\n▶ 관리자 세션이 승인합니다(사람 승인 필요 없음)" if card.approver == "manager"
                                 else (f"\n⚠ 사람 승인 — {'; '.join(card.human_why)}" if card.human_why else "")
                                 + "\n▶ 그 세션 패널의 「합치기 승인」에서 승인합니다"))
@@ -980,8 +987,10 @@ class MergePrep:
         ok = await self._deliver(mgr[0], mgr[1], self._card_msg(c))
         c.manager_told = ok
         if not ok:
+            # 11-17 바로 보낸다. 승인자가 사람으로 바뀌었다(승인 대기 알림과 같다). 묶음으로 미루면 21:00까지 아무도 승인하지 않는다
             self._notify(c, f"mergeprep:mcard:{c.sid}:{c.head[:12]}",
-                         f"관리자 세션에 합치기 카드를 알리지 못했습니다 — 「{c.title or c.sid}」(세션 {c.sid}) {c.branch}. 패널에서 승인합니다")
+                         f"관리자 세션에 합치기 카드를 알리지 못했습니다 — 「{c.title or c.sid}」(세션 {c.sid}) {c.branch}. 패널에서 승인합니다",
+                         later=False)
             if c.approver == "manager":
                 c.approver = "human"
                 c.note = "관리자 세션에 알리지 못해 사람이 승인합니다."
@@ -1360,8 +1369,10 @@ class MergePrep:
         m = await self.manager_of(c.repo)
         ok = bool(m) and await self._deliver(m[0], m[1], msg)
         if not ok:
+            # 11-17 바로 보낸다. 관리자 몫(합친 뒤 시험과 push, 끝난 세션의 충돌 풀기)을 받을 곳이 없어 사람에게 넘기는 글이다
             self._notify(c, f"mergeprep:mgr:{c.sid}:{c.head[:12]}:{c.status[:8]}",
-                         ("관리자 세션이 없어" if not m else "관리자 세션에 보내지 못해") + f" 텔레그램으로 남깁니다 — {msg}")
+                         ("관리자 세션이 없어" if not m else "관리자 세션에 보내지 못해") + f" 텔레그램으로 남깁니다 — {msg}",
+                         later=False)
         return ok
 
     def _notify(self, c: Card | None, key: str, msg: str, check_db: bool = True, later: bool | None = None) -> None:

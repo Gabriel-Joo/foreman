@@ -1,6 +1,5 @@
 """코더 상주(11-09, log/coder_resident_20261109.md) — 방마다 늘 있는 코더의 "맡길 일 N" 중 DB에서 세는 것. LLM 없음.
 
-- 받은 할 일 — 머리줄 [＋ 할 일]에서 "코더에게"로 받은 것 중 새로(bridge/scribe_room.py 받는 함, 0028 assignee)
 - 쉬게 한 일 — [쉬게 하기]로 세션만 끝내고 worktree를 남긴 것(session_action 'rest'). 합치거나 버리기 전까지, 다시 살아나지 않은 것
 나머지 신호(파이프라인 실패 · 빌드 알림 없음 · 승인 대기 · 권한 거부)는 화면이 이미 받는 값(대시보드 · 파이프라인 스냅숏)으로 센다 —
 새로 판정하지 않는다(bridge/static/js/coder.js coderJobs).
@@ -14,7 +13,6 @@ from typing import Any
 
 from sqlalchemy import text
 
-from bridge import scribe_room as sr
 from bridge import worktree as wt
 from bridge.handoff import REST_ACT
 from bridge.liveness import live_sessions
@@ -83,13 +81,10 @@ async def rested(engine: Any, sessions_dir: str | Path, project: str | None = No
 
 
 async def todo(engine: Any, sessions_dir: str | Path) -> dict[str, dict[str, Any]]:
-    """프로젝트마다 {inbox: [코더 몫 새로], rested: [쉬게 한 일]} — 화면이 1분마다 부른다."""
+    """프로젝트마다 {rested: [쉬게 한 일]}. 화면이 1분마다 부른다(drift는 api/coder.py가 붙인다).
+    11-17 inbox(코더 몫 받은 할 일)를 뺐다. 11-15 포스트잇 뒤로 코더 「맡길 일」은 포스트잇의 코더 추천 [띄우기]로 옮겨
+    scribe_room.inbox_new(..., "coder")가 늘 []였고, 화면(coder.js)도 읽지 않았다."""
     async with engine.connect() as c:
         names = [r[0] for r in (await c.execute(text("SELECT name FROM project"))).all()]
     rs = await rested(engine, sessions_dir)
-    out: dict[str, dict[str, Any]] = {}
-    for name in names:
-        inbox = await sr.inbox_new(engine, name, "coder")
-        out[name] = {"inbox": [{"id": x["id"], "body": x["body"], "created_at": x["created_at"].isoformat() + "Z"} for x in inbox],
-                     "rested": [r for r in rs if r["project"] == name]}
-    return out
+    return {name: {"rested": [r for r in rs if r["project"] == name]} for name in names}

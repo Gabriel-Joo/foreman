@@ -102,13 +102,41 @@ def net_kind(t: str | None) -> list[str]:
 
 
 # ── 쌓임 기준(config/scribe.toml [postit]) ───────────────────
+_CONF_WARNED: set[str] = set()
+
+
+def _conf_warn(msg: str) -> None:
+    """설정 문제는 한 번만 경고한다(서기실을 읽을 때마다 부른다)."""
+    if msg not in _CONF_WARNED:
+        _CONF_WARNED.add(msg)
+        log.warning("%s", msg)
+
+
 def conf(path: Path | None = None) -> dict[str, int]:
+    """쌓임 기준. 서기 말풍선을 정하는 설정은 이 [postit] 하나다(11-17, 옛 [nudge]는 읽는 곳이 없어 뺐다).
+    파일이 없으면 기본값. 틀린 값은 기본값으로, 모르는 칸과 모르는 표는 무시하고 돌되 로그에 경고한다(조용히 무시하지 않게)."""
     import tomllib
+    p = Path(path or CONF_FILE)
     try:
-        raw = tomllib.loads(Path(path or CONF_FILE).read_text(encoding="utf-8")).get("postit") or {}
-    except (OSError, tomllib.TOMLDecodeError):
-        raw = {}
-    return {k: int(raw[k]) if str(raw.get(k, "")).isdigit() else v for k, v in CONF_DEFAULT.items()}
+        whole = tomllib.loads(p.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        whole = {}
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        _conf_warn(f"{p.name}을 읽지 못해 쌓임 기준을 기본값으로 둡니다: {type(e).__name__}")
+        whole = {}
+    for k in whole:
+        if k != "postit":
+            _conf_warn(f"{p.name}의 [{k}]는 읽는 코드가 없습니다(쌓임 기준은 [postit])")
+    raw = whole.get("postit") or {}
+    for k in raw:
+        if k not in CONF_DEFAULT:
+            _conf_warn(f"{p.name} [postit]의 {k}는 모르는 칸입니다(아는 칸: {', '.join(CONF_DEFAULT)})")
+    out = {}
+    for k, v in CONF_DEFAULT.items():
+        if k in raw and not str(raw[k]).isdigit():
+            _conf_warn(f"{p.name} [postit] {k} = {raw[k]!r}는 0 이상 정수가 아니라 기본값 {v}로 둡니다")
+        out[k] = int(raw[k]) if str(raw.get(k, "")).isdigit() else v
+    return out
 
 
 def nudge_of(n_open: int, oldest: datetime | None, last_check: datetime | None, cf: dict[str, int] | None = None,

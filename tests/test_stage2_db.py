@@ -1552,19 +1552,11 @@ async def test_inbox_assignee_coder_jobs_and_rest(env, tmp_path):
     r = await cr.rested(engine, s.sessions_dir, proj)
     assert [(x["session_id"], x["branch"], x["days"]) for x in r] == [(sid, "cc/rest-a", 2)]
     todo = await cr.todo(engine, s.sessions_dir)
-    assert todo[proj]["rested"][0]["session_id"] == sid and todo[proj]["inbox"] == []    # 코더 몫은 이미 가져갔다
+    assert todo[proj]["rested"][0]["session_id"] == sid and "inbox" not in todo[proj]    # 11-17 코더 몫 받은 할 일 칸은 뺐다
     async with engine.begin() as cn:
         await cn.execute(T("INSERT INTO session_action (session_id, action, ok, detail) VALUES (:s, 'wt-merge', 1, 'x')"), {"s": sid})
     assert await cr.rested(engine, s.sessions_dir) == []
-    # 서기 제안 — 새로 3개 이상 또는 가장 오래된 것 3일(config/scribe.toml)
-    now = datetime(2026, 11, 9, 12, 0)
-    one = [{"created_at": now - timedelta(hours=1)}]
-    conf = {"new_min": 3, "oldest_days": 3}
-    assert sr.nudge_of([], conf, now) is None and sr.nudge_of(one, conf, now) is None
-    assert sr.nudge_of(one * 3, conf, now)["n"] == 3
-    old = sr.nudge_of([{"created_at": now - timedelta(days=4)}], conf, now)
-    assert old["days"] == 4 and "4일째" in old["why"]
-    assert sr.nudge_conf(tmp_path / "없음.toml") == sr.NUDGE_DEFAULT
+    # 서기 말풍선 기준은 tests/test_postit.py(config/scribe.toml [postit], 11-17에 옛 [nudge] 길을 뺐다)
 
 
 # ── 11-06 사람이 붙인 이름이 항상 이긴다 ─────────────

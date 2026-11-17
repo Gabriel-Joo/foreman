@@ -276,18 +276,6 @@ why = "계획 시작 결과 글. 목록 이름 「끝낸 것」이 아니라 「
 
 [[code_exception]]
 file = "bridge/scribe_room.py"
-old = "받은 할 일"
-near = "한 사람 말도, 받은 할 일도 없습니다"
-why = "scribe_room.start 안 거부 사유. 11-15 같은 시각 다른 코더(두 길 합치기)가 start를 고쳐 이번에 건드리지 않음. 합친 뒤 「포스트잇에서 [→]로 보낸 줄도, 뺄 줄도 없습니다」로 따로 고친다"
-
-[[code_exception]]
-file = "bridge/scribe_room.py"
-old = "받은 할 일"
-near = "개 받은 할 일 "
-why = "scribe_room.start가 남기는 session_action detail(화면에 나가지 않음). 위와 같은 까닭으로 이번에 건드리지 않음"
-
-[[code_exception]]
-file = "bridge/scribe_room.py"
 old = "따로 작업"
 near = "너는 따로 작업(worktree) 세션이다"
 why = "서기실 세션 지시문(COMMON)"

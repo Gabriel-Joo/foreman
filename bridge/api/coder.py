@@ -21,7 +21,7 @@ def invalidate() -> None:
 
 @router.get("/todo")
 async def coder_todo(request: Request) -> dict[str, Any]:
-    """프로젝트마다 {inbox, rested} — 화면이 1분마다 부른다. 15초 동안은 같은 답."""
+    """프로젝트마다 {rested, drift}. 화면이 1분마다 부른다. 15초 동안은 같은 답(11-17 inbox를 뺐다, coder_room.todo)."""
     if _cache["data"] is not None and time.monotonic() - _cache["at"] < 15:
         return _cache["data"]
     data = {"projects": await cr.todo(request.app.state.store.engine, request.app.state.settings.sessions_dir)}

@@ -66,6 +66,16 @@ def test_plan_start_passes_task_and_sessions_of_keeps_it():
     assert "task" in fm.S_FIELDS and 'role "scribe"일 때만' in fm.INSTRUCTIONS
 
 
+def test_instructions_scribe_tasks_follow_tasks():
+    """11-17. 교장 지시문의 서기 일 이름은 scribe_room.TASKS 한 곳에서 온다(손으로 적은 목록이 sync, loss를 말하고 techdoc이 빠졌다)."""
+    line = next(ln for ln in fm.INSTRUCTIONS.splitlines() if "서기실 일 이름(" in ln)
+    names = line.split("서기실 일 이름(")[1].split(")")[0].split(", ")
+    assert set(names) == set(sr.TASKS) - {"publish"}                  # publish는 세션이 아니라 버튼
+    role = next(ln for ln in fm.INSTRUCTIONS.splitlines() if "scribe 일감" in ln)
+    assert all(f"({k})" in role for k in names) and "(sync)" not in role and "(loss)" not in role
+    assert "{SCRIBE_" not in fm.INSTRUCTIONS
+
+
 def test_plan_start_hands_task_to_spawn_new(tmp_path, monkeypatch):
     from bridge import foreman_note
     from tests.test_foreman_multi import _HM, _aw, _disp, _Eng

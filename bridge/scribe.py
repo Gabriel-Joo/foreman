@@ -1,8 +1,10 @@
 """서기 재료 도우미(LLM 없음, docs/12_scribe.md 「3. 무엇을 읽나」).
 
-서기 일감의 재료를 만들 때 함께 쓰는 작은 함수만 둔다. 쓰는 곳: 「나중에 할 일 정리」 재료(scribe_room.later_material), 물어보기 재료(scribe_ask).
+서기 일감의 재료를 만들 때 함께 쓰는 작은 함수만 둔다. 쓰는 곳: 「알려진 한계 쓰기」 재료(scribe_room.later_material, 11-15 전 이름
+「나중에 할 일 정리」), 물어보기 재료(scribe_ask).
 - 사람 말 원문은 자르지 않는다(_full). 요약 줄만 자른다(_clip)
-- 사람 프롬프트 원문이 든 재료는 저장소 밖(~/.foreman/scribe/, 700)에 쓴다(write). GitHub에 올리지 않는다
+- 사람 프롬프트 원문이 든 재료는 저장소 밖(OUT_ROOT 아래 <프로젝트>_<날짜>/)에 쓴다(write). 그 날짜 폴더를 700, 파일을 600으로 맞춘다.
+  맨 위 폴더 권한은 정하지 않는다. GitHub에 올리지 않는다
 회고 재료 묶음(collect, render, retro_prompt)은 11-15에 회고 쓰기와 함께 뺐다(docs/12_scribe.md 「0.」).
 """
 

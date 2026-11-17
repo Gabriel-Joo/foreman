@@ -878,7 +878,10 @@ class HandoffManager:
     def will_worktree(self, cwd: str, exclude_cc: str | None = None, role: str | None = None) -> bool:
         """spawn_new(worktree=None)이 따로 작업 자리로 보낼까 — 그 프로젝트에 살아 있는 세션이 있으면.
         exclude_cc — 세지 않을 세션(새 세션으로 옮기기의 옛 세션: 곧 끝나니 하나 더 생기는 게 아니다, 11-09).
-        role — 관리자(manager)는 늘 원본 폴더라 False(11-11 아홉). 코더 · 서기 · 디자이너 등은 위 규칙."""
+        role: 관리자(manager)는 늘 원본 폴더라 False(11-11 아홉). 코더, 서기, 디자이너 등은 위 규칙.
+        Ctrl+Z로 멈춘 세션(상태 T)도 살아 있는 세션으로 센다(11-17 확인, 의도). 이 판정은 원본 폴더 작업 트리에 쓰는 세션이 둘이 되지 않게
+        막는 것이라, 사람이 멈춘 세션을 다시 살리면 같은 트리를 함께 쓰게 된다. foreman.py는 attach 대상 고르기(지금 받을 수 있는 세션)와
+        계획 겹침(file_conflicts)에서 멈춘 세션을 빼는데, 기준이 다르다."""
         if role == "manager" or not self.project_of or not cwd:
             return False
         project = self.project_of(cwd)[0]
