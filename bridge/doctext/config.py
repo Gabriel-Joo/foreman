@@ -34,6 +34,7 @@
     docs = true                 # README에 docs 차례(문서, 제목, 요약)를 넣는다. 기본 false. 상태 칸은 없다
     docs_summary = "para"       # 요약을 읽는 곳: para(첫 # 줄 뒤 첫 문단), heading:<글>(그 글이 든 절 아래 첫 문단), none
     docs_skip = ["상태:"]        # 이 머리로 시작하는 인용 문단은 요약으로 쓰지 않는다
+    docs_numbered_only = false  # true면 docs 차례에 NN_로 시작하는 파일만 넣는다(TODO.md, style_guide.md 같은 번호 없는 글은 편이 아니라 뺀다). 기본 false
 
 모르는 칸은 경고로 알리고 쓰지 않는다. 깨진 파일이나 틀린 값은 기본값으로 떨어지지 않고 DocsConfigError로 멈춘다
 (조용히 FOREMAN 기본값으로 돌면 다른 저장소의 기록 폴더가 코드로 세어지는 것처럼 틀린 결과가 알림 없이 나온다).
@@ -147,7 +148,7 @@ class DocsConfig:
     allowed_domains: list[str] = field(default_factory=list)
     not_code: list[str] = field(default_factory=lambda: [".md"])
     check: CheckConfig = field(default_factory=CheckConfig)
-    readme: dict[str, Any] | None = None    # [readme] 표(title, project, docs, docs_summary, docs_skip). None이면 README 생성과 점검 9번이 꺼져 있다
+    readme: dict[str, Any] | None = None    # [readme] 표(title, project, docs, docs_summary, docs_skip, docs_numbered_only). None이면 README 생성과 점검 9번이 꺼져 있다
     source: str = "default"                # "default" 또는 읽은 파일(`.foreman/docs.toml`, rev가 있으면 `rev:.foreman/docs.toml`)
     warnings: list[str] = field(default_factory=list)
 
@@ -188,9 +189,9 @@ def parse(text: str, source: str = PATH) -> DocsConfig:
             raise DocsConfigError(f"{source}: readme는 표([readme])여야 합니다")
         cfg.readme = {}
         for k, v in rd.items():
-            if k == "docs":
+            if k in ("docs", "docs_numbered_only"):
                 if not isinstance(v, bool):
-                    raise DocsConfigError(f"{source}: readme.docs는 true 또는 false여야 합니다")
+                    raise DocsConfigError(f"{source}: readme.{k}는 true 또는 false여야 합니다")
                 cfg.readme[k] = v
             elif k == "docs_skip":
                 cfg.readme[k] = _strs(v, f"{source}: readme.docs_skip") if v != [] else []

@@ -96,6 +96,21 @@ def test_cover_skips_not_code(foreman):
     assert any("CLAUDE.md" in x and "덮기 밖" in x for x in w)               # .md는 not_code에 있어도 덮기 대상에 남는다
 
 
+def test_cover_skips_generated_readme(foreman):
+    """`[readme]` 표가 있으면 맨 위 README.md는 생성물이라 덮기 대상이 아니다. 표가 없으면 지금처럼 대상이다. 다른 폴더의 README.md는 그대로 대상."""
+    put(foreman, "README.md", "# 가짜\n")
+    put(foreman, "apps/README.md", "# 앱\n")
+    commit(foreman)
+    w = whats(run(foreman))
+    assert any("README.md가" in x and "덮기 밖" in x and "apps/" not in x for x in w)       # 표 없음: 대상
+    put(foreman, ".foreman/docs.toml", '[readme]\ntitle = "가짜"\n')
+    commit(foreman)
+    res = run(foreman)
+    w = whats(res)
+    assert not any("덮기 밖: README.md" in x for x in w)                                     # 표 있음: 대상에서 빠짐
+    assert any("덮기 밖: apps/README.md" in x for x in w)
+
+
 def test_foreman_errors(foreman):
     put(foreman, "bridge/c.py", "새 파일\n")
     put(foreman, "notion/01_a.md", (foreman / "notion/01_a.md").read_text(encoding="utf-8")

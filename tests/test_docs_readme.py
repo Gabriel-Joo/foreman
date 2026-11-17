@@ -218,6 +218,8 @@ def test_project_from_origin(tmp_path):
     ('[readme]\ndocs_summary = "first"\n', "docs_summary"),
     ('[readme]\ndocs_summary = "heading:"\n', "docs_summary"),
     ('[readme]\ndocs_skip = "상태:"\n', "글자 목록"),
+    ('[readme]\ndocs_numbered_only = "yes"\n', "docs_numbered_only는 true 또는 false"),
+    ('[readme]\ndocs_numbered_only = 1\n', "docs_numbered_only는 true 또는 false"),
 ])
 def test_config_errors(body, why):
     with pytest.raises(dcfg.DocsConfigError, match=why):
@@ -258,6 +260,34 @@ def test_docs_toc_foreman_shape(tmp_path, capsys):
     put(r, "docs/02_new.md", "# 새 문서\n\n새 요약.\n")                                  # 편이 늘면 점검 9번이 건다
     errs, _ = check9(r)
     assert len(errs) == 1 and "다릅니다" in errs[0]
+
+
+def test_docs_toc_numbered_only(tmp_path, capsys):
+    """`docs_numbered_only = true`면 NN_로 시작하는 파일만 차례에 든다. 기본(없음)은 번호 없는 파일도 넣는다."""
+    files = dict(FILES) | DOCS_FOREMAN | {"docs/TODO.md": "# 할 일\n\n나중에.\n", "docs/style_guide.md": "# 문서 쓰는 법\n\n기준.\n"}
+    base = '[readme]\ntitle = "가짜"\nproject = "fake"\ndocs = true\n'
+    files[".foreman/docs.toml"] = base
+    r = make(tmp_path, files, name="off")
+    rc, _, _ = cli(capsys, "--repo", str(r), "--links", links_file(tmp_path), "readme")
+    sec = (r / "README.md").read_text(encoding="utf-8")
+    sec = sec[sec.index(f"## {rd.DOCS_HEAD}"):]
+    assert rc == 0 and "docs/TODO.md" in sec and "docs/style_guide.md" in sec          # 기본: 지금 동작
+    files[".foreman/docs.toml"] = base + "docs_numbered_only = true\n"
+    r = make(tmp_path, files, name="on")
+    rc, _, _ = cli(capsys, "--repo", str(r), "--links", links_file(tmp_path), "readme")
+    sec = (r / "README.md").read_text(encoding="utf-8")
+    sec = sec[sec.index(f"## {rd.DOCS_HEAD}"):]
+    assert rc == 0 and "docs/TODO.md" not in sec and "docs/style_guide.md" not in sec
+    assert "docs/00_design.md" in sec and "docs/01_brief.md" in sec
+    assert check9(r)[0] == []                                                           # 점검 9번도 같은 차례를 본다
+
+
+def test_intro_unbolds_whole_paragraph_only():
+    assert rd.intro("# 제목\n\n**문단 전체가 굵다. 둘째 문장도.**\n") == "문단 전체가 굵다. 둘째 문장도."
+    assert rd.intro("# 제목\n\n**첫 줄이 굵다\n둘째 줄도 굵다 [code:a.py].**\n") == "첫 줄이 굵다 둘째 줄도 굵다."
+    assert rd.intro("# 제목\n\n**하나** 그리고 **둘**\n") == "**하나** 그리고 **둘**"        # 굵은 글이 둘이면 그대로
+    assert rd.intro("# 제목\n\n앞은 **굵게** 뒤는 보통이다.\n") == "앞은 **굵게** 뒤는 보통이다."
+    assert rd.intro("# 제목\n\n**굵게** 시작한다.\n") == "**굵게** 시작한다."
 
 
 def test_docs_toc_other_shape(tmp_path, capsys):

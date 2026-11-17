@@ -3,7 +3,7 @@
 들어가는 것 넷, 이 차례로:
 1. 제목: 저장소 이름(`.foreman/docs.toml` `[readme] title`, 없으면 그 저장소의 게시 프로젝트 이름)
 2. 소개 문단: 포트폴리오 00편(`portfolio/00_*.md`)의 첫 문단. 첫 # 줄 뒤에서 처음 나오는 본문 문단이다. 인용(`>`),
-   절 제목, 그림, 표, 목록 줄은 건너뛴다. 글은 그대로 두고 근거 표시만 뗀다(노션 판과 같은 `STRIP`)
+   절 제목, 그림, 표, 목록 줄은 건너뛴다. 글은 그대로 두고 근거 표시만 뗀다(노션 판과 같은 `STRIP`). 문단 전체를 굵은 글 하나로 감쌌으면 그 표시만 벗긴다
 3. 포트폴리오와 기술문서 원고 편 목록: 표 칸은 번호, 제목(편 파일 링크), 하위. 번호는 첫 # 줄 앞 번호(`03 `, `02-01 `),
    없으면 파일 이름 번호(`03_x.md`는 03, `01_a/02_b.md`는 01-02). 제목은 번호를 뗀 첫 # 줄. 표에는 맨 위 편만 넣고,
    하위 편이 있는 편은 「하위 N」을 하위 칸에 적는다(11-17 사용자: README는 길 안내라 50줄이면 목차가 된다. 하위 편은
@@ -15,7 +15,8 @@
    `README.md`와 하위 폴더는 빼고) 한 줄씩, 칸은 문서(파일 링크), 제목, 요약. **상태 칸은 두지 않는다**(손으로 쓴 차례의 상태 칸이
    늘 낡았다). 제목은 첫 # 줄, 없으면 파일 이름. 요약은 저장소마다 꼴이 달라 `[readme] docs_summary`로 고른다:
    `"para"`(기본, 첫 # 줄 뒤 다음 절 제목 전의 첫 문단), `"heading:<글>"`(그 글이 든 절 제목 아래 첫 문단, 런슈즈 「한 줄 요약」),
-   `"none"`. `docs_skip`에 적은 머리(예: `"상태:"`)로 시작하는 인용 문단은 건너뛴다. 문단의 첫 문장만, 120자까지
+   `"none"`. `docs_skip`에 적은 머리(예: `"상태:"`)로 시작하는 인용 문단은 건너뛴다. 문단의 첫 문장만, 120자까지.
+   `docs_numbered_only = true`면 `NN_`로 시작하는 파일만 넣는다(기본 false)
 
 README 칸에 옮기는 제목과 요약에서는 em dash와 가운뎃점을 쉼표로 바꾼다(백틱 안은 그대로). README 새 줄도 줄표 검사를 받는데
 원본 문서의 옛 기호를 그대로 옮기면 생성물이 그 검사에 걸린다. 원본 문서는 바꾸지 않는다.
@@ -47,6 +48,7 @@ TOP = ("<!-- 이 파일은 `tools/docs.py readme`가 만든다. 손으로 고치
 NO_LINK = "아직 노션에 올라가지 않았습니다."
 DOCS_HEAD = "문서"                                      # docs 차례 절 제목
 SUMMARY_MAX = 120
+WHOLE_BOLD = re.compile(r"^\*\*((?:(?!\*\*).)+)\*\*$")   # 굵은 글 하나가 문단 전체인 꼴
 HEADING = re.compile(r"^#{1,6}\s")
 SKIP_LINE = re.compile(r"^\s*(!\[|\||[-*+]\s|\d+\.\s|---|<)")
 SENTENCE = re.compile(r"^(.+?[.!?](?:\*\*|[)」\"'])*)(?=\s|$)")
@@ -100,7 +102,10 @@ def intro(md: str) -> str | None:
                 break
             continue
         para.append(STRIP.sub("", s).strip())
-    return " ".join(para) or None
+    text = " ".join(para)
+    # 문단 전체를 한 번에 감싼 굵은 표시만 벗긴다(굵은 글은 문단 안에서 한두 곳을 짚는 것이다). 일부만 굵은 글은 그대로 둔다
+    m = WHOLE_BOLD.match(text)
+    return (m.group(1).strip() if m else text) or None
 
 
 def cell(s: str) -> str:
@@ -155,12 +160,15 @@ def doc_summary(md: str, mode: str = "para", skip: tuple[str, ...] = ()) -> str:
 
 
 def doc_rows(folder: str, paths: list[str], bodies: dict[str, str], mode: str = "para",
-             skip: tuple[str, ...] = ()) -> list[tuple[str, str, str]]:
-    """docs 차례 줄 [(경로, 제목, 요약)]: 폴더 바로 아래 `*.md`(그 폴더의 README.md는 뺀다), 파일 이름 차례."""
+             skip: tuple[str, ...] = (), numbered_only: bool = False) -> list[tuple[str, str, str]]:
+    """docs 차례 줄 [(경로, 제목, 요약)]: 폴더 바로 아래 `*.md`(그 폴더의 README.md는 뺀다), 파일 이름 차례.
+    numbered_only면 `NN_`로 시작하는 파일만 넣는다(`[readme] docs_numbered_only`)."""
     out: list[tuple[str, str, str]] = []
     for p in sorted(paths):
         rel = p[len(folder):]
         if "/" in rel or not rel.endswith(".md") or rel == "README.md":
+            continue
+        if numbered_only and not PART.match(rel):
             continue
         md = bodies.get(p, "")
         title = STRIP.sub("", first_h1(md)[1] or "").strip() or rel[:-3]
@@ -269,5 +277,8 @@ def diff(have: str, want: str) -> str | None:
     return "끝 줄바꿈이 다릅니다"
 
 
-__all__ = ["Built", "DOCS_HEAD", "NAME_KO", "NO_LINK", "ORDER", "PATH", "TOP", "build", "cell", "diff", "doc_rows",
+GENERATED = (PATH,)       # 생성기가 쓰는 파일 전부(저장소 맨 위 기준 경로). 덮기 검사가 대상에서 뺀다. 새 생성물은 여기에 더한다
+
+
+__all__ = ["Built", "DOCS_HEAD", "GENERATED", "NAME_KO", "NO_LINK", "ORDER", "PATH", "TOP", "build", "cell", "diff", "doc_rows",
            "doc_summary", "intro", "links_in", "number", "rows", "top_piece", "top_rows"]
