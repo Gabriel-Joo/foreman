@@ -81,6 +81,21 @@ def test_foreman_default_clean(foreman):
     assert res["reads"]["piece"] and res["marks"] == 6                         # 울타리 안은 세지 않는다(FOREMAN)
 
 
+def test_cover_skips_not_code(foreman):
+    """not_code의 확장자, 경로, 글롭에 드는 파일은 덮기 대상이 아니고, 덮기 밖 틀림으로도 나오지 않는다. `.md`는 빼지 않는다."""
+    put(foreman, ".foreman/docs.toml", 'not_code = [".md", ".png", "static/skip.txt", "assets/*.bin"]\n')
+    put(foreman, "static/skip.txt", "x\n")
+    put(foreman, "static/keep.txt", "y\n")
+    put(foreman, "assets/a.bin", "z\n")
+    put(foreman, "assets/b.png", "p")
+    put(foreman, "CLAUDE.md", "규칙\n")
+    commit(foreman)
+    w = whats(run(foreman))
+    assert not any("assets/" in x or "skip.txt" in x for x in w)             # 글롭, 경로, 확장자로 빠짐
+    assert any("static/keep.txt" in x and "덮기 밖" in x for x in w)         # 안 든 파일은 그대로 덮기 밖
+    assert any("CLAUDE.md" in x and "덮기 밖" in x for x in w)               # .md는 not_code에 있어도 덮기 대상에 남는다
+
+
 def test_foreman_errors(foreman):
     put(foreman, "bridge/c.py", "새 파일\n")
     put(foreman, "notion/01_a.md", (foreman / "notion/01_a.md").read_text(encoding="utf-8")

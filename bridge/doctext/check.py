@@ -31,7 +31,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from bridge.doctext import dashdot, readme
-from bridge.doctext.config import DocsConfig
+from bridge.doctext.config import DocsConfig, not_code_match
 from bridge.doctext.head import COVERS, READ, SHA, bad_covers, parse_head
 from bridge.doctext.lines import COMMENT, TEXT, walk
 from bridge.doctext.marks import MARK, STRIP, target
@@ -356,7 +356,10 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
         files = sorted(GitView(repo, r0).files) if r0 and len(reads.get("main", [])) == 1 else (
             sorted(base.files) if isinstance(base, GitView) else tree(repo, None))
         folders = tuple(d for d in sets.values() if d) + tuple(cfg.records)
-        target_files = [f for f in files if not f.startswith(folders)]
+        # `not_code`에 드는 파일(사진, 잠금 파일 같은 것)은 덮을 대상이 아니다. 확장자 `.md`만은 뺀다. 문서 묶음 밖 글(CLAUDE.md,
+        # README.md, 운영 절차서)은 코드는 아니어도 어느 편이 다루는지 보는 대상으로 남겨 둔다(판단은 log/foreman-6_cover_not_code_*.md)
+        skip = [p for p in cfg.not_code if p != ".md"]
+        target_files = [f for f in files if not f.startswith(folders) and not not_code_match(f, skip)]
         covered: set[str] = set()
         for k in ck.cover_by:
             ps = checked.get(k) or (pieces_of(repo, rev, sets[k], k in ck.numbered_only, cfg.records) if sets.get(k) else [])
