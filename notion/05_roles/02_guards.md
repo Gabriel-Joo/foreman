@@ -274,7 +274,7 @@ until ! pgrep -f "tools/screen.py"; do sleep 3; done
 
 ### 브리지 밖에서 도는 하나
 
-이 hook만 브리지를 거치지 않는다. 저장소의 `.claude/settings.json`에 PostToolUse hook으로 바로 걸려 있다.
+이 hook만 브리지를 거치지 않는다. 저장소의 `.claude/settings.json`에 PostToolUse hook으로 바로 걸려 있다. 이 파일에는 이 hook 하나만 들어 있고, 어떤 도구든 하나가 끝날 때마다 5초 안에 한국어 점검 스크립트를 부르라고 적혀 있다 [code:.claude/settings.json].
 
 ```json
 {"hooks": {"PostToolUse": [{"matcher": "*", "hooks": [{"type": "command",
