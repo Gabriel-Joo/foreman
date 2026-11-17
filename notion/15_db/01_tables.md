@@ -365,7 +365,7 @@ erDiagram
 | `edited_at` | 0031 | 사람이 목록에서 글을 고친 마지막 시각 |
 | `source`, `source_ref`, `confirmed`, `closed_reason`, `closed_at`, `closed_note` | 0033 | 어디서 왔나, 근거, 확인 전인가, 닫힌 까닭 |
 
-0033의 칸이 지금 포스트잇의 뼈대다 [code:migrations/0033_postit.sql]. `source`는 들어온 길이다. 포스트잇 창에 바로 적음(note), 옛 머리줄 단추(todo, 단추는 없앴고 옛 길과 이미 든 줄에만 남았다), 사람이 대화에서 말해 관리자가 올림(said), 브리지 그물이 대화에서 찾음(chat), 문서로 옮기기에서 다 못 넣은 것(promote) [code:bridge/postit.py]. `source_ref`는 그 근거(턴 번호나 옮기기 항목)이고, 그물과 옮기기에서 온 것은 근거 하나에 한 장만 만든다. `confirmed`가 0이면 그물이 찾은 것이라 화면에 흐리게 보이고 사람이 저장하거나 버린다. `closed_reason`은 drop(안 하기로 함), limit(README 「알려진 한계」로 보냄), done(끝남)이다.
+0033의 칸이 지금 포스트잇의 뼈대다 [code:migrations/0033_postit.sql]. `source`는 들어온 길이다. 포스트잇 창에 바로 적음(note), 옛 머리줄 단추(todo, 단추는 없앴고 옛 길과 이미 든 줄에만 남았다), 사람이 대화에서 말해 관리자가 올림(said), 브리지 그물이 대화에서 찾음(chat), 문서로 옮기기에서 다 못 넣은 것(promote), TODO 항목을 [한계로] 보내며 새로 만든 닫힌 줄(todomd) [code:bridge/postit.py]. `source_ref`는 그 근거(턴 번호나 옮기기 항목)이고, 그물과 옮기기에서 온 것은 근거 하나에 한 장만 만든다. `confirmed`가 0이면 그물이 찾은 것이라 화면에 흐리게 보이고 사람이 저장하거나 버린다. `closed_reason`은 drop(안 하기로 함), todo(`docs/TODO.md`로 보냄), limit(고른 편의 「알려진 한계」로 보냄), done(끝남)이다.
 
 상태 칸이 따로 없다는 점이 이 표의 특징이다. 「새로」, 「가져가는 중」, 「합쳐짐」 같은 상태는 `closed_reason`과 `taken_by` 세션의 `session_action` 줄을 함께 보고 계산한다 [code:bridge/postit.py]. 세션이 합쳐졌는지는 이미 장부에 있으니, 같은 사실을 두 곳에 두어 어긋나게 하지 않으려는 것이다. 「→ 포스트잇」.
 
