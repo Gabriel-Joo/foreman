@@ -7,6 +7,8 @@
   올라가 루트에 닿는지 본다. 루트 자체는 못 건드린다. 지우기는 휴지통(archive — 30일 되살릴 수 있다).
 - 원본은 main에 커밋된 것만(`git show HEAD:<경로>`). 같은 원본은 같은 페이지에 내용을 갈아 끼운다(URL 그대로). 내용이 같으면 건너뛴다.
 - 근거 표시: [c:sha] → GitHub 커밋 링크, [log:…] · [docs:…] → 게시한 커밋의 파일 링크, [t:…] → 뺀다(사용자만 볼 수 있는 DB 번호, 11-06 결정).
+- 편 사이 참조(11-17): 원고의 「→ 「제목」」은 같은 묶음(기술문서 원고 폴더, portfolio/) 편의 첫 # 줄로 찾아 그 Notion 페이지를 건다
+  (Ctx.xref_url). 없거나 겹친 제목은 글자로 두고 경고, 아직 안 올린 편은 그 편이 올라간 뒤 다시 건다(Publisher.relink, docsync 두 번째 돌기).
 """
 
 from __future__ import annotations
@@ -67,6 +69,12 @@ class Ctx:
         # 원고 → 게시된 Notion 페이지(11-15 사용자 목차 결정 4 — 포트폴리오 편 끝에 노션 편 링크 한 줄). 저장소 경로 → Notion url.
         # 원고가 `../notion/02_x.md`로 가리키면 저장소 링크 대신 그 Notion 페이지로 건다(Publisher.publish가 채운다)
         self.pages: dict[str, str] = {}
+        # 편 사이 참조 「→ 「제목」」(11-17 사용자 지시 22의 10번). 같은 묶음 편들의 첫 # 줄 색인(xref_index). None이면 알아보지 않는다
+        # (원고가 아닌 글). 풀린 편(refs), 풀렸지만 아직 Notion에 없는 편(pending), 없거나 겹친 제목(warnings)을 변환하며 모은다
+        self.xref: tuple[dict[str, list[str]], dict[str, list[str]]] | None = None
+        self.refs: set[str] = set()
+        self.pending: list[str] = []
+        self.warnings: list[str] = []
 
     def blob(self, rel: str) -> str:
         return f"{self.gh}/blob/{self.commit}/{rel}"
@@ -94,6 +102,52 @@ class Ctx:
             return self.pages[r]
         return self.blob(r) if r else None
 
+    def xref_url(self, title: str) -> str | None:
+        """「→ 「제목」」의 제목 → 그 편의 Notion url. 못 풀면 None이고 까닭을 warnings(없음, 겹침) 또는 pending(아직 안 올림)에 남긴다.
+        그대로 맞는 제목을 먼저 보고, 없으면 앞 번호를 뗀 제목으로 본다(xref_index). 자기 자신을 가리키면 링크 없이 둔다."""
+        assert self.xref is not None
+        exact, bare = self.xref
+        key = re.sub(r"[`*]", "", title).strip()
+        hits = exact.get(key) or bare.get(key) or []
+        if not hits:
+            _note(self.warnings, f"→ 「{title}」: 이 제목을 가진 편이 없어 글자로 둡니다")
+            return None
+        if len(hits) > 1:
+            _note(self.warnings, f"→ 「{title}」: 이 제목을 가진 편이 {len(hits)}개라 글자로 둡니다({', '.join(hits)})")
+            return None
+        target = hits[0]
+        if target == self.path:
+            return None
+        self.refs.add(target)
+        if target in self.pages:
+            return self.pages[target]
+        _note(self.pending, target)
+        return None
+
+
+def _note(out: list[str], s: str) -> None:
+    if s not in out:
+        out.append(s)
+
+
+XREF_BARE = re.compile(r"^\d{2}(?:-\d{2})?\s+")     # H1 앞 번호(「00 」, 「02-01 」). 인프라 scripts/docs-check.py 5번 규칙과 같다
+
+
+def xref_index(titles: dict[str, str | None]) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """같은 묶음 편들(경로 → 첫 # 줄 제목, first_h1)의 제목 색인. (그대로 제목 → 경로들, 앞 번호 뗀 제목 → 경로들).
+    FOREMAN 원고는 「→ 「03 세션 지켜보기와 글 넣기」」처럼 번호째 쓰고, 인프라 원고는 번호 없이 쓴다. 둘 다 받는다."""
+    exact: dict[str, list[str]] = {}
+    bare: dict[str, list[str]] = {}
+    for path in sorted(titles):
+        t = titles[path]
+        if not t:
+            continue
+        exact.setdefault(t, []).append(path)
+        b = XREF_BARE.sub("", t)
+        if b != t:
+            bare.setdefault(b, []).append(path)
+    return exact, bare
+
 
 EVIDENCE_STRIP = r"\s*\[(?:c|t|log|docs|code):[^\]\s]+\]"     # 원고의 노션 판에서 떼는 근거 표시(이웃 공백까지)
 SOURCES = ("log/", "docs/", "portfolio/", "notion/")         # 게시할 수 있는 원본 폴더(notion/ = 노션 기술문서 원고, 11-15)
@@ -104,6 +158,8 @@ _INLINE = re.compile(
     r"|(?P<code>`[^`\n]+`)"
     r"|(?P<bold>\*\*(?P<btext>(?:`[^`\n]+`|[^*\n]|\*(?!\*))+?)\*\*)"
     r"|(?P<ev>\[(?P<evk>c|log|docs|code|t):(?P<evv>[^\]\s]+)\])"
+    # 편 사이 참조(11-17). 코드 구간 안은 위 code가 먼저 먹는다. 제목에 백틱이 있으면 받지 않는다(안쪽 코드 구간을 깨지 않게)
+    r"|(?P<xref>(?P<xa>→[ \t]*)「(?P<xt>[^」\n`]+)」)"
     r"|(?P<link>\[(?P<ltext>[^\]\n]+)\]\((?P<lhref>[^)\s]+)\))")
 
 
@@ -133,6 +189,12 @@ def _runs(text: str, ctx: Ctx, bold: bool) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     pos = 0
     for m in _INLINE.finditer(text):
+        url = None
+        if m["xref"]:
+            # 못 풀면(원고가 아닌 글, 없는 제목, 아직 안 올린 편) 앞뒤 글과 한 덩어리 그대로, 블록 지문이 전과 같게(pos를 옮기지 않는다)
+            url = ctx.xref_url(m["xt"]) if ctx.xref is not None else None
+            if not url:
+                continue
         if m.start() > pos:
             out += _rt(text[pos:m.start()], bold=bold)
         if m["code2"]:
@@ -154,6 +216,8 @@ def _runs(text: str, ctx: Ctx, bold: bool) -> list[dict[str, Any]]:
             else:                                 # log · docs — 파일(줄 범위 · 절은 떼고 파일만 잇는다)
                 f = re.split(r"[:#]", v)[0]
                 out += _rt(f"{k}/{f}", code=True, bold=bold, link=ctx.blob(f"{k}/{f}") if ctx.links else None)
+        elif m["xref"]:
+            out += _rt(m["xa"], bold=bold) + _rt(f"「{m['xt']}」", bold=bold, link=url)   # 화살표는 글자, 「제목」에 그 편 페이지
         elif m["link"]:
             href = ctx.resolve(m["lhref"])
             if href and not ctx.links and href.startswith(ctx.gh):
@@ -542,6 +606,27 @@ def git_show(repo: str, path: str, ref: str = "HEAD") -> tuple[str, str]:
     sha = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%h", ref, "--", path],
                          capture_output=True, text=True, timeout=15).stdout.strip()
     return r.stdout, sha
+
+
+def ref_titles(repo: str, ref: str, prefix: str, cache: dict[str, str | None] | None = None) -> dict[str, str | None]:
+    """ref에 있는 prefix 아래 .md마다 첫 # 줄 제목(first_h1). 편 사이 참조 색인 재료(11-17). ls-tree 한 번으로 blob을 보고,
+    같은 blob은 cache에서 꺼낸다(맞추기 한 번에 편마다 묶음 전체를 다시 읽지 않게). ref를 못 읽으면 OSError."""
+    r = subprocess.run(["git", "-C", repo, "ls-tree", "-r", ref, "--", prefix], capture_output=True, text=True, timeout=15)
+    if r.returncode != 0:
+        raise OSError(f"{ref}의 {prefix}를 읽지 못했습니다")
+    cache = {} if cache is None else cache
+    out: dict[str, str | None] = {}
+    for ln in r.stdout.splitlines():
+        meta, _, path = ln.partition("\t")
+        parts = meta.split()
+        if len(parts) < 3 or parts[1] != "blob" or not path.endswith(".md"):
+            continue
+        sha = parts[2]
+        if sha not in cache:
+            body = subprocess.run(["git", "-C", repo, "cat-file", "-p", sha], capture_output=True, text=True, timeout=15).stdout
+            cache[sha] = first_h1(body)[1]
+        out[path] = cache[sha]
+    return out
 
 
 def header_block(path: str, commit: str, ctx: Ctx, when: str) -> dict[str, Any]:
@@ -1032,6 +1117,7 @@ class Publisher:
         self.docs_page = norm(docs_page) if docs_page else None
         self.portfolio_page = norm(portfolio_page) if portfolio_page else None
         self.scope = Scope(client, root)
+        self._h1_cache: dict[str, str | None] = {}      # blob → 첫 # 줄(편 사이 참조 색인, ref_titles)
         self.configure(docs_mode, quiet_min, opts)
 
     def configure(self, docs_mode: str = "off", quiet_min: float = 30, opts: dict[str, Any] | None = None) -> None:
@@ -1075,6 +1161,27 @@ class Publisher:
         # h1_title는 기술문서(원고 폴더 src)만 — 포트폴리오는 portfolio_title 방식 그대로
         return Ctx(path, commit, self.gh, links=links, heading_md=self.heading_md,
                    h1_title=self.h1_title and path.startswith(self.src), manuscript=path.startswith(MANUSCRIPTS))
+
+    def xref_group(self, path: str) -> str | None:
+        """「→ 「제목」」을 찾는 묶음(11-17). 포트폴리오는 portfolio/, 기술문서 원고는 원고 폴더(src가 notion/일 때). 그 밖은 None
+        (docs/를 그대로 올리는 프로젝트는 알아보지 않는다. 사람이 옮긴 페이지와 맞대는 펫퍼민트 글이 바뀌지 않게)."""
+        if path.startswith("portfolio/"):
+            return "portfolio/"
+        if self.src in MANUSCRIPTS and path.startswith(self.src):
+            return self.src
+        return None
+
+    async def _publish_ctx(self, path: str, commit: str) -> Ctx:
+        """게시용 Ctx. 원고면 게시된 원고 url(pages)과 같은 묶음 제목 색인(xref)까지 채운다."""
+        ctx = self._ctx(path, commit, links=not path.startswith(MANUSCRIPTS))
+        if ctx.manuscript:
+            ctx.pages = await self._page_urls()
+            if (g := self.xref_group(path)):
+                try:
+                    ctx.xref = xref_index(ref_titles(self.repo, self.ref, g, self._h1_cache))
+                except (OSError, subprocess.SubprocessError) as e:
+                    ctx.warnings.append(f"편 사이 참조 색인을 읽지 못해 → 「제목」을 글자로 둡니다: {e}")
+        return ctx
 
     async def new_page_plan(self, path: str) -> tuple[str, str | None]:
         """새 페이지의 (부모 페이지, 정한 제목 또는 None). 정할 수 없으면 OutOfScope — 만들지 않는다(짐작으로 엉뚱한 자리 · 제목에 만들지 않게).
@@ -1146,8 +1253,8 @@ class Publisher:
         return dict(r) if r else None
 
     async def _page_urls(self) -> dict[str, str]:
-        """게시된 원고(notion/ · portfolio/)의 경로 → Notion url — 원고끼리 상대 링크를 Notion 페이지로 잇는다(11-15).
-        아직 안 올린 원고를 가리키면 글자만 남는다(노션 원고를 먼저 올린 뒤 포트폴리오를 올린다)."""
+        """게시된 원고(notion/ · portfolio/)의 경로 → Notion url — 원고끼리 상대 링크와 「→ 「제목」」(11-17)을 Notion 페이지로 잇는다
+        (11-15). 아직 안 올린 원고를 가리키면 글자만 남는다. 「→ 「제목」」은 그 편이 올라간 뒤 다시 건다(relink)."""
         from sqlalchemy import text
         out: dict[str, str] = {}
         async with self.e.connect() as c:
@@ -1157,6 +1264,41 @@ class Publisher:
                     {"p": self.project, "pre": pre + "%"})).all()
                 out.update({r[0]: r[1] for r in rows if r[1]})
         return out
+
+    async def _pending_paths(self, group: str) -> list[str]:
+        """그 묶음에서 링크를 다 걸지 못한 채 올라간 편. publish가 content_hash를 비워 둔 것(commit_sha는 있다).
+        짝만 지은 페이지(pair, commit_sha도 비어 있다)는 들지 않는다."""
+        from sqlalchemy import text
+        async with self.e.connect() as c:
+            rows = (await c.execute(text(
+                "SELECT path FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' "
+                "AND content_hash IS NULL AND commit_sha IS NOT NULL AND path LIKE :pre ORDER BY path"),
+                {"p": self.project, "pre": group + "%"})).all()
+        return [r[0] for r in rows]
+
+    async def relink(self, published: str, when: str = "") -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """published 편이 막 올라갔다. 그 편을 「→ 「제목」」으로 가리키는데 아직 링크를 못 건 편을 다시 게시한다(11-17).
+        (다시 건 것, 못 건 것). 다시 게시는 relink 없이 한 번만(서로 기다리는 편끼리 돌지 않게). 사람 수정이 있으면 덮지 않고 못 건 것으로."""
+        g = self.xref_group(published)
+        done: list[dict[str, Any]] = []
+        failed: list[dict[str, Any]] = []
+        if not g:
+            return done, failed
+        for p in await self._pending_paths(g):
+            if p == published:
+                continue
+            try:
+                body, commit = git_show(self.repo, p, self.ref)
+                ctx = await self._publish_ctx(p, commit or "HEAD")
+                md_to_blocks(body, ctx)
+                if published not in ctx.refs:
+                    continue
+                # 제목은 지금 것 그대로(docsync가 준 README 표 제목을 첫 H1이나 파일 이름으로 바꾸지 않게. title = "h1"이면 어차피 H1)
+                r = await self.publish(p, when, title=(await self._row(p) or {}).get("title"), relink=False)
+                done.append({"path": p, "action": r["action"], "pending": r.get("pending", [])})
+            except (HumanEdited, OutOfScope, NotionError, FileNotFoundError, OSError) as e:
+                failed.append({"path": p, "error": str(e)[:200]})
+        return done, failed
 
     async def _save(self, path: str, **kw: Any) -> None:
         from sqlalchemy import text
@@ -1232,18 +1374,32 @@ class Publisher:
                 out.append(plain((b.get(t) or {}).get("rich_text") or [])[:60] or f"({t})")
         return out
 
-    async def publish(self, path: str, when: str = "", force: bool = False, title: str | None = None) -> dict[str, Any]:
+    async def publish(self, path: str, when: str = "", force: bool = False, title: str | None = None,
+                      relink: bool = True) -> dict[str, Any]:
         """force — Notion에서 사람이 고친 블록이 있어도 git 원본으로 덮는다([Notion 수정 버리고 덮기]). 아니면 HumanEdited.
-        title — 페이지 제목을 정해 준다(기술문서: "파일 이름 — README 표 설명", bridge/docsync.titles). 없으면 첫 H1 · 파일 이름."""
+        title — 페이지 제목을 정해 준다(기술문서: "파일 이름 — README 표 설명", bridge/docsync.titles). 없으면 첫 H1 · 파일 이름.
+        결과의 warnings: 링크로 못 바꾼 「→ 「제목」」(없는 제목, 겹치는 제목), pending: 가리키지만 아직 Notion에 없는 편(11-17).
+        relink: 올린 뒤 이 편을 기다리던 편을 다시 건다(Publisher.relink). docsync는 끄고 다 올린 뒤 한 번 더 돈다."""
+        res = await self._publish_one(path, when, force, title)
+        if res.get("warnings"):
+            logging.getLogger("foreman.notion").warning("편 사이 참조를 링크로 못 바꿨습니다(%s) %s: %s",
+                                                        self.project, path, " / ".join(res["warnings"])[:400])
+        if relink and res.get("action") != "unchanged" and self.xref_group(path):
+            res["relinked"], res["relink_failed"] = await self.relink(path, when)
+        return res
+
+    async def _publish_one(self, path: str, when: str, force: bool, title: str | None) -> dict[str, Any]:
         given = title
         body, commit = git_show(self.repo, path, self.ref)
         digest = content_digest(self.repo, path, body, self.ref)
         portfolio = path.startswith("portfolio/")      # 바깥 사람이 읽는 글 — 저장소 링크 없이, 맨 위 "사본" 안내 없이(11-06)
         # 원고(notion/, portfolio/, 11-15)는 저장소 링크를 걸지 않는다(Ctx 참고). 머리 주석과 근거 표시는 _ctx가 뗀다
-        ctx = self._ctx(path, commit or "HEAD", links=not path.startswith(MANUSCRIPTS))
-        if ctx.manuscript:
-            ctx.pages = await self._page_urls()
+        ctx = await self._publish_ctx(path, commit or "HEAD")
         title, blocks = md_to_blocks(body, ctx)
+        xref = {"warnings": ctx.warnings, "pending": ctx.pending}
+        # 아직 안 올린 편을 가리키면 지문을 비워 둔다(11-17). 이 편은 「바뀜」으로 남아 다음 게시(그 편이 올라간 뒤 relink,
+        # docsync 두 번째 돌기, 사람의 [게시])에서 다시 걸린다. 그 편이 끝내 안 올라가면 계속 바뀜으로 보인다(조용히 묻히지 않게)
+        saved = None if ctx.pending else digest
         h1 = ctx.h1_title and bool(title)               # title = "h1": 첫 H1이 있으면 그것이 제목(docsync가 준 README 표 제목보다 앞선다)
         if ctx.h1_title and not title:
             logging.getLogger("foreman.notion").warning("첫 H1이 없어 README 표 제목 방식으로 돌아갑니다(title = h1): %s", path)
@@ -1272,9 +1428,9 @@ class Publisher:
                     await self._save(path, title=title)
                 if row["content_hash"] == digest:
                     return {"path": path, "action": "unchanged", "page_id": pid, "url": row["url"], "commit": commit,
-                            "title": title}
+                            "title": title, **xref}
                 if "shape" in self.keep_notion:
-                    return await self._publish_shape(path, pid, row, blocks, commit, digest, title, force)
+                    return {**await self._publish_shape(path, pid, row, blocks, commit, saved, title, force), **xref}
                 prev = None if force else self.prev_blocks(path, row)
                 if self.keep_notion:
                     kids = await self.c.children(pid)
@@ -1286,8 +1442,8 @@ class Publisher:
                 st = await sync_children(self.c, pid, blocks)    # 같은 페이지 · 같은 URL, 바뀐 블록만(mermaid 미리보기가 남는다)
                 if not self.keep_title:
                     await self.c.set_title(pid, title)
-                await self._save(path, kind="doc", title=title, commit_sha=commit, content_hash=digest, status="published", error=None)
-                return {"path": path, "action": "updated", "page_id": pid, "url": row["url"], "commit": commit, "sync": st}
+                await self._save(path, kind="doc", title=title, commit_sha=commit, content_hash=saved, status="published", error=None)
+                return {"path": path, "action": "updated", "page_id": pid, "url": row["url"], "commit": commit, "sync": st, **xref}
             # Notion에서 지워졌거나 범위 밖으로 옮겨졌다 — 그 페이지는 두고 새로 만든다
         if not self.create:
             # 11-09 펫퍼민트 — 사람이 옮겨 둔 페이지에만 맞춘다. 짝이 없거나 범위 밖이면 새로 만들지 않고 멈춘다(사용자: 새 페이지 0)
@@ -1300,11 +1456,11 @@ class Publisher:
         pid = norm(p["id"])
         n = await append_tree(self.c, pid, blocks)
         await self._save(path, kind="doc", title=title, notion_page_id=pid, parent_page_id=parent, commit_sha=commit,
-                         content_hash=digest, status="published", url=p.get("url"), error=None)
-        return {"path": path, "action": "created", "page_id": pid, "url": p.get("url"), "commit": commit, "blocks": n}
+                         content_hash=saved, status="published", url=p.get("url"), error=None)
+        return {"path": path, "action": "created", "page_id": pid, "url": p.get("url"), "commit": commit, "blocks": n, **xref}
 
     async def _publish_shape(self, path: str, pid: str, row: dict[str, Any], blocks: list[dict[str, Any]], commit: str | None,
-                             digest: str, title: str, force: bool) -> dict[str, Any]:
+                             digest: str | None, title: str, force: bool) -> dict[str, Any]:
         """쪽 단위 비교(11-09 펫퍼민트 — 모양 예외가 끝없이 늘어서). 글(compact)로만 견준다:
         - Notion == 새 git → 글이 같다. Notion은 손대지 않고 맨 아래 갱신 줄만(모양은 Notion 그대로)
         - Notion == 지난번 맞춘 git(row.commit_sha) → Notion은 그대로고 git만 바뀌었다. 같은 글 블록은 Notion 블록을 두고 나머지만 맞춘다

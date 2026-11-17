@@ -189,16 +189,32 @@ async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset
         return {"project": pub.project, "ref_sha": None, "done": [], "held": [], "failed": [], "halted": pub.config_halt}
     st = await status(pub)
     done, held, failed = [], [], []
-    for f in st["new"] + st["changed"]:
+    warnings: list[dict[str, Any]] = []
+    pending: list[str] = []
+
+    async def one(f: str) -> dict[str, Any] | None:
         try:
-            r = await pub.publish(f, when, force=f in force, title=st.get("titles", {}).get(f))
-            done.append({"path": f, "action": r["action"]})
+            # relink=False: 편마다 기다리던 편을 다시 걸면 편 수의 제곱만큼 돈다. 다 올린 뒤 아래에서 한 번 더 돈다(11-17)
+            return await pub.publish(f, when, force=f in force, title=st.get("titles", {}).get(f), relink=False)
         except HumanEdited as e:
             held.append({"path": f, "edits": e.edits[:5], "count": len(e.edits), "url": e.url})
         except OutOfScope as e:                          # 게시기가 일부러 막은 것 — 사유 글 그대로(알림에 "OutOfScope:"를 붙이지 않게)
             failed.append({"path": f, "error": str(e)[:200]})
         except Exception as e:  # noqa: BLE001 — 파일 하나가 막혀도 나머지는 올린다
             failed.append({"path": f, "error": f"{type(e).__name__}: {str(e)[:200]}"})
+        return None
+
+    for f in st["new"] + st["changed"]:
+        if (r := await one(f)) is not None:
+            done.append({"path": f, "action": r["action"]})
+            if r.get("pending"):
+                pending.append(f)
+            warnings += [{"path": f, "warning": w} for w in r.get("warnings") or []]
+    # 두 번째 돌기(11-17): 아직 안 올라간 편을 「→ 「제목」」으로 가리켜 링크를 못 건 편. 이번에 그 편들이 만들어졌으니 다시 건다.
+    # 그래도 남으면(가리킨 편이 막혀 못 올라감) 지문이 비어 있어 다음 맞추기에 「바뀜」으로 다시 잡힌다
+    for f in pending:
+        if (r := await one(f)) is not None and r.get("pending"):
+            warnings.append({"path": f, "warning": "가리킨 편이 아직 Notion에 없어 링크를 못 걸었습니다: " + ", ".join(r["pending"])})
     src = st.get("src") or src_of(pub)
     tree = src == "notion/"
     for f in st["deleted"]:
@@ -243,7 +259,7 @@ async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset
                 failed.append({"path": "(차례)", "error": f"{type(e).__name__}: {str(e)[:200]}"})
     if not held and not failed and st["ref_sha"]:
         await pub._save(MARK, kind="mark", title="기술문서 맞춘 커밋", commit_sha=st["ref_sha"], status="published", error=None)
-    return {"project": pub.project, "ref_sha": st["ref_sha"], "done": done, "held": held, "failed": failed}
+    return {"project": pub.project, "ref_sha": st["ref_sha"], "done": done, "held": held, "failed": failed, "warnings": warnings}
 
 
 class DocSync:

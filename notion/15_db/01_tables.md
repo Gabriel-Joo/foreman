@@ -348,7 +348,7 @@ erDiagram
 
 ### doc_publish — 노션에 올린 기록
 
-원고 하나를 노션 페이지 하나에 올린 기록이 한 행이다. 원본은 git의 마크다운이고 노션은 게시판이다. 같은 원본은 같은 노션 페이지에 내용만 갈아 끼워 주소가 그대로다 [code:migrations/0022_doc_publish.sql]. `(project, path)`가 겹치지 않는 열쇠다. `path`는 저장소 기준 원본 경로이고, 여러 원고를 묶는 페이지는 `@section/<이름>` 꼴로 적는다(`kind`가 section). `notion_page_id`는 FOREMAN이 만든 페이지로, 고치기와 내리기는 이 페이지에만 한다. `content_hash`는 마지막으로 올린 원본의 해시로, 같으면 다시 올리지 않고 다르면 「원본이 바뀜」으로 보인다. `status`는 published, archived(노션 휴지통, 30일 동안 되살릴 수 있다), failed다. 쓰는 쪽은 `bridge/notion.py`다. 「→ 노션 게시」.
+원고 하나를 노션 페이지 하나에 올린 기록이 한 행이다. 원본은 git의 마크다운이고 노션은 게시판이다. 같은 원본은 같은 노션 페이지에 내용만 갈아 끼워 주소가 그대로다 [code:migrations/0022_doc_publish.sql]. `(project, path)`가 겹치지 않는 열쇠다. `path`는 저장소 기준 원본 경로이고, 여러 원고를 묶는 페이지는 `@section/<이름>` 꼴로 적는다(`kind`가 section). `notion_page_id`는 FOREMAN이 만든 페이지로, 고치기와 내리기는 이 페이지에만 한다. `content_hash`는 마지막으로 올린 원본의 해시로, 같으면 다시 올리지 않고 다르면 「원본이 바뀜」으로 보인다. 아직 노션에 없는 편을 편 사이 참조로 가리킨 채 올라간 원고는 이 칸을 비워 두어, 그 편이 올라간 뒤 다시 올려 링크를 건다(`commit_sha`는 남아 있어 짝 등록으로 들어와 둘 다 빈 행과 갈린다) [code:bridge/notion.py]. `status`는 published, archived(노션 휴지통, 30일 동안 되살릴 수 있다), failed다. 쓰는 쪽은 `bridge/notion.py`다. 「→ 노션 게시」.
 
 ### scribe_review — 서기 검토 기록
 

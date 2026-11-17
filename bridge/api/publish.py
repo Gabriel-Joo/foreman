@@ -130,7 +130,8 @@ async def publish_do(body: PublishIn, request: Request) -> JSONResponse:
             if ds is None or p.docs_mode == "off":
                 return JSONResponse({"refused": f"{body.project}는 기술문서 게시가 꺼져 있습니다(config/notion.toml docs)"}, status_code=409)
             r = await ds.run_one(body.project, {body.path} if body.force else frozenset())
-            r = {"action": "docsync", **{k: r[k] for k in ("done", "held", "failed")}}
+            # warnings: 링크로 못 바꾼 「→ 「제목」」(없는 제목, 겹치는 제목, 끝내 안 올라간 편, 11-17)
+            r = {"action": "docsync", **{k: r[k] for k in ("done", "held", "failed")}, "warnings": r.get("warnings", [])}
         elif body.action == "reorder":
             r = await p.reorder_portfolio()
         elif body.action == "prune":

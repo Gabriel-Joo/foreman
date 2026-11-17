@@ -106,7 +106,7 @@ class _Pub:
         self.project, self.docs_page, self.saved, self.calls = "runshoes", None, [], []
         self.held, self.fail = set(held), set(fail)
 
-    async def publish(self, path, when, force=False, title=None):
+    async def publish(self, path, when, force=False, title=None, relink=True):
         self.calls.append((path, force))
         if path in self.held and not force:
             raise nt.HumanEdited(path, ["사람이 고침"], "https://notion/x")

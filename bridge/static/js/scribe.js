@@ -311,13 +311,17 @@ export function createScribe(store) {
     const body = act === 'docsync' || force ? { path, action: 'docsync', project, force } : { path, action: act, project };
     const r = await fetch('/api/publish', { method: 'POST', headers: store.headers(true), body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
+    // 「→ 「제목」」을 링크로 못 바꾼 것(11-17): 없는 제목, 겹치는 제목, 아직 안 올라간 편. 조용히 글자로만 두지 않고 결과 줄에 보인다
+    const warns = (j.warnings || []).map((w) => (typeof w === 'string' ? w : `${w.path}: ${w.warning}`));
+    if (j.pending && j.pending.length) warns.push(`가리킨 편이 아직 Notion에 없어 링크를 못 걸었습니다(그 편을 올리면 다시 겁니다): ${j.pending.join(', ')}`);
+    const warnTxt = warns.length ? ` 링크로 못 바꾼 참조 ${warns.length}: ${warns[0]}` : '';
     if (r.ok && j.action === 'docsync') {
-      note = { bad: !!(j.held.length || j.failed.length),
-        msg: `기술문서를 맞췄습니다: 올림 ${j.done.length}${j.held.length ? ` · 사람이 고쳐 멈춤 ${j.held.length}` : ''}${j.failed.length ? ` · 실패 ${j.failed.length}(${j.failed[0].path})` : ''}` };
+      note = { bad: !!(j.held.length || j.failed.length || warns.length),
+        msg: `기술문서를 맞췄습니다: 올림 ${j.done.length}${j.held.length ? ` · 사람이 고쳐 멈춤 ${j.held.length}` : ''}${j.failed.length ? ` · 실패 ${j.failed.length}(${j.failed[0].path})` : ''}${warns.length ? '.' : ''}${warnTxt}` };
       await load(true, room);
       return;
     }
-    note = r.ok ? { msg: { created: '새 페이지로 올렸습니다.', updated: '같은 페이지에 덮어썼습니다.', unchanged: '바뀐 것이 없어 건너뛰었습니다.', archived: '휴지통으로 보냈습니다.' }[j.action] || '마쳤습니다.' }
+    note = r.ok ? { bad: !!warns.length, msg: ({ created: '새 페이지로 올렸습니다.', updated: '같은 페이지에 덮어썼습니다.', unchanged: '바뀐 것이 없어 건너뛰었습니다.', archived: '휴지통으로 보냈습니다.' }[j.action] || '마쳤습니다.') + warnTxt }
       : { bad: true, msg: `${j.refused || j.detail || r.status}` };
     await load(true, room);
   }

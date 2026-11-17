@@ -28,7 +28,7 @@ class _Pub:
         self.project, self.docs_mode, self.repo, self.ref, self.docs_page = name, mode, "/repo", "origin/main", None
         self.held, self.calls, self.saved = {"docs/09.md"}, [], []
 
-    async def publish(self, path, when, force=False, title=None):
+    async def publish(self, path, when, force=False, title=None, relink=True):
         self.calls.append((path, force))
         if path in self.held and not force:
             raise nt.HumanEdited(path, ["사람이 고침 1", "사람이 고침 2"], "https://notion/x")
