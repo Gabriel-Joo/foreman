@@ -24,7 +24,8 @@ def test_rule_is_user_sentence_and_coder_only():
 
 def test_prompt_block_foreman_repo():
     b = docrefs.prompt_block(ROOT, "coder")
-    assert USER in b and "`.venv/bin/python tools/docrefs.py --range main...HEAD --unfixed`" in b
+    assert USER in b and "`.venv/bin/python tools/docs.py refs --range main...HEAD --unfixed`" in b
+    assert "docrefs.py" not in b and "코드로 걸린 문서 N, 안 고침 M" in b        # 3단계: 이름 하나, 카드 줄은 나눠 센다
     assert docrefs.TONE_FOREMAN in b and "docs/style_guide.md" in b and "경어체" in b
     assert "—" not in b and "·" not in b                     # 새 글에 em dash, 가운뎃점을 쓰지 않는다
 
@@ -32,7 +33,7 @@ def test_prompt_block_foreman_repo():
 def test_prompt_block_other_repo(tmp_path):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     b = docrefs.prompt_block(tmp_path, "coder")
-    assert USER in b and "tools/docrefs.py --repo . --range main...HEAD" in b
+    assert USER in b and "tools/docs.py --repo . refs --range main...HEAD" in b
     assert docrefs.TONE_OTHER in b and docrefs.TONE_FOREMAN not in b
 
 

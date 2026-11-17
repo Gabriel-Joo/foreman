@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/notion.py, bridge/docsync.py, bridge/notioncfg.py, bridge/manuscript.py, bridge/doctext/, bridge/api/publish.py, config/notion.toml, migrations/0022_doc_publish.sql
+다루는 곳: bridge/notion.py, bridge/docsync.py, bridge/notioncfg.py, bridge/manuscript.py, bridge/doctext/, bridge/api/publish.py, config/notion.toml, migrations/0022_doc_publish.sql, tests/test_docsync.py, tests/test_docsync_last.py, tests/test_notion*.py, tests/test_portfolio_projects.py, tests/test_publish_hold.py
 읽은 커밋: fb7121b
 -->
 

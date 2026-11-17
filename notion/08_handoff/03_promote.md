@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/promote.py, bridge/static/js/promote.js, migrations/0020_promotion.sql
+다루는 곳: bridge/promote.py, bridge/static/js/promote.js, migrations/0020_promotion.sql, tests/js/promote.test.mjs, tests/test_promote.py
 읽은 커밋: fb7121b
 -->
 # 문서로 옮기기

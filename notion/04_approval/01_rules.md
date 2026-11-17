@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/approval.py, config/approval.toml, scripts/approval-replay.py
+다루는 곳: bridge/approval.py, config/approval.toml, scripts/approval-replay.py, tests/fixtures/, tests/test_approval.py, tests/test_approval_now.py, tests/test_approval_silent_delete.py
 읽은 커밋: 5e0f7c5
 -->
 

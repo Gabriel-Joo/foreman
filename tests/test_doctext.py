@@ -132,8 +132,11 @@ def test_users_share_one_definition():
     from bridge import docrefs, evidence, manuscript, notion
     from tests import screen_words
     assert evidence.MARK is dt.MARK and screen_words.MARK is dt.MARK
-    assert docrefs.MARK is dt.REF_MARK and docrefs.parse_head is dt.parse_head
+    assert docrefs.MARK is dt.REF_MARK and not hasattr(docrefs, "parse_head")   # 3단계: 거꾸로 찾기는 머리 주석을 읽지 않는다
     assert docrefs._tree is dt.tree and docrefs._read_many is dt.read_many and docrefs.DocrefsError is dt.RepoError   # 2단계
+    from bridge.doctext import check
+    assert evidence.SKIP_LINE is check.SKIP_LINE and evidence.mark_problem is check.mark_problem   # 3단계: 점검과 한 곳
+    assert evidence.covers_problem is check.covers_problem and evidence.is_claim is check.is_claim
     assert manuscript.parse_head is dt.parse_head and manuscript.head_text is dt.head_text
     assert notion.first_h1 is dt.first_h1 and notion.xref_index is dt.xref_index
 

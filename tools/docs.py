@@ -9,11 +9,13 @@
     .venv/bin/python tools/docs.py refs bridge/mergeprep.py   # 거꾸로 찾기: 이 파일을 가리키는 문서와 줄
     .venv/bin/python tools/docs.py refs --range main...HEAD --unfixed
     .venv/bin/python tools/docs.py --repo <다른 저장소> --json refs --range origin/main~20..origin/main
+    .venv/bin/python tools/docs.py check [-v]                  # 문서 점검: 머리 주석, 근거 표시, 덮기, 참조, 금지어, 그림(-v는 의심 줄까지)
 
-문법과 저장소 읽기는 bridge/doctext 한 곳, 거꾸로 찾기 판정은 bridge/docrefs.py(합치기 카드와 같다). 3단계에서 check(문서 점검)가 붙는다.
-tools/docrefs.py는 `refs`와 같은 결과를 내는 껍데기다(코더 지시문과 합치기 카드 안내가 그 이름을 쓴다).
+문법과 저장소 읽기는 bridge/doctext 한 곳, 거꾸로 찾기 판정은 bridge/docrefs.py(합치기 카드와 같다), 문서 점검은 bridge/doctext/check.py.
+거꾸로 찾기는 근거 표시와 글 안 경로만 따라가고(밀림), 머리 주석 「다루는 곳」은 점검의 덮기 검사만 읽는다(11-17 3단계).
+옛 껍데기 tools/docrefs.py는 3단계에서 지웠다(이름이 둘이면 어느 쪽을 적을지부터 애매해진다).
 
-종료 코드: 0(읽음), 2(인자, 저장소, git, 설정 문제). FOREMAN 저장소 밖으로 이 파일만 옮겨 부르거나 파이썬이 3.11보다 낮으면
+종료 코드: 0(읽음, check는 틀린 것 없음), 1(check가 틀린 것을 찾음), 2(인자, 저장소, git, 설정 문제). FOREMAN 저장소 밖으로 이 파일만 옮겨 부르거나 파이썬이 3.11보다 낮으면
 조용히 넘지 않고 2로 끝난다. 부르는 쪽도 이 명령이 없거나 실패한 것을 `|| true`로 덮지 않는다(조용한 고장이 된다).
 """
 
@@ -31,6 +33,7 @@ sys.path.insert(0, str(ROOT))
 try:
     from bridge import docrefs
     from bridge.docrefs import DocrefsError
+    from bridge.doctext import check as dcheck
     from bridge.doctext import config as dcfg
     from bridge.doctext.repo import read_many as _read_many
     from bridge.doctext.repo import tree as _tree
@@ -167,6 +170,9 @@ def main(argv: list[str] | None = None) -> int:
     # refs 뒤에 써도 받는다(다른 저장소 껍데기가 옛 인자를 그대로 넘긴다). SUPPRESS라 앞에 쓴 값을 지우지 않는다
     r.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="JSON으로(앞에 써도 같다)")
     r.add_argument("--rev", default=argparse.SUPPRESS, help="범위 없이 찾을 때 문서를 읽을 커밋(앞에 써도 같다)")
+    c = sub.add_parser("check", help="문서 점검(틀린 것이 있으면 종료 코드 1)")
+    c.add_argument("-v", "--verbose", action="store_true", help="근거 없는 숫자, 인용 줄(의심)까지")
+    c.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="JSON으로(앞에 써도 같다)")
     a = ap.parse_args(argv)
     if a.cmd == "refs" and not a.files and not a.rng:
         r.error("코드 파일이나 --range 중 하나는 주어야 합니다")
@@ -187,6 +193,9 @@ def main(argv: list[str] | None = None) -> int:
             text = docrefs.render(res, a.brief, a.unfixed)
             if a.unfixed:
                 res = {**res, "docs": [d for d in res["docs"] if d["fixed"] is False]}
+        elif a.cmd == "check":
+            res = dcheck.run(repo, a.rev, cfg, sets)
+            text = dcheck.render(res, a.verbose)
         else:
             res = cmd_marks(repo, a.rev, cfg, sets, a.set, a.files)
             text = render_marks(res)
@@ -197,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
         for w in cfg.warnings:
             print(f"⚠ {w}", file=sys.stderr)
     print(json.dumps(res, ensure_ascii=False, indent=1) if a.json else text)
-    return 0
+    return 1 if a.cmd == "check" and res["errors"] else 0
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/terminal.py, bridge/api/terminal.py, bridge/static/js/terminal.js, bridge/static/js/ccscreen.js, deploy/shell/, scripts/foreman-shell-hook.sh
+다루는 곳: bridge/terminal.py, bridge/api/terminal.py, bridge/static/js/terminal.js, bridge/static/js/ccscreen.js, deploy/shell/, scripts/foreman-shell-hook.sh, tests/js/term_follow.test.mjs, tests/test_ccscreen.py, tests/test_terminal.py
 읽은 커밋: e5d584b
 -->
 # 셸 패널과 세션 화면

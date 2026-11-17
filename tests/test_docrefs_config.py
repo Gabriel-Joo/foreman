@@ -77,7 +77,7 @@ def test_infra_files_mode(infra):
     d = by_doc(dr.scan(infra, files=["scripts/tool.sh"]))
     assert "portfolio/00_x.md" in d and d["portfolio/00_x.md"]["fixed"] is None
     d = by_doc(dr.scan(infra, files=["apps/a/deploy.yaml"]))
-    assert d["docs/03_kube.md"]["hits"][0]["how"] == "covers"
+    assert "docs/03_kube.md" not in d                                         # 다루는 곳(apps/a/)은 덮기 검사 몫(3단계)
     assert not any(k.startswith("docs/history/") for k in d)                  # 기록 폴더는 문서가 아니다
     r = dr.scan(infra, files=["docs/history/data.txt"])
     assert not r["triggers"] and not r["docs"] and "기록 폴더" in r["warnings"][0]
@@ -92,15 +92,16 @@ def test_infra_range_pair_chain_and_lines(infra):
     put(infra, "docs/history/data.txt", "기록 바꿈\n")
     c1 = commit(infra, "code only")
     r = dr.scan(infra, rng=f"{c0}..{c1}")
-    assert by_doc(r)["docs/03_kube.md"]["fixed"] is False and r["unfixed"] == 1
+    assert r["docs"] == [] and r["unfixed"] == 0                               # 다루는 곳으로만 가리킨 파일은 걸지 않는다(3단계)
     assert r["code"] == ["apps/a/deploy.yaml"]                                 # 기록 폴더 파일은 코드가 아니다
 
     put(infra, "apps/a/deploy.yaml", ten("deploy", 5))
     put(infra, "docs/03_kube.md", (infra / "docs/03_kube.md").read_text(encoding="utf-8") + "\n덧붙임.\n")
     c2 = commit(infra, "code and doc")
     d = by_doc(dr.scan(infra, rng=f"{c1}..{c2}"))
-    assert d["docs/03_kube.md"]["fixed"] is True
+    assert "docs/03_kube.md" not in d                                          # 자기 자신은 걸지 않는다
     assert d["notion/03_kube.md"]["fixed"] is False and d["notion/03_kube.md"]["hits"][0]["how"] == "pair"   # 번호 짝
+    assert d["notion/03_kube.md"]["by"] == "doc"
     assert "notion/03_kube/01_sub.md" in d and "notion/04_other.md" not in d
 
     put(infra, "cluster/Vagrantfile", ten("vm", 9))
@@ -161,7 +162,8 @@ def test_foreman_doc_triggers(foreman):
     assert r["config"] == "default" and r["code"] == [] and r["triggers"] == ["CLAUDE.md", "docs/11_x.md"]
     d = by_doc(r)
     got = {(h["how"], h["code"]) for h in d["notion/11_x.md"]["hits"]}
-    assert got == {("covers", "docs/11_x.md"), ("mark", "CLAUDE.md"), ("mark", "docs/11_x.md")}
+    assert got == {("mark", "CLAUDE.md"), ("mark", "docs/11_x.md")}          # 다루는 곳 docs/11_x.md로는 걸지 않는다(3단계)
+    assert all(x["by"] == "doc" for x in r["docs"]) and r["by"]["doc"]["total"] == len(r["docs"])
     assert {(h["how"], h["code"]) for h in d["docs/12_y.md"]["hits"]} == {("mark", "docs/11_x.md")}
     assert "docs/11_x.md" not in d and "log/r.md" not in d                   # 자기 자신, 기록 폴더는 걸지 않는다
     assert not any(h["how"] == "pair" for x in r["docs"] for h in x["hits"])  # FOREMAN은 번호 짝을 켜지 않는다
@@ -174,7 +176,7 @@ def test_foreman_folder_argument_expands(foreman):
     r = dr.scan(foreman, files=["bridge/sub/"])
     assert r["triggers"] == ["bridge/sub/b.py", "bridge/sub/c.py"] and r["docs"] == []
     r = dr.scan(foreman, files=["bridge/*.py"])
-    assert "notion/11_x.md" in by_doc(r) and "bridge/a.py" in r["code"]
+    assert "docs/11_x.md" in by_doc(r) and "notion/11_x.md" not in by_doc(r) and "bridge/a.py" in r["code"]
     r = dr.scan(foreman, files=["notion/"])
     assert r["triggers"] == [] and "아래에 걸게 하는 파일이 없습니다" in r["warnings"][0]
 
@@ -208,27 +210,26 @@ def load_tool(name):
     return m
 
 
-def test_docs_refs_and_docrefs_shell_same(infra, capsys):
-    docs, shell = load_tool("docs"), load_tool("docrefs")
+def test_docs_refs_args(infra, capsys):
+    """tools/docs.py refs 하나로 모았다(3단계에서 tools/docrefs.py 껍데기를 지웠다). 다른 저장소 껍데기가 넘기는 옛 인자 차례도 받는다."""
+    docs = load_tool("docs")
+    assert not (ROOT / "tools" / "docrefs.py").exists()
     c0 = sh(infra, "rev-parse", "HEAD")
     put(infra, "docs/style_guide.md", "# 쓰는 법\n규칙 둘 바꿈\n규칙 셋\n규칙 넷\n규칙 다섯\n")
     put(infra, "apps/a/deploy.yaml", ten("deploy", 2))
     commit(infra, "both")
     outs = []
-    for argv_docs, argv_shell in ((["--repo", str(infra), "refs", "--range", f"{c0}..HEAD"], ["--repo", str(infra), "--range", f"{c0}..HEAD"]),
-                                  (["--repo", str(infra), "--json", "refs", "--range", f"{c0}..HEAD", "--unfixed"],
-                                   ["--repo", str(infra), "--range", f"{c0}..HEAD", "--unfixed", "--json"]),
-                                  (["--repo", str(infra), "refs", "cluster/Vagrantfile:2", "--brief"],
-                                   ["--repo", str(infra), "cluster/Vagrantfile:2", "--brief"])):
-        assert docs.main(argv_docs) == 0
-        a = capsys.readouterr().out
-        assert shell.main(argv_shell) == 0
-        b = capsys.readouterr().out
-        assert a == b
-        outs.append(a)
-    assert outs[0].startswith("걸리는 문서 2, 안 고침 2 (범위") and "코드 파일 1개, 문서 1개" in outs[0]
-    assert "번호 짝" not in outs[0] and "notion/03_kube.md (노션 원고)" in outs[0]
+    for argv in (["--repo", str(infra), "refs", "--range", f"{c0}..HEAD"],
+                 ["--repo", str(infra), "--json", "refs", "--range", f"{c0}..HEAD", "--unfixed"],
+                 ["--repo", str(infra), "refs", "cluster/Vagrantfile:2", "--brief"]):
+        assert docs.main(argv) == 0
+        outs.append(capsys.readouterr().out)
+    # deploy.yaml은 docs/03_kube.md 다루는 곳으로만 가리켜 걸지 않는다. style_guide.md 줄 2는 원고 근거 표시가 건다
+    assert outs[0].startswith("걸리는 문서 1, 안 고침 1 (범위") and "코드 파일 1개, 문서 1개" in outs[0]
+    assert "\n문서로만 걸린 문서 1, 안 고침 1\n" in outs[0]
+    assert "번호 짝" not in outs[0] and "notion/03_kube.md (노션 원고, 문서로만 걸림)" in outs[0]
     assert all(d["fixed"] is False for d in json.loads(outs[1])["docs"])
+    assert "docs/03_kube.md" in outs[2]
     # 인프라 껍데기는 옛 인자를 refs 뒤에 그대로 넘긴다(--json, --rev가 뒤에 와도 같다)
     assert docs.main(["--repo", str(infra), "refs", "--range", f"{c0}..HEAD", "--unfixed", "--json"]) == 0
     assert capsys.readouterr().out == outs[1]

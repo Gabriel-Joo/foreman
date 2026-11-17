@@ -696,11 +696,14 @@ async def test_merged_msg_docs_pick_follows_approver(repo, monkeypatch):
     assert "걸리는 문서 1, 안 고침 0" in s                                       # 11-17 수 한 줄
     c.docs = {"readme": [], "total": 3, "unfixed": 1, "docs": [{"where": "notion/a.md", "lines": [1], "count": 1, "files": ["a.py"], "stale": True}]}
     s = m._merged_msg(c, {"merged": 2})
-    assert "걸리는 문서 3, 안 고침 1" in s and "이 브랜치에서 고치지 않은 문서: notion/a.md" in s and "tools/docrefs.py --range" in s
+    assert "걸리는 문서 3, 안 고침 1" in s and "이 브랜치에서 고치지 않은 문서: notion/a.md" in s and "tools/docs.py refs --range" in s
+    c.docs = {**c.docs, "by": {"code": {"total": 1, "unfixed": 1}, "doc": {"total": 2, "unfixed": 0}}}   # 3단계 카드
+    s = m._merged_msg(c, {"merged": 2})
+    assert "코드로 걸린 문서 1, 안 고침 1 / 문서로만 걸린 문서 2, 안 고침 0" in s and "docrefs.py" not in s
 
 
 async def test_card_msg_and_ready_notice_show_doc_count(repo, monkeypatch):
-    """11-17 관리자 카드 글과 「합치기 준비됨」 알림에 「걸리는 문서 N, 안 고침 M」, 찾지 못했으면 그 까닭."""
+    """11-17 관리자 카드 글과 「합치기 준비됨」 알림에 걸리는 문서 수(코드로 걸린 것과 문서로만 걸린 것을 나눠, 3단계), 찾지 못했으면 그 까닭."""
     p = Path((await wt.create(str(repo), "w"))["path"])
     (p / "bridge").mkdir(); (p / "bridge" / "mergeprep.py").write_text("x\n")
     sh(p, "add", "."); sh(p, "commit", "-qm", "고침")
@@ -709,11 +712,28 @@ async def test_card_msg_and_ready_notice_show_doc_count(repo, monkeypatch):
     m.cfg.notify_ready = True
     monkeypatch.setattr(m, "_notify", lambda c, key, msg=None, later=None, **kw: notes.append(msg))
     card = await m.prep(row, {})
-    assert docrefs_line(card) == "걸리는 문서 1, 안 고침 1"
-    assert any("📄 걸리는 문서 1, 안 고침 1" in (n or "") for n in notes)
-    assert "걸리는 문서 1, 안 고침 1(바뀐 코드를 가리키는 문서" in m._card_msg(card)
+    assert docrefs_line(card) == "코드로 걸린 문서 1, 안 고침 1"
+    assert any("📄 코드로 걸린 문서 1, 안 고침 1" in (n or "") for n in notes)
+    assert "코드로 걸린 문서 1, 안 고침 1(바뀐 코드나 문서를 가리키는 문서" in m._card_msg(card)
+    assert "config_note" not in card.docs and "설정을 바꿨습니다" not in m._card_msg(card)
     card.docs = {"error": "걸리는 문서를 찾지 못했습니다(OSError)", "readme": [], "docs": []}
     assert "⚠ 걸리는 문서를 찾지 못했습니다(OSError)." in m._card_msg(card)
+
+
+async def test_card_notes_branch_changed_docs_config(repo, monkeypatch):
+    """11-17 사용자 결정 9: 브랜치가 .foreman/docs.toml을 바꿨는데 카드는 base 판 설정으로 셌으면 카드, 알림, 관리자 글에 한 줄."""
+    p = Path((await wt.create(str(repo), "w"))["path"])
+    (p / ".foreman").mkdir(exist_ok=True); (p / ".foreman" / "docs.toml").write_text('records = ["log/", "x/"]\n')
+    (p / "bridge").mkdir(); (p / "bridge" / "mergeprep.py").write_text("x\n")
+    sh(p, "add", "."); sh(p, "commit", "-qm", "설정과 코드")
+    m, h, sent, row, _ = _mk(repo, monkeypatch)
+    notes = []
+    m.cfg.notify_ready = True
+    monkeypatch.setattr(m, "_notify", lambda c, key, msg=None, later=None, **kw: notes.append(msg))
+    card = await m.prep(row, {})
+    want = "이 브랜치가 설정을 바꿨습니다. 이 셈은 main 설정 기준입니다"
+    assert card.docs["config_note"] == want
+    assert any(f"⚠ {want}" in (n or "") for n in notes) and f"⚠ {want}." in m._card_msg(card)
 
 
 def docrefs_line(card):

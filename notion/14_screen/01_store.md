@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/static/js/store.js, bridge/api/dashboard.py, bridge/uiver.py
+다루는 곳: bridge/static/js/store.js, bridge/api/dashboard.py, bridge/uiver.py, tests/test_app_db.py, tests/test_human_needs.py
 읽은 커밋: e5d584b
 -->
 # 데이터 계층

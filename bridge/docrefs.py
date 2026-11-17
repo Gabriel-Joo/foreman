@@ -1,8 +1,11 @@
 """거꾸로 찾기(11-17 사용자 지시 21). 바뀐 코드나 문서를 주면 그것을 가리키는 문서(docs, 노션 원고, 포트폴리오)와 줄을 돌려준다.
 
 읽기만 한다. 저장소를 바꾸지 않는다(git은 ls-tree, ls-files, cat-file, diff, merge-base, rev-parse만 부른다).
-명령은 `tools/docs.py refs`(`tools/docrefs.py`는 같은 결과를 내는 껍데기), 브리지는 `scan()`을 부른다
-(합치기 카드 「걸리는 문서」, `bridge/mergeprep.py`).
+명령은 `tools/docs.py refs`, 브리지는 `scan()`을 부른다(합치기 카드 「걸리는 문서」, `bridge/mergeprep.py`).
+
+이 도구는 밀림 검사다(11-17 사용자 결정, 문서 도구 합치기 3단계). 원고 머리 주석 「다루는 곳」(파일 단위, 덮기 검사만 읽는다,
+`tools/docs.py check`)은 읽지 않고, 근거 표시와 글 안 경로만 따라간다. 전에는 두 검사가 같은 자리를 읽어 다루는 곳에 넣은
+파일이 바뀔 때마다 편 전체가 헛걸렸다. 편 단위 밀림은 서기실 셈(`bridge/manuscript.py`, 다루는 곳의 feat, fix 커밋)이 본다.
 
 저장소마다 다른 것은 그 저장소 `.foreman/docs.toml`(`bridge/doctext/config.py`)에서 읽는다(11-17 문서 도구 합치기 2단계).
 파일이 없으면 FOREMAN 기본값이다. 설정은 작업 트리 판을 읽는다(범위 없이 `rev`를 주면 그 커밋 판).
@@ -14,22 +17,22 @@
 
 걸게 하는 것(`triggers`, 종류 `code` 또는 `doc`)
 - code  문서 묶음 폴더 밖의 파일 가운데 기록 폴더가 아니고 `not_code` 확장자가 아닌 것
-- doc   docs 묶음 문서와 묶음 밖의 `*.md`(README.md, CLAUDE.md 등). 근거 표시와 다루는 곳으로 가리킬 때만 걸린다
+- doc   docs 묶음 문서와 묶음 밖의 `*.md`(README.md, CLAUDE.md 등). 근거 표시로 가리킬 때만 걸린다
         (경로를 글에 적은 것만으로는 걸지 않는다). 원고와 포트폴리오, 기록은 걸게 하지 않는다
+걸린 문서마다 `by`: 코드 파일로 걸린 줄이 하나라도 있으면 "code", 문서로만 걸렸으면 "doc"(합치기 카드가 둘을 나눠 센다)
 
 가리키는 꼴(`how`, 결과에 그대로 남아 어느 자리에서 걸렸는지 보인다)
 - `mark`   근거 표시 `[code:경로]`, `[docs:경로]`(docs 묶음 폴더 기준), 폴더(끝이 /는 아래 모두), 줄 번호 `[code:경로:10-20]`
-- `covers` 원고와 포트폴리오 머리 주석 「다루는 곳」(파일, 끝이 /인 폴더, *가 든 글롭. 꼴은 `bridge/doctext/head.py`)
 - `path`   백틱 안이나 맨글의 저장소 경로(`bridge/x.py`, 폴더 `bridge/static/js/`). code만
 - `name`   백틱 안의 파일 이름이나 경로 끝(`mergeprep.py`). 저장소에서 그 끝을 가진 파일이 하나뿐일 때만. code만
 - `pair`   번호 짝(`pair_numbers`)
 
-근거 표시, 머리 주석, 코드 울타리와 HTML 주석 가르기, 저장소 읽기는 문서 문법 묶음 `bridge/doctext` 한 곳을 쓴다.
+근거 표시, 코드 울타리와 HTML 주석 가르기, 저장소 읽기는 문서 문법 묶음 `bridge/doctext` 한 곳을 쓴다.
 
 커밋 범위(`A..B`, `A...B`)를 주면 그 범위에서 바뀐 파일로 찾고, 문서는 B 판을 읽는다. 그 문서가 같은 범위에서 바뀌었으면
 `fixed` True(고침), 아니면 False(안 고침). 파일 목록만 주면 작업 트리(또는 `rev`)를 읽고 `fixed`는 None(모름)이다.
 근거 표시에 줄 번호가 있고 바뀐 줄을 알면(범위, 또는 `경로:줄-줄` 인자) 겹칠 때만 건다(`overlap` True). 바뀐 줄은 범위의
-옛 쪽 줄 번호다. 줄 번호 없는 표시, 다루는 곳, 경로는 늘 건다(`overlap` None).
+옛 쪽 줄 번호다. 줄 번호 없는 표시와 경로는 늘 건다(`overlap` None).
 """
 
 from __future__ import annotations
@@ -41,7 +44,6 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from bridge.doctext import config as dcfg
-from bridge.doctext.head import parse_head
 from bridge.doctext.lines import TEXT, walk
 from bridge.doctext.marks import MARK as ANY_MARK
 from bridge.doctext.marks import REF_MARK as MARK
@@ -167,13 +169,9 @@ def _pathlike(tok: str) -> bool:
 
 
 def refs_in(md: str, docs_dir: str = DOCS_DIR) -> list[dict[str, Any]]:
-    """한 문서의 가리킴 [{line, target, range, how, ref}]. 코드 울타리와 HTML 주석 안은 보지 않는다(머리 주석은 따로 covers로).
-    `[docs:x]`의 target은 docs 묶음 폴더 기준 경로(`docs/x`)다."""
+    """한 문서의 가리킴 [{line, target, range, how, ref}]. 코드 울타리와 HTML 주석 안은 보지 않는다. 머리 주석 「다루는 곳」도
+    읽지 않는다(덮기 검사 몫, 11-17 3단계). `[docs:x]`의 target은 docs 묶음 폴더 기준 경로(`docs/x`)다."""
     out: list[dict[str, Any]] = []
-    head = parse_head(md)
-    if head:
-        for c in head["covers"]:
-            out.append({"line": head["line"], "target": _clean(c), "range": None, "how": "covers", "ref": f"다루는 곳: {c}"})
     lines = md.splitlines()
     for i0, kind in walk(lines):
         if kind != TEXT:
@@ -242,8 +240,9 @@ def _glob(p: str) -> bool:
 
 def matches(target: str, how: str, code: str, names: dict[str, list[str]], kind: str = "code") -> bool:
     """가리킴 하나가 걸게 하는 파일 하나를 덮나. 폴더(끝이 /)는 그 아래 모두, 글롭은 fnmatch(*가 /도 넘는다),
-    `name`은 저장소에서 그 끝을 가진 파일이 하나뿐일 때 그 파일만. 문서(kind doc)는 근거 표시와 다루는 곳만 본다."""
-    if kind == "doc" and how not in ("mark", "covers"):
+    `name`은 저장소에서 그 끝을 가진 파일이 하나뿐일 때 그 파일만. 문서(kind doc)는 근거 표시만 본다.
+    how "covers"는 가리킴이 아니라 파일 인자 폴더, 글롭을 펼칠 때 쓴다(폴더 아래 모두, 글롭)."""
+    if kind == "doc" and how != "mark":
         return False
     if target.endswith("/"):
         return code.startswith(target)
@@ -320,9 +319,10 @@ def scan(repo: str | Path, files: list[str] | None = None, rng: str | None = Non
     """거꾸로 찾기 한 번. files(`경로`, `폴더/`, 글롭, `경로:시작-끝`) 또는 rng 중 하나는 있어야 한다. 둘 다 주면 범위의 파일 중 files만.
     cfg를 주지 않으면 그 저장소 `.foreman/docs.toml`(작업 트리, 범위 없이 rev를 주면 그 판)을 읽는다.
 
-    돌려주는 것: {repo, range, rev, sets, config, code, triggers, docs: [{doc, kind, fixed, files, hits: [{line, heading,
-    para_from, para_to, para, how, ref, code, range, overlap}]}], total, unfixed, warnings}. `code`는 걸게 한 코드 파일,
+    돌려주는 것: {repo, range, rev, sets, config, code, triggers, docs: [{doc, kind, fixed, by, files, hits: [{line, heading,
+    para_from, para_to, para, how, ref, code, range, overlap}]}], total, unfixed, by, warnings}. `code`는 걸게 한 코드 파일,
     `triggers`는 코드와 문서 모두, 걸린 줄의 `code`는 그 줄이 가리킨 걸게 한 파일(문서일 수도 있다).
+    맨 위 `by`는 {"code": {total, unfixed}, "doc": {total, unfixed}}(코드로 걸린 문서와 문서로만 걸린 문서, 둘을 더하면 total).
     docs는 안 고친 것, 걸린 수가 많은 것 먼저."""
     repo = str(Path(repo).resolve())
     if not files and not rng:
@@ -370,7 +370,7 @@ def scan(repo: str | Path, files: list[str] | None = None, rng: str | None = Non
     kinds = {p: trigger_kind(p, sets, cfg) or "code" for p in trig}
     code = [p for p in trig if kinds[p] == "code"]
     empty = {"repo": repo, "range": rng, "rev": rev, "sets": sets, "config": cfg.source, "code": code, "triggers": trig,
-             "docs": [], "total": 0, "unfixed": 0, "warnings": warnings}
+             "docs": [], "total": 0, "unfixed": 0, "by": split_by([]), "warnings": warnings}
     if not trig:
         return empty
     names = _names(sorted(set(tracked) | set(trig)))
@@ -392,10 +392,10 @@ def scan(repo: str | Path, files: list[str] | None = None, rng: str | None = Non
                 continue
             if heads is None:
                 heads = _headings(lines)
-            pa, pb, ptxt = paragraph(lines, r["line"], para_cap) if r["how"] != "covers" else (r["line"], r["line"], r["ref"])
+            pa, pb, ptxt = paragraph(lines, r["line"], para_cap)
             for t in hit:
                 raw_hits.setdefault(path, []).append({
-                    "line": r["line"], "heading": "(머리 주석)" if r["how"] == "covers" else heads[r["line"] - 1],
+                    "line": r["line"], "heading": heads[r["line"] - 1],
                     "para_from": pa, "para_to": pb, "para": ptxt, "how": r["how"], "ref": r["ref"], "code": t,
                     "range": list(r["range"]) if r["range"] else None, "overlap": None})
     if cfg.pair_numbers:
@@ -423,15 +423,34 @@ def scan(repo: str | Path, files: list[str] | None = None, rng: str | None = Non
         if not keep:
             continue
         keep.sort(key=lambda h: (h["line"], h["code"]))
-        docs.append({"doc": path, "kind": kind_of(path, sets), "fixed": (path in changed) if rng else None,
+        by = "code" if any(kinds[h["code"]] == "code" for h in keep) else "doc"
+        docs.append({"doc": path, "kind": kind_of(path, sets), "fixed": (path in changed) if rng else None, "by": by,
                      "files": sorted({h["code"] for h in keep}), "hits": keep})
     docs.sort(key=lambda d: (d["fixed"] is True, -len(d["hits"]), d["doc"]))
-    return {**empty, "docs": docs, "total": len(docs), "unfixed": sum(1 for d in docs if d["fixed"] is False)}
+    return {**empty, "docs": docs, "total": len(docs), "unfixed": sum(1 for d in docs if d["fixed"] is False), "by": split_by(docs)}
 
 
-# ── 글 모양(tools/docs.py refs, tools/docrefs.py) ───────────
+def config_changed(repo: str | Path, rng: str) -> bool:
+    """범위가 문서 설정(`.foreman/docs.toml`)을 바꿨나. 거꾸로 찾기는 설정을 작업 트리 판으로 읽으므로, 바꿨으면 그 셈은 옛 값 기준이다."""
+    a, b = parse_range(str(repo), rng)
+    return bool(_gits(repo, "diff", "--name-only", "--no-renames", a, b, "--", dcfg.PATH).strip())
+
+
+def split_by(docs: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """코드로 걸린 문서와 문서로만 걸린 문서의 수(11-17 사용자 결정 8). 2단계 문서 트리거로 FOREMAN 합치기 카드 수가 407에서 600으로
+    늘었는데 코드로 새로 걸린 것은 0이었다. 섞어 보이면 둘 다 안 보게 된다."""
+    out = {"code": {"total": 0, "unfixed": 0}, "doc": {"total": 0, "unfixed": 0}}
+    for d in docs:
+        k = out["code" if d.get("by", "code") == "code" else "doc"]
+        k["total"] += 1
+        k["unfixed"] += d.get("fixed") is False or d.get("stale") is True
+    return out
+
+
+# ── 글 모양(tools/docs.py refs) ─────────────────────────────
 KIND_KO = {"docs": "docs", "notion": "노션 원고", "portfolio": "포트폴리오"}
-HOW_KO = {"mark": "근거 표시", "path": "경로", "name": "파일 이름", "covers": "다루는 곳", "pair": "번호 짝"}
+HOW_KO = {"mark": "근거 표시", "path": "경로", "name": "파일 이름", "pair": "번호 짝"}
+BY_KO = {"code": "코드로", "doc": "문서로만"}
 
 
 def fixed_ko(v: bool | None) -> str:
@@ -448,13 +467,16 @@ def render(res: dict[str, Any], brief: bool = False, unfixed: bool = False) -> s
     else:
         head += f" ({what}, 고쳤는지는 범위를 주어야 압니다)"
     out.append(head)
+    if res["total"]:
+        out.append(split_line(res))
     for w in res.get("warnings") or []:
         out.append(f"⚠ {w}")
     for d in res["docs"]:
         if unfixed and d["fixed"] is not False:
             continue
         lines = sorted({h["line"] for h in d["hits"]})
-        out.append(f"\n[{fixed_ko(d['fixed'])}] {d['doc']} ({KIND_KO.get(d['kind'], d['kind'])}) 줄 {', '.join(map(str, lines[:12]))}"
+        out.append(f"\n[{fixed_ko(d['fixed'])}] {d['doc']} ({KIND_KO.get(d['kind'], d['kind'])}, {BY_KO[d.get('by', 'code')]} 걸림) "
+                   f"줄 {', '.join(map(str, lines[:12]))}"
                    + (" …" if len(lines) > 12 else "") + f" ← {', '.join(d['files'])}")
         if brief:
             continue
@@ -466,7 +488,7 @@ def render(res: dict[str, Any], brief: bool = False, unfixed: bool = False) -> s
             last = key
             rng = f" 줄 {h['range'][0]}-{h['range'][1]}" + (" (바뀐 줄과 겹침)" if h["overlap"] else "") if h["range"] else ""
             out.append(f"  {h['line']}: 「{h['heading'] or '(제목 없음)'}」 {HOW_KO.get(h['how'], h['how'])} {h['ref']} → {h['code']}{rng}")
-            if h["how"] not in ("covers", "pair"):
+            if h["how"] != "pair":
                 span = f"{h['para_from']}-{h['para_to']}" if h["para_to"] != h["para_from"] else str(h["para_from"])
                 out.append(f"     ({span}) {h['para']}")
     return "\n".join(out)
@@ -475,16 +497,17 @@ def render(res: dict[str, Any], brief: bool = False, unfixed: bool = False) -> s
 # ── 합치기 카드 모양 ────────────────────────────────────────
 def card_docs(res: dict[str, Any], limit: int = 12, hits: int = 5) -> dict[str, Any]:
     """scan 결과 → 합치기 카드 `docs` 칸(옛 정리 후보 모양을 잇는다: where, lines, count, files, stale). `stale` = 이 브랜치에서
-    안 고침. 더한 칸: kind(docs, notion, portfolio), hits(줄, 제목, 문단 앞부분), 전체 수 total과 안 고친 수 unfixed(목록을 자르기 전)."""
+    안 고침. 더한 칸: kind(docs, notion, portfolio), by(code 코드로 걸림, doc 문서로만 걸림), hits(줄, 제목, 문단 앞부분),
+    전체 수 total과 안 고친 수 unfixed, 나눈 수 by(목록을 자르기 전). 목록은 코드로 걸린 것 먼저."""
     groups = []
-    for d in res["docs"]:
+    for d in sorted(res["docs"], key=lambda d: d.get("by", "code") != "code"):
         lines = sorted({h["line"] for h in d["hits"]})
-        groups.append({"where": d["doc"], "kind": d["kind"], "lines": lines[:8], "count": len(lines), "files": d["files"],
-                       "stale": d["fixed"] is False,
+        groups.append({"where": d["doc"], "kind": d["kind"], "by": d.get("by", "code"), "lines": lines[:8], "count": len(lines),
+                       "files": d["files"], "stale": d["fixed"] is False,
                        "hits": [{"line": h["line"], "heading": h["heading"][:80], "text": h["para"][:160], "code": h["code"]}
                                 for h in d["hits"][:hits]]})
     return {"readme": [], "docs": groups[:limit], "total": res["total"], "unfixed": res["unfixed"],
-            "code": len(res["code"]), "warnings": res.get("warnings") or []}
+            "by": res.get("by") or split_by(res["docs"]), "code": len(res["code"]), "warnings": res.get("warnings") or []}
 
 
 # ── 코더 첫 글에 붙이는 묶음(11-17 사용자 지시 21) ─────────────
@@ -513,25 +536,37 @@ def prompt_block(cwd: str | Path, role: str | None) -> str:
         return ""
     own = _same_repo(cwd, FOREMAN_ROOT)
     if own:
-        cmd = ".venv/bin/python tools/docrefs.py"
+        cmd = ".venv/bin/python tools/docs.py refs"
     else:
         py = FOREMAN_ROOT / ".venv" / "bin" / "python"
-        cmd = f"{py if py.exists() else 'python3'} {FOREMAN_ROOT / 'tools' / 'docrefs.py'} --repo ."
+        cmd = f"{py if py.exists() else 'python3'} {FOREMAN_ROOT / 'tools' / 'docs.py'} --repo . refs"
     return ("\n\n## 고친 코드의 문서도 함께 (코더 규칙, 브리지가 붙임)\n"
             f"- {CODER_DOCS_RULE}\n"
             f"- 거꾸로 찾는 도구(읽기만 한다): `{cmd} --range main...HEAD --unfixed`(이 브랜치가 바꾼 코드를 가리키는데 아직 안 고친 문서와 줄), "
-            f"커밋 전이면 `{cmd} <고친 파일 경로>`. 합치기 카드에도 「걸리는 문서 N, 안 고침 M」으로 보인다. 걸린 문단이 지금 코드와 맞으면 그대로 둔다\n"
+            f"커밋 전이면 `{cmd} <고친 파일 경로>`. 합치기 카드에도 「코드로 걸린 문서 N, 안 고침 M」으로 보인다(문서만 바꿔 걸린 것은 따로 센다). "
+            "걸린 문단이 지금 코드와 맞으면 그대로 둔다\n"
             f"- {TONE_FOREMAN if own else TONE_OTHER}\n"
             "- 그 저장소 CLAUDE.md가 사람 승인으로 정한 문서(README.md, CLAUDE.md 등)는 고쳐도 합치기 카드가 사람에게 간다. "
             "고치지 못한 문서는 마지막 보고에(결과 기록을 남기는 저장소면 거기에도) 「무엇이 걸리는지」로 적는다")
 
 
+def split_line(d: dict[str, Any]) -> str:
+    """「코드로 걸린 문서 N, 안 고침 M / 문서로만 걸린 문서 K, 안 고침 L」. 0인 쪽은 뺀다."""
+    by = d.get("by") or split_by(d.get("docs") or [])
+    parts = [f"{'코드로 걸린' if k == 'code' else '문서로만 걸린'} 문서 {by[k]['total']}, 안 고침 {by[k]['unfixed']}"
+             for k in ("code", "doc") if by.get(k, {}).get("total")]
+    return " / ".join(parts)
+
+
 def count_line(d: dict[str, Any] | None) -> str:
-    """「걸리는 문서 N, 안 고침 M」. 카드 글, 알림 글이 같이 쓴다. 걸리는 문서가 없으면 빈 글."""
+    """카드 글, 알림 글이 같이 쓰는 한 줄. 코드로 걸린 것과 문서로만 걸린 것을 나눈다(11-17 사용자 결정 8, `split_line`).
+    `by`가 없는 옛 카드는 「걸리는 문서 N, 안 고침 M」. 걸리는 문서가 없으면 빈 글."""
     if not d:
         return ""
     total = d.get("total", len(d.get("docs") or []))
     if not total:
         return ""
+    if d.get("by"):
+        return split_line(d)
     unfixed = d.get("unfixed", sum(1 for x in d.get("docs") or [] if x.get("stale")))
     return f"걸리는 문서 {total}, 안 고침 {unfixed}"

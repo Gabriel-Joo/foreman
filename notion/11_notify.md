@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/notify.py, bridge/telegram.py, config/notify.toml, migrations/0005_notification.sql, deploy/mysql/backup.sh, deploy/systemd/foreman-bridge.service, scripts/foreman-bridge-alert.sh, bridge/mergeprep.py, bridge/handoff.py
+다루는 곳: bridge/notify.py, bridge/telegram.py, config/notify.toml, migrations/0005_notification.sql, deploy/mysql/backup.sh, deploy/systemd/foreman-bridge.service, scripts/foreman-bridge-alert.sh, bridge/mergeprep.py, bridge/handoff.py, tests/test_fail_now_unpriced.py
 읽은 커밋: fb7121b
 -->
 # 11 알림

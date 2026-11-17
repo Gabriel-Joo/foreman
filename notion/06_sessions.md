@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/handoff.py, bridge/worktree.py, bridge/preview.py, bridge/previews.py, bridge/api/handoff.py, config/worktree.toml, bridge/static/js/newsession.js, bridge/docrefs.py
+다루는 곳: bridge/handoff.py, bridge/worktree.py, bridge/preview.py, bridge/previews.py, bridge/api/handoff.py, config/worktree.toml, bridge/static/js/newsession.js, bridge/docrefs.py, tests/test_handoff.py, tests/test_manager_seat.py, tests/test_preview.py, tests/test_worktree.py, tests/test_wt_end.py, tests/test_wt_truth.py
 읽은 커밋: fb7121b
 -->
 
@@ -71,7 +71,7 @@ flowchart LR
 
 **첫 글을 넣는다.** 계획이나 서기실에서 첫 글을 넘겼으면 1초 쉬고 그 글을 입력 칸에 넣는다. 옮기기용 요약을 같이 골랐으면 요약을 첫 글 뒤에 붙인다. 넣은 뒤 15초 안에 실제로 제출됐는지 트랜스크립트로 확인하고, 확인하지 못하면 「입력 칸을 확인해 주세요」를 돌려준다. 보냈다고 끝내지 않고 받았는지까지 보는 것이다 [code:bridge/handoff.py].
 
-코더 세션에는 브리지가 넣는 글에 한 절을 더 붙인다. 제목은 「고친 코드의 문서도 함께」이고, 고친 코드를 가리키는 문서(docs, 노션 원고, 포트폴리오)가 있으면 같은 브랜치에서 그 문서도 고치라는 규칙, 어느 문서가 걸리는지 찾는 명령(`tools/docrefs.py --range main...HEAD --unfixed`), 문서마다 다른 말투 규칙이 들어 있다 [code:bridge/docrefs.py] [code:bridge/roles.py]. 첫 글이 있으면 첫 글 끝에, 옮기기용 요약만 넣을 때는 요약 뒤에, 사람이 덧붙인 말 앞에 붙는다 [code:bridge/handoff.py]. 붙이는 것은 코더뿐이다. 디자이너와 조사에는 붙이지 않는다. 다른 저장소(런슈즈, 펫퍼민트)의 코더에게는 FOREMAN의 찾기 도구를 그 저장소에 대고 읽기만 하는 명령과 「말투와 문서 자리는 그 저장소 CLAUDE.md를 따른다」는 줄이 대신 들어간다. 이 절을 사람이나 교장이 쓰는 첫 글에 맡기지 않고 브리지가 붙이는 까닭은, 코드를 고친 뒤 문서를 서기가 나중에 따라잡는 사이 문서가 계속 밀렸기 때문이다(→ 05 역할과 권한, → 07 합치기의 합치기 카드) [log:foreman-8_docrefs_20261117.md]. 빈틈이 하나 있다. 첫 글도 요약도 없이 사람이 [+ 세션]으로 띄운 빈 코더 세션에는 넣는 글 자체가 없어 이 절도 붙지 않는다. FOREMAN 저장소의 코더는 CLAUDE.md에서 같은 규칙을 읽는다.
+코더 세션에는 브리지가 넣는 글에 한 절을 더 붙인다. 제목은 「고친 코드의 문서도 함께」이고, 고친 코드를 가리키는 문서(docs, 노션 원고, 포트폴리오)가 있으면 같은 브랜치에서 그 문서도 고치라는 규칙, 어느 문서가 걸리는지 찾는 명령(`tools/docs.py refs --range main...HEAD --unfixed`), 문서마다 다른 말투 규칙이 들어 있다 [code:bridge/docrefs.py] [code:bridge/roles.py]. 첫 글이 있으면 첫 글 끝에, 옮기기용 요약만 넣을 때는 요약 뒤에, 사람이 덧붙인 말 앞에 붙는다 [code:bridge/handoff.py]. 붙이는 것은 코더뿐이다. 디자이너와 조사에는 붙이지 않는다. 다른 저장소(런슈즈, 펫퍼민트)의 코더에게는 FOREMAN의 찾기 도구를 그 저장소에 대고 읽기만 하는 명령과 「말투와 문서 자리는 그 저장소 CLAUDE.md를 따른다」는 줄이 대신 들어간다. 이 절을 사람이나 교장이 쓰는 첫 글에 맡기지 않고 브리지가 붙이는 까닭은, 코드를 고친 뒤 문서를 서기가 나중에 따라잡는 사이 문서가 계속 밀렸기 때문이다(→ 05 역할과 권한, → 07 합치기의 합치기 카드) [log:foreman-8_docrefs_20261117.md]. 빈틈이 하나 있다. 첫 글도 요약도 없이 사람이 [+ 세션]으로 띄운 빈 코더 세션에는 넣는 글 자체가 없어 이 절도 붙지 않는다. FOREMAN 저장소의 코더는 CLAUDE.md에서 같은 규칙을 읽는다.
 
 ### [+ 세션] 창
 

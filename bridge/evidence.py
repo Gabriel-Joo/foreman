@@ -14,18 +14,19 @@ from __future__ import annotations
 import asyncio
 import re
 from datetime import UTC, datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
 
+from bridge.doctext.check import SKIP_LINE, FsView, covers_problem, is_claim, mark_problem  # noqa: E402,F401
+from bridge.doctext.config import FOREMAN_CLAIM, CheckConfig  # noqa: E402
 from bridge.doctext.lines import text_lines  # noqa: E402
 from bridge.doctext.marks import MARK, target  # noqa: E402,F401  (MARK는 tests/screen_words.py도 이 이름으로 읽었다)
-from bridge.doctext.titles import XREF  # noqa: E402
 
-CLAIM = re.compile(r"\d|“|”|\"[^\"]{4,}\"|「[^」]{2,}」")      # 숫자 · 인용이 있는 줄 — 근거가 있어야 할 줄
-# 사진 줄(![설명](경로))도 뺀다 — 설명의 근거는 사진 자체다(11-06 「한눈에」 의심 2개가 둘 다 사진 설명이었고 사진과 맞았다)
-SKIP_LINE = re.compile(r"^\s*(#|>|\||```|---|!\[|\s*$)")
+# 근거 표시 파일과 줄, 다루는 곳 경로, 의심 줄 꼴은 문서 점검(bridge/doctext/check.py, tools/docs.py check)과 한 곳이다(11-17 3단계)
+CLAIM = re.compile(FOREMAN_CLAIM)                # 숫자, 인용이 있는 줄. 근거가 있어야 할 줄
+CLAIM_MIN = CheckConfig().claim_min
 
 
 async def _git(repo: str, *args: str) -> tuple[int, str]:
@@ -36,38 +37,19 @@ async def _git(repo: str, *args: str) -> tuple[int, str]:
 
 
 def _file_problem(root: Path, kind: str, v: str) -> str | None:
-    t = target(v)
-    if not t:
-        return "모양을 알아보지 못했습니다"
-    name, ta, tb = t
-    rel = PurePosixPath(name)
-    if rel.is_absolute() or ".." in rel.parts:
-        return "저장소 밖을 가리킵니다"
-    f = root / name if kind == "code" else root / kind / name
-    shown = name if kind == "code" else f"{kind}/{name}"
-    if kind == "code" and f.is_dir() and ta is None:
-        return None                                   # 폴더 — [code:bridge/static/js/]
-    if not f.is_file():
-        return f"{shown} 파일이 없습니다"
-    if ta is not None:
-        n = len(f.read_text(encoding="utf-8", errors="replace").splitlines())
-        a, b = ta, tb or ta
-        if a < 1 or b > n or b < a:
-            return f"줄 범위가 맞지 않습니다(파일은 {n}줄)"
-    return None
+    return mark_problem(kind, v, FsView(root))
 
 
 async def check_text(body: str, root: str, engine: Any = None) -> dict[str, Any]:
     """한 글의 근거 표시를 확인한다 — {total, ok, bad:[{line, mark, why}], unsupported:[{line, text}]}."""
-    from bridge.doctext.head import COVERS, READ, bad_covers, parse_head
+    from bridge.doctext.head import COVERS, READ, parse_head
     marks: list[tuple[int, str, str]] = []
     unsupported = []
     # 코드 울타리와 HTML 주석(원고 머리 주석) 밖 줄만. 머리 주석은 아래에서 따로 본다
     for i, ln in text_lines(body.splitlines()):
-        found = [(m["k"], m["v"]) for m in MARK.finditer(ln)]
-        marks += [(i, k, v) for k, v in found]
-        # "→ 「다른 글 제목」"은 글 안내라 주장이 아니다(11-06 포트폴리오 02 · 05의 의심이 둘 다 이것)
-        if not found and not SKIP_LINE.match(ln) and CLAIM.search(XREF.sub("", ln)) and len(ln.strip()) > 20:
+        marks += [(i, m["k"], m["v"]) for m in MARK.finditer(ln)]
+        # "→ 「다른 글 제목」"은 글 안내라 주장이 아니다(11-06 포트폴리오 02, 05의 의심이 둘 다 이것). 판정은 is_claim 한 곳
+        if is_claim(ln, CLAIM, CLAIM_MIN):
             unsupported.append({"line": i, "text": ln.strip()[:160]})
     bad = []
     commits: dict[str, bool] = {}
@@ -106,14 +88,11 @@ async def check_text(body: str, root: str, engine: Any = None) -> dict[str, Any]
                 bad.append({"line": at, "mark": f"머리 주석 {READ} {read}", "why": "그 커밋이 저장소에 없습니다"})
         if not head["covers"]:
             bad.append({"line": at, "mark": f"머리 주석 {COVERS}", "why": "적혀 있지 않습니다"})
+        view = FsView(root)
         for c in head["covers"]:
-            p = Path(root, c.rstrip("/")) if not any(ch in c for ch in "*?[") else None
-            if c in bad_covers([c]):
-                bad.append({"line": at, "mark": f"머리 주석 {COVERS} {c}", "why": "저장소 밖을 가리킵니다"})
-            elif p is not None and not p.exists():
-                bad.append({"line": at, "mark": f"머리 주석 {COVERS} {c}", "why": "그 경로가 없습니다"})
-            elif p is None and not list(Path(root).glob(c)):
-                bad.append({"line": at, "mark": f"머리 주석 {COVERS} {c}", "why": "그 글롭에 맞는 파일이 없습니다"})
+            why = covers_problem(c, view)
+            if why:
+                bad.append({"line": at, "mark": f"머리 주석 {COVERS} {c}", "why": why})
     return {"total": total, "ok": total - len(bad), "bad": bad, "unsupported": unsupported}
 
 

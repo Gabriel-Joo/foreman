@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/scribe_room.py, bridge/scribe.py, bridge/api/scribe.py, config/scribe.toml, bridge/static/js/scribe.js, migrations/0023_scribe_review.sql
+다루는 곳: bridge/scribe_room.py, bridge/scribe.py, bridge/api/scribe.py, config/scribe.toml, bridge/static/js/scribe.js, migrations/0023_scribe_review.sql, tests/js/scribe.test.mjs, tests/test_scribe.py, tests/test_scribe_room.py, tests/test_scribe_two_paths.py
 읽은 커밋: fb7121b
 -->
 # 서기실과 일감

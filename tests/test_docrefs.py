@@ -1,4 +1,5 @@
-"""거꾸로 찾기(11-17 사용자 지시 21, bridge/docrefs.py, tools/docrefs.py). tmp 가짜 저장소로. 읽기만 하는지도 본다."""
+"""거꾸로 찾기(11-17 사용자 지시 21, bridge/docrefs.py, tools/docs.py refs). tmp 가짜 저장소로. 읽기만 하는지도 본다.
+3단계(11-17 사용자 결정 1): 머리 주석 「다루는 곳」은 읽지 않는다(덮기 검사 몫). 근거 표시와 글 안 경로만 따라간다."""
 
 import json
 import subprocess
@@ -94,8 +95,7 @@ def test_refs_in_kinds():
     assert not any(t in ("bridge/", "tests/*") for t, _ in got)           # 맨 위 폴더, 넓은 글롭은 백틱이어도 걸지 않는다
     assert all(r["line"] != 13 for r in refs)                             # 울타리 안
     n = dr.refs_in(NOTION)
-    assert {(r["target"], r["how"], r["line"]) for r in n if r["how"] == "covers"} == {
-        ("bridge/mergeprep.py", "covers", 1), ("bridge/static/js/", "covers", 1)}
+    assert not [r for r in n if r["how"] == "covers"]                    # 다루는 곳은 가리킴이 아니다(덮기 검사 몫)
     assert {(r["target"], tuple(r["range"]) if r["range"] else None) for r in n if r["how"] == "mark"} == {
         ("bridge/transcript/", None), ("bridge/mergeprep.py", (3, 4))}
 
@@ -104,15 +104,15 @@ def test_files_mode_finds_docs_notion_portfolio(repo):
     res = dr.scan(repo, files=["bridge/mergeprep.py"])
     assert res["sets"] == {"docs": "docs/", "notion": "notion/", "portfolio": "portfolio/"}   # .foreman/notion.toml src
     d = by_doc(res)
-    assert set(d) == {"docs/11_x.md", "notion/07_merge.md", "portfolio/07_merge.md"}
+    # 포트폴리오는 다루는 곳(글롭 bridge/*.py)으로만 가리켜 걸리지 않는다(3단계)
+    assert set(d) == {"docs/11_x.md", "notion/07_merge.md"}
     assert all(x["fixed"] is None for x in res["docs"]) and res["unfixed"] == 0        # 범위가 없으면 고쳤는지 모름
     [h] = d["docs/11_x.md"]["hits"]
     assert h["line"] == 5 and h["heading"] == "1. 합치기" and h["how"] == "path"
     assert (h["para_from"], h["para_to"]) == (5, 6) and "이어지는 줄" in h["para"]        # 목록 항목 + 들여 쓴 이어지는 줄
     nh = {(x["how"], x["line"]) for x in d["notion/07_merge.md"]["hits"]}
-    assert nh == {("covers", 1), ("mark", 9)}
-    assert d["notion/07_merge.md"]["kind"] == "notion" and d["portfolio/07_merge.md"]["kind"] == "portfolio"
-    assert d["portfolio/07_merge.md"]["hits"][0]["how"] == "covers"                    # 글롭 bridge/*.py
+    assert nh == {("mark", 9)}
+    assert d["notion/07_merge.md"]["kind"] == "notion" and all(x["by"] == "code" for x in res["docs"])
 
 
 def test_folder_name_and_ambiguous(repo):
@@ -136,12 +136,11 @@ def test_range_fixed_unfixed_and_line_overlap(repo):
     res = dr.scan(repo, rng=f"{a}..HEAD")
     assert res["code"] == ["bridge/mergeprep.py"]            # 문서, log, *.md는 코드가 아니다
     d = by_doc(res)
-    assert d["notion/07_merge.md"]["fixed"] is True and d["docs/11_x.md"]["fixed"] is False
-    assert res["total"] == 3 and res["unfixed"] == 2
-    assert res["docs"][-1]["doc"] == "notion/07_merge.md"     # 안 고친 것 먼저
-    # 바뀐 줄은 10. 줄 번호 3-4 근거 표시는 겹치지 않아 걸지 않는다(2단계, 인프라와 같다. 전에는 overlap False로 걸었다)
-    assert not [h for h in d["notion/07_merge.md"]["hits"] if h["range"]]
-    assert [h["how"] for h in d["notion/07_merge.md"]["hits"]] == ["covers"]   # 다루는 곳은 그대로 걸린다
+    assert d["docs/11_x.md"]["fixed"] is False
+    # 바뀐 줄은 10. 줄 번호 3-4 근거 표시는 겹치지 않아 걸지 않는다(2단계, 인프라와 같다. 전에는 overlap False로 걸었다).
+    # 다루는 곳(bridge/mergeprep.py)으로는 걸지 않는다(3단계). 그래서 원고는 걸리지 않는다
+    assert "notion/07_merge.md" not in d and "portfolio/07_merge.md" not in d
+    assert res["total"] == 1 and res["unfixed"] == 1 and res["by"]["code"] == {"total": 1, "unfixed": 1}
     assert all(h["overlap"] is None for h in d["docs/11_x.md"]["hits"])  # 줄 번호 없는 가리킴
     put(repo, "bridge/mergeprep.py", "".join(f"line{i}\n" for i in range(1, 21)).replace("line3\n", "L3\n"))
     sh(repo, "commit", "-qam", "fix: 3")
@@ -168,8 +167,7 @@ def test_doc_folder_media_is_not_code(repo):
 def test_files_mode_line_ranges(repo):
     hit = [h for h in by_doc(dr.scan(repo, files=["bridge/mergeprep.py:4-6"]))["notion/07_merge.md"]["hits"] if h["range"]][0]
     assert hit["overlap"] is True
-    hits = by_doc(dr.scan(repo, files=["bridge/mergeprep.py:9"]))["notion/07_merge.md"]["hits"]
-    assert not [h for h in hits if h["range"]] and [h["how"] for h in hits] == ["covers"]   # 안 겹치는 줄 번호는 걸지 않는다
+    assert "notion/07_merge.md" not in by_doc(dr.scan(repo, files=["bridge/mergeprep.py:9"]))   # 안 겹치는 줄 번호는 걸지 않는다
 
 
 def test_src_from_foreman_config_and_default(repo, tmp_path):
@@ -208,26 +206,42 @@ def test_errors(repo):
 def test_card_docs_and_count_line(repo):
     a = sh(repo, "rev-parse", "HEAD")
     put(repo, "bridge/mergeprep.py", "z\n"); sh(repo, "commit", "-qam", "fix: z")
-    c = dr.card_docs(dr.scan(repo, rng=f"{a}..HEAD"), limit=2)
-    assert c["total"] == 3 and c["unfixed"] == 3 and len(c["docs"]) == 2 and c["readme"] == []
-    assert set(c["docs"][0]) >= {"where", "kind", "lines", "count", "files", "stale", "hits"}
-    assert dr.count_line(c) == "걸리는 문서 3, 안 고침 3"
+    c = dr.card_docs(dr.scan(repo, rng=f"{a}..HEAD"), limit=1)
+    assert c["total"] == 2 and c["unfixed"] == 2 and len(c["docs"]) == 1 and c["readme"] == []
+    assert set(c["docs"][0]) >= {"where", "kind", "by", "lines", "count", "files", "stale", "hits"}
+    assert c["by"] == {"code": {"total": 2, "unfixed": 2}, "doc": {"total": 0, "unfixed": 0}}
+    assert dr.count_line(c) == "코드로 걸린 문서 2, 안 고침 2"
+    both = {"total": 5, "by": {"code": {"total": 3, "unfixed": 1}, "doc": {"total": 2, "unfixed": 2}}}
+    assert dr.count_line(both) == "코드로 걸린 문서 3, 안 고침 1 / 문서로만 걸린 문서 2, 안 고침 2"
+    assert dr.count_line({"total": 2, "by": {"code": {"total": 0, "unfixed": 0}, "doc": {"total": 2, "unfixed": 1}}}) \
+        == "문서로만 걸린 문서 2, 안 고침 1"
     assert dr.count_line({"readme": [], "docs": [{"stale": True}, {"stale": False}]}) == "걸리는 문서 2, 안 고침 1"   # 옛 카드
     assert dr.count_line({"docs": []}) == "" and dr.count_line(None) == ""
 
 
+def test_card_docs_code_first(repo):
+    """카드 목록은 코드로 걸린 문서 먼저(문서로만 걸린 것이 많아도 코드 쪽이 잘리지 않게)."""
+    res = {"docs": [{"doc": "a.md", "kind": "notion", "by": "doc", "fixed": False, "files": ["CLAUDE.md"], "hits": []},
+                    {"doc": "b.md", "kind": "notion", "by": "code", "fixed": True, "files": ["x.py"], "hits": []}],
+           "total": 2, "unfixed": 1, "code": ["x.py"]}
+    c = dr.card_docs(res, limit=1)
+    assert [x["where"] for x in c["docs"]] == ["b.md"] and c["by"]["doc"] == {"total": 1, "unfixed": 1}
+
+
 def test_cli(repo, capsys):
     import importlib.util
-    spec = importlib.util.spec_from_file_location("docrefs_cli", ROOT / "tools" / "docrefs.py")
+    spec = importlib.util.spec_from_file_location("docs_cli", ROOT / "tools" / "docs.py")
     cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+    assert not (ROOT / "tools" / "docrefs.py").exists()      # 3단계에서 옛 껍데기를 지웠다(이름은 tools/docs.py refs 하나)
     a = sh(repo, "rev-parse", "HEAD")
     put(repo, "bridge/mergeprep.py", "z\n"); sh(repo, "commit", "-qam", "fix: z")
-    assert cli.main(["--repo", str(repo), "--range", f"{a}..HEAD"]) == 0
+    assert cli.main(["--repo", str(repo), "refs", "--range", f"{a}..HEAD"]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("걸리는 문서 3, 안 고침 3") and "[안 고침] docs/11_x.md (docs) 줄 5" in out
+    assert out.startswith("걸리는 문서 2, 안 고침 2") and "\n코드로 걸린 문서 2, 안 고침 2\n" in out
+    assert "[안 고침] docs/11_x.md (docs, 코드로 걸림) 줄 5" in out
     assert "「1. 합치기」 경로" in out and "(5-6) - 카드는" in out
-    assert cli.main(["--repo", str(repo), "bridge/mergeprep.py", "--json", "--brief"]) == 0
+    assert cli.main(["--repo", str(repo), "refs", "bridge/mergeprep.py", "--json", "--brief"]) == 0
     j = json.loads(capsys.readouterr().out)
-    assert j["total"] == 3 and j["range"] is None
-    assert cli.main(["--repo", str(repo), "--range", "nope..HEAD"]) == 2
+    assert j["total"] == 2 and j["range"] is None
+    assert cli.main(["--repo", str(repo), "refs", "--range", "nope..HEAD"]) == 2
     assert "거꾸로 찾기 실패" in capsys.readouterr().err

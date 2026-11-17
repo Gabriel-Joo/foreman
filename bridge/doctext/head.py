@@ -30,9 +30,15 @@ def head_text(covers: list[str], read: str) -> str:
     return f"<!--\n{COVERS}: {', '.join(covers)}\n{READ}: {read}\n-->"
 
 
-def parse_head(md: str) -> dict[str, Any] | None:
-    """머리 주석 → {covers: [...], read: 해시 또는 None, line: 시작 줄(1부터)}. 없으면 None."""
-    for a, _, body in comments(split(md)):
+def parse_head(md: str, at: str = "first") -> dict[str, Any] | None:
+    """머리 주석 → {covers: [...], read: 해시 또는 None, line: 시작 줄(1부터)}. 없으면 None.
+    at "first"(FOREMAN): 두 칸 가운데 하나라도 든 울타리 밖 첫 주석. "top"(인프라 docs-check.py): 빈 줄 뒤 파일 맨 앞 주석만."""
+    lines = split(md)
+    found_any = comments(lines)
+    if at == "top":
+        first = next((i for i, ln in enumerate(lines) if ln.strip()), None)
+        found_any = [c for c in found_any if c[0] == first][:1]
+    for a, _, body in found_any:
         covers: list[str] = []
         read = None
         found = False

@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/roleguard.py, bridge/reposcope.py, bridge/schemalock.py, bridge/pgrep_guard.py, scripts/korean-check.py, .claude/settings.json, config/roles.toml
+다루는 곳: bridge/roleguard.py, bridge/reposcope.py, bridge/schemalock.py, bridge/pgrep_guard.py, scripts/korean-check.py, .claude/settings.json, config/roles.toml, tests/test_roleguard.py, tests/test_roleguard_inspector.py, tests/test_pgrep_guard.py, tests/test_reposcope.py, tests/test_korean_check.py
 읽은 커밋: 9a7c22d
 -->
 

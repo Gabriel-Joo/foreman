@@ -8,6 +8,7 @@
 - `titles`  편 제목(첫 # 줄), 번호 뗀 제목, 편 사이 참조 `→ 「제목」`
 - `config`  저장소마다 다른 것 `.foreman/docs.toml`(2단계부터 거꾸로 찾기가 쓴다)
 - `repo`    저장소 읽기(추적 파일 목록, 여러 파일을 작업 트리나 커밋에서 한 번에, 2단계에 `bridge/docrefs.py`에서 옮김)
+- `check`   문서 점검(3단계, 인프라 scripts/docs-check.py 1~7번 규칙). 근거 확인기(bridge/evidence.py)가 같은 판정을 가져다 쓴다
 
 쓰는 곳: 근거 확인기(bridge/evidence.py), 게시기(bridge/notion.py), 거꾸로 찾기(bridge/docrefs.py),
 원고 셈(bridge/manuscript.py), 명령 tools/docs.py. 표준 라이브러리만 쓴다(다른 저장소에서 FOREMAN 명령으로 부를 수 있게).

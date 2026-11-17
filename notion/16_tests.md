@@ -1,5 +1,5 @@
 <!--
-다루는 곳: tests/, pyproject.toml, requirements.lock, deploy/systemd/foreman-bridge.service
+다루는 곳: tests/conftest.py, tests/testdb.py, tests/screen_words.py, tests/test_js.py, tests/test_live_config_shape.py, tests/test_public_secret_shapes.py, tests/test_bridge_alert.py, tests/test_coder_docs_rule.py, tests/test_docrefs.py, tests/test_fail_notify_scan.py, tests/test_hook_timeouts.py, tests/test_hookmiss.py, tests/test_roles_agree.py, pyproject.toml, requirements.lock, deploy/systemd/foreman-bridge.service
 읽은 커밋: fb7121b
 -->
 # 16 시험과 배포
@@ -40,7 +40,7 @@ js 시험은 따로 돌리지 않아도 pytest 한 번에 같이 돈다. `tests/
 
 ## 3. 시험 묶음의 짜임
 
-지금 `tests/` 아래 파이썬 시험 파일(`test_*.py`)은 103개이고, pytest가 모으는 시험은 1,307개다(값을 바꿔 여러 번 도는 시험을 하나씩 센 수, js 시험을 부르는 시험 하나 포함) [code:tests/]. js 시험은 `tests/js/` 아래 40개 파일, 225개다 [code:tests/js/]. 시험 파일 말고 시험을 돕는 파일과 폴더는 아래와 같다.
+지금 `tests/` 아래 파이썬 시험 파일(`test_*.py`)은 104개이고, pytest가 모으는 시험은 1,329개다(값을 바꿔 여러 번 도는 시험을 하나씩 센 수, js 시험을 부르는 시험 하나 포함) [code:tests/]. js 시험은 `tests/js/` 아래 40개 파일, 226개다 [code:tests/js/]. 시험 파일 하나하나는 그 시험이 지키는 기능을 설명하는 편이 머리 주석 「다루는 곳」에 둔다. 이 편은 아래 시험 장치와 여러 기능에 걸친 시험만 맡는다. 전에는 이 편이 시험 폴더 전체를 맡아서 시험 하나만 바뀌어도 이 편이 다시 볼 편으로 떴다 [log:foreman-5_docs_check_20261117.md]. 시험 파일 말고 시험을 돕는 파일과 폴더는 아래와 같다.
 
 | 자리 | 하는 일 |
 |---|---|

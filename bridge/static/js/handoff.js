@@ -121,25 +121,42 @@ export function ruleNote(c) {
 // 11-17 걸리는 문서(bridge/docrefs.py, 사용자 지시 21). 이 브랜치가 바꾼 코드를 가리키는 docs, 노션 원고, 포트폴리오.
 // 승인할 때 밀린 것을 바로 보게 수는 위 줄에(목록은 호버), 문서마다 줄은 「자세히」에. 옛 카드(total 없음)는 목록으로 센다.
 // 찾지 못했으면(error) 위 줄에 경고로(0으로 보이면 조용한 고장)
+// 11-17 사용자 결정 8: 코드로 걸린 문서와 문서로만 걸린 문서(docs, CLAUDE.md만 바뀌어 걸린 것)를 위 줄 둘로 나눈다(섞어 보이면 둘 다 안 보게 된다).
+// by가 없는 옛 카드는 한 줄. 결정 9: 브랜치가 문서 설정을 바꿨는데 main 설정으로 셌으면 경고 한 줄(config_note)
 const DOC_KIND = { docs: 'docs', notion: '원고', portfolio: '포트폴리오' };
+const DOC_BY = {
+  code: { line: '코드로 걸린 문서', row: '코드로', tip: '코드로 걸린 문서 — 이 브랜치가 바꾼 코드를 가리키는 docs, 노션 원고, 포트폴리오입니다.' },
+  doc: { line: '문서로만 걸린 문서', row: '문서로만', tip: '문서로만 걸린 문서 — 이 브랜치가 바꾼 docs나 CLAUDE.md 같은 문서만 가리키는 문서입니다. 코드는 바뀌지 않았습니다.' },
+};
+function docsTop(list, total, unfixed, label, tipHead) {
+  const names = list.filter((x) => x.stale).concat(list.filter((x) => !x.stale)).map((x) => `${x.stale ? '안 고침' : '고침'} ${x.where}`);
+  const tip = `${tipHead} 안 고침은 이 브랜치에서 고치지 않은 문서입니다. 줄은 「자세히」에 있습니다.${
+    names.slice(0, 10).map((s) => `\n${s}`).join('')}${total > 10 ? `\n외 ${total - 10}개` : ''}`;
+  return `<div class="small mp-docs ${unfixed ? 'warn' : 'muted'}" title="${esc(tip).replace(/\n/g, '&#10;')}">📄 ${label} ${total}, 안 고침 ${unfixed}</div>`;
+}
 export function docsNote(c) {
   const d = (c && c.docs) || {};
   if (d.error) return { top: `<div class="small warn mp-docs" title="걸리는 문서 — 바뀐 코드를 가리키는 문서를 찾지 못했습니다.">📄 ${esc(d.error)}</div>`, rows: '' };
   const list = d.docs || [];
   const total = d.total ?? list.length;
-  if (!total) return { top: '', rows: '' };
-  const unfixed = d.unfixed ?? list.filter((x) => x.stale).length;
-  const names = list.filter((x) => x.stale).concat(list.filter((x) => !x.stale)).map((x) => `${x.stale ? '안 고침' : '고침'} ${x.where}`);
-  const tip = `걸리는 문서 — 이 브랜치가 바꾼 코드를 가리키는 docs, 노션 원고, 포트폴리오입니다. 안 고침은 이 브랜치에서 고치지 않은 문서입니다. 줄은 「자세히」에 있습니다.${
-    names.slice(0, 10).map((s) => `\n${s}`).join('')}${total > 10 ? `\n외 ${total - 10}개` : ''}`;
-  const top = `<div class="small mp-docs ${unfixed ? 'warn' : 'muted'}" title="${esc(tip).replace(/\n/g, '&#10;')}">📄 걸리는 문서 ${total}, 안 고침 ${unfixed}</div>`;
+  const cfg = d.config_note ? `<div class="small warn mp-docs-cfg" title="문서 설정 — 이 브랜치가 .foreman/docs.toml을 바꿨지만 카드는 합칠 곳의 설정으로 셌습니다. 합친 뒤에는 수가 달라질 수 있습니다.">⚠ ${esc(d.config_note)}</div>` : '';
+  if (!total) return { top: cfg, rows: '' };
+  let top;
+  if (d.by) {
+    top = ['code', 'doc'].filter((k) => d.by[k] && d.by[k].total).map((k) =>
+      docsTop(list.filter((x) => (x.by || 'code') === k), d.by[k].total, d.by[k].unfixed, DOC_BY[k].line, DOC_BY[k].tip)).join('');
+  } else {
+    top = docsTop(list, total, d.unfixed ?? list.filter((x) => x.stale).length, '걸리는 문서',
+      '걸리는 문서 — 이 브랜치가 바꾼 코드를 가리키는 docs, 노션 원고, 포트폴리오입니다.');
+  }
   const rows = list.map((x) => {
     const hits = (x.hits || []).map((h) => `${h.line}: 「${h.heading || ''}」 ${h.text || ''}`).join('\n');
     return `<div class="small mp-doc"${hits ? ` title="${esc(`${x.where}\n${hits}`).replace(/\n/g, '&#10;')}"` : ''}><code>${esc(x.where)}</code>${
-      x.kind && DOC_KIND[x.kind] && x.kind !== 'docs' ? ` <span class="muted">${DOC_KIND[x.kind]}</span>` : ''} 줄 ${x.lines.join(', ')}${x.count > x.lines.length ? ' …' : ''} <span class="muted">${esc(x.files.join(', '))}</span>${
+      x.kind && DOC_KIND[x.kind] && x.kind !== 'docs' ? ` <span class="muted">${DOC_KIND[x.kind]}</span>` : ''}${
+      d.by && x.by ? ` <span class="muted">${DOC_BY[x.by] ? DOC_BY[x.by].row : ''}</span>` : ''} 줄 ${x.lines.join(', ')}${x.count > x.lines.length ? ' …' : ''} <span class="muted">${esc(x.files.join(', '))}</span>${
       x.stale ? ' <span class="warn">안 고침</span>' : ' <span class="ok">고침</span>'}</div>`;
   }).join('');
-  return { top, rows };
+  return { top: top + cfg, rows };
 }
 export function mpSection(mp, b, sid) {
   if (!mp) return '';

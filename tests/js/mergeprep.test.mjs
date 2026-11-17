@@ -162,6 +162,27 @@ test('걸리는 문서: 수는 위 줄, 목록은 자세히, 원고 표시, 찾�
   assert.match(e.split('<details')[0], /class="small warn mp-docs"[^>]*>📄 걸리는 문서를 찾지 못했습니다\(OSError\)/);
 });
 
+// 11-17 사용자 결정 8, 9(문서 도구 합치기 3단계). 코드로 걸린 것과 문서로만 걸린 것은 위 줄 둘로, 설정을 바꾼 브랜치는 경고 한 줄
+test('걸리는 문서: 코드로 걸린 것과 문서로만 걸린 것을 나눠 보이고, 설정을 바꾼 브랜치는 경고', () => {
+  const docs = { readme: [], total: 3, unfixed: 2, by: { code: { total: 1, unfixed: 0 }, doc: { total: 2, unfixed: 2 } }, docs: [
+    { where: 'docs/11_worktree.md', kind: 'docs', by: 'code', lines: [18], count: 1, files: ['bridge/mergeprep.py'], stale: false },
+    { where: 'notion/14_screen.md', kind: 'notion', by: 'doc', lines: [3], count: 1, files: ['CLAUDE.md'], stale: true },
+    { where: 'notion/06_sessions.md', kind: 'notion', by: 'doc', lines: [7], count: 1, files: ['docs/11_worktree.md'], stale: true }],
+    config_note: '이 브랜치가 설정을 바꿨습니다. 이 셈은 main 설정 기준입니다' };
+  const h = mpSection({ card: card({ docs }) }, b, 7);
+  const [top, rest] = h.split('<details class="mp-more"');
+  assert.match(top, /<div class="small mp-docs muted" title="코드로 걸린 문서 — [^"]*&#10;고침 docs\/11_worktree\.md">📄 코드로 걸린 문서 1, 안 고침 0<\/div>/);
+  assert.match(top, /<div class="small mp-docs warn" title="문서로만 걸린 문서 — [^"]*&#10;안 고침 notion\/14_screen\.md&#10;안 고침 notion\/06_sessions\.md">📄 문서로만 걸린 문서 2, 안 고침 2<\/div>/);
+  assert.match(top, /⚠ 이 브랜치가 설정을 바꿨습니다\. 이 셈은 main 설정 기준입니다/);
+  assert.ok(!top.includes('걸리는 문서 3'));                                  // 섞은 수는 보이지 않는다
+  assert.match(rest, /<code>notion\/14_screen\.md<\/code> <span class="muted">원고<\/span> <span class="muted">문서로만<\/span> 줄 3/);
+  assert.match(rest, /<code>docs\/11_worktree\.md<\/code> <span class="muted">코드로<\/span> 줄 18/);
+  const only = mpSection({ card: card({ docs: { ...docs, total: 1, by: { code: { total: 1, unfixed: 0 }, doc: { total: 0, unfixed: 0 } }, config_note: undefined } }) }, b, 7);
+  assert.ok(only.includes('코드로 걸린 문서 1') && !only.includes('문서로만 걸린 문서') && !only.includes('설정을 바꿨습니다'));
+  const none = mpSection({ card: card({ docs: { readme: [], total: 0, docs: [], config_note: docs.config_note } }) }, b, 7);
+  assert.match(none, /설정을 바꿨습니다/);                                   // 걸린 문서가 없어도 경고는 보인다
+});
+
 test('묻는 말이 있어도 카드는 뜬다 — 묻는 말을 함께 보인다(11-11 D2 281)', () => {
   const h = mpSection({ card: card({ asks: { tail: '한 번씩 확인해 주세요.' } }), health: { ok: true } }, b, 7);
   assert.match(h, /세션이 묻는 말이 있습니다\. 패널에서 답하십시오: 한 번씩 확인해 주세요/);

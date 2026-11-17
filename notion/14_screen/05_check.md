@@ -1,5 +1,5 @@
 <!--
-다루는 곳: tools/, bridge/static/js/demo.js, bridge/static/demo/, tests/screen_words.py, tests/test_screen_words.py, tests/data/screen_words.toml
+다루는 곳: tools/, bridge/static/js/demo.js, bridge/static/demo/, tests/screen_words.py, tests/test_screen_words.py, tests/data/screen_words.toml, tests/js/merge_wait.test.mjs, tests/js/merge_wait_manager.test.mjs, tests/js/overhead_marks.test.mjs, tests/test_merge_wait.py, tests/test_merge_wait_manager.py, tests/test_merge_wait_off_remind.py, tests/test_overhead_marks.py
 읽은 커밋: fb7121b
 -->
 # 화면 점검과 시연

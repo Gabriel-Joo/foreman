@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/reconcile.py
+다루는 곳: bridge/reconcile.py, tests/test_reconcile.py
 읽은 커밋: e5d584b
 -->
 # 끝난 뒤 맞추기

@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/handoff.py, bridge/pointers.py, bridge/handoff_state.py, migrations/0014_handoff.sql, migrations/0024_summary_state.sql
+다루는 곳: bridge/handoff.py, bridge/pointers.py, bridge/handoff_state.py, migrations/0014_handoff.sql, migrations/0024_summary_state.sql, tests/test_handoff_state.py, tests/test_pointers.py
 읽은 커밋: fb7121b
 -->
 

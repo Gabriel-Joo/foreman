@@ -264,11 +264,21 @@ def parse_merge_tree(rc: int, out: str) -> list[str] | None:
 
 def doc_candidates(repo: str, base: str, branch: str, docs_dir: str = "docs", limit: int = 12) -> dict[str, Any]:
     """「걸리는 문서」(11-17 사용자 지시 21, 전 이름 정리 후보). 이 브랜치가 바꾼 코드를 가리키는 docs, 노션 원고, 포트폴리오와 그 줄.
-    판정은 거꾸로 찾기 `bridge/docrefs.py` 한 곳(명령 `tools/docrefs.py`와 같다). 문서는 브랜치 판을 읽고, 그 문서를 이 브랜치에서
+    판정은 거꾸로 찾기 `bridge/docrefs.py` 한 곳(명령 `tools/docs.py refs`와 같다). 문서는 브랜치 판을 읽고, 그 문서를 이 브랜치에서
     고쳤으면 고침, 아니면 `stale`(안 고침)이다. 코드를 고친 세션이 문서도 함께 고친다는 규칙이라, 안 고친 것은 사람이 승인할 때 본다.
-    전에는 바뀐 파일의 경로나 이름이 나오는 docs 줄만 맞댔다(원고, 포트폴리오, 근거 표시, 머리 주석 「다루는 곳」은 보지 않았다).
-    옛 카드 모양을 이어 "readme"는 늘 빈 목록이다(README 「나중에 할 일」 줄 후보는 11-15에 뺐다). total, unfixed는 목록을 자르기 전 수."""
-    return docrefs.card_docs(docrefs.scan(repo, rng=f"{base}...{branch}", docs_dir=docs_dir), limit)
+    코드로 걸린 문서와 문서로만 걸린 문서는 `by`로 나눠 센다(11-17 사용자 결정 8). 머리 주석 「다루는 곳」으로는 걸지 않는다(3단계).
+    옛 카드 모양을 이어 "readme"는 늘 빈 목록이다(README 「나중에 할 일」 줄 후보는 11-15에 뺐다). total, unfixed는 목록을 자르기 전 수.
+
+    문서 설정(`.foreman/docs.toml`)은 지금처럼 이 저장소 작업 트리 판(합치기는 원본 폴더에서 돈다, 곧 base 쪽 값)으로 읽는다.
+    브랜치가 그 파일을 바꿨으면 `config_note`에 한 줄을 남긴다(11-17 사용자 결정 9. 조용히 다른 값으로 세면 왜 숫자가 달랐는지 못 찾는다)."""
+    out = docrefs.card_docs(docrefs.scan(repo, rng=f"{base}...{branch}", docs_dir=docs_dir), limit)
+    if docrefs.config_changed(repo, f"{base}...{branch}"):
+        out["config_note"] = config_note(base)
+    return out
+
+
+def config_note(base: str) -> str:
+    return f"이 브랜치가 설정을 바꿨습니다. 이 셈은 {base} 설정 기준입니다"
 
 
 # ── 카드 ─────────────────────────────────────────────────
@@ -862,6 +872,7 @@ class MergePrep:
                              + (f"\n❓ 세션이 묻는 말이 있습니다 — 패널에서 답하십시오: {asks.get('tail') or ''}" if asks else "")
                              + (f"\n🛡 {rule_line(card)}" if rule_urgent(card) else "")
                              + (f"\n📄 {docrefs.count_line(docs)}" if docrefs.count_line(docs) else "")
+                             + (f"\n⚠ {docs['config_note']}" if docs.get("config_note") else "")
                              + (f"\n⚠ {docs['error']}" if docs.get("error") else "")
                              + ("\n▶ 관리자 세션이 승인합니다(사람 승인 필요 없음)" if card.approver == "manager"
                                 else (f"\n⚠ 사람 승인 — {'; '.join(card.human_why)}" if card.human_why else "")
@@ -920,8 +931,9 @@ class MergePrep:
         """카드가 생겼을 때 관리자에게(승인자 = 관리자인 프로젝트만)."""
         how = (f"충돌 {len(c.conflict)}개({', '.join(c.conflict[:5])})" if c.conflict
                else ("충돌 없음 · ff 가능" if c.ff else f"충돌 없음 · {c.base}에 새 커밋 {c.behind}개(rebase)"))
-        cl = docrefs.count_line(c.docs)     # 11-17 「걸리는 문서 N, 안 고침 M」
+        cl = docrefs.count_line(c.docs)     # 11-17 「코드로 걸린 문서 N, 안 고침 M / 문서로만 걸린 문서 K, 안 고침 L」
         derr = (c.docs or {}).get("error")
+        dnote = (c.docs or {}).get("config_note")
         sq = (" 이 프로젝트는 squash로 합친다(커밋 하나, 본문에 원래 날짜 · 해시 · 제목). 제목은 세션 제목으로 기계가 만든다 — "
               "묶은 일을 더 잘 말하는 제목이 있으면 승인할 때 \"title\": \"…\"로 넘긴다(그 저장소 커밋 꼴로)."
               if self.cfg.rule(c.project).squash and c.ahead >= 2 else "")
@@ -930,7 +942,8 @@ class MergePrep:
                 f"{' 세션이 묻는 말이 있다: ' + str((c.asks or {}).get('tail') or '') if c.asks else ''}"
                 f"{' 조사 세션이지만 브리지가 스스로 끝내고 합치지 않았다: ' + c.auto_why + '.' if c.auto_why else ''}"
                 f"{' 🛡 ' + rule_line(c) if c.rule_files or c.rule_files_error else ''}"
-                f"{' ' + cl + '(바뀐 코드를 가리키는 문서, 안 고침은 이 브랜치에서 고치지 않은 것).' if cl else ''}"
+                f"{' ' + cl + '(바뀐 코드나 문서를 가리키는 문서, 안 고침은 이 브랜치에서 고치지 않은 것. 문서로만 걸린 것은 docs나 CLAUDE.md만 바뀌어 걸린 것).' if cl else ''}"
+                f"{' ⚠ ' + dnote + '.' if dnote else ''}"
                 f"{' ⚠ ' + derr + '.' if derr else ''}")
         see = f" 카드 전부: GET /api/merge-prep?project={c.project}(커밋, 바뀐 파일, 걸리는 문서와 줄)."
         if c.human_why:
@@ -1271,12 +1284,12 @@ class MergePrep:
         ended = " 세션은 끝냈다." if res.get("ended") is not None else ""
         docs = (c.docs or {})
         dn = len(docs.get("docs") or [])      # README 「나중에 할 일」 후보는 11-15에 뺐다
-        cl = docrefs.count_line(docs)         # 11-17 「걸리는 문서 N, 안 고침 M」(bridge/docrefs.py)
+        cl = docrefs.count_line(docs)         # 11-17 코드로 걸린 것과 문서로만 걸린 것을 나눈 한 줄(bridge/docrefs.py)
         stale = [x["where"] for x in docs.get("docs") or [] if x.get("stale")][:5]
         extra = ""
         if stale:
             extra += (f" 바뀐 코드를 가리키는데 이 브랜치에서 고치지 않은 문서: {', '.join(stale)}. 낡았으면 코더(원고와 포트폴리오는 서기)에게 "
-                      "맡긴다. 확인은 tools/docrefs.py --range로 한다.")
+                      "맡긴다. 확인은 tools/docs.py refs --range로 한다.")
         # 11-13 다 골랐으면 카드를 바로 치운다(안 부르면 keep_docs_h 뒤 치운다 — 다 고르고도 카드가 남지 않게)
         done = (f" 다 봤으면 POST /api/sessions/{c.sid}/merge-prep {{\"action\":\"docs_done\",\"by\":\"manager\"}}로 카드를 치운다"
                 f"(안 부르면 {self.cfg.keep_docs_h}시간 뒤 치운다).")

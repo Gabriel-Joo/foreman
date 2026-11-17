@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/handover.py, bridge/managers.py, bridge/api/managers.py, config/managers.toml, migrations/0031_handover_todo_edit.sql
+다루는 곳: bridge/handover.py, bridge/managers.py, bridge/api/managers.py, config/managers.toml, migrations/0031_handover_todo_edit.sql, tests/js/handover.test.mjs, tests/test_handover.py, tests/test_managers.py, tests/test_escalate_number.py
 읽은 커밋: 5e0f7c5
 -->
 # 관리자에게 넘기기와 보고
