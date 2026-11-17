@@ -33,17 +33,20 @@
 | 상주 자리 | 테마의 `library` 구역 — 마법학교 "서고", 오피스 "아카이브". 현장은 `store`(자재창고) 대신 도면함을 둘 자리를 정한다. plain은 구역이 없어 하나 더한다 |
 | 움직임 | 일이 없으면 서고에 앉아 있다(IDLE). 일하면 서고 책상에서 쓰고, 커밋할 때 커밋 데스크로 간다. 지금도 서고는 "파일 읽기" 일이 가는 곳이라 따로 만들 것이 적다 |
 
-**맡는 일(일감 종류):**
+**맡는 일(일감 종류, `bridge/scribe_room.py` `TASKS`):** 일곱이다. `publish`만 세션이 아니고, 나머지 여섯은 worktree 서기 세션으로 뜬다(`scribe_room.start`, 지시문은 `task_prompt`).
 
 | 일감 | 하는 것 | 내놓는 것 |
 |---|---|---|
-| `sync` 문서 맞추기 | 마지막 문서 갱신 뒤의 커밋 · log를 보고 docs를 고친다. README 로드맵 줄 맞추기는 11-15에 뺐다(0절) | 브랜치의 diff |
-| `portfolio` 포트폴리오 | 화면 하나를 한 편으로, 비개발자도 읽을 글을 쓴다. 편 없이 시키면 편 목록부터 정한다(11-15, 7절) | `portfolio/NN_이름.md`, 같은 글의 Notion 판(5절) |
-| `techdoc` 기술문서 쓰기(11-15) | 코드를 읽고 노션 기술문서 원고를 통으로 쓴다. 세션 하나가 목차를 정하고 편마다 서브에이전트가 쓴다(5절) | `notion/` 원고 diff. 게시는 사람이 [Notion에 올리기] |
-| `trim` CLAUDE.md 정리 | 꼭 지킬 규칙만 짧게 남기고 상세는 docs로 옮겨 가리킨다 | diff, 옮긴 규칙의 목적지 표 |
-| `loss` 압축 손실 반영 | 압축 손실 점검 결과(예: `log/runshoes_compaction_loss_20261105.md`)에서 살릴 것을 CLAUDE.md · docs · 메모리에 넣자고 제안한다 | 제안 diff. 뒤집힌 결정은 넣지 않는다 |
-| `polish` 인계 요약 다듬기 | 세션이 쓴 요약을 원문(트랜스크립트)과 맞대 빠진 결정 · 틀린 사실을 고친다 | 요약의 새 판(`summary`의 새 행, 옛것은 남긴다) |
-| `later` 알려진 한계 쓰기(11-15, 전 「나중에 할 일 정리」) | 포스트잇에서 사람이 [→]로 보낸 것을 README 「알려진 한계」에 「지금은 ~이다」 말투로 쓰고, [갱신]에서 끝났다고 닫은 한계 줄을 뺀다. 할 일은 README로 옮기지 않는다(11절) | README diff |
+| `doccheck` 문서 점검 | README, docs/, CLAUDE.md에 적힌 경로, 함수, 설정 키, 명령, 숫자가 지금 저장소와 맞는지 찾아 보고한다. 고치지 않는다. 결과 문서 없는 단계(`stages_without_result`)를 지시문에 넣는다 | `log/doccheck_<날짜>.md`(어긋남만) |
+| `docfix` 문서 고치기(11-11) | 문서 점검 결과나 물어보기 답에 적힌 어긋남을 지금 저장소와 다시 맞대고 문서에서 고친다. 코드는 건드리지 않고, 코드가 틀려 보이면 응답에 알린다. 서기실 메뉴에는 없다. 점검 결과의 [바로 고치기]와 물어보기 답의 [이 답대로 문서 고치기]에서만 뜬다(`scribe.js` `ORDER` 밖). 같은 점검 결과를 고쳐 합친 뒤에는 다시 권하지 않는다(`fixed_reports`) | README, docs/, CLAUDE.md diff |
+| `trim` CLAUDE.md 정리 | 꼭 지킬 규칙만 짧게 남기고 상세는 docs로 옮겨 가리킨다. 규칙을 없애지 않는다 | diff, 옮긴 규칙의 목적지 표 `log/trim_<날짜>.md` |
+| `later` 알려진 한계 쓰기(11-15, 전 「나중에 할 일 정리」) | 포스트잇에서 사람이 [→]로 보낸 것을 README 「알려진 한계」에 「지금은 ~이다」 말투로 쓰고, [갱신]에서 끝났다고 닫은 한계 줄을 뺀다. 할 일은 README로 옮기지 않는다(11절). 쓸 줄도 뺄 줄도 없으면 띄우지 않는다 | README diff |
+| `portfolio` 포트폴리오 쓰기 | 화면 하나를 한 편으로, 비개발자도 읽을 글을 쓴다. 편 없이 시키면 편 목록부터 정한다(11-15, 7절). `portfolio/` 폴더가 있는 저장소만 | `portfolio/NN_이름.md`, 같은 글의 Notion 판(5절) |
+| `techdoc` 기술문서 쓰기(11-15) | 코드를 읽고 노션 기술문서 원고를 통으로 쓴다. 세션 하나가 목차를 정하고 편마다 서브에이전트가 쓴다(5절). 게시기 원고 폴더(`src`)가 `notion/`인 프로젝트만 | `notion/` 원고 diff. 게시는 사람이 [Notion에 올리기] |
+| `publish` Notion 게시 | 세션 없이 서기실 [게시], [Notion에 올리기] 버튼으로 올린다(`bridge/notion.py`, 5절). `start`는 거절한다 | Notion 페이지 |
+
+- 11-05 설계의 `sync` 문서 맞추기, `loss` 압축 손실 반영, `polish` 인계 요약 다듬기는 코드에 들어간 적이 없다. 11-06 첫 서기실 코드(`549be68`)의 일감은 retro, doccheck, readme, trim, later, publish였다(retro, readme는 11-15에 뺐다, 0절). 문서 맞추기는 찾기(`doccheck`)와 고치기(`docfix`)로 나뉘었다. `loss`, `polish` 자리를 왜 두지 않았는지는 기록에 없다
+- 교장(계획)이 붙이는 서기 일 이름은 `bridge/foreman.py` 지시문에 따로 적혀 있다. 11-17 코드에서 그 목록은 `TASKS`와 다르다. task 칸 목록(later, trim, doccheck, docfix, portfolio)에 techdoc이 없고, role 칸 설명은 아직 옛 sync, loss를 말한다. 사람이 카드에서 넣는 일 이름은 꼴(`TASK_RE`)만 맞으면 받는다
 
 **띄우는 길은 셋, 기록은 하나(11-15 사용자 「한 곳으로 합쳐라」)** [log:foreman-4_scribe_two_paths_20261115.md]
 - 길: 서기실 [시키기](`scribe_room.start`), 계획 [시작](`ForemanDispatcher.start`), 직접 띄우기(`POST /api/spawn`). 셋 모두 `HandoffManager.spawn_new`로 간다
@@ -60,8 +63,11 @@
 2. **브리지가 할 일을 센다(12d).** LLM 없이 기계적으로 센다. 서기 머리 위에 "할 일 3"처럼 뜨고, 누르면 그 일감이 계획 카드로 채워진다.
    - 단계 설계 문서(`docs/NN_*`)에 결과 파일(`log/stage<N>_*`)이 없음
    - (README 마지막 변경 뒤 커밋 10개 이상은 11-15에 뺐다. 0절)
-   - CLAUDE.md가 기준 줄 수(예: 80줄)를 넘음
-   - 새 인계 요약이 생김(`polish` 후보), 압축 손실 점검 결과가 생김(`loss` 후보)
+   - CLAUDE.md가 기준 줄 수(`CLAUDE_MD_MAX` 80줄)를 넘음
+   - ~~새 인계 요약이 생김(`polish` 후보), 압축 손실 점검 결과가 생김(`loss` 후보)~~(11-05 설계. 두 일감이 코드에 없어 세지 않는다, 1절)
+   - 포스트잇 [→]로 보내 README에 아직 안 쓴 줄과 [갱신]에서 닫은 README 한계 줄(`later`), [갱신]이 결과 없이 끝남(11-6절)
+   - Notion 게시 뒤처짐: FOREMAN 포트폴리오의 새 글과 바뀐 글, 기술문서 맞추기 줄(`docsync.todo_items`, 5절)
+   - 점검 결과(`log/doccheck_*.md`)가 합쳐져 있으면 서기실 문서 점검 줄에 [바로 고치기](`docfix`)가 붙는다. 할 일 수에는 들지 않는다
    - 기술문서 쓰기(11-15 사용자): 마지막으로 기술문서 서기 세션(`scribe-task techdoc`)을 합친 시각에서 이틀(`TECHDOC_DAYS`)이 지났고, 다루는 코드가 바뀐 편이 있을 때. 커밋 수로 세지 않는다. 이틀이 지났어도 코드가 그대로면 올리지 않는다. 머리 주석을 읽지 못한 편은 바뀐 것으로 센다(조용히 「그대로」가 되지 않게). 합친 기록이 없으면 `notion/`을 마지막으로 바꾼 커밋 시각으로 잰다(계획 길로 일 종류 없이 쓴 원고). 원고가 하나도 없으면 올리지 않는다(첫 목차는 사람이 정한다) — `scribe_room.techdoc_state`
 
 **커밋 수로 자동 실행하지 않는 이유:** 문서는 사람이 읽는 글이라 초안이 쌓이면 검토 빚이 된다. 또 같은 저장소에 일하는 세션이 있으면 README에서 충돌이 난다. 그래서 할 일은 세고, 실행은 사람이 누른다.
@@ -73,17 +79,17 @@
 - 화면 버튼과 서버가 같은 판단(`blocked`)을 쓴다
 
 **어떻게 도나:** 실제 CC 세션이다(`claude -p` 한 번이 아니다). 여러 파일을 읽고 diff를 만들어야 해서다.
-- 11단계 worktree로 띄운다(`.worktrees/scribe-<날짜>`, 브랜치 `cc/scribe-…`)
+- 11단계 worktree로 띄운다. ~~`.worktrees/scribe-<날짜>`, 브랜치 `cc/scribe-…`~~(11-05 설계. 코드는 다른 세션과 같은 이름 규칙이다 → `.worktrees/<프로젝트>[-N]`, 브랜치 `cc/<프로젝트>[-N]`, `bridge/handoff.py` `spawn_new`, `bridge/worktree.py` `create`)
 - **[합치기]가 곧 사람의 검토 관문이다.** 이미 있는 장치를 그대로 쓴다
-- 예외는 `polish`다. 작아서 디스패처처럼 `claude -p` 한 번으로 돈다
+- ~~예외는 `polish`다. 작아서 디스패처처럼 `claude -p` 한 번으로 돈다~~(`polish`는 코드에 없다, 1절). 세션 없이 도는 것은 `publish`(버튼)와 물어보기(`claude -p` 한 번, 12절)다
 
 ## 3. 무엇을 읽나 — 재료
 
 브리지가 LLM 없이 재료를 만들어 첫 글이 가리키는 파일로 준다. 서기는 거기서 시작해 필요한 원문만 더 읽는다. 함께 쓰는 함수는 `bridge/scribe.py`(`kst`, `_clip`, `_full`, `git_commits`, `write`).
-- 「알려진 한계 쓰기」: `later.md`(`scribe_room.py` `later_material`). 쓸 줄(포스트잇 [→]) 원문과 뺄 줄([갱신] 판정과 근거). Masker를 거쳐 저장소 밖(`~/.foreman/scribe/`, 700)에 쓴다. 11-15 전에는 받은 할 일과 「나중에」 낱말이 든 사람 턴이었다
+- 「알려진 한계 쓰기」: `later.md`(`scribe_room.py` `later_material`). 쓸 줄(포스트잇 [→]) 원문과 뺄 줄([갱신] 판정과 근거). Masker를 거쳐 저장소 밖(`~/.foreman/scribe/<프로젝트>_<날짜>/`)에 쓴다. `scribe.write`가 그 날짜 폴더를 700, 파일을 600으로 맞춘다. 위 `~/.foreman/scribe/`는 `mkdir`로만 만들어 권한을 코드가 정하지 않는다(11-17 이 서버에서는 700). 11-15 전에는 받은 할 일과 「나중에」 낱말이 든 사람 턴이었다
 - 포스트잇 [갱신]: `postit_check_<req>.md`(`bridge/postit.py` `check_material`). 열린 포스트잇 원문, README 「알려진 한계」 줄, 최근 커밋 40개(참고만)
 - 물어보기: 포스트잇 최근 30개(닫힌 것 포함), 최근 3일 커밋(`bridge/scribe_ask.py`, 12절)
-- 그 밖의 일감(문서 점검, CLAUDE.md 정리, 포트폴리오, 기술문서 쓰기)은 재료 파일 없이 저장소를 직접 읽는다. 기술문서 쓰기 일감 지시문에는 서기실이 센 「코드가 바뀐 편」 · 「머리 주석을 읽지 못한 편」 · 있는 편 목록과, 사람이 관리자를 거쳐 넘긴 요청(`note`)이 들어간다
+- 그 밖의 일감(문서 점검, 문서 고치기, CLAUDE.md 정리, 포트폴리오, 기술문서 쓰기)은 재료 파일 없이 저장소를 직접 읽는다. 문서 고치기 지시문에는 고칠 목록(`log/doccheck_*.md` 이름 또는 물어보기 답 글, `NOTE_MAX` 4000자까지)이 들어간다. 기술문서 쓰기 일감 지시문에는 서기실이 센 「코드가 바뀐 편」 · 「머리 주석을 읽지 못한 편」 · 있는 편 목록과, 사람이 관리자를 거쳐 넘긴 요청(`note`)이 들어간다
 
 **사람 말은 자르지 않고 다 준다**(11-10 사용자, dispatch #209) [log:scribe_material_noclip_20261110.md] [log:merge_scribe_noclip_20261110.md] [log:note_threads_only_20261113.md]
 - 재료의 사람 말(`turn.prompt_text`)은 `<pasted_content>` 껍데기만 벗기고 글자를 빼지 않는다(`bridge/scribe.py` `_full`). 길이는 껍데기 벗기기로만 줄인다
@@ -184,7 +190,7 @@
 - 런슈즈 출력 68만
 - 디스패처 1회: 상황 1.1만 자, 17초
 
-**일감 하나의 어림:**
+**일감 하나의 어림(11-05 설계 때 어림, 옛 일감 이름이다. `sync`, `loss`, `polish`는 코드에 없다, 1절. 지금 일감으로 다시 잰 값은 없다):**
 
 | 일감 | 입력 | 출력 | 모델 |
 |---|---|---|---|
@@ -215,7 +221,7 @@
 
 ## 9. 단계
 
-> 상태(2026-11-06, 11-14에 12b · 12c 칸을 이후 일에 맞춤): ✓ 12a · 12b(근거 확인기 · 고친 양, 조사 역할 검토 · 숫자 대조는 아직) · 서기실 · 할 일 세기 · Notion 게시 · 시킬 일 셋(11-15 회고와 README 갱신을 뺌) · 동시에 시키기 규칙 / △ 12c(작업 기록 DB만 없음). 상세는 `log/stage12_scribe_result.md`
+> 상태(2026-11-06, 11-14에 12b · 12c 칸을 이후 일에 맞춤): ✓ 12a · 12b(근거 확인기 · 고친 양, 조사 역할 검토 · 숫자 대조는 아직) · 서기실 · 할 일 세기 · Notion 게시 · 시킬 일(11-06 서기실 메뉴의 문서 점검, CLAUDE.md 정리, 나중에 할 일 정리. 11-15 회고와 README 갱신을 뺌. 11-17 코드의 일감 일곱은 1절) · 동시에 시키기 규칙 / △ 12c(작업 기록 DB만 없음). 상세는 `log/stage12_scribe_result.md`
 
 | 단계 | 할 것 | 끝의 기준 | 상태(11-06) |
 |---|---|---|---|
@@ -228,7 +234,7 @@
 
 1. 역할 이름 `scribe` / 서기, 색 잉크 갈색 — **확정**
 2. Notion 부모 페이지 — **사용자가 만들어 알려 준다(대기)**
-3. 모델 — 서기만이 아니라 **모든 세션이 모델을 고르게** 먼저 넣었다([결과](../log/stage12_model_choice_result.md)). 서기의 기본값은 `config/models.toml`의 `scribe = "claude-opus-5-5"`(11-14 전 `"opus"`)이고, 일감마다 바꿀 수 있다(`sync` · `polish`는 Sonnet 권장)
+3. 모델 — 서기만이 아니라 **모든 세션이 모델을 고르게** 먼저 넣었다([결과](../log/stage12_model_choice_result.md)). 서기의 기본값은 `config/models.toml`의 `scribe = "claude-opus-5-5"`(11-14 전 `"opus"`)이고, 일감마다 바꿀 수 있다(`sync` · `polish`는 Sonnet 권장. 두 일감은 코드에 들어가지 않았다, 1절)
 
 ## 11. 포스트잇 (11-09 받는 함 → 11-15 포스트잇) [log:foreman-5_postit_20261115.md] [log:foreman-6_postit_proposal_20261115.md]
 
@@ -283,7 +289,8 @@
 
 ### 11-6. 조용히 쌓이지 않게
 
-- 머리 탭 단추에 할 일 수(「포스트잇 4장」, 11-15 전에는 가장 오래된 날도 적었다). 쌓인 까닭은 단추 호버에 적힌다(펼친 창에는 쌓임 안내 줄을 두지 않는다. 11-15 사용자: 「끝난 것은 [갱신]으로 찾고 안 할 것은 [x]로 지웁니다」는 [갱신] · [x] 호버에 이미 있다). **쌓임 기준**(`config/scribe.toml [postit]`, 없으면 코드 기본값 `open_max` 20, `stale_days` 7, `refresh_days` 7): 열린 것 20개 이상, 가장 오래된 것 7일, 마지막 [갱신] 뒤(한 번도 안 했으면 가장 오래된 것부터) 7일 중 하나면 서기 자리 말풍선 「포스트잇 쌓임」과 단추 주황. **말풍선만, 21시 묶음 보고에는 넣지 않는다**(사용자 답 4)
+- 머리 탭 단추에 할 일 수(「포스트잇 4장」, 11-15 전에는 가장 오래된 날도 적었다). 쌓인 까닭은 단추 호버에 적힌다(펼친 창에는 쌓임 안내 줄을 두지 않는다. 11-15 사용자: 「끝난 것은 [갱신]으로 찾고 안 할 것은 [x]로 지웁니다」는 [갱신] · [x] 호버에 이미 있다). **쌓임 기준**(`config/scribe.toml [postit]`, 없으면 코드 기본값 `open_max` 20, `stale_days` 7, `refresh_days` 7. 11-17 그 파일에 `[postit]`은 없어 기본값으로 돈다): 열린 것 20개 이상, 가장 오래된 것 7일, 마지막 [갱신] 뒤(한 번도 안 했으면 가장 오래된 것부터) 7일 중 하나면 서기 자리 말풍선 「포스트잇 쌓임」과 단추 주황. **말풍선만, 21시 묶음 보고에는 넣지 않는다**(사용자 답 4)
+- `config/scribe.toml`에 있는 칸은 `[nudge]`(`new_min` 3, `oldest_days` 3) 하나다. 11-09 받는 함 때 서기 몫 받은 할 일이 쌓이면 「정리할까요?」 말풍선을 띄우던 기준이다. 11-17 코드에서 이 값을 읽는 것은 `scribe_room.nudge_conf`, `nudge_of`뿐이고 브리지 안에서 부르는 곳이 없다(시험만 부른다). 말풍선은 위 `[postit]` 기준(`bridge/postit.py` `nudge_of`)이 정한다. 파일 머리 주석은 아직 옛 머리줄 [＋ 할 일]을 말한다
 - [갱신]이 결과 없이 세션이 끝나면 `postit-done`(ok 0)을 남기고 화면 「지난 [갱신]이 결과 없이 끝났습니다」, 서기 할 일 줄 「포스트잇 [갱신] 실패」
 - README에 아직 안 쓴 [→] 줄과 뺄 줄은 서기 할 일 「알려진 한계 쓰기: 쓸 줄 N, 뺄 줄 M」
 - 그물이 깨져 늘 0이 되면 `tests/test_postit.py`의 실제 예문 시험이 걸린다
@@ -291,8 +298,9 @@
 ### 11-7. API
 
 - `GET /api/postit?project=` 열린 것, 판정, 최근 닫은 것 20, 요약. `GET /api/postit/summary` 프로젝트마다 요약
-- `POST /api/postit {project, body, session?}` 201(새로 만듦) 또는 200(같은 근거에 같은 글이 이미 있어 만들지 않음 — 응답에 `created: false`, `duplicate: true`, 까닭 글 `reason`). 글이 다른 여러 장은 같은 세션이어도 모두 201이다. 프로젝트 토큰은 자기 프로젝트만(`bridge/scopetoken.py`)
-- `POST /api/postit/save {project, body?, confirm?}`, `POST /api/postit/{id}/close {reason: drop|limit|done, note?}`, `POST /api/postit/refresh {project}`, `POST /api/postit/check/{cid} {action: close|keep}`
+- `POST /api/postit {project, body, session?, source?}` 201(새로 만듦) 또는 200(같은 근거에 같은 글이 이미 있어 만들지 않음 — 응답에 `created: false`, `duplicate: true`, 까닭 글 `reason`). 글이 다른 여러 장은 같은 세션이어도 모두 201이다. `source`는 `note`, `todo`, `said` 중 하나이고, 없으면 `session`이 있을 때 `said`, 없을 때 `note`. 프로젝트 토큰은 자기 프로젝트만(`bridge/scopetoken.py`)
+- `POST /api/postit/save {project, body?, confirm?}`, `POST /api/postit/{id}/close {reason: drop|limit|done, note?}`, `POST /api/postit/refresh {project}`, `POST /api/postit/check/{cid} {action: close|keep}`. 성공은 200이고 `/refresh`만 202(세션 띄우기가 꺼져 있으면 503)
+- 위 다섯 POST 모두 브리지가 거절하면(`Refused`) 409 `{"refused": "까닭"}`이다(`bridge/api/postit.py`, 11-15 `ee966ec`부터)
 - 옛 길은 그대로 돈다: `POST /api/scribe/inbox`(= source todo), `GET /api/scribe/inbox`, `POST /api/scribe/inbox/{id}/drop`(= [x]), `PUT /api/todo/{id}`(열린 것 고치기)
 - 남은 것: 텔레그램으로 적기는 하지 않았다. 노션 「이것도 써라」는 포스트잇에 넣지 않는다(관리자에게 말한다, 사용자 답 11)
 
