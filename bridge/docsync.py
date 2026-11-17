@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import subprocess
@@ -31,7 +32,9 @@ log = logging.getLogger("foreman.docsync")
 MARK = "@docs-sync"          # doc_publish 행 — commit_sha = 마지막으로 다 맞춘 ref 커밋(전체 해시)
 # 11-09 하위 폴더도 읽는다(펫퍼민트 docs/02_pipeline/ — Notion 하위 페이지 구조를 따라). 빼는 것은 경로 앞부분으로:
 # docs/archive/는 늘(런슈즈 docs/README "노션 · 발표 자료에 옮기지 않는다"), 프로젝트 skip의 "…/"로 끝나는 항목은 폴더 통째로
-DOCS_SPEC = ":(glob)docs/**/*.md"
+LAST_MARK = "@docs-last"    # doc_publish 행. title = 마지막 맞추기의 멈춤, 실패 수(JSON), error = 첫 실패. 때는 행의 updated_at
+LAST_WINDOW = timedelta(minutes=10)     # 「올림 N」으로 세는 한 묶음의 길이(마지막으로 올린 때에서 거슬러)
+DOCS_SPEC =":(glob)docs/**/*.md"
 ALWAYS_SKIP = ("docs/archive/",)
 
 
@@ -305,11 +308,22 @@ class DocSync:
             res = await sync(pub, when, force)
         res["at"] = time.time()
         self.last[name] = res
+        await self._persist(pub, res)
         n = len(res["done"])
         if n or res["held"] or res["failed"]:
             log.warning("기술문서 맞춤 %s — 올림 %d · 사람 수정으로 멈춤 %d · 실패 %d", name, n, len(res["held"]), len(res["failed"]))
         self._alert(pub, res)
         return res
+
+    async def _persist(self, pub: Any, res: dict[str, Any]) -> None:
+        """한 번의 맞추기 결과(멈춤, 실패 수와 첫 실패)를 @docs-last 행에 남긴다. 브리지를 다시 띄운 뒤에도 화면이 같은 말을 하게.
+        올린 편과 때는 편마다 행(updated_at)에 이미 있다. 못 남겨도 맞추기는 이어 가고 로그에 남긴다."""
+        first = f"{res['failed'][0]['path']}: {str(res['failed'][0]['error'])[:200]}" if res["failed"] else None
+        try:
+            await pub._save(LAST_MARK, kind="mark", title=json.dumps({"held": len(res["held"]), "failed": len(res["failed"]), "at": int(res["at"])}),   # at: 같은 결과가 이어져도 행이 바뀌어 updated_at이 오른다
+                            status="published", error=first)
+        except Exception as e:  # noqa: BLE001
+            log.warning("기술문서 맞추기 결과를 남기지 못했습니다(%s): %s: %s", pub.project, type(e).__name__, str(e)[:120])
 
     def hold(self, name: str, path: str, edits: list[str], url: str | None) -> bool:
         """한 쪽 게시(POST /api/publish action=publish)가 사람 수정으로 멈췄을 때(11-12) — [지금 맞추기]로 멈춘 것과 같은 꼴로
@@ -356,8 +370,46 @@ class DocSync:
                     *[f"▶ {f['path']} — {f['error'][:120]}" for f in res["failed"][:4]]]))
 
 
+async def last_published(pub: Any, mem: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """「마지막으로 올린 때」와 그 결과를 DB에서 읽는다(11-17). 메모리(mem)는 보태기만 하고 없어도 같은 글이 나온다.
+
+    - 때: 원고 폴더 아래 게시된 편의 updated_at 가운데 가장 늦은 것. 한 편씩 올린 게시, 자동 맞추기, [Notion에 올리기]가
+      모두 Publisher.publish로 그 행을 쓰므로 어떤 길로 올렸든 들어간다
+    - 올림: 그 때에서 LAST_WINDOW 안에 올라간 편 수(한 번의 맞추기든 한 편씩이든 같은 셈)
+    - 멈춤, 실패: 맞추기가 남긴 `@docs-last` 행(LAST_MARK)이 그 묶음 안이면 그것, 아니면 메모리(mem)가 그 묶음 안일 때 그것
+    - DB에 올린 편도 맞추기 기록도 없으면 None(정말 없을 때만). 읽지 못하면 예외를 그대로 올린다(없다고 하지 않는다)"""
+    src = src_of(pub)
+    async with pub.e.connect() as c:
+        rows = (await c.execute(text(
+            "SELECT path, kind, status, title, error, updated_at FROM doc_publish "
+            "WHERE project = :p AND (path LIKE :pre OR path = :m)"), {"p": pub.project, "pre": f"{src}%", "m": LAST_MARK})).mappings().all()
+    docs = [r["updated_at"] for r in rows if r["path"].startswith(src) and r["status"] == "published" and r["updated_at"]]
+    mark = next((r for r in rows if r["path"] == LAST_MARK), None)
+    mark_at = mark["updated_at"] if mark and mark["updated_at"] else None
+    at = max([*docs, *([mark_at] if mark_at else [])], default=None)
+    mem_at = datetime.fromtimestamp(mem["at"], UTC).replace(tzinfo=None) if mem and mem.get("at") else None
+    if at is None and mem_at is None:
+        return None
+    at = max(x for x in (at, mem_at) if x)
+    start = at - LAST_WINDOW
+    out: dict[str, Any] = {"at": at.replace(tzinfo=UTC).timestamp(), "done": sum(1 for d in docs if d >= start),
+                           "held": 0, "failed": 0, "failed_first": None}
+    if mem and mem_at and mem_at >= start:
+        out.update(held=len(mem.get("held", [])), failed=len(mem.get("failed", [])),
+                   failed_first=(f"{mem['failed'][0]['path']}: {str(mem['failed'][0]['error'])[:80]}" if mem.get("failed") else None))
+        out["done"] = max(out["done"], len(mem.get("done", [])))
+    elif mark and mark_at and mark_at >= start:
+        try:
+            n = json.loads(mark["title"] or "{}")
+        except ValueError:
+            n = {}
+        out.update(held=int(n.get("held", 0)), failed=int(n.get("failed", 0)), failed_first=mark["error"])
+    return out
+
+
 async def summary(pub: Any, last: dict[str, Any] | None) -> dict[str, Any]:
-    """기술문서 게시 상태 읽기(D2, 11-11) — 서기 화면용. 읽기만 한다. 게시됨 · 새 · 바뀜 · 지워짐 · 못 읽음 수, push 대기 커밋 수, 마지막 맞추기 결과."""
+    """기술문서 게시 상태 읽기(D2, 11-11) — 서기 화면용. 읽기만 한다. 게시됨 · 새 · 바뀜 · 지워짐 · 못 읽음 수, push 대기 커밋 수, 마지막 맞추기 결과.
+    마지막으로 올린 때는 DB에서(last_published). 브리지를 다시 띄워도 남는다. 못 읽으면 last_error(화면이 「읽지 못했습니다」)."""
     st = await status(pub)
     files = len(st["files"])
     out: dict[str, Any] = {
@@ -368,12 +420,12 @@ async def summary(pub: Any, last: dict[str, Any] | None) -> dict[str, Any]:
         "code_changed": len(st.get("code_changed", [])), "code_unknown": len(st.get("code_unknown", [])),
         "code_changed_paths": [x["path"] for x in st.get("code_changed", [])][:10],
         "behind_commits": st["behind_commits"], "synced": st["synced"],
-        "last": None,
+        "last": None, "last_error": None,
     }
-    if last:
-        out["last"] = {"at": last.get("at"), "done": len(last.get("done", [])), "held": len(last.get("held", [])),
-                       "failed": len(last.get("failed", [])),
-                       "failed_first": (f"{last['failed'][0]['path']}: {str(last['failed'][0]['error'])[:80]}" if last.get("failed") else None)}
+    try:
+        out["last"] = await last_published(pub, last)
+    except Exception as e:  # noqa: BLE001 - 못 읽었는데 「기록 없음」이라고 하지 않는다
+        out["last_error"] = f"{type(e).__name__}: {str(e)[:80]}"
     return out
 
 

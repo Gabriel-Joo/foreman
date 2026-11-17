@@ -105,6 +105,15 @@ export function createScribe(store) {
     return `${head(`<span class="${c.behind || gone || noPlace ? 'warn' : 'muted'}">${esc(c.text)}${gone ? `, 원본 없음 ${gone}` : ''}${noPlace ? ', Notion 자리 없음' : ''}</span>`)}${placeLine}${prune}${rows || '<p class="small muted">게시할 글이 없습니다(main의 portfolio/*.md).</p>'}</details>`;
   }
 
+  // 「마지막으로 올림」(11-17). 서버가 DB 기록에서 읽어 준 값(d.last). 올린 길(한 편씩, 자동 맞추기, [Notion에 올리기])과 상관없다.
+  // 「아직 올린 기록 없음」은 기록이 정말 없을 때만, 읽지 못했으면 없다고 하지 않고 읽지 못했다고 한다
+  function lastPublishedText(d) {
+    if (d.last_error) return `마지막으로 올린 때를 ${UNREAD}`;
+    const l = d.last;
+    if (!l) return '아직 올린 기록 없음';
+    return `마지막으로 올림 ${l.at ? ago(new Date(l.at * 1000).toISOString()) : ''}: 올림 ${l.done}${l.held ? `, 사람이 고쳐 멈춤 ${l.held}` : ''}${l.failed ? `, 실패 ${l.failed}` : ''}`;
+  }
+
   // 기술문서 게시 — docs/ 전체를 프로젝트별 Notion 페이지로 맞춘다. 읽기 API(docs_pub)가 준 숫자만 보인다
   function docsPubBlock(room, pj, label) {
     const tag = '<b>기술문서 게시</b>';
@@ -124,15 +133,14 @@ export function createScribe(store) {
       const btn = behindN || d.broken
         ? `<button type="button" class="small" data-pub="docsync" data-proj="${esc(room)}" data-ask="${esc(ask)}"${busy ? ' disabled' : ''} title="Notion에 올리기 — notion/ 원고 가운데 바뀐 편만 Notion [기술문서]에 올립니다. 올리기 전에 확인 창을 띄웁니다.">Notion에 올리기</button>` : '';
       const l = d.last;
-      const lastTxt = !l ? '아직 올린 기록 없음' : `마지막으로 올림 ${l.at ? ago(new Date(l.at * 1000).toISOString()) : ''}: 올림 ${l.done}${l.held ? `, 사람이 고쳐 멈춤 ${l.held}` : ''}${l.failed ? `, 실패 ${l.failed}` : ''}`;
+      const lastTxt = lastPublishedText(d);
       const failed = l && l.failed ? `<div class="small bad">실패: ${esc(l.failed_first || '')}</div>` : '';
       return `<div class="sc-row" ${tip}><div class="small">${tag} <span class="${c.behind ? 'warn' : 'ok'}">${esc(c.text)}</span> <span class="${pc.cls}">/ ${esc(pc.text)}</span>
       <div class="muted">${esc(lastTxt)}</div>${failed}</div>${btn}</div>`;
     }
     const commits = d.behind_commits === null || d.behind_commits === undefined ? '맞춘 적 없음' : `push 대기 커밋 ${d.behind_commits}개`;
     const l = d.last;
-    const lastTxt = !l ? '아직 자동으로 맞춘 기록 없음'
-      : `마지막 맞춤 ${l.at ? ago(new Date(l.at * 1000).toISOString()) : ''}: 올림 ${l.done}${l.held ? ` · 사람이 고쳐 멈춤 ${l.held}` : ''}${l.failed ? ` · 실패 ${l.failed}` : ''}`;
+    const lastTxt = lastPublishedText(d);
     const failed = l && l.failed ? `<div class="small bad">실패: ${esc(l.failed_first || '')}</div>` : '';
     const why = ((pj.items || []).find((x) => x.act === 'docsync') || {}).why;
     const btn = behindN || d.broken

@@ -135,6 +135,8 @@ class _Pub:
 
     def __init__(self, held=(), fail=()):
         self.project, self.docs_page, self.saved, self.calls = "runshoes", None, [], []
+        from test_techdoc import FakeDB
+        self.e = FakeDB()                                    # summary가 마지막으로 올린 때를 DB에서 읽는다(11-17)
         self.held, self.fail = set(held), set(fail)
 
     async def publish(self, path, when, force=False, title=None, relink=True):
