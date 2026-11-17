@@ -368,7 +368,7 @@ class Notifier:
         later를 주면 묶음 여부를 부른 쪽이 정한다(11-13 escalate 보고 — [digest] kinds와 상관없이 묶음을 켠 프로젝트면 묶음)."""
         if not self.rules.enabled:
             return
-        decision = "digest" if (self.digestable(project, kind, msg) if later is None else later) else "pending"
+        decision = self.direct_decision(project, kind, msg, later)
 
         async def go() -> None:
             try:
@@ -381,6 +381,12 @@ class Notifier:
         t = asyncio.create_task(go())
         self._tasks.add(t)
         t.add_done_callback(self._tasks.discard)
+
+    def direct_decision(self, project: str | None, kind: str, msg: str | None, later: bool | None = None) -> str:
+        """send_direct가 지금 보낼지("pending") 묶음으로 미룰지("digest") 정한다.
+        「실패는 바로」(11-17 사용자)는 두 길로 지킨다. 실패 알림은 글에 ⚠를 달아 digestable의 urgent_marks에 걸리고,
+        부른 쪽이 later=False를 함께 넘겨 글이 바뀌어도 바로 간다(bridge/handoff.py, bridge/mergeprep.py)."""
+        return "digest" if (self.digestable(project, kind, msg) if later is None else later) else "pending"
 
     def digestable(self, project: str | None, kind: str, msg: str | None) -> bool:
         """하루 묶음으로 미룰 일상 알림인가 — 묶음을 켠 프로젝트 · [digest] kinds · 급한 표시(⚠ ❌ 🛑 ⏰ ❓)가 없을 때만."""

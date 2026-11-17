@@ -110,6 +110,12 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const tok = () => { try { return localStorage.getItem('foremanToken') || ''; } catch { return ''; } };
 const usd = (v, d = 2) => v == null ? '—' : '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+// 11-17 가격 칸이 없는 토큰(config/usage.toml에 출처 없는 칸은 비운다)은 0원이 아니라 「모름」이다. 환산액 옆에 「+ 모름」을 붙인다
+const KIND_NAME = Object.fromEntries(KINDS.map(([k, n]) => [k, n]));
+const MISS_TIP = '모름: 가격 출처가 없는 토큰이 있어 그 몫은 환산하지 못했습니다. 실제 환산액은 이보다 큽니다.';
+const missText = (u) => (u || []).map((x) => `${esc(x.model)} ${KIND_NAME[x.kind] || esc(x.kind)} ${big(x.tokens)} 토큰`).join(', ');
+const usdRow = (r) => usd(r.usd) + (r.unpriced && Object.keys(r.unpriced).length
+  ? ` <span class="warn" title="${MISS_TIP} ${esc(Object.entries(r.unpriced).map(([k, v]) => `${KIND_NAME[k] || k} ${big(v)} 토큰`).join(', '))}">+ 모름</span>` : '');
 const big = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(n);
 const D = (s) => s ? new Date(s) : null;
 const hm = (s) => s ? D(s).toLocaleTimeString('ko-KR', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
@@ -150,6 +156,8 @@ function render(d) {
   // 11-14 CC가 /usage에서 한도 줄을 뺀 경우 — 실패가 아니라 "그 한도를 확인할 수 없음". 옛 값은 지금 값이 아니다
   for (const l of (d.limits || []).filter((x) => x.absent))
     bands.push(`<div class="band warn"><b>${esc(l.label)} 확인할 수 없음.</b> /usage에 ${esc(l.label)} 줄이 없습니다. 서버가 ${esc(l.label)} 한도 값을 주지 않을 때 CC가 줄을 뺍니다. ${l.last_pct != null ? `마지막으로 본 값은 ${l.last_pct}%(${mdhm(l.last_at)})이며 지금 값이 아닙니다. ` : ''}${l.scoped ? '' : '이 한도의 80 · 95% 알림은 줄이 다시 나올 때까지 멈춥니다.'}</div>`);
+  if ((d.unpriced || []).length)
+    bands.push(`<div class="band warn"><b>환산이 일부 빠졌습니다.</b> 가격 출처가 없는 칸은 0원으로 세지 않고 「모름」으로 둡니다: ${missText(d.unpriced)}. 아래 환산액, 비중, 한도 하한은 그만큼 작게 나옵니다. config/usage.toml [prices]에 출처가 있는 값을 넣으면 풀립니다.</div>`);
   if (r.credential_expires_at && D(r.credential_expires_at) - Date.now() < 864e5)
     bands.push(`<div class="band warn"><b>⚠ CC 로그인이 ${mdhm(r.credential_expires_at)}에 만료됩니다.</b> 만료되면 모든 세션과 계획 세우기가 멈춥니다. 아무 CC 터미널에서 /login 해 주세요.</div>`);
   $('bands').innerHTML = bands.join('');
@@ -177,7 +185,7 @@ function card(x) {
     <div class="bar ${cls}"><i class="e" style="width:${Math.min(100, e ?? 0)}%"></i><i class="m" style="width:${Math.min(100, m ?? 0)}%"></i></div>
     <dl class="kv">
       <dt>리셋</dt><dd>${mdhm(x.reset_at)} <span class="muted small">${left(x.reset_at)}</span></dd>
-      <dt title="FOREMAN이 본 것 — 이 구간에서 FOREMAN이 기록한 CC 세션 · claude -p 사용의 환산액입니다.">FOREMAN이 본 것</dt><dd>${usd(x.window_usd)}</dd>
+      <dt title="FOREMAN이 본 것 — 이 구간에서 FOREMAN이 기록한 CC 세션 · claude -p 사용의 환산액입니다.">FOREMAN이 본 것</dt><dd>${usd(x.window_usd)}${(x.unpriced || []).length ? ` <span class="warn" title="${MISS_TIP} ${missText(x.unpriced)}">+ 모름</span>` : ''}</dd>
       <dt title="못 보는 사용 — 웹 · 앱 Claude, 다른 PC의 CC는 기록이 없습니다. 측정 %에는 들어 있습니다.">못 보는 사용</dt><dd class="muted">웹 · 앱 · 다른 PC (금액 모름)</dd>
       <dt title="한도 하한 — FOREMAN이 본 것 ÷ 측정 %입니다. 못 보는 사용만큼 실제 한도는 더 큽니다.">한도 하한</dt><dd>${f ? `${usd(f.usd, 0)} 이상 <span class="muted small">근거 ${f.n}개${f.n > 1 ? ` · ${usd(f.min, 0)}~${usd(f.max, 0)}` : ''}${f.stable ? '' : ' · 아직 흔들림'}</span>` : '<span class="muted">관찰이 더 필요합니다(20% 이상)</span>'}</dd>
       <dt>최근 1시간</dt><dd>${usd(x.rate_usd_h)}/시간</dd>
@@ -268,7 +276,7 @@ const tokCols = [
   { h: '응답', v: (r) => r.n.toLocaleString() },
   { h: '캐시 읽기', v: (r) => big(r.cache_read), tip: '캐시 읽기 — 응답마다 다시 읽은 맥락 토큰' },
   { h: '캐시 쓰기', v: (r) => big(r.cache_write) }, { h: '출력', v: (r) => big(r.output) },
-  { h: '환산', v: (r) => usd(r.usd) }, { h: '비중', v: pct }];
+  { h: '환산', v: usdRow }, { h: '비중', v: pct }];
 
 function tables(d) {
   $('tSess').innerHTML = table((d.by_session || []).slice(0, 30), [
@@ -276,8 +284,8 @@ function tables(d) {
     { h: '프로젝트', l: 1, v: (r) => esc(r.project || '—') },
     { h: '응답당 맥락', v: (r) => big(Math.round(r.cache_read / Math.max(1, r.n))), tip: '응답당 맥락 — 응답 하나가 다시 읽은 평균 토큰입니다. 클수록 응답 하나가 비쌉니다.' },
     ...tokCols]);
-  $('tProj').innerHTML = table(d.by_project || [], [{ h: '프로젝트', l: 1, v: (r) => esc(r.key) }, { h: '환산', v: (r) => usd(r.usd) }, { h: '비중', v: pct }]);
-  $('tModel').innerHTML = table(d.by_model || [], [{ h: '모델', l: 1, v: (r) => esc(r.key) }, { h: '출력', v: (r) => big(r.output) }, { h: '환산', v: (r) => usd(r.usd) }, { h: '비중', v: pct }]);
+  $('tProj').innerHTML = table(d.by_project || [], [{ h: '프로젝트', l: 1, v: (r) => esc(r.key) }, { h: '환산', v: usdRow }, { h: '비중', v: pct }]);
+  $('tModel').innerHTML = table(d.by_model || [], [{ h: '모델', l: 1, v: (r) => esc(r.key) }, { h: '출력', v: (r) => big(r.output) }, { h: '환산', v: usdRow }, { h: '비중', v: pct }]);
   const label = Object.fromEntries((d.limits || []).map((l) => [l.key, l.label]));
   $('tObs').innerHTML = table(d.observations || [], [
     { h: '읽은 때', l: 1, v: (r) => mdhm(r.observed_at) }, { h: '한도', l: 1, v: (r) => esc(label[r.limit_key] || r.limit_key) },

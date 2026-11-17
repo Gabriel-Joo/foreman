@@ -113,11 +113,18 @@ class UsageConfig:
         return None
 
     def usd(self, model: str, t: dict[str, int]) -> float:
-        """100만 토큰당 정가로 환산. 표에 없는 모델(<synthetic> 등)은 0."""
+        """100만 토큰당 정가로 환산한 **아는 부분**. 가격 칸이 없는 토큰은 여기 들어가지 않는다.
+        그 토큰은 0원이 아니라 「모름」이다. 얼마나 빠졌는지는 unpriced가 센다(11-17 사용자, 출처 없는 가격은 비운다)."""
         p = self.price(model)
         if p is None:
             return 0.0
-        return sum(t.get(k, 0) * p.get(k, 0.0) for k in TOKEN_KINDS) / 1e6
+        return sum(t.get(k, 0) * p[k] for k in TOKEN_KINDS if k in p) / 1e6
+
+    def unpriced(self, model: str, t: dict[str, int]) -> dict[str, int]:
+        """가격 칸이 없어 환산하지 못한 토큰(종류 → 토큰 수). 토큰이 0인 종류는 넣지 않는다.
+        표에 없는 모델이면 그 모델의 토큰 전부가 여기 든다(조용히 0원으로 세지 않게)."""
+        p = self.price(model) or {}
+        return {k: int(t.get(k, 0)) for k in TOKEN_KINDS if t.get(k, 0) and k not in p}
 
 
 def load_config(path: str | Path) -> UsageConfig:
@@ -285,6 +292,12 @@ def window_usd(cfg: UsageConfig, lim: Limit, by_model: dict[str, dict[str, int]]
     return sum(cfg.usd(m, t) for m, t in by_model.items() if lim.counts(m))
 
 
+def window_unpriced(cfg: UsageConfig, lim: Limit, by_model: dict[str, dict[str, int]]) -> list[dict[str, Any]]:
+    """그 창에서 가격 칸이 없어 window_usd에 들어가지 않은 토큰. [{model, kind, tokens}]. 비면 환산이 다 된 것."""
+    return [{"model": m, "kind": k, "tokens": n} for m, t in sorted(by_model.items()) if lim.counts(m)
+            for k, n in cfg.unpriced(m, t).items()]
+
+
 def chain_windows(times: list[datetime], hours: float, anchors: list[datetime] | None = None) -> list[dict[str, Any]]:
     """5시간 창 다시 짓기 — 창은 그 창의 첫 메시지부터 hours. 메시지 시각을 차례로 이어 붙인다.
     anchors(읽은 리셋 시각)가 있으면 [리셋 - hours, 리셋)을 그대로 쓴다 — FOREMAN 밖 사용이 창을 먼저 열 수 있다(10-23)."""
@@ -385,7 +398,9 @@ async def limit_status(engine: Any, cfg: UsageConfig, now: datetime, latest: dic
             last = None
         reset_at = (last or {}).get("reset_at") or next_weekly(lim.reset, now, cfg.tz)
         w = await current_window(engine, lim, reset_at, now)
-        u_now = window_usd(cfg, lim, await spend_by_model(engine, w["start"], now)) if w else 0.0
+        spent = await spend_by_model(engine, w["start"], now) if w else {}
+        u_now = window_usd(cfg, lim, spent) if w else 0.0
+        miss = window_unpriced(cfg, lim, spent)          # 가격 칸이 없는 토큰. 있으면 u_now, 하한, 추정이 그만큼 작다
         fl = floors(obs)
         measured = last["pct"] if last else None
         same_window = bool(last and w and last.get("observed_at") and last["observed_at"] >= w["start"])
@@ -409,7 +424,7 @@ async def limit_status(engine: Any, cfg: UsageConfig, now: datetime, latest: dic
                     "measured_pct": measured, "measured_at": last.get("observed_at") if last else None,
                     "reset_at": w["end"] if w else reset_at, "window_start": w["start"] if w else None,
                     "window_anchored": bool(w and w["anchored"]),
-                    "window_usd": round(u_now, 2), "floor": fl,
+                    "window_usd": round(u_now, 2), "unpriced": miss, "floor": fl,
                     "est_pct": round(est, 1) if est is not None else None, "rate_usd_h": round(rate, 2),
                     "eta_100": eta, "eta_before_reset": bool(eta and w and eta < w["end"]), "observations": len(obs),
                     "absent": gone, "absent_since": absent.get(lim.key),
@@ -459,13 +474,19 @@ async def breakdown(engine: Any, cfg: UsageConfig, start: datetime, end: datetim
 
     def add(kind: str, key: Any, model: str, t: dict[str, int], n: int, **extra: Any) -> None:
         row = tables[kind].setdefault(key, {"key": key, **extra, **{k: 0 for k in TOKEN_KINDS},
-                                            **{f"usd_{k}": 0.0 for k in TOKEN_KINDS}, "usd": 0.0, "n": 0})
+                                            **{f"usd_{k}": 0.0 for k in TOKEN_KINDS}, "usd": 0.0, "n": 0, "unpriced": {}})
         p = cfg.price(model) or {}
         for k in TOKEN_KINDS:
             row[k] += t[k]
-            row[f"usd_{k}"] += t[k] * p.get(k, 0.0) / 1e6     # 어디서 나가나 — 종류별(긴 맥락을 응답마다 다시 읽는 캐시 읽기 등)
+            row[f"usd_{k}"] += t[k] * p.get(k, 0.0) / 1e6     # 아는 부분만. 어디서 나가나, 종류별(긴 맥락을 응답마다 다시 읽는 캐시 읽기 등)
         row["usd"] += cfg.usd(model, t)
         row["n"] += n
+        for k, v in cfg.unpriced(model, t).items():          # 가격 칸이 없는 토큰. 0원이 아니라 「모름」(11-17)
+            row["unpriced"][k] = row["unpriced"].get(k, 0) + v
+            if kind == "model":
+                miss[(model, k)] = miss.get((model, k), 0) + v
+
+    miss: dict[tuple[str, str], int] = {}
 
     for r in msg:
         t = _tok(r)
@@ -483,8 +504,10 @@ async def breakdown(engine: Any, cfg: UsageConfig, start: datetime, end: datetim
         add("session", f"claude -p · {r.source}", r.model, t, int(r.n), title=f"claude -p({name})", project=r.project)
         add("hour", r.h, r.model, t, int(r.n))
     total = sum(x["usd"] for x in tables["model"].values()) or 0.0
+    # unpriced: 가격 칸이 없어 total_usd, by_kind에 들어가지 않은 토큰(모델, 종류마다). 비면 환산이 다 된 것
     out: dict[str, Any] = {"total_usd": round(total, 2),
-                           "by_kind": {k: round(sum(x[f"usd_{k}"] for x in tables["model"].values()), 4) for k in TOKEN_KINDS}}
+                           "by_kind": {k: round(sum(x[f"usd_{k}"] for x in tables["model"].values()), 4) for k in TOKEN_KINDS},
+                           "unpriced": [{"model": m, "kind": k, "tokens": v} for (m, k), v in sorted(miss.items())]}
     for kind, rows in tables.items():
         lst = list(rows.values())
         for x in lst:

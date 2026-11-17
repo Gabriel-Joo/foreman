@@ -75,7 +75,8 @@ async def usage(request: Request, hours: float | None = None) -> dict[str, Any]:
         o["seen_usd"] = float(o["seen_usd"]) if o["seen_usd"] is not None else None
     data = _j({"generated_at": now, "tz": cfg.tz, "basis": "API 정가 비율 환산(config/usage.toml). 한도는 하한입니다",
                "reading": reading, "limits": limits, "period": {"start": start, "end": now}, **tables,
-               "recent": {"total_usd": recent["total_usd"], "by_kind": recent["by_kind"], "by_session": recent["by_session"][:8]},
+               "recent": {"total_usd": recent["total_usd"], "by_kind": recent["by_kind"], "by_session": recent["by_session"][:8],
+                          "unpriced": recent["unpriced"]},
                "observations": obs})
     _cache.update(at=time.monotonic(), key=key, data=data)
     return data

@@ -536,12 +536,17 @@ class HandoffManager:
         if self.on_change:
             self.on_change()
 
-    def _notify(self, row: SessionRow, msg: str, kind: str = "handoff") -> None:
+    def _notify(self, row: SessionRow, msg: str, kind: str = "handoff", fail: bool = False) -> None:
+        """fail=True면 실패 알림이다. 글 앞에 ⚠를 달고 묶음을 켠 프로젝트여도 바로 보낸다(11-17 사용자,
+        「실패는 묶어서 늦게 알 이유가 없다」). 성공 알림은 그대로 묶음 기준을 따른다."""
         if self.notifier:
             try:
                 rule = self.notifier.rules.for_project(row.project) if hasattr(self.notifier, "rules") else None
                 prefix = (rule.prefix if rule and rule.prefix else "[미분류]") + " "     # 승인 알림과 같은 접두어
-                self.notifier.send_direct(row.project, kind, row.id, prefix + msg)
+                if fail:
+                    self.notifier.send_direct(row.project, kind, row.id, prefix + "⚠ " + msg, later=False)
+                else:
+                    self.notifier.send_direct(row.project, kind, row.id, prefix + msg)
             except Exception as e:  # noqa: BLE001 — 알림 실패가 요약을 막지 않는다
                 log.warning("인계 알림 실패: %s", type(e).__name__)
 
@@ -598,13 +603,15 @@ class HandoffManager:
                     ended_seen = loop.time()
             if ended_seen and loop.time() - ended_seen > 6:     # 턴이 닫혔는데 표지가 없다(마지막 줄이 늦게 쓰일 여유 6초)
                 await self._finish(sid, "failed", None, texts, "턴이 끝났는데 인계 표지가 없다", turn_id)
-                self._notify(row, "인계 요약 실패 — 표지 없음(원문은 패널에)")
+                self._notify(row, "인계 요약 실패, 표지가 없습니다(원문은 패널에 있습니다)", fail=True)
                 return
             if row.cc and row.cc not in live_sessions(self.sessions_dir):
                 await self._finish(sid, "failed", None, texts, "기다리는 중에 세션이 끝났다", turn_id)
+                # 11-17 전에는 알림이 없었다(조용한 실패). 요약을 시킨 세션이 사라져 요약이 오지 않는다
+                self._notify(row, "인계 요약 실패, 기다리는 중에 세션이 끝났습니다", fail=True)
                 return
         await self._finish(sid, "timeout", None, assistant_text(path, offset), f"{self.wait_s:.0f}초 안에 돌아오지 않았다", turn_id)
-        self._notify(row, "인계 요약 시간 초과")
+        self._notify(row, f"인계 요약 시간 초과, {self.wait_s:.0f}초 안에 돌아오지 않았습니다", fail=True)
 
     async def _turn_of(self, prompt_id: str | None) -> int | None:
         if not prompt_id:
@@ -645,9 +652,12 @@ class HandoffManager:
                 p.kill()
                 await p.wait()
                 await self._finish(sid, "timeout", None, None, f"claude -p가 {self.wait_s:.0f}초 안에 끝나지 않았다")
+                # 11-17 죽은 세션 요약의 실패 셋은 전에 알림이 없었다(조용한 실패). 버튼을 누른 뒤 뒤에서 돌아 화면을 떠났을 수 있다
+                self._notify(row, f"죽은 세션 인계 요약 시간 초과, claude -p가 {self.wait_s:.0f}초 안에 끝나지 않았습니다", fail=True)
                 return
         except OSError as e:
             await self._finish(sid, "failed", None, None, f"claude를 띄우지 못함: {e}")
+            self._notify(row, f"죽은 세션 인계 요약 실패, claude를 띄우지 못했습니다({type(e).__name__})", fail=True)
             return
         texts = out.decode(errors="replace")
         body = extract_block(texts, req)
@@ -657,6 +667,7 @@ class HandoffManager:
         else:
             await self._finish(sid, "failed", None, texts or err.decode(errors="replace")[-4000:],
                                f"표지 없음 (종료 코드 {p.returncode})")
+            self._notify(row, f"죽은 세션 인계 요약 실패, 표지가 없습니다(종료 코드 {p.returncode}, 원문은 패널에 있습니다)", fail=True)
 
     async def from_compact(self, row: SessionRow, kind: str = "handoff") -> dict[str, Any]:
         if not row.transcript:

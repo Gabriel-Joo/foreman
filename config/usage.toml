@@ -26,11 +26,10 @@ output = 0.50
 cache_read = 0.01
 cache_write = 0.20
 
-[prices.fable]
-input = 10.0
-output = 50.0
-cache_read = 0.25
-cache_write = 20.0
+# Fable은 가격 칸을 두지 않는다(11-17 사용자 「출처를 못 찾았으면 비워 둬라. 짐작한 값을 넣지 마라」).
+# 11-08부터 있던 네 칸(입력 10, 출력 50, 캐시 읽기 0.25, 캐시 쓰기 20)은 커밋, 주석, 기록 어디에도 출처가 없었다.
+# 칸이 없는 토큰은 0원으로 세지 않고 「모름」으로 둔다(/usage 화면 띠와 「+ 모름」, /api/usage unpriced).
+# 출처가 있는 값을 찾으면 [prices.fable]에 그 칸만 넣고, 이 주석에 출처를 적는다
 
 # 한도 — /usage 화면의 줄 머리("Current session" · "Current week (all models)" · "Current week (Fable)")로 고른다.
 # window_h: 창 길이(리셋 시각에서 거꾸로). models: 이 글자가 든 모델만 센다(빈 목록이면 전부)
