@@ -275,7 +275,7 @@ FOREMAN 세션은 다른 저장소(runshoes · petmint-rag-chatbot · ronanlab-i
 - **풀린 막음**: 코더가 `docs/operations.md`, `docs/style_guide.md`, 원고를 고치지 않던 약속(CLAUDE.md 「따로 작업(worktree)에서 일할 때」, 「8.」 서기 몫, `tests/screen_words.py` 안내)을 「고친다, 못 고치면 까닭을 보고」로 바꿨다. 역할 권한(`config/roles.toml`, `bridge/roleguard.py`)에는 코더 막음이 원래 없었다. README.md, CLAUDE.md, `config/*.toml`과 위 두 문서는 고쳐도 합치기 카드가 사람에게 가는 것(`config/handoff.toml` `human_paths`, `human_always`)은 그대로다
 - **도구**: `.venv/bin/python tools/docrefs.py` (읽기만 한다. git은 ls-tree, cat-file, diff, merge-base, rev-parse만)
   - `tools/docrefs.py bridge/x.py bridge/transcript/ bridge/y.py:10-40` 파일, 폴더, 줄 범위로. 작업 트리(또는 `--rev`) 문서를 읽고 고침 여부는 모른다
-  - `tools/docrefs.py --range main...HEAD [--unfixed] [--brief] [--json]` 범위에서 바뀐 코드로(문서, `log/`, `*.md`는 코드가 아니다). 문서는 B 판, 같은 범위에서 그 문서가 바뀌었으면 고침
+  - `tools/docrefs.py --range main...HEAD [--unfixed] [--brief] [--json]` 범위에서 바뀐 코드로(문서, `log/`, `*.md`는 코드가 아니다. 문서 묶음 폴더 아래 파일은 사진 등 확장자와 상관없이 코드가 아니다, 11-17 `portfolio/img/` 헛걸림). 문서는 B 판, 같은 범위에서 그 문서가 바뀌었으면 고침
   - `--repo <경로>` 다른 저장소. 원고 폴더는 그 저장소 `.foreman/notion.toml` `src`, 없으면 FOREMAN `config/notion.toml`의 그 저장소 칸 `src`(worktree면 원본 폴더 이름으로 찾는다), `--src`로 덮는다. `src`가 `docs/`면 docs와 한 묶음
   - 출력: 문서마다 고침 / 안 고침 / 모름, 줄, 걸린 코드 파일. 줄마다 제목(가까운 `#`), 가리킨 꼴, 문단(목록 항목과 표 줄은 그 줄과 들여 쓴 이어지는 줄, 아니면 빈 줄 사이 덩어리). 안 고친 것, 걸린 줄이 많은 것 먼저. 종료 코드 0(없어도), 2(인자, git 문제)
   - 브리지는 `docrefs.scan()`(합치기 카드 `mergeprep.doc_candidates`가 부른다, 「6-1.」)

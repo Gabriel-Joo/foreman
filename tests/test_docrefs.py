@@ -150,6 +150,20 @@ def test_range_fixed_unfixed_and_line_overlap(repo):
     assert dr.scan(repo, rng=f"{a}...HEAD", files=["bridge/static/js/"])["code"] == []
 
 
+def test_doc_folder_media_is_not_code(repo):
+    """문서 묶음 아래 사진(png, gif, webm)이나 다른 파일은 코드가 아니다(11-17 합치기 카드 헛걸림 「걸리는 문서 4, 안 고침 3」)."""
+    a = sh(repo, "rev-parse", "HEAD")
+    for rel in ("portfolio/img/a.png", "portfolio/img/b.gif", "portfolio/img/c.webm", "notion/img/d.png", "docs/img/e.svg"):
+        put(repo, rel, "x\n")
+    put(repo, "bridge/transcript/reader.py", "y\n")
+    sh(repo, "add", "."); sh(repo, "commit", "-qm", "feat: 사진")
+    res = dr.scan(repo, rng=f"{a}..HEAD")
+    assert res["code"] == ["bridge/transcript/reader.py"]
+    sets = dr.doc_sets("notion/")
+    assert not dr.is_code("portfolio/img/a.png", sets) and not dr.is_code("notion/x.json", sets)
+    assert dr.is_code("bridge/static/img/a.png", sets) and dr.is_code("portfolio.py", sets)
+
+
 def test_files_mode_line_ranges(repo):
     hit = [h for h in by_doc(dr.scan(repo, files=["bridge/mergeprep.py:4-6"]))["notion/07_merge.md"]["hits"] if h["range"]][0]
     assert hit["overlap"] is True

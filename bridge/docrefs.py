@@ -31,7 +31,7 @@ from bridge.manuscript import parse_head
 FOREMAN_ROOT = Path(__file__).resolve().parent.parent
 DOCS_DIR = "docs/"
 PORTFOLIO_DIR = "portfolio/"
-SKIP_CODE_DIRS = ("log/",)          # 범위에서 바뀐 파일 중 코드로 치지 않는 곳(결과 기록). 문서 묶음과 *.md도 코드가 아니다
+SKIP_CODE_DIRS = ("log/",)          # 범위에서 바뀐 파일 중 코드로 치지 않는 곳(결과 기록). 문서 묶음 아래 파일(사진 포함)과 *.md도 코드가 아니다
 
 MARK = re.compile(r"\[code:(?P<v>[^\]\s]+)\]")
 TICK = re.compile(r"`([^`\n]+)`")
@@ -327,7 +327,11 @@ def parse_range(repo: str, rng: str) -> tuple[str, str]:
 
 
 def is_code(path: str, sets: dict[str, str]) -> bool:
-    return not path.endswith(".md") and not path.startswith(SKIP_CODE_DIRS) and kind_of(path, sets) is None
+    """범위에서 바뀐 파일 가운데 코드인가. 문서 묶음 폴더 아래 파일은 확장자와 상관없이 코드가 아니다
+    (11-17 `portfolio/img/`의 png, gif, webm이 코드로 세어져 합치기 카드에 헛걸림이 생겼다)."""
+    if path.endswith(".md") or path.startswith(SKIP_CODE_DIRS):
+        return False
+    return not any(d and path.startswith(d) for d in sets.values())
 
 
 def scan(repo: str | Path, files: list[str] | None = None, rng: str | None = None, rev: str | None = None,

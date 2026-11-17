@@ -425,7 +425,7 @@ class LossChecker:
             await self._run_inner(lid, row, path, repo)
         except Exception as e:  # noqa: BLE001 — 어떤 실패든 running으로 남기지 않는다
             await self._save(lid, status="failed", error=f"{type(e).__name__}: {e}")
-            self.m._notify(row, f"압축으로 잊은 것 찾기 실패 — {type(e).__name__}")
+            self.m._notify(row, f"압축으로 잊은 것 찾기 실패 — {type(e).__name__}", fail=True)
 
     async def _run_inner(self, lid: int, row: Any, path: str, repo: str) -> None:
         segs = await asyncio.to_thread(extract, path)
@@ -464,10 +464,12 @@ class LossChecker:
         await self._save(lid, status=status, items=self.mask.deep(res["items"]), runs=_runs_view(runs),
                          groups_done=len(runs), cost_usd=round(sum(r["cost_usd"] or 0 for r in runs), 4), error=err or None)
         if status == "failed":
-            self.m._notify(row, f"압축으로 잊은 것 찾기 실패 — {err}")
+            self.m._notify(row, f"압축으로 잊은 것 찾기 실패 — {err}", fail=True)
         else:
+            # 11-17 묶음 일부가 실패했으면(bad) 끝난 알림이어도 바로 보낸다. 건너뛴 프롬프트만 있으면 실패가 아니다
             self.m._notify(row, f"압축으로 잊은 것 찾기 끝 — 사라짐 {cnt.get('사라짐', 0)} · 약해짐 {cnt.get('약해짐', 0)}"
-                                f"{' (' + err + ')' if err else ''} — 패널 [세션 정리] 탭 「넘기기 전 정리」에서 보고 「대화 결정 문서에 적기」로 넘길 수 있습니다")
+                                f"{' (' + err + ')' if err else ''} — 패널 [세션 정리] 탭 「넘기기 전 정리」에서 보고 「대화 결정 문서에 적기」로 넘길 수 있습니다",
+                           fail=bool(bad))
 
     async def list(self, sid: int, limit: int = 3) -> list[dict[str, Any]]:
         from sqlalchemy import text

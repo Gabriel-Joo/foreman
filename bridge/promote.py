@@ -443,13 +443,13 @@ class Promoter:
         body, texts, why = await self._wait(row, "FOREMAN-PROMOTE", req, path, offset, prompt_id)
         if body is None:
             await self._save(pid, status="timeout" if "초 안에" in (why or "") else "failed", raw=texts, error=why)
-            self.m._notify(row, f"대화 결정 문서에 적기 — 목록 실패: {why}")
+            self.m._notify(row, f"대화 결정 문서에 적기 — 목록 실패: {why}", fail=True)
             return
         try:
             items = parse_items(body)
         except Refused as e:
             await self._save(pid, status="failed", raw=texts, error=str(e))
-            self.m._notify(row, f"대화 결정 문서에 적기 — 목록 실패: {e}")
+            self.m._notify(row, f"대화 결정 문서에 적기 — 목록 실패: {e}", fail=True)
             return
         await self._save(pid, status="listed", items=items, raw=texts)
         self.m._notify(row, f"문서에 적을 대화 결정 {len(items)}개 — 패널 [세션 정리] 탭 「넘기기 전 정리」에서 고치고 승인해 주세요")
@@ -541,4 +541,4 @@ class Promoter:
         if res["ok"]:
             self.m._notify(row, f"대화 결정 문서에 적기 끝 — {len(approved)}개, 커밋 {(res['commit'] or '없음')[:8]}")
         else:
-            self.m._notify(row, "대화 결정 문서에 적기 — 확인 실패: " + "; ".join(res["problems"])[:300])
+            self.m._notify(row, "대화 결정 문서에 적기 — 확인 실패: " + "; ".join(res["problems"])[:300], fail=True)
