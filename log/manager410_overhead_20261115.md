@@ -310,5 +310,9 @@
   - 515 관리자 승인 합침(`e8ba9a5`, `log/foreman-6_notion_scope_fix_20261117.md`): notion 29편, 확실 11, 다듬기 11, 11-17 코드 변경으로 함께 고친 줄, 513과 514 주제 9줄은 미룸, 판단 13 그대로. 근거 확인기 통과. 「규칙 위반 없음」. 알릴 것: `[c:dc4944e]`가 main에 없는 커밋, `docs/12_scribe.md:162` 「비공개 저장소」
   - 관리자: 진행 글을 또 영어로 씀(「Only notion and log, no conflict.」). 이 지시에서 세 번째
   - 515, 516 합친 뒤 시험 node 218, pytest 1190 통과 → push → 노션 기술문서와 포트폴리오 바뀐 편 게시
+  - 노션 게시(force 없음): 포트폴리오 15편 updated, 12편 unchanged, 다시 세우기 됨. 기술문서 docsync 28편 updated, 멈춤 0, 실패 0, 건너뛴 파일 없음
+  - 513 관리자 승인 합침(`log/foreman-4_portfolio_per_project_20261117.md`): 패널이 `GET /api/publish?project=`로 고른 프로젝트를 부름, `portfolio/` 없으면 「아직 없음」, Notion 자리 없으면 게시 막고 까닭, 게시 버튼 모두 `data-proj`, 목록을 게시 판(`ref`)에서 셈. 인프라는 `origin/main`에 아직 `portfolio/`가 없어 「아직 없음」(인프라 작업 브랜치에 12편). 사람이 넣을 값 없음(네 프로젝트 `portfolio_page` 이미 있음). 위반 둘(영어 진행 글 한 번, 새 주석의 줄표와 가운뎃점을 커밋 전에 바꿈). 시험 node 221, pytest 1197 통과
+  - 517(`log/foreman-8_docrefs_20261117.md`): `bridge/docrefs.py`와 `tools/docrefs.py`, 코더 첫 글 끝 규칙(코더만), 교장 지시문 코더 줄, 합치기 카드 「정리 후보」를 「걸리는 문서 N, 안 고침 M」으로 합침, CLAUDE.md 두 줄과 docs 11_worktree 8절 등 코더 문서 금지 풂. CLAUDE.md, operations 때문에 사람 승인 카드. 515와 `notion/07_merge/01_card.md` 충돌이라 관리자가 517에 rebase와 양쪽 살리기를 보냄. 위반 둘(영어 낱말 진행 글 넷, 새 주석 줄표와 가운뎃점 22곳을 뒤 커밋에서 바꿈)
+  - 관리자: 진행 글을 또 영어로 씀(「Let me look at 517's log first …」). 이 지시에서 네 번째
   - 499 정리 후보 9개는 관리자가 합치기 카드에서 직접 읽음(문서별로 「이 브랜치가 바꾼 파일 이름이 나오는 줄」 묶음. 넷은 고치지 않은 문서, 다섯은 499가 고친 문서끼리 서로 가리키는 줄)
 - 그 밖에는 관리자 규칙 위반 없음(이 기록의 일). 412 끝내기 확인 창에 Enter를 보낸 것은 합치기 흐름 안에서 그 세션의 남은 예약을 끝낸 것이다(멈춘 CC 프로세스 · 다른 프로젝트 세션 아님)
