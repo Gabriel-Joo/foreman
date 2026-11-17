@@ -134,13 +134,71 @@ test('Notion 게시는 둘 — 포트폴리오 게시(접힘, 게시됨 N)와 �
   assert.ok(h.includes('data-pub="docsync"'));
 });
 
-test('펫퍼민트처럼 기술문서만이면 포트폴리오 게시는 연결 안 됨, 게시 상태를 못 읽으면 읽지 못했습니다', async () => {
+test('펫퍼민트처럼 portfolio/가 없으면 포트폴리오 게시는 아직 없음, 게시 상태를 못 읽으면 읽지 못했습니다', async () => {
   const pm = { ...PJ, topics: [], portfolio: null, docs_pub: null, pub_error: 'NotionError: 401' };
-  const sc = mk({ petmint: pm }, { enabled: true, docs: [] });
+  const sc = mk({ petmint: pm }, { enabled: true, docs: [], portfolio: { has_dir: false, place: true, ref: 'origin/main' } });
   sc.html('petmint', 'P'); await settle();
   const h = sc.html('petmint', 'P');
-  assert.ok(h.includes('포트폴리오를 게시하지 않습니다'));
+  assert.ok(h.includes('<b>포트폴리오 게시</b>: 아직 없음. 이 프로젝트에는 portfolio/ 폴더가 없습니다.'));
+  assert.ok(!h.includes('포트폴리오를 게시하지 않습니다') && !h.includes('FOREMAN만'));      // 11-17 전 FOREMAN만 연결 글
   assert.match(h, /기술문서 게시<\/b>: 게시 상태를 읽지 못했습니다\(NotionError: 401\)/);
+  // 원본 커밋을 못 읽으면 「없음」이 아니라 읽지 못했습니다
+  const un = mk({ petmint: pm }, { enabled: true, docs: [], portfolio: { has_dir: null, place: true, ref: 'origin/main' } });
+  un.html('petmint', 'P'); await settle();
+  assert.ok(un.html('petmint', 'P').includes('<b>포트폴리오 게시</b>: 원본 커밋 origin/main을 읽지 못했습니다.'));
+});
+
+test('포트폴리오 게시는 고른 프로젝트로(11-17): 목록, 게시, 원본 없는 페이지 내리기 모두 그 프로젝트', async () => {
+  const calls = [];
+  const infra = { enabled: true, portfolio: { has_dir: true, place: true, ref: 'origin/main' },
+    docs: [{ path: 'portfolio/01_a.md', status: 'new', changed: null }, { path: 'portfolio/00_old.md', status: 'published', changed: null, gone: true }] };
+  globalThis.fetch = async (u, o = {}) => {
+    calls.push({ u, body: o.body ? JSON.parse(o.body) : null });
+    if (u === '/api/scribe/todo') return { ok: true, json: async () => ({ tasks: TASKS, projects: { 'ronanlab-infra': PJ, foreman: PJ } }) };
+    if (o.method === 'POST') return { ok: true, json: async () => ({ action: 'created', done: [], failed: [] }) };
+    return { ok: true, json: async () => (u.includes('ronanlab-infra') ? infra : { enabled: true, docs: [] }) };
+  };
+  globalThis.confirm = () => true;
+  const sc = createScribe({ headers: () => ({}), touch() {} });
+  sc.html('ronanlab-infra', '인프라'); await settle();
+  const h = sc.html('ronanlab-infra', '인프라');
+  assert.ok(calls.some((c) => c.u === '/api/publish?project=ronanlab-infra'));
+  assert.ok(!calls.some((c) => c.u === '/api/publish' || c.u === '/api/publish?project=foreman'));
+  assert.match(h, /data-pub="publish" data-proj="ronanlab-infra" data-path="portfolio\/01_a.md"/);
+  assert.match(h, /data-pub="prune" data-proj="ronanlab-infra"/);
+  const btn = (sel) => ({ target: { closest: (q) => (q === '[data-pub]' ? sel : null) }, preventDefault() {} });
+  await sc.onClick(btn({ dataset: { pub: 'publish', proj: 'ronanlab-infra', path: 'portfolio/01_a.md' } }), 'ronanlab-infra', '인프라');
+  await sc.onClick(btn({ dataset: { pub: 'prune', proj: 'ronanlab-infra' } }), 'ronanlab-infra', '인프라');
+  await sc.onClick(btn({ dataset: { pub: 'publish', path: 'portfolio/01_a.md' } }), 'ronanlab-infra', '인프라');    // data-proj가 없어도 고른 방
+  const posts = calls.filter((c) => c.body).map((c) => c.body);
+  assert.deepEqual(posts.map((b) => [b.action, b.project]), [['publish', 'ronanlab-infra'], ['prune', 'ronanlab-infra'], ['publish', 'ronanlab-infra']]);
+  // 다시 읽기도 그 프로젝트(FOREMAN을 부르지 않는다)
+  assert.ok(!calls.some((c) => c.u.startsWith('/api/publish?project=foreman')));
+});
+
+test('Notion 자리가 정해지지 않은 프로젝트(11-17): 상태는 보이고 [게시]는 까닭과 함께 막힌다', async () => {
+  const sc = mk({ newproj: PJ }, { enabled: true, portfolio: { has_dir: true, place: false, place_why: 'Notion 자리가 정해지지 않았습니다(config/notion.toml portfolio_page)' },
+    docs: [{ path: 'portfolio/01_a.md', status: 'new', changed: null }] });
+  sc.html('newproj', 'N'); await settle();
+  const h = sc.html('newproj', 'N');
+  assert.match(h, /<b>포트폴리오 게시<\/b> <span class="warn">게시됨 0 · 새 1, Notion 자리 없음<\/span>/);
+  assert.ok(h.includes('게시할 수 없습니다: Notion 자리가 정해지지 않았습니다'));
+  assert.match(h, /data-pub="publish"[^>]* disabled title="게시 — 지금은 할 수 없습니다\. Notion 자리가 정해지지 않았습니다/);
+});
+
+test('FOREMAN은 그대로: 자리 있음이면 [게시]가 열려 있고 FOREMAN으로 부른다', async () => {
+  const calls = [];
+  globalThis.fetch = async (u) => {
+    calls.push(u);
+    if (u === '/api/scribe/todo') return { ok: true, json: async () => ({ tasks: TASKS, projects: { foreman: PJ } }) };
+    return { ok: true, json: async () => ({ enabled: true, portfolio: { has_dir: true, place: true, ref: 'HEAD' }, docs: [{ path: 'portfolio/01_a.md', status: 'published', changed: true }] }) };
+  };
+  const sc = createScribe({ headers: () => ({}), touch() {} });
+  sc.html('foreman', 'F'); await settle();
+  const h = sc.html('foreman', 'F');
+  assert.ok(calls.includes('/api/publish?project=foreman'));
+  assert.match(h, /data-pub="publish" data-proj="foreman" data-path="portfolio\/01_a.md" title="게시 — main에 커밋된 원본을/);
+  assert.ok(h.includes('>다시 게시<') && !h.includes('Notion 자리 없음'));
 });
 
 test('물어보기 답 · 문서 점검 결과에서 바로 고치기', async () => {

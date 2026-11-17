@@ -1126,7 +1126,7 @@ class Publisher:
         notion/ 원고(11-15)는 나무 규칙: `notion/02_x/01_y.md`는 `notion/02_x.md` 페이지 아래. 부모 글이 아직 Notion에 없으면 만들지 않는다
         (맞추기는 나무 차례로 올려 부모가 먼저 올라간다)."""
         if path.startswith("portfolio/"):
-            return self.portfolio_page or self.root
+            return self.portfolio_place()
         if path.startswith(self.src) and self.docs_page:
             from bridge.manuscript import tree_parent
             up = tree_parent(path, self.src) if self.tree else None
@@ -1426,7 +1426,7 @@ class Publisher:
             rows = (await c.execute(text(
                 "SELECT path, notion_page_id FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' "
                 "AND path LIKE :pre ORDER BY path"), {"p": self.project, "pre": "portfolio/%"})).all()
-        return await self.reorder([(r[0], r[1]) for r in rows], self.portfolio_page or self.root, force=True)
+        return await self.reorder([(r[0], r[1]) for r in rows], self.portfolio_place(), force=True)
 
     async def reorder(self, rows: list[tuple[str, str]], parent: str, force: bool = False) -> dict[str, Any]:
         """rows(경로, 페이지) 순서대로 parent 아래에 다시 세운다 — 임시 묶음 「정렬 중」으로 옮겼다가 순서대로 되돌린다(페이지 · URL ·
@@ -1461,12 +1461,39 @@ class Publisher:
         await self._save(key, status="archived")
         return {"path": key, "action": "archived", "page_id": pid}
 
+    def portfolio_place(self) -> str:
+        """포트폴리오 글이 놓일 [포트폴리오] 페이지(11-17 프로젝트별). 칸(config/notion.toml portfolio_page)이 비어 있으면 거절한다.
+        전에는 프로젝트 페이지(root) 바로 아래로 조용히 떨어졌다(11-06 FOREMAN 방식). 자리를 정하지 않은 프로젝트가 아무 데나 쌓지 않게."""
+        if not self.portfolio_page:
+            raise OutOfScope(f"{self.project}의 포트폴리오 Notion 자리가 정해지지 않았습니다(config/notion.toml portfolio_page)")
+        return self.portfolio_page
+
+    def portfolio_files(self) -> list[str] | None:
+        """원본 커밋(ref)의 portfolio/ 아래 .md. 게시가 읽는 판(git_show와 같은 ref)과 같게 센다(11-17, 전에는 작업 폴더 색인).
+        ref를 읽지 못하면 None(빈 목록과 가른다. 조용히 「없음」이 되지 않게)."""
+        r = subprocess.run(["git", "-C", self.repo, "ls-tree", "-r", "-z", "--name-only", self.ref, "--", "portfolio/"],
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            return None
+        return [f for f in r.stdout.split("\0") if f.endswith(".md")]
+
+    def portfolio_state(self) -> dict[str, Any]:
+        """포트폴리오 패널 머리(11-17). has_dir: ref에 portfolio/가 있나(None은 읽지 못함), place: Notion 자리가 정해졌나."""
+        files = self.portfolio_files()
+        r = subprocess.run(["git", "-C", self.repo, "ls-tree", "-d", "--name-only", self.ref, "--", "portfolio"],
+                           capture_output=True, text=True, timeout=15) if files is not None else None
+        return {"has_dir": None if r is None or r.returncode != 0 else bool(r.stdout.strip()),
+                "place": bool(self.portfolio_page), "ref": self.ref,
+                "place_why": None if self.portfolio_page else "Notion 자리가 정해지지 않았습니다(config/notion.toml portfolio_page)"}
+
     async def list(self) -> list[dict[str, Any]]:
-        """게시할 수 있는 글(main의 portfolio/*.md) + 그 게시 기록. 원본이 게시 뒤에 바뀌었으면 changed.
-        회고는 11-06부터 Notion에 두지 않는다(포트폴리오 8편이 바깥 판 — git에만 남긴다)."""
+        """게시할 수 있는 글(원본 커밋 ref의 portfolio/*.md) + 그 게시 기록. 원본이 게시 뒤에 바뀌었으면 changed.
+        회고는 11-06부터 Notion에 두지 않는다(포트폴리오 8편이 바깥 판 — git에만 남긴다).
+        11-17 프로젝트별: ref를 읽지 못하면 OSError로 올린다(빈 목록으로 삼키지 않는다)."""
         from sqlalchemy import text
-        files = subprocess.run(["git", "-C", self.repo, "ls-files", "portfolio/*.md"], capture_output=True,
-                               text=True, timeout=15).stdout.split()
+        files = self.portfolio_files()
+        if files is None:
+            raise OSError(f"{self.project}의 원본 커밋 {self.ref}를 읽지 못했습니다")
         async with self.e.connect() as c:
             rows = {r["path"]: dict(r) for r in (await c.execute(text(
                 "SELECT path, title, status, url, commit_sha, content_hash, updated_at FROM doc_publish "

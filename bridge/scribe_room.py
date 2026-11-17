@@ -207,18 +207,22 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
         if (pub := publishers.get(name)) is not None:
             # 11-09 런슈즈 요청 3-1 — 파일마다 한 줄이던 것을 묶음마다 한 줄로. 포트폴리오는 사람이 [게시](바깥 독자에게 내는 글)
             # D2: Notion이 꺼져 있어도 다른 할 일은 센다 — 다만 삼키지 않고 pub_error로 내려 화면이 「읽지 못했습니다」를 보인다
+            # 11-17 포트폴리오도 프로젝트마다(전에는 FOREMAN만). 따로 잡아 포트폴리오를 못 읽어도 기술문서 줄은 남는다
             try:
-                if name == "foreman":
-                    docs = await pub.list()
-                    port_pub = {"total": len(docs), "published": sum(d["status"] == "published" for d in docs),
-                                "new": sum(d["status"] == "new" for d in docs), "changed": sum(bool(d["changed"]) for d in docs)}
-                    pend = [d for d in docs if d["status"] == "new" or d["changed"]]
-                    if pend:
-                        nn = sum(d["status"] == "new" for d in pend)
-                        items.append({"kind": "publish", "title": f"Notion 포트폴리오: 파일 {len(pend)}개 뒤처짐"
-                                      f"({' · '.join(x for x in (f'새 {nn}' if nn else '', f'바뀜 {len(pend) - nn}' if len(pend) - nn else '') if x)})",
-                                      "why": ", ".join(Path(d["path"]).name for d in pend[:4]) + (" …" if len(pend) > 4 else "")
-                                      + ". 아래 「포트폴리오 게시」에서 올립니다"})
+                docs = await pub.list()
+                port_pub = {"total": len(docs), "published": sum(d["status"] == "published" for d in docs),
+                            "new": sum(d["status"] == "new" for d in docs), "changed": sum(bool(d["changed"]) for d in docs)}
+                pend = [d for d in docs if d["status"] == "new" or d["changed"]]
+                if pend:
+                    nn = sum(d["status"] == "new" for d in pend)
+                    place = "" if getattr(pub, "portfolio_page", None) else " Notion 자리가 정해지지 않아 아직 올릴 수 없습니다."
+                    items.append({"kind": "publish", "title": f"Notion 포트폴리오: 파일 {len(pend)}개 뒤처짐"
+                                  f"({' · '.join(x for x in (f'새 {nn}' if nn else '', f'바뀜 {len(pend) - nn}' if len(pend) - nn else '') if x)})",
+                                  "why": ", ".join(Path(d["path"]).name for d in pend[:4]) + (" …" if len(pend) > 4 else "")
+                                  + ". 아래 「포트폴리오 게시」에서 올립니다." + place})
+            except Exception as e:  # noqa: BLE001
+                port_pub = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+            try:
                 last_res = docsync.last.get(name) if docsync else None
                 if pub.docs_mode != "off":
                     docs_pub = await ds.summary(pub, last_res)

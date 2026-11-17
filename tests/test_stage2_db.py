@@ -1256,6 +1256,8 @@ async def test_notion_publish_update_unchanged_archive_and_scope(env, tmp_path):
         await pub.publish("log/retro_커밋안됨.md")
 
     # 포트폴리오(11-06) — 묶음 없이 루트 바로 아래, 번호 붙은 제목. 예전 「포트폴리오」 아래 페이지는 다시 게시할 때 루트로 옮긴다
+    # 11-17부터 자리(portfolio_page)가 없으면 루트로 떨어지지 않고 거절한다(tests/test_portfolio_projects.py). 여기서는 자리를 루트로 정해 둔다
+    pub.portfolio_page = "root"
     (repo / "portfolio").mkdir()
     (repo / "portfolio" / "00_overview.md").write_text("# 한눈에\n\n- 무엇\n", encoding="utf-8")
     (repo / "portfolio" / "01_loss.md").write_text("# 압축 손실\n\n- 숫자\n", encoding="utf-8")

@@ -50,31 +50,43 @@ export function pubCounts(p) {
 }
 
 export function createScribe(store) {
-  let todo = null, pub = null, note = null, busy = false, at = 0;
-  let todoBad = false, pubBad = false;          // 마지막으로 읽기에 실패했나 — 지난 것을 보이되 「읽지 못했습니다」를 함께 보인다
+  let todo = null, note = null, busy = false, cur = 'foreman';
+  // 11-17 포트폴리오 게시는 프로젝트마다: 고른 프로젝트(room)의 게시 목록을 따로 들고, 읽은 시각도 따로 센다
+  const pubs = {}, pubBad = {}, at = {};
+  let todoBad = false;          // 마지막으로 읽기에 실패했나. 지난 것을 보이되 「읽지 못했습니다」를 함께 보인다
   let askText = '', asking = false, answer = null;
   const postit = createPostitBlock(store);        // 11-15 머리 탭 포스트잇과 같은 목록 · 같은 동작
 
-  async function load(force = false) {
-    if (!force && Date.now() - at < 20000) return;
-    at = Date.now();
+  async function load(force = false, room = cur) {
+    if (!force && Date.now() - (at[room] || 0) < 20000) return;
+    at[room] = Date.now();
     try {
-      const [t, p] = await Promise.all([fetch('/api/scribe/todo', { headers: store.headers() }), fetch('/api/publish', { headers: store.headers() })]);
-      todoBad = !t.ok; pubBad = !p.ok;
+      const [t, p] = await Promise.all([fetch('/api/scribe/todo', { headers: store.headers() }),
+        fetch(`/api/publish?project=${encodeURIComponent(room)}`, { headers: store.headers() })]);
+      todoBad = !t.ok; pubBad[room] = !p.ok;
       todo = t.ok ? await t.json() : todo;
-      pub = p.ok ? await p.json() : pub;
-    } catch { todoBad = pubBad = true; /* 못 읽으면 지난 것을 보이고, 못 읽었다고 알린다 */ }
+      if (p.ok) pubs[room] = await p.json();
+    } catch { todoBad = true; pubBad[room] = true; /* 못 읽으면 지난 것을 보이고, 못 읽었다고 알린다 */ }
     store.touch('panel');
   }
 
   // 포트폴리오 게시 — 파일 목록은 접힘 기본, 접은 채 「게시됨 10」
   function portPubBlock(room, pj) {
     const head = (inner) => `<details class="hand"${keep(`scribe:${room}:pubport`)}><summary title="포트폴리오 게시 — 바깥 독자에게 내는 portfolio/ 글을 Notion에 올립니다. 원본은 git이고 버튼을 눌러야만 올라갑니다."><b>포트폴리오 게시</b> ${inner}</summary>`;
-    if (room !== 'foreman') return '<div class="small muted sc-line"><b>포트폴리오 게시</b>: 이 프로젝트는 포트폴리오를 게시하지 않습니다(지금은 FOREMAN만 연결돼 있습니다).</div>';
-    if (pubBad && !pub) return `<div class="small bad sc-line"><b>포트폴리오 게시</b>: 게시 목록을 ${UNREAD}.</div>`;
+    // 11-17 고른 프로젝트의 portfolio/ 상태(전에는 FOREMAN만 보고 다른 프로젝트는 「게시하지 않습니다」였다)
+    const pub = pubs[room];
+    if (pubBad[room] && !pub) return `<div class="small bad sc-line"><b>포트폴리오 게시</b>: 게시 목록을 ${UNREAD}.</div>`;
     if (!pub) return '<div class="small muted sc-line"><b>포트폴리오 게시</b>: 게시 목록을 읽는 중입니다.</div>';
     if (!pub.enabled) return `<div class="small warn sc-line"><b>포트폴리오 게시</b>: ${esc(pub.why || 'Notion 게시가 꺼져 있습니다.')}</div>`;
     const docs = pub.docs || [];
+    const ps = pub.portfolio || {};
+    if (ps.has_dir === null) return `<div class="small bad sc-line"><b>포트폴리오 게시</b>: 원본 커밋${ps.ref ? ` ${esc(ps.ref)}` : ''}을 ${UNREAD}.</div>`;
+    if (ps.has_dir === false && !docs.length) return '<div class="small muted sc-line" title="포트폴리오 게시 — 이 프로젝트의 main에 portfolio/ 폴더가 생기면 여기서 Notion에 올립니다."><b>포트폴리오 게시</b>: 아직 없음. 이 프로젝트에는 portfolio/ 폴더가 없습니다.</div>';
+    // Notion 자리가 정해지지 않은 프로젝트는 상태만 보이고 게시를 막는다(조용히 다른 자리에 올리지 않게. 서버도 같은 까닭으로 거절)
+    const noPlace = ps.place === false ? (ps.place_why || 'Notion 자리가 정해지지 않았습니다.') : '';
+    const off = busy || noPlace ? ' disabled' : '';
+    const why = (tip) => esc(noPlace ? `${tip.split(' — ')[0]} — 지금은 할 수 없습니다. ${noPlace}` : tip);
+    const placeLine = noPlace ? `<div class="small warn">게시할 수 없습니다: ${esc(noPlace)}</div>` : '';
     const c = pubCounts({ published: docs.filter((d) => d.status === 'published').length, new: docs.filter((d) => d.status === 'new').length,
       changed: docs.filter((d) => d.status === 'published' && d.changed).length });
     // 원본 없는 페이지(11-15) — git에서 지운 옛 편이 Notion에 남은 것. 새 판을 올린 뒤 한꺼번에 내린다(휴지통, 30일 안에 되살림)
@@ -84,13 +96,13 @@ export function createScribe(store) {
       const st = d.status === 'new' ? '<span class="muted">안 올림</span>' : d.status === 'archived' ? '<span class="muted">휴지통</span>'
         : d.gone ? '<span class="warn">원본 없음</span>' : d.changed ? '<span class="warn">원본이 바뀜</span>' : '<span class="ok">게시됨</span>';
       const btns = [
-        d.status !== 'published' || d.changed ? `<button type="button" class="small" data-pub="publish" data-path="${esc(d.path)}" title="게시 — main에 커밋된 원본을 Notion에 올립니다. 이미 올린 글이면 같은 페이지를 덮어씁니다.">${d.status === 'published' ? '다시 게시' : '게시'}</button>` : '',
-        d.status === 'published' ? `<button type="button" class="small ghost" data-pub="archive" data-path="${esc(d.path)}" title="내리기 — Notion 페이지를 휴지통으로 보냅니다(30일 안에 되살릴 수 있습니다). 우리가 만든 페이지만 됩니다.">내리기</button>` : '',
+        d.status !== 'published' || d.changed ? `<button type="button" class="small" data-pub="publish" data-proj="${esc(room)}" data-path="${esc(d.path)}"${off} title="${why('게시 — main에 커밋된 원본을 Notion에 올립니다. 이미 올린 글이면 같은 페이지를 덮어씁니다.')}">${d.status === 'published' ? '다시 게시' : '게시'}</button>` : '',
+        d.status === 'published' ? `<button type="button" class="small ghost" data-pub="archive" data-proj="${esc(room)}" data-path="${esc(d.path)}"${busy ? ' disabled' : ''} title="내리기 — Notion 페이지를 휴지통으로 보냅니다(30일 안에 되살릴 수 있습니다). 우리가 만든 페이지만 됩니다.">내리기</button>` : '',
         d.url ? `<a class="small" href="${esc(d.url)}" target="_blank" rel="noopener" title="Notion에서 열기 — 새 탭으로 엽니다.">열기</a>` : '',
       ].join(' ');
       return `<div class="sc-row"><div class="small"><code>${esc(d.path)}</code> ${st}${d.commit ? ` <span class="muted">· 커밋 ${esc(d.commit)}</span>` : ''}${d.updated_at ? ` <span class="muted">· ${ago(d.updated_at)}</span>` : ''}</div><div class="hand-btns">${btns}</div></div>`;
     }).join('');
-    return `${head(`<span class="${c.behind || gone ? 'warn' : 'muted'}">${esc(c.text)}${gone ? `, 원본 없음 ${gone}` : ''}</span>`)}${prune}${rows || '<p class="small muted">게시할 글이 없습니다(main의 portfolio/*.md).</p>'}</details>`;
+    return `${head(`<span class="${c.behind || gone || noPlace ? 'warn' : 'muted'}">${esc(c.text)}${gone ? `, 원본 없음 ${gone}` : ''}${noPlace ? ', Notion 자리 없음' : ''}</span>`)}${placeLine}${prune}${rows || '<p class="small muted">게시할 글이 없습니다(main의 portfolio/*.md).</p>'}</details>`;
   }
 
   // 기술문서 게시 — docs/ 전체를 프로젝트별 Notion 페이지로 맞춘다. 읽기 API(docs_pub)가 준 숫자만 보인다
@@ -157,7 +169,8 @@ export function createScribe(store) {
   // pick — 서기 머리 위 "정리할까요?"(11-09)를 눌러 열면 그 일(later)을 고른 채: 그 줄을 밝히고 [시키기]를 primary로.
   // 고르기만 한다 — 세션은 사람이 [시키기]를 눌러야 뜬다(자동은 제안까지만)
   function html(room, label, pick = null) {
-    load();
+    cur = room;
+    load(false, room);
     const tasks = (todo && todo.tasks) || {};
     const pj = (todo && todo.projects && todo.projects[room]) || {};
     const items = pj.items || [], opened = pj.open || [], blocked = pj.blocked || {}, behind = pj.behind || {};
@@ -216,7 +229,7 @@ export function createScribe(store) {
       ${postitHtml}
       <details class="hand"${pick ? ' open' : keep(`scribe:${room}:list`, true)}><summary title="할 일 — 서기에게 시킬 일 한 목록입니다. 이름 옆 숫자는 밀린 정도이고, 숫자가 없으면 지금 밀린 것이 없습니다."><b>할 일</b> ${sumCount}${bad}</summary>${listBody}</details>
       <div class="hand">${portfolioBlock(room, pj, tasks)}${portPubBlock(room, pj)}${docsPubBlock(room, pj, label)}</div>
-      ${pubBad && pub ? `<div class="small bad">게시 목록을 ${UNREAD}(지난 값입니다).</div>` : ''}`;
+      ${pubBad[room] && pubs[room] ? `<div class="small bad">게시 목록을 ${UNREAD}(지난 값입니다).</div>` : ''}`;
   }
 
   // 글 칸은 다시 그려져도 남게 입력마다 적어 둔다(opanel이 #pSel의 input을 넘긴다)
@@ -256,7 +269,7 @@ export function createScribe(store) {
       note = r.ok ? { msg: `「${name}」: 서기 세션을 띄웠습니다. 서기실에서 일합니다.`, tip: `서기 세션 — tmux 창 ${j.tmux || '?'}` } : { bad: true, msg: `띄우지 못했습니다: ${j.refused || j.detail || r.status}` };
     } catch { note = { bad: true, msg: '띄우지 못했습니다. 서버에 닿지 못했습니다.' }; }
     busy = false;
-    await load(true);
+    await load(true, room);
   }
 
   async function onClick(ev, room, label, openSession) {
@@ -264,7 +277,7 @@ export function createScribe(store) {
     // 합치지 않은 worktree의 [합치기]에 닿을 길이 없었다
     const o = ev.target.closest('[data-sc-open]');
     if (o) { ev.preventDefault(); if (openSession) openSession(Number(o.dataset.scOpen)); return; }
-    if (await postit.onClick(ev, room)) { await load(true); return; }      // 포스트잇 줄 · [저장] · [갱신]
+    if (await postit.onClick(ev, room)) { await load(true, room); return; }      // 포스트잇 줄 · [저장] · [갱신]
     if (ev.target.closest('[data-sc-ask]')) { ev.preventDefault(); await ask(room); return; }
     if (ev.target.closest('[data-sc-fix]')) {        // 물어보기 답으로 바로 고치기
       ev.preventDefault();
@@ -279,7 +292,7 @@ export function createScribe(store) {
       await start(room, label, k, topic, topic ? (t.dataset.name || topic) : '', null);
       return;
     }
-    const act = p.dataset.pub, path = p.dataset.path || 'docs/', project = p.dataset.proj || 'foreman', force = !!p.dataset.force;
+    const act = p.dataset.pub, path = p.dataset.path || 'docs/', project = p.dataset.proj || room, force = !!p.dataset.force;
     if (act === 'archive' && !confirm(`${path}의 Notion 페이지를 휴지통으로 보냅니다(30일 안에 Notion에서 되살릴 수 있습니다).\n\n내릴까요?`)) return;
     if (force && !confirm(`${path}\nNotion에서 사람이 고친 곳을 버리고 git 원본으로 덮습니다. 살릴 수정이면 먼저 git에 옮겨 주세요.\n\n덮을까요?`)) return;
     if (act === 'docsync' && !force && p.dataset.ask && !confirm(p.dataset.ask)) return;      // notion/ 원고 — 코드가 바뀐 편을 보이고 묻는다
@@ -290,7 +303,7 @@ export function createScribe(store) {
       const j = await r.json().catch(() => ({}));
       note = r.ok ? { bad: !!(j.failed || []).length, msg: `원본 없는 페이지를 내렸습니다: ${(j.done || []).length}${(j.failed || []).length ? `, 실패 ${j.failed.length}(${j.failed[0].path})` : ''}` }
         : { bad: true, msg: `${j.refused || j.detail || r.status}` };
-      await load(true);
+      await load(true, room);
       return;
     }
     note = { msg: `${act === 'archive' ? '내리는' : act === 'docsync' ? '기술문서를 맞추는' : '올리는'} 중입니다…` }; store.touch('panel');
@@ -301,12 +314,12 @@ export function createScribe(store) {
     if (r.ok && j.action === 'docsync') {
       note = { bad: !!(j.held.length || j.failed.length),
         msg: `기술문서를 맞췄습니다: 올림 ${j.done.length}${j.held.length ? ` · 사람이 고쳐 멈춤 ${j.held.length}` : ''}${j.failed.length ? ` · 실패 ${j.failed.length}(${j.failed[0].path})` : ''}` };
-      await load(true);
+      await load(true, room);
       return;
     }
     note = r.ok ? { msg: { created: '새 페이지로 올렸습니다.', updated: '같은 페이지에 덮어썼습니다.', unchanged: '바뀐 것이 없어 건너뛰었습니다.', archived: '휴지통으로 보냈습니다.' }[j.action] || '마쳤습니다.' }
       : { bad: true, msg: `${j.refused || j.detail || r.status}` };
-    await load(true);
+    await load(true, room);
   }
 
   return { html, onClick, onInput, onKey, load };

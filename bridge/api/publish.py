@@ -49,7 +49,12 @@ async def publish_list(request: Request, project: str = "foreman") -> dict[str, 
     if p is None:
         why = getattr(request.app.state, "publisher_off", None) or f"{project}의 Notion 게시가 설정돼 있지 않습니다(config/notion.toml)"
         return {"enabled": False, "why": why, "docs": []}
-    out = {"enabled": True, "root": p.root, "docs": await p.list()}
+    # 11-17 포트폴리오 패널 프로젝트별: 고른 프로젝트의 portfolio/ 있음(has_dir)과 Notion 자리(place)를 같이 내린다.
+    # portfolio/가 없어도 목록은 읽는다(폴더째 지운 뒤 Notion에 남은 페이지가 「원본 없음」으로 보이게). 화면은 글도 기록도 없으면 「아직 없음」.
+    # 원본 커밋을 못 읽으면 has_dir None, 목록은 비우고 화면은 「읽지 못했습니다」
+    st = p.portfolio_state() if hasattr(p, "portfolio_state") else {"has_dir": True, "place": True}
+    docs = await p.list() if st.get("has_dir") is not None else []
+    out = {"enabled": True, "root": p.root, "docs": docs, "portfolio": st}
     cfg = getattr(request.app.state, "notion_cfg", None)
     if cfg is not None and project in cfg.state:
         # 11-12 — 지금 쓰는 설정의 출처(repo · foreman) · 경고 · 오류(깨진 저장소 파일이면 옛 설정 그대로 + stale)
