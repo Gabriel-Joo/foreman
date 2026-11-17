@@ -233,8 +233,27 @@ def test_moved_file_with_new_file_in_old_place(tmp_path):
     assert hits == {("docs/00_design.md", 4, "가운뎃점"), ("README.md", 3, "가운뎃점")}
 
 
+def test_moved_file_edited_line_is_compared_with_old_line(tmp_path):
+    """옮긴 파일에서 옛 줄을 고치기만 하면(기호 수 그대로) 걸지 않는다. 글이 달라 옮긴 줄 풀이로는 못 풀고,
+    git이 옮긴 파일을 복사로 알아봐야(-C) 덩어리가 옛 줄과 맞대어진다. 기호를 더했으면 건다."""
+    g, base = _repo_with_base(tmp_path)
+    old = "\n".join(f"옛 줄 {i:02d} 그대로 두는 설계 문장입니다" for i in range(8))
+    (tmp_path / "README.md").write_text(old + "\n옛 줄 · 하나\n사이 줄은 그대로 둡니다\n옛 줄 — 둘\n", encoding="utf-8")
+    subprocess.run([*g, "add", "-A"], check=True)
+    subprocess.run([*g, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "b"], check=True)
+    base = subprocess.run([*g, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    subprocess.run([*g, "mv", "README.md", "docs/00_design.md"], check=True)
+    (tmp_path / "docs/00_design.md").write_text(
+        old + "\n옛 줄 · 하나를 고침\n사이 줄은 그대로 둡니다\n옛 줄 — 둘 · 가운뎃점을 더함\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("# 새 안내\n", encoding="utf-8")
+    subprocess.run([*g, "add", "-A"], check=True)
+    hits = {(p, r, n) for p, r, n, _ in dashdot.scan(tmp_path, base)}
+    assert hits == {("docs/00_design.md", 11, "가운뎃점")}
+
+
 def test_moved_file_cut_by_more_than_half(tmp_path):
-    """옮긴 뒤 절반 넘게 줄여도(같은 날 설계 문서 943줄을 595줄로, 유사도 42%) 남은 옛 줄은 새 줄이 아니다(복사 문턱 40%)."""
+    """옮긴 뒤 절반 넘게 줄여도(같은 날 설계 문서 943줄을 595줄로, 유사도 42%) 남은 옛 줄은 새 줄이 아니다.
+    안 바뀐 옛 줄은 복사 문턱과 상관없이 옮긴 줄 풀이(지운 줄과 글이 같음)가 푼다."""
     g = ["git", "-C", str(tmp_path)]
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     old = [f"옛 줄 {i:02d} 그대로 두는 설계 문장입니다" + (" — 옛 기호" if i == 1 else "") for i in range(20)]
@@ -248,6 +267,120 @@ def test_moved_file_cut_by_more_than_half(tmp_path):
     (tmp_path / "README.md").write_text("# 새 안내\n", encoding="utf-8")
     subprocess.run([*g, "add", "-A"], check=True)
     assert dashdot.scan(tmp_path, base) == []
+
+
+def _commit_all(tmp_path, files: dict[str, str]) -> str:
+    """파일을 쓰고(지우려면 값 None) 실제 git 커밋을 만들어 그 해시를 돌려준다."""
+    g = ["git", "-C", str(tmp_path)]
+    if not (tmp_path / ".git").exists():
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    for p, text in files.items():
+        f = tmp_path / p
+        if text is None:
+            f.unlink()
+            continue
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text, encoding="utf-8")
+    subprocess.run([*g, "add", "-A"], check=True)
+    subprocess.run([*g, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c"], check=True)
+    return subprocess.run([*g, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+
+
+MOVE_SKIP = ("docs/archive/", *dashdot.TOOL_DIRS)    # 기록 폴더 하나를 둔 저장소 설정(점검 밖)
+SECTION = ["## 옮길 절", "- 하나 · 둘을 함께 본다", "- 셋 — 넷은 따로 본다", "- 다섯은 기호가 없다"]
+STAY = [f"남는 줄 {i} 이 문장은 그대로 둡니다" for i in range(6)]
+
+
+def _scan(tmp_path, base, **kw):
+    return {(p, r, n) for p, r, n, _ in dashdot.scan(tmp_path, base, skip=MOVE_SKIP, **kw)}
+
+
+def test_moved_within_file_is_not_new(tmp_path):
+    """같은 파일 안에서 절을 옮기기만 하면 기호가 든 줄도 새 줄이 아니다(11-17 런슈즈 docs/09 안 옮김 110건)."""
+    base = _commit_all(tmp_path, {"docs/a.md": "\n".join([*SECTION, *STAY]) + "\n"})
+    _commit_all(tmp_path, {"docs/a.md": "\n".join([*STAY, *SECTION]) + "\n"})
+    assert _scan(tmp_path, base) == set()
+    assert _scan(tmp_path, base, strict=True) == set()      # 옮긴 줄은 strict여도 새 줄이 아니다
+
+
+def test_moved_to_other_files_is_not_new(tmp_path):
+    """다른 파일로 옮겨도 새 줄이 아니다. 점검 밖 기록 폴더로 간 것도, 점검 안 다른 문서로 간 것도."""
+    base = _commit_all(tmp_path, {"docs/a.md": "\n".join([*SECTION, *STAY]) + "\n", "docs/b.md": "# 다른 편\n"})
+    _commit_all(tmp_path, {
+        "docs/a.md": "\n".join(STAY) + "\n",
+        "docs/archive/a_log.md": "\n".join(SECTION[:2]) + "\n",                # 점검 밖으로
+        "docs/b.md": "# 다른 편\n" + "\n".join(SECTION[2:]) + "\n",               # 점검 안 다른 편으로
+    })
+    assert _scan(tmp_path, base) == set()
+    # 같은 커밋을 rev로 읽어도 같다(합치기 카드가 읽는 판)
+    head = subprocess.run(["git", "-C", str(tmp_path), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    assert _scan(tmp_path, base, rev=head) == set()
+
+
+def test_moved_with_added_symbol_is_flagged(tmp_path):
+    """옮기며 기호를 더하면 건다. 옮기기만 한 줄은 그대로 풀린다."""
+    base = _commit_all(tmp_path, {"docs/a.md": "\n".join([*SECTION, *STAY]) + "\n"})
+    moved = [SECTION[0], SECTION[1] + " · 여섯", *SECTION[2:]]          # 둘째 줄에 가운뎃점을 하나 더함
+    _commit_all(tmp_path, {"docs/a.md": "\n".join([*STAY, *moved]) + "\n"})
+    assert _scan(tmp_path, base) == {("docs/a.md", 8, "가운뎃점")}
+
+
+def test_moved_line_does_not_hide_new_symbol_in_its_old_hunk(tmp_path):
+    """옛 덩어리에서 기호 든 줄을 옮겨 가고 그 자리에 새 기호를 더해도, 지운 것으로 상쇄되어 놓치지 않는다."""
+    base = _commit_all(tmp_path, {"docs/a.md": "\n".join([*SECTION, *STAY]) + "\n"})
+    new_top = ["## 옮길 절", "- 아주 새로 쓴 줄 — 더함", SECTION[3]]       # 기호가 든 두 줄은 아래로 옮겨 간다
+    _commit_all(tmp_path, {"docs/a.md": "\n".join([*new_top, *STAY, SECTION[1], SECTION[2]]) + "\n"})
+    assert _scan(tmp_path, base) == {("docs/a.md", 2, "em dash")}
+
+
+def test_moved_with_one_char_changed_is_flagged(tmp_path):
+    """옮기며 글자 하나를 바꾸면 옮긴 줄이 아니다. 그 줄에 기호가 늘었으면 건다."""
+    base = _commit_all(tmp_path, {"docs/a.md": "\n".join([*SECTION, "- 기호 없는 줄은 옮기며 고친다", *STAY]) + "\n"})
+    changed = [SECTION[0], SECTION[1].replace("하나 · 둘", "하나 · 두"), SECTION[2],      # 기호 수는 같지만 글이 다르다
+               SECTION[3], "- 기호 없는 줄은 옮기며 · 고친다"]                           # 기호가 늘었다
+    _commit_all(tmp_path, {"docs/a.md": "\n".join([*STAY, *changed]) + "\n"})
+    got = _scan(tmp_path, base)
+    assert ("docs/a.md", 11, "가운뎃점") in got                 # 기호가 늘어난 줄
+    assert ("docs/a.md", 8, "가운뎃점") in got                  # 글자 하나가 바뀐 줄은 옮긴 줄이 아니라 새 줄이다(지금처럼 건다)
+    assert ("docs/a.md", 9, "em dash") not in got               # 안 바뀐 줄은 풀린다
+
+
+def test_moved_lines_are_matched_by_count(tmp_path):
+    """같은 글을 두 번 더하면 지운 쪽 한 줄은 더한 쪽 한 줄만 풀어 준다. 나머지 하나는 새 줄이다."""
+    base = _commit_all(tmp_path, {"docs/a.md": "\n".join([SECTION[1], *STAY]) + "\n"})
+    _commit_all(tmp_path, {"docs/a.md": "\n".join([*STAY, SECTION[1], "사이 줄이 있다", SECTION[1]]) + "\n"})
+    assert len(_scan(tmp_path, base)) == 1
+
+
+def test_moved_line_ignores_only_edge_whitespace(tmp_path):
+    """앞뒤 공백만 다르면 같은 글이다(들여쓰기를 바꿔 옮긴 것). 가운데 글자가 다르면 아니다."""
+    base = _commit_all(tmp_path, {"docs/a.md": "\n".join([SECTION[1], SECTION[2], *STAY]) + "\n"})
+    _commit_all(tmp_path, {"docs/a.md": "\n".join([*STAY, "  " + SECTION[1] + "  ", SECTION[2].replace("셋 — 넷", "셋  — 넷")]) + "\n"})
+    assert _scan(tmp_path, base) == {("docs/a.md", 8, "em dash")}
+
+
+def test_moved_with_mark_appended_is_not_new(tmp_path):
+    """옮기며 끝에 근거 표시를 덧붙여도, 표 줄 가운데 칸에 덧붙여도 옮긴 줄이다(표시만 떼면 글이 같다)."""
+    table = "| 식별 | `id` · `brand` | V1 · V4 |"
+    base = _commit_all(tmp_path, {"docs/a.md": "\n".join([SECTION[1], SECTION[2], table, *STAY]) + "\n"})
+    moved = [SECTION[1] + " [code:bridge/x.py:10-20] [c:abc1234]", SECTION[2] + " [log:a.md]",
+             "| 식별 | `id` · `brand` | V1 · V4 [code:db/V1.sql:12-14] |"]
+    _commit_all(tmp_path, {"docs/a.md": "\n".join([*STAY, *moved]) + "\n"})
+    assert _scan(tmp_path, base) == set()
+
+
+def test_moved_with_mark_and_added_symbol_is_flagged(tmp_path):
+    """근거 표시를 덧붙이며 본문에 기호도 더하면 건다(표시를 뗀 본문이 달라졌다)."""
+    base = _commit_all(tmp_path, {"docs/a.md": "\n".join([SECTION[1], SECTION[2], *STAY]) + "\n"})
+    _commit_all(tmp_path, {"docs/a.md": "\n".join([*STAY, SECTION[1] + " · 더함 [code:bridge/x.py]", SECTION[2] + " [log:a.md]"]) + "\n"})
+    assert _scan(tmp_path, base) == {("docs/a.md", 7, "가운뎃점")}
+
+
+def test_moved_with_date_tail_is_flagged(tmp_path):
+    """날짜 꼬리나 HTML 주석은 글이라 떼지 않는다. 덧붙이며 옮기면 건다."""
+    base = _commit_all(tmp_path, {"docs/a.md": "\n".join([SECTION[1], SECTION[2], *STAY]) + "\n"})
+    _commit_all(tmp_path, {"docs/a.md": "\n".join([*STAY, SECTION[1] + " (2026-11-02 기준)", SECTION[2] + " <!-- 확인 못 함 -->"]) + "\n"})
+    assert _scan(tmp_path, base) == {("docs/a.md", 7, "가운뎃점"), ("docs/a.md", 8, "em dash")}
 
 
 def test_check_runs_dashdot_with_repo_base(tmp_path):
