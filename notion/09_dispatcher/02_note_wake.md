@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/foreman_note.py, bridge/wake.py, config/wake.toml, bridge/static/js/fmpanel.js, migrations/0025_foreman_note.sql
-읽은 커밋: e5d584b
+다루는 곳: bridge/foreman_note.py, bridge/wake.py, config/wake.toml, bridge/static/js/fmpanel.js, migrations/0025_foreman_note.sql, migrations/0029_seed_ronanlab_infra.sql
+읽은 커밋: 5e0f7c5
 -->
 # 진행 중인 일과 자동 기상
 
@@ -83,7 +83,7 @@ flowchart LR
 
 ### 크기 상한과 접기
 
-노트는 프로젝트마다 약 2000토큰까지만 상황 묶음에 넣는다(`TOKEN_CAP`). 교장에게 넣는 상황 묶음 전체가 1만에서 2만 토큰쯤이라, 프로젝트 셋이 2000씩 써도 넘치지 않는 크기로 잡았다 [docs:14_dispatcher_note_wake.md]. 토큰 수는 실측하지 않고 넉넉하게 어림한다. 한글 한 글자를 1토큰, 나머지는 3.5글자를 1토큰으로 센다 [code:bridge/foreman_note.py].
+노트는 프로젝트마다 약 2000토큰까지만 상황 묶음에 넣는다(`TOKEN_CAP`). 교장에게 넣는 상황 묶음 전체가 1만에서 2만 토큰쯤이라, 프로젝트 셋이 2000씩 써도 넘치지 않는 크기로 잡았다 [docs:14_dispatcher_note_wake.md]. 셋은 이 값을 정한 11-08의 프로젝트 수다. 11-10에 인프라 저장소가 더해져 지금은 넷이지만 [code:migrations/0029_seed_ronanlab_infra.sql], 넷이 2000씩 써도 8000토큰이라 여전히 묶음 크기 안이다. 토큰 수는 실측하지 않고 넉넉하게 어림한다. 한글 한 글자를 1토큰, 나머지는 3.5글자를 1토큰으로 센다 [code:bridge/foreman_note.py].
 
 줄은 최근에 확인한 것부터 넣는다. 상한을 넘친 줄은 지우지 않고 접는다. 접힌 줄은 상황 묶음에는 들어가지 않지만 패널에는 「접힘(상한을 넘어 계획을 세울 때 안 들어갑니다)」이라는 표시와 함께 남는다. 기억이 조용히 사라지지 않게, 사라진 것이 보이게 한 것이다 [code:bridge/static/js/fmpanel.js].
 

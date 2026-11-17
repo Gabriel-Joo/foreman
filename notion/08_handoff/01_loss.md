@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/losscheck.py, bridge/compactwatch.py, bridge/static/js/losscheck.js, migrations/0021_loss_check.sql
-읽은 커밋: e5d584b
+읽은 커밋: 5e0f7c5
 -->
 
 # 압축 손실 재기
@@ -169,7 +169,7 @@ claude -p --model <모델> --output-format json --no-session-persistence
 
 ### 결과를 다섯 갈래로 가르기
 
-점검이 끝나면 결과를 다섯 갈래 가운데 하나로 가른다. 처음에는 이 갈래가 없었다. 압축된 적 없는 세션도 실패로 남았고, 묶음 일부가 실패한 점검도 끝남으로 남아 실패가 조용히 "잊은 것 없음"처럼 보일 수 있었다. 사용자가 "없음"과 "실패"가 같은 글로 보인다고 짚은 뒤 서버가 갈래를 정해 내려 주게 바꿨다 [code:bridge/losscheck.py] [c:e0135a1].
+점검이 끝나면 결과를 다섯 갈래 가운데 하나로 가른다. 서버가 내려 주는 값(`OUTCOMES`)에는 아직 도는 중(`running`)이 하나 더 있어 모두 여섯이고, 끝난 점검의 결과는 아래 다섯이다 [code:bridge/losscheck.py]. 처음에는 이 갈래가 없었다. 압축된 적 없는 세션도 실패로 남았고, 묶음 일부가 실패한 점검도 끝남으로 남아 실패가 조용히 "잊은 것 없음"처럼 보일 수 있었다. 사용자가 "없음"과 "실패"가 같은 글로 보인다고 짚은 뒤 서버가 갈래를 정해 내려 주게 바꿨다 [code:bridge/losscheck.py] [c:e0135a1].
 
 | 갈래 | 뜻 |
 |---|---|

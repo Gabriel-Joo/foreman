@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/scribe_room.py, bridge/scribe.py, bridge/api/scribe.py, config/scribe.toml, bridge/static/js/scribe.js, migrations/0023_scribe_review.sql
-읽은 커밋: e5d584b
+읽은 커밋: 5e0f7c5
 -->
 # 서기실과 일감
 
@@ -146,7 +146,7 @@ flowchart TB
 
 결과로 서기실의 열린 일과 막기는 계획 길 서기도 세고, 계획 겹침은 서기실 서기도 본다. 화면의 「열려 있는 일」 설명에 「계획으로 띄운 서기 세션도 셉니다」라고 적은 것이 이 뜻이다. 길이 넷째로 늘어도 `spawn_new`를 지나는 한 기록은 갈라지지 않는다 [code:bridge/static/js/scribe.js].
 
-남은 틈도 있다. 「알려진 한계 쓰기」의 기준점(지난 정리가 어디까지 봤나, `scribe-later`)과 [바로 고치기]로 고친 점검 결과 목록은 서기실 길에서만 쌓인다. 계획 길로 `later`를 띄우면 열린 일과 막기에는 잡히지만 기준점은 옮겨 가지 않는다 [log:foreman-4_scribe_two_paths_20261115.md]. 또 교장 지시문은 서기 일 이름으로 `later, trim, doccheck, docfix, portfolio`만 예로 들고 `techdoc`은 적지 않았다. 브리지는 꼴만 맞으면 어느 이름이든 받으므로 관리자가 `techdoc`을 넘기면 그대로 남는다 [code:bridge/foreman.py].
+남은 틈도 있다. 「알려진 한계 쓰기」의 기준점(지난 정리가 어디까지 봤나, `scribe-later`)과 [바로 고치기]로 고친 점검 결과 목록은 서기실 길에서만 쌓인다. 계획 길로 `later`를 띄우면 열린 일과 막기에는 잡히지만 기준점은 옮겨 가지 않는다 [log:foreman-4_scribe_two_paths_20261115.md]. 교장 지시문의 서기 일 이름은 11-17부터 손으로 적지 않고 `TASKS`에서 만든다. 그 전에는 지시문에 적은 목록이 없어진 `sync`, `loss`를 말하고 `techdoc`을 빠뜨려 있었다. 지금은 `TASKS`에서 세션이 아닌 버튼인 `publish`만 빼고 doccheck, trim, later, docfix, portfolio, techdoc을 모두 적는다 [code:bridge/foreman.py] [c:408e4ed]. 브리지는 지금도 꼴만 맞으면 어느 이름이든 받는다.
 
 ## 재료는 저장소 밖에
 
@@ -227,7 +227,7 @@ flowchart TB
 
 서기실을 열지 않아도 오피스 화면의 서기 자리에 짧은 글이 뜬다. 할 일 줄이 있으면 「문서 할 일 N」, 포스트잇이 쌓였으면 「포스트잇 쌓임」이다. 이 글은 서기 캐릭터가 아니라 서기 자리에 붙어서, 서기 세션이 일하러 자리를 떠나도 남는다 [code:bridge/static/js/office.js]. 누르면 서기실이 열리고, 말풍선이 가리키는 일이 있으면 그 줄을 밝혀 [시키기]를 앞세운 채 연다. 이때도 세션은 뜨지 않는다. 화면 맨 위에 「골라 두었습니다. [시키기]를 눌러야 서기 세션이 뜹니다」가 보인다 [code:bridge/static/js/scribe.js]. 자동은 제안까지만 한다.
 
-`config/scribe.toml`의 `[nudge]`(`new_min = 3`, `oldest_days = 3`)는 이 말풍선의 옛 기준이다 [code:config/scribe.toml]. 서기 몫으로 받은 할 일이 셋 이상이거나 가장 오래된 것이 사흘이면 「정리할까요?」를 띄우던 값인데, 포스트잇이 생긴 뒤로 말풍선은 포스트잇 쪽 판단(`bridge/postit.py`의 `nudge_of`, 같은 파일의 `[postit]` 절을 읽고 없으면 기본값)이 정한다. 서기실 쪽 `nudge_of`와 `[nudge]` 값은 지금 어디에서도 불리지 않는다 [code:bridge/scribe_room.py] [code:bridge/postit.py].
+「포스트잇 쌓임」 말풍선의 기준은 `config/scribe.toml`의 `[postit]` 표(`open_max = 20`, `stale_days = 7`, `refresh_days = 7`) 하나이고, `bridge/postit.py`의 `conf`, `nudge_of`가 이 표를 읽어 정한다 [code:config/scribe.toml] [code:bridge/postit.py]. 예전에는 같은 파일에 `[nudge]`(`new_min = 3`, `oldest_days = 3`)가 있었다. 서기 몫으로 받은 할 일이 셋 이상이거나 가장 오래된 것이 사흘이면 「정리할까요?」를 띄우던 서기실 쪽 기준인데, 포스트잇이 생긴 뒤로 그 값을 읽는 코드는 시험뿐이었다. 11-17에 그 표와 서기실 쪽 `nudge_conf`, `nudge_of`를 빼고, 이제는 파일에 읽지 않는 표나 칸이 있으면 브리지 로그에 경고가 남는다 [c:408e4ed] [code:bridge/scribe_room.py].
 
 ## 왜 자동으로 돌리지 않나
 

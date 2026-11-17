@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/main.py, bridge/__main__.py, bridge/config.py
-읽은 커밋: e5d584b
+읽은 커밋: 5e0f7c5
 -->
 
 # 01 전체 구조
@@ -213,6 +213,7 @@ API는 기능별 라우터(주소 묶음)로 나뉘어 있고, `main.py`는 그�
 | 승인 | `approval.py` | → 04 승인의 규칙: 실행과 글자 |
 | | `approvals.py` | → 04 승인의 기다리는 길: hook 두 개 |
 | | `approval_summary.py` | → 04 승인의 승인 요약 |
+| | `hookmiss.py`(판정 없이 통과한 도구 호출을 한 줄씩 남기는 기록) | → 04 승인의 기다리는 길: hook 두 개, → 02 기록 모으기의 CC hook 받기 |
 | 역할과 권한 | `roles.py`, `inspector_close.py` | → 05 역할과 권한의 역할 다섯 |
 | | `roleguard.py`, `reposcope.py`, `schemalock.py`, `pgrep_guard.py` | → 05 역할과 권한의 글이 아니라 권한으로 |
 | | `scopetoken.py` | → 05 역할과 권한의 열쇠와 비밀 |

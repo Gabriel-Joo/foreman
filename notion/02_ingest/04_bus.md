@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/bus.py, bridge/mask.py, bridge/ingest_health.py, bridge/api/ws.py, bridge/api/debug.py, bridge/static/debug.html
-읽은 커밋: e5d584b
+다루는 곳: bridge/bus.py, bridge/mask.py, bridge/ingest_health.py, bridge/api/ws.py, bridge/api/debug.py, bridge/static/debug.html, tests/test_secret_files.py
+읽은 커밋: 5e0f7c5
 -->
 
 # 적재와 내보내기
@@ -96,11 +96,13 @@ CC 세션의 기록에는 비밀값이 섞일 수 있다. 사람이 프롬프트
 
 ### 1. 정확한 값
 
-브리지가 뜰 때 저장소의 비밀 파일 셋(DB, 브리지, 텔레그램용 `.env`)을 읽어, 키 이름에 `PASSWORD`, `PASSWD`, `TOKEN`, `SECRET`, `KEY` 가운데 하나가 든 줄의 값을 모은다. 그 값이 글 어디에든 나오면 `«masked:키이름»`으로 바꾼다. 예를 들어 `.env`에 `DB_PASSWORD=예시값가짜123`이 있었다면, 어떤 글에 `예시값가짜123`이 나와도 `«masked:DB_PASSWORD»`가 된다. 키 이름을 남기는 까닭은 나중에 기록을 읽는 사람이 무엇이 있었는지는 알 수 있게 하려는 것이다 [code:bridge/mask.py].
+브리지가 뜰 때 저장소의 비밀값 파일을 골라 읽는다. 고르는 대상은 저장소 맨 위에서 이름이 `.env`로 시작하는 파일 가운데 예시 꼬리(`.example`, `.sample`, `.template`, `.dist`, 값 없이 키 이름만 적어 저장소에 올리는 견본 파일)가 붙은 것을 뺀 전부, 그리고 설정 파일이 경로를 가리키는 토큰 파일(`config/notify.toml`의 텔레그램 파일, `config/tokens.toml`의 프로젝트 토큰 파일)이다. 설정에서 경로를 바꾸면 그 경로를 따라간다. 지금(5e0f7c5) 고르는 파일은 `.env.db`, `.env.bridge`, `.env.telegram`, `.env.notion`, `.env.project_tokens` 다섯이다 [code:bridge/mask.py] [code:config/tokens.toml] [code:config/notify.toml]. 그 파일들에서 키 이름에 `PASSWORD`, `PASSWD`, `TOKEN`, `SECRET`, `KEY` 가운데 하나가 든 줄의 값을 모은다. 그 값이 글 어디에든 나오면 `«masked:키이름»`으로 바꾼다. 예를 들어 `.env`에 `DB_PASSWORD=예시값가짜123`이 있었다면, 어떤 글에 `예시값가짜123`이 나와도 `«masked:DB_PASSWORD»`가 된다. 키 이름을 남기는 까닭은 나중에 기록을 읽는 사람이 무엇이 있었는지는 알 수 있게 하려는 것이다 [code:bridge/mask.py].
 
 값을 고르는 조건이 몇 있다. 8자보다 짧은 값, 숫자만 있는 값(포트 번호 같은 것), `true`와 `false`는 뺀다. 짧거나 흔한 값까지 가리면 평범한 글이 망가진다. 긴 값부터 바꾼다. 한 값이 다른 값 안에 들어 있을 때 짧은 것이 먼저 바뀌어 긴 것의 나머지가 드러나는 것을 막는다 [code:bridge/mask.py].
 
 처음에는 키 이름을 보지 않고 비밀 파일의 값을 모두 가렸다. 그랬더니 DB 사용자 이름처럼 비밀이 아닌 값까지 가려져, 평범한 설정 이야기가 `«masked»` 투성이가 되었다. 그래서 키 이름이 비밀인 줄만 고르도록 좁혔다 [log:stage2_transcript_result.md] [c:5650cca].
+
+읽을 파일도 11-17 전에는 DB, 브리지, 텔레그램용 셋을 손으로 적어 두었다. 그 사이 노션 토큰 파일과 프로젝트 토큰 파일이 새로 생겼는데 목록에 들지 않아, 그 두 파일의 값은 정확한 값 가리기에서 빠져 있었다. 손 목록은 새 파일이 생길 때마다 또 빠지므로 위처럼 이름의 꼴로 고르는 방식으로 바꿨다. 파일을 넓게 골라도 비밀이 아닌 키는 키 이름 판정에서 걸러진다. 비밀값 파일이 가리기 대상에서 빠지면 깨지는 시험이 이 약속을 지킨다 [c:5e3a51d] [code:tests/test_secret_files.py] [log:foreman-4_mask_env_files_20261117.md].
 
 ### 2. 알려진 형식
 
@@ -113,6 +115,7 @@ CC 세션의 기록에는 비밀값이 섞일 수 있다. 사람이 프롬프트
 | Anthropic 키 | `sk-ant-`로 시작하고 20자 넘게 이어짐 | `«masked:anthropic-key»` |
 | GitHub 토큰 | `ghp_`, `gho_`, `ghs_`, `ghu_` 뒤 30자 넘게, 또는 `github_pat_` 뒤 40자 넘게 | `«masked:github-token»` |
 | AWS 접근 키 | `AKIA` 뒤 대문자와 숫자 16자 | `«masked:aws-key»` |
+| Notion 통합 토큰 | 지금 꼴 `ntn_`, 옛 꼴 `secret_` 뒤 영숫자 40자 넘게(40자 넘게라서 `secret_key` 같은 낱말에는 걸리지 않는다). 11-17에 더했다 [c:5e3a51d] | `«masked:notion-token»` |
 | Bearer 헤더 | `Bearer` 뒤 16자 넘는 토큰 | `Bearer «masked»` |
 
 [code:bridge/mask.py]

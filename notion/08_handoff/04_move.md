@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/static/js/moveflow.js, bridge/static/js/handoff.js, bridge/switchwatch.py, config/handoff.toml
-읽은 커밋: 9a7c22d
+다루는 곳: bridge/static/js/moveflow.js, bridge/static/js/handoff.js, bridge/switchwatch.py, config/handoff.toml, bridge/losscheck.py
+읽은 커밋: 5e0f7c5
 -->
 # 새 세션으로 옮기기
 
@@ -92,7 +92,7 @@ flowchart TD
 
 그래서 한 단계가 `STALL_MS`, 곧 10분 넘게 그대로면 「멈춘 것 같습니다」로 바꾸고 몇 분째인지 적은 뒤 [다시 시도]와 [멈추기]를 준다 [code:bridge/static/js/moveflow.js]. [다시 시도]는 실패한 단계에 따라 다르게 군다. 문서 후보 단계면 목록을 다시 묻고, 요약 단계면 요약을 다시 받고, 새 세션 단계면 띄우기를 다시 하고, 옛 세션 끝내기 단계면 `/exit`만 다시 보낸다. 앞의 두 단계에서 막혔으면 [문서 후보 없이 묻기]로 잊은 것 찾기를 버리고 갈 수 있다. [멈추기]는 어느 단계에서나 흐름을 그만두며, 이미 쓴 문서와 받은 요약은 남는다.
 
-잊은 것 찾기의 결과도 같은 태도로 다룬다. 처음에는 서버가 「압축된 적이 없어 찾을 것이 없음」을 실패로, 「일부 묶음이 실패함」을 성공으로 저장해, 화면이 실패를 「없음」처럼 보일 수 있었다 [log:move_screens_20261113.md]. 지금은 서버가 결과를 여섯 갈래(`outcome`)로 내고, 흐름은 그 가운데 다섯을 흐름 맨 위 한 줄로 다른 글과 다른 색으로 남긴다. 서버가 `outcome`을 주지 않는 옛 기록도 `lossOutcome`이 같은 갈래로 맞춘다 [code:bridge/static/js/moveflow.js].
+잊은 것 찾기의 결과도 같은 태도로 다룬다. 처음에는 서버가 「압축된 적이 없어 찾을 것이 없음」을 실패로, 「일부 묶음이 실패함」을 성공으로 저장해, 화면이 실패를 「없음」처럼 보일 수 있었다 [log:move_screens_20261113.md]. 지금은 서버가 끝난 점검의 결과를 다섯 갈래로 가르고, 아직 도는 중(`running`)까지 더해 여섯 값 가운데 하나(`outcome`)로 내려 준다 [code:bridge/losscheck.py]. 흐름은 끝난 점검의 다섯 갈래를 흐름 맨 위 한 줄로 다른 글과 다른 색으로 남긴다. 서버가 `outcome`을 주지 않는 옛 기록도 `lossOutcome`이 같은 갈래로 맞춘다 [code:bridge/static/js/moveflow.js].
 
 | 갈래 | 뜻 | 흐름 위에 남는 줄의 결 |
 |---|---|---|

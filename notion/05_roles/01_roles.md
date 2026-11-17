@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/roles.py, config/roles.toml, config/models.toml, bridge/static/js/roles.js, bridge/foreman.py, bridge/inspector_close.py, .claude/agents/Explore.md
-읽은 커밋: e5d584b
+다루는 곳: bridge/roles.py, config/roles.toml, config/models.toml, bridge/static/js/roles.js, bridge/foreman.py, bridge/inspector_close.py, .claude/agents/Explore.md, bridge/roleguard.py, bridge/hookmiss.py
+읽은 커밋: 5e0f7c5
 -->
 
 # 역할 다섯
@@ -87,7 +87,7 @@ FOREMAN 밖(터미널에서 직접)에서 띄운 CC 세션은 조립기가 늘 �
 
 조사는 원래 CC의 plan 모드(읽기 전용: 읽기와 조사만 하고, 무언가 고치기 전에 계획 승인을 받는 모드)로 떴다 [log:stage11_roles_result.md]. 고치지 않는 역할이니 아예 쓰기를 못 하게 하는 것이 맞아 보였다. 그런데 이 방식에는 구멍이 있었다. 조사도 결과는 남겨야 하는데, log 파일 하나를 쓰려 해도 계획 승인이 한 번 필요했다. 그래서 관리자가 조사 일을 맡길 때 조사 역할을 피하고 코더로 띄우는 일이 생겼다. 「고치지 않는다」를 지키려고 만든 장치가 오히려 고칠 수 있는 역할로 일을 몰아낸 것이다 [docs:11_foreman_dispatch.md].
 
-지금은 조사가 보통 모드로 뜨고, 브리지가 도구를 부르기 직전(PreToolUse hook)에 log 밖 쓰기를 막는다. `config/roles.toml`의 역할 규칙은 대부분 기록만 하는 관찰 모드인데, 조사 규칙 `inspector-write` 하나만 `enforce` 목록에 넣어 관찰 모드에서도 막는다 [code:config/roles.toml]. 허용되는 것은 `log/` 아래 새 파일 쓰기, 이 세션이 만든 log 고치기, `git add log/<파일>`, 스테이지가 log뿐인 커밋이다. 무엇을 어떻게 가려 막는지는 → 「글이 아니라 권한으로」 편.
+지금은 조사가 보통 모드로 뜨고, 브리지가 도구를 부르기 직전(PreToolUse hook)에 log 밖 쓰기를 막는다. `config/roles.toml`의 역할 규칙은 대부분 기록만 하는 관찰 모드인데, 조사 규칙 `inspector-write` 하나만 `enforce` 목록에 넣어 관찰 모드에서도 막는다 [code:config/roles.toml]. 허용되는 것은 `log/` 아래 새 파일 쓰기, 이 세션이 만든 log 고치기, `git add log/<파일>`, 스테이지가 log뿐인 커밋이다. 이 판정이 예외로 실패하면 막지 않고 통과시키되, 브리지 로그와 텔레그램(한 시간에 한 번)으로 알리고 판정 없는 통과 기록 파일(`.run/hook_miss.log`)에 실패할 때마다 한 줄을 남긴다 [code:bridge/roleguard.py] [code:bridge/hookmiss.py] [c:cd14ed6]. 무엇을 어떻게 가려 막는지는 → 「글이 아니라 권한으로」 편.
 
 교장 계획은 이 규칙이 실제로 막고 있는지를 보고 조사의 모드를 정한다 [code:bridge/foreman.py].
 

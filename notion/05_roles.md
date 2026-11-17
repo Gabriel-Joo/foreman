@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/roles.py, config/roles.toml, bridge/static/js/roles.js, docs/roles.md
-읽은 커밋: e5d584b
+다루는 곳: bridge/roles.py, config/roles.toml, bridge/static/js/roles.js, docs/roles.md, bridge/roleguard.py, bridge/hookmiss.py
+읽은 커밋: 5e0f7c5
 -->
 
 # 05 역할과 권한
@@ -64,7 +64,7 @@ flowchart LR
   G -->|걸림, 막는 규칙| DENY[거부<br/>무엇이 왜 막혔고 어떻게 하면 되는지 세션에 돌려줌]
 ```
 
-지금 규칙은 다섯이다 [code:config/roles.toml]. 작업방 세션의 `git push`(`worktree-push`), Bash로 저장소 파일 고치기(`bash-file-edit`), 관리자가 허용된 곳 밖을 고치기(`manager-code`), 서기가 코드 폴더를 고치기(`scribe-code`), 조사가 `log/` 밖을 쓰기(`inspector-write`)다. 브리지는 세션 역할을 DB에서 읽되 도구 호출마다 DB를 치지 않게 60초 동안 기억한다 [code:bridge/roleguard.py]. 판정 자체가 실패하면 세션을 묶지 않고 통과시킨 뒤 브리지 로그와 시간마다 한 번 텔레그램으로 알린다. 권한 검사가 고장 나서 모든 세션이 멈추는 쪽이 더 나쁘다고 봤다.
+지금 규칙은 다섯이다 [code:config/roles.toml]. 작업방 세션의 `git push`(`worktree-push`), Bash로 저장소 파일 고치기(`bash-file-edit`), 관리자가 허용된 곳 밖을 고치기(`manager-code`), 서기가 코드 폴더를 고치기(`scribe-code`), 조사가 `log/` 밖을 쓰기(`inspector-write`)다. 브리지는 세션 역할을 DB에서 읽되 도구 호출마다 DB를 치지 않게 60초 동안 기억한다 [code:bridge/roleguard.py]. 판정 자체가 실패하면 세션을 묶지 않고 통과시킨 뒤 브리지 로그와 시간마다 한 번 텔레그램으로 알린다. 텔레그램은 한 시간에 한 번이라, 실패할 때마다 판정 없는 통과 기록 파일(`.run/hook_miss.log`)에도 한 줄을 남긴다. 줄에는 오류 종류, 세션 id, 도구 이름만 들어가고 명령 글은 들어가지 않는다 [code:bridge/roleguard.py] [code:bridge/hookmiss.py] [c:cd14ed6]. 권한 검사가 고장 나서 모든 세션이 멈추는 쪽이 더 나쁘다고 봤다.
 
 ### 막지 않고 먼저 지켜보았다
 

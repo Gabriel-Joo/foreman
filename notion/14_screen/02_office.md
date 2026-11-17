@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/office.js, bridge/static/js/theme.js, bridge/static/js/grid.js, bridge/static/js/sprites.js, bridge/static/js/walk.js, bridge/static/js/aura.js, bridge/static/js/overhead.js, bridge/static/js/wrap.js, bridge/static/themes/, scripts/draw_props.py, LICENSES.md
-읽은 커밋: e5d584b
+읽은 커밋: 5e0f7c5
 -->
 
 # 픽셀 오피스와 테마
@@ -349,7 +349,7 @@ CC-BY의 출처 표시는 `LICENSES.md`에 작가 이름, 라이선스, 출처 �
 
 처음에는 단계마다 Jenkins, Harbor, ArgoCD 캐릭터가 서 있었다. 지금은 배송 담당 한 명이 돌아다닌다. 평소에는 라인 맨 앞 자기 자리에 있다. 새 빌드가 보이면 그 커밋을 만든 세션 캐릭터가 걸어와 6초 동안 일감을 넘기고, 배송 담당은 지금 단계 앞으로 걸어간다 [code:bridge/static/js/office.js]. 성공하면 배포 앞에 25초 머물다 제자리로 돌아가고, 실패하면 그 단계에 30분 서 있다. 한 방에 빌드가 여럿이면 가장 오래된 진행 중인 것을 맡고, 나머지는 머리 위 「대기 N」으로 보인다(호버에 밀린 커밋 목록). 2시간 넘게 끝 알림이 오지 않은 옛 행은 진행 중으로 보지 않는다. 끝 알림이 영영 안 온 행이 배송 담당을 붙잡던 일이 있었다 [code:bridge/static/js/office.js]. 문서만 바뀐 빌드는 이미지와 배포가 없는 것이 정상이라 빌드에서 끝난 것으로 본다.
 
-인프라 현장(`ronanlab-infra`)처럼 빌드해 내보내는 앱이 아닌 곳은 모눈 칸은 그대로 두고 단계 그림, 화살표, 배송 담당을 그리지 않는다. 이름표는 테마의 출하 이름 뒤에 「없음」을 붙인다 [code:bridge/static/js/office.js]. 빌드 알림이 어디서 어떻게 오고, 끊긴 것을 어떻게 알아채는지는 「→ 12 CI/CD 인과 체인」이 다룬다.
+인프라 현장(`ronanlab-infra`)처럼 빌드해 내보내는 앱이 아닌 곳은 모눈 칸은 그대로 두고 단계 그림, 화살표, 배송 담당을 그리지 않는다. 이름표는 테마의 출하 이름 뒤에 「없음」을 붙인다. 11-17부터 FOREMAN 현장도 그렇다. FOREMAN은 이미지를 만들지 않고 작업 폴더에서 바로 도는 앱이라 세 칸이 늘 「기록 없음」이었다. 왜 줄이 없는지는 현장마다 달라서, 이름표 호버에 현장별 까닭 글이 붙는다 [code:bridge/static/js/office.js] [c:9ac4527]. 빌드 알림이 어디서 어떻게 오고, 끊긴 것을 어떻게 알아채는지는 「→ 12 CI/CD 인과 체인」이 다룬다.
 
 ## 막혔던 것: 하나씩 땜질하다 점검기와 자동 재배치로
 

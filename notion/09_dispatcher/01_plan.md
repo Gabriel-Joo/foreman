@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/foreman.py, bridge/api/foreman.py, bridge/static/js/foremanchat.js, migrations/0016_foreman_dispatch.sql, migrations/0030_dispatch_session.sql
-읽은 커밋: e5d584b
+다루는 곳: bridge/foreman.py, bridge/api/foreman.py, bridge/static/js/foremanchat.js, migrations/0016_foreman_dispatch.sql, migrations/0030_dispatch_session.sql, migrations/0029_seed_ronanlab_infra.sql, bridge/scribe_room.py
+읽은 커밋: 5e0f7c5
 -->
 
 # 계획 한 번
@@ -67,7 +67,7 @@ sequenceDiagram
 | 세션마다 최신 인계 요약 | `summary`(status ok) | 앞부분 600자 | 위 세션마다, 있을 때 |
 | 파이프라인 | 파이프라인 관리자의 스냅숏 | 프로젝트마다 마지막 빌드 한 줄 | 맨 아래 한 번 |
 
-CLAUDE.md, MEMORY.md, docs 파일은 파일의 수정 시각(mtime)을 기억해 두고 바뀐 것만 다시 읽는다 [code:bridge/foreman.py]. 세 저장소의 docs만 해도 수백 KB라 매번 읽으면 느리고, 같은 글이 그대로 들어가면 프롬프트 캐시(앞부분이 같으면 다시 계산하지 않는 API 기능)도 잘 먹는다 [docs:11_foreman_dispatch.md].
+CLAUDE.md, MEMORY.md, docs 파일은 파일의 수정 시각(mtime)을 기억해 두고 바뀐 것만 다시 읽는다 [code:bridge/foreman.py]. 설계 때(11-05) 잰 docs 폴더 크기만 해도 런슈즈 193KB, 펫퍼민트 495KB였다. 지금 등록된 프로젝트는 넷이라 [code:migrations/0029_seed_ronanlab_infra.sql] 매번 읽으면 느리고, 같은 글이 그대로 들어가면 프롬프트 캐시(앞부분이 같으면 다시 계산하지 않는 API 기능)도 잘 먹는다 [docs:11_foreman_dispatch.md].
 
 ### 무엇을 넣지 않았나
 
@@ -136,7 +136,7 @@ claude -p --model sonnet --output-format json --no-session-persistence
 | `sessions[].worktree` | 작업방에서 띄울지 | 정하지 않는다 | 살아 있는 세션이 있거나 둘째 세션이면 켬, 관리자는 늘 끔 |
 | `sessions[].files` | 맡을 파일 | 알면 적는다 | 저장소 기준 상대 경로만 40개까지, 겹침 검사 |
 | `sessions[].merge_order` | 합칠 순서 | 여럿이고 겹칠 때 | 없으면 계획 안 순서 |
-| `sessions[].task` | 서기 일 종류(later, trim, doccheck, docfix, portfolio) | 서기일 때 | 꼴이 맞지 않으면 버린다 |
+| `sessions[].task` | 서기 일 종류(doccheck, trim, later, docfix, portfolio, techdoc). 지시문은 이 목록을 서기실 일 목록 한 곳(`bridge/scribe_room.py`)에서 가져오고, 세션이 아니라 버튼인 게시(publish)만 뺀다 | 서기일 때 | 꼴이 맞지 않으면 버린다 |
 | `reasons` | 판단 근거 | 정한다 | 그대로 |
 | `confidence` | 확신도 0~1 | 정한다 | 그대로, 0.7 아래면 카드에서 근거를 펼쳐 둔다 |
 | `questions` | 사람에게 물을 것 | 정한다 | 그대로 |

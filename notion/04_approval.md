@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/approval.py, bridge/approvals.py, bridge/approval_summary.py, bridge/api/approvals.py, config/approval.toml
-읽은 커밋: 9a7c22d
+다루는 곳: bridge/approval.py, bridge/approvals.py, bridge/approval_summary.py, bridge/api/approvals.py, config/approval.toml, config/roles.toml
+읽은 커밋: 5e0f7c5
 -->
 # 04 승인
 
@@ -71,7 +71,7 @@ hook 스크립트 `scripts/foreman-decide.sh`는 브리지가 응답하지 않�
 
 ### 승인 정책과 상관없이 막는 것
 
-PreToolUse는 승인 판정만 하는 자리가 아니다. 같은 hook에서 승인 정책보다 먼저 네 가지를 거부(`deny`)한다. 다른 세션이 스키마를 바꾸는 중일 때(스키마 잠금), 다른 저장소를 고치려 할 때, `pgrep -f`나 `pkill -f`가 자기 셸에 걸릴 때, 그리고 역할 규칙에 어긋날 때다 [code:bridge/approvals.py]. 이 넷은 프로젝트가 observe여도 막는다. 이 검사 자체가 예외로 실패하면 예전에는 브리지가 오류(500)를 냈고 hook 스크립트가 그것을 통과로 받았다. 지금은 브리지가 예외를 잡아 판정 없이 통과시키되, 어느 검사가 무슨 예외로 실패했는지를 위의 기록 파일에 남긴다 [code:bridge/approvals.py] [c:cd14ed6]. 승인이 「물어볼 일」이라면 이쪽은 「묻지 않고 막을 일」이라 성격이 다르다. → 「글이 아니라 권한으로」(05 역할과 권한의 하위 편).
+PreToolUse는 승인 판정만 하는 자리가 아니다. 같은 hook에서 승인 정책보다 먼저 네 가지를 거부(`deny`)한다. 다른 세션이 스키마를 바꾸는 중일 때(스키마 잠금), 다른 저장소를 고치려 할 때, `pgrep -f`나 `pkill -f`가 자기 셸에 걸릴 때, 그리고 역할 규칙에 어긋날 때다 [code:bridge/approvals.py]. 앞의 셋은 프로젝트가 observe여도 늘 막는다. 역할 규칙은 늘 막지 않는다. 역할 규칙에는 승인 정책과 따로 자기 모드가 있고, 그 모드가 enforce이거나 막도록 따로 적어 둔 규칙일 때만 막는다. 지금은 모드가 observe(기록만 함)이고 보는 프로젝트가 FOREMAN 하나라서, FOREMAN의 조사 세션이 `log/` 밖을 쓰는 것(`inspector-write`) 하나만 막고 나머지 역할 규칙은 기록만 한다 [code:bridge/approvals.py] [code:config/roles.toml]. 이 검사 자체가 예외로 실패하면 예전에는 브리지가 오류(500)를 냈고 hook 스크립트가 그것을 통과로 받았다. 지금은 브리지가 예외를 잡아 판정 없이 통과시키되, 어느 검사가 무슨 예외로 실패했는지를 위의 기록 파일에 남긴다 [code:bridge/approvals.py] [c:cd14ed6]. 승인이 「물어볼 일」이라면 이쪽은 「묻지 않고 막을 일」이라 성격이 다르다. → 「글이 아니라 권한으로」(05 역할과 권한의 하위 편).
 
 ## 프로젝트마다 observe와 enforce
 
@@ -120,7 +120,7 @@ FOREMAN 화면에는 「지금 눌러야 하는 버튼은 `primary`(채운 색, 
 
 원칙을 지키려면 규칙이 낡았는지 알아야 한다. 그래서 브리지는 묻지 않은 판정까지 모두 남긴다. allow와 pass를 포함한 모든 PreToolUse 판정은 `event(type=approval_req)`로(규칙, 이유, 강제 여부, 요약), 승인 대기와 결과는 `approval` 표와 `event(approval_res)`로 들어간다 [code:bridge/approvals.py]. ask와 결정은 로그에도 이유와 함께 남는다. 거절이나 보류에는 언제나 이유를 남긴다는 것은 초기 단계부터의 약속이다.
 
-이 기록 위에 승인 이력(`GET /api/approvals/history?days=1|7|30`)이 있다. 규칙별로 몇 번 걸렸고 몇 번 승인, 거부, 모름이었는지, observe 프로젝트에서 「걸렸을 것」이 몇 번인지 센다 [code:bridge/api/approvals.py]. **3번 넘게 걸렸는데 한 번도 거부하지 않은 규칙은 「늘 Yes」로 표시한다** [code:bridge/api/approvals.py]. 묻는 의미가 없으면 규칙을 고칠 후보라는 뜻이다. 시간이 초과되었거나 브리지가 다시 뜬 뒤 터미널에서 답한 것은 승인 행만으로 결과를 알 수 없으므로, 그 도구의 결과(`tool_result`)가 오류 없이 왔는지로 거꾸로 짐작한다 [code:bridge/api/approvals.py].
+이 기록 위에 승인 이력(`GET /api/approvals/history?days=1|7|30`)이 있다. 규칙별로 몇 번 걸렸고 몇 번 승인, 거부, 모름이었는지, observe 프로젝트에서 「걸렸을 것」이 몇 번인지 센다 [code:bridge/api/approvals.py]. **3번 이상 걸렸는데 한 번도 거부하지 않은 규칙은 「늘 Yes」로 표시한다** [code:bridge/api/approvals.py]. 묻는 의미가 없으면 규칙을 고칠 후보라는 뜻이다. 시간이 초과되었거나 브리지가 다시 뜬 뒤 터미널에서 답한 것은 승인 행만으로 결과를 알 수 없으므로, 그 도구의 결과(`tool_result`)가 오류 없이 왔는지로 거꾸로 짐작한다 [code:bridge/api/approvals.py].
 
 이 표가 실제로 규칙을 바꿨다. 처음 본 7일에 45건 가운데 승인 44, 거부 1이었고, 늘 Yes로 `보호-설정파일` 10건과 `민감한-경로` 8건이 떴다 [code:README.md]. 보호-설정파일 10건은 모두 Edit 도구로 `approval.toml`을 고친 것이어서, 도구 편집은 통과시키고 알림만 보내도록 바꿨다. 규칙을 바꿀 때 지난 도구 호출 전체에 옛 규칙과 새 규칙을 다시 돌려 하루 ask 수가 어떻게 달라지는지 보는 방법(`scripts/approval-replay.py`)은 → 「규칙: 실행과 글자」.
 

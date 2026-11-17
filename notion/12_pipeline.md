@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/pipeline.py, bridge/api/webhooks.py, config/pipeline.toml, deploy/cicd/argocd-notifications-foreman.yaml, migrations/0012_pipeline.sql
-읽은 커밋: e5d584b
+다루는 곳: bridge/pipeline.py, bridge/api/webhooks.py, config/pipeline.toml, deploy/cicd/argocd-notifications-foreman.yaml, migrations/0012_pipeline.sql, bridge/static/js/shipstate.js
+읽은 커밋: 5e0f7c5
 -->
 
 # 12 CI/CD 인과 체인
@@ -153,7 +153,7 @@ Jenkins 쪽은 처음에 반대 방향으로 설계했다. FOREMAN이 Jenkins �
 
 `/webhooks/harbor`는 있다. Harbor 기본 웹훅 형식에서 이미지 올림(`PUSH_ARTIFACT`)은 성공, 검사 실패와 용량 초과는 실패로 읽고, 내려받기, 지우기 같은 것은 체인의 단계가 아니라 버린다 [code:bridge/pipeline.py]. 태그 12자리는 DB의 `git_commit`에서 앞자리가 하나만 맞으면 그 SHA로, 아니면 로컬 저장소에서 `git rev-parse`로 푼다.
 
-그러나 Harbor 쪽에 FOREMAN으로 보내는 웹훅 정책을 건 기록은 없다. 처음 조사 때 Harbor의 알림 정책은 0행이었고, 이미지를 올리는 일은 Jenkins의 「빌드·push」 스테이지 안에서 일어나며 태그가 곧 커밋이라 따로 받을 필요가 적다고 봤다 [log:stage8_cicd_result.md]. 그래서 화면의 이미지 칸은 대개 Jenkins 행에서 미루어 그린다. Jenkins가 진행 중이면 이미지도 진행 중, Jenkins가 「빌드·push」에서 실패했으면 이미지 실패, 다른 스테이지에서 실패했으면 이미지는 올라간 것으로 본다 [code:bridge/static/js/office.js].
+그러나 Harbor 쪽에 FOREMAN으로 보내는 웹훅 정책을 건 기록은 없다. 처음 조사 때 Harbor의 알림 정책은 0행이었고, 이미지를 올리는 일은 Jenkins의 「빌드·push」 스테이지 안에서 일어나며 태그가 곧 커밋이라 따로 받을 필요가 적다고 봤다 [log:stage8_cicd_result.md]. 그래서 화면의 이미지 칸은 대개 Jenkins 행에서 미루어 그린다. 기준은 하나, 그 빌드의 이미지가 실제로 올라갔는가다. Jenkins가 진행 중이면 이미지도 진행 중, 이미지를 올리는(push) 단계에서 실패했으면 이미지 실패(✗)다. push 뒤 단계(매니페스트 태그, 배포)에서 실패했으면 이미지는 이미 올라갔으니 성공(✓)으로 본다. push 앞 단계(태그, 시험 등)에서 실패했거나, 어느 단계인지 모르거나 단계 이름이 없는 실패면 올라갔다고 말하지 않고 「기록 없음」으로 둔다. Harbor가 직접 알려 온 상태가 있으면 그것을 먼저 따른다 [code:bridge/static/js/shipstate.js]. 11-17 전에는 push 단계가 아닌 실패를 모두 ✓로 그려, push 앞에서 실패해 이미지가 없는데도 ✓가 떴다 [c:9ac4527] [log:foreman-6_designer_code_oddities_20261117.md].
 
 ### 5-3. ArgoCD: notifications로 알림만 더한다
 
@@ -284,7 +284,7 @@ ArgoCD 알림을 시험할 때 클러스터 안에서 알림을 한 번 보내 �
 
 옆 패널의 프로젝트 칸에는 「파이프라인」 덩어리가 있다 [code:bridge/static/js/render.js]. 머리 줄에 인프라 캐릭터 칩(Jenkins, Harbor, ArgoCD)이 있고 응답이 없으면 ⚠가 붙는다. 그 아래에 차례로 「빌드 알림 끊김 의심」, push 뒤 빌드를 기다리는 줄(평소 회색, 3분 넘으면 노랑, 17분 넘으면 빨강), 「빌드 전 커밋」 줄, 그리고 최근 체인 넷이 온다. 체인 한 줄은 머리 커밋 앞 8자리와 제목, 묶인 커밋 수(+N커밋), 커밋한 세션 이름, 그리고 「Jenkins → Harbor → ArgoCD」 세 칸이다. 칸의 표시는 ✓(성공), ✗(실패, 깨진 곳 이름이 굵게), …(진행 중), 「⏸ ArgoCD Sync 대기」, 「– 나중 배포로 대체」이고, 깨진 체인 아래에는 「여기서 깨짐: 단계 · 깨진 곳 (메시지)」가 빨갛게 붙는다. 칸에 마우스를 올리면 상태와 메시지가, 체인에 올리면 묶인 커밋 전부와 만든 세션이 보인다. 칸을 누르면 Jenkins 빌드나 ArgoCD 앱 화면이 열린다.
 
-픽셀 사무실에서는 방마다 아래쪽에 출하 라인이 있다. 출하 접수대에서 ① 빌드, ② 이미지, ③ 배포 세 칸으로 이어지고, 테마마다 이름과 가구가 다르다 [code:bridge/static/js/office.js]. 처음 구상은 Jenkins, Harbor, ArgoCD 캐릭터가 각자 자기 칸에 서 있는 것이었는데, 사용자 요청으로 배송 담당 한 명이 돌아다니는 모양으로 바꿨다. 새 빌드가 보이면 그 커밋을 만든 세션 캐릭터가 걸어와 일감을 넘기고(6초), 배송 담당이 지금 단계 앞으로 걸어간다. 성공하면 배포 칸 앞에 25초 머문 뒤 제자리로, 실패하면 그 단계 앞에 30분 서 있다. 한 방에 빌드가 여럿 진행 중이면 가장 오래된 것을 맡고 나머지는 자리 옆 「대기 N」이 된다. 인프라 저장소(ronanlab-infra)는 빌드하는 앱이 아니라 파이프라인 설정에 없고, 그 방에는 출하 라인 대신 「<테마의 출하 이름> 없음」 이름표만 있다.
+픽셀 사무실에서는 방마다 아래쪽에 출하 라인이 있다. 출하 접수대에서 ① 빌드, ② 이미지, ③ 배포 세 칸으로 이어지고, 테마마다 이름과 가구가 다르다 [code:bridge/static/js/office.js]. 처음 구상은 Jenkins, Harbor, ArgoCD 캐릭터가 각자 자기 칸에 서 있는 것이었는데, 사용자 요청으로 배송 담당 한 명이 돌아다니는 모양으로 바꿨다. 새 빌드가 보이면 그 커밋을 만든 세션 캐릭터가 걸어와 일감을 넘기고(6초), 배송 담당이 지금 단계 앞으로 걸어간다. 성공하면 배포 칸 앞에 25초 머문 뒤 제자리로, 실패하면 그 단계 앞에 30분 서 있다. 한 방에 빌드가 여럿 진행 중이면 가장 오래된 것을 맡고 나머지는 자리 옆 「대기 N」이 된다. 인프라 저장소(ronanlab-infra)는 빌드하는 앱이 아니라 파이프라인 설정에 없고, 그 방에는 출하 라인 대신 「<테마의 출하 이름> 없음」 이름표만 있다. 11-17부터 FOREMAN 방도 같다. FOREMAN은 이미지를 만들지 않고 작업 폴더에서 바로 돌아 세 칸이 늘 「기록 없음」이었기 때문이다. 이름표 호버의 까닭 글은 두 방이 다르다 [code:bridge/static/js/office.js] [c:9ac4527].
 
 체인 묶음은 계획 세우기에도 들어간다. 교장이 계획을 세울 때 받는 상황 묶음에 파이프라인 상태가 같이 실린다(→ 09 교장과 관리자).
 

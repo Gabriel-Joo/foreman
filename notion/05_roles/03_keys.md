@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/api/auth.py, bridge/scopetoken.py, config/tokens.toml, bridge/mask.py, .env.bridge.example, .env.db.example
-읽은 커밋: e5d584b
+다루는 곳: bridge/api/auth.py, bridge/scopetoken.py, config/tokens.toml, bridge/mask.py, tests/test_secret_files.py, .env.bridge.example, .env.db.example
+읽은 커밋: 5e0f7c5
 -->
 # 열쇠와 비밀
 
@@ -231,9 +231,9 @@ hook을 받는 쪽은 토큰을 비교하고, 틀리면 401과 함께 로그에 
 
 가리는 방식은 세 겹이다.
 
-첫째, 정확한 값. 브리지가 뜰 때 `.env.db`, `.env.bridge`, `.env.telegram`을 읽어, 키 이름에 PASSWORD, PASSWD, TOKEN, SECRET, KEY가 들어간 줄의 값(8자 이상)을 기억한다. 글 속에서 그 값을 만나면 `«masked:키 이름»`으로 바꾼다. 긴 값부터 바꿔, 한 값이 다른 값을 품고 있어도 꼬이지 않는다. 키 이름에 비밀을 뜻하는 낱말이 없는 값은 가리지 않는다. 처음에는 파일의 모든 값을 가렸더니 DB 사용자 이름(`foreman_app`)까지 가려져 글이 읽히지 않았다 [code:bridge/mask.py]. 숫자만 있거나 `true`, `false`인 값도 건너뛴다.
+첫째, 정확한 값. 브리지가 뜰 때 비밀값 파일을 골라 읽는다. 고르는 대상은 저장소 맨 위의 `.env`로 시작하는 파일 가운데 `.example` 같은 예시 파일을 뺀 전부와, `config/notify.toml`과 `config/tokens.toml`이 가리키는 토큰 파일이다 [code:bridge/mask.py]. 그 파일에서 키 이름에 PASSWORD, PASSWD, TOKEN, SECRET, KEY가 들어간 줄의 값(8자 이상)을 기억한다. 글 속에서 그 값을 만나면 `«masked:키 이름»`으로 바꾼다. 긴 값부터 바꿔, 한 값이 다른 값을 품고 있어도 꼬이지 않는다. 키 이름에 비밀을 뜻하는 낱말이 없는 값은 가리지 않는다. 처음에는 파일의 모든 값을 가렸더니 DB 사용자 이름(`foreman_app`)까지 가려져 글이 읽히지 않았다 [code:bridge/mask.py]. 숫자만 있거나 `true`, `false`인 값도 건너뛴다.
 
-둘째, 알려진 모양. 개인키 블록, 텔레그램 봇 토큰, Anthropic 키, GitHub 토큰, AWS 키, `Bearer` 뒤의 값처럼 생김새로 알아볼 수 있는 것들을 정규식으로 찾아 바꾼다.
+둘째, 알려진 모양. 개인키 블록, 텔레그램 봇 토큰, Anthropic 키, GitHub 토큰, AWS 키, Notion 통합 토큰(11-17에 더함), `Bearer` 뒤의 값처럼 생김새로 알아볼 수 있는 것들을 정규식으로 찾아 바꾼다 [code:bridge/mask.py] [c:5e3a51d].
 
 셋째, 키=값 꼴. 이름에 PASSWORD, SECRET, TOKEN, API_KEY, PWD가 든 대입(`X_TOKEN=…`, `password: …`)의 값(6자 이상)을 가린다 [code:bridge/mask.py].
 
@@ -245,7 +245,7 @@ hook을 받는 쪽은 토큰을 비교하고, 틀리면 401과 함께 로그에 
 
 가리기가 원본을 고치지 않는다는 것도 기억해야 한다. 가리기는 FOREMAN이 만드는 사본(DB, 화면, 알림)에만 걸린다. CC가 쓰는 대화 파일과 세션 화면에 이미 찍힌 값은 그대로 남는다. 위 표의 일들에서 「값이 남은 곳」이 늘 그 세션의 대화 파일이었던 까닭이다 [log:merge_bar_discard_tab_20261111.md]. 그래서 찍힌 뒤에 할 수 있는 일은 결국 바꾸기뿐이고, 바꾸기를 싸게 만드는 것(새도 되는 열쇠 고르기, 바꾸는 차례 정해 두기)이 가리기만큼 중요하다.
 
-정확한 값 목록은 `.env.db`, `.env.bridge`, `.env.telegram` 세 파일에서만 읽는다 [code:bridge/mask.py]. 그래서 지금 프로젝트 토큰 파일(`.env.project_tokens`)과 Notion 연동 토큰 파일의 값은 정확한 값으로는 가려지지 않고, `Bearer` 뒤에 오거나 키=값 꼴로 적혔을 때만 둘째, 셋째 겹에 걸린다. 프로젝트 토큰은 늘 `Bearer $T`처럼 변수로 쓰니 평소에는 값이 글자로 나타나지 않지만, 값이 맨몸으로 찍히면 이 그물을 빠져나간다. 또 정확한 값 목록은 대개 `Masker`를 만들 때 한 번 읽으니, 토큰을 바꾼 뒤에는 브리지를 다시 띄워야 새 값도 가린다. 열쇠를 바꾸는 차례에 「브리지 다시 띄우기」가 늘 들어 있어 지금까지는 저절로 맞았다 [log:merge_token_docs_20261111.md].
+정확한 값 목록은 11-17 전에는 `.env.db`, `.env.bridge`, `.env.telegram` 세 파일을 손으로 적어 읽었다. 그 사이 프로젝트 토큰 파일(`.env.project_tokens`)과 Notion 연동 토큰 파일(`.env.notion`)이 새로 생겼는데 목록에 들지 않아, 그 두 파일의 값은 정확한 값으로는 가려지지 않았다. 손 목록은 새 파일이 생길 때마다 또 빠지므로 11-17에 위처럼 파일을 고르는 방식으로 바꿨고, 비밀값 파일이 대상에서 빠지면 깨지는 시험을 걸었다 [c:5e3a51d] [code:tests/test_secret_files.py] [log:foreman-4_mask_env_files_20261117.md]. 또 정확한 값 목록은 대개 `Masker`를 만들 때 한 번 읽으니, 토큰을 바꾼 뒤에는 브리지를 다시 띄워야 새 값도 가린다. 열쇠를 바꾸는 차례에 「브리지 다시 띄우기」가 늘 들어 있어 지금까지는 저절로 맞았다 [log:merge_token_docs_20261111.md].
 
 ## 정리 — 이 편의 원칙들
 

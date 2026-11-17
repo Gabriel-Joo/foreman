@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/postit.py, bridge/api/postit.py, bridge/api/todo.py, bridge/static/js/postit.js, migrations/0027_todo_inbox.sql, migrations/0028_todo_inbox_assignee.sql, migrations/0033_postit.sql
-읽은 커밋: e5d584b
+읽은 커밋: 5e0f7c5
 -->
 # 포스트잇
 
@@ -236,7 +236,7 @@ LLM 판정을 쓰지 않은 까닭은 비용과 표시 두 가지다. 관리자�
 | 가장 오래된 포스트잇 | 7일 | `stale_days` |
 | 마지막 [갱신] 뒤(한 번도 안 했으면 가장 오래된 것부터) | 7일 | `refresh_days` |
 
-값은 `config/scribe.toml`의 `[postit]` 절에서 바꿀 수 있고, 절이 없거나 값이 숫자가 아니면 위 기본값을 쓴다 [code:bridge/postit.py]. 쌓이면 머리줄 단추가 주황이 되고, 서기 자리에 「포스트잇 쌓임」 말풍선이 뜬다 [code:bridge/static/js/office.js]. 단추 호버에는 쌓인 까닭이 「할 일 26장, 가장 오래된 것 8일째」 꼴로 적힌다 [code:bridge/static/js/postit.js]. 단추 글에서 가장 오래된 날을 뺄 때 주황의 까닭이 볼 곳 없이 사라지지 않게 호버로 옮긴 것이다 [log:foreman-5_postit_look_20261115.md].
+값은 `config/scribe.toml`의 `[postit]` 절에서 바꿀 수 있고, 절이 없거나 값이 0 이상 정수가 아니면 위 기본값을 쓴다 [code:bridge/postit.py]. 11-17부터는 값이 틀렸을 때, 모르는 칸이나 `[postit]` 밖의 표가 있을 때, 파일을 읽지 못했을 때 브리지 로그에 한 번씩 경고를 남긴다. 그 전에는 모두 말없이 기본값으로 돌았다. 파일이 아예 없으면 경고하지 않는다 [code:bridge/postit.py] [c:408e4ed]. 쌓이면 머리줄 단추가 주황이 되고, 서기 자리에 「포스트잇 쌓임」 말풍선이 뜬다 [code:bridge/static/js/office.js]. 단추 호버에는 쌓인 까닭이 「할 일 26장, 가장 오래된 것 8일째」 꼴로 적힌다 [code:bridge/static/js/postit.js]. 단추 글에서 가장 오래된 날을 뺄 때 주황의 까닭이 볼 곳 없이 사라지지 않게 호버로 옮긴 것이다 [log:foreman-5_postit_look_20261115.md].
 
 쌓임은 말풍선과 단추 색으로만 알리고, 텔레그램 21시 묶음 보고에는 넣지 않는다 [code:bridge/postit.py]. 포스트잇은 급한 일이 아니고, 하루 한 번 오는 묶음 보고마다 「포스트잇 N장」이 붙으면 그 줄은 곧 읽히지 않는 소음이 된다는 판단이다. 그 대신 화면에서는 기준을 넘는 순간 늘 보인다.
 
