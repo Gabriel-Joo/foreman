@@ -155,7 +155,7 @@ def test_plan_scribe_counts_in_room_and_room_scribe_in_plan_conflicts(tmp_path, 
 
         opened = await sr.open_tasks(eng, proj)
         assert [(o["session_id"], o["task"]) for o in opened] == [(plan, "plan"), (old, "plan"), (room, "later")]
-        assert opened[0]["files"] == ["CLAUDE.md", "docs/style_guide.md"] and opened[2]["files"] == ["README.md"]
+        assert opened[0]["files"] == ["CLAUDE.md", "docs/style_guide.md"] and opened[2]["files"] == ["README.md", "docs/TODO.md"]
         assert gone not in [o["session_id"] for o in opened] and done not in [o["session_id"] for o in opened]
         # 서기실 겹침 막기가 계획 길 서기를 안다
         assert f"세션 {plan}" in sr.blocked("trim", opened) and "CLAUDE.md" in sr.blocked("trim", opened)

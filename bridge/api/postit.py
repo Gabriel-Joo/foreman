@@ -4,9 +4,14 @@
 - GET  /api/postit/summary           프로젝트마다 요약(머리 탭 개수 · 가장 오래된 날)
 - POST /api/postit {project, body, session?}   하나 올리기. session(관리자 자기 세션 id)을 주면 출처 said, 근거는 그 세션의 마지막 사람 턴
 - POST /api/postit/save {project, body?, confirm?}   [저장] — 적은 글을 올리고 확인 전 줄을 받아들인다
-- POST /api/postit/{id}/close {reason: drop|limit|done, note?}   [x] · [→] · 끝남
+- POST /api/postit/{id}/close {reason: drop|limit|done, note?}   [x] · 끝남 · limit은 [한계로] 길만이라 여기서는 409
 - POST /api/postit/refresh {project}   [갱신] — 조사 세션을 띄운다
 - POST /api/postit/check/{cid} {action: close|keep}   판정 한 줄을 사람이 닫거나 남긴다
+11-17 문서 정리 E(받은 편지함 겸 TODO 보는 창, bridge/todofile.py):
+- GET  /api/postit/pieces?project=    [한계로]에서 고를 편(기술문서, 포트폴리오)
+- POST /api/postit/{id}/todo          [TODO로]. 그 저장소 docs/TODO.md에 다음 번호로 더하고 그 파일만 커밋(push 안 함)
+- POST /api/postit/limit {project, piece, reason, postit? | todo?}   [한계로]. 까닭이 비면 409
+- POST /api/postit/todo/remove {project, id}   [지우기]. `(todo:번호)` 커밋이 끝냈다고 한 항목만
 """
 
 from __future__ import annotations
@@ -50,6 +55,19 @@ class CheckIn(BaseModel):
     action: Literal["close", "keep"]
 
 
+class LimitIn(BaseModel):
+    project: str = Field(min_length=1, max_length=64)
+    piece: str = Field(min_length=1, max_length=300)
+    reason: str = Field(default="", max_length=pi.REASON_MAX * 2)     # 빈 까닭은 409로 까닭을 말한다(422가 아니라)
+    postit: int | None = None
+    todo: str | None = Field(default=None, max_length=40)
+
+
+class TodoRemoveIn(BaseModel):
+    project: str = Field(min_length=1, max_length=64)
+    id: str = Field(min_length=3, max_length=40)
+
+
 def _iso(v: Any) -> Any:
     return v.isoformat() + "Z" if hasattr(v, "isoformat") else v
 
@@ -88,7 +106,8 @@ async def view(engine: Any, project: str) -> dict[str, Any]:
     summ = await pi.summary(engine, project, await sr.later_since(engine, project))
     return {"project": project, "items": [_row(x, by.get(f"p:{x['id']}")) for x in posts],
             "readme_checks": [_check(k) for k in cks if k["item"].startswith("L:")],
-            "closed": [_row(x, None) for x in closed], "summary": sr._json_postit(summ)}
+            "closed": [_row(x, None) for x in closed], "summary": sr._json_postit(summ),
+            "todo": await pi.todo_view(engine, project)}
 
 
 @router.get("")
@@ -149,6 +168,46 @@ async def postit_refresh(body: RefreshIn, request: Request) -> JSONResponse:
 async def postit_check(cid: int, body: CheckIn, request: Request) -> JSONResponse:
     try:
         r = await pi.resolve_check(request.app.state.store.engine, cid, body.action)
+    except Refused as e:
+        return JSONResponse({"refused": str(e)}, status_code=409)
+    _changed()
+    return JSONResponse(r)
+
+
+@router.get("/pieces")
+async def postit_pieces(request: Request, project: str) -> JSONResponse:
+    import asyncio
+    try:
+        repo = await pi._repo(request.app.state.store.engine, project)
+    except Refused as e:
+        return JSONResponse({"refused": str(e)}, status_code=409)
+    return JSONResponse({"project": project, "pieces": await asyncio.to_thread(pi.pieces_of, repo)})
+
+
+@router.post("/limit")
+async def postit_limit(body: LimitIn, request: Request) -> JSONResponse:
+    try:
+        r = await pi.to_limit(request.app.state.store.engine, body.project, body.piece, body.reason, body.postit, body.todo)
+    except Refused as e:
+        return JSONResponse({"refused": str(e)}, status_code=409)
+    _changed()
+    return JSONResponse(r)
+
+
+@router.post("/todo/remove")
+async def postit_todo_remove(body: TodoRemoveIn, request: Request) -> JSONResponse:
+    try:
+        r = await pi.todo_remove(request.app.state.store.engine, body.project, body.id)
+    except Refused as e:
+        return JSONResponse({"refused": str(e)}, status_code=409)
+    _changed()
+    return JSONResponse(r)
+
+
+@router.post("/{iid}/todo")
+async def postit_to_todo(iid: int, request: Request) -> JSONResponse:
+    try:
+        r = await pi.to_todo(request.app.state.store.engine, iid)
     except Refused as e:
         return JSONResponse({"refused": str(e)}, status_code=409)
     _changed()

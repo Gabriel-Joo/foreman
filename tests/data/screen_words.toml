@@ -97,6 +97,19 @@ new = "「브랜치 이름」 칸에서"
 scope = "화면과 문서 인용"
 commit = "cc/foreman-4 11-15"
 
+# 11-17 문서 정리 E(cc/foreman-4). 포스트잇 [→]를 [한계로]로 바꾸며 옛 거부 글과 보냄 알림을 바꿨다
+[[rename]]
+old = "README 한계 절이 없어졌습니다"
+new = "[한계로]로 보냅니다. 편과 안 하는 까닭이 있어야 합니다"
+scope = "화면과 문서 인용"
+commit = "cc/foreman-4 11-17"
+
+[[rename]]
+old = "README에 쓰는 것은 서기 「알려진 한계 쓰기」입니다"
+new = "그 편에 쓰는 것은 서기 「알려진 한계 쓰기」입니다"
+scope = "화면"
+commit = "cc/foreman-4 11-17"
+
 # 11-15 이번에 고친 둘(cc/foreman-5). 끝내기 메뉴는 11-14 91e090a
 [[rename]]
 old = "끝내고 합치기"
@@ -273,12 +286,6 @@ file = "bridge/postit.py"
 old = "열린 것"
 near = "## 포스트잇(열린 것"
 why = "[갱신] 조사 세션에 주는 재료 파일의 머리줄(세션에 넣는 글, 화면에 나가지 않음)"
-
-[[code_exception]]
-file = "bridge/scribe_room.py"
-old = "닫은 것"
-near = "뺄 줄([갱신]에서 끝났다고 닫은 것)"
-why = "서기 세션 「알려진 한계 쓰기」 지시문(세션에 넣는 글). 판정 줄의 [닫기] 단추를 누른 것을 가리킨다"
 
 [[code_exception]]
 file = "bridge/foreman.py"

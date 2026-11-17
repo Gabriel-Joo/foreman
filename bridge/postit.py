@@ -7,9 +7,18 @@
   said    대화에서 사람이 「포스트잇에 올려라」 · 「나중에 할 일에 넣어라」 — 관리자가 그 턴에서 POST /api/postit(session)를 부른다
   chat    브리지 그물(sweep) — 사람이 미루자고 했는데 포스트잇이 안 생긴 턴. 확인 전(confirmed 0, 화면에 흐리게)
   promote 옮기기 「문서에 넣을 것 고르기」의 미완(bridge/promote.py dest "postit") — 세션이 쓰지 않고 브리지가 넣는다
-닫기: [x] drop(그냥 사라짐) · [→] limit(README 「알려진 한계」로 — 쓰는 것은 서기 「알려진 한계 쓰기」) · done(끝남).
+닫기: [x] drop(그냥 사라짐), done(끝남), todo([TODO로]), limit([한계로]).
 [갱신]: 조사(inspector) 세션이 코드를 보고 줄마다 판정한다(끝남 · 남음 · 모름). 근거가 코드 자리일 때만 「끝남」.
 판정은 제안이다 — 사람이 줄마다 닫는다(커밋만 보고 자동으로 지우지 않는다, 사용자).
+
+받은 편지함 겸 TODO 보는 창(11-17 사용자, 문서 정리 E). 프로젝트마다 세 묶음:
+  아직 안 보낸 것  열린 포스트잇(new, taking, merged). 0033 전의 옛 줄도 열려 있으면 여기다(마이그레이션 없이 표시 규칙으로)
+  할 일            그 저장소 docs/TODO.md 항목(bridge/todofile.py). 번호와 제목만, 내용은 복사하지 않는다
+  30일 넘은 것     올린 날이 30일 넘은 TODO 항목(할 일 묶음에서는 빠진다)
+[TODO로]: todofile.add가 다음 번호로 더하고 그 파일만 커밋한다. 포스트잇은 closed_reason todo, closed_note에 번호와 커밋.
+[한계로]: 편과 안 하는 까닭이 있어야 한다(까닭이 비면 거부, docs/manuscript_rules.md 1절). closed_reason limit, closed_note에
+  `편:` `까닭:` 줄(TODO에서 보냈으면 `TODO:` 줄도). TODO 항목에서 보냈으면 출처 todomd 줄을 닫힌 채로 새로 만든다.
+  서기 「알려진 한계 쓰기」가 그 편의 「알려진 한계」 절에 쓰고, TODO에서 온 것은 같은 커밋에서 TODO.md 항목을 지운다.
 """
 
 from __future__ import annotations
@@ -28,25 +37,18 @@ from sqlalchemy import bindparam, text
 log = logging.getLogger(__name__)
 
 MAX = 8000
-SOURCES = ("note", "todo", "said", "chat", "promote")
+SOURCES = ("note", "todo", "said", "chat", "promote", "todomd")
 ONE_PER_REF = ("chat", "promote")      # 근거 하나에 한 장인 출처. said · note는 글이 다르면 여러 장
 DUP_REASON = "같은 근거에 같은 글이 이미 있어 새로 만들지 않았습니다"
-SOURCE_KO = {"note": "포스트잇에 적음", "todo": "포스트잇에 적음", "said": "대화에서 올림", "chat": "대화에서 찾음", "promote": "옮기기 미완"}
+SOURCE_KO = {"note": "포스트잇에 적음", "todo": "포스트잇에 적음", "said": "대화에서 올림", "chat": "대화에서 찾음", "promote": "옮기기 미완",
+             "todomd": "TODO 항목"}
 CLOSE = ("drop", "limit", "done")
-README_LIMIT = "알려진 한계"        # README 절 제목(이 글이 든 머리줄) — 아직 없을 수 있다(관리자가 「나중에 할 일」 표를 옮기기 전)
-# README가 생성물인 저장소(.foreman/docs.toml [readme] 표가 켜짐)에는 한계 절을 둘 곳이 없다. 옛 길([→], 서기 「알려진 한계 쓰기」)은
-# 문서 정리 E 단계의 [한계로]로 바뀔 때까지 조용히 두지 않고 이 글로 거부한다(11-17 사용자)
-LIMIT_GONE = "README 한계 절이 없어졌습니다. E 단계의 [한계로]가 생기면 그것을 써야 합니다"
-
-
-def readme_generated(repo: str | Path) -> bool:
-    """그 저장소의 README.md가 생성물인가([readme] 표). 설정이 깨졌으면 그 까닭으로 거부한다(모르는 채 옛 길로 가지 않는다)."""
-    from bridge.doctext import config as dcfg
-    from bridge.inject import Refused
-    try:
-        return dcfg.load(repo).readme is not None
-    except dcfg.DocsConfigError as e:
-        raise Refused(f"문서 설정을 읽지 못해 알려진 한계로 보낼 수 없습니다: {e}") from e
+README_LIMIT = "알려진 한계"        # README 절 제목(이 글이 든 머리줄). [갱신]이 README에 이 절이 있는 저장소만 그 줄을 본다
+LIMIT_TITLE = "알려진 한계"         # [한계로]가 쓰는 원고 편의 절 제목
+# [→]는 11-17 [한계로]로 바뀌었다. 편과 까닭 없이 limit으로 닫는 길(옛 API close limit)은 이 글로 거부한다
+LIMIT_NEEDS = "[한계로]로 보냅니다. 편과 안 하는 까닭이 있어야 합니다"
+NO_REASON = "안 하는 까닭이 비어 있습니다. 까닭을 쓸 수 없으면 한계가 아니라 아직 못 한 일이라 [TODO로] 보냅니다"
+REASON_MAX = 1000
 CHECK_ACT = "postit-run"            # session_action(칸 12자) — [갱신] 조사 세션을 띄움(detail: "<프로젝트> <req> p<N> L<N>")
 CHECK_DONE_ACT = "postit-done"      # 결과를 받음(ok) · 결과 없이 끝남(ok 0)
 CHECK_TAG = "FOREMAN-POSTIT-CHECK"
@@ -71,8 +73,8 @@ STATE = ("CASE "
          "ELSE 'taking' END")
 OPEN_STATES = ("new", "taking", "merged")
 STATE_KO = {"new": "열림", "taking": "코더가 하는 중", "merged": "코더 세션 끝남",
-            "drop": "삭제", "done": "끝남", "limit": "알려진 한계로 보냄",
-            "limit_writing": "알려진 한계로 보냄(서기가 쓰는 중)", "limit_written": "알려진 한계로 보냄(README에 씀)"}
+            "drop": "삭제", "done": "끝남", "todo": "TODO로 보냄", "limit": "알려진 한계로 보냄",
+            "limit_writing": "알려진 한계로 보냄(서기가 쓰는 중)", "limit_written": "알려진 한계로 보냄(서기가 씀)"}
 
 # ── 그물(문장 꼴, LLM 없음) ──────────────────────────────────
 # 438 1-3 F'': 표 이름에 올려라 · 나중에 정한다 · 미루자 · 낱말 없는 「지금은 두」 「그때 다시」. 「포스트잇」 · 「나중에 할 일」 둘 다 알아듣는다.
@@ -222,17 +224,13 @@ async def add(engine: Any, project: str, body: str, source: str = "note", source
         return {"id": int(r.lastrowid), "created": True}
 
 
-async def close(engine: Any, iid: int, reason: str, note: str | None = None) -> bool:
-    """[x] drop · [→] limit · done. 열린 것만. limit은 가져간 세션을 풀어 둔다 — README에 쓰는 서기가 새로 가져간다."""
+async def close(engine: Any, iid: int, reason: str, note: str | None = None, *, _limit_ok: bool = False) -> bool:
+    """[x] drop · done. 열린 것만. limit은 to_limit만 부른다(편과 까닭이 있어야 한다). limit은 가져간 세션을 풀어 둔다 — 쓰는 서기가 새로 가져간다."""
     from bridge.inject import Refused
     if reason not in CLOSE:
         raise Refused(f"닫는 까닭은 {', '.join(CLOSE)} 중 하나입니다: {reason}")
-    if reason == "limit":
-        async with engine.connect() as c:
-            row = (await c.execute(text("SELECT p.repo_path FROM todo_inbox i JOIN project p ON p.name = i.project "
-                                        "WHERE i.id = :i"), {"i": iid})).first()
-        if row and row[0] and readme_generated(row[0]):
-            raise Refused(LIMIT_GONE)
+    if reason == "limit" and not _limit_ok:
+        raise Refused(LIMIT_NEEDS)
     async with engine.begin() as c:
         r = await c.execute(text(
             "UPDATE todo_inbox SET closed_reason = :r, closed_at = UTC_TIMESTAMP(3), closed_note = :n, "
@@ -256,6 +254,161 @@ async def confirm(engine: Any, ids: list[int]) -> int:
         return r.rowcount
 
 
+# ── [TODO로], [한계로], TODO 항목 지우기(11-17 문서 정리 E) ─────────────
+async def _repo(engine: Any, project: str) -> str:
+    from bridge.inject import Refused
+    async with engine.connect() as c:
+        r = (await c.execute(text("SELECT repo_path FROM project WHERE name = :p"), {"p": project})).first()
+    if not r:
+        raise Refused(f"모르는 프로젝트입니다: {project}")
+    if not r[0] or not Path(r[0], ".git").exists():
+        raise Refused("이 프로젝트의 저장소를 찾지 못했습니다")
+    return str(r[0])
+
+
+async def _open_row(engine: Any, iid: int) -> dict[str, Any]:
+    from bridge.inject import Refused
+    async with engine.connect() as c:
+        r = (await c.execute(text(f"SELECT i.id, i.project, i.body, {STATE} AS state FROM todo_inbox i WHERE i.id = :i"),
+                             {"i": iid})).mappings().first()
+    if not r:
+        raise Refused("그 포스트잇이 없습니다")
+    if r["state"] not in OPEN_STATES:
+        raise Refused("이미 닫힌 포스트잇입니다")
+    return dict(r)
+
+
+async def to_todo(engine: Any, iid: int) -> dict[str, Any]:
+    """[TODO로]. 그 저장소 docs/TODO.md에 다음 번호로 더하고 그 파일만 커밋한다(push하지 않는다). 포스트잇은 todo로 닫는다.
+    → {id: 번호, commit}. 커밋에 성공했는데 포스트잇을 닫지 못하면 그 까닭을 그대로 올린다(두 곳에 남은 것을 사람이 알게)."""
+    from bridge import todofile as tf
+    from bridge.inject import Refused
+    row = await _open_row(engine, iid)
+    repo = await _repo(engine, row["project"])
+    why = (f"포스트잇 #{iid}에서 사람이 [TODO로] 보낸 것을 {tf.PATH}에 더했다.\n"
+           "FOREMAN 브리지가 사람이 누른 단추로 이 파일만 담아 만든 커밋이다. push는 하지 않았다.")
+    try:
+        res = await tf.add(repo, row["body"], f"포스트잇 p:{iid}", why)
+    except tf.TodoError as e:
+        raise Refused(str(e)) from e
+    async with engine.begin() as c:
+        r = await c.execute(text("UPDATE todo_inbox SET closed_reason = 'todo', closed_at = UTC_TIMESTAMP(3), closed_note = :n "
+                                 "WHERE id = :i AND closed_reason IS NULL AND dropped_at IS NULL"),
+                            {"n": f"TODO: {res['value']}\n커밋: {res['commit']}", "i": iid})
+        if r.rowcount:
+            await c.execute(text("UPDATE postit_check SET resolved = 'closed', resolved_at = UTC_TIMESTAMP(3) "
+                                 "WHERE item = :it AND resolved IS NULL"), {"it": f"p:{iid}"})
+    if not r.rowcount:
+        raise Refused(f"{res['value']}로 커밋했지만({res['commit']}) 포스트잇 #{iid}을 닫지 못했습니다. 그사이 닫혔는지 봅니다")
+    return {"id": res["value"], "commit": res["commit"]}
+
+
+def limit_note(piece: str, reason: str, todo: str | None = None) -> str:
+    return (f"TODO: {todo}\n" if todo else "") + f"편: {piece}\n까닭: {reason}"
+
+
+def parse_limit_note(note: str | None) -> dict[str, str | None]:
+    """closed_note의 `TODO:` `편:` `까닭:` 줄. 까닭은 끝까지(여러 줄). 옛 [→] 줄(꼴 없음)은 모두 None."""
+    out: dict[str, str | None] = {"todo": None, "piece": None, "reason": None}
+    lines = (note or "").split("\n")
+    for n, ln in enumerate(lines):
+        if ln.startswith("TODO: ") and out["piece"] is None:
+            out["todo"] = ln[6:].strip() or None
+        elif ln.startswith("편: ") and out["piece"] is None:
+            out["piece"] = ln[3:].strip() or None
+        elif ln.startswith("까닭: "):
+            out["reason"] = "\n".join([ln[4:]] + lines[n + 1:]).strip() or None
+            break
+    return out
+
+
+def pieces_of(repo: str) -> list[dict[str, str]]:
+    """[한계로]에서 고를 편 — 기술문서 원고와 포트폴리오 묶음의 .md(HEAD). {path, title, set}."""
+    from bridge import manuscript as ms
+    from bridge.doctext import config as dcfg
+    from bridge.doctext.titles import first_h1
+    try:
+        sets = dcfg.load(repo).sets
+    except dcfg.DocsConfigError:
+        sets = {}
+    out = []
+    for name, label in (("notion", "기술문서"), ("portfolio", "포트폴리오")):
+        folder = sets.get(name) or f"{name}/"
+        for f in ms.files(repo, folder, "HEAD"):
+            r = subprocess.run(["git", "-C", repo, "show", f"HEAD:{f}"], capture_output=True, text=True, timeout=15)
+            out.append({"path": f, "title": (first_h1(r.stdout)[1] if r.returncode == 0 else None) or Path(f).stem, "set": label})
+    return out
+
+
+async def to_limit(engine: Any, project: str, piece: str, reason: str, iid: int | None = None, todo: str | None = None) -> dict[str, Any]:
+    """[한계로]. 포스트잇(iid) 또는 TODO 항목(todo 번호) 하나를 편(piece)의 「알려진 한계」로 보낸다. 까닭이 비면 거부한다.
+    쓰는 것은 서기 「알려진 한계 쓰기」(scribe_room start later)다. TODO 항목은 서기가 같은 커밋에서 TODO.md에서 지운다."""
+    from bridge import todofile as tf
+    from bridge.inject import Refused
+    reason = (reason or "").strip()
+    if not reason:
+        raise Refused(NO_REASON)
+    if len(reason) > REASON_MAX:
+        raise Refused(f"까닭이 너무 깁니다({len(reason)}자). {REASON_MAX}자까지 받습니다")
+    if (iid is None) == (todo is None):
+        raise Refused("포스트잇 하나나 TODO 항목 하나를 고릅니다")
+    repo = await _repo(engine, project)
+    if piece not in {p["path"] for p in await asyncio.to_thread(pieces_of, repo)}:
+        raise Refused(f"고른 편이 이 저장소의 기술문서나 포트폴리오에 없습니다: {piece}")
+    if iid is not None:
+        row = await _open_row(engine, iid)
+        if row["project"] != project:
+            raise Refused("다른 프로젝트의 포스트잇입니다")
+        await close(engine, iid, "limit", limit_note(piece, reason), _limit_ok=True)
+        return {"id": iid, "piece": piece}
+    head = await asyncio.to_thread(tf.head_text, repo)
+    body = tf.entry_text(head or "", todo or "")
+    if body is None:
+        raise Refused(f"{tf.PATH}에 {todo}가 없습니다")
+    ref = f"todo:{todo}"
+    async with engine.begin() as c:
+        busy = (await c.execute(text(f"SELECT i.id FROM todo_inbox i WHERE i.project = :p AND i.source_ref = :r "
+                                     f"AND {STATE} IN ('limit', 'limit_writing')"), {"p": project, "r": ref})).first()
+        if busy:
+            raise Refused(f"{todo}는 이미 알려진 한계로 보냈습니다(포스트잇 #{busy[0]}). 서기가 쓰면 TODO에서 빠집니다")
+        r = await c.execute(text("INSERT INTO todo_inbox (project, body, assignee, source, source_ref, confirmed, closed_reason, closed_at, closed_note) "
+                                 "VALUES (:p, :b, 'scribe', 'todomd', :r, TRUE, 'limit', UTC_TIMESTAMP(3), :n)"),
+                            {"p": project, "b": body[:MAX], "r": ref, "n": limit_note(piece, reason, todo)})
+    return {"id": int(r.lastrowid), "piece": piece, "todo": todo}
+
+
+async def todo_remove(engine: Any, project: str, tid: str) -> dict[str, Any]:
+    """TODO 항목 [지우기] — 커밋 메시지에 `(todo:번호)`가 있어 끝났다고 본 항목만. 사람이 눌러야 지운다(저절로 지우지 않는다)."""
+    from bridge import todofile as tf
+    from bridge.inject import Refused
+    repo = await _repo(engine, project)
+    done = (await asyncio.to_thread(tf.done_by_commits, repo)).get(tid)
+    if not done:
+        raise Refused(f"{tid}를 끝냈다고 적은 커밋(`(todo:{tid})`)을 찾지 못했습니다. 지우지 않았습니다")
+    why = (f"커밋 {done['commit']}(「{done['subject']}」)이 메시지에 (todo:{tid})로 끝냈다고 적어\n"
+           "사람이 포스트잇 창에서 [지우기]를 눌렀다. FOREMAN 브리지가 이 파일만 담아 만든 커밋이다. push는 하지 않았다.")
+    try:
+        res = await tf.remove(repo, tid, why)
+    except tf.TodoError as e:
+        raise Refused(str(e)) from e
+    return {"id": tid, "commit": res["commit"], "by": done["commit"]}
+
+
+async def todo_view(engine: Any, project: str) -> dict[str, Any]:
+    from bridge import todofile as tf
+    async with engine.connect() as c:
+        r = (await c.execute(text("SELECT repo_path FROM project WHERE name = :p"), {"p": project})).first()
+    v = await asyncio.to_thread(tf.view, r[0] if r else None)
+    # [한계로] 보내 서기가 아직 쓰는 중인 항목. 두 번 보내지 않게 표시한다
+    async with engine.connect() as c:
+        rows = (await c.execute(text(f"SELECT i.source_ref FROM todo_inbox i WHERE i.project = :p AND i.source = 'todomd' "
+                                     f"AND {STATE} IN ('limit', 'limit_writing')"), {"p": project})).all()
+    sent = {x[0][5:] for x in rows if x[0] and x[0].startswith("todo:")}
+    for it in v["items"]:
+        it["limit_sent"] = it["id"] in sent
+    return v
+
+
 _COLS = ("i.id, i.project, i.body, i.assignee, i.source, i.source_ref, i.confirmed, i.created_at, i.edited_at, i.taken_by, "
          "i.closed_reason, i.closed_at, i.closed_note")
 
@@ -272,12 +425,13 @@ async def items(engine: Any, project: str | None = None, open_only: bool = True,
 
 
 async def limit_pending(engine: Any, project: str) -> list[dict[str, Any]]:
-    """[→]로 보냈는데 README에 아직 안 쓴 것 — 서기 「알려진 한계 쓰기」가 가져간다(오래된 것부터)."""
+    """[한계로] 보냈는데 아직 안 쓴 것 — 서기 「알려진 한계 쓰기」가 가져간다(오래된 것부터). 편 · 까닭 · TODO 번호를 풀어 붙인다."""
     async with engine.connect() as c:
         rows = (await c.execute(text(
-            f"SELECT i.id, i.body, i.created_at, i.closed_at FROM todo_inbox i WHERE i.project = :p AND {STATE} = 'limit' ORDER BY i.id"),
+            f"SELECT i.id, i.body, i.source, i.created_at, i.closed_at, i.closed_note FROM todo_inbox i "
+            f"WHERE i.project = :p AND {STATE} = 'limit' ORDER BY i.id"),
             {"p": project})).mappings().all()
-    return [dict(r) for r in rows]
+    return [{**dict(r), **parse_limit_note(r["closed_note"])} for r in rows]
 
 
 async def readme_drop_pending(engine: Any, project: str, since: datetime | None) -> list[dict[str, Any]]:
@@ -546,7 +700,9 @@ async def summary(engine: Any, project: str, since: datetime | None = None, now:
         run_state = {"session_id": last["session_id"], "at": last["at"],
                      "state": "running" if last["done"] is None else "done" if last["done"]["ok"] else "failed",
                      "detail": (last["done"] or {}).get("detail")}
-    return {"open": len(posts), "unconfirmed": sum(not x["confirmed"] for x in posts),
+    tv = await todo_view(engine, project)
+    todo = {"n": tv["n"] - tv["old"], "old": tv["old"], "done": tv["done"], "exists": tv["exists"], "error": tv["error"]}
+    return {"open": len(posts), "unconfirmed": sum(not x["confirmed"] for x in posts), "todo": todo,
             "oldest_at": oldest, "oldest_days": (now - oldest).days if oldest else 0,
             "likely_done": sum(k["verdict"] == "done" for k in cks),
             "recommend": sum(bool(k["coder"]) for k in cks if k["item"].startswith("p:")),

@@ -1,7 +1,7 @@
 // 포스트잇(11-15) — 머리 탭 종이 숫자 · 목록(확인 전 흐리게, 끝난 것 같음, 코더 추천 [띄우기]) · 동작이 부르는 API
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { badgeOf, listHtml, planText, act, firstLine, mmddhm } from '../../bridge/static/js/postit.js';
+import { badgeOf, listHtml, planText, act, firstLine, mmddhm, limitBlocked, todoGroups, onLimitInput, NO_REASON } from '../../bridge/static/js/postit.js';
 
 const P = {
   foreman: { open: 3, oldest_at: '2026-11-13T01:00:00Z', nudge: null, likely_done: 1 },
@@ -12,7 +12,7 @@ test('머리 탭 종이 — 지금 방 숫자(N장, 가장 오래된 날은 뺐�
   const b = badgeOf(P, 'foreman');
   assert.equal(b.text, '포스트잇 3장');
   assert.equal(b.cls, '');
-  assert.match(b.tip, /^포스트잇 — 할 일 3장, 끝난 것 같음 1\. 누르면 펼칩니다\.$/);
+  assert.match(b.tip, /^포스트잇 — 아직 안 보낸 것 3장, 끝난 것 같음 1\. 누르면 펼칩니다\.$/);
   const all = badgeOf(P, null);
   assert.equal(all.text, '포스트잇 4장');
   assert.equal(all.cls, 'warn');                                   // 한 방이라도 쌓이면
@@ -23,6 +23,15 @@ test('머리 탭 종이 — 지금 방 숫자(N장, 가장 오래된 날은 뺐�
   assert.match(badgeOf(null, 'foreman').tip, /읽지 못했습니다/);
   assert.deepEqual([badgeOf(null, 'foreman').text, badgeOf(null, 'foreman').cls], ['포스트잇 ?', 'warn']);   // 0처럼 보이지 않게
   assert.equal(badgeOf({ x: { open: 0 } }, 'x').text, '포스트잇 0장');
+});
+
+test('머리 탭 종이 — TODO 할 일 수와 30일 넘은 것은 호버에, 커밋이 끝냈다고 한 할 일이 있으면 주황(지우기는 사람이)', () => {
+  const b = badgeOf({ infra: { open: 2, todo: { n: 40, old: 3, done: 0 } } }, 'infra');
+  assert.equal(b.cls, '');
+  assert.match(b.tip, /아직 안 보낸 것 2장\. 할 일 40, 30일 넘은 것 3\./);
+  const d = badgeOf({ infra: { open: 0, todo: { n: 5, old: 0, done: 1 } } }, 'infra');
+  assert.equal(d.cls, 'warn');
+  assert.match(d.tip, /커밋이 끝냈다고 한 할 일 1개는 창에서 \[지우기\]로 지웁니다\./);
 });
 
 test('새 화면 글에 가운뎃점 · em dash가 없다(툴팁 첫 줄의 「제목 — 설명」 나눔만)', () => {
@@ -37,10 +46,81 @@ test('새 화면 글에 가운뎃점 · em dash가 없다(툴팁 첫 줄의 「�
   for (const old of ['열린 것', '닫은 것', '열린 포스트잇', '가장 오래된 것', '여기에 바로 적습니다']) assert.ok(!all.includes(old), old);
   assert.match(all, /placeholder="할 일을 메모합니다"/);
   assert.match(all, /끝낸 것 1<\/summary>/);
-  assert.match(all, /할 일이 없습니다\./);
+  assert.match(all, /아직 안 보낸 것이 없습니다\./);
+  assert.match(all, /docs\/TODO\.md를 읽지 못했습니다\./);           // 옛 브리지(view.todo 없음)는 0이 아니라 읽지 못함
 });
 
-test('목록 — 확인 전은 흐리게, 끝난 것 같음은 근거와 [닫기] · [남기기], 코더 추천은 [띄우기], 줄마다 [x] · [→]', () => {
+const TODO = {
+  path: 'docs/TODO.md', exists: true, error: null, prefix: 'infra', n: 3, old: 1, done: 1,
+  items: [
+    { id: 'infra-2', title: 'MySQL 승격을 앱 트래픽까지', date: '2026-11-10', days: 7, old: false, done_by: null },
+    { id: 'infra-5', title: 'ingress-nginx 끊김 원인', date: '2026-10-01', days: 47, old: true, done_by: null },
+    { id: 'infra-7', title: 'runshoes MySQL 정기 백업', date: '2026-11-12', days: 5, old: false, done_by: { commit: 'abc1234', subject: 'ops: 백업 (todo:infra-7)' }, limit_sent: false },
+  ],
+};
+
+test('세 묶음 — 아직 안 보낸 것(적는 칸이 위, 줄마다 [TODO로] [한계로]), 할 일(번호와 제목만, [한계로]), 30일 넘은 것', () => {
+  const view = { project: 'ronanlab-infra', summary: {}, readme_checks: [], closed: [], todo: TODO,
+    items: [{ id: 11, body: '첫 줄\n둘째 줄 내용', source_label: '포스트잇에 적음', created_at: '2026-11-17T01:00:00Z', confirmed: true, state: 'new', label: '열림' }] };
+  const h = listHtml(view);
+  const at = (s) => h.indexOf(s);
+  // 차례: 아직 안 보낸 것 머리 → 적는 칸 → 그 줄들 → 할 일 → 30일 넘은 것
+  assert.ok(at('아직 안 보낸 것 <span class="pi-n">1</span>') < at('pi-draft') && at('pi-draft') < at('data-pi-row="11"'));
+  assert.ok(at('data-pi-row="11"') < at('할 일 <span class="pi-n">2</span>') && at('할 일 <span class="pi-n">2</span>') < at('30일 넘은 것 <span class="pi-n">1</span>'));
+  assert.ok(h.includes('data-pi-todo="11"') && h.includes('data-pi-limit="11" data-kind="postit"') && h.includes('data-pi-close="11" data-reason="drop"'));
+  assert.ok(!h.includes('data-reason="limit"'));                                  // 옛 [→]는 없다
+  // 세 묶음과 줄마다 펼침은 keep 열쇠로 기억한다(다시 그려도 접힘이 풀리지 않게, 처음값은 묶음 펼침 줄 접힘)
+  for (const g of ['unsent', 'todo', 'old']) assert.match(h, new RegExp(`<details class="pi-group" data-pi-group="${g}"[^>]*data-keep="postit:ronanlab-infra:g:${g}"[^>]* open`));
+  assert.match(h, /<details class="pi-main"[^>]*data-keep="postit:ronanlab-infra:p11"/);
+  // 할 일 줄: 번호와 한 줄 제목, [한계로]. 내용(둘째 줄 등)은 없다
+  assert.ok(h.includes('<b class="pi-tid">infra-2</b> MySQL 승격을 앱 트래픽까지'));
+  assert.ok(h.includes('data-pi-limit="infra-2" data-kind="todo"') && !h.includes('data-pi-todo="infra-2"'));
+  // 커밋이 끝냈다고 한 항목: 알림 칩과 [지우기](사람 단추)
+  assert.ok(h.includes('커밋 abc1234이 끝냄') && h.includes('data-pi-tdel="infra-7"') && !h.includes('data-pi-tdel="infra-2"'));
+  // 30일 넘은 것은 할 일 묶음에 겹쳐 보이지 않는다
+  const g = todoGroups(TODO);
+  assert.ok(g.old.includes('infra-5') && !g.now.includes('infra-5') && g.n === 2 && g.nOld === 1);
+  assert.match(g.old, /47일째/);
+});
+
+test('할 일 묶음 — 파일이 없거나 번호 꼴이 아니면 그렇다고 보인다', () => {
+  const none = todoGroups({ exists: false, error: '이 저장소에는 docs/TODO.md가 없습니다', items: [] });
+  assert.match(none.now, /이 저장소에는 docs\/TODO\.md가 없습니다\./);
+  const plain = todoGroups({ exists: true, error: 'docs/TODO.md에 번호 붙은 항목이 없습니다(이 저장소 꼴은 번호가 없습니다)', items: [] });
+  assert.match(plain.now, /번호 붙은 항목이 없습니다/);
+  assert.match(todoGroups({ exists: true, error: null, items: [] }).now, /할 일이 없습니다\./);
+  assert.equal(todoGroups(null).n, '?');
+});
+
+test('[한계로] 칸 — 편 고르기와 까닭. 까닭이 비면 [보내기]가 꺼지고 막는 글이 보인다', () => {
+  assert.equal(limitBlocked({ piece: 'notion/09.md', reason: '  ' }), NO_REASON);
+  assert.match(limitBlocked({ piece: '', reason: '까닭' }), /편을 골라야/);
+  assert.equal(limitBlocked({ piece: 'notion/09.md', reason: '서버가 한 대라 둘째 디스크가 없다' }), '');
+  assert.match(limitBlocked({ piece: 'p', reason: 'x'.repeat(1001) }), /1000자까지/);
+  const view = { project: 'foreman', summary: {}, readme_checks: [], closed: [], todo: TODO,
+    items: [{ id: 4, body: 'a', source_label: '포스트잇에 적음', created_at: '2026-11-17T01:00:00Z', confirmed: true, state: 'new', label: '열림' }] };
+  const pieces = [{ path: 'notion/09_limits.md', title: '알려진 한계', set: '기술문서' }];
+  const open = listHtml(view, { lim: { kind: 'postit', id: '4', piece: 'notion/09_limits.md', reason: '' }, pieces });
+  assert.match(open, /data-pi-lim-send="1" disabled/);
+  assert.ok(open.includes('<option value="notion/09_limits.md" selected>기술문서: 알려진 한계</option>'));
+  assert.ok(open.includes(NO_REASON.replace(/\[/g, '[')));
+  const ok = listHtml(view, { lim: { kind: 'postit', id: '4', piece: 'notion/09_limits.md', reason: '까닭' }, pieces });
+  assert.ok(!/data-pi-lim-send="1" disabled/.test(ok));
+  // TODO 줄에서 연 칸은 그 줄 밑에만
+  const t = listHtml(view, { lim: { kind: 'todo', id: 'infra-2', piece: '', reason: '' }, pieces });
+  assert.ok(t.indexOf('data-pi-lim="1"') > t.indexOf('data-pi-trow="infra-2"') && t.indexOf('data-pi-lim="1"') < t.indexOf('data-pi-trow="infra-7"'));
+  // 입력은 다시 그리지 않고 [보내기]만 켠다
+  const send = { disabled: true }, why = { textContent: '', classList: { toggle() {} } };
+  const box = { querySelector: (s) => (s === '[data-pi-lim-send]' ? send : why) };
+  const ui = { lim: { kind: 'postit', id: '4', piece: 'notion/09_limits.md', reason: '' } };
+  assert.equal(onLimitInput({ target: { value: '까닭 있음', classList: { contains: (c) => c === 'pi-lim-reason' }, closest: () => box } }, ui), true);
+  assert.equal(ui.lim.reason, '까닭 있음');
+  assert.equal(send.disabled, false);
+  onLimitInput({ target: { value: '', classList: { contains: (c) => c === 'pi-lim-reason' }, closest: () => box } }, ui);
+  assert.equal(send.disabled, true);
+});
+
+test('목록 — 확인 전은 흐리게, 끝난 것 같음은 근거와 [닫기] · [남기기], 코더 추천은 [띄우기], 줄마다 [TODO로] · [한계로] · [x]', () => {
   const view = {
     project: 'foreman',
     summary: { oldest_at: '2026-11-13T01:00:00Z', oldest_days: 2, last_check_at: '2026-11-15T07:30:00Z', check: { state: 'done', at: '2026-11-15T07:30:00Z', session_id: 9 } },
@@ -55,8 +135,9 @@ test('목록 — 확인 전은 흐리게, 끝난 것 같음은 근거와 [닫기
     closed: [],
   };
   const h = listHtml(view, { label: 'FOREMAN' });
-  assert.match(h, /<b>FOREMAN<\/b> 할 일 <b class="pi-n">3장<\/b><span class="muted">, 확인 전 1<\/span>/);
-  assert.match(listHtml({ ...view, items: view.items.slice(1) }, { label: 'FOREMAN' }).replace(/<[^>]+>/g, ''), /^FOREMAN 할 일 2장끝난 것 같음/);   // 확인 전이 없으면 「FOREMAN 할 일 2장」만
+  assert.match(h, /<div class="pi-head small"><b>FOREMAN<\/b><\/div>/);
+  assert.match(h, /아직 안 보낸 것 <span class="pi-n">3<\/span>/);
+  assert.match(listHtml({ ...view, items: view.items.slice(1) }, { label: 'FOREMAN' }).replace(/<[^>]+>/g, ''), /^FOREMAN끝난 것 같음/);
   // 11-15 쌓임 안내 줄은 뺐다(쌓임 표시는 단추 주황과 호버, 서기 말풍선이 맡는다). 쌓였어도 창에는 줄이 없다
   assert.ok(!listHtml({ ...view, summary: { ...view.summary, nudge: { why: '할 일 26장' } } }).includes('쌓였습니다'));
   assert.match(h, /class="pi-row pi-unconf" data-pi-row="1"/);
@@ -65,7 +146,7 @@ test('목록 — 확인 전은 흐리게, 끝난 것 같음은 근거와 [닫기
   assert.ok(h.includes('data-pi-check="31" data-act="close"') && h.includes('data-pi-check="40" data-act="keep"'));
   assert.ok(h.includes('<code>bridge/static/js/opanel.js:120</code>'));
   assert.ok(h.includes('data-pi-launch="3"') && !h.includes('data-pi-launch="2"'));
-  for (const id of [1, 2, 3]) assert.ok(h.includes(`data-pi-close="${id}" data-reason="drop"`) && h.includes(`data-pi-close="${id}" data-reason="limit"`));
+  for (const id of [1, 2, 3]) assert.ok(h.includes(`data-pi-close="${id}" data-reason="drop"`) && h.includes(`data-pi-todo="${id}"`) && h.includes(`data-pi-limit="${id}" data-kind="postit"`));
   assert.match(h, /저장 \(확인 전 1\)/);
   assert.ok(h.includes(`<span class="muted">마지막 갱신: ${mmddhm('2026-11-15T07:30:00Z')}</span>`));
 });
@@ -109,19 +190,54 @@ test('목록 한 줄 — 구분선은 건너뛰고 첫 글 줄, 길면 자른다
   assert.equal(firstLine(''), '');
 });
 
-test('동작 — [x] · [→] · [저장](확인 전 함께) · 판정 닫기가 부르는 API', async () => {
+test('동작 — [x] · [TODO로] · [한계로](까닭이 비면 보내지 않음) · [지우기] · [저장](확인 전 함께) · 판정 닫기가 부르는 API', async () => {
   const calls = [];
-  globalThis.fetch = async (url, o) => { calls.push([url, JSON.parse(o.body)]); return { ok: true, json: async () => ({ id: 9, confirmed: 1 }) }; };
+  globalThis.fetch = async (url, o) => {
+    calls.push([url, o && o.body ? JSON.parse(o.body) : null]);
+    if (url.startsWith('/api/postit/pieces')) return { ok: true, json: async () => ({ pieces: [{ path: 'notion/09.md', title: '한계', set: '기술문서' }] }) };
+    return { ok: true, json: async () => ({ id: url.endsWith('/todo') ? 'foreman-124' : 9, confirmed: 1, commit: 'abc1234' }) };
+  };
   const view = { items: [{ id: 1, confirmed: false }, { id: 2, confirmed: true }] };
-  let draft = '새로 적은 것', note = null;
-  const ctx = { store: { headers: () => ({}) }, project: 'foreman', view, draft: () => draft, setDraft: (v) => { draft = v; }, done: (n) => { note = n; return true; } };
+  let draft = '새로 적은 것', note = null, drawn = 0;
+  const ui = { lim: null, pieces: {} };
+  const ctx = { store: { headers: () => ({}) }, project: 'foreman', view, draft: () => draft, setDraft: (v) => { draft = v; }, done: (n) => { note = n; return true; },
+    ui, redraw: () => { drawn += 1; } };
   const ev = (attrs) => ({ preventDefault() {}, target: { closest: (sel) => {
     const k = sel.slice(1, -1);
     return k in attrs ? { dataset: attrs[k] } : null;
   } } });
-  await act(ev({ 'data-pi-close': { piClose: '2', reason: 'limit' } }), ctx);
-  assert.deepEqual(calls.at(-1), ['/api/postit/2/close', { reason: 'limit' }]);
-  assert.match(note.msg, /알려진 한계로 보냈습니다/);
+  await act(ev({ 'data-pi-close': { piClose: '2', reason: 'drop' } }), ctx);
+  assert.deepEqual(calls.at(-1), ['/api/postit/2/close', { reason: 'drop' }]);
+  assert.match(note.msg, /지웠습니다/);
+  await act(ev({ 'data-pi-todo': { piTodo: '2' } }), ctx);
+  assert.deepEqual(calls.at(-1), ['/api/postit/2/todo', {}]);
+  assert.match(note.msg, /foreman-124로 docs\/TODO\.md에 더하고 커밋했습니다\(abc1234\)\. push는 하지 않았습니다\./);
+  // [한계로] — 칸을 열고 편 목록을 읽는다. 까닭이 비면 API를 부르지 않는다
+  await act(ev({ 'data-pi-limit': { piLimit: 'foreman-3', kind: 'todo' } }), ctx);
+  assert.deepEqual(ui.lim, { kind: 'todo', id: 'foreman-3', piece: '', reason: '' });
+  assert.equal(ui.pieces.foreman.length, 1);
+  assert.ok(drawn >= 2);
+  ui.lim.piece = 'notion/09.md';
+  const before = calls.length;
+  await act(ev({ 'data-pi-lim-send': {} }), ctx);
+  assert.equal(calls.length, before);                               // 까닭이 비어 보내지 않았다
+  assert.equal(note.bad, true);
+  assert.equal(note.msg, NO_REASON);
+  assert.ok(ui.lim);                                                 // 칸은 열린 채
+  ui.lim.reason = '  물리 서버가 한 대다  ';
+  await act(ev({ 'data-pi-lim-send': {} }), ctx);
+  assert.deepEqual(calls.at(-1), ['/api/postit/limit', { project: 'foreman', piece: 'notion/09.md', reason: '물리 서버가 한 대다', todo: 'foreman-3' }]);
+  assert.equal(ui.lim, null);
+  ui.lim = { kind: 'postit', id: '2', piece: 'notion/09.md', reason: '까닭' };
+  await act(ev({ 'data-pi-lim-send': {} }), ctx);
+  assert.deepEqual(calls.at(-1), ['/api/postit/limit', { project: 'foreman', piece: 'notion/09.md', reason: '까닭', postit: 2 }]);
+  ui.lim = { kind: 'postit', id: '2', piece: '', reason: '' };
+  await act(ev({ 'data-pi-lim-x': {} }), ctx);
+  assert.equal(ui.lim, null);
+  globalThis.confirm = () => true;
+  await act(ev({ 'data-pi-tdel': { piTdel: 'infra-7' } }), ctx);
+  assert.deepEqual(calls.at(-1), ['/api/postit/todo/remove', { project: 'foreman', id: 'infra-7' }]);
+  delete globalThis.confirm;
   await act(ev({ 'data-pi-save': {} }), ctx);
   assert.deepEqual(calls.at(-1), ['/api/postit/save', { project: 'foreman', body: '새로 적은 것', confirm: [1] }]);
   assert.equal(draft, '');

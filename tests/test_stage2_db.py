@@ -1329,11 +1329,23 @@ async def test_postit_states_close_and_limit(env, tmp_path):
     sid = q(s, "SELECT id FROM character_session WHERE cc_session_id = %s", SID)[0][0]
     proj = q(s, "SELECT p.name FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
                 "JOIN project p ON p.id = ch.project_id WHERE cs.id = %s", sid)[0][0]
-    # 시드의 저장소 경로(실제 원본 폴더)에 기대지 않는다. 임시 저장소로 바꾸고 [readme] 표를 넣었다 뺐다 한다
+    # 시드의 저장소 경로(실제 원본 폴더)에 기대지 않는다. 임시 저장소(원고 한 편, TODO.md)로 바꾼다
     repo = tmp_path / "repo"
     (repo / ".foreman").mkdir(parents=True)
     import subprocess
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+
+    def g(*a):
+        return subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True, check=True).stdout
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    g("config", "user.email", "t@t")
+    g("config", "user.name", "t")
+    (repo / "notion").mkdir()
+    (repo / "notion" / "09_limits.md").write_text("# 알려진 한계\n\n## 알려진 한계\n", encoding="utf-8")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "TODO.md").write_text("# TODO\n\n- **foreman-1** 백업 한 벌 더 (2026-11-15)\n  디스크가 하나다.\n"
+                                           "- **foreman-2** 재부팅 확인 (2026-09-01)\n", encoding="utf-8")
+    g("add", "-A")
+    g("commit", "-q", "-m", "init")
     async with engine.begin() as c:
         await c.execute(T("UPDATE project SET repo_path = :r WHERE name = :p"), {"r": str(repo), "p": proj})
     for bad in ("  ", "x" * (sr.INBOX_MAX + 1)):
@@ -1353,9 +1365,19 @@ async def test_postit_states_close_and_limit(env, tmp_path):
     assert await sr.inbox_new(engine, proj) == [] and await sr.inbox_new(engine, proj, "coder") == []
     todo = await sr.todo(engine)
     assert todo[proj]["postit"]["open"] == 2 and not any(i["kind"] == "later" for i in todo[proj]["items"])  # 열린 포스트잇은 서기 몫이 아니다
-    # [→] 알려진 한계 — 서기 「알려진 한계 쓰기」 몫이 된다
-    assert await pi.close(engine, a, "limit", "못 푼다") is True and await pi.close(engine, a, "drop") is False
-    assert [x["id"] for x in await sr.inbox_new(engine, proj)] == [a]
+    # [한계로](11-17) — 편과 안 하는 까닭이 있어야 한다. 옛 [→](까닭 없는 close limit)과 빈 까닭은 거부하고 포스트잇은 열린 채
+    with pytest.raises(Refused, match="편과 안 하는 까닭"):
+        await pi.close(engine, a, "limit", "못 푼다")
+    with pytest.raises(Refused, match="안 하는 까닭이 비어 있습니다"):
+        await pi.to_limit(engine, proj, "notion/09_limits.md", "   ", iid=a)
+    with pytest.raises(Refused, match="고른 편이"):
+        await pi.to_limit(engine, proj, "notion/없는편.md", "까닭", iid=a)
+    assert (await state())[a] == "new"
+    assert await pi.to_limit(engine, proj, "notion/09_limits.md", "서버가 한 대다", iid=a) == {"id": a, "piece": "notion/09_limits.md"}
+    assert await pi.close(engine, a, "drop") is False
+    pend = await sr.inbox_new(engine, proj)
+    assert [x["id"] for x in pend] == [a] and pend[0]["piece"] == "notion/09_limits.md" and pend[0]["reason"] == "서버가 한 대다"
+    assert pend[0]["todo"] is None
     todo = await sr.todo(engine)
     assert any(i["title"] == "알려진 한계 쓰기: 쓸 줄 1, 뺄 줄 0" for i in todo[proj]["items"])
     await sr._inbox_take(engine, [a], sid)
@@ -1395,16 +1417,40 @@ async def test_postit_states_close_and_limit(env, tmp_path):
     assert await sr.inbox_take_pick(engine, k, sid) is True and await sr.inbox_take_pick(engine, k, sid) is False
     assert (await state())[k] == "merged" and k in [x["id"] for x in await pi.items(engine, proj)]
     assert q(s, "SELECT assignee FROM todo_inbox WHERE id = %s", k)[0][0] == "coder"
-    # README가 생성물인 저장소에서는 [→]가 분명히 거부되고 포스트잇은 열린 채 남는다
-    gen = await sr.inbox_add(engine, proj, "생성물 README에 보낼 한계")
-    (repo / ".foreman" / "docs.toml").write_text('[readme]\ntitle = "가짜"\n', encoding="utf-8")
-    with pytest.raises(Refused, match="README 한계 절이 없어졌습니다"):
-        await pi.close(engine, gen, "limit")
-    assert (await state())[gen] == "new"
-    (repo / ".foreman" / "docs.toml").write_text("[readme\n", encoding="utf-8")
-    with pytest.raises(Refused, match="문서 설정을 읽지 못해"):
-        await pi.close(engine, gen, "limit")
-    assert await pi.close(engine, gen, "done") is True                          # 다른 닫기는 설정과 상관없다
+    # [TODO로](11-17). 저장소 docs/TODO.md에 다음 번호로 더하고 그 파일만 커밋한다. 포스트잇은 todo로 닫혀 「할 일」로 간다
+    gen = await sr.inbox_add(engine, proj, "질문 카드 접기\n답한 뒤 한 줄로")
+    res = await pi.to_todo(engine, gen)
+    assert res["id"] == "foreman-3" and res["commit"]
+    assert (await state())[gen] == "todo"
+    assert g("log", "-1", "--format=%s") == "docs: TODO에 foreman-3 항목을 더함\n"
+    assert g("show", "--name-only", "--format=", "HEAD").split() == ["docs/TODO.md"]
+    assert "- **foreman-3** 질문 카드 접기 " in g("show", "HEAD:docs/TODO.md")
+    assert q(s, "SELECT closed_note FROM todo_inbox WHERE id = %s", gen)[0][0].startswith("TODO: foreman-3\n커밋: ")
+    with pytest.raises(Refused, match="이미 닫힌"):
+        await pi.to_todo(engine, gen)
+    tv = await pi.todo_view(engine, proj)
+    assert [i["id"] for i in tv["items"]] == ["foreman-1", "foreman-2", "foreman-3"] and tv["old"] == 1
+    summ = await pi.summary(engine, proj)
+    assert summ["todo"]["n"] == 2 and summ["todo"]["old"] == 1 and summ["todo"]["done"] == 0
+    # TODO 항목 [한계로]. 닫힌 채 todomd 줄이 생겨 서기 몫이 되고, 두 번 보내지 않는다
+    t = await pi.to_limit(engine, proj, "notion/09_limits.md", "디스크가 하나라 다른 디스크가 없다", todo="foreman-1")
+    with pytest.raises(Refused, match="이미 알려진 한계로 보냈습니다"):
+        await pi.to_limit(engine, proj, "notion/09_limits.md", "또", todo="foreman-1")
+    with pytest.raises(Refused, match="foreman-9가 없습니다"):
+        await pi.to_limit(engine, proj, "notion/09_limits.md", "까닭", todo="foreman-9")
+    pend = {x["id"]: x for x in await sr.inbox_new(engine, proj)}
+    assert pend[t["id"]]["todo"] == "foreman-1" and pend[t["id"]]["source"] == "todomd" and "디스크가 하나다" in pend[t["id"]]["body"]
+    assert {i["id"]: i for i in (await pi.todo_view(engine, proj))["items"]}["foreman-1"]["limit_sent"] is True
+    # (todo:번호) 커밋은 알리기만 하고 지우지 않는다. [지우기]는 그 커밋이 있을 때만
+    with pytest.raises(Refused, match="찾지 못했습니다"):
+        await pi.todo_remove(engine, proj, "foreman-2")
+    (repo / "x.txt").write_text("x\n", encoding="utf-8")
+    g("add", "x.txt")
+    g("commit", "-q", "-m", "ops: 재부팅 확인함", "-m", "(todo:foreman-2)")
+    assert (await pi.summary(engine, proj))["todo"]["done"] == 1
+    assert "foreman-2" in g("show", "HEAD:docs/TODO.md")
+    out = await pi.todo_remove(engine, proj, "foreman-2")
+    assert out["by"] and "foreman-2" not in g("show", "HEAD:docs/TODO.md")
 
 
 async def test_postit_net_sweep(env):

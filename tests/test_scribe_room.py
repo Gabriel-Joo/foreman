@@ -41,7 +41,7 @@ def test_task_prompts(task):
     if task == "doccheck":
         assert "고치지 마라" in p and "docs/12_x.md" in p
     if task == "later":
-        assert "/m/later.md" in p and "README.md만 고친다" in p
+        assert "/m/later.md" in p and "고칠 곳: 재료가 고른 편 파일" in p
     with pytest.raises(ValueError):
         sr.task_prompt("publish", "foreman", "/repo")
 
@@ -50,7 +50,11 @@ def test_blocked_same_task_same_file_no_cap():
     """동시에 시키기(11-06) — 같은 일 · 같은 파일만 막고, 파일이 다른 일은 몇 개든 같이 둔다(11-15 상한 없앰)."""
     trim = {"session_id": 194, "task": "trim", "title": "서기 — CLAUDE.md 정리"}
     later = {"session_id": 193, "task": "later", "title": "서기 — 나중에 할 일 정리"}
-    assert sr.blocked("later", [trim]) is None                                # CLAUDE.md · docs/ ↔ README.md — 겹치지 않는다
+    # 11-17 알려진 한계 쓰기는 docs/TODO.md도 맡는다(TODO에서 [한계로] 보낸 항목을 지운다). docs/ 통째로 맡는 trim과 겹쳐 막힌다
+    assert "docs/TODO.md" in sr.blocked("later", [trim])
+    assert sr.blocked("later", [{"session_id": 5, "task": "portfolio", "topic": "01_a", "title": "서기"}], None, ["notion/09.md"]) is None
+    assert "portfolio/01_a" in sr.blocked("later", [{"session_id": 5, "task": "portfolio", "topic": "01_a", "title": "서기"}], None,
+                                          ["portfolio/01_a.md"])            # 고른 편이 열린 포트폴리오 편이면 막는다
     assert "이미 열려" in sr.blocked("trim", [trim])
     assert "README.md" in sr.blocked("docfix", [later])                       # 문서 고치기와 나중에 할 일은 같은 파일
     assert sr.blocked("doccheck", [trim, later]) is None                      # 둘 열려 있어도 파일이 다르면 셋째를 막지 않는다
@@ -183,15 +187,15 @@ def test_techdoc_and_portfolio_start_refusals(tmp_path):
         asyncio.run(sr.start(None, eng, "foreman", "portfolio", "09_없음"))
 
 
-def test_later_refused_when_readme_generated(tmp_path):
-    """README가 생성물인 저장소([readme] 표)에는 한계 절이 없다. 「알려진 한계 쓰기」는 세션을 띄우기 전에 분명히 거부한다(11-17 사용자)."""
-    import asyncio
-    from bridge.inject import Refused
+def test_later_prompt_writes_to_picked_piece_and_drops_todo(tmp_path):
+    """「알려진 한계 쓰기」(11-17 문서 정리 E). README가 아니라 [한계로]에서 고른 편의 「알려진 한계」 절에 까닭과 함께 쓴다.
+    TODO 항목에서 온 줄은 같은 커밋에서 docs/TODO.md 항목을 지우고 메시지에 (todo:번호)를 적는다. 11-17 전의 README 생성물 거부는 없앴다."""
     r = _repo(tmp_path)
-    (r / ".foreman").mkdir(exist_ok=True)
-    (r / ".foreman" / "docs.toml").write_text('[readme]\ntitle = "가짜"\n', encoding="utf-8")
-    with pytest.raises(Refused, match="README 한계 절이 없어졌습니다"):
-        asyncio.run(sr.start(None, _FakeEngine({"foreman": str(r)}), "foreman", "later"))
+    p = sr.task_prompt("later", "foreman", str(r), {"materials": "/m/later.md"})
+    assert "고른 편의 「알려진 한계」 절" in p and "안 하는 까닭" in p
+    assert "`docs/TODO.md`의 그 항목" in p and "`(todo:번호)`" in p
+    assert "README 「6. 로드맵」" not in p                       # 옛 README 절 만들기 지시는 없다
+    assert sr.touches("later") == ["README.md", "docs/TODO.md"]          # 고른 편 파일은 띄울 때 더한다(blocked의 extra)
 
 
 class _FakeEngine:
@@ -220,11 +224,11 @@ class _FakeEngine:
 
 
 def test_later_task_is_known_limits():
-    """11-15 포스트잇 — 미룬 말 그물은 bridge/postit.py(tests/test_postit.py). 서기 later는 README 「알려진 한계」 쓰기다."""
+    """11-15 포스트잇 — 미룬 말 그물은 bridge/postit.py(tests/test_postit.py). 서기 later는 「알려진 한계」 쓰기다(11-17부터 고른 편에)."""
     assert not hasattr(sr, "LATER")
     assert sr.TASKS["later"]["title"] == "알려진 한계 쓰기"
     p = sr.task_prompt("later", "foreman", "/repo", {"materials": "/m/later.md"})
-    assert "알려진 한계" in p and "포스트잇 #번호" in p and "나중에 할 일" not in p
+    assert "알려진 한계" in p and "[한계로]" in p and "나중에 할 일" not in p
 
 
 def test_last_change_commits_since_and_unreadable(tmp_path):

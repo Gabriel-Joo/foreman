@@ -282,6 +282,13 @@ button.rolebadge.fixed:hover { background:color-mix(in srgb, var(--rc) 16%, tran
 .postit .pi-foot { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 .postit .pi-foot > span { flex:1; min-width:10em; }
 .postit .pi-closed .pi-crow { overflow-wrap:anywhere; }
+/* 11-17 세 묶음(아직 안 보낸 것, 할 일, 30일 넘은 것)과 [한계로] 칸 */
+.postit .pi-group { display:grid; gap:4px; margin-top:8px; }
+.postit .pi-gh { border-bottom:1px solid var(--line); padding-bottom:2px; }
+.postit .pi-gh .pi-n { font-weight:700; }
+.postit .pi-tid { white-space:nowrap; }
+.postit .pi-lim { display:grid; gap:4px; padding:4px 6px; margin:2px 0 4px; border:1px dashed var(--line); border-radius:3px; background:var(--card); }
+.postit .pi-lim select, .postit .pi-lim textarea { width:100%; background:var(--card); color:var(--fg); border-color:var(--line); }
 .postit button { color:var(--fg); background:var(--card); border-color:var(--line); }
 .postit button.ghost { background:transparent; }
 .postit code { background:var(--code); overflow-wrap:anywhere; }
