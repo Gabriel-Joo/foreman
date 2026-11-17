@@ -155,7 +155,7 @@ export function createScribe(store) {
     const upd = cand
       ? `<button type="button" class="small" data-sc-task="portfolio" data-topic="${esc(cand.slug)}" data-name="${esc(cand.title)}"${busy ? ' disabled' : ''} title="갱신 — 코드가 가장 많이 바뀐 편 「${esc(cand.title)}」(코드 바뀐 커밋 ${cand.commits}개)을 서기에게 고쳐 쓰게 합니다. 다른 편은 아래 목록에서 고릅니다.">갱신</button>`
       : `<button type="button" class="small" disabled title="갱신 — 지금 고쳐 쓰게 할 편이 없습니다(코드가 바뀐 편이 없거나 모두 열려 있습니다).">갱신</button>`;
-    const whole = `<button type="button" class="small" data-sc-task="portfolio" data-name=""${busy || pf.blocked ? ' disabled' : ''} title="${esc(pf.blocked ? `포트폴리오 쓰기 — 지금은 시킬 수 없습니다. ${pf.blocked}` : '포트폴리오 쓰기 — 서기가 화면을 보고 편 목록을 정해 portfolio/ 글을 새로 쓰거나 고쳐 씁니다.')}">시키기</button>`;
+    const whole = `<button type="button" class="small" data-sc-task="portfolio" data-name=""${busy || pf.blocked ? ' disabled' : ''} title="${esc(pf.blocked ? `포트폴리오 쓰기 — 지금은 시킬 수 없습니다. ${pf.blocked}` : '포트폴리오 쓰기 — 서기가 보여줄 화면이 있으면 화면마다, 없으면 결정마다 편 목록을 정해 portfolio/ 글을 새로 쓰거나 고쳐 씁니다.')}">시키기</button>`;
     const rows = tps.map((t) => {
       const n = t.commits === null || t.commits === undefined
         ? `<span class="warn" title="${esc(t.why || '')}">셀 수 없음</span>` : t.commits ? `<span class="warn">코드 바뀐 커밋 ${t.commits}</span>` : '<span class="ok">그대로</span>';

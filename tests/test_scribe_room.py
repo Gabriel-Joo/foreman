@@ -118,6 +118,12 @@ def test_portfolio_pieces_from_folder_and_blocked_per_piece(tmp_path):
     assert "portfolio/01_room.md" in one and "정해진 주제 목록은 없다" in whole
     assert "../notion/" in whole and "무엇을 해 주나" in whole and "덧붙인 요청" not in whole
     assert "16편" in sr.task_prompt("portfolio", "foreman", "/repo", {"note": "포트폴리오 16편, 합치지 않는다"})
+    for p in (one, whole):                                                        # 11-17 축 기준: 화면이 있으면 화면 축, 없으면 결정 중심
+        assert "보여줄 화면이 있으면 화면 축, 없으면 결정 중심" in p
+        assert "화면 축(보여줄 화면이 있을 때)" in p and "결정 중심(보여줄 화면이 없을 때)" in p
+        assert "상황" in p and "고른 것" in p and "까닭" in p and "치른 값" in p
+        assert "log/" in p and "본 근거" in p                                      # 어느 축을 골랐는지 기록하게 한다
+        assert p.index("축 고르기") < p.index("화면 축(보여줄")                       # 기준이 맨 앞(두 갈래보다 먼저)
 
 
 def test_writing_prompts_keep_user_rules():
