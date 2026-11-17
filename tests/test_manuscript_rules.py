@@ -70,6 +70,14 @@ def test_limit_and_todo_rules_are_in_the_doc():
     assert "치른 대가" not in " ".join(manuscript_rules.lines("coder"))   # 코더는 5절 첫 줄만
 
 
+def test_arrow_quote_rule_reaches_every_prompt():
+    """11-17 사용자 결정: 화살표 뒤 「」는 편 사이 참조, 화면 글과 사람 말은 " ". 서기 둘과 코더가 모두 받는다."""
+    for kind in ("techdoc", "portfolio", "coder"):
+        text = " ".join(manuscript_rules.lines(kind))
+        assert "뒤의 「」는 편 사이 참조다" in text, kind
+        assert "화면 글이나 사람 말을 그대로 옮길 때는 \" \"를 쓴다" in text, kind
+
+
 def test_broken_doc_raises_and_block_says_so(monkeypatch, tmp_path):
     bad = tmp_path / "rules.md"
     bad.write_text("# 제목\n\n## 1. 모든 문서\n\n글머리 없는 문단\n", encoding="utf-8")
