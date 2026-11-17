@@ -2,7 +2,8 @@
 
 - 기준 문서가 읽히고, 서기 지시문 둘과 코더 규칙 절이 같은 줄을 받는다
 - 기준 문서는 지시문 코드를 근거 표시로 가리켜 그 코드가 바뀌면 거꾸로 찾기에 걸린다
-- em dash와 가운뎃점: 기준 커밋 뒤 새 줄(docs, 원고, 포트폴리오, 코드 주석)에 들어오면 깨진다(`bridge/doctext/dashdot.py`)
+- em dash와 가운뎃점: 기준 커밋 뒤 새 줄(docs, 원고, 포트폴리오, README.md, CLAUDE.md, 코드 주석)에 들어오면 깨진다
+  (`bridge/doctext/dashdot.py`). 기준 커밋은 `.foreman/docs.toml` `[check] dashdot_base`에서 읽는다. 문서 점검 8번도 같은 검사다
 """
 
 import subprocess
@@ -11,13 +12,15 @@ from pathlib import Path
 import pytest
 
 from bridge import docrefs, manuscript_rules, scribe_room
+from bridge.doctext import check as dcheck
+from bridge.doctext import config as dcfg
 from bridge.doctext import dashdot
 from bridge.doctext.check import FsView, mark_problem
 from bridge.doctext.marks import MARK
 
 ROOT = Path(__file__).resolve().parent.parent
-# 이 규칙이 들어오기 바로 전 main(11-17 648ac08). 이 커밋 뒤에 더한 줄만 본다. 바꾸지 않는다
-BASE = "648ac08a0285c88626a2d5c16ae98732f47cb8a8"
+# 이 규칙이 들어오기 바로 전 main(11-17 648ac08). 값은 저장소 설정 한 곳(.foreman/docs.toml)에만 둔다
+BASE = dcfg.load(ROOT).check.dashdot_base
 
 
 # ── 기준 문서 읽기 ─────────────────────────────
@@ -35,7 +38,11 @@ def test_user_criteria_are_in_the_doc():
     text = " ".join(manuscript_rules.lines("portfolio") + manuscript_rules.lines("techdoc"))
     for want in ("비개발자도 읽는다", "어려운 말은 처음 나오는 자리에서 한 줄로 푼다", "용어 풀이", "같은 말투",
                  "em dash", "가운뎃점", "화면 축", "결정 중심", "치른 값", "하지 않은 것을 한 것처럼 쓰지 않는다",
-                 "까닭을 모르면 모른다고 적는다", "같은 범위인지"):
+                 "까닭을 모르면 모른다고 적는다", "같은 범위인지",
+                 # 11-17 4단계 정할 것 답: 화면 글 가운뎃점, 인프라 기준 둘
+                 "화면 글에는 가운뎃점을 쓸 수 있다", "감탄과 비유를 남발하지 않는다", "결정 중심으로 쓸 때는 막혔을 때 절을 둔다",
+                 # 11-17 사용자 결정(인프라 관리자 전달): 목록 허용에 「치른 값」, 저장소 예외 없음
+                 "「치른 값」(그 선택으로 잃거나 떠안은 것)에만 쓴다", "저장소마다 예외로 두지 않는다"):
         assert want in text, want
 
 
@@ -66,7 +73,9 @@ def test_scribe_prompts_and_coder_block_share_lines(tmp_path):
         assert x in tech
     for x in manuscript_rules.lines("portfolio"):
         assert x in port
-    assert "포트폴리오: " + manuscript_rules.lines("portfolio")[-4] in coder    # 코더는 종류 머리를 붙여 받는다
+    sec5 = manuscript_rules.sections(manuscript_rules.PATH.read_text(encoding="utf-8"))["5"]
+    assert "포트폴리오: " + sec5[0] in coder    # 코더는 종류 머리를 붙여 5절 첫 줄만 받는다
+    assert sec5[-1] not in coder
     # 옛 지시문의 따로 적힌 기준 줄은 없다(한 벌에서만 온다)
     for old in ("표, 명령어, 설정 값처럼 목록이나 표가 더 맞는 것만 예외다", "읽는 사람과 깊이(docs/12_scribe.md"):
         assert old not in tech and old not in port
@@ -117,9 +126,21 @@ def test_code_parts_are_comments_only():
 
 def test_wanted_paths():
     assert dashdot.wanted("docs/x.md") == "doc" and dashdot.wanted("notion/a/b.md") == "doc"
+    assert dashdot.wanted("README.md") == "doc" and dashdot.wanted("CLAUDE.md") == "doc"    # 11-17 사용자 결정 2
     assert dashdot.wanted("bridge/x.py") == "code" and dashdot.wanted("bridge/static/js/a.js") == "code"
-    for no in ("log/x.md", "README.md", "CLAUDE.md", "docs/a.png", "bridge/static/index.html"):
+    for no in ("log/x.md", "bridge/README.md", "docs/a.png", "bridge/static/index.html"):
         assert dashdot.wanted(no) is None, no
+    # 다른 저장소: 기록 폴더가 docs 안에 있어도 기록이 먼저다(인프라 docs/history/)
+    skip = ("docs/history/", *dashdot.TOOL_DIRS)
+    assert dashdot.wanted("docs/history/a.md", ("docs/",), skip) is None
+    assert dashdot.wanted("docs/01_a.md", ("docs/",), skip) == "doc" and dashdot.wanted("log/a.md", ("docs/",), skip) is None
+
+
+def test_screen_strings_are_not_checked():
+    """화면 글(js 문자열, html)의 가운뎃점은 1절대로 쓸 수 있고, 검사는 코드 문자열을 보지 않는다(11-17 사용자 결정 1)."""
+    js = "btn.title = '보내기 · 멈추기';\nconst h = `<th>입력 · 출력</th>`;\n"
+    assert dashdot.js_parts(js) == {}
+    assert dashdot.wanted("bridge/static/index.html") is None
 
 
 def test_only_grown_hunks_count(tmp_path):
@@ -147,7 +168,71 @@ def test_base_must_be_ancestor(tmp_path):
         dashdot.hunks(tmp_path, BASE)
 
 
+def _repo_with_base(tmp_path) -> tuple[list[str], str]:
+    g = ["git", "-C", str(tmp_path)]
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/a.md").write_text("옛 줄 · 하나\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("# 제목\n\n옛 소개 — 그대로 둔다\n", encoding="utf-8")
+    subprocess.run([*g, "add", "-A"], check=True)
+    subprocess.run([*g, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a"], check=True)
+    base = subprocess.run([*g, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    return g, base
+
+
+def test_readme_new_lines_only(tmp_path):
+    """README와 CLAUDE.md는 기준 뒤 새 줄만 건다. 기존 줄의 기호는 그대로 둔다(11-17 사용자 결정 2)."""
+    _, base = _repo_with_base(tmp_path)
+    (tmp_path / "README.md").write_text("# 제목\n\n옛 소개 — 그대로 둔다\n새 소개 · 더함\n", encoding="utf-8")
+    (tmp_path / "CLAUDE.md").write_text("- 새 규칙 — 하나\n", encoding="utf-8")
+    hits = {(p, r, n) for p, r, n, _ in dashdot.scan(tmp_path, base)}
+    assert hits == {("README.md", 4, "가운뎃점"), ("CLAUDE.md", 1, "em dash")}
+
+
+def test_check_runs_dashdot_with_repo_base(tmp_path):
+    """문서 점검 8번: 칸이 있으면 새 줄을 틀림으로 세고, 커밋 판(rev, 합치기 카드)도 그 판으로 본다."""
+    g, base = _repo_with_base(tmp_path)
+    (tmp_path / ".foreman").mkdir()
+    (tmp_path / ".foreman/docs.toml").write_text(f'[check]\nsets = []\ncover_by = []\ndashdot_base = "{base}"\n',
+                                                encoding="utf-8")
+    (tmp_path / "docs/a.md").write_text("옛 줄 · 하나\n새 줄 — 더함\n", encoding="utf-8")
+    cfg = dcfg.load(tmp_path)
+    assert cfg.check.dashdot_base == base
+    res = dcheck.run(str(tmp_path), None, cfg, docrefs.resolve_sets(str(tmp_path), cfg))
+    assert [(e["doc"], e["line"]) for e in res["errors"]] == [("docs/a.md", 2)] and "em dash" in res["errors"][0]["what"]
+    assert res["notes"] == [] and res["dashdot"] == {"base": base, "hits": 1, "ran": True}
+    assert "줄표, 가운뎃점 검사: 기준 커밋" in dcheck.render(res)
+    subprocess.run([*g, "add", "-A"], check=True)
+    subprocess.run([*g, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "b"], check=True)
+    (tmp_path / "docs/a.md").write_text("옛 줄 · 하나\n", encoding="utf-8")        # 작업 트리에서 지워도 커밋 판에는 있다
+    assert [e["line"] for e in dcheck.run(str(tmp_path), "HEAD", cfg, {"docs": "docs/"})["errors"]] == [2]
+    assert dcheck.run(str(tmp_path), None, cfg, {"docs": "docs/"})["errors"] == []
+
+
+def test_check_without_base_says_so(tmp_path):
+    """칸이 없는 저장소는 검사하지 않고 알린다. 모든 줄을 조용히 걸지도, 조용히 넘어가지도 않는다."""
+    _repo_with_base(tmp_path)
+    (tmp_path / "docs/a.md").write_text("새 줄 — 더함\n", encoding="utf-8")
+    cfg = dcfg.DocsConfig()
+    cfg.check.sets, cfg.check.cover_by = [], []
+    res = dcheck.run(str(tmp_path), None, cfg, {"docs": "docs/"})
+    assert res["errors"] == [] and res["notes"] == [dashdot.NO_BASE] and not res["dashdot"]["ran"]
+    assert "알림  기준 커밋이 없어 줄표, 가운뎃점 검사를 하지 않았습니다" in dcheck.render(res)
+    # 조상이 아닌 기준 커밋은 틀림 하나(0건으로 보이지 않게)
+    cfg.check.dashdot_base = "0" * 40
+    res = dcheck.run(str(tmp_path), None, cfg, {"docs": "docs/"})
+    assert len(res["errors"]) == 1 and "돌리지 못했습니다" in res["errors"][0]["what"]
+    assert "줄표, 가운뎃점 검사:" not in dcheck.render(res)
+
+
+@pytest.mark.parametrize("bad", ['"abc"', '"648AC08"', "7", '"648ac08 "'])
+def test_dashdot_base_must_be_commit_hash(bad):
+    with pytest.raises(dcfg.DocsConfigError):
+        dcfg.parse(f"[check]\ndashdot_base = {bad}\n")
+
+
 def test_new_lines_have_no_dash_or_dot():
+    assert BASE, ".foreman/docs.toml [check] dashdot_base가 없습니다"
     found = [f"{p}:{r} {n} | {s}" for p, r, n, s in dashdot.scan(ROOT, BASE)]
     assert not found, ("새 줄에 em dash나 가운뎃점이 있습니다(docs/manuscript_rules.md 「1.」 「6.」). "
                        "쉼표, 괄호, 새 문장으로 바꿉니다. 화면 글이나 절 제목 인용은 「」로 감쌉니다:\n" + "\n".join(found))

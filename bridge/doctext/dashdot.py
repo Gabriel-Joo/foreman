@@ -1,13 +1,15 @@
 """새 줄의 em dash와 가운뎃점(11-17 문서 도구 합치기 4단계, `docs/manuscript_rules.md` 「1.」 「6.」). 읽기만 한다.
 
-기준 커밋(BASE) 뒤로 더해지거나 고쳐진 줄만 본다(`git diff BASE`, 작업 트리와 추적하지 않는 파일까지). 이미 있던 줄은 세지 않는다.
+기준 커밋(저장소마다 `.foreman/docs.toml` `[check] dashdot_base`) 뒤로 더해지거나 고쳐진 줄만 본다(`git diff 기준`, 작업 트리와
+추적하지 않는 파일까지. rev를 주면 그 커밋까지). 이미 있던 줄은 세지 않는다.
 고친 덩어리는 지운 줄과 더한 줄의 기호 수를 맞대어 늘어난 기호만 건다(옛 줄을 고치기만 해도 옛 기호를 다 걷어야 하면
 11-17 하루치(커밋 41개) 82건 가운데 57건이 그런 줄이라 사람이 시험을 무시하게 된다. `log/foreman-4_manuscript_rules_20261117.md`).
 
-- 문서: docs, notion, portfolio 아래 `*.md`. 코드 울타리와 HTML 주석 안은 보지 않는다
+- 문서: 문서 묶음 폴더(docs, notion, portfolio. 저장소 설정의 [sets]) 아래 `*.md`와 맨 위 `README.md`, `CLAUDE.md`.
+  코드 울타리와 HTML 주석 안은 보지 않는다
 - 코드 주석: `.py`(`#` 주석과 문자열만으로 된 문장, 곧 독스트링), `.js`와 `.css`(`//`, `/* */`), `.toml`과 `.sh`(`#`)
 - 세지 않는 것: 백틱 안, 「」와 『』와 큰따옴표 안(화면 글과 절 제목 인용), 기호 하나만 괄호로 감싼 것
-- 보지 않는 곳: `log/`, 문서 묶음 밖 `*.md`(README.md, CLAUDE.md), 그 밖의 확장자. 코드의 문자열(화면 글, 지시문)
+- 보지 않는 곳: 기록 폴더(FOREMAN `log/`, 저장소 설정의 records), 그 밖의 `*.md`와 확장자. 코드의 문자열(화면 글, 지시문)
 
 표준 라이브러리만 쓴다.
 """
@@ -24,8 +26,11 @@ from bridge.doctext.lines import TEXT, walk
 
 CHARS = {"—": "em dash", "·": "가운뎃점"}
 DOC_DIRS = ("docs/", "notion/", "portfolio/")
-SKIP_DIRS = ("log/", ".venv/", "node_modules/", ".tools/", ".worktrees/")
+ROOT_DOCS = ("README.md", "CLAUDE.md")          # 묶음 밖에서 보는 문서(11-17 사용자 결정, 맨 위 것만)
+TOOL_DIRS = (".venv/", "node_modules/", ".tools/", ".worktrees/")
+SKIP_DIRS = ("log/", *TOOL_DIRS)
 CODE_EXT = (".py", ".js", ".css", ".toml", ".sh")
+NO_BASE = "기준 커밋이 없어 줄표, 가운뎃점 검사를 하지 않았습니다(.foreman/docs.toml [check] dashdot_base)"
 
 # 세지 않는 자리(인용과 코드). 줄에서 지운 뒤 기호를 찾는다
 QUOTED = re.compile(r"`[^`]*`|「[^」]*」|『[^』]*』|\"[^\"]*\"|“[^”]*”|\([—·]\)")
@@ -43,13 +48,13 @@ def _git(repo: str | Path, *a: str) -> str:
     return r.stdout.decode(errors="replace")
 
 
-def wanted(path: str) -> str | None:
-    """"doc", "code", 또는 None(보지 않는다)."""
-    if path.startswith(SKIP_DIRS):
+def wanted(path: str, doc_dirs: tuple[str, ...] = DOC_DIRS, skip: tuple[str, ...] = SKIP_DIRS) -> str | None:
+    """"doc", "code", 또는 None(보지 않는다). doc_dirs는 문서 묶음 폴더, skip은 기록 폴더와 도구 폴더."""
+    if path.startswith(skip):
         return None
     if path.endswith(".md"):
-        return "doc" if path.startswith(DOC_DIRS) else None
-    if path.startswith(DOC_DIRS):
+        return "doc" if path.startswith(doc_dirs) or path in ROOT_DOCS else None
+    if path.startswith(doc_dirs):
         return None
     return "code" if path.endswith(CODE_EXT) else None
 
@@ -57,28 +62,33 @@ def wanted(path: str) -> str | None:
 Hunk = tuple[str, str | None, range, range]     # (새 경로, 옛 경로 또는 None, 옛 줄, 새 줄). 줄 번호는 1부터
 
 
-def hunks(repo: str | Path, base: str) -> list[Hunk]:
-    """기준 커밋과 작업 트리 사이에 바뀐 덩어리. 추적하지 않는 파일은 통째로 새 덩어리 하나.
-    base가 HEAD의 조상이 아니면 DashDotError(조용히 0줄로 지나가지 않게)."""
+def hunks(repo: str | Path, base: str, rev: str | None = None, doc_dirs: tuple[str, ...] = DOC_DIRS,
+          skip: tuple[str, ...] = SKIP_DIRS) -> list[Hunk]:
+    """기준 커밋과 작업 트리(rev가 있으면 그 커밋) 사이에 바뀐 덩어리. 작업 트리면 추적하지 않는 파일은 통째로 새 덩어리 하나.
+    base가 HEAD(또는 rev)의 조상이 아니면 DashDotError(조용히 0줄로 지나가지 않게)."""
+    tip = rev or "HEAD"
     try:
-        _git(repo, "merge-base", "--is-ancestor", base, "HEAD")
+        _git(repo, "merge-base", "--is-ancestor", base, tip)
     except DashDotError as e:
-        raise DashDotError(f"기준 커밋 {base[:10]}이 HEAD의 조상이 아닙니다: {e}") from e
+        raise DashDotError(f"기준 커밋 {base[:10]}이 {tip[:10]}의 조상이 아닙니다: {e}") from e
     out: list[Hunk] = []
     old: str | None = None
     cur: str | None = None
-    for line in _git(repo, "diff", "--no-color", "--no-ext-diff", "-U0", "-M", "--diff-filter=AMR", base).splitlines():
+    diff = ["diff", "--no-color", "--no-ext-diff", "-U0", "-M", "--diff-filter=AMR", base, *([rev] if rev else [])]
+    for line in _git(repo, *diff).splitlines():
         if line.startswith("--- "):
             p = line[4:]
             old = p[2:] if p.startswith("a/") else None
         elif line.startswith("+++ "):
             p = line[4:]
-            cur = p[2:] if p.startswith("b/") and wanted(p[2:]) else None
+            cur = p[2:] if p.startswith("b/") and wanted(p[2:], doc_dirs, skip) else None
         elif cur and (m := HUNK.match(line)):
             a, b, c, d = (int(x) if x is not None else 1 for x in m.groups())
             out.append((cur, old, range(a, a + b), range(c, c + d)))
+    if rev:
+        return out
     for p in _git(repo, "ls-files", "--others", "--exclude-standard").splitlines():
-        if wanted(p):
+        if wanted(p, doc_dirs, skip):
             try:
                 n = len((Path(repo) / p).read_text(encoding="utf-8").splitlines())
             except (OSError, UnicodeDecodeError):
@@ -216,19 +226,21 @@ def _count(parts: dict[int, str], rows: range) -> dict[str, int]:
     return n
 
 
-def scan(repo: str | Path, base: str, strict: bool = False) -> list[tuple[str, int, str, str]]:
-    """(파일, 줄, 기호 이름, 그 줄 글 앞 80자). 기준 커밋 뒤 새 줄만.
+def scan(repo: str | Path, base: str, strict: bool = False, rev: str | None = None,
+         doc_dirs: tuple[str, ...] = DOC_DIRS, skip: tuple[str, ...] = SKIP_DIRS) -> list[tuple[str, int, str, str]]:
+    """(파일, 줄, 기호 이름, 그 줄 글 앞 80자). 기준 커밋 뒤 새 줄만. rev가 있으면 그 커밋 판을 읽는다.
 
     덩어리마다 지운 줄과 더한 줄의 기호 수를 맞대어, 그 기호가 늘어난 덩어리의 더한 줄만 낸다. 옛 줄을 고치기만 하고
     기호를 더하지 않았으면 걸지 않는다(이미 있던 기호는 세지 않는다). strict면 늘었는지 보지 않고 더한 줄을 모두 본다."""
     out: list[tuple[str, int, str, str]] = []
     new_parts: dict[str, dict[int, str]] = {}
     old_parts: dict[str, dict[int, str]] = {}
-    for path, old, old_rows, new_rows in sorted(hunks(repo, base), key=lambda h: (h[0], h[3].start)):
+    for path, old, old_rows, new_rows in sorted(hunks(repo, base, rev, doc_dirs, skip), key=lambda h: (h[0], h[3].start)):
         if path not in new_parts:
             try:
-                new_parts[path] = parts_of(path, (Path(repo) / path).read_text(encoding="utf-8"))
-            except (OSError, UnicodeDecodeError):
+                text = _git(repo, "show", f"{rev}:{path}") if rev else (Path(repo) / path).read_text(encoding="utf-8")
+                new_parts[path] = parts_of(path, text)
+            except (OSError, UnicodeDecodeError, DashDotError):
                 new_parts[path] = {}
         parts = new_parts[path]
         grew = set(CHARS.values())
@@ -247,3 +259,20 @@ def scan(repo: str | Path, base: str, strict: bool = False) -> list[tuple[str, i
                     if name in grew:
                         out.append((path, row, name, s.strip()[:80]))
     return out
+
+
+def for_repo(repo: str | Path, base: str | None, sets: dict[str, str], records: list[str],
+             rev: str | None = None) -> dict:
+    """저장소 하나를 그 설정대로(문서 점검 `bridge/doctext/check.py`가 부른다). 돌려주는 것: {base, hits, note, error}.
+
+    기준 커밋 칸이 없으면 검사하지 않고 note(NO_BASE)를 남긴다. 조용히 모든 줄을 걸거나(옛 줄 수백 건) 조용히 넘어가지 않게.
+    기준 커밋이 조상이 아니거나 git이 실패하면 error(0건으로 보이지 않게)."""
+    if not base:
+        return {"base": None, "hits": [], "note": NO_BASE, "error": None}
+    doc_dirs = tuple(d for d in sets.values() if d) or DOC_DIRS
+    skip = (*tuple(records), *TOOL_DIRS)
+    try:
+        hits = scan(repo, base, rev=rev, doc_dirs=doc_dirs, skip=skip)
+    except DashDotError as e:
+        return {"base": base, "hits": [], "note": None, "error": str(e)}
+    return {"base": base, "hits": hits, "note": None, "error": None}

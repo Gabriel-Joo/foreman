@@ -26,6 +26,7 @@
     banned = []                           # 금지어(IP, 도메인, 홈 경로, 토큰 꼴, 포트)를 보는 묶음(["notion", "portfolio"])
     domains_in = ["portfolio"]            # allowed_domains를 받는 묶음
     cover_by = ["notion"]                 # 덮기 검사: 문서 묶음과 기록 밖 추적 파일은 이 묶음 어느 편의 다루는 곳에 들어야 한다
+    dashdot_base = "648ac08…"             # 새 줄 em dash와 가운뎃점 검사의 기준 커밋(4단계). 없으면 검사하지 않고 점검 결과에 알린다
 
 모르는 칸은 경고로 알리고 쓰지 않는다. 깨진 파일이나 틀린 값은 기본값으로 떨어지지 않고 DocsConfigError로 멈춘다
 (조용히 FOREMAN 기본값으로 돌면 다른 저장소의 기록 폴더가 코드로 세어지는 것처럼 틀린 결과가 알림 없이 나온다).
@@ -67,6 +68,7 @@ class CheckConfig:
     banned: list[str] = field(default_factory=list)
     domains_in: list[str] = field(default_factory=lambda: ["portfolio"])
     cover_by: list[str] = field(default_factory=lambda: ["notion"])
+    dashdot_base: str | None = None       # 기본값 없음: 저장소마다 넣는 때의 main이 다르다(`bridge/doctext/dashdot.py`)
 
     def as_dict(self) -> dict[str, Any]:
         return {k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v) for k, v in self.__dict__.items()}
@@ -120,6 +122,10 @@ def _check(raw: Any, source: str, warnings: list[str]) -> CheckConfig:
             if not isinstance(v, int) or isinstance(v, bool) or v < 0:
                 raise DocsConfigError(f"{where}는 0 이상 정수여야 합니다: {v!r}")
             c.claim_min = v
+        elif k == "dashdot_base":
+            if not isinstance(v, str) or not re.fullmatch(r"[0-9a-f]{7,40}", v):
+                raise DocsConfigError(f"{where}는 커밋 해시(소문자 16진수 7~40자)여야 합니다: {v!r}")
+            c.dashdot_base = v
         else:
             warnings.append(f"{source}: 모르는 칸 check.{k}는 쓰지 않습니다")
     return c

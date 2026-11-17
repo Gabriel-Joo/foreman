@@ -1,3 +1,7 @@
 # 문서 규칙(FOREMAN 문서 도구가 읽는다, tools/docs.py). 없는 칸은 FOREMAN 기본값
 # 바뀌어도 코드로 세지 않는 파일. 근거 표시를 달 문장이 없는 것(빈 패키지 표시 파일, 무시 목록)이라 「근거가 없는 파일」 셈에서 뺀다
 not_code = [".md", ".gitignore", "bridge/__init__.py", "bridge/api/__init__.py", "bridge/db/__init__.py", "bridge/doctext/__init__.py"]
+
+[check]
+# 새 줄 em dash와 가운뎃점 검사의 기준 커밋. 이 규칙이 들어오기 바로 전 main(11-17). 이 커밋 뒤에 더한 줄만 본다. 바꾸지 않는다
+dashdot_base = "648ac08a0285c88626a2d5c16ae98732f47cb8a8"

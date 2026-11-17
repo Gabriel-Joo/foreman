@@ -8,6 +8,8 @@
     5. 편 사이 참조: → 「제목」이 같은 묶음(check.xref면 그 묶음) 편 하나의 첫 # 줄과 같다
     6. 금지어(check.banned 묶음만): IP 주소, 도메인(check.domains_in 묶음은 allowed_domains를 뺀다), 홈 경로, 토큰 꼴, 포트 번호
     7. 그림 `![…](경로)`: 파일이 있다
+    8. 새 줄의 em dash와 가운뎃점(4단계, `bridge/doctext/dashdot.py`): check.dashdot_base 뒤에 더한 문서 줄과 코드 주석.
+       칸이 없으면 검사하지 않고 결과 notes에 알린다(틀림으로 세지 않는다)
     + 의심(틀림이 아니다): 숫자나 인용이 있는데 근거 표시가 없는 본문 줄(check.claim, check.claim_min)
 
 「다루는 곳」은 파일 단위 자리라 덮기 검사(4)만 읽는다. 밀림(바뀐 코드를 가리키는 줄)은 거꾸로 찾기(`bridge/docrefs.py`)가
@@ -24,6 +26,7 @@ import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from bridge.doctext import dashdot
 from bridge.doctext.config import DocsConfig
 from bridge.doctext.head import COVERS, READ, SHA, bad_covers, parse_head
 from bridge.doctext.lines import COMMENT, TEXT, walk
@@ -302,8 +305,16 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str]) -> di
         for f in target_files:
             if f not in covered:
                 err(None, None, f"덮기 밖: {f}가 {', '.join(ck.cover_by)} 어느 편의 {COVERS}에도 들지 않습니다")
+    # 8. 새 줄의 em dash와 가운뎃점
+    dd = dashdot.for_repo(repo, ck.dashdot_base, sets, cfg.records, rev)
+    notes = [dd["note"]] if dd["note"] else []
+    if dd["error"]:
+        err(None, None, f"줄표, 가운뎃점 검사를 돌리지 못했습니다: {dd['error']}")
+    for p, i, name, s in dd["hits"]:
+        err(p, i, f"새 줄의 {name}: {s}")
     return {"errors": errors, "suspects": suspects, "sets": {k: len(ps) for k, ps in checked.items()},
-            "marks": n_marks, "reads": reads, "cover": cover}
+            "marks": n_marks, "reads": reads, "cover": cover, "notes": notes,
+            "dashdot": {"base": dd["base"], "hits": len(dd["hits"]), "ran": bool(dd["base"]) and not dd["error"]}}
 
 
 def _mark_why(kind: str, v: str, kinds: list[str], view: FsView | GitView, docs_dir: str, log_dir: str, has) -> str | None:
@@ -322,6 +333,11 @@ def render(res: dict[str, Any], verbose: bool = False) -> str:
     reads = "; ".join(f"{k} {len(v)}가지" for k, v in res["reads"].items())
     out.append(f"편 {sum(res['sets'].values())}({sets}), 근거 표시 {res['marks']}, 읽은 커밋 {reads or '없음'}, "
                f"덮기 대상 파일 {res['cover']['target']} 가운데 {res['cover']['covered']} 덮음")
+    dd = res.get("dashdot") or {}
+    if dd.get("ran"):
+        out.append(f"줄표, 가운뎃점 검사: 기준 커밋 {dd['base'][:10]} 뒤 새 줄에서 {dd['hits']}건")
+    for n in res.get("notes", []):
+        out.append(f"알림  {n}")
     for e in res["errors"]:
         where = f"{e['doc']}:{e['line']}: " if e["doc"] and e["line"] else f"{e['doc']}: " if e["doc"] else ""
         out.append(f"틀림  {where}{e['what']}")
