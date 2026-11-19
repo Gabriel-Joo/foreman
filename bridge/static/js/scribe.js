@@ -11,6 +11,8 @@ import { createPostitBlock } from './postit.js';
 // 기술문서 쓰기(techdoc, 11-15)는 원고 폴더가 notion/인 프로젝트만(서버가 pj.techdoc을 줄 때만 보인다)
 export const ORDER = ['doccheck', 'later', 'trim', 'techdoc'];
 const UNREAD = '읽지 못했습니다';
+// 기술문서 쓰기 줄에 [갱신]이 없는 까닭(11-19 S1). 서버가 편 하나를 고르는 주제(topic)를 포트폴리오 쓰기에서만 받는다(bridge/scribe_room.py)
+export const TECHDOC_NO_UPDATE = '포트폴리오 쓰기와 달리 [갱신]이 없습니다. 서버가 편 하나만 고쳐 쓰게 하는 길을 아직 포트폴리오 쓰기에만 두었습니다. 나중에 둡니다.';
 
 // 일마다 옆에 붙는 밀린 수 — 「알려진 한계 쓰기 — 13개 밀림」. 밀린 것이 없으면 이름만(빈 문자열)
 export function behindText(k, b) {
@@ -47,6 +49,23 @@ export function pubCounts(p) {
   const extra = [p.new ? `새 ${p.new}` : '', p.changed ? `바뀜 ${p.changed}` : '', p.deleted ? `지워짐 ${p.deleted}` : '', p.broken ? `못 읽음 ${p.broken}` : '']
     .filter(Boolean);
   return { text: `게시됨 ${p.published}${extra.length ? ` · ${extra.join(' · ')}` : ''}`, bad: false, behind: extra.length > 0 };
+}
+
+// 사람 수정으로 멈춘 편의 덮기 단추(11-19). 전에는 접는 칸 「할 일」 안 맨 위에 있어, 칸을 접어 두면 단추가 안 보였다.
+// 이제 접히지 않는 「기술문서 게시」 줄 바로 아래(「사람이 고쳐 멈춤 N」을 읽는 자리)에 둔다. 「할 일」 칸은 펴지 않고 머리에 「덮기 N」만.
+// 「멈춤 N」이 보이는데 단추가 없으면 그 까닭을 쓴다(조용히 비지 않게): 목록을 못 읽었거나, 지금 덮을 편이 없거나
+export function heldRows(pj, busy = false) {
+  const items = (pj.items || []).filter((x) => x.kind === 'publish' && x.act === 'force');
+  const rows = items.map((x) => `<div class="sc-row"><div class="small bad"><b>${esc(x.title)}</b> <span class="muted">(${esc(x.why)})</span></div>
+      <button type="button" class="small danger" data-pub="publish" data-force="1" data-proj="${esc(x.project)}" data-path="${esc(x.path)}"${busy ? ' disabled' : ''} title="Notion 수정 버리고 덮기 — Notion에서 사람이 고친 곳을 버리고 git 원본으로 덮습니다. 살릴 수정이면 먼저 git에 옮겨 주세요.">Notion 수정 버리고 덮기</button></div>`).join('');
+  if (items.length) return rows;
+  const d = pj.docs_pub;
+  if (!d) return '';
+  if (d.held_error) return `<div class="small bad">사람이 고쳐 멈춘 편 목록을 ${UNREAD}(${esc(d.held_error)}). 덮기 단추를 보일 수 없습니다.</div>`;
+  if (d.last && d.last.held && d.held_buttons === 0) {
+    return `<div class="small warn">사람이 고쳐 멈춘 ${d.last.held}편 가운데 지금 덮을 편이 없습니다. 그 뒤 git이 다시 바뀌었거나 이미 맞춰졌습니다. 다음에 올릴 때 다시 봅니다.</div>`;
+  }
+  return '';
 }
 
 export function createScribe(store) {
@@ -136,7 +155,7 @@ export function createScribe(store) {
       const lastTxt = lastPublishedText(d);
       const failed = l && l.failed ? `<div class="small bad">실패: ${esc(l.failed_first || '')}</div>` : '';
       return `<div class="sc-row" ${tip}><div class="small">${tag} <span class="${c.behind ? 'warn' : 'ok'}">${esc(c.text)}</span> <span class="${pc.cls}">/ ${esc(pc.text)}</span>
-      <div class="muted">${esc(lastTxt)}</div>${failed}</div>${btn}</div>`;
+      <div class="muted">${esc(lastTxt)}</div>${failed}</div>${btn}</div>${heldRows(pj, busy)}`;
     }
     const commits = d.behind_commits === null || d.behind_commits === undefined ? '맞춘 적 없음' : `push 대기 커밋 ${d.behind_commits}개`;
     const l = d.last;
@@ -146,7 +165,7 @@ export function createScribe(store) {
     const btn = behindN || d.broken
       ? `<button type="button" class="small" data-pub="docsync" data-proj="${esc(room)}"${busy ? ' disabled' : ''} title="지금 맞추기 — 기다리지 않고 지금 바뀐 기술문서만 Notion에 올립니다. 사람이 Notion에서 고친 페이지는 덮지 않습니다.">지금 맞추기</button>` : '';
     return `<div class="sc-row" ${tip}><div class="small">${tag} <span class="${c.behind ? 'warn' : 'ok'}">${esc(c.text)}</span> <span class="muted">/ 문서 ${d.total}개 · ${commits}</span>
-      <div class="muted">${esc(lastTxt)}${why ? ` (${esc(why)})` : ''}</div>${failed}</div>${btn}</div>`;
+      <div class="muted">${esc(lastTxt)}${why ? ` (${esc(why)})` : ''}</div>${failed}</div>${btn}</div>${heldRows(pj, busy)}`;
   }
 
   // 포트폴리오 쓰기(11-15 화면 축) — 정해진 주제 없이 portfolio/ 파일이 편이다. 머리줄 「글 N편 가운데 코드가 바뀐 편 M」:
@@ -190,9 +209,7 @@ export function createScribe(store) {
       const why = blocked[k];
       return `<button type="button" class="small${pri && !why ? ' primary' : ''}" data-sc-task="${esc(k)}"${busy || why ? ' disabled' : ''} title="${esc(why ? `${(tasks[k] || {}).title || k} — 지금은 시킬 수 없습니다. ${why}` : `${(tasks[k] || {}).title || k} — 서기 세션을 작업방으로 띄워 맡깁니다. 끝나면 [끝내기 ▾]의 [합치고 끝내기]로 검토해 합칩니다.`)}">${label}</button>`;
     };
-    // 사람 수정으로 멈춘 파일 — 눈에 띄게 맨 위(조용히 멈춰 있지 않게)
-    const alerts = items.filter((x) => x.kind === 'publish' && x.act === 'force').map((x) => `<div class="sc-row"><div class="small bad"><b>${esc(x.title)}</b> <span class="muted">(${esc(x.why)})</span></div>
-        <button type="button" class="small danger" data-pub="publish" data-force="1" data-proj="${esc(x.project)}" data-path="${esc(x.path)}" title="Notion 수정 버리고 덮기 — Notion에서 사람이 고친 곳을 버리고 git 원본으로 덮습니다. 살릴 수정이면 먼저 git에 옮겨 주세요.">Notion 수정 버리고 덮기</button></div>`).join('');
+    // 사람 수정으로 멈춘 파일의 덮기 줄은 11-19부터 이 칸이 아니라 아래 「기술문서 게시」 줄 밑(heldRows). 접어 둬도 보이게
     // 한 목록 — 「문서 할 일」(센 것)과 「시킬 일」(메뉴)이 같은 줄이다. 밀린 수는 이름 옆에
     let nBehind = 0;
     const rows = ORDER.filter((k) => tasks[k] && (k !== 'techdoc' || pj.techdoc)).map((k) => {
@@ -201,6 +218,8 @@ export function createScribe(store) {
       // 기술문서 쓰기는 일 설명 대신 지금 원고 상태(글 N편 가운데 코드가 바뀐 편 M, 마지막으로 합친 지 며칠)
       const sub = blocked[k] ? blocked[k] : k === 'techdoc' ? pj.techdoc.why : tasks[k].desc;
       let extra = '';
+      // 11-19 사용자 결정 S1: 기술문서 쓰기에는 [갱신]을 지금 두지 않고 까닭만 한 줄(나중에 둔다, docs/TODO.md foreman-125)
+      if (k === 'techdoc') extra = `<div class="sc-row"><div class="small muted">${esc(TECHDOC_NO_UPDATE)}</div></div>`;
       if (k === 'doccheck' && pj.report) {          // 문서 점검 결과로 바로 고치기 — 찾기만 하고 끝나지 않게
         const r = pj.report;
         extra = r.fixed
@@ -228,8 +247,10 @@ export function createScribe(store) {
       ${postit.html(room, label, { noHead: true })}</details>`;
     const nAlert = items.filter((x) => x.kind === 'publish' && x.act === 'force').length;
     const bad = todoBad ? ` <span class="bad">· 지금 값을 ${UNREAD}(지난 값입니다)</span>` : '';
-    const sumCount = !todo ? '' : (nBehind + nAlert ? `<span class="warn">밀린 것 ${nBehind + nAlert}</span>` : '<span class="muted">밀린 것 없음</span>');
-    const listBody = !todo ? (todoBad ? `<p class="small bad">할 일을 ${UNREAD}.</p>` : '<p class="small muted">할 일을 읽는 중입니다.</p>') : pickHead + alerts + rows + inboxRow + openHtml;
+    // 덮기 N은 칸 머리에 따로(빨강). 단추는 칸 밖 「기술문서 게시」 아래라 칸을 접어 둔 기억은 그대로 둔다
+    const coverTxt = nAlert ? ` <span class="bad" title="덮기 — 사람이 Notion에서 고쳐 멈춘 편입니다. 단추는 아래 「기술문서 게시」 밑에 있습니다.">덮기 ${nAlert}(아래 기술문서 게시)</span>` : '';
+    const sumCount = !todo ? '' : (nBehind + nAlert ? `<span class="warn">밀린 것 ${nBehind + nAlert}</span>${coverTxt}` : '<span class="muted">밀린 것 없음</span>');
+    const listBody = !todo ? (todoBad ? `<p class="small bad">할 일을 ${UNREAD}.</p>` : '<p class="small muted">할 일을 읽는 중입니다.</p>') : pickHead + rows + inboxRow + openHtml;
     // 물어보기(11-10) — 세션 없이 읽기 전용으로 한 번 묻는다. 답만 하고 파일은 고치지 않는다(고치는 일은 아래 [문서 고치기])
     // 답 닫기(11-17 사용자): 답은 화면에만 있고(서버에 남기지 않는다) 닫으면 이 화면에서만 사라진다. 물은 글은 칸에 그대로 둔다
     const fixOne = answer && !answer.bad && answer.text

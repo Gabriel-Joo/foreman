@@ -34,6 +34,10 @@ MARK = "@docs-sync"          # doc_publish 행 — commit_sha = 마지막으로 
 # docs/archive/는 늘(런슈즈 docs/README "노션 · 발표 자료에 옮기지 않는다"), 프로젝트 skip의 "…/"로 끝나는 항목은 폴더 통째로
 LAST_MARK = "@docs-last"    # doc_publish 행. title = 마지막 맞추기의 멈춤, 실패 수(JSON), error = 첫 실패. 때는 행의 updated_at
 LAST_WINDOW = timedelta(minutes=10)     # 「올림 N」으로 세는 한 묶음의 길이(마지막으로 올린 때에서 거슬러)
+# 11-19 사람 수정으로 멈춘 편마다 한 행(덮기 단추 자료). @docs-last에는 수만 남아, 브리지를 다시 띄우면 단추가 사라졌다.
+# path = 앞붙이 + 원고 경로, kind mark, status held(풀리면 released), title = {"count": n}, error = 고친 곳 앞부분(JSON 목록),
+# url = Notion 페이지, commit_sha = 한 쪽 게시가 멈춘 때의 ref(맞추기가 멈춘 편은 비운다. 메모리에서와 같게 ref로 거르지 않는다)
+HELD_PRE = "@docs-held/"
 DOCS_SPEC =":(glob)docs/**/*.md"
 ALWAYS_SKIP = ("docs/archive/",)
 
@@ -309,6 +313,7 @@ class DocSync:
         res["at"] = time.time()
         self.last[name] = res
         await self._persist(pub, res)
+        await self.save_held(name)
         n = len(res["done"])
         if n or res["held"] or res["failed"]:
             log.warning("기술문서 맞춤 %s — 올림 %d · 사람 수정으로 멈춤 %d · 실패 %d", name, n, len(res["held"]), len(res["failed"]))
@@ -325,6 +330,46 @@ class DocSync:
         except Exception as e:  # noqa: BLE001
             log.warning("기술문서 맞추기 결과를 남기지 못했습니다(%s): %s: %s", pub.project, type(e).__name__, str(e)[:120])
 
+    async def save_held(self, name: str) -> None:
+        """멈춘 편 목록(last[name]["held"])을 편마다 DB 행(HELD_PRE)으로 맞춘다(11-19). 목록에 없는 옛 행은 released로.
+        못 남겨도 맞추기와 게시는 이어 가고 로그에 남긴다(화면은 메모리로 지금 단추를 그대로 보인다)."""
+        pub = self.pubs.get(name)
+        res = self.last.get(name)
+        if pub is None or res is None:
+            return
+        try:
+            async with pub.e.connect() as c:
+                old = {r[0] for r in (await c.execute(text(
+                    "SELECT path, status FROM doc_publish WHERE project = :p AND path LIKE :pre"),
+                    {"p": pub.project, "pre": f"{HELD_PRE}%"})).all() if r[1] == "held"}
+            want = {}
+            for h in res.get("held", []):
+                want[HELD_PRE + h["path"]] = h
+            for key, h in want.items():
+                await pub._save(key, kind="mark", title=json.dumps({"count": int(h.get("count", len(h.get("edits", []))))}),
+                                status="held", url=h.get("url"), commit_sha=h.get("ref_sha"), error=_edits_json(h.get("edits", [])))
+            for key in old - set(want):
+                await pub._save(key, status="released")
+        except Exception as e:  # noqa: BLE001
+            log.warning("멈춘 편 목록을 남기지 못했습니다(%s): %s: %s", name, type(e).__name__, str(e)[:120])
+
+    async def last_for(self, name: str) -> tuple[dict[str, Any] | None, str | None]:
+        """서기 화면이 읽는 마지막 결과(11-19). 메모리에 없으면(브리지를 다시 띄운 뒤) DB의 멈춘 편 행에서 held를 되살린다.
+        되살린 것은 at이 없어 「마지막으로 올림」 수는 그대로 @docs-last 행에서 읽힌다(last_published). 못 읽으면 (None, 까닭)."""
+        if name in self.last:
+            return self.last[name], None
+        pub = self.pubs.get(name)
+        if pub is None:
+            return None, None
+        try:
+            held = await load_held(pub)
+        except Exception as e:  # noqa: BLE001 (못 읽었는데 멈춘 편이 없다고 하지 않는다)
+            return None, f"{type(e).__name__}: {str(e)[:80]}"
+        if not held:
+            return None, None
+        self.last[name] = {"project": name, "ref_sha": None, "done": [], "held": held, "failed": [], "restored": True}
+        return self.last[name], None
+
     def hold(self, name: str, path: str, edits: list[str], url: str | None) -> bool:
         """한 쪽 게시(POST /api/publish action=publish)가 사람 수정으로 멈췄을 때(11-12) — [지금 맞추기]로 멈춘 것과 같은 꼴로
         last["held"]에 남기고(같은 파일은 한 줄) 텔레그램 ✋을 보낸다(같은 파일 · 같은 커밋이면 한 번). docs/ 문서만(서기 할 일의 덮기 줄 자리)."""
@@ -333,6 +378,7 @@ class DocSync:
             return False
         sha = ref_sha(pub.repo, pub.ref)
         res = self.last.setdefault(name, {"project": name, "ref_sha": sha, "done": [], "held": [], "failed": [], "at": time.time()})
+        res.setdefault("at", time.time())          # DB에서 되살린 결과(at 없음)에 더할 때도 새로 멈춘 것으로 센다
         # ref_sha를 항목에 둔다 — git이 다시 바뀌면 이 줄은 사라진다(todo_items). 같은 경로의 옛 줄은 바꿔 끼운다
         entry = {"path": path, "edits": list(edits[:5]), "count": len(edits), "url": url, "ref_sha": sha}
         res["held"] = [h for h in res["held"] if h["path"] != path] + [entry]
@@ -368,6 +414,39 @@ class DocSync:
                 self.notifier.send_direct(pub.project, "docsync", None, "\n".join([
                     f"{prefix} ⚠ Notion 기술문서 자동 게시 실패 {len(res['failed'])}개 — 뒤처진 채로 남습니다",
                     *[f"▶ {f['path']} — {f['error'][:120]}" for f in res["failed"][:4]]]))
+
+
+def _edits_json(edits: list[str]) -> str:
+    """고친 곳 앞부분을 error 칸(512자)에 들어가게 JSON 목록으로. 넘치면 뒤 항목부터 버린다."""
+    out = [str(e)[:120] for e in edits[:5]]
+    while out and len(json.dumps(out, ensure_ascii=False)) > 500:
+        out.pop()
+    return json.dumps(out, ensure_ascii=False)
+
+
+async def load_held(pub: Any) -> list[dict[str, Any]]:
+    """DB에 남은 멈춘 편(HELD_PRE 행, status held)을 메모리 held 꼴로 읽는다(11-19). 읽지 못하면 예외를 그대로 올린다."""
+    async with pub.e.connect() as c:
+        rows = (await c.execute(text(
+            "SELECT path, status, title, error, url, commit_sha FROM doc_publish WHERE project = :p AND path LIKE :pre"),
+            {"p": pub.project, "pre": f"{HELD_PRE}%"})).mappings().all()
+    out = []
+    for r in rows:
+        if r["status"] != "held":
+            continue
+        try:
+            n = int(json.loads(r["title"] or "{}").get("count", 0))
+        except (ValueError, AttributeError):
+            n = 0
+        try:
+            edits = [str(x) for x in json.loads(r["error"] or "[]")]
+        except ValueError:
+            edits = []
+        h = {"path": r["path"][len(HELD_PRE):], "edits": edits, "count": n or len(edits), "url": r["url"]}
+        if r["commit_sha"]:
+            h["ref_sha"] = r["commit_sha"]
+        out.append(h)
+    return out
 
 
 async def last_published(pub: Any, mem: dict[str, Any] | None = None) -> dict[str, Any] | None:

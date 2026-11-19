@@ -224,10 +224,16 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
             except Exception as e:  # noqa: BLE001
                 port_pub = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
             try:
-                last_res = docsync.last.get(name) if docsync else None
+                # 11-19 메모리가 비었으면(브리지를 다시 띄운 뒤) DB의 멈춘 편 행에서 덮기 줄을 되살린다
+                last_res, held_error = await docsync.last_for(name) if docsync else (None, None)
                 if pub.docs_mode != "off":
                     docs_pub = await ds.summary(pub, last_res)
-                items += await ds.todo_items(pub, last_res)
+                got = await ds.todo_items(pub, last_res)
+                items += got
+                if docs_pub is not None:
+                    # 화면이 「멈춤 N」인데 덮기 단추가 없으면 그 까닭을 쓰게(조용히 비지 않게): 지금 덮을 수 있는 편 수, 못 읽은 까닭
+                    docs_pub["held_buttons"] = sum(1 for x in got if x.get("act") == "force")
+                    docs_pub["held_error"] = held_error
             except Exception as e:  # noqa: BLE001
                 pub_error = f"{type(e).__name__}: {str(e)[:120]}"
         opened = await open_tasks(engine, name)

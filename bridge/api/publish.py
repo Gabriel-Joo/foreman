@@ -143,12 +143,16 @@ async def publish_do(body: PublishIn, request: Request) -> JSONResponse:
                        else p.archive(body.path) if body.action == "archive" else p.move(body.path, body.section or ""))
             ds = getattr(request.app.state, "docsync", None)
             if ds is not None and body.action == "publish":
+                await ds.last_for(body.project)          # 다시 띄운 뒤면 DB의 멈춘 편을 먼저 되살린다(다른 편 행을 잘못 풀지 않게)
                 ds.release(body.project, body.path)
+                await ds.save_held(body.project)        # 11-19 DB의 멈춘 편 행도 풀어 다시 띄운 뒤 단추가 되살아나지 않게
     except HumanEdited as e:
         ds = getattr(request.app.state, "docsync", None)
         if ds is not None and body.action == "publish" and not body.force:
             try:    # 11-12 — 서기 할 일 덮기 줄 + 텔레그램 ✋([지금 맞추기]로 멈춘 것과 같은 꼴). 실패해도 409 응답은 나간다
+                await ds.last_for(body.project)          # 다시 띄운 뒤면 DB의 멈춘 편을 먼저 되살린다
                 ds.hold(body.project, body.path, e.edits, e.url)
+                await ds.save_held(body.project)        # 11-19 다시 띄운 뒤에도 덮기 단추가 남게 DB에도
             except Exception:  # noqa: BLE001
                 pass
         return JSONResponse({"refused": f"{e}. git에 옮기거나 [Notion 수정 버리고 덮기]를 눌러 주세요", "edits": e.edits[:10],
