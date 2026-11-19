@@ -7,7 +7,8 @@
 - 같은 프레임이 이어지면 하나로 묶고 머무는 시간을 늘린다(쉬는 장면이 공짜가 된다)
 - 줄일 때는 NEAREST(픽셀이 뭉개지지 않게). 디더 없음(점무늬가 크기를 키우고 픽셀 그림을 더럽힌다)
 - `--delta`(11-19, 마법학교 돌바닥 무늬처럼 JPEG 잡음이 많은 장면용): 보이는 화면과 거의 같은 점(세 색 차의 합이 문턱 아래)을
-  투명으로 두고 바뀐 곳만 담는다. 문턱 기본 120, 글씨가 바뀌는 장면은 잔상이 남아 24쯤으로 낮춘다. 투명 칸 하나를 쓰니 색은 최대 255
+  투명으로 두고 바뀐 곳만 담는다. 문턱 기본 40(글씨가 바뀐 곳에 잔상이 남지 않는 안전한 쪽), 크기를 더 줄이고 싶으면 80, 120으로 올리고
+  글씨가 많이 바뀌는 장면은 24쯤으로 낮춘다. 투명 칸 하나를 쓰니 색은 최대 255
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops
 
-DELTA_THRESHOLD = 120   # 기본 문턱(R, G, B 차의 합). 낮을수록 작은 변화도 담는다(잔상이 줄고 크기가 는다)
+DELTA_THRESHOLD = 40   # 기본 문턱(R, G, B 차의 합). 낮을수록 작은 변화도 담는다(잔상이 줄고 크기가 는다). 120은 글씨가 바뀐 곳에 잔상이 남는다
 
 
 def _changed_mask(canvas: Image.Image, im: Image.Image, threshold: int) -> Image.Image:
@@ -77,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--colors", type=int, default=128)
     ap.add_argument("--delta", action="store_true", help="앞 장과 거의 같은 점을 투명으로 두고 바뀐 곳만 담는다(색은 최대 255)")
     ap.add_argument("--delta-threshold", type=int, default=DELTA_THRESHOLD,
-                    help=f"--delta에서 이 값 아래로 달라진 점은 안 바뀐 것으로 본다(R, G, B 차의 합, 기본 {DELTA_THRESHOLD}. 글씨가 바뀌면 24쯤)")
+                    help=f"--delta에서 이 값 아래로 달라진 점은 안 바뀐 것으로 본다(R, G, B 차의 합, 기본 {DELTA_THRESHOLD}. 크기를 더 줄이려면 80, 120으로 올리고 글씨가 많이 바뀌면 24쯤으로 낮춘다)")
     a = ap.parse_args(argv)
     files = sorted(p for p in Path(a.frames).iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))[:: a.every]
     if not files:

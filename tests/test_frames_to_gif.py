@@ -38,11 +38,25 @@ def test_default_is_unchanged_without_delta(tmp_path):
 
 
 def test_delta_keeps_only_changed_pixels(tmp_path):
-    """문턱 120: 작은 변화(합 30)는 무시해 앞 장에 묶고, 점 하나가 바뀐 장은 그 점만 담고 나머지 255칸은 투명이다."""
+    """기본 문턱(40): 작은 변화(합 30)는 무시해 앞 장에 묶고, 점 하나가 바뀐 장은 그 점만 담고 나머지 255칸은 투명이다."""
     r = probe(tmp_path, "--delta")
     assert r["frames"] == 2 and r["durations"] == [200, 200]
     assert r["transparent"] == [0, 255]
     assert r["dot"] == [200, 20, 20]          # 투명 위로 이어 붙여도 점은 새 색이다
+
+
+def test_delta_threshold_default_is_40(tmp_path):
+    """기본 문턱은 40이다(120은 글씨가 바뀐 곳에 잔상이 남아 안전한 쪽으로 내렸다). 옵션으로 올리면 결과가 바뀐다."""
+    helptext = subprocess.run(["python3", "-I", str(REPO / "tools" / "frames_to_gif.py"), "--help"],
+                              capture_output=True, text=True).stdout
+    assert "기본 40" in " ".join(helptext.split())      # 도움말이 줄바꿈되니 공백을 합쳐 본다
+    (tmp_path / "d").mkdir()
+    (tmp_path / "e").mkdir()
+    (tmp_path / "h").mkdir()
+    default = probe(tmp_path / "d", "--delta")
+    assert default == probe(tmp_path / "e", "--delta", "--delta-threshold", "40")
+    high = probe(tmp_path / "h", "--delta", "--delta-threshold", "300")
+    assert high != default
 
 
 def test_delta_ignores_color_reduction_error(tmp_path):
