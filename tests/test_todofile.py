@@ -143,21 +143,59 @@ def test_add_commits_only_todo_and_skips_used_numbers(tmp_path):
     _git(r, "commit", "-q", "-am", "docs: 더함")
     (r / "docs" / "TODO.md").write_text(INFRA, encoding="utf-8")
     _git(r, "commit", "-q", "-am", "docs: 지움 (todo:infra-9)")
-    # 다른 세션이 올려 둔 스테이지와 고치는 중인 파일은 그대로 남는다
-    (r / "a.txt").write_text("남의 변경\n", encoding="utf-8")
-    _git(r, "add", "a.txt")
-    (r / "b.txt").write_text("추적 안 함\n", encoding="utf-8")
     res = asyncio.run(tf.add(str(r), "다른 디스크에 백업\n둘째 줄", "포스트잇 p:12", "포스트잇 #12에서 보냄", date(2026, 11, 17)))
     assert res["value"] == "infra-10"
     assert _git(r, "log", "-1", "--format=%s") == "docs: TODO에 infra-10 항목을 더함\n"
     assert _git(r, "show", "--name-only", "--format=", "HEAD").split() == ["docs/TODO.md"]
-    assert _git(r, "diff", "--cached", "--name-only").split() == ["a.txt"]                     # 남의 스테이지는 그대로
     assert "- infra-10 (2026-11-17) 다른 디스크에 백업 둘째 줄 → 포스트잇 p:12" in _git(r, "show", "HEAD:docs/TODO.md")
     assert _git(r, "status", "--porcelain", "--", "docs/TODO.md") == ""
     # 지우기도 그 파일만
     res2 = asyncio.run(tf.remove(str(r), "infra-1", "커밋이 끝냈다고 함"))
     assert res2["value"] == "infra-1" and "infra-1 " not in _git(r, "show", "HEAD:docs/TODO.md")
     assert _git(r, "log", "-1", "--format=%s") == "docs: TODO에서 infra-1 항목을 지움\n"
+
+
+def test_commit_ignores_other_dirty_files_and_takes_only_todo(tmp_path):
+    """11-19 사용자: TODO.md가 아닌 파일이 더럽거나(고침, 스테이지) 추적 안 하는 새 파일이 있어도 막지 않는다. 커밋에는 TODO.md만 든다."""
+    r = _repo(tmp_path)
+    (r / "a.txt").write_text("남의 스테이지\n", encoding="utf-8")
+    _git(r, "add", "a.txt")
+    (r / "a.txt").write_text("스테이지 뒤 또 고침\n", encoding="utf-8")
+    (r / "docs" / "other.md").write_text("추적 안 함\n", encoding="utf-8")
+    (r / "남의 작업.txt").write_text("한글 이름\n", encoding="utf-8")
+    before = _git(r, "status", "--porcelain")
+    asyncio.run(tf.add(str(r), "새 일", "p", "왜", date(2026, 11, 19)))
+    assert _git(r, "show", "--name-only", "--format=", "HEAD").split() == ["docs/TODO.md"]
+    assert _git(r, "diff", "--cached", "--name-only").split() == ["a.txt"]                     # 남의 스테이지는 커밋에 안 들어가고 그대로
+    assert (r / "a.txt").read_text(encoding="utf-8") == "스테이지 뒤 또 고침\n"               # 남의 작업도 그대로
+    assert (r / "docs" / "other.md").exists() and (r / "남의 작업.txt").exists()
+    assert _git(r, "status", "--porcelain") == before
+    asyncio.run(tf.remove(str(r), "infra-1", "왜"))
+    assert _git(r, "show", "--name-only", "--format=", "HEAD").split() == ["docs/TODO.md"]
+    assert _git(r, "status", "--porcelain") == before
+
+
+@pytest.mark.parametrize("marker", ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge"])
+def test_commit_refuses_while_merge_or_rebase_runs(tmp_path, marker):
+    """HEAD가 흔들리는 자리(합치기, rebase, cherry-pick, revert)에는 커밋을 얹지 않는다."""
+    r = _repo(tmp_path)
+    p = r / ".git" / marker
+    p.mkdir() if marker == "rebase-merge" else p.write_text("x\n", encoding="utf-8")
+    head = _git(r, "rev-parse", "HEAD")
+    with pytest.raises(tf.TodoError, match="합치기나 rebase가 도는 중이라 커밋하지 않았습니다"):
+        asyncio.run(tf.add(str(r), "새 일", "p", "왜"))
+    assert _git(r, "rev-parse", "HEAD") == head
+
+
+def test_commit_refuses_when_todo_is_staged(tmp_path):
+    """TODO.md를 누가 스테이지에 올려 둔 경우도 거부한다(섞인다). 아무것도 건드리지 않는다."""
+    r = _repo(tmp_path)
+    (r / "docs" / "TODO.md").write_text(INFRA + "- infra-20 (2026-11-17) 올려 둠 → x\n", encoding="utf-8")
+    _git(r, "add", "docs/TODO.md")
+    head = _git(r, "rev-parse", "HEAD")
+    with pytest.raises(tf.TodoError, match=r"docs/TODO.md에 커밋 안 된 변경이 있어 건드리지 않았습니다"):
+        asyncio.run(tf.remove(str(r), "infra-1", "왜"))
+    assert _git(r, "rev-parse", "HEAD") == head and "infra-20" in _git(r, "diff", "--cached")
 
 
 def test_commit_refuses_when_todo_dirty_or_detached(tmp_path):

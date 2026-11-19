@@ -190,6 +190,29 @@ test('목록 한 줄 — 구분선은 건너뛰고 첫 글 줄, 길면 자른다
   assert.equal(firstLine(''), '');
 });
 
+test('저장소에 넣은 기록 — 못 넣은 줄 밑에 까닭이 보이고, 맨 아래 접는 칸에 성공과 거부가 시각과 함께 남는다', () => {
+  const view = { project: 'ronanlab-infra', summary: {}, readme_checks: [], closed: [], todo: { items: [] },
+    items: [
+      { id: 7, body: '백업 한 벌 더', source_label: '포스트잇에 적음', created_at: '2026-11-19T01:00:00Z', confirmed: true, state: 'new', label: '열림',
+        repo_refused: '[TODO로] 못 넣었습니다. 저장소에 커밋 안 된 변경이 2개 있어 커밋하지 않았습니다(a.txt, b.txt)' },
+      { id: 8, body: '다른 일', source_label: '포스트잇에 적음', created_at: '2026-11-19T01:00:00Z', confirmed: true, state: 'new', label: '열림', repo_refused: null },
+    ],
+    repo_log: [
+      { id: 2, ok: false, note: '[TODO로] 못 넣었습니다. 저장소에 커밋 안 된 변경이 2개 있어 커밋하지 않았습니다(a.txt, b.txt)', created_at: '2026-11-19T01:05:00Z' },
+      { id: 1, ok: true, note: 'ronanlab-infra 저장소 docs/TODO.md에 infra-44로 더했습니다(커밋 abc1234, push 안 함)', created_at: '2026-11-18T01:05:00Z' },
+    ] };
+  const h = listHtml(view);
+  assert.equal((h.match(/class="small bad pi-refused"/g) || []).length, 1);               // 거부된 줄에만
+  assert.match(h, /pi-refused[^>]*>\[TODO로\] 못 넣었습니다\. 저장소에 커밋 안 된 변경이 2개/);
+  assert.match(h, /저장소에 넣은 기록 2/);
+  assert.match(h, /못 함: \[TODO로\] 못 넣었습니다/);
+  assert.match(h, /ronanlab-infra 저장소 docs\/TODO\.md에 infra-44로 더했습니다\(커밋 abc1234, push 안 함\)/);
+  const none = listHtml({ ...view, repo_log: [], items: [] });
+  assert.ok(!none.includes('저장소에 넣은 기록') && !none.includes('pi-refused'));        // 기록이 없으면 칸도 없다
+  const old = listHtml({ ...view, repo_log: undefined });                                 // 옛 브리지 응답에도 그려진다
+  assert.ok(!old.includes('저장소에 넣은 기록'));
+});
+
 test('동작 — [x] · [TODO로] · [한계로](까닭이 비면 보내지 않음) · [지우기] · [저장](확인 전 함께) · 판정 닫기가 부르는 API', async () => {
   const calls = [];
   globalThis.fetch = async (url, o) => {
@@ -211,7 +234,7 @@ test('동작 — [x] · [TODO로] · [한계로](까닭이 비면 보내지 않�
   assert.match(note.msg, /지웠습니다/);
   await act(ev({ 'data-pi-todo': { piTodo: '2' } }), ctx);
   assert.deepEqual(calls.at(-1), ['/api/postit/2/todo', {}]);
-  assert.match(note.msg, /foreman-124로 docs\/TODO\.md에 더하고 커밋했습니다\(abc1234\)\. push는 하지 않았습니다\./);
+  assert.match(note.msg, /foreman 저장소 docs\/TODO\.md에 foreman-124로 더하고 커밋했습니다\(abc1234\)\. push는 하지 않았습니다\./);
   // [한계로] — 칸을 열고 편 목록을 읽는다. 까닭이 비면 API를 부르지 않는다
   await act(ev({ 'data-pi-limit': { piLimit: 'foreman-3', kind: 'todo' } }), ctx);
   assert.deepEqual(ui.lim, { kind: 'todo', id: 'foreman-3', piece: '', reason: '' });

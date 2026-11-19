@@ -4,7 +4,7 @@
 -->
 # 표 지도
 
-FOREMAN의 DB(MySQL)에는 지금 표가 스물아홉 개 있다. 마이그레이션 파일(DB 구조를 바꾸는 SQL 파일)이 만든 표가 스물여덟 개이고, 적용 도구가 스스로 만드는 `schema_migrations`가 하나다. 처음 마이그레이션 `0001_init.sql`이 여덟 개를 만들었고, 그 뒤 서른두 개의 마이그레이션이 표를 더하거나 칸을 늘리거나 이미 든 행을 고쳤다. 표를 지우거나 이름을 바꾼 마이그레이션은 없다 [code:migrations/]. 이 편은 마이그레이션이 만든 스물여덟 개 가운데 기능이 쓰는 스물일곱 개를 하는 일에 따라 다섯 덩어리로 묶고(1~5절), 되돌리기용으로만 남긴 표 하나는 6절에 따로 둔다. 표마다 무엇을 담는지, 어느 칸이 뜻을 가지는지, 누가 쓰는지, 어느 편이 그 표를 쓰는 기능을 깊게 설명하는지를 적는다. 칸 하나하나를 다 옮기지는 않는다. 칸 전체는 마이그레이션 파일에 있고, 파일마다 머리에 왜 그 칸을 두었는지가 주석으로 적혀 있다.
+FOREMAN의 DB(MySQL)에는 지금 표가 서른 개 있다. 마이그레이션 파일(DB 구조를 바꾸는 SQL 파일)이 만든 표가 스물아홉 개이고, 적용 도구가 스스로 만드는 `schema_migrations`가 하나다. 처음 마이그레이션 `0001_init.sql`이 여덟 개를 만들었고, 그 뒤 서른세 개의 마이그레이션이 표를 더하거나 칸을 늘리거나 이미 든 행을 고쳤다. 표를 지우거나 이름을 바꾼 마이그레이션은 없다 [code:migrations/]. 이 편은 마이그레이션이 만든 스물아홉 개 가운데 기능이 쓰는 스물여덟 개를 하는 일에 따라 다섯 덩어리로 묶고(1~5절), 되돌리기용으로만 남긴 표 하나는 6절에 따로 둔다. 표마다 무엇을 담는지, 어느 칸이 뜻을 가지는지, 누가 쓰는지, 어느 편이 그 표를 쓰는 기능을 깊게 설명하는지를 적는다. 칸 하나하나를 다 옮기지는 않는다. 칸 전체는 마이그레이션 파일에 있고, 파일마다 머리에 왜 그 칸을 두었는지가 주석으로 적혀 있다.
 
 DB를 왜 MySQL로 골랐는지, 왜 ENUM 대신 VARCHAR를 쓰는지, 보관과 백업은 어떻게 하는지는 「→ 15 DB」가 다룬다. 마이그레이션을 어떤 차례로 적용하고 누가 스키마를 바꿀 수 있는지는 「→ 마이그레이션」이 다룬다 [code:bridge/db/migrate.py]. 이 편은 지도다. 어디에 무엇이 있는지를 보여 준다.
 
@@ -20,7 +20,7 @@ DB를 왜 MySQL로 골랐는지, 왜 ENUM 대신 VARCHAR를 쓰는지, 보관과
 
 **뒤에 더한 마이그레이션은 거의 다 「더하기만」이다.** 0017 무렵부터 파일 머리에 되돌리는 SQL을 적고 [code:migrations/0020_promotion.sql], 0028부터는 「이전 코드는 이 칸을 모른다, 지워도 돈다」를 함께 적는다 [code:migrations/0028_todo_inbox_assignee.sql] [code:migrations/0032_merge_card.sql]. 칸을 지우거나 이름을 바꾸는 마이그레이션은 없다. 새 브리지 코드가 문제를 일으키면 코드만 되돌려도 옛 코드가 새 스키마 위에서 그대로 돌게 하려는 것이다.
 
-스물아홉 번째 표인 `schema_migrations`는 이 지도의 덩어리에 넣지 않았다. 어느 마이그레이션 파일을 적용했는지를 파일 내용의 해시와 함께 적는 표인데, 마이그레이션 파일이 아니라 적용 도구가 스스로 만든다 [code:bridge/db/migrate.py]. 「→ 마이그레이션」이 다룬다.
+서른 번째 표인 `schema_migrations`는 이 지도의 덩어리에 넣지 않았다. 어느 마이그레이션 파일을 적용했는지를 파일 내용의 해시와 함께 적는 표인데, 마이그레이션 파일이 아니라 적용 도구가 스스로 만든다 [code:bridge/db/migrate.py]. 「→ 마이그레이션」이 다룬다.
 
 ## 한눈에
 
@@ -38,6 +38,7 @@ DB를 왜 MySQL로 골랐는지, 왜 ENUM 대신 VARCHAR를 쓰는지, 보관과
 | | `scribe_review` | 0023 |
 | | `todo_inbox` | 0027 |
 | | `postit_check` | 0033 |
+| | `postit_repo_log` | 0034 |
 | 바깥 | `notification` | 0005 |
 | | `approval` | 0010 |
 | | `git_commit`, `build`, `build_commit` | 0012 |
@@ -309,6 +310,7 @@ erDiagram
     todo_inbox }o..o| character_session : "가져간 세션(taken_by)"
     postit_check }o..o| todo_inbox : "item = p:id"
     postit_check }o..|| character_session : "판정한 조사 세션"
+    postit_repo_log }o..o| todo_inbox : "postit_id, FK 없음"
 
     doc_publish {
         bigint id PK
@@ -344,6 +346,13 @@ erDiagram
         varchar verdict "done, left, unknown"
         varchar resolved
     }
+    postit_repo_log {
+        bigint id PK
+        varchar project
+        varchar repo
+        varchar action "add, remove"
+        boolean ok
+    }
 ```
 
 ### doc_publish — 노션에 올린 기록
@@ -372,6 +381,10 @@ erDiagram
 ### postit_check — 포스트잇 확인 판정
 
 포스트잇 창에서 [갱신]을 누르면 조사 세션이 코드를 읽고 열린 포스트잇과 README 「알려진 한계」 줄마다 끝났는지 판정한다. 그 판정 한 줄이 한 행이다 [code:migrations/0033_postit.sql]. `item`은 `p:<포스트잇 id>` 또는 `L:<README 줄 앞부분>`이다. README 줄은 DB에 없어서 판정할 때의 글 앞부분을 `item_text`에 남긴다. `verdict`는 done, left, unknown이고, done은 근거가 코드 자리일 때만 낸다. `coder`는 남은 일이면 코더에게 맡길 만한가다. 판정은 제안일 뿐이라, 사람이 줄마다 닫거나 남긴 결과를 `resolved`(closed, kept)에 적는다. 커밋만 보고 자동으로 지우지 않는다 [code:bridge/postit.py].
+
+### postit_repo_log: 저장소에 넣으려고 누른 기록
+
+포스트잇 창에서 [TODO로]나 TODO 항목의 [지우기]를 누르면 브리지가 그 프로젝트 저장소에 직접 커밋한다. 누른 것마다 성공도 거부도 한 행으로 남긴다 [code:migrations/0034_postit_repo_log.sql]. `repo`는 저장소 폴더 이름, `action`은 add(항목을 더함)와 remove(지움), `ok`는 커밋했는지다. `commit`은 짧은 해시이고 성공일 때만 있다. `note`는 사람이 읽는 한 줄로, 어느 저장소에 무엇을 넣었는지 또는 왜 못 했는지가 적힌다. `postit_id`는 누른 포스트잇이고, TODO 항목의 [지우기]에는 포스트잇이 없어 비어 있다. 이 표를 둔 까닭은 열린 포스트잇에 메모 칸이 없어, 거부된 까닭을 `todo_inbox`에 적을 곳이 없었기 때문이다. 화면은 이 행을 열린 줄 밑의 거부 까닭과 창 아래 「저장소에 넣은 기록」으로 보인다 [code:bridge/postit.py]. 「→ 포스트잇」.
 
 ## 5. 바깥: 알림, 승인, git과 CI/CD, 사용량
 

@@ -1419,13 +1419,38 @@ async def test_postit_states_close_and_limit(env, tmp_path):
     assert q(s, "SELECT assignee FROM todo_inbox WHERE id = %s", k)[0][0] == "coder"
     # [TODO로](11-17). 저장소 docs/TODO.md에 다음 번호로 더하고 그 파일만 커밋한다. 포스트잇은 todo로 닫혀 「할 일」로 간다
     gen = await sr.inbox_add(engine, proj, "질문 카드 접기\n답한 뒤 한 줄로")
+    # 11-19: docs/TODO.md가 더러우면 거부하고, 왜 못 했는지가 포스트잇에 남는다(다시 열어도 보인다)
+    todo_md = repo / "docs" / "TODO.md"
+    clean = todo_md.read_text(encoding="utf-8")
+    todo_md.write_text(clean + "- **foreman-9** 사람이 고치는 중\n", encoding="utf-8")
+    head_before = g("rev-parse", "HEAD")
+    with pytest.raises(Refused, match="docs/TODO.md에 커밋 안 된 변경이 있어 건드리지 않았습니다"):
+        await pi.to_todo(engine, gen)
+    assert g("rev-parse", "HEAD") == head_before and (await state())[gen] == "new"       # 커밋도 안 했고 포스트잇도 열려 있다
+    assert "사람이 고치는 중" in todo_md.read_text(encoding="utf-8")                      # 고치던 글은 그대로
+    rl = await pi.repo_log(engine, proj)
+    assert len(rl) == 1 and not rl[0]["ok"] and rl[0]["postit_id"] == gen and rl[0]["action"] == "add" and rl[0]["commit"] is None
+    assert rl[0]["repo"] == "repo" and "[TODO로] 못 넣었습니다" in rl[0]["note"] and "docs/TODO.md에 커밋 안 된 변경" in rl[0]["note"]
+    from bridge.api import postit as api_postit
+    v = await api_postit.view(engine, proj)                                              # 화면이 받는 값에 까닭이 실린다
+    assert {x["id"]: x["repo_refused"] for x in v["items"]}[gen] == rl[0]["note"]
+    assert v["repo_log"][0]["ok"] is False
+    todo_md.write_text(clean, encoding="utf-8")
+    # 다른 파일이 더럽거나 추적 안 하는 새 파일이 있어도 막지 않고, 커밋에는 TODO.md만 든다
+    (repo / "남의작업.txt").write_text("다른 세션이 쓰는 중\n", encoding="utf-8")
     res = await pi.to_todo(engine, gen)
     assert res["id"] == "foreman-3" and res["commit"]
     assert (await state())[gen] == "todo"
+    rl = await pi.repo_log(engine, proj)
+    assert rl[0]["ok"] and rl[0]["commit"] == res["commit"] and rl[0]["todo_id"] == "foreman-3" and rl[0]["postit_id"] == gen
+    assert "repo 저장소 docs/TODO.md에 foreman-3로 더했습니다" in rl[0]["note"] and "push 안 함" in rl[0]["note"]
+    v = await api_postit.view(engine, proj)
+    assert all(x["id"] != gen for x in v["items"])                                       # 닫혔으니 열린 줄에 거부 까닭이 남지 않는다
     assert g("log", "-1", "--format=%s") == "docs: TODO에 foreman-3 항목을 더함\n"
     assert g("show", "--name-only", "--format=", "HEAD").split() == ["docs/TODO.md"]
     assert "- **foreman-3** 질문 카드 접기 " in g("show", "HEAD:docs/TODO.md")
-    assert q(s, "SELECT closed_note FROM todo_inbox WHERE id = %s", gen)[0][0].startswith("TODO: foreman-3\n커밋: ")
+    note = q(s, "SELECT closed_note FROM todo_inbox WHERE id = %s", gen)[0][0]
+    assert note == f"TODO: foreman-3\n커밋: {res['commit']}\n저장소: repo\ndocs/TODO.md에 더함, push 안 함"
     with pytest.raises(Refused, match="이미 닫힌"):
         await pi.to_todo(engine, gen)
     tv = await pi.todo_view(engine, proj)
@@ -1449,8 +1474,18 @@ async def test_postit_states_close_and_limit(env, tmp_path):
     g("commit", "-q", "-m", "ops: 재부팅 확인함", "-m", "(todo:foreman-2)")
     assert (await pi.summary(engine, proj))["todo"]["done"] == 1
     assert "foreman-2" in g("show", "HEAD:docs/TODO.md")
+    clean2 = todo_md.read_text(encoding="utf-8")
+    todo_md.write_text(clean2 + "- **foreman-9** 다시 고치는 중\n", encoding="utf-8")
+    with pytest.raises(Refused, match="docs/TODO.md에 커밋 안 된 변경이 있어"):
+        await pi.todo_remove(engine, proj, "foreman-2")
+    assert "foreman-2" in g("show", "HEAD:docs/TODO.md")
+    rl = await pi.repo_log(engine, proj)
+    assert not rl[0]["ok"] and rl[0]["action"] == "remove" and rl[0]["todo_id"] == "foreman-2" and rl[0]["postit_id"] is None
+    todo_md.write_text(clean2, encoding="utf-8")
     out = await pi.todo_remove(engine, proj, "foreman-2")
     assert out["by"] and "foreman-2" not in g("show", "HEAD:docs/TODO.md")
+    rl = await pi.repo_log(engine, proj)
+    assert rl[0]["ok"] and rl[0]["commit"] == out["commit"] and f"끝낸 커밋 {out['by']}" in rl[0]["note"] and "repo 저장소" in rl[0]["note"]
 
 
 async def test_postit_net_sweep(env):

@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/postit.py, bridge/todofile.py, bridge/api/postit.py, bridge/api/todo.py, bridge/static/js/postit.js, migrations/0027_todo_inbox.sql, migrations/0028_todo_inbox_assignee.sql, migrations/0033_postit.sql, tests/js/postit.test.mjs, tests/test_postit.py, tests/test_todofile.py
+다루는 곳: bridge/postit.py, bridge/todofile.py, bridge/api/postit.py, bridge/api/todo.py, bridge/static/js/postit.js, migrations/0027_todo_inbox.sql, migrations/0028_todo_inbox_assignee.sql, migrations/0033_postit.sql, migrations/0034_postit_repo_log.sql, tests/js/postit.test.mjs, tests/test_postit.py, tests/test_todofile.py
 읽은 커밋: 8cfa257
 -->
 # 포스트잇
@@ -193,7 +193,15 @@ TODO.md의 꼴은 저장소마다 다르다. FOREMAN은 `- **foreman-12** 제목
 
 [TODO로]를 누르면 브리지가 그 프로젝트 저장소 원본 폴더의 `docs/TODO.md`에 다음 번호로 항목을 더하고 커밋한다 [code:bridge/todofile.py]. 다음 번호는 지금 파일과 그 파일의 지난 기록(`git log -p`)에서 가장 큰 번호에 하나를 더한 것이다. 끝나서 지운 번호를 다시 쓰지 않으려는 것이다. 항목은 그 저장소 꼴대로 쓰고, 「포스트잇에서 보낸 것」 절 끝에 붙인다. 절이 없으면 파일 끝에 만든다. 제목은 포스트잇 글의 첫 줄이고, 나온 곳에는 `포스트잇 p:<번호>`를 적는다. 커밋 제목은 `docs: TODO에 infra-12 항목을 더함` 꼴이다. 포스트잇 줄은 `todo`로 닫혀 「아직 안 보낸 것」에서 빠지고, 그 항목은 「할 일」에 나타난다.
 
-다른 세션이 같은 저장소 원본 폴더에서 일하고 있을 수 있어서 이 커밋은 조심스럽게 한다. 커밋은 `git commit --only -- docs/TODO.md`로 그 파일만 담는다. 다른 세션이 스테이지(다음 커밋에 담으려고 올려 둔 변경)에 올려 둔 것은 건드리지 않는다. 막는 때는 넷이다. 저장소가 브랜치 위에 있지 않을 때, 합치기나 rebase가 도는 중일 때, `docs/TODO.md`에 아직 커밋 안 된 변경이 있을 때(누가 고치는 중일 수 있다), 커밋이 실패할 때다. 커밋이 실패하면 고친 파일을 마지막 커밋 상태로 되돌리고 그 까닭을 화면에 보인다 [code:bridge/todofile.py]. push는 하지 않는다. push는 그 저장소 규칙대로 관리자가 한다.
+다른 세션이 같은 저장소 원본 폴더에서 일하고 있을 수 있어서 이 커밋은 조심스럽게 한다. 커밋은 `git commit --only -- docs/TODO.md`로 그 파일만 담는다. 다른 파일이 고쳐져 있거나 추적하지 않는 새 파일이 있어도 막지 않는다. 그런 파일은 커밋에 들어가지 않고 그대로 남기 때문이다. 처음에는 저장소 어디든 변경이 있으면 막도록 넓혔다가, 막을 까닭이 없는 경우까지 거부해 과하다고 보고 되돌렸다. 막는 때는 넷이다. 저장소가 브랜치 위에 있지 않을 때, 합치기나 rebase 같은 HEAD가 흔들리는 작업이 도는 중일 때, `docs/TODO.md`에 커밋 안 된 변경(고침이나 스테이지)이 있을 때(사람이 그 파일을 고치는 중이면 섞인다), 커밋이 실패할 때다. 커밋이 실패하면 고친 파일을 마지막 커밋 상태로 되돌리고 그 까닭을 화면에 보인다 [code:bridge/todofile.py]. push는 하지 않는다. push는 그 저장소 규칙대로 관리자가 한다.
+
+FOREMAN 자기 저장소도 같은 규칙이다. 관리자가 원본 폴더에서 다른 기록 파일을 고치는 중이어도 `docs/TODO.md`만 깨끗하면 [TODO로]가 된다. FOREMAN만의 예외는 두지 않았다.
+
+### 저장소에 넣은 기록: 거부도 성공도 남긴다
+
+[TODO로]와 [지우기]를 누를 때마다 `postit_repo_log` 표에 한 줄이 남는다 [code:migrations/0034_postit_repo_log.sql]. 성공이면 어느 저장소(폴더 이름)의 `docs/TODO.md`에 어느 번호로 더했는지, 커밋 짧은 해시, push하지 않았다는 말이 한 문장으로 적힌다. 지웠을 때는 지운 번호와 지운 커밋, 그 항목을 끝냈다고 한 커밋이 적힌다. 거부이면 위에서 본 까닭이 그대로 적힌다 [code:bridge/postit.py]. 사람이 그 저장소에 가 보지 않아도 무엇이 어디에 들어갔는지 알 수 있게 하려는 것이다. 성공한 [TODO로]는 포스트잇 줄의 닫힌 근거에도 `저장소:` 줄이 든다.
+
+거부 까닭을 새 표에 둔 것은 열린 포스트잇에 메모 칸이 없기 때문이다. 닫힌 근거 칸은 닫을 때만 쓰이는데, 거부된 줄은 닫히지 않는다. 화면은 이 기록을 두 곳에 보인다. 못 넣은 줄 바로 밑에 마지막 거부 까닭이 빨갛게 붙어 창을 다시 열어도 남아 있고, 맨 아래 「저장소에 넣은 기록」 접는 칸에 최근 20줄이 시각과 함께 있다 [code:bridge/static/js/postit.js]. 포스트잇이 나중에 [TODO로]에 성공해 닫히면 그 거부 까닭은 열린 줄에서 사라지고 기록 칸에만 남는다 [code:bridge/api/postit.py]. 기록을 DB에 못 남겨도 커밋 결과 보고는 막지 않고 브리지 로그에만 남긴다.
 
 ### [한계로]: 편과 안 하는 까닭이 있어야 보낸다
 
@@ -213,7 +221,7 @@ TODO.md의 꼴은 저장소마다 다르다. FOREMAN은 `- **foreman-12** 제목
 
 ### 다른 저장소에서
 
-인프라, 런슈즈, 펫퍼민트 방에서도 같은 창이 같은 코드로 돈다. FOREMAN 세션은 다른 저장소를 고치지 못하게 막혀 있는데(다른 저장소 막음), 이 막음은 세션의 도구 호출을 거르는 장치라 브리지가 하는 [TODO로], [지우기] 커밋에는 걸리지 않는다. 그래서 브리지 쪽에 따로 선을 그었다. 사람이 그 프로젝트 창에서 누른 단추로만 하고, 그 저장소 원본 폴더의 `docs/TODO.md` 하나만 담으며, push하지 않는다. 다른 프로젝트의 관리자가 쓰는 프로젝트 토큰(그 프로젝트에만 닿는 열쇠)으로는 이 길에 닿지 않는다 [code:bridge/scopetoken.py]. [한계로]로 생기는 서기 일은 그 저장소에 띄우는 서기 세션이 하고, 그 저장소 CLAUDE.md를 따른다.
+인프라, 런슈즈, 펫퍼민트 방에서도 같은 창이 같은 코드로 돈다. FOREMAN 세션은 다른 저장소를 고치지 못하게 막혀 있는데(다른 저장소 막음), 이 막음은 세션의 도구 호출을 거르는 장치라 브리지가 하는 [TODO로], [지우기] 커밋에는 걸리지 않는다. 그래서 브리지 쪽에 따로 선을 그었다. 사람이 그 프로젝트 창에서 누른 단추로만 하고, 그 저장소 원본 폴더의 `docs/TODO.md` 하나만 담으며, push하지 않는다. 그 파일에 커밋 안 된 변경이 있으면 거부하고 까닭을 포스트잇에 남긴다. 다른 프로젝트의 관리자가 쓰는 프로젝트 토큰(그 프로젝트에만 닿는 열쇠)으로는 이 길에 닿지 않는다 [code:bridge/scopetoken.py]. [한계로]로 생기는 서기 일은 그 저장소에 띄우는 서기 세션이 하고, 그 저장소 CLAUDE.md를 따른다.
 
 ## 닫기: [x]와 [갱신]
 

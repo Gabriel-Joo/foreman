@@ -101,6 +101,7 @@ function rowHtml(x, busy, project = '') {
   const dis = busy ? ' disabled' : '';
   return `<div class="pi-row${x.confirmed ? '' : ' pi-unconf'}" data-pi-row="${x.id}">
     <details class="pi-main"${keep(`postit:${project}:p${x.id}`)}><summary class="small">${esc(firstLine(x.body))} <span class="muted">(${esc(x.source_label)}, ${esc(mmdd(x.created_at))}${ref})</span> ${chip}</summary><pre class="hand-body">${esc(x.body)}</pre></details>
+    ${x.repo_refused ? `<div class="small bad pi-refused" title="저장소에 못 넣은 까닭 — 마지막으로 [TODO로]를 눌렀을 때 저장소가 거부한 까닭입니다. 정리한 뒤 다시 누릅니다.">${esc(x.repo_refused)}</div>` : ''}
     <div class="pi-btns">${x.recommend ? `<button type="button" class="small primary" data-pi-launch="${x.id}"${dis} title="띄우기 — 이 포스트잇으로 계획 창을 열고 바로 계획을 받습니다. [이대로 시작]을 누르면 코더 세션이 이 일을 가져갑니다.">띄우기</button>` : ''}
     <button type="button" class="small" data-pi-todo="${x.id}"${dis} title="TODO로 — 아직 할 일입니다. 저장소 docs/TODO.md에 다음 번호로 더하고 그 파일만 커밋합니다. push는 하지 않습니다.">TODO로</button>
     <button type="button" class="small" data-pi-limit="${x.id}" data-kind="postit"${dis} title="한계로 — 안 하기로 한 것입니다. 편을 고르고 안 하는 까닭을 적으면 서기가 그 편 「알려진 한계」에 씁니다.">한계로</button>
@@ -181,6 +182,10 @@ export function listHtml(view, { busy = false, draft = '', note = null, label = 
   const closed = view.closed || [];
   const closedHtml = closed.length ? `<details class="pi-closed"${keep(`postit:${view.project}:closed`)}><summary class="small muted" title="끝낸 것 — 최근에 끝내거나 보내거나 지운 포스트잇을 다시 봅니다.">끝낸 것 ${closed.length}</summary>${
     closed.map((x) => `<div class="small muted pi-crow">${esc(x.label)}: ${esc(firstLine(x.body, 60))}${x.closed_note ? ` <span title="${esc(x.closed_note)}">(근거)</span>` : ''}</div>`).join('')}</details>` : '';
+  // 저장소에 넣으려고 누른 기록(성공과 거부). 사람이 그 저장소에 가 보지 않아도 알 수 있게
+  const rl = view.repo_log || [];
+  const logHtml = rl.length ? `<details class="pi-closed"${keep(`postit:${view.project}:repolog`)}><summary class="small muted" title="저장소에 넣은 기록 — [TODO로]와 [지우기]를 눌러 저장소에 커밋한 일과 거부된 일입니다. push는 하지 않았습니다.">저장소에 넣은 기록 ${rl.length}</summary>${
+    rl.map((r) => `<div class="small pi-crow ${r.ok ? 'muted' : 'bad'}">${esc(mmddhm(r.created_at) || '')} ${r.ok ? '' : '못 함: '}${esc(r.note)}</div>`).join('')}</details>` : '';
   const saveTip = unconf.length
     ? `저장 — 적은 글을 포스트잇에 올리고, 확인 전 ${unconf.length}줄도 받아들입니다. 아닌 줄은 먼저 [x]로 지웁니다.`
     : '저장 — 적은 글을 포스트잇에 바로 올립니다. DB에만 적고 저장소는 건드리지 않습니다. Ctrl+Enter로도 저장합니다.';
@@ -201,7 +206,7 @@ export function listHtml(view, { busy = false, draft = '', note = null, label = 
     <div class="pi-list">${tg.now}</div></details>
     ${grp('old', '30일 넘은 것', tg.nOld, '30일 넘은 것 — 올린 날이 30일 넘은 할 일입니다. 아직 할지 다시 봅니다.')}
     <div class="pi-list">${tg.old}</div></details>
-    ${closedHtml}</div>`;
+    ${logHtml}${closedHtml}</div>`;
 }
 
 // 동작 — 머리 탭 창 · 서기실이 같이 쓴다. ctx: {store, project, view, draft(), setDraft(), done(note)}
@@ -228,7 +233,7 @@ export async function act(ev, ctx) {
     }
     if (td) {
       const j = await api(`/api/postit/${td.dataset.piTodo}/todo`, {});
-      return ctx.done({ msg: `#${td.dataset.piTodo}을 ${j.id}로 docs/TODO.md에 더하고 커밋했습니다(${j.commit}). push는 하지 않았습니다.` });
+      return ctx.done({ msg: `#${td.dataset.piTodo}을 ${ctx.project} 저장소 docs/TODO.md에 ${j.id}로 더하고 커밋했습니다(${j.commit}). push는 하지 않았습니다.` });
     }
     if (lm) {
       // 칸을 연다. 편 목록은 프로젝트마다 한 번 읽는다
@@ -263,7 +268,7 @@ export async function act(ev, ctx) {
       const id = tdel.dataset.piTdel;
       if (typeof confirm === 'function' && !confirm(`${id}를 docs/TODO.md에서 지우고 그 파일만 커밋합니다. push는 하지 않습니다.\n\n지울까요?`)) return true;
       const j = await api('/api/postit/todo/remove', { project: ctx.project, id });
-      return ctx.done({ msg: `${id}를 지우고 커밋했습니다(${j.commit}).` });
+      return ctx.done({ msg: `${id}를 ${ctx.project} 저장소 docs/TODO.md에서 지우고 커밋했습니다(${j.commit}). push는 하지 않았습니다.` });
     }
     if (sv) {
       const body = ctx.draft().trim();

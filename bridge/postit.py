@@ -287,14 +287,18 @@ async def to_todo(engine: Any, iid: int) -> dict[str, Any]:
     repo = await _repo(engine, row["project"])
     why = (f"포스트잇 #{iid}에서 사람이 [TODO로] 보낸 것을 {tf.PATH}에 더했다.\n"
            "FOREMAN 브리지가 사람이 누른 단추로 이 파일만 담아 만든 커밋이다. push는 하지 않았다.")
+    name = Path(repo).name
     try:
         res = await tf.add(repo, row["body"], f"포스트잇 p:{iid}", why)
     except tf.TodoError as e:
+        await log_repo(engine, row["project"], name, iid, "add", False, None, None, f"[TODO로] 못 넣었습니다. {e}")
         raise Refused(str(e)) from e
+    await log_repo(engine, row["project"], name, iid, "add", True, res["value"], res["commit"],
+                   f"{name} 저장소 {tf.PATH}에 {res['value']}로 더했습니다(커밋 {res['commit']}, push 안 함)")
     async with engine.begin() as c:
         r = await c.execute(text("UPDATE todo_inbox SET closed_reason = 'todo', closed_at = UTC_TIMESTAMP(3), closed_note = :n "
                                  "WHERE id = :i AND closed_reason IS NULL AND dropped_at IS NULL"),
-                            {"n": f"TODO: {res['value']}\n커밋: {res['commit']}", "i": iid})
+                            {"n": f"TODO: {res['value']}\n커밋: {res['commit']}\n저장소: {name}\n{tf.PATH}에 더함, push 안 함", "i": iid})
         if r.rowcount:
             await c.execute(text("UPDATE postit_check SET resolved = 'closed', resolved_at = UTC_TIMESTAMP(3) "
                                  "WHERE item = :it AND resolved IS NULL"), {"it": f"p:{iid}"})
@@ -387,11 +391,37 @@ async def todo_remove(engine: Any, project: str, tid: str) -> dict[str, Any]:
         raise Refused(f"{tid}를 끝냈다고 적은 커밋(`(todo:{tid})`)을 찾지 못했습니다. 지우지 않았습니다")
     why = (f"커밋 {done['commit']}(「{done['subject']}」)이 메시지에 (todo:{tid})로 끝냈다고 적어\n"
            "사람이 포스트잇 창에서 [지우기]를 눌렀다. FOREMAN 브리지가 이 파일만 담아 만든 커밋이다. push는 하지 않았다.")
+    name = Path(repo).name
     try:
         res = await tf.remove(repo, tid, why)
     except tf.TodoError as e:
+        await log_repo(engine, project, name, None, "remove", False, tid, None, f"{tid} [지우기] 못 했습니다. {e}")
         raise Refused(str(e)) from e
+    await log_repo(engine, project, name, None, "remove", True, tid, res["commit"],
+                   f"{name} 저장소 {tf.PATH}에서 {tid}를 지웠습니다(커밋 {res['commit']}, 끝낸 커밋 {done['commit']}, push 안 함)")
     return {"id": tid, "commit": res["commit"], "by": done["commit"]}
+
+
+async def log_repo(engine: Any, project: str, repo: str, postit_id: int | None, action: str, ok: bool,
+                   todo_id: str | None, commit: str | None, note: str) -> None:
+    """다른 저장소에 커밋하려고 눌린 것마다 한 줄(0034 postit_repo_log). 성공도 거부도 남긴다. 못 남겨도 누른 일은 막지 않는다."""
+    try:
+        async with engine.begin() as c:
+            await c.execute(text("INSERT INTO postit_repo_log (project, repo, postit_id, action, ok, todo_id, `commit`, note) "
+                                 "VALUES (:p, :r, :i, :a, :o, :t, :c, :n)"),
+                            {"p": project, "r": repo[:128], "i": postit_id, "a": action, "o": bool(ok), "t": todo_id, "c": commit,
+                             "n": note[:1000]})
+    except Exception:      # noqa: BLE001 - 기록 실패가 커밋 결과 보고를 가리지 않게
+        log.warning("postit_repo_log를 남기지 못했습니다", exc_info=True)
+
+
+async def repo_log(engine: Any, project: str, limit: int = 20) -> list[dict[str, Any]]:
+    """화면용: 이 프로젝트에서 저장소에 넣으려고 누른 최근 기록(새것부터)."""
+    async with engine.connect() as c:
+        rows = (await c.execute(text("SELECT id, repo, postit_id, action, ok, todo_id, `commit`, note, created_at "
+                                     "FROM postit_repo_log WHERE project = :p ORDER BY id DESC LIMIT :n"),
+                                {"p": project, "n": limit})).mappings().all()
+    return [dict(r) for r in rows]
 
 
 async def todo_view(engine: Any, project: str) -> dict[str, Any]:
