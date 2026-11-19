@@ -25,6 +25,7 @@ FOREMAN은 한 서버에서 동시에 도는 여러 AI 작업 세션을 브라�
 | 13 | [셸 패널](portfolio/13_shell.md) |  |
 | 14 | [사용량 화면](portfolio/14_usage.md) |  |
 | 15 | [텔레그램 알림](portfolio/15_telegram.md) |  |
+| 16 | [알려진 한계](portfolio/16_limits.md) |  |
 
 ## 기술문서
 
@@ -49,6 +50,7 @@ FOREMAN은 한 서버에서 동시에 도는 여러 AI 작업 세션을 브라�
 | 14 | [화면](notion/14_screen.md) | 하위 5 |
 | 15 | [DB](notion/15_db.md) | 하위 2 |
 | 16 | [시험과 배포](notion/16_tests.md) |  |
+| 17 | [알려진 한계](notion/17_limits.md) |  |
 
 ## 문서
 
