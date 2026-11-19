@@ -53,3 +53,13 @@ test('멈춤 N인데 덮을 편이 없거나 목록을 못 읽으면 그렇다�
   assert.ok(heldRows({ items: [], docs_pub: DOCS({ held_buttons: 0, held_error: 'OSError: 끊김' }) }).includes('읽지 못했습니다'));
   assert.equal(heldRows({ items: [], docs_pub: DOCS({ last: { held: 0 }, held_buttons: 0 }) }), '');
 });
+
+test('멈춘 편 목록 자체가 없으면 「덮을 편이 없습니다」가 아니라 목록이 아직 없다고 쓴다(11-19)', () => {
+  const t = heldRows({ items: [], docs_pub: DOCS({ last: { held: 5 }, held_buttons: 0, held_list_missing: 5 }) });
+  assert.ok(t.includes('멈춘 5편의 목록이 아직 없습니다. 다음 맞추기 뒤에 보입니다.'));
+  assert.ok(!t.includes('덮을 편이 없습니다'));
+  // 목록이 있는 쪽(held_list_missing이 null)은 지금 글 그대로
+  assert.ok(heldRows({ items: [], docs_pub: DOCS({ held_buttons: 0, held_list_missing: null }) }).includes('지금 덮을 편이 없습니다'));
+  // 단추가 있으면 단추가 먼저
+  assert.ok(heldRows({ items: [FORCE], docs_pub: DOCS({ held_buttons: 1, held_list_missing: null }) }).includes('data-force="1"'));
+});

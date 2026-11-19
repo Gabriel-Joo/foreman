@@ -62,6 +62,8 @@ export function heldRows(pj, busy = false) {
   const d = pj.docs_pub;
   if (!d) return '';
   if (d.held_error) return `<div class="small bad">사람이 고쳐 멈춘 편 목록을 ${UNREAD}(${esc(d.held_error)}). 덮기 단추를 보일 수 없습니다.</div>`;
+  // 목록 자체를 모르는 경우(옛 브리지가 멈춘 편 행을 남기지 않았다). 사람이 기다릴지 맞추기를 돌릴지 정하게 수를 보인다
+  if (d.held_list_missing) return `<div class="small warn">멈춘 ${d.held_list_missing}편의 목록이 아직 없습니다. 다음 맞추기 뒤에 보입니다.</div>`;
   if (d.last && d.last.held && d.held_buttons === 0) {
     return `<div class="small warn">사람이 고쳐 멈춘 ${d.last.held}편 가운데 지금 덮을 편이 없습니다. 그 뒤 git이 다시 바뀌었거나 이미 맞춰졌습니다. 다음에 올릴 때 다시 봅니다.</div>`;
   }

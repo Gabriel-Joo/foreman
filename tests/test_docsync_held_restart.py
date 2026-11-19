@@ -88,3 +88,23 @@ def test_unreadable_held_rows_say_so(tmp_path):
     pub.e = Broken()
     last, err = run(ds.DocSync({"infra": pub}).last_for("infra"))
     assert last is None and "OSError" in err
+
+
+def test_held_list_missing_tells_two_cases_apart(tmp_path, monkeypatch):
+    """「멈춤 N」인데 목록이 없는 것(옛 브리지가 행을 안 남김)과, 목록은 있는데 지금 덮을 편이 0인 것을 가른다(11-19)."""
+    pub, db, st = _world(tmp_path)
+    _fake_status(monkeypatch, changed=())                       # git이 다시 바뀌어 덮을 편이 0인 꼴
+    summ = {"last": {"held": 5}}
+    # (가) 멈춘 수만 있고 @docs-held 행이 없음 -> 목록을 모름, 수를 돌려준다
+    last, err = run(ds.DocSync({"infra": pub}).last_for("infra"))
+    assert last is None and ds.held_list_missing(summ, last, err) == 5
+    # (나) 행은 있는데 지금 덮을 편이 0 -> 목록을 아니까 None(「지금 덮을 편이 없습니다」 글이 맞는 경우)
+    _sync_holding(monkeypatch, [{"path": "docs/b.md", "edits": ["x"], "count": 1, "url": None}])
+    run(ds.DocSync({"infra": pub}).run_one("infra"))
+    last, err = run(ds.DocSync({"infra": pub}).last_for("infra"))
+    assert last["held"] and ds.held_list_missing(summ, last, err) is None
+    assert _forces(run(ds.todo_items(pub, last))) == []
+    # 멈춘 수가 0이거나 목록을 못 읽은 때는 이 글이 아니다(못 읽은 것은 held_error 글이 따로 말한다)
+    assert ds.held_list_missing({"last": {"held": 0}}, None, None) is None
+    assert ds.held_list_missing({"last": None}, None, None) is None
+    assert ds.held_list_missing(summ, None, "OSError: 끊김") is None

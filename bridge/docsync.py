@@ -449,6 +449,16 @@ async def load_held(pub: Any) -> list[dict[str, Any]]:
     return out
 
 
+def held_list_missing(summ: dict[str, Any], last: dict[str, Any] | None, held_error: str | None) -> int | None:
+    """「멈춤 N」인데 멈춘 편 목록 자체가 없으면 N, 아니면 None(11-19).
+    옛 브리지가 멈춘 편 행(HELD_PRE)을 남기지 않아 목록을 모르는 경우다. 목록은 있는데 지금 덮을 편이 0인 경우
+    (그 뒤 git이 다시 바뀜, 이미 맞춰짐)와 가른다. 목록을 못 읽은 경우(held_error)도 따로 말하므로 여기서는 None"""
+    n = int(((summ or {}).get("last") or {}).get("held") or 0)
+    if not n or held_error or (last or {}).get("held"):
+        return None
+    return n
+
+
 async def last_published(pub: Any, mem: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """「마지막으로 올린 때」와 그 결과를 DB에서 읽는다(11-17). 메모리(mem)는 보태기만 하고 없어도 같은 글이 나온다.
 

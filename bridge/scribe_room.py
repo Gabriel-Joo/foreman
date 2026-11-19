@@ -234,6 +234,7 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
                     # 화면이 「멈춤 N」인데 덮기 단추가 없으면 그 까닭을 쓰게(조용히 비지 않게): 지금 덮을 수 있는 편 수, 못 읽은 까닭
                     docs_pub["held_buttons"] = sum(1 for x in got if x.get("act") == "force")
                     docs_pub["held_error"] = held_error
+                    docs_pub["held_list_missing"] = ds.held_list_missing(docs_pub, last_res, held_error)
             except Exception as e:  # noqa: BLE001
                 pub_error = f"{type(e).__name__}: {str(e)[:120]}"
         opened = await open_tasks(engine, name)
