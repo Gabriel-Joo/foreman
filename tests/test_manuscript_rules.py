@@ -47,14 +47,20 @@ def test_user_criteria_are_in_the_doc():
 
 
 def test_limit_and_todo_rules_are_in_the_doc():
-    """11-17 문서 정리 A단계: 한계는 안 하기로 한 것만 까닭과 함께, 할 일은 docs/TODO.md, 묶음마다 한계 편 하나."""
+    """11-17 문서 정리 A단계: 할 일은 docs/TODO.md, 묶음마다 한계 편 하나.
+    11-19 사용자: 두 갈래(한계, 할 일)를 넷(한계, 조건, 설계, 할 일)으로, 한계 편의 꼴은 2절 3단 머리 아래."""
     secs = manuscript_rules.sections(manuscript_rules.PATH.read_text(encoding="utf-8"))
-    for want in ("안 하기로 한 것만 쓴다", "까닭을 함께 적는다", "`docs/TODO.md`로 보낸다",
-                 "한계 절에 적지 않는다", "조건인 한계", "안 하는 까닭 대신 그 조건을 적는다"):
-        assert want in " ".join(secs["1"]), want
+    sec1 = " ".join(secs["1"])
+    for want in ("한계, 조건, 설계, 할 일 넷으로 가른다", "하려 했는데 안 한 것", "안 하는 까닭을 한 줄로 쓸 수 있다",
+                 "우리가 고르지 않은 것", "본문 약속으로 간다", "`docs/TODO.md`로 간다", "까닭을 지어내지 않는다",
+                 "문서에서 까닭을 못 찾으면 할 일이다", "한계 절에 적지 않는다"):
+        assert want in sec1, want
+    for old in ("안 하기로 한 것만 쓴다", "조건인 한계"):          # 옛 두 갈래 기준이 함께 남지 않는다
+        assert old not in sec1, old
     sec2 = " ".join(secs["2"])
     for want in ("「알려진 한계」 편을 하나 둔다", "한 번만 적고", "가리키는 한 줄로 바꾼다",
-                 "한 편에만 해당하는 한계는 그 편에 그대로 둔다"):
+                 "한 편에만 걸리는 줄은 그 편에 둔다", "결정으로 묶는다", "거꾸로 쓰면 변명으로 읽힌다",
+                 "뿌리는 머리 문단에서 한 번만 말하고", "조건 묶음은 편 맨 끝에 둔다"):
         assert want in sec2, want
     sec5 = " ".join(secs["5"])     # 포트폴리오 「치른 값」: 고르면서 치른 대가, 까닭이 정의에 들어 있음
     for want in ("치른 대가", "늘 통과한다", "대개 할 일", "넣지 않고 `docs/TODO.md`로 보낸다",
@@ -64,10 +70,19 @@ def test_limit_and_todo_rules_are_in_the_doc():
     # 지시문 셋이 모두 받는다(서기 둘은 1, 2절 전체, 코더는 1, 2절 전체)
     for kind in ("techdoc", "portfolio", "coder"):
         text = " ".join(manuscript_rules.lines(kind))
-        assert "안 하기로 한 것만 쓴다" in text and "「알려진 한계」 편을 하나 둔다" in text, kind
-        assert "조건인 한계" in text, kind
+        assert "하려 했는데 안 한 것" in text and "「알려진 한계」 편을 하나 둔다" in text, kind
+        assert "우리가 고르지 않은 것" in text and "거꾸로 쓰면 변명으로 읽힌다" in text, kind
     assert "치른 대가" in " ".join(manuscript_rules.lines("portfolio"))   # 포트폴리오 서기는 5절 전체
     assert "치른 대가" not in " ".join(manuscript_rules.lines("coder"))   # 코더는 5절 첫 줄만
+
+
+def test_runshoes_six_rules_reach_every_prompt():
+    """11-19 사용자: 런슈즈에서 세운 원고 규칙 여섯이 서기 둘과 코더 지시문에 모두 들어간다(1, 2절)."""
+    for kind in ("techdoc", "portfolio", "coder"):
+        text = " ".join(manuscript_rules.lines(kind))
+        for want in ("번호와 한글 제목만 둔다", "옮기지 않은 말을 목록으로 적어", "글쓴이의 사정을 원고에 쓰지 않는다",
+                     "세는 법을 함께 적는다", "거꾸로 쓰면 변명으로 읽힌다", "넷으로 가른다"):
+            assert want in text, (kind, want)
 
 
 def test_arrow_quote_rule_reaches_every_prompt():
