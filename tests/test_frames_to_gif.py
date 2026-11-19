@@ -45,6 +45,17 @@ def test_delta_keeps_only_changed_pixels(tmp_path):
     assert r["dot"] == [200, 20, 20]          # 투명 위로 이어 붙여도 점은 새 색이다
 
 
+def test_delta_ignores_color_reduction_error(tmp_path):
+    """색을 2개로 줄이면 두 칸의 색이 합쳐져 원본과 30쯤 어긋난다. 보이는 화면을 줄인 색으로 들고 견주면 문턱 24 아래인
+    '같은 장면'이 바뀐 것으로 잡힌다. 원본 RGB로 견주면 같은 장은 앞 장에 묶이고, 점 하나가 바뀐 장은 그 점만 담긴다."""
+    r = subprocess.run(["python3", "-I", "-W", "ignore", str(REPO / "tests" / "data" / "gif_probe_lossy.py"),
+                        str(REPO), "2", "24"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    out = json.loads(r.stdout.strip().splitlines()[-1])
+    assert out["durations"] == [200, 100]
+    assert out["transparent"] == [0, 255]     # 16×16=256점 가운데 바뀐 한 점만 빼고 모두 투명
+
+
 def test_delta_threshold_changes_result(tmp_path):
     """문턱을 24로 낮추면 작은 변화(30)도 담긴다. 문턱이 아주 높으면 아무것도 안 바뀐 장면이 되어 첫 장 하나만 남는다."""
     (tmp_path / "low").mkdir()

@@ -1,5 +1,5 @@
 <!--
-다루는 곳: tools/, bridge/static/js/demo.js, bridge/static/demo/, tests/screen_words.py, tests/test_screen_words.py, tests/data/screen_words.toml, tests/data/gif_probe.py, tests/test_frames_to_gif.py, tests/js/merge_wait.test.mjs, tests/js/merge_wait_manager.test.mjs, tests/js/overhead_marks.test.mjs, tests/test_merge_wait.py, tests/test_merge_wait_manager.py, tests/test_merge_wait_off_remind.py, tests/test_overhead_marks.py
+다루는 곳: tools/, bridge/static/js/demo.js, bridge/static/demo/, tests/screen_words.py, tests/test_screen_words.py, tests/data/screen_words.toml, tests/data/gif_probe.py, tests/data/gif_probe_lossy.py, tests/test_frames_to_gif.py, tests/js/merge_wait.test.mjs, tests/js/merge_wait_manager.test.mjs, tests/js/overhead_marks.test.mjs, tests/test_merge_wait.py, tests/test_merge_wait_manager.py, tests/test_merge_wait_off_remind.py, tests/test_overhead_marks.py
 읽은 커밋: fb7121b
 -->
 # 화면 점검과 시연
@@ -193,7 +193,7 @@ flowchart LR
 
 프레임 폴더를 GIF 하나로 묶는다. 픽셀 그림이라는 성질에 맞춰 네 가지를 정했다 [code:tools/frames_to_gif.py].
 
-첫째, 팔레트(쓸 색 목록)를 전체에서 한 번만 뽑는다. 프레임 가운데 최대 여덟 장을 고르게 골라 세로로 이어 붙인 그림에서 색을 뽑고, 모든 프레임을 같은 팔레트로 줄인다. 프레임마다 팔레트를 따로 뽑으면 같은 벽이 프레임마다 미세하게 다른 색이 되어 화면이 흔들린다. 둘째, 디더링(점무늬로 없는 색을 흉내 내기)을 하지 않는다. 점무늬는 크기를 키우고 픽셀 그림을 더럽힌다. 셋째, 폭을 줄일 때는 가장 가까운 픽셀을 고르는 방식(NEAREST)으로 줄여 픽셀이 뭉개지지 않게 한다. 넷째, 앞 장과 똑같은 프레임이 이어지면 하나로 묶고 머무는 시간만 늘린다. 캐릭터가 쉬는 장면은 거의 공짜가 된다.
+첫째, 팔레트(쓸 색 목록)를 전체에서 한 번만 뽑는다. 프레임을 여덟 등분한 간격으로 골라(장이 적으면 전부, 많아도 열다섯 장쯤) 세로로 이어 붙인 그림에서 색을 뽑고, 모든 프레임을 같은 팔레트로 줄인다. 프레임마다 팔레트를 따로 뽑으면 같은 벽이 프레임마다 미세하게 다른 색이 되어 화면이 흔들린다. 둘째, 디더링(점무늬로 없는 색을 흉내 내기)을 하지 않는다. 점무늬는 크기를 키우고 픽셀 그림을 더럽힌다. 셋째, 폭을 줄일 때는 가장 가까운 픽셀을 고르는 방식(NEAREST)으로 줄여 픽셀이 뭉개지지 않게 한다. 넷째, 앞 장과 똑같은 프레임이 이어지면 하나로 묶고 머무는 시간만 늘린다. 캐릭터가 쉬는 장면은 거의 공짜가 된다.
 
 색 수는 실제로 재 보고 정했다. 17초짜리 출하 라인 영상(890×570)을 색 수만 바꿔 만든 크기는 이랬다 [log:stage13_demo_capture_result.md].
 
@@ -205,7 +205,7 @@ flowchart LR
 
 카메라가 자리를 잡은 뒤 찍으면 화면 전체가 바뀌는 프레임이 없어 GIF가 더 작아진다. 녹화기에 `--lead`가 있는 또 하나의 까닭이다. 마법학교 테마는 촛불과 불꽃이 매 프레임 바뀌어 무겁다. 같은 7초 방 전체가 4.38MB였다 [log:stage13_demo_capture_result.md].
 
-돌바닥 무늬가 있는 마법학교 테마는 JPEG 잡음이 점마다 달라서 같은 설정에서도 오피스보다 GIF가 두 배쯤 커진다. 이럴 때를 위해 `--delta`를 두었다. 지금 보이는 화면과 거의 같은 점(빨강, 초록, 파랑 차의 합이 문턱 아래인 점)은 투명으로 비워 두고 바뀐 곳만 담는다. 문턱은 `--delta-threshold`로 고르고 기본은 120이며, 글씨가 바뀌는 장면은 잔상이 남아 24쯤으로 낮춘다. 투명 칸 하나를 쓰므로 색은 최대 255다. 옵션을 주지 않으면 위 네 가지만 지킨 예전 그대로 돈다 [code:tools/frames_to_gif.py] [code:tools/screen.py].
+돌바닥 무늬가 있는 마법학교 테마는 JPEG 잡음이 점마다 달라서 같은 설정에서도 오피스보다 GIF가 두 배쯤 커진다. 이럴 때를 위해 `--delta`를 두었다. 지금 보이는 화면과 거의 같은 점(빨강, 초록, 파랑 차의 합이 문턱 아래인 점)은 투명으로 비워 두고 바뀐 곳만 담는다. 지금 보이는 화면은 색을 줄인 그림이 아니라 원본 색으로 들고 견준다. 줄인 색으로 견주면 색을 줄이며 생긴 오차가 문턱에 더해져 같은 점이 달라 보이고, 투명이 줄어 GIF가 커진다. 문턱은 `--delta-threshold`로 고르고 기본은 120이며, 글씨가 바뀌는 장면은 잔상이 남아 24쯤으로 낮춘다. 투명 칸 하나를 쓰므로 색은 최대 255다. 옵션을 주지 않으면 위 네 가지만 지킨 예전 그대로 돈다 [code:tools/frames_to_gif.py] [code:tools/screen.py].
 
 ### 3-4. 녹화가 드러낸 것
 

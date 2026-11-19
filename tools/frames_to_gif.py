@@ -22,7 +22,7 @@ DELTA_THRESHOLD = 120   # 기본 문턱(R, G, B 차의 합). 낮을수록 작은
 
 
 def _changed_mask(canvas: Image.Image, im: Image.Image, threshold: int) -> Image.Image:
-    """보이는 화면(canvas)과 새 프레임(im)이 문턱 이상 다른 점은 255, 나머지는 0인 'L' 그림."""
+    """보이는 화면(canvas)과 새 프레임(im)이 문턱 이상 다른 점은 255, 나머지는 0인 'L' 그림. 둘 다 원본 RGB여야 한다(색을 줄인 그림이면 같은 점도 달라 보인다)."""
     r, g, b = ImageChops.difference(canvas, im).split()
     total = ImageChops.add(ImageChops.add(r, g), b)      # 255에서 잘린다. 문턱은 255 안에서만 뜻이 있다
     return total.point(lambda v: 255 if v >= threshold else 0)
@@ -34,7 +34,7 @@ def build_frames(ims: list[Image.Image], colors: int, step: float, delta: bool =
     if delta:
         colors = min(colors, 255)                         # 투명 칸 하나(255번)를 비워 둔다
     # 공통 팔레트 — 프레임 몇 장을 이어 붙인 그림에서 한 번 뽑는다
-    pick = ims[:: max(1, len(ims) // 8)][:8]
+    pick = ims[:: max(1, len(ims) // 8)]                  # 8등분 간격(장이 적으면 전부). 많아야 15장쯤
     sheet = Image.new("RGB", (pick[0].width, pick[0].height * len(pick)))
     for i, im in enumerate(pick):
         sheet.paste(im, (0, i * im.height))
@@ -50,7 +50,9 @@ def build_frames(ims: list[Image.Image], colors: int, step: float, delta: bool =
                 durs.append(step)
         return frames, durs
     transparent = 255
-    canvas = q[0].convert("RGB")                          # 보는 사람 눈에 지금 보이는 화면. 원본이 아니라 이것과 견준다(조금씩 어긋나 쌓이지 않게)
+    # 지금 보이는 화면을 원본 RGB로 든다. 앞 원본 장과 견주면 잡음이 장마다 쌓여 번지고, 색을 줄인 그림과 견주면 줄인 오차가
+    # 문턱에 더해져 같은 점이 달라 보인다(투명이 줄고 GIF가 커진다). 그려 넣은 점만 새 원본 값으로 바꾼다
+    canvas = ims[0]
     for i in range(1, len(ims)):
         mask = _changed_mask(canvas, ims[i], threshold)
         if mask.getbbox() is None:                        # 문턱 아래로만 달라졌다, 머무는 시간만 늘린다
@@ -61,7 +63,7 @@ def build_frames(ims: list[Image.Image], colors: int, step: float, delta: bool =
         f.info["transparency"] = transparent
         frames.append(f)
         durs.append(step)
-        canvas = Image.composite(q[i].convert("RGB"), canvas, mask)
+        canvas = Image.composite(ims[i], canvas, mask)
     return frames, durs
 
 
