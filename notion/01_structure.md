@@ -73,7 +73,7 @@ FOREMAN을 처음 보면 가장 이상해 보이는 점이 이것이다. 글은 
 
 넣기는 반대다. 트랜스크립트는 CC가 쓰는 파일이지 CC가 읽는 입력이 아니다. 실행 중인 CC에 글을 전하는 길은 그 터미널에 키를 넣는 것뿐이다. 그래서 넣기는 tmux로 정했다. 다만 `tmux send-keys`로 한 글자씩 치면 여러 줄 글의 줄바꿈에서 CC가 중간에 제출해 버린다. 그래서 글을 tmux 버퍼에 먼저 담고(`load-buffer`), 괄호 붙여넣기(앱에 「지금부터 붙여넣기다」라고 알리는 터미널 약속)로 붙인 뒤(`paste-buffer -p -r`), 잠깐 쉬고 Enter를 따로 보낸다 [code:bridge/inject.py]. 이 방식을 고른 실측과 까닭은 → 03 세션 지켜보기와 글 넣기.
 
-이 길에는 숨은 전제가 하나 있다. **같은 세션에 넣는다.** 별도의 headless 세션(화면 없이 `claude -p`로 한 번 묻고 끝나는 세션)을 띄워 일을 시키지 않는다. 사람이 CC 터미널에서 보는 세션과 FOREMAN 화면이 보여 주는 세션이 같은 것이어야, 맥락이 이어지고 「내가 보는 것과 실제가 같다」가 지켜진다 [docs:00_design.md] [docs:01_kickoff.md]. headless 실행은 계획 세우기, 인계 요약, 압축 손실 재기처럼 한 번 묻고 답만 받는 보조 일에만 쓴다.
+이 길에는 숨은 전제가 하나 있다. **같은 세션에 넣는다.** 별도의 headless 세션(화면 없이 `claude -p`로 한 번 묻고 끝나는 세션)을 띄워 일을 시키지 않는다. 사람이 CC 터미널에서 보는 세션과 FOREMAN 화면이 보여 주는 세션이 같은 것이어야, 맥락이 이어지고 「내가 보는 것과 실제가 같다」가 지켜진다 [docs:00_design.md] [docs:history/01_kickoff.md]. headless 실행은 계획 세우기, 인계 요약, 압축 손실 재기처럼 한 번 묻고 답만 받는 보조 일에만 쓴다.
 
 화면을 긁는 일이 아주 없는 것은 아니다. 글을 넣기 직전에 CC 창에 확인 창(권한 묻기, 끝내기 확인, 자동 압축 권유 등)이 떠 있는지 보려고 `capture-pane`으로 화면을 한 번 읽는다 [code:bridge/inject.py]. 하지만 이것은 「지금 붙여 넣어도 되나」를 가르는 판정일 뿐, 내용을 읽는 길은 아니다. 셸(bash만 돌고 트랜스크립트가 없는 tmux 세션)은 아예 긁지도 않고 ttyd로 터미널 화면을 그대로 브라우저에 띄운다.
 
@@ -244,7 +244,7 @@ API는 기능별 라우터(주소 묶음)로 나뉘어 있고, `main.py`는 그�
 
 ## 그림에는 있지만 아직 없는 것
 
-README의 처음 설계 그림은 브리지가 맡을 일로 지금보다 몇 가지를 더 적었다. 코드에서 확인한 지금 상태는 이렇다 [code:bridge/main.py] [code:bridge/pipeline.py] [code:bridge/api/webhooks.py].
+설계 문서의 처음 그림은 브리지가 맡을 일로 지금보다 몇 가지를 더 적었다 [docs:00_design.md]. 코드에서 확인한 지금 상태는 이렇다 [code:bridge/main.py] [code:bridge/pipeline.py] [code:bridge/api/webhooks.py].
 
 웹훅은 Jenkins, Harbor, ArgoCD 셋만 받는다. 설계 그림에 있던 GitLab 웹훅 받는 곳은 없다. 폴링 쪽에서는 로컬 git 폴링과 인프라(Jenkins, ArgoCD 등) 생존 확인이 파이프라인 안에 있고, 사용량 읽기가 따로 있다. 설계 그림에 적힌 LLM 지표 수집, 프로메테우스 쿼리, systemd 유닛과 docker 컨테이너의 재시작 추세 폴링은 아직 브리지에 없다. FOREMAN을 만든 계기가 바로 systemd 유닛 하나(`milvus-port-forward`)가 한 달 넘게 567,740번 재시작한 것을 몰랐던 일이라, 재시작 추세 폴링은 이 프로젝트의 목적과 가장 가까운 빈자리다 [docs:00_design.md].
 

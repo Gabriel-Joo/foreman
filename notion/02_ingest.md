@@ -27,7 +27,7 @@ CC(Claude Code)는 FOREMAN에게 아무것도 보고하지 않는다. CC는 자�
 | API 오류 | 2건 중 2건 | StopFailure |
 | 창을 닫거나 exit | 5건 중 0건 | SessionEnd |
 
-이 표의 수치는 README 3.2와 킥오프 결과의 실측이다 [log:01_kickoff_result.md]. 세션이 끝날 때는 트랜스크립트에 아무 표시도 남지 않고, Esc로 끊을 때는 hook이 오지 않는다. 그래서 둘을 겹쳐야 빈칸이 줄어든다.
+이 표의 수치는 설계 문서 3.2와 킥오프 결과의 실측이다 [docs:00_design.md] [log:01_kickoff_result.md]. 세션이 끝날 때는 트랜스크립트에 아무 표시도 남지 않고, Esc로 끊을 때는 hook이 오지 않는다. 그래서 둘을 겹쳐야 빈칸이 줄어든다.
 
 **트랜스크립트만 쓰면 모자란 것**은 셋이다. 첫째, 세션 종료처럼 파일에 줄이 남지 않는 사건을 모른다. 둘째, 느리다. assistant 줄은 응답을 다 받은 뒤에야 쓰이므로, 실시간으로 받아 보니 도구 호출 줄이 화면에 오기까지 0.5~0.8초가 걸렸다 [log:stage2_transcript_result.md]. 반면 UserPromptSubmit hook은 턴을 7ms 만에 열었고, Stop hook은 마지막 응답 줄보다 먼저 도착해 턴을 닫았다 [log:stage2_transcript_result.md]. 셋째, 프롬프트 줄 없이 들어오는 입력이 있다. 서브에이전트 결과가 부모에게 전달될 때 트랜스크립트에는 프롬프트 줄이 없고 hook으로만 오는 경우가 실측됐다 [code:bridge/assembler.py].
 

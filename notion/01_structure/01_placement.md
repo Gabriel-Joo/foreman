@@ -1,5 +1,5 @@
 <!--
-다루는 곳: deploy/systemd/foreman-bridge.service, deploy/systemd/foreman-bridge-alert.service, scripts/foreman-bridge-alert.sh, deploy/mysql/, docs/02_cloudflare_tunnel.md
+다루는 곳: deploy/systemd/foreman-bridge.service, deploy/systemd/foreman-bridge-alert.service, scripts/foreman-bridge-alert.sh, deploy/mysql/, docs/history/02_cloudflare_tunnel.md
 읽은 커밋: 5e0f7c5
 -->
 # 어디에 두었나
@@ -239,28 +239,28 @@ DB를 띄운 뒤 표를 만드는 마이그레이션과 표의 구조는 → 15 
 
 ## 포기한 것: Cloudflare 터널 공개
 
-열지 않기로 하기 전에 터널을 여는 작업 지시서를 끝까지 써 두었다 [docs:02_cloudflare_tunnel.md]. 지금은 맨 위에 「보류, 필요해지면」 표시를 달고 지우지 않고 남겨 두었다. 무엇을 하려 했는지 보면 왜 그만두었는지도 더 잘 보인다.
+열지 않기로 하기 전에 터널을 여는 작업 지시서를 끝까지 써 두었다 [docs:history/02_cloudflare_tunnel.md]. 지금은 맨 위에 「보류, 필요해지면」 표시를 달고 지우지 않고 남겨 두었다. 무엇을 하려 했는지 보면 왜 그만두었는지도 더 잘 보인다.
 
-계획은 이 서버의 기존 터널 두 개와 같은 방식으로 세 번째 터널을 더하는 것이었다. 설정 폴더를 따로 두고, systemd 유닛도 기존 것과 같은 꼴로 만들 생각이었다. 지시서에서 가장 힘을 준 것은 차례였다 [docs:02_cloudflare_tunnel.md].
+계획은 이 서버의 기존 터널 두 개와 같은 방식으로 세 번째 터널을 더하는 것이었다. 설정 폴더를 따로 두고, systemd 유닛도 기존 것과 같은 꼴로 만들 생각이었다. 지시서에서 가장 힘을 준 것은 차례였다 [docs:history/02_cloudflare_tunnel.md].
 
 ```
 터널 생성 → DNS 라우트 → Access Application 생성과 정책 적용
 → 정책이 실제로 막는지 확인 → 그 다음에 터널 실행 → systemd 등록
 ```
 
-이 차례를 강하게 지키라고 한 까닭이 있다. 같은 서버의 다른 터널을 세울 때는 터널을 먼저 띄우고 인증을 나중에 걸었다. 그 사이 몇 분 동안 엔드포인트가 인증 없이 열려 있었다. 그쪽은 모델 목록을 조회하는 정도라 감수할 만했다. FOREMAN은 서버에 명령을 넣고 셸에 닿는 엔드포인트라 인증 없는 구간이 1초라도 있으면 안 된다고 적었다 [docs:02_cloudflare_tunnel.md].
+이 차례를 강하게 지키라고 한 까닭이 있다. 같은 서버의 다른 터널을 세울 때는 터널을 먼저 띄우고 인증을 나중에 걸었다. 그 사이 몇 분 동안 엔드포인트가 인증 없이 열려 있었다. 그쪽은 모델 목록을 조회하는 정도라 감수할 만했다. FOREMAN은 서버에 명령을 넣고 셸에 닿는 엔드포인트라 인증 없는 구간이 1초라도 있으면 안 된다고 적었다 [docs:history/02_cloudflare_tunnel.md].
 
-인증 정책도 좁게 잡았다. 앱이 부르는 서비스 토큰 방식이 아니라 사람이 브라우저로 로그인하는 방식이고, 허용 대상은 사용자 본인 이메일 하나뿐이다. 도메인 전체를 허용하거나, 우회(Bypass) 정책을 두거나, 시험 삼아 잠깐 여는 것도 금지했다. 펫퍼민트는 시연용이라 「로그인한 누구나」로 열었는데, 같은 정책을 FOREMAN에 쓰면 서버 전체가 넘어간다고 적었다 [docs:02_cloudflare_tunnel.md].
+인증 정책도 좁게 잡았다. 앱이 부르는 서비스 토큰 방식이 아니라 사람이 브라우저로 로그인하는 방식이고, 허용 대상은 사용자 본인 이메일 하나뿐이다. 도메인 전체를 허용하거나, 우회(Bypass) 정책을 두거나, 시험 삼아 잠깐 여는 것도 금지했다. 펫퍼민트는 시연용이라 「로그인한 누구나」로 열었는데, 같은 정책을 FOREMAN에 쓰면 서버 전체가 넘어간다고 적었다 [docs:history/02_cloudflare_tunnel.md].
 
-WebSocket도 따로 확인하게 했다. FOREMAN 화면은 WebSocket이 핵심이라 HTTP가 되어도 WS가 안 되면 쓸 수 없다. Access 쿠키가 WS 연결에도 실리는지, HTTPS 페이지에서 `wss://`로 붙는지, 끊었다 다시 붙을 때 이어지는지를 확인 목록에 넣었다 [docs:02_cloudflare_tunnel.md].
+WebSocket도 따로 확인하게 했다. FOREMAN 화면은 WebSocket이 핵심이라 HTTP가 되어도 WS가 안 되면 쓸 수 없다. Access 쿠키가 WS 연결에도 실리는지, HTTPS 페이지에서 `wss://`로 붙는지, 끊었다 다시 붙을 때 이어지는지를 확인 목록에 넣었다 [docs:history/02_cloudflare_tunnel.md].
 
-마지막 단계는 브리지 자체 인증이었다. Cloudflare Access는 앞단에서만 막는다. 서버 안이나 같은 망에서 브리지 포트로 바로 붙는 길은 막지 못한다. 그래서 브리지가 모든 API와 WS 연결에서 자기 토큰을 따로 검사하게 하라고 했다 [docs:02_cloudflare_tunnel.md].
+마지막 단계는 브리지 자체 인증이었다. Cloudflare Access는 앞단에서만 막는다. 서버 안이나 같은 망에서 브리지 포트로 바로 붙는 길은 막지 못한다. 그래서 브리지가 모든 API와 WS 연결에서 자기 토큰을 따로 검사하게 하라고 했다 [docs:history/02_cloudflare_tunnel.md].
 
 터널은 열지 않았지만 이 마지막 단계만은 실제로 들어갔다. 지금 브리지는 화면과 API용 토큰, hook용 토큰, 웹훅용 토큰을 따로 두고, 데이터를 내는 경로 가운데 인증 없이 열린 것은 상태만 알려 주는 `/healthz` 하나뿐이다 [code:bridge/config.py][code:bridge/api/health.py]. 셋은 브리지 설정 파일에 칸이 있는 토큰이다. 한 프로젝트의 세션과 방 API만 여는 프로젝트 토큰은 따로 켜는 것이고(11-11부터 켜져 있다) [code:config/tokens.toml], 화면 파일(HTML, 그림, 스크립트)은 토큰 없이 나가고 그 화면이 부르는 데이터에 토큰이 걸린다 [code:bridge/main.py]. 토큰을 셋으로 가른 까닭(하나가 새도 나머지 권한은 못 쓴다)은 → 05-3 열쇠와 비밀에서 다룬다. 루프백에만 열어 두었어도 같은 서버의 다른 계정은 그 포트에 닿을 수 있으니, 이 토큰은 터널과 상관없이 필요했다.
 
 ## 다시 열 때의 조건
 
-다시 열 가능성은 남겨 두었다. 열게 된다면 지시서를 그대로 따르지 않고 더 강한 조건으로 고쳐 쓴 뒤 연다 [docs:00_design.md][docs:02_cloudflare_tunnel.md].
+다시 열 가능성은 남겨 두었다. 열게 된다면 지시서를 그대로 따르지 않고 더 강한 조건으로 고쳐 쓴 뒤 연다 [docs:00_design.md][docs:history/02_cloudflare_tunnel.md].
 
 첫째, 지금 화면을 그대로 열지 않는다. 셸 패널, 세션에 글 넣기, 승인 버튼을 뺀 읽기 전용 화면을 따로 두고 그것만 연다. 밖에서는 세션 상태와 파이프라인만 본다. 뚫려도 볼 수만 있고 아무것도 실행할 수 없게 하는 것이다.
 

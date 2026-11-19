@@ -57,8 +57,6 @@ FOREMAN은 한 서버에서 동시에 도는 여러 AI 작업 세션을 브라�
 | 문서 | 제목 | 요약 |
 |---|---|---|
 | [00_design.md](docs/00_design.md) | FOREMAN | 문서 틀(11-17 사용자): 이 문서는 설계 전체이고 세션과 개발자가 읽는다. |
-| [01_kickoff.md](docs/01_kickoff.md) | BRIEF 01, 킥오프: 설계 검토 | FOREMAN 프로젝트를 시작한다. |
-| [02_cloudflare_tunnel.md](docs/02_cloudflare_tunnel.md) | BRIEF 02, 외부 노출: Cloudflare Tunnel + Access | **터널을 열지 않는다.** |
 | [10_office_design.md](docs/10_office_design.md) | 10, 픽셀 오피스: 이상적인 그림 (사용자 구상, 2026-11-03) | 에셋이 무엇을 지원하느냐에 따라 깎는다, 맨 아래 "실제로 가능한 범위"(에셋 조사 뒤 추가). |
 | [11_foreman_dispatch.md](docs/11_foreman_dispatch.md) | 11, 포먼이 세션을 띄운다, 자동 인계 (설계, 2026-11-05) | [+ 세션]을 사람이 다 정하던 것(프로젝트, 새로/인계, 어느 요약, 역할)을 포먼이 판단한다. |
 | [11_handoff.md](docs/11_handoff.md) | 11, 세션 인계, 세션 조작 (설계, 2026-11-05) | 로드맵 11단계 중 "세션 인계"를 먼저 한다(런슈즈 세션이 730MB, 17일째, auto-compact 17번, 사용자 판단으로 앞당김). |

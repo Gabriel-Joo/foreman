@@ -298,7 +298,7 @@ FOREMAN의 텔레그램은 한 방향이다. 브리지는 텔레그램으로 보
 |---|---|---|---|---|
 | 🔐 승인 대기, ❓ 세션이 묻습니다 | `approval` | `bridge/approvals.py` | 바로 | → 「기다리는 길: hook 두 개」 |
 | ⏰ 승인 대기 시간이 지났습니다 | `appr_to` | `bridge/approvals.py` | 바로 | → 「기다리는 길: hook 두 개」 |
-| 🛡 안전 규칙 파일 수정 | `rulefile` | `bridge/approvals.py` | 바로 | → 「04 승인」 |
+| 🛡 안전 규칙 파일 수정, 합친 뒤 규칙 파일 바뀜 | `rulefile` | `bridge/approvals.py`, `bridge/handoff.py` | 바로 | → 「04 승인」, → 「07 합치기」 |
 | 🔒 스키마 잠금에 막힘 | `schlock` | `bridge/approvals.py` | 바로 | → 「글이 아니라 권한으로」 |
 | ✋ 권한 거부 30분째 | `denied` | `bridge/human_wait.py` | 바로 | → 「03 세션 지켜보기와 글 넣기」 |
 | ⚠ API 오류로 멈춤 30분째 | `apistop` | `bridge/human_wait.py` | 바로 | → 「03 세션 지켜보기와 글 넣기」 |
