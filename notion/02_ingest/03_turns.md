@@ -1,10 +1,10 @@
 <!--
 다루는 곳: bridge/assembler.py, bridge/store.py, bridge/models.py, tests/test_stage2_db.py
-읽은 커밋: e5d584b
+읽은 커밋: c6bee08
 -->
 # 턴 조립
 
-트랜스크립트 줄과 hook은 그대로는 흩어진 기록이다. 한 줄은 사람 입력이고, 다음 줄은 모델 응답의 한 조각이고, 그다음은 도구 결과이고, 그 사이에 hook이 따로 날아온다. 이 편은 그 조각들을 「턴」이라는 단위로 묶어 DB의 `turn`, `message`, `subagent_run`, `event` 행으로 만드는 조립기(`bridge/assembler.py`)를 다룬다. 줄을 파일에서 읽어 오는 일은 → 트랜스크립트 읽기, hook을 받는 입구는 → CC hook 받기, 적재가 막혔을 때 알리고 화면으로 내보내는 일은 → 적재와 내보내기에서 다룬다. 여기서는 받은 줄을 어떻게 해석하고 어디에 붙이는지만 깊게 본다.
+트랜스크립트 줄과 hook은 그대로는 흩어진 기록이다. 한 줄은 사람 입력이고, 다음 줄은 모델 응답의 한 조각이고, 그다음은 도구 결과이고, 그 사이에 hook이 따로 날아온다. 이 편은 그 조각들을 「턴」이라는 단위로 묶어 DB의 `turn`, `message`, `subagent_run`, `event` 행으로 만드는 조립기(`bridge/assembler.py`)를 다룬다. 줄을 파일에서 읽어 오는 일은 → 「트랜스크립트 읽기」, hook을 받는 입구는 → 「CC hook 받기」, 적재가 막혔을 때 알리고 화면으로 내보내는 일은 → 「적재와 내보내기」에서 다룬다. 여기서는 받은 줄을 어떻게 해석하고 어디에 붙이는지만 깊게 본다.
 
 ## 1. 턴이란 무엇인가
 
@@ -17,12 +17,12 @@ flowchart LR
   A[트랜스크립트 줄] --> C[조립기]
   B[hook] --> C
   D[프로세스 훑기] --> C
-  C -->|한 트랜잭션| E[(turn · message · event · subagent_run)]
+  C -->|한 트랜잭션| E[(turn, message, event, subagent_run)]
   E -->|커밋 뒤| F[알림 판정]
   E -->|커밋 뒤| G[화면 WS]
 ```
 
-DB의 네 표는 이렇게 나뉜다. `turn`은 한 턴에 한 행이고, 누가 열었는지(`origin`), 왜 닫혔는지(`end_reason`), 무엇이 닫았는지(`closed_by`), 걸린 시간(`duration_ms`), 도중에 압축이 있었는지(`compacted`)를 갖는다. `message`는 API 응답 하나에 한 행이고 토큰 수를 갖는다. `event`는 도구 호출, 도구 결과, 모델 글, 중단, 압축 같은 낱낱의 일이다. `subagent_run`은 서브에이전트(CC가 일을 나눠 맡기려고 띄운 작은 CC) 하나에 한 행이다 [code:bridge/assembler.py]. 표 전체 지도는 → 15 DB에 있다.
+DB의 네 표는 이렇게 나뉜다. `turn`은 한 턴에 한 행이고, 누가 열었는지(`origin`), 왜 닫혔는지(`end_reason`), 무엇이 닫았는지(`closed_by`), 걸린 시간(`duration_ms`), 도중에 압축이 있었는지(`compacted`)를 갖는다. `message`는 API 응답 하나에 한 행이고 토큰 수를 갖는다. `event`는 도구 호출, 도구 결과, 모델 글, 중단, 압축 같은 낱낱의 일이다. `subagent_run`은 서브에이전트(CC가 일을 나눠 맡기려고 띄운 작은 CC) 하나에 한 행이다 [code:bridge/assembler.py]. 표 전체 지도는 → 「15 DB」에 있다.
 
 ## 2. 턴 끝을 신호 하나로 판정하지 않는 까닭
 
@@ -63,7 +63,7 @@ DB의 네 표는 이렇게 나뉜다. `turn`은 한 턴에 한 행이고, 누가
 
 `session_end`와 `process_lost`를 나눈 까닭이 있다. hook을 한 번이라도 받은 세션이면, 정상으로 끝났을 때 SessionEnd hook이 왔을 것이다. 그런데 hook 없이 프로세스만 사라졌다면 무언가 비정상으로 죽은 것이니 `process_lost`로 따로 알린다. hook을 한 번도 받지 못한 세션(hook 설치 전 세션 등)은 정상 종료와 비정상 종료를 가를 근거가 없어 `session_end`로 둔다 [log:stage2_transcript_result.md]. 이 판정은 30초마다 도는 훑기(`sweep`)가 하고, 프로세스가 없고 60초 넘게 조용할 때만 닫는다 [code:bridge/config.py]. 정지(Ctrl+Z로 멈춘 `T` 상태)된 프로세스는 살아 있는 것으로 본다. 사용자가 일부러 세워 둔 세션을 끝난 것으로 치면 안 되기 때문이다 [code:bridge/assembler.py].
 
-닫힌 뒤의 알림은 커밋이 끝난 다음에 부른다. 트랜잭션 안에서 알림 함수를 부르면 알림 쪽이 DB를 읽을 때 아직 닫히기 전 상태를 보기 때문이다. 그래서 조립 중에는 닫힌 턴을 묶음(`Batch.closed`)에 모아 두고, 커밋 뒤 `_after_commit`이 한꺼번에 알림 쪽으로 넘긴다 [code:bridge/assembler.py]. 어떤 턴을 알리고 어떤 턴을 묵히는지는 → 11 알림.
+닫힌 뒤의 알림은 커밋이 끝난 다음에 부른다. 트랜잭션 안에서 알림 함수를 부르면 알림 쪽이 DB를 읽을 때 아직 닫히기 전 상태를 보기 때문이다. 그래서 조립 중에는 닫힌 턴을 묶음(`Batch.closed`)에 모아 두고, 커밋 뒤 `_after_commit`이 한꺼번에 알림 쪽으로 넘긴다 [code:bridge/assembler.py]. 어떤 턴을 알리고 어떤 턴을 묵히는지는 → 「11 알림」.
 
 ### hook이 트랜스크립트보다 먼저 올 때
 
@@ -73,7 +73,7 @@ DB의 네 표는 이렇게 나뉜다. `turn`은 한 턴에 한 행이고, 누가
 
 설계 때는 「턴 = 사람 프롬프트부터 종료 신호까지」였다. 실제 트랜스크립트를 조사해 보니 더 좋은 열쇠가 CC 안에 이미 있었다. CC는 모든 user 줄에 `promptId`라는 값을 적는데, 한 턴에 속한 user 줄(사람 프롬프트, 도구 결과, 중단 표시, 압축 요약, 메타 줄)이 모두 같은 `promptId`를 갖는다. 빠진 줄은 0개였다. assistant 줄과 system 줄에는 없다 [log:stage2_transcript_result.md].
 
-그래서 조립기의 규칙은 이렇다. 처음 보는 `promptId`를 가진 user 줄이 오면 새 턴을 연다. 이미 아는 `promptId`면 그 턴의 줄이다. 턴 표의 `prompt_id` 칼럼은 UNIQUE 키라 같은 `promptId`로 턴이 둘 생길 수 없다 [code:migrations/0003_turn_prompt_id.sql]. assistant 줄과 system 줄은 `promptId`가 없으니, 지금 열려 있는 턴(메모리의 `open_turn`)에 붙는다. 줄의 순서는 파일에 쓰인 순서를 그대로 따르고 timestamp로 다시 정렬하지 않는다. timestamp가 거꾸로 쓰인 줄이 실제로 많아서다(→ 트랜스크립트 읽기) [code:bridge/assembler.py].
+그래서 조립기의 규칙은 이렇다. 처음 보는 `promptId`를 가진 user 줄이 오면 새 턴을 연다. 이미 아는 `promptId`면 그 턴의 줄이다. 턴 표의 `prompt_id` 칼럼은 UNIQUE 키라 같은 `promptId`로 턴이 둘 생길 수 없다 [code:migrations/0003_turn_prompt_id.sql]. assistant 줄과 system 줄은 `promptId`가 없으니, 지금 열려 있는 턴(메모리의 `open_turn`)에 붙는다. 줄의 순서는 파일에 쓰인 순서를 그대로 따르고 timestamp로 다시 정렬하지 않는다. timestamp가 거꾸로 쓰인 줄이 실제로 많아서다(→ 「트랜스크립트 읽기」) [code:bridge/assembler.py].
 
 `promptId`로 바꾼 덕에 설계에서 못 보던 것이 드러났다. 턴을 여는 것이 사람 프롬프트만이 아니었다. 백그라운드 작업이 끝났다는 알림(task-notification)도, 다른 CC 세션이 보낸 메시지도 새 `promptId`로 새 턴을 연다. 이것은 6절의 `origin`으로 가른다 [log:stage2_transcript_result.md].
 
@@ -115,9 +115,9 @@ Esc 중단은 보통 트랜스크립트에 `[Request interrupted by user]` 줄�
 
 ### 압축 도중
 
-자동 압축(대화가 길어져 CC가 앞부분을 요약해 줄이는 일)이 턴 도중에 일어나면 턴은 끝나지 않고 압축 경계를 넘어 이어진다 [log:01_kickoff_result.md]. 그래서 `system/compact_boundary` 줄은 턴을 닫지 않고, 지금 열린 턴에 `compacted = TRUE`만 표시하고 `compact` 이벤트를 남긴다. 압축 요약 user 줄(`isCompactSummary`)도 새 턴을 열지 않고 같은 표시만 한다 [code:bridge/assembler.py]. 압축이 있었다는 사실은 커밋 뒤 압축 알림과 압축 손실 재기로 넘어간다(→ 08 인계와 압축 손실).
+자동 압축(대화가 길어져 CC가 앞부분을 요약해 줄이는 일)이 턴 도중에 일어나면 턴은 끝나지 않고 압축 경계를 넘어 이어진다 [log:01_kickoff_result.md]. 그래서 `system/compact_boundary` 줄은 턴을 닫지 않고, 지금 열린 턴에 `compacted = TRUE`만 표시하고 `compact` 이벤트를 남긴다. 압축 요약 user 줄(`isCompactSummary`)도 새 턴을 열지 않고 같은 표시만 한다 [code:bridge/assembler.py]. 압축이 있었다는 사실은 커밋 뒤 압축 알림과 압축 손실 재기로 넘어간다(→ 「08 인계와 압축 손실」).
 
-## 6. 누가 턴을 열었나 — origin
+## 6. 누가 턴을 열었나: origin
 
 턴을 연 것이 사람인지 아닌지에 따라 알림과 화면이 달라야 한다. 백그라운드 서브에이전트가 일곱 개 끝날 때마다 사람에게 「끝남」 알림이 일곱 번 가면 정작 사람 턴의 알림이 묻힌다. 그래서 `turn.origin`에 턴을 연 것을 적는다 [code:bridge/assembler.py].
 
@@ -149,7 +149,7 @@ CC의 `--resume`이나 fork로 만든 세션은 앞 세션의 기록을 새 파�
 
 그런데 `claude --fork-session`은 모양이 달랐다. 앞 세션 줄을 uuid와 시각째 복사하면서 사람 줄의 `promptId`를 새 프롬프트의 `promptId`로 바꿔 썼다. `promptId`가 있으니 앞의 방어를 그대로 지나갔고, 첫 복사 줄이 새 턴에 붙고 진짜 새 프롬프트는 「이미 있는 턴」으로 흘러가 시작 이벤트도 남지 않았다 [log:stage0_tmux_result.md]. 겉모양(promptId가 있나 없나)으로 막은 방어가 다른 겉모양에 뚫린 것이다.
 
-지금은 `promptId`가 아니라 줄의 uuid로 가린다. 사람 줄의 uuid가 다른 세션의 이벤트나 턴에 이미 있으면 복사 구간이 시작된 것으로 보고(`copying`), 그 뒤의 응답, 도구 결과, `turn_duration`, 중단 표시까지 첫 새 프롬프트가 나올 때까지 건너뛴다. 복사 줄의 `turn_duration`이 새 세션의 열린 턴을 옛 시각으로 닫거나, 옛 응답이 새 턴에 붙는 것을 막기 위해서다. 복사 줄은 원래 시각을 그대로 갖고 있으니, 복사 구간 직전 이 세션 줄의 시각(`copy_floor`)보다 이른 사람 줄도 복사 줄로 본다 [code:bridge/assembler.py]. 또 `prompt_uuid`를 쓰는 세 곳(턴 만들기, hook이 연 턴 채우기, meta를 human으로 바꾸기)은 다른 턴이 이미 가진 값이면 비워(`NULL`) 넣는다(`_free_uuid`). 값 하나 때문에 덩어리 전체가 막히는 일을 다시 만들지 않으려는 것이다 [code:bridge/assembler.py]. 막힌 덩어리를 어떻게 알리고 건너뛰는지는 → 적재와 내보내기.
+지금은 `promptId`가 아니라 줄의 uuid로 가린다. 사람 줄의 uuid가 다른 세션의 이벤트나 턴에 이미 있으면 복사 구간이 시작된 것으로 보고(`copying`), 그 뒤의 응답, 도구 결과, `turn_duration`, 중단 표시까지 첫 새 프롬프트가 나올 때까지 건너뛴다. 복사 줄의 `turn_duration`이 새 세션의 열린 턴을 옛 시각으로 닫거나, 옛 응답이 새 턴에 붙는 것을 막기 위해서다. 복사 줄은 원래 시각을 그대로 갖고 있으니, 복사 구간 직전 이 세션 줄의 시각(`copy_floor`)보다 이른 사람 줄도 복사 줄로 본다 [code:bridge/assembler.py]. 또 `prompt_uuid`를 쓰는 세 곳(턴 만들기, hook이 연 턴 채우기, meta를 human으로 바꾸기)은 다른 턴이 이미 가진 값이면 비워(`NULL`) 넣는다(`_free_uuid`). 값 하나 때문에 덩어리 전체가 막히는 일을 다시 만들지 않으려는 것이다 [code:bridge/assembler.py]. 막힌 덩어리를 어떻게 알리고 건너뛰는지는 → 「적재와 내보내기」.
 
 ## 8. 토큰은 message.id로 한 번만 센다
 
@@ -157,13 +157,13 @@ CC의 `--resume`이나 fork로 만든 세션은 앞 세션의 기록을 새 파�
 
 그래서 `message` 표를 따로 두고 `message.id`를 기본 키로 삼았다. 조립기는 한 덩어리 안에서 같은 `message.id`의 줄을 사전 하나에 모아 한 행으로 만들고, 뒤 줄에서는 더 큰 output 토큰과 비어 있지 않은 `stop_reason`만 반영한다. DB에 넣을 때도 `ON DUPLICATE KEY UPDATE token_output = GREATEST(…)`라 같은 응답이 다음 덩어리에 걸쳐 와도, 파일을 다시 읽어도 한 행이다 [code:bridge/assembler.py]. 덩어리 경계에서 응답이 잘려도 마찬가지다. 시험은 쓰다 만 줄 뒤에 나머지를 붙였을 때 그 메시지가 한 행인지를 본다 [code:tests/test_stage2_db.py].
 
-서브에이전트 줄의 output 토큰은 믿을 수 없다. 서브에이전트 줄의 usage는 응답을 받기 시작한 시점 값으로 보인다. `stop_reason`이 비어 있고, 글자당 output 토큰이 0.002로 부모(0.77)와 크게 다르다 [log:01_kickoff_result.md]. 그래서 서브에이전트 행은 `output_tokens_reliable = false`로 만들고, task-notification에 실려 오는 `subagent_tokens` 등은 `reported_*` 칸에 보조 검증용으로만 남긴다 [code:bridge/assembler.py]. 토큰을 어떻게 화면에 보이는지는 → 13 사용량과 모델.
+서브에이전트 줄의 output 토큰은 믿을 수 없다. 서브에이전트 줄의 usage는 응답을 받기 시작한 시점 값으로 보인다. `stop_reason`이 비어 있고, 글자당 output 토큰이 0.002로 부모(0.77)와 크게 다르다 [log:01_kickoff_result.md]. 그래서 서브에이전트 행은 `output_tokens_reliable = false`로 만들고, task-notification에 실려 오는 `subagent_tokens` 등은 `reported_*` 칸에 보조 검증용으로만 남긴다 [code:bridge/assembler.py]. 토큰을 어떻게 화면에 보이는지는 → 「13 사용량과 모델」.
 
 ## 9. 덩어리 하나가 트랜잭션 하나다
 
 조립기의 가장 중요한 약속은 「같은 줄을 몇 번 다시 읽어도 행이 늘지 않는다」다. 브리지는 다시 뜨고, DB는 잠깐 끊기고, 파일은 잘리거나 inode가 바뀐다. 그때마다 어디까지 적재했는지 정확히 맞추려 애쓰는 대신, 다시 읽어도 결과가 같게 만들었다 [code:bridge/assembler.py].
 
-먼저 조립기 안의 쓰기는 한 줄로 선다. 조립기는 `asyncio.Lock` 하나를 갖고, 트랜스크립트 덩어리 적용, hook 적용, 훑기, 서브에이전트 연결 모두 이 자물쇠 안에서 돈다 [code:bridge/assembler.py]. 트랜스크립트와 hook은 `bridge/bus.py`의 대기열을 거치지 않고 조립기가 직접 DB에 쓴다. 대기열은 승인, 입력 넣기, 셸, 웹훅처럼 조립기 밖에서 생긴 이벤트의 길이다(12절, → 적재와 내보내기).
+먼저 조립기 안의 쓰기는 한 줄로 선다. 조립기는 `asyncio.Lock` 하나를 갖고, 트랜스크립트 덩어리 적용, hook 적용, 훑기, 서브에이전트 연결 모두 이 자물쇠 안에서 돈다 [code:bridge/assembler.py]. 트랜스크립트와 hook은 `bridge/bus.py`의 대기열을 거치지 않고 조립기가 직접 DB에 쓴다. 대기열은 승인, 입력 넣기, 셸, 웹훅처럼 조립기 밖에서 생긴 이벤트의 길이다(12절, → 「적재와 내보내기」).
 
 덩어리(파일에서 한 번에 읽는 양, 최대 8MB) 하나가 DB 트랜잭션 하나다 [code:bridge/config.py]. 그 덩어리의 모든 턴, 메시지, 이벤트를 넣고, 같은 트랜잭션에서 `transcript_file.read_offset`을 덩어리 끝으로 옮긴다. 중간에 무엇이 실패하면 전부 롤백되고 offset도 덩어리 앞에 그대로 남는다. 커밋되지 않은 줄은 다음에 다시 읽힐 뿐이다. 실패하면 그 세션의 메모리 상태(열린 턴, 아는 promptId 등)도 버리고 다음에 DB에서 다시 읽는다 [code:bridge/assembler.py].
 
@@ -194,7 +194,7 @@ uuid가 없는 줄(대기열 조작 등)과 한 줄에 블록이 여럿일 때�
 
 ## 11. 무엇을 남기고 무엇을 버리나
 
-조립기는 줄의 모든 것을 저장하지 않는다. 도구 결과 본문은 저장하지 않고 길이와 오류 여부만, 오류면 앞 300자만 남긴다. 도구 결과에는 형식을 모르는 비밀이 섞일 수 있고, 그런 비밀은 비밀 가리기(마스킹)로 못 잡는다. 원문은 트랜스크립트에 남아 있으니 화면에서 누르면 그때 파일에서 찾아 읽는다(→ 트랜스크립트 읽기) [code:bridge/assembler.py]. 모델 글은 모두, 생각(thinking)은 길이만, 도구 입력은 문자열 하나에 2,000자까지 남기고, 모두 DB에 넣기 전에 비밀을 가린다 [code:bridge/assembler.py]. 비밀 가리기의 규칙은 → 적재와 내보내기.
+조립기는 줄의 모든 것을 저장하지 않는다. 도구 결과 본문은 저장하지 않고 길이와 오류 여부만, 오류면 앞 300자만 남긴다. 도구 결과에는 형식을 모르는 비밀이 섞일 수 있고, 그런 비밀은 비밀 가리기(마스킹)로 못 잡는다. 원문은 트랜스크립트에 남아 있으니 화면에서 누르면 그때 파일에서 찾아 읽는다(→ 「트랜스크립트 읽기」) [code:bridge/assembler.py]. 모델 글은 모두, 생각(thinking)은 길이만, 도구 입력은 문자열 하나에 2,000자까지 남기고, 모두 DB에 넣기 전에 비밀을 가린다 [code:bridge/assembler.py]. 비밀 가리기의 규칙은 → 「적재와 내보내기」.
 
 `event.target`(무엇을 대상으로 한 일인가, 예를 들면 Bash 명령이나 파일 경로)은 칼럼이 1,024자다. 실측에서 Bash 명령 9,979개 가운데 25.2%가 1,024자를 넘었고 가장 긴 것은 24,528자였다 [code:bridge/models.py]. 그래서 `clip_target`이 칼럼에는 1,023자와 말줄임표를 넣고, 원문은 `payload.target_full`로 옮긴다. 말줄임표를 붙인 것은 화면에서도 잘린 것이 보이게 하려는 것이다 [code:bridge/models.py].
 
@@ -202,7 +202,7 @@ CC가 붙이는 세션 제목(`ai-title` 줄)은 같은 제목이 수천 번 되
 
 ## 12. 모델과 저장소: models.py와 store.py
 
-`bridge/models.py`는 DB의 VARCHAR 칼럼에 들어갈 수 있는 값의 목록이다. DB는 ENUM을 쓰지 않고 파이썬 쪽에서 검사한다. 값을 늘릴 때마다 마이그레이션을 하지 않으려는 것이다 [code:bridge/models.py]. 이벤트 출처(`EventSource`: hook, transcript, poll, debug, bridge, shell, webhook), 이벤트 종류(`EventType`), 상태(`EventStatus`), 역할(`Role`)이 여기 있다. 역할 값 가운데 세션이 고를 수 있는 것은 `bridge/roles.py` 한 곳에서 정하고, 시험이 그 값이 모두 여기에도 있는지 본다(→ 05 역할과 권한) [code:bridge/models.py].
+`bridge/models.py`는 DB의 VARCHAR 칼럼에 들어갈 수 있는 값의 목록이다. DB는 ENUM을 쓰지 않고 파이썬 쪽에서 검사한다. 값을 늘릴 때마다 마이그레이션을 하지 않으려는 것이다 [code:bridge/models.py]. 이벤트 출처(`EventSource`: hook, transcript, poll, debug, bridge, shell, webhook), 이벤트 종류(`EventType`), 상태(`EventStatus`), 역할(`Role`)이 여기 있다. 역할 값 가운데 세션이 고를 수 있는 것은 `bridge/roles.py` 한 곳에서 정하고, 시험이 그 값이 모두 여기에도 있는지 본다(→ 「05 역할과 권한」) [code:bridge/models.py].
 
 `EventIn`은 hook, 와처, 폴링, 디버그처럼 조립기 밖의 생산자가 이벤트를 넣을 때 쓰는 모양이다. 시간대가 없는 시각은 UTC로 본다. 트랜스크립트 timestamp는 UTC(`Z`)인데 서버 로컬 시각은 KST라, 섞이면 9시간 어긋나기 때문이다 [code:bridge/models.py]. DB에는 모두 시간대 없는 UTC로 들어간다 [code:bridge/store.py].
 
