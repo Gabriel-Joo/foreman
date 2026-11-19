@@ -153,7 +153,7 @@ Jenkins 쪽은 처음에 반대 방향으로 설계했다. FOREMAN이 Jenkins �
 
 `/webhooks/harbor`는 있다. Harbor 기본 웹훅 형식에서 이미지 올림(`PUSH_ARTIFACT`)은 성공, 검사 실패와 용량 초과는 실패로 읽고, 내려받기, 지우기 같은 것은 체인의 단계가 아니라 버린다 [code:bridge/pipeline.py]. 태그 12자리는 DB의 `git_commit`에서 앞자리가 하나만 맞으면 그 SHA로, 아니면 로컬 저장소에서 `git rev-parse`로 푼다.
 
-그러나 Harbor 쪽에 FOREMAN으로 보내는 웹훅 정책을 건 기록은 없다. 처음 조사 때 Harbor의 알림 정책은 0행이었고, 이미지를 올리는 일은 Jenkins의 「빌드·push」 스테이지 안에서 일어나며 태그가 곧 커밋이라 따로 받을 필요가 적다고 봤다 [log:stage8_cicd_result.md]. 그래서 화면의 이미지 칸은 대개 Jenkins 행에서 미루어 그린다. 기준은 하나, 그 빌드의 이미지가 실제로 올라갔는가다. Jenkins가 진행 중이면 이미지도 진행 중, 이미지를 올리는(push) 단계에서 실패했으면 이미지 실패(✗)다. push 뒤 단계(매니페스트 태그, 배포)에서 실패했으면 이미지는 이미 올라갔으니 성공(✓)으로 본다. push 앞 단계(태그, 시험 등)에서 실패했거나, 어느 단계인지 모르거나 단계 이름이 없는 실패면 올라갔다고 말하지 않고 「기록 없음」으로 둔다. Harbor가 직접 알려 온 상태가 있으면 그것을 먼저 따른다 [code:bridge/static/js/shipstate.js]. 11-17 전에는 push 단계가 아닌 실패를 모두 ✓로 그려, push 앞에서 실패해 이미지가 없는데도 ✓가 떴다 [c:9ac4527] [log:foreman-6_designer_code_oddities_20261117.md].
+그러나 Harbor 쪽에 FOREMAN으로 보내는 웹훅 정책을 건 기록은 없다. 처음 조사 때 Harbor의 알림 정책은 0행이었고, 이미지를 올리는 일은 Jenkins의 「빌드·push」 스테이지 안에서 일어나며 태그가 곧 커밋이라 따로 받을 필요가 적다고 봤다 [log:stage8_cicd_result.md]. 그래서 화면의 이미지 칸은 대개 Jenkins 행에서 미루어 그린다. 기준은 하나, 그 빌드의 이미지가 실제로 올라갔는가다. Jenkins가 진행 중이면 이미지도 진행 중, 이미지를 올리는(push) 단계에서 실패했으면 이미지 실패(✗)다. push 뒤 단계(매니페스트 태그, 배포)에서 실패했으면 이미지는 이미 올라갔으니 성공(✓)으로 본다. push 앞 단계(태그, 시험 등)에서 실패했거나, 어느 단계인지 모르거나 단계 이름이 없는 실패면 올라갔다고 말하지 않고 「기록 없음」으로 둔다. Harbor가 직접 알려 온 상태가 있으면 그것을 먼저 따른다 [code:bridge/static/js/shipstate.js]. 처음에는 push 단계가 아닌 실패를 모두 ✓로 그려, push 앞에서 실패해 이미지가 없는데도 ✓가 떴다 [c:9ac4527] [log:foreman-6_designer_code_oddities_20261117.md].
 
 ### 5-3. ArgoCD: notifications로 알림만 더한다
 
