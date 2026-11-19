@@ -428,3 +428,6 @@
 - **foreman-132** 시험, import 확인, 대기 0 확인을 한 스크립트로 (2026-11-15)
   다시 띄우기 전에 사람이 치는 확인 셋을 한 스크립트로 묶는 안이 있었지만 만들지 않았다.
   나온 곳: `notion/16_tests.md` 95
+- **foreman-135** 브리지를 다시 띄우는 길에 `XDG_RUNTIME_DIR` 넣기 (2026-11-19)
+  관리자 셸에 `XDG_RUNTIME_DIR`가 비어 `systemctl --user restart foreman-bridge`가 「org.freedesktop.systemd1 exited with status 1」로 실패했다. 사용자 버스 소켓은 있었고, 값을 `/run/user/<uid>`로 주니 됐다. 다시 띄우는 명령(`docs/operations.md`, CLAUDE.md 「돌리기, 확인」)이나 그 길을 감싸는 스크립트가 값이 없으면 채워 넣게 한다. foreman-132 스크립트를 만들면 그 안에 둔다.
+  나온 곳: 사용자 11-19, `log/manager410_overhead_20261115.md`
