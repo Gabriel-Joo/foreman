@@ -240,7 +240,10 @@ export function mpSection(mp, b, sid) {
     ${c.error ? `<div class="small bad">${esc(c.error)}</div>` : ''}
     ${c.esc_off_at && c.status === 'ready' ? `<div class="small muted mp-off" title="답 안 해도 됨 — 사람이 관리자 머리 위의 이 카드 물음을 껐습니다. 머리 위 · 승인 막대 숫자에서 뺐고 카드는 남습니다. 이 세션이 새로 커밋하면 다시 올립니다.">사람이 답 안 해도 됨으로 둠(${esc(clock(c.esc_off_at))}). 관리자 머리 위 · 승인 막대에서 뺐습니다(합치려면 [합치기]).</div>` : ''}
     ${c.status === 'merged' && !merged ? '<div class="small muted">합치기까지 했습니다. 시험 · push · 브리지 다시 띄우기는 관리자가 합니다.</div>' : ''}
-    ${open && managerCard(c) && c.status === 'ready' && c.approver === 'auto' ? '<div class="small muted mp-by-auto" title="스스로 합치기 — 조사 세션이 log 새 파일만 커밋했습니다. 브리지가 승인 없이 합치고 세션을 끝냅니다. 사람이 누를 것은 없습니다.">브리지가 스스로 합치고 조사 세션을 끝냅니다. 사람이 누를 것은 없습니다.</div>'
+    ${open && managerCard(c) && c.status === 'ready' && c.approver === 'auto' ? (c.queue_id
+      // 11-19 서기실 전체 줄이 띄운 편(bridge/scribe_queue.py). 같은 승인자 auto 길이지만 조사 세션이 아니다
+      ? '<div class="small muted mp-by-auto" title="스스로 합치기 — 서기실 전체 줄이 띄운 편이 그 원고만 고쳤고 문서 점검 새 틀림이 없습니다. 브리지가 승인 없이 합치고 줄은 다음 편으로 넘어갑니다. 사람이 누를 것은 없습니다.">브리지가 스스로 합칩니다(서기실 전체 줄의 원고). 사람이 누를 것은 없습니다.</div>'
+      : '<div class="small muted mp-by-auto" title="스스로 합치기 — 조사 세션이 log 새 파일만 커밋했습니다. 브리지가 승인 없이 합치고 세션을 끝냅니다. 사람이 누를 것은 없습니다.">브리지가 스스로 합치고 조사 세션을 끝냅니다. 사람이 누를 것은 없습니다.</div>')
       : open && managerCard(c) && c.status === 'ready' ? '<div class="small muted mp-by-manager" title="관리자 승인 — 이 프로젝트는 합치기 승인을 관리자 세션이 합니다. 사람이 누를 것은 없습니다.">관리자 세션이 승인합니다. 사람이 누를 것은 없습니다.</div>'
       : open ? `<div class="hand-btns">${b('mp-merge', '합치기', !!c.head && c.status !== 'merging', 'primary', tip)}${b('mp-skip', '나중에', true, 'ghost', '나중에 — 이 카드를 치웁니다. 이 세션이 새로 커밋하면 다시 뜹니다.')}</div>` : ''}
   </section>`;

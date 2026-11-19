@@ -242,3 +242,12 @@ test('문서 점검: 새로 생긴 틀린 것은 노랑과 줄, 없으면 흐린
   assert.match(mpSection({ card: withCheck({ total: 1, new: 1, old: 0, lines: ['x'] }, { error: '걸리는 문서를 찾지 못했습니다(x)' }) }, b, 7), /걸리는 문서를 찾지 못했습니다[\s\S]*틀린 것 1<\/div>/);
   assert.ok(!mpSection({ card: card() }, b, 7).includes('mp-check'));
 });
+
+// 11-19 승인자 auto 카드의 글은 조사 세션과 서기실 전체 줄 편을 가른다(같은 길, 다른 세션)
+test('승인자 auto 카드: 조사 세션 글과 서기실 전체 줄 편 글이 다르고, 둘 다 단추가 없다', () => {
+  const insp = mpSection({ card: card({ approver: 'auto' }) }, b, 7);
+  assert.match(insp, /mp-by-auto[^>]*>브리지가 스스로 합치고 조사 세션을 끝냅니다/);
+  const q = mpSection({ card: card({ approver: 'auto', queue_id: 3 }) }, b, 7);
+  assert.match(q, /mp-by-auto[^>]*>브리지가 스스로 합칩니다\(서기실 전체 줄의 원고\)/);
+  assert.ok(!q.includes('조사 세션') && !q.includes('data-act="mp-merge"'));
+});

@@ -26,6 +26,20 @@ class StartIn(BaseModel):
     note: str | None = Field(default=None, max_length=sr.NOTE_MAX)   # 문서 고치기 — 물어보기 답(고칠 목록) · 기술문서 쓰기 — 덧붙인 요청
 
 
+class QueueIn(BaseModel):
+    """서기실 전체 줄(11-19, bridge/scribe_queue.py). start는 project와 task(topics를 안 주면 코드가 바뀐 편), 나머지는 queue_id."""
+    action: str = Field(pattern="^(start|pause|resume|close)$")
+    project: str | None = Field(default=None, max_length=64)
+    task: str | None = Field(default=None, max_length=16)
+    topics: list[str] | None = Field(default=None, max_length=500)
+    queue_id: int | None = None
+
+
+def invalidate() -> None:
+    """할 일 답을 다시 세게(줄이 바뀌면 bridge/scribe_queue.py on_change가 부른다)."""
+    _cache["data"] = None
+
+
 class InboxIn(BaseModel):
     project: str = Field(min_length=1, max_length=64)
     body: str = Field(min_length=1, max_length=sr.INBOX_MAX)
@@ -107,3 +121,24 @@ async def scribe_start(body: StartIn, request: Request) -> JSONResponse:
         return JSONResponse({"refused": str(e)}, status_code=409)
     _cache["data"] = None
     return JSONResponse(r, status_code=202)
+
+
+@router.post("/queue")
+async def scribe_queue(body: QueueIn, request: Request) -> JSONResponse:
+    """서기실 전체 줄. [전체](start), [멈추기](pause), [이어가기](resume), [줄 닫기](close). 사람이 서기실 창에서 누른 것만."""
+    q = getattr(request.app.state, "scribe_queue", None)
+    if q is None:
+        raise HTTPException(503, "서기실 전체 줄이 꺼져 있습니다")
+    try:
+        if body.action == "start":
+            if not body.project or not body.task:
+                raise Refused("프로젝트와 일(포트폴리오 쓰기, 기술문서 쓰기)이 있어야 합니다")
+            r = await q.begin(body.project, body.task, body.topics)
+        else:
+            if body.queue_id is None:
+                raise Refused("줄 번호가 없습니다")
+            r = await getattr(q, body.action)(body.queue_id)
+    except Refused as e:
+        return JSONResponse({"refused": str(e)}, status_code=409)
+    _cache["data"] = None
+    return JSONResponse(r, status_code=202 if body.action == "start" else 200)

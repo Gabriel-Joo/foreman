@@ -376,6 +376,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if app.state.notifier:
                 rule = app.state.notifier.rules.for_project("foreman")
                 app.state.notifier.send_direct("foreman", "direct", None, f"{(rule and rule.prefix) or '[FOREMAN]'} ⚠ {why}")
+        # 11-19(사용자) 서기실 전체 줄(bridge/scribe_queue.py). 합치기 준비 뒤에 띄운다(mergeprep.queue를 잇는다). 줄은 DB에 있어
+        # 다시 띄워도 이어진다. 안 떠도 브리지는 뜨고, 텔레그램으로 알린다
+        squeue_task = None
+        try:
+            from bridge.api import scribe as scribe_api
+            from bridge.scribe_queue import ScribeQueue
+
+            def _squeue_changed() -> None:
+                scribe_api.invalidate()
+                dashboard_api.invalidate()
+            sq_ = ScribeQueue(app.state.handoff, publishers=lambda: getattr(app.state, "publishers", None),
+                              notifier=app.state.notifier, on_change=_squeue_changed)
+            app.state.scribe_queue = sq_
+            squeue_task = sq_.start()
+        except Exception as e:  # noqa: BLE001
+            why = f"서기실 전체 줄을 켜지 못했다: {type(e).__name__}: {str(e)[:200]}"
+            log.error(why)
+            if app.state.notifier:
+                rule = app.state.notifier.rules.for_project("foreman")
+                app.state.notifier.send_direct("foreman", "direct", None, f"{(rule and rule.prefix) or '[FOREMAN]'} ⚠ {why}")
         if app.state.approvals:
             app.state.approvals.schema = app.state.schema_lock
             # 11-09 — 다른 저장소는 읽기만(config/approval.toml [repo_scope])
@@ -506,7 +526,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await app.state.terminal.stop()   # ttyd만 내린다 — tmux 셸은 남는다
             recon_task = app.state.reconciler._task if app.state.reconciler else None
             for t in (watch_task, state_task, health_task, usage_task, docsync_task, denied_task, schema_task, stall_task, recon_task,
-                      mprep_task, insp_task, handover_task, note_task, postit_task, app.state.foreman._note_task):
+                      mprep_task, insp_task, squeue_task, handover_task, note_task, postit_task, app.state.foreman._note_task):
                 if t:
                     t.cancel()
                     try:

@@ -21,6 +21,10 @@ worktree 세션이 「일을 마침」이 되면 merge-tree를 돌려 **합치�
 - 조사 세션 스스로 끝내기(11-15 사용자, bridge/inspector_close.py): self.auto가 있으면 조사(inspector) 세션 카드 중 바뀐 파일이 모두
   log/ 새 파일이고 충돌, 묻는 말, 늘-사람 까닭이 없는 것은 승인자 auto로 만든다. 사람과 관리자에게 카드를 알리지 않고 InspectorClose가
   approve(by="auto")로 끝내고 합치고 치운다. 아니면 auto_why에 까닭을 싣고 지금처럼 카드로 남긴다(관리자 카드 글에 그 까닭)
+- 서기실 전체 줄(11-19 사용자, bridge/scribe_queue.py): self.queue가 있고 줄이 띄워 지금 도는 편의 세션이면 카드를 가른다(_queue_verdict).
+  같은 승인자 auto 길을 넓힌 것이다(새 길을 따로 두지 않는다). 그 편 원고 하나와 기록 폴더만 바뀌고 문서 점검 새 틀림 0, 충돌과
+  늘-사람 까닭이 없으면 auto(줄이 approve(by="auto")로 합친다). 점검 틀림은 줄의 실패, 늘-사람이면 줄의 「미룬 것」, 코드 파일이
+  섞이면 지금처럼 카드(줄은 그 카드가 합쳐지기를 기다린다). 사람이 손으로 띄운 서기 세션은 이 가름을 쓰지 않는다
 
 조용한 고장 금지: 준비 실패 · 훑기가 stuck_min 넘게 안 끝남 · 합치기 실패 · 관리자에게 못 알림 → 텔레그램 한 번 + 카드(목록)에 사유.
 카드는 메모리(self.cards)에서 돌고 DB 표 merge_card(0032)에 맞춰 남긴다(11-13, log/mergeprep_db_20261113.md) — 브리지를 다시
@@ -377,6 +381,8 @@ class Card:
     pushed: bool | None = None
     # 11-15 조사 세션 카드인데 브리지가 스스로 합치지 않는 까닭(log 밖 파일, 충돌, 묻는 말 등). 스스로 합치는 카드(approver auto)는 None
     auto_why: str | None = None
+    # 11-19 서기실 전체 줄이 띄운 편의 카드면 그 줄 id(bridge/scribe_queue.py). 승인자 auto 줄 카드는 묻는 말로 내리지 않는다
+    queue_id: int | None = None
     # 11-15 D2 바뀐 파일 중 안전 규칙 · 게이트 파일(config/approval.toml [sensitive] protect). 합치기를 막지 않고 표시만 —
     # 합치면 브리지를 다시 띄울 때 살아난다. 확인을 못 했으면 rule_files_error에 까닭
     rule_files: list[str] = field(default_factory=list)
@@ -463,6 +469,7 @@ class MergePrep:
         self._restored = False
         self._reminded: set[int] = set()    # 오래된 합치기 물음 알림을 낸 escalate id — 매 맞추기마다 DB를 보지 않게(DB 키가 진짜 한 번)
         self.auto: Any = None               # 11-15 InspectorClose(bridge/inspector_close.py). 있으면 조사 log 카드를 승인자 auto로
+        self.queue: Any = None              # 11-19 ScribeQueue(bridge/scribe_queue.py). 있으면 줄 세션 카드를 가른다
         wt.SQUASH_OF = self.squash_for_repo  # 패널 [합치기]도 같은 squash 설정을 따르게(handoff.worktree_act → wt.merge)
 
     # ── 보기 ──
@@ -863,7 +870,8 @@ class MergePrep:
             if old.status == "ready" and old.asks != asks:  # 같은 커밋에서 묻는 말만 생기거나 풀림 — 카드는 그대로, 표시만
                 old.asks, old.updated_at = asks, _iso(_now())
                 self._touched = True
-                if asks and old.approver == AUTO:          # 11-15 답을 받아야 하니 스스로 합치지 않는다. 지금처럼 카드로
+                # 11-15 답을 받아야 하니 스스로 합치지 않는다. 지금처럼 카드로. 줄 카드는 판단거리로 모으니 그대로(11-19)
+                if asks and old.approver == AUTO and not old.queue_id:
                     await self.demote_auto(old, "세션이 묻는 말을 남겼습니다")
             return old
         if await self._skipped(sid, st["head"]):
@@ -906,6 +914,12 @@ class MergePrep:
                 card.note = "조사 세션이 log 새 파일만 커밋했습니다. 브리지가 승인 없이 합치고 세션을 끝냅니다."
             else:
                 card.note = f"조사 세션 카드지만 브리지가 스스로 합치지 않습니다: {card.auto_why}. " + (card.note or "")
+        qv = None
+        if self.queue is not None and (qi := await self.queue.running_item(sid)) is not None:
+            # 11-19 서기실 전체 줄이 띄운 편. 카드 없이 합칠지, 실패, 미룸, 카드로 기다림을 가른다
+            qv = await self._queue_verdict(card, repo, st, qi)
+            if card.approver == AUTO:
+                mgr = None
         if old is None or old.head != card.head:
             await self.h._act(sid, ACT_CARD, None, True, f"{name} {card.head[:8]} " + ("충돌 " + ",".join(conflict)[:300] if conflict else "충돌 없음")
                               + (" · 묻는 말 있음" if asks else "") + (" · 턴 끝" if via == "turn_end" else f", {via}" if via != "sweep" else " · 훑기")
@@ -932,6 +946,8 @@ class MergePrep:
                                 + "\n▶ 그 세션 패널의 「합치기 승인」에서 승인합니다"))
             if mgr is not None:
                 self._spawn(self._tell_manager_card(card, mgr))
+            if qv is not None:          # 줄에 알린다(다음 편 띄우기까지 이어지니 잠금 밖에서)
+                self._spawn(self.queue.on_card(sid, *qv))
         elif old is not None and old.status == "ready":
             card.manager_told = old.manager_told              # 같은 커밋 — 관리자에게 다시 알리지 않는다(live만 바뀐 경우)
             card.esc_id, card.esc_mgr, card.esc_error = old.esc_id, old.esc_mgr, old.esc_error   # 올린 물음도 그대로
@@ -957,6 +973,42 @@ class MergePrep:
             return why
         hw = c.human_why or await self._human_why(repo, st["base"], st["branch"], c.project)
         return ("늘 사람에게 올릴 것에 걸렸습니다: " + "; ".join(hw)) if hw else None
+
+    async def _queue_verdict(self, c: Card, repo: str, st: dict[str, Any], qi: dict[str, Any]) -> tuple[str, str | None]:
+        """줄 세션 카드 가름(11-19 사용자). (kind, 까닭): auto(카드 없이 합침), card(카드로 기다림), fail(줄의 실패), held(미룸).
+        auto 판정은 조사 log 길(log_only_why)과 같은 자리를 넓힌 것이다. 파일 판정은 bridge/scribe_queue.py piece_only_why."""
+        from bridge.scribe_queue import piece_only_why
+        c.queue_id = qi["queue_id"]
+        if c.conflict:
+            return "card", f"충돌 {len(c.conflict)}개({', '.join(c.conflict[:3])}), 합치기 카드를 기다립니다"
+        chk = (c.docs or {}).get("check")
+        if _check_bad(chk) or (c.docs or {}).get("error"):
+            return "fail", "문서 점검: " + (check_line(chk) or (c.docs or {}).get("error") or "?")
+        try:
+            hw = c.human_why or await self._human_why(repo, st["base"], st["branch"], c.project)
+        except Exception as e:  # noqa: BLE001, 가르지 못하면 사람에게(안전한 쪽)
+            hw = [f"늘-사람 판정 실패({type(e).__name__})"]
+        if hw:
+            c.human_why, c.approver = hw, "human"
+            c.note = "사람 승인 카드입니다(서기실 전체 줄은 이 편을 미룬 것으로 넣고 다음 편으로 넘어갔습니다): " + "; ".join(hw)
+            return "held", "사람 승인: " + "; ".join(hw)
+        _, raw = await wt.git(repo, "diff", "--raw", "--no-renames", "-z", f"{st['base']}...{st['branch']}")
+        try:
+            records = dcfg.load(repo, st["base"]).records
+        except Exception:  # noqa: BLE001, 문서 설정을 못 읽으면 기본 기록 폴더
+            records = ["log/"]
+        why = piece_only_why(parse_raw(raw), qi["task"], qi["topic"], records)
+        if why is None:
+            c.approver, c.auto_why = AUTO, None
+            c.note = "서기실 전체 줄이 띄운 편이 그 원고만 고쳤고 문서 점검 새 틀림이 없습니다. 브리지가 카드 없이 합칩니다."
+            return "auto", None
+        c.note = f"서기실 전체 줄이 띄운 편이지만 카드로 올립니다: {why}. " + (c.note or "")
+        return "card", "합치기 카드를 기다립니다: " + why
+
+    def _after_store(self, card: Card) -> None:
+        """카드를 메모리에 넣은 뒤. 승인자 auto 줄 카드면 줄이 합친다(approve는 잠금을 잡으니 예약만)."""
+        if card.queue_id and card.approver == AUTO and card.status == "ready" and self.queue is not None:
+            self._spawn(self.queue.auto_merge(card.sid))
 
     async def demote_auto(self, c: Card, why: str) -> None:
         """스스로 합치기로 한 조사 카드를 지금 카드(관리자 또는 사람 승인)로 돌린다(11-15). 묻는 말이 생기거나 끝내기 판정이 물음,
@@ -1053,6 +1105,7 @@ class MergePrep:
                 if self.cards.get(sid) is not card:
                     self.cards[sid] = card
                     changed = True
+                    self._after_store(card)
             changed = changed or self._touched
             for sid in [s for s, c in self.cards.items() if s not in keep and c.status == "ready"]:
                 del self.cards[sid]                       # 더는 일을 마친 상태가 아니다(다시 일함 · 합침 · 버림)
@@ -1101,6 +1154,7 @@ class MergePrep:
             elif old is not card:
                 self.cards[sid] = card
                 changed = True
+                self._after_store(card)
         await self.sync()
         if changed and self.on_change:
             self.on_change()
@@ -1176,6 +1230,8 @@ class MergePrep:
         await self.h._act(sid, ACT_SKIP, None, True, c.head)
         del self.cards[sid]
         await self.sync()
+        if self.queue is not None:           # 11-19 줄 편의 카드를 미루면 그 편은 실패, 줄은 다음 편으로
+            self._spawn(self.queue.on_skip(sid))
         if self.on_change:
             self.on_change()
         return {"ok": True, "note": "카드를 치웠습니다. 이 세션이 새로 커밋하면 다시 만듭니다."}
@@ -1237,7 +1293,8 @@ class MergePrep:
                 conflict = await self._rebase_check(c.repo, st["base"], st["branch"])
             c.behind, c.base_head, c.live, c.conflict, c.updated_at = st["behind"], st["base_head"], live, conflict, _iso(_now())
             if conflict:
-                return await self._send_conflict(c, row, live and by != AUTO)   # 조사는 rebase를 못 한다(log만), 관리자에게
+                # 조사는 rebase를 못 한다(log만), 관리자에게. 줄 서기 세션은 살아 있으면 스스로 푼다(11-19)
+                return await self._send_conflict(c, row, live and (by != AUTO or bool(c.queue_id)))
             c.status, c.error = "merging", None
             await self.sync()            # 합치는 중에 브리지가 내려가면 되살릴 때 「결과 모름」으로 보이게
             if self.on_change:
@@ -1258,7 +1315,8 @@ class MergePrep:
                 c.pushed = await pushed_to_origin(c.repo, c.base, (c.merge_result or {}).get("commit"))
                 await self.h._act(sid, ACT_MERGE, None, True, f"{c.name} {c.head[:8]} 커밋 {res.get('merged')}개"
                                   + (f" squash {res['squash'][:8]}" if res.get("squash") else "")
-                                  + (" · 관리자 승인" if by == "manager" else ", 조사 log라 승인 없이" if by == AUTO else " · 사람 승인"))
+                                  + (" · 관리자 승인" if by == "manager" else (", 줄의 원고라 승인 없이" if c.queue_id else ", 조사 log라 승인 없이")
+                                     if by == AUTO else " · 사람 승인"))
                 c.manager_told = await self._tell_manager(c, self._merged_msg(c, res))
                 await self.after_merge(c, res)
             else:
@@ -1298,7 +1356,8 @@ class MergePrep:
 
     async def _send_conflict(self, c: Card, row: Any, live: bool) -> dict[str, Any]:
         files = ", ".join(c.conflict or [])
-        who = "관리자가" if c.approved_by == "manager" else "브리지가(조사 log라 승인 없이)" if c.approved_by == AUTO else "사람이"
+        who = ("관리자가" if c.approved_by == "manager" else ("브리지가(줄의 원고라 승인 없이)" if c.queue_id else "브리지가(조사 log라 승인 없이)")
+               if c.approved_by == AUTO else "사람이")
         if live:
             msg = (f"[FOREMAN 합치기] {who} 합치기를 승인했는데 {c.branch}가 {c.base}와 충돌한다(파일: {files}). "
                    f"`git rebase {c.base}`로 {c.base}를 가져와 충돌을 풀고 커밋한 뒤 보고해라. push · 브리지 다시 띄우기는 하지 마라. "
@@ -1314,7 +1373,7 @@ class MergePrep:
             c.status = "conflict_manager"
             c.manager_told = await self._tell_manager(c, (
                 f"[FOREMAN 합치기] {who} 세션 {c.sid} 「{c.title or ''}」의 {c.branch} 합치기를 승인했는데 {c.base}와 충돌한다(파일: {files}). "
-                + ("조사 세션은 log만 쓸 수 있어 풀 수 없다(세션은 끝내지 않았다)" if c.approved_by == AUTO else "그 세션은 끝났다")
+                + ("조사 세션은 log만 쓸 수 있어 풀 수 없다(세션은 끝내지 않았다)" if c.approved_by == AUTO and not c.queue_id else "그 세션은 끝났다")
                 + " — 관리자가 원본 폴더에서 풀어 합친다(docs/11_worktree.md 「6.」). 시험 · push도 관리자 몫이다."))
             c.note = ("관리자에게 충돌 풀기를 넘겼습니다." if c.approved_by == AUTO else "세션이 끝나 관리자에게 충돌 풀기를 넘겼습니다.") \
                 if c.manager_told else "관리자 세션이 없어 넘기지 못했습니다. 텔레그램으로 알렸습니다."
@@ -1330,6 +1389,11 @@ class MergePrep:
             how = (f"커밋 {res.get('merged', c.ahead)}개를 커밋 하나({res['squash'][:8]}"
                    + (f" 「{res['title']}」" if res.get("title") else "") + ")로 묶어 squash — 본문에 원래 날짜 · 해시 · 제목"
                    + (f", 원래 커밋은 `git log {res['orig_ref']}`" if res.get("orig_ref") else "") + ", " + how)
+        if c.approved_by == AUTO and c.queue_id:     # 11-19 서기실 전체 줄. 조사 log 길과 같은 「합치기」 알림, push는 관리자
+            ended = " 세션은 끝냈고 작업방도 지웠다." if res.get("ended") is not None else " 작업방을 지웠다."
+            return (f"[FOREMAN 합치기] 서기실 전체 줄(줄 {c.queue_id})이 띄운 서기 세션 {c.sid} 「{c.title or ''}」이 그 편 원고만 고쳤고 "
+                    f"문서 점검 새 틀림이 없어 브리지가 승인 없이 {c.branch}(커밋 {res.get('merged', c.ahead)}개)를 {c.base}에 합쳤다({how})."
+                    f"{ended} 바뀐 파일: {', '.join(c.files[:8])}. push와 브리지 다시 띄우기는 관리자가 한다. 줄은 다음 편으로 넘어간다.")
         if c.approved_by == AUTO:       # 11-15 조사 세션 스스로 끝내기. 결과는 그 log에, push는 관리자 몫 그대로
             ended = " 조사 세션은 끝냈고 작업방도 지웠다." if res.get("ended") is not None else " 작업방을 지웠다."
             return (f"[FOREMAN 합치기] 조사 세션 {c.sid} 「{c.title or ''}」이 log 새 파일만 커밋해 브리지가 승인 없이 {c.branch}"

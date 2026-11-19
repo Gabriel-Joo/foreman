@@ -39,6 +39,7 @@ DB를 왜 MySQL로 골랐는지, 왜 ENUM 대신 VARCHAR를 쓰는지, 보관과
 | | `todo_inbox` | 0027 |
 | | `postit_check` | 0033 |
 | | `postit_repo_log` | 0034 |
+| | `scribe_queue`, `scribe_queue_item` | 0035 |
 | 바깥 | `notification` | 0005 |
 | | `approval` | 0010 |
 | | `git_commit`, `build`, `build_commit` | 0012 |
@@ -311,6 +312,8 @@ erDiagram
     postit_check }o..o| todo_inbox : "item = p:id"
     postit_check }o..|| character_session : "판정한 조사 세션"
     postit_repo_log }o..o| todo_inbox : "postit_id, FK 없음"
+    scribe_queue ||--o{ scribe_queue_item : "queue_id, FK 없음"
+    scribe_queue_item }o..o| character_session : "session_id, FK 없음"
 
     doc_publish {
         bigint id PK
@@ -353,6 +356,19 @@ erDiagram
         varchar action "add, remove"
         boolean ok
     }
+    scribe_queue {
+        bigint id PK
+        varchar project
+        varchar task "portfolio, techdoc"
+        varchar state "running, paused, done, closed"
+    }
+    scribe_queue_item {
+        bigint id PK
+        bigint queue_id
+        varchar topic
+        varchar state "waiting, running, merged, failed, held"
+        varchar how "auto, card"
+    }
 ```
 
 ### doc_publish — 노션에 올린 기록
@@ -385,6 +401,10 @@ erDiagram
 ### postit_repo_log: 저장소에 넣으려고 누른 기록
 
 포스트잇 창에서 [TODO로]나 TODO 항목의 [지우기]를 누르면 브리지가 그 프로젝트 저장소에 직접 커밋한다. 누른 것마다 성공도 거부도 한 행으로 남긴다 [code:migrations/0034_postit_repo_log.sql]. `repo`는 저장소 폴더 이름, `action`은 add(항목을 더함)와 remove(지움), `ok`는 커밋했는지다. `commit`은 짧은 해시이고 성공일 때만 있다. `note`는 사람이 읽는 한 줄로, 어느 저장소에 무엇을 넣었는지 또는 왜 못 했는지가 적힌다. `postit_id`는 누른 포스트잇이고, TODO 항목의 [지우기]에는 포스트잇이 없어 비어 있다. 이 표를 둔 까닭은 열린 포스트잇에 메모 칸이 없어, 거부된 까닭을 `todo_inbox`에 적을 곳이 없었기 때문이다. 화면은 이 행을 열린 줄 밑의 거부 까닭과 창 아래 「저장소에 넣은 기록」으로 보인다 [code:bridge/postit.py]. 「→ 포스트잇」.
+
+### scribe_queue, scribe_queue_item: 서기실 전체 줄
+
+서기실 「포트폴리오 쓰기」와 「기술문서 쓰기」의 [전체]가 세운 줄이다. 줄 하나가 `scribe_queue`의 한 행이고, 줄에 선 편 하나가 `scribe_queue_item`의 한 행이다 [code:migrations/0035_scribe_queue.sql]. 줄은 편을 한 번에 하나씩 띄우고, 한 편이 main에 합쳐져야 다음 편을 띄운다. 브리지를 다시 띄워도 줄이 이어지도록 메모리가 아니라 이 표에 둔다. `scribe_queue.state`는 running(도는 중), paused(멈춤. 지금 편이 끝나면 다음 편을 띄우지 않는다), done(남은 편 없음), closed(사람이 닫음)다. 한 프로젝트에 running이나 paused인 줄은 하나뿐이고, 이것은 코드가 지킨다. `stall_told`는 「오래 안 끝남」을 이미 알린 편이다. `scribe_queue_item.state`는 waiting, running, merged, failed, held(사람 승인 카드라 미룸)이고, `how`는 합친 길(auto는 카드 없이, card는 카드로), `reason`은 실패나 미룸의 까닭 또는 지금 기다리는 것, `decisions`는 그 편 서기가 마지막 응답에 남긴 「사람이 정할 것」이다 [code:bridge/scribe_queue.py]. 「→ 서기실과 일감」.
 
 ## 5. 바깥: 알림, 승인, git과 CI/CD, 사용량
 

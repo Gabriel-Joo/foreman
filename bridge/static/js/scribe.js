@@ -15,8 +15,16 @@ const UNREAD = '읽지 못했습니다';
 // 편이 있는 일(11-19 foreman-125, 서버 bridge/scribe_room.py PIECE_TASKS와 짝). 포트폴리오 쓰기와 기술문서 쓰기가 같은 [갱신]과
 // 편 목록 단추를 쓴다. tps는 서버가 준 편 목록({slug, title, commits, why, blocked}), title은 일 이름(「포트폴리오 쓰기」).
 // [갱신]은 코드가 가장 많이 바뀐 편 하나(막힌 편은 뺀다), 편 목록은 편마다 [고쳐 쓰기]. 막힌 편은 단추를 끄고 까닭을 호버로
-export function pieceButtons(task, title, tps, busy = false) {
+// 11-19 [전체](all): 코드가 바뀐 편(셀 수 없는 편 포함)을 줄을 세워 한 편씩(bridge/scribe_queue.py). 줄은 프로젝트에 하나라
+// 도는 줄(queue, 포트폴리오든 기술문서든)이 있으면 끈다
+export function pieceButtons(task, title, tps, busy = false, queue = null) {
   const cnt = (t) => (t.commits === null || t.commits === undefined ? -1 : t.commits);
+  const nAll = tps.filter((t) => t.commits !== 0).length;
+  const qOn = !!queue && !queue.error && (queue.state === 'running' || queue.state === 'paused');
+  const allWhy = qOn ? '이미 도는 줄이 있습니다. 끝나거나 닫은 뒤에 세웁니다.' : !nAll ? '코드가 바뀐 편이 없습니다.' : '';
+  const all = `<button type="button" class="small" data-sc-queue="${esc(task)}" data-n="${nAll}"${busy || allWhy ? ' disabled' : ''} title="${esc(allWhy
+    ? `전체 — 지금은 줄을 세울 수 없습니다. ${allWhy}`
+    : `전체 — 코드가 바뀐 편 ${nAll}편을 줄을 세워 한 편씩 서기에게 고쳐 쓰게 합니다. 한 편이 main에 합쳐져야 다음 편이 뜹니다.`)}">전체</button>`;
   const cand = tps.filter((t) => !t.blocked && t.commits).sort((a, b) => cnt(b) - cnt(a))[0];
   const upd = cand
     ? `<button type="button" class="small" data-sc-task="${esc(task)}" data-topic="${esc(cand.slug)}" data-name="${esc(cand.title)}"${busy ? ' disabled' : ''} title="갱신 — 코드가 가장 많이 바뀐 편 「${esc(cand.title)}」(코드 바뀐 커밋 ${cand.commits}개)을 서기에게 고쳐 쓰게 합니다. 다른 편은 아래 목록에서 고릅니다.">갱신</button>`
@@ -27,7 +35,50 @@ export function pieceButtons(task, title, tps, busy = false) {
     return `<div class="sc-row"><div class="small"><b>${esc(t.title)}</b> <code>${esc(t.slug)}</code> ${n}${t.blocked ? ` <span class="muted">(${esc(t.blocked)})</span>` : ''}</div>
         <button type="button" class="small" data-sc-task="${esc(task)}" data-topic="${esc(t.slug)}" data-name="${esc(t.title)}"${busy || t.blocked ? ' disabled' : ''} title="${esc(t.blocked ? `${title} — 지금은 시킬 수 없습니다. ${t.blocked}` : `${title} — 「${t.title}」을 서기에게 고쳐 쓰게 합니다.`)}">고쳐 쓰기</button></div>`;
   }).join('');
-  return { upd, rows };
+  return { upd, rows, all };
+}
+
+// 서기실 전체 줄 칸(11-19, bridge/scribe_queue.py view). 줄에 선 편 목록, 지금 편, 멈추기와 이어가기, 실패한 편과 미룬 편 목록.
+// 판단거리(편마다 「사람이 정할 것」)와 미룬 카드는 줄이 끝나면 한 번에 보인다(도는 동안은 수만). 오래 안 끝나는 편은 빨갛게
+const Q_STATE = { waiting: '기다림', running: '도는 중', failed: '실패', held: '미룸' };
+export function queueBlock(q, tasks = {}, busy = false) {
+  if (!q) return '';
+  if (q.error) return `<div class="small bad sc-line"><b>전체 줄</b>: ${esc(q.error)}</div>`;
+  const k = q.counts || {};
+  const name = (tasks[q.task] || {}).title || q.task;
+  const done = q.state === 'done';
+  const open = (sid) => (sid ? ` <button type="button" class="small ghost" data-sc-open="${sid}" title="세션 열기 — 이 편 서기 세션의 [세션 정리] 탭을 엽니다. 합치기 카드와 diff를 봅니다.">세션 열기</button>` : '');
+  const stateOf = (i) => (i.state === 'merged' ? (i.how === 'auto' ? '합침(카드 없이)' : '합침(카드로)') : Q_STATE[i.state] || i.state);
+  const btn = q.state === 'running'
+    ? `<button type="button" class="small" data-sq-act="pause" data-qid="${q.id}"${busy ? ' disabled' : ''} title="멈추기 — 지금 도는 편은 끝까지 돌고, 다음 편은 띄우지 않습니다.">멈추기</button>`
+    : q.state === 'paused'
+      ? `<button type="button" class="small primary" data-sq-act="resume" data-qid="${q.id}"${busy ? ' disabled' : ''} title="이어가기 — 멈춘 줄을 다시 돌립니다. 지금 도는 편이 없으면 다음 편을 바로 띄웁니다.">이어가기</button>`
+      + `<button type="button" class="small ghost" data-sq-act="close" data-qid="${q.id}"${busy ? ' disabled' : ''} title="줄 닫기 — 남은 편을 띄우지 않고 줄을 닫습니다. 지금 도는 편 세션은 건드리지 않습니다.">줄 닫기</button>`
+      : `<button type="button" class="small ghost" data-sq-act="close" data-qid="${q.id}"${busy ? ' disabled' : ''} title="줄 닫기 — 끝난 줄을 서기실에서 치웁니다. 판단거리와 미룬 카드를 다 봤을 때 누릅니다.">줄 닫기</button>`;
+  const head = `<div class="sc-row"><div class="small"><b>전체 줄</b> ${esc(name)} <span class="${q.state === 'paused' ? 'warn' : done ? 'ok' : 'muted'}">${esc(q.state_ko || q.state)}</span>
+    <span class="muted">합침 ${k.merged || 0}(카드 없이 ${k.auto || 0}, 카드로 ${k.card || 0}), 실패 ${k.failed || 0}, 미룸 ${k.held || 0}, 남음 ${k.waiting || 0}</span></div><div class="hand-btns">${btn}</div></div>`;
+  const c = q.current;
+  const now = c
+    ? `<div class="small ${c.stalled ? 'bad' : ''}">지금 편 「${esc(c.title)}」 <span class="muted">세션 ${c.session_id}${c.minutes !== null && c.minutes !== undefined ? `, ${c.minutes}분째` : ''}</span>${c.stalled ? ` 오래 안 끝남(${q.stall_min}분 넘음)` : ''}${c.reason ? `: ${esc(c.reason)}` : ''}${open(c.session_id)}</div>`
+    : '';
+  const pausedNote = q.state === 'paused' ? `<div class="small warn">${esc(q.note || '멈춤')}${c ? '' : '. 지금 도는 편이 없습니다.'}</div>` : '';
+  const items = q.items || [];
+  const listRows = items.map((i) => `<div class="small">${i.pos + 1}. ${esc(i.title)} <code>${esc(i.topic)}</code> <span class="${i.state === 'failed' ? 'bad' : i.state === 'held' ? 'warn' : i.state === 'merged' ? 'ok' : 'muted'}">${esc(stateOf(i))}</span></div>`).join('');
+  const list = `<details class="hand"${keep(`scribe:queue:${q.id}:list`)}><summary class="small muted" title="줄 목록 — 줄에 선 편과 편마다 지금 상태입니다. 합친 편도 남습니다.">줄 목록 ${items.length}</summary>${listRows}</details>`;
+  const failed = items.filter((i) => i.state === 'failed');
+  const failHtml = failed.length ? `<div class="small bad"><b>실패 ${failed.length}</b> <span class="muted">줄은 멈추지 않고 다음 편으로 넘어갔습니다</span>${
+    failed.map((i) => `<div class="sc-row"><div class="small">· 「${esc(i.title)}」: ${esc(i.reason || '')}</div>${open(i.session_id)}</div>`).join('')}</div>` : '';
+  const held = items.filter((i) => i.state === 'held');
+  const heldHtml = !held.length ? '' : done
+    ? `<div class="small warn"><b>미룬 카드 ${held.length}</b> <span class="muted">사람 승인입니다. 세션을 열어 합치기 카드를 누릅니다</span>${
+      held.map((i) => `<div class="sc-row"><div class="small">· 「${esc(i.title)}」: ${esc(i.reason || '')}</div>${open(i.session_id)}</div>`).join('')}</div>`
+    : `<div class="small warn">미룬 카드 ${held.length}(사람 승인, 줄이 끝나면 모아 보입니다)</div>`;
+  const dec = items.filter((i) => i.has_decisions);
+  const decHtml = !dec.length ? '' : done
+    ? `<div class="small"><b>판단거리 ${dec.length}편</b> <span class="muted">편마다 서기가 남긴 「사람이 정할 것」입니다</span>${
+      dec.map((i) => `<div class="sc-answer"><b>「${esc(i.title)}」</b><div style="white-space:pre-wrap">${esc(i.decisions || '')}</div></div>`).join('')}</div>`
+    : `<div class="small muted">판단거리 ${dec.length}편(줄이 끝나면 한 번에 보입니다)</div>`;
+  return `<div class="hand sc-queue">${head}${now}${pausedNote}${failHtml}${heldHtml}${decHtml}${list}</div>`;
 }
 
 // 일마다 옆에 붙는 밀린 수 — 「알려진 한계 쓰기 — 13개 밀림」. 밀린 것이 없으면 이름만(빈 문자열)
@@ -195,10 +246,10 @@ export function createScribe(store) {
     const pc = piecesText(pf);
     const state = pf.unread ? `<span class="bad">${esc(pf.unread)}</span>` : `<span class="${pc.cls}">${esc(pc.text)}</span>`;
     // [갱신]은 코드가 가장 많이 바뀐 편을 고쳐 쓰게 한다. 어느 편인지는 아래 목록에서 따로 고를 수도 있다(기술문서 쓰기와 같은 pieceButtons)
-    const { upd, rows } = pieceButtons('portfolio', tasks.portfolio.title || '포트폴리오 쓰기', tps, busy);
+    const { upd, rows, all } = pieceButtons('portfolio', tasks.portfolio.title || '포트폴리오 쓰기', tps, busy, pj.queue);
     const whole = `<button type="button" class="small" data-sc-task="portfolio" data-name=""${busy || pf.blocked ? ' disabled' : ''} title="${esc(pf.blocked ? `포트폴리오 쓰기 — 지금은 시킬 수 없습니다. ${pf.blocked}` : '포트폴리오 쓰기 — 서기가 보여줄 화면이 있으면 화면마다, 없으면 결정마다 편 목록을 정해 portfolio/ 글을 새로 쓰거나 고쳐 씁니다.')}">시키기</button>`;
-    return `<div class="sc-row"><div class="small" title="포트폴리오 쓰기 — 서기가 화면마다 한 편씩 portfolio/에 씁니다. 바깥 독자용이라 저장소 링크 없이 게시됩니다."><b>포트폴리오 쓰기</b> ${state}</div><div class="hand-btns">${upd}${whole}</div></div>
-      <details class="hand"${keep(`scribe:${room}:topics`)}><summary class="small muted" title="글 목록 — 편마다 읽은 커밋 뒤 다루는 코드를 바꾼 커밋 수를 봅니다.">글 목록 ${tps.length}</summary>${rows || '<p class="small muted">아직 쓴 글이 없습니다.</p>'}</details>`;
+    return `<div class="sc-row"><div class="small" title="포트폴리오 쓰기 — 서기가 화면마다 한 편씩 portfolio/에 씁니다. 바깥 독자용이라 저장소 링크 없이 게시됩니다."><b>포트폴리오 쓰기</b> ${state}</div><div class="hand-btns">${upd}${all}${whole}</div></div>
+      <details class="hand"${keep(`scribe:${room}:topics`)}><summary class="small muted" title="편 목록 — 포트폴리오 편마다 읽은 커밋 뒤 다루는 코드를 바꾼 커밋 수를 보고, 한 편만 골라 고쳐 쓰게 합니다.">편 목록 ${tps.length}</summary>${rows || '<p class="small muted">아직 쓴 글이 없습니다.</p>'}</details>`;
   }
 
   // pick — 서기 머리 위 "정리할까요?"(11-09)를 눌러 열면 그 일(later)을 고른 채: 그 줄을 밝히고 [시키기]를 primary로.
@@ -230,8 +281,8 @@ export function createScribe(store) {
       // [시키기]는 편 없이 통째로 쓰기 그대로
       if (k === 'techdoc') {
         const tps = pj.techdoc.topics || [];
-        const pb = pieceButtons('techdoc', tasks.techdoc.title, tps, busy);
-        btns = `<div class="hand-btns">${pb.upd}${btns}</div>`;
+        const pb = pieceButtons('techdoc', tasks.techdoc.title, tps, busy, pj.queue);
+        btns = `<div class="hand-btns">${pb.upd}${pb.all}${btns}</div>`;
         extra = `<details class="hand"${keep(`scribe:${room}:techdoc_topics`)}><summary class="small muted" title="편 목록 — 기술문서 원고 편마다 읽은 커밋 뒤 다루는 코드를 바꾼 커밋 수를 보고, 한 편만 골라 고쳐 쓰게 합니다.">편 목록 ${tps.length}</summary>${pb.rows || '<p class="small muted">아직 쓴 원고가 없습니다.</p>'}</details>`;
       }
       if (k === 'doccheck' && pj.report) {          // 문서 점검 결과로 바로 고치기 — 찾기만 하고 끝나지 않게
@@ -280,6 +331,7 @@ export function createScribe(store) {
       ${askHtml}
       ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}"${note.tip ? ` title="${esc(note.tip)}"` : ''}>${esc(note.msg)}</div>` : ''}
       ${postitHtml}
+      ${queueBlock(pj.queue, tasks, busy)}
       <details class="hand"${keep(`scribe:${room}:list`, true)}><summary title="할 일 — 서기에게 시킬 일 한 목록입니다. 이름 옆 숫자는 밀린 정도이고, 숫자가 없으면 지금 밀린 것이 없습니다."><b>할 일</b> ${sumCount}${bad}</summary>${listBody}</details>
       <div class="hand">${portfolioBlock(room, pj, tasks)}${portPubBlock(room, pj)}${docsPubBlock(room, pj, label)}</div>
       ${pubBad[room] && pubs[room] ? `<div class="small bad">게시 목록을 ${UNREAD}(지난 값입니다).</div>` : ''}`;
@@ -325,6 +377,29 @@ export function createScribe(store) {
     await load(true, room);
   }
 
+  // 전체 줄(11-19). [전체]는 확인 창 뒤 줄을 세우고, [멈추기] [이어가기] [줄 닫기]는 줄 번호로. 결과는 note 한 줄
+  async function queueAct(room, label, qb, qa) {
+    let body;
+    if (qb) {
+      const k = qb.dataset.scQueue, title = ((todo && todo.tasks) || {})[k]?.title || k;
+      if (!confirm(`${label}의 「${title}」에서 코드가 바뀐 편 ${qb.dataset.n}편을 줄을 세워 한 편씩 서기에게 맡깁니다.\n한 편이 main에 합쳐져야 다음 편이 뜹니다. 원고만 고친 편은 카드 없이 합쳐지고, 다른 파일을 고친 편은 합치기 카드로 갑니다.\n\n진행할까요?`)) return;
+      body = { action: 'start', project: room, task: k };
+    } else {
+      const act = qa.dataset.sqAct;
+      if (act === 'close' && !confirm('이 줄을 닫습니다. 남은 편은 띄우지 않고, 판단거리와 실패 목록도 서기실에서 사라집니다.\n\n닫을까요?')) return;
+      body = { action: act, queue_id: Number(qa.dataset.qid) };
+    }
+    busy = true; note = { msg: '전체 줄을 바꾸는 중입니다…' }; store.touch('panel');
+    try {
+      const r = await fetch('/api/scribe/queue', { method: 'POST', headers: store.headers(true), body: JSON.stringify(body) });
+      const j = await r.json().catch(() => ({}));
+      note = !r.ok ? { bad: true, msg: `하지 못했습니다: ${j.refused || j.detail || r.status}` }
+        : body.action === 'start' ? { msg: `줄을 세웠습니다: ${j.items}편. 첫 편 서기 세션을 띄웠습니다.` } : { msg: j.note || '마쳤습니다.' };
+    } catch { note = { bad: true, msg: '하지 못했습니다. 서버에 닿지 못했습니다.' }; }
+    busy = false;
+    await load(true, room);
+  }
+
   async function onClick(ev, room, label, openSession) {
     // 열린 서기 일의 세션 열기(11-06) — 끝난 서기 세션은 3분 뒤 화면에서 사라지고, 서기실의 「서기」를 누르면 이 창이 떠서
     // 합치지 않은 worktree의 [합치기]에 닿을 길이 없었다
@@ -338,6 +413,8 @@ export function createScribe(store) {
       if (answer && !answer.bad && answer.text) await start(room, label, 'docfix', null, '물어보기 답', answer.text);
       return;
     }
+    const qb = ev.target.closest('[data-sc-queue]'), qa = ev.target.closest('[data-sq-act]');
+    if (qb || qa) { ev.preventDefault(); await queueAct(room, label, qb, qa); return; }
     const t = ev.target.closest('[data-sc-task]'), p = ev.target.closest('[data-pub]');
     if (!t && !p) return;
     ev.preventDefault();

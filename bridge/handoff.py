@@ -354,6 +354,7 @@ class HandoffManager:
         self.models = Models()              # 고를 수 있는 모델 · 역할 기본값(config/models.toml, 11-05)
         self.promote: Any = None            # 문서로 옮기기(bridge/promote.py) — main.py가 넣는다
         self.mergeprep: Any = None          # 합치기 준비(bridge/mergeprep.py, 11-11) — config/handoff.toml이 켜면 main.py가 넣는다
+        self.scribe_queue: Any = None       # 서기실 전체 줄(bridge/scribe_queue.py, 11-19). 합침, 버림을 알려 다음 편으로 넘긴다
 
     # ── 조회 ────────────────────────────────────────────
     async def session(self, sid: int) -> SessionRow | None:
@@ -1309,6 +1310,8 @@ class HandoffManager:
             res["preview_stopped"] = await self._stop_preview(row)
             if row.project:
                 await self._retire_wt_characters(row, name)
+            if (sq := getattr(self, "scribe_queue", None)) is not None:   # 줄 편이면 끝남(합침) 또는 실패(버림). 카드를 치우기 전에 승인자를 읽는다
+                sq.on_worktree(row.id, act, res)
             if self.mergeprep is not None:                # 합치기 막대 · 말풍선이 1분 훑기를 기다리지 않게(11-11)
                 self.mergeprep.worktree_gone(row.id)
         await self._act(row.id, f"wt-{act}", None, bool(res.get("ok")),

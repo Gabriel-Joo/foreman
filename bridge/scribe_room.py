@@ -103,18 +103,24 @@ def has_portfolio(repo: str) -> bool:
 
 
 async def last_techdoc_merge(engine: Any, project: str, repo: str) -> tuple[datetime | None, str]:
-    """마지막으로 기술문서 서기 세션(scribe-task techdoc)을 합친 시각(UTC)과 출처. 그런 기록이 없으면 notion/을 마지막으로 바꾼
-    커밋 시각(계획 · 직접 띄우기로 일 종류 없이 쓴 원고도 있을 수 있다) — 둘 다 없으면 (None, "")."""
-    async with engine.connect() as c:
-        r = (await c.execute(text(
-            "SELECT MAX(m.created_at) FROM session_action m JOIN character_session cs ON cs.id = m.session_id "
+    """마지막으로 기술문서 **통째 쓰기** 서기 세션(scribe-task detail 'techdoc' 그대로)을 합친 시각(UTC)과 출처.
+    11-19 사용자: 편 하나(detail 'techdoc <편>', [갱신], 편 목록, 전체 줄)를 합쳐도 시계를 다시 시작하지 않는다. 다시 시작하면
+    남은 편이 이틀 동안 묻힌다(「코드가 바뀐 편 N」은 계속 보인다).
+    통째 쓰기 기록이 없으면 notion/을 마지막으로 바꾼 커밋 시각(계획, 직접 띄우기로 일 종류 없이 쓴 원고도 있을 수 있다). 이때도
+    편 하나 합치기가 있었으면 합쳐진 편 세션 가운데 처음 띄운 때 앞의 커밋만 본다(편 커밋이 시계를 당기지 않게. 편 커밋은
+    합친 시각보다 앞서 찍히니 띄운 시각으로 자른다). 둘 다 없으면 (None, "")."""
+    base = ("FROM session_action m JOIN character_session cs ON cs.id = m.session_id "
             "JOIN `character` ch ON ch.id = cs.character_id JOIN project p ON p.id = ch.project_id "
-            "WHERE p.name = :p AND m.action = 'wt-merge' AND m.ok AND EXISTS (SELECT 1 FROM session_action sa "
-            "  WHERE sa.session_id = m.session_id AND sa.action = :a AND sa.ok AND sa.detail LIKE 'techdoc%')"),
-            {"p": project, "a": TASK_ACT})).scalar()
+            "JOIN session_action sa ON sa.session_id = m.session_id AND sa.action = :a AND sa.ok "
+            "WHERE p.name = :p AND m.action = 'wt-merge' AND m.ok AND ")
+    async with engine.connect() as c:
+        r = (await c.execute(text("SELECT MAX(m.created_at) " + base + "sa.detail = 'techdoc'"), {"p": project, "a": TASK_ACT})).scalar()
+        first_piece = None if r else (await c.execute(text("SELECT MIN(sa.created_at) " + base + "sa.detail LIKE 'techdoc %'"),
+                                                        {"p": project, "a": TASK_ACT})).scalar()
     if r:
         return r, "merge"
-    ts = _git(repo, "log", "-1", "--format=%ct", "HEAD", "--", TECHDOC_DIR)
+    before = ["--before", f"{first_piece.isoformat()}Z"] if first_piece else []
+    ts = _git(repo, "log", "-1", "--format=%ct", *before, "HEAD", "--", TECHDOC_DIR)
     if ts.isdigit():
         return datetime.fromtimestamp(int(ts), UTC).replace(tzinfo=None), "commit"
     return None, ""
@@ -292,7 +298,8 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
             if techdoc["due"]:
                 items.append({"kind": "techdoc", "title": f"기술문서 쓰기: 코드가 바뀐 편 {techdoc['need']}", "why": techdoc["why"]})
         report = doccheck_report(repo)
-        out[name] = {"items": items, "open": opened, "topics": tps, "nudge": nudge,
+        from bridge import scribe_queue as sq       # 11-19 전체 줄(포트폴리오와 기술문서가 한 벌)
+        out[name] = {"queue": await sq.view(engine, name), "items": items, "open": opened, "topics": tps, "nudge": nudge,
                      "blocked": {k: b for k in TASKS if k not in ("publish", "portfolio") and (b := blocked(k, opened))},
                      "behind": behind, "inbox": None, "postit": _json_postit(pst), "techdoc": techdoc,
                      "portfolio": portfolio, "port_pub": port_pub, "docs_pub": docs_pub, "pub_error": pub_error,
@@ -689,6 +696,9 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
             f"\n\n덧붙인 요청(사람이 관리자를 거쳐 넘긴 것)\n{e['note']}" if e.get("note") else "")
     else:
         raise ValueError(task)
+    if e.get("queue"):
+        from bridge.scribe_queue import QUEUE_RULES
+        body += "\n\n" + QUEUE_RULES
     return head + body + "\n" + COMMON
 
 
@@ -710,8 +720,19 @@ async def _record(engine: Any, project: str, name: str, task: str, topic: str | 
         log.warning("서기실 띄우기 기록(dispatch) 실패: %s", type(e).__name__)
 
 
+def piece_task_ok(task: str, project: str, repo: str, publishers: dict[str, Any] | None) -> None:
+    """편이 있는 일을 이 프로젝트에 시킬 수 있나(start와 전체 줄 bridge/scribe_queue.py begin이 같이 쓴다). 안 되면 Refused."""
+    from bridge.inject import Refused
+    if task == "portfolio" and not has_portfolio(repo):
+        raise Refused(f"이 저장소에는 {PORTFOLIO_DIR} 폴더가 없습니다. 포트폴리오를 쓰는 프로젝트가 아닙니다")
+    if task == "techdoc":
+        pub = (publishers or {}).get(project)
+        if pub is None or getattr(pub, "src", "docs/") != TECHDOC_DIR:
+            raise Refused(f"이 프로젝트는 기술문서 원고 폴더가 {TECHDOC_DIR}이 아닙니다(config/notion.toml src). 기술문서 쓰기를 시킬 수 없습니다")
+
+
 async def start(m: Any, engine: Any, project: str, task: str, topic: str | None = None, note: str | None = None,
-                publishers: dict[str, Any] | None = None) -> dict[str, Any]:
+                publishers: dict[str, Any] | None = None, queue: int | None = None) -> dict[str, Any]:
     """서기 일을 worktree 세션으로 띄운다(handoff.spawn_new). 편이 있는 일(PIECE_TASKS: 포트폴리오, 11-19부터 기술문서)은
     편(topic)이 있으면 그 편만, 없으면 원고 폴더 통째로(11-15). 편은 main의 원고 폴더에 있는 것만 받는다.
     기술문서 쓰기(techdoc, 11-15)는 게시기 원고 폴더(src)가 notion/인 프로젝트만 — publishers로 본다. note는 덧붙인 요청.
@@ -738,12 +759,8 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
         raise Refused("이 프로젝트의 저장소를 찾지 못했습니다")
     tp = None
     tps: list[dict[str, Any]] = []
-    if task == "portfolio" and not has_portfolio(repo):
-        raise Refused(f"이 저장소에는 {PORTFOLIO_DIR} 폴더가 없습니다. 포트폴리오를 쓰는 프로젝트가 아닙니다")
-    if task == "techdoc":
-        pub = (publishers or {}).get(project)
-        if pub is None or getattr(pub, "src", "docs/") != TECHDOC_DIR:
-            raise Refused(f"이 프로젝트는 기술문서 원고 폴더가 {TECHDOC_DIR}이 아닙니다(config/notion.toml src). 기술문서 쓰기를 시킬 수 없습니다")
+    if task in PIECE_TASKS:
+        piece_task_ok(task, project, repo, publishers)
     spec = PIECE_TASKS.get(task)
     if spec is not None:
         # 편이 있는 일: 편은 main의 원고 폴더에 있는 것만. 없는 편, 원고 폴더 밖 경로(「..」, 다른 폴더)는 목록에 없어 거절된다
@@ -782,6 +799,8 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
             if tp is not None:
                 extra.update(slug=tp["slug"], title=tp["title"], covers=", ".join(f"`{c}`" for c in tp["covers"]),
                              commits="" if tp["commits"] is None else f"{tp['commits']}개")
+            if queue is not None and tp is not None:
+                extra["queue"] = str(queue)          # 11-19 전체 줄이 띄운 편(bridge/scribe_queue.py QUEUE_RULES를 붙인다)
         if task == "techdoc" and tp is None:
             from bridge import manuscript as ms
             pcs = ms.pieces(repo, TECHDOC_DIR, "HEAD")
@@ -804,4 +823,5 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
         await m._act(res["session_id"], LATER_ACT, res.get("pid"), True, f"{now.isoformat()} 쓸 줄 {len(inbox)}개")
         # 받은 할 일은 이 세션이 가져간다 — 합쳐지면 "옮김", 버려지면 다시 "새로"(상태는 계산, _INBOX_STATE)
         await _inbox_take(engine, [x["id"] for x in inbox], res["session_id"])
-    return {"task": task, "project": project, "topic": tp["slug"] if tp else None, **{k: res.get(k) for k in ("tmux", "cc_session_id", "worktree", "note", "injected")}}
+    return {"task": task, "project": project, "topic": tp["slug"] if tp else None,
+            **{k: res.get(k) for k in ("session_id", "tmux", "cc_session_id", "worktree", "note", "injected")}}
