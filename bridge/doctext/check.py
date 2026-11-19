@@ -35,7 +35,7 @@ from bridge.doctext.config import DocsConfig, not_code_match
 from bridge.doctext.head import COVERS, READ, SHA, bad_covers, parse_head
 from bridge.doctext.lines import COMMENT, TEXT, walk
 from bridge.doctext.marks import MARK, STRIP, target
-from bridge.doctext.repo import RepoError, gits, read_many, tree
+from bridge.doctext.repo import RepoError, git_z, gits, is_quoted, quoted_problem, read_many, tree
 from bridge.doctext.titles import XREF, first_h1, xref_index, xref_lookup
 
 # 근거 확인기가 11-06부터 쓰던 꼴. 사진 줄(![설명](경로))도 뺀다(설명의 근거는 사진 자체다)
@@ -161,8 +161,8 @@ def pieces_of(repo: str, rev: str | None, folder: str, numbered: bool, records: 
     if rev:
         names = tree(repo, rev, [folder])
     else:
-        names = [x for x in gits(repo, "ls-files", "--cached", "--others", "--exclude-standard", "--", folder).splitlines()
-                 if x and (Path(repo) / x).is_file()]
+        names = [x for x in git_z(repo, "ls-files", "--cached", "--others", "--exclude-standard", "--", folder)
+                 if (Path(repo) / x).is_file()]
     out = [p for p in sorted(set(names)) if p.endswith(".md") and not p.startswith(tuple(records))]
     if numbered:
         out = [p for p in out if NUMBERED.match(p[len(folder):])]
@@ -371,6 +371,12 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
         r0 = (reads.get("main") or [None])[0] if cfg.read_commit == "set" and ck.files_at == "read" else None
         files = sorted(GitView(repo, r0).files) if r0 and len(reads.get("main", [])) == 1 else (
             sorted(base.files) if isinstance(base, GitView) else tree(repo, None))
+        # git이 경로를 따옴표로 내보냈으면(설정이 바뀌었거나 새 길이 생겼을 때) 무늬와 폴더에 걸리지 않아 덮기 밖으로 조용히 세어진다.
+        # 그렇게 세지 않고 틀림 하나로 알린다(11-19 펫퍼민트 52줄)
+        quoted = [f for f in files if is_quoted(f)]
+        if quoted:
+            files = [f for f in files if f not in quoted]
+            err(None, None, f"{quoted_problem(quoted[0])}. 같은 경로 {len(quoted)}개를 덮기 대상에서 뺐습니다")
         folders = tuple(d for d in sets.values() if d) + tuple(cfg.records)
         # `not_code`에 드는 파일(사진, 잠금 파일 같은 것)은 덮을 대상이 아니다. 확장자 `.md`만은 뺀다. 문서 묶음 밖 글(CLAUDE.md,
         # README.md, 운영 절차서)은 코드는 아니어도 어느 편이 다루는지 보는 대상으로 남겨 둔다(판단은 log/foreman-6_cover_not_code_*.md)

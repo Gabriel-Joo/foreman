@@ -50,6 +50,7 @@ from bridge.doctext.marks import MARK as ANY_MARK
 from bridge.doctext.marks import REF_MARK as MARK
 from bridge.doctext.marks import split_range as _split_range
 from bridge.doctext.repo import RepoError as DocrefsError
+from bridge.doctext.repo import git_z, is_quoted, quoted_problem
 from bridge.doctext.repo import gits as _gits
 from bridge.doctext.repo import read_many as _read_many
 from bridge.doctext.repo import tree as _tree
@@ -59,7 +60,7 @@ DOCS_DIR = dcfg.DocsConfig().sets["docs"]
 PORTFOLIO_DIR = dcfg.DocsConfig().sets["portfolio"]
 
 TICK = re.compile(r"`([^`\n]+)`")
-TOKEN = re.compile(r"[A-Za-z0-9_./*-]+(?::\d+(?:-\d+)?)?")
+TOKEN = re.compile(r"[\w./*-]+(?::\d+(?:-\d+)?)?")      # \w: 한글 이름 파일(`bridge/한글.py`)이 아스키 조각으로 쪼개져 안 걸리지 않게(11-19)
 # 맨글 경로: 슬래시가 있고 확장자로 끝나는 것만(URL의 // 뒤, 다른 경로 가운데는 빼려고 앞 글자를 본다)
 PLAIN = re.compile(r"(?<![\w./:-])((?:[\w.-]+/)+[\w.-]+\.[A-Za-z0-9]{1,6})(?::(\d+)(?:-(\d+))?)?(?![\w/-])")
 LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s|^\s*\|")
@@ -161,7 +162,7 @@ def _clean(tok: str) -> str:
 
 
 def _pathlike(tok: str) -> bool:
-    if not tok or tok.startswith(("-", "/", "~")) or ".." in tok.split("/") or not re.search(r"[A-Za-z]", tok):
+    if not tok or tok.startswith(("-", "/", "~")) or ".." in tok.split("/") or not re.search(r"[^\W\d_]", tok):
         return False
     if not ("/" in tok or EXT.search(tok)):
         return False
@@ -276,6 +277,8 @@ def changed_lines(repo: str, a: str, b: str, files: list[str]) -> dict[str, list
     out: dict[str, list[tuple[int, int]]] = {}
     cur = None
     for ln in _gits(repo, "diff", "-U0", "--no-renames", a, b, "--", *files).splitlines():
+        if ln.startswith(("--- ", "+++ ")) and is_quoted(ln[4:]):
+            raise DocrefsError(quoted_problem(ln[4:]))
         if ln.startswith("--- "):
             cur = ln[6:] if ln.startswith("--- a/") else None
         elif ln.startswith("+++ ") and cur is None and ln.startswith("+++ b/"):
@@ -350,7 +353,7 @@ def scan(repo: str | Path, files: list[str] | None = None, rng: str | None = Non
     a = b = None
     if rng:
         a, b = parse_range(repo, rng)
-        changed = set(_gits(repo, "diff", "--name-only", "--no-renames", a, b).splitlines())
+        changed = set(git_z(repo, "diff", "--name-only", "--no-renames", a, b))
         trig = sorted(p for p in changed if trigger_kind(p, sets, cfg))
         if given:
             trig = [p for p in trig if p in given or any(matches(g, "path", p, {}) for g in given)]

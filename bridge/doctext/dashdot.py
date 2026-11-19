@@ -24,6 +24,7 @@ import tokenize
 from pathlib import Path
 
 from bridge.doctext.lines import TEXT, walk
+from bridge.doctext.repo import is_quoted, quoted_problem
 from bridge.doctext.marks import STRIP
 
 CHARS = {"—": "em dash", "·": "가운뎃점"}
@@ -44,10 +45,23 @@ class DashDotError(RuntimeError):
 
 
 def _git(repo: str | Path, *a: str) -> str:
-    r = subprocess.run(["git", "-C", str(repo), "-c", "core.quotepath=off", *a], capture_output=True, timeout=120)
+    r = subprocess.run(["git", "-C", str(repo), "-c", "core.quotepath=false", *a], capture_output=True, timeout=120)
     if r.returncode:
         raise DashDotError(f"git {a[0]} 실패: {r.stderr.decode(errors='replace').strip()[:200]}")
     return r.stdout.decode(errors="replace")
+
+
+def _git_z(repo: str | Path, *a: str) -> list[str]:
+    """파일 목록 명령을 `-z`로 읽어 `\\0`로 나눈다(`bridge.doctext.repo.git_z`와 같다)."""
+    return [x for x in _git(repo, a[0], "-z", *a[1:]).split("\0") if x]
+
+
+def _header_path(line: str, prefix: str) -> str | None:
+    """diff 머리(`--- a/…`, `+++ b/…`)의 파일 경로. 없는 파일(/dev/null)이면 None. 따옴표로 싼 경로는 이름을 읽을 수 없어 DashDotError."""
+    p = line[4:]
+    if is_quoted(p):
+        raise DashDotError(quoted_problem(p))
+    return p[2:] if p.startswith(prefix) else None
 
 
 def wanted(path: str, doc_dirs: tuple[str, ...] = DOC_DIRS, skip: tuple[str, ...] = SKIP_DIRS) -> str | None:
@@ -94,8 +108,7 @@ def removed_pool(repo: str | Path, base: str, rev: str | None = None) -> dict[st
                 left_new -= 1
             continue
         if line.startswith("--- "):
-            p = line[4:]
-            old = p[2:] if p.startswith("a/") else None
+            old = _header_path(line, "a/")
         elif m := HUNK.match(line):
             a, b, _, d = (int(x) if x is not None else 1 for x in m.groups())
             left_old, left_new, row = b, d, a
@@ -129,17 +142,16 @@ def hunks(repo: str | Path, base: str, rev: str | None = None, doc_dirs: tuple[s
     cur: str | None = None
     for line in _git(repo, *_diff_args(base, rev, only_wanted_kinds=True)).splitlines():
         if line.startswith("--- "):
-            p = line[4:]
-            old = p[2:] if p.startswith("a/") else None
+            old = _header_path(line, "a/")
         elif line.startswith("+++ "):
-            p = line[4:]
-            cur = p[2:] if p.startswith("b/") and wanted(p[2:], doc_dirs, skip) else None
+            p = _header_path(line, "b/")
+            cur = p if p and wanted(p, doc_dirs, skip) else None
         elif cur and (m := HUNK.match(line)):
             a, b, c, d = (int(x) if x is not None else 1 for x in m.groups())
             out.append((cur, old, range(a, a + b), range(c, c + d)))
     if rev:
         return out
-    for p in _git(repo, "ls-files", "--others", "--exclude-standard").splitlines():
+    for p in _git_z(repo, "ls-files", "--others", "--exclude-standard"):
         if wanted(p, doc_dirs, skip):
             try:
                 n = len((Path(repo) / p).read_text(encoding="utf-8").splitlines())
