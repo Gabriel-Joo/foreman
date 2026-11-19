@@ -555,6 +555,35 @@ COMMON = """
 - `pgrep -f` · `pkill -f`를 쓰지 않는다 — CC는 Bash 명령 전체를 `bash -c`로 돌려 패턴이 자기 셸에 걸린다(브리지가 거부한다). 기다릴 때는 그 작업의 PID나 결과 파일을 본다"""
 
 
+XREF_SHOW = 30          # 지시문에 줄 번호까지 적는 「」 없는 참조 수(넘으면 수만)
+
+
+def piece_xrefs(repo: str, path: str) -> str:
+    """편 하나(main 판)의 「」 없는 편 사이 참조를 지시문 한 줄 글로. 없으면 빈 글. 판정은 문서 점검과 같다
+    (`bridge/doctext/check.py` piece_bare_xrefs). 점검은 기준 커밋 앞 옛 줄을 의심으로만 세서 서기가 고쳐 쓸 때 안 보이므로
+    편을 띄울 때 여기서 알린다(11-19 관리자 410 일감). 못 세면 그 까닭(조용히 빠지지 않게)."""
+    from bridge import docrefs
+    from bridge.doctext import check as dcheck
+    from bridge.doctext import config as dcfg
+    try:
+        cfg = dcfg.load(repo, "HEAD")
+        hits = dcheck.piece_bare_xrefs(repo, "HEAD", cfg, docrefs.resolve_sets(repo, cfg), path)
+    except Exception as e:  # noqa: BLE001, 지시문은 낸다
+        return f"(셀 수 없음: {type(e).__name__})"
+    if not hits:
+        return ""
+    rows = ", ".join(f"{i}줄 " + (f"「→ {t}」" if inner else f"→ {t}") for i, t, inner in hits[:XREF_SHOW])
+    more = f" 외 {len(hits) - XREF_SHOW}곳" if len(hits) > XREF_SHOW else ""
+    return f"{len(hits)}곳: {rows}{more}"
+
+
+def _xref_line(e: dict[str, str]) -> str:
+    if not e.get("xrefs"):
+        return ""
+    return (f"\n- 이 편에서 「」 없이 쓴 편 사이 참조 {e['xrefs']}. 편 사이 참조는 → 「제목」 꼴이어야 노션 링크가 되고 점검이 제목을 맞댄다."
+            " 고쳐 쓰면서 모두 그 꼴로 바꾼다(고친 줄에 남으면 문서 점검이 틀림으로 센다)")
+
+
 def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None = None) -> str:
     today = (datetime.now(UTC) + KST).strftime("%Y%m%d")
     e = extra or {}
@@ -598,7 +627,7 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
         if slug:
             what = f"""할 일: 포트폴리오 글 「{e.get('title') or slug}」(`portfolio/{slug}.md`)을 지금 화면과 코드에 맞게 고쳐 쓴다.
 - 이 편의 머리 주석이 말하는 다루는 곳: {e.get('covers') or '(없음 — 이번에 정해 적는다)'}. 읽은 커밋 뒤 그 코드를 바꾼 커밋: {e.get('commits') or '(셀 수 없음)'}
-- 다른 편: {e.get('siblings') or '(없음)'}. 같은 내용을 다시 쓰지 말고 "→ 「제목」"으로 가리킨다
+- 다른 편: {e.get('siblings') or '(없음)'}. 같은 내용을 다시 쓰지 말고 "→ 「제목」"으로 가리킨다{_xref_line(e)}
 - 고칠 곳은 `portfolio/{slug}.md`와 `portfolio/img/{slug}_*`뿐이다"""
         else:
             what = f"""할 일: 포트폴리오를 `portfolio/`에 쓴다. 정해진 주제 목록은 없다. 먼저 아래 「축 고르기」로 축을 정하고, 그 축으로 편 목록을 정해 새로 쓰거나 고쳐 쓴다.
@@ -644,7 +673,7 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
 원고 쓰기만 한다. Notion에 올리는 것은 사람이 서기실 「기술문서 게시」의 [Notion에 올리기]로 한다.
 - 이 편의 머리 주석이 말하는 다루는 곳: {e.get('covers') or '(없음 — 이번에 정해 적는다)'}. 읽은 커밋 뒤 그 코드를 바꾼 커밋: {e.get('commits') or '(셀 수 없음)'}
 - 다른 편: {e.get('siblings') or '(없음)'}. 다른 편은 고치지 않는다. 같은 내용을 다시 쓰지 말고 "→ 「제목」"으로 가리킨다.
-  다른 편이 지금 코드와 어긋나 보이면 고치지 말고 마지막 응답에 적는다
+  다른 편이 지금 코드와 어긋나 보이면 고치지 말고 마지막 응답에 적는다{_xref_line(e)}
 - 파일 이름과 나무 자리는 바꾸지 않는다. 편을 옮기거나 쪼개야 할 것 같으면 고치지 말고 마지막 응답에 적는다"""
             order = f"""일하는 순서
 1. `git rev-parse --short HEAD`를 적어 둔다
@@ -798,7 +827,8 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
             extra["note"] = note or ""
             if tp is not None:
                 extra.update(slug=tp["slug"], title=tp["title"], covers=", ".join(f"`{c}`" for c in tp["covers"]),
-                             commits="" if tp["commits"] is None else f"{tp['commits']}개")
+                             commits="" if tp["commits"] is None else f"{tp['commits']}개",
+                             xrefs=piece_xrefs(repo, f"{spec['dir']}{tp['slug']}.md"))
             if queue is not None and tp is not None:
                 extra["queue"] = str(queue)          # 11-19 전체 줄이 띄운 편(bridge/scribe_queue.py QUEUE_RULES를 붙인다)
         if task == "techdoc" and tp is None:

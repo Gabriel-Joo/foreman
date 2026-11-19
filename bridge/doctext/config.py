@@ -27,6 +27,8 @@
     domains_in = ["portfolio"]            # allowed_domains를 받는 묶음
     cover_by = ["notion"]                 # 덮기 검사: 문서 묶음과 기록 밖 추적 파일은 이 묶음 어느 편의 다루는 곳에 들어야 한다
     dashdot_base = "648ac08…"             # 새 줄 em dash와 가운뎃점 검사의 기준 커밋(4단계). 없으면 검사하지 않고 점검 결과에 알린다
+    xref_base = "8593516…"                # 「」 없는 편 사이 참조(→ 제목)를 틀림으로 셀 기준 커밋. 이 뒤에 더하거나 고친 줄만 틀림, 옛 줄은 의심.
+                                          # 없으면 모두 의심으로 세고 점검 결과에 알린다(main의 틀린 것 0을 깨지 않게)
 
     [readme]                    # README 생성(tools/docs.py readme, 점검 9번, 문서 정리 B). 이 표가 있어야 켜진다.
     title = "FOREMAN"           # README 제목. 없으면 project
@@ -77,6 +79,7 @@ class CheckConfig:
     domains_in: list[str] = field(default_factory=lambda: ["portfolio"])
     cover_by: list[str] = field(default_factory=lambda: ["notion"])
     dashdot_base: str | None = None       # 기본값 없음: 저장소마다 넣는 때의 main이 다르다(`bridge/doctext/dashdot.py`)
+    xref_base: str | None = None          # 「」 없는 편 사이 참조를 틀림으로 셀 기준 커밋. 없으면 모두 의심(`bridge/doctext/titles.py` bare_xrefs)
 
     def as_dict(self) -> dict[str, Any]:
         return {k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v) for k, v in self.__dict__.items()}
@@ -130,10 +133,10 @@ def _check(raw: Any, source: str, warnings: list[str]) -> CheckConfig:
             if not isinstance(v, int) or isinstance(v, bool) or v < 0:
                 raise DocsConfigError(f"{where}는 0 이상 정수여야 합니다: {v!r}")
             c.claim_min = v
-        elif k == "dashdot_base":
+        elif k in ("dashdot_base", "xref_base"):
             if not isinstance(v, str) or not re.fullmatch(r"[0-9a-f]{7,40}", v):
                 raise DocsConfigError(f"{where}는 커밋 해시(소문자 16진수 7~40자)여야 합니다: {v!r}")
-            c.dashdot_base = v
+            setattr(c, k, v)
         else:
             warnings.append(f"{source}: 모르는 칸 check.{k}는 쓰지 않습니다")
     return c

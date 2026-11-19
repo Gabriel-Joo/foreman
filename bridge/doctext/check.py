@@ -6,6 +6,8 @@
     3. 근거 표시: 쓸 수 있는 종류(check.kinds), 커밋이 있다, 파일이 있고 줄 범위가 맞다(files_at 판), 턴 번호는 숫자
     4. 덮기: 문서 묶음과 기록 밖 추적 파일 하나하나가 check.cover_by 묶음 어느 편의 다루는 곳에 든다
     5. 편 사이 참조: → 「제목」이 같은 묶음(check.xref면 그 묶음) 편 하나의 첫 # 줄과 같다
+       「」 없이 쓴 참조(→ 07 합치기, 「→ 포스트잇」. 판정은 `titles.bare_xrefs`)는 check.xref_base 뒤에 더하거나 고친 줄만 틀림이고
+       옛 줄은 의심이다(줄표 검사와 같은 새 줄, `dashdot.new_doc_rows`). 칸이 없으면 모두 의심으로 세고 notes에 알린다
     6. 금지어(check.banned 묶음만): IP 주소, 도메인(check.domains_in 묶음은 allowed_domains를 뺀다), 홈 경로, 토큰 꼴, 포트 번호
     7. 그림 `![…](경로)`: 파일이 있다
     8. 새 줄의 em dash와 가운뎃점(4단계, `bridge/doctext/dashdot.py`): check.dashdot_base 뒤에 더한 문서 줄과 코드 주석.
@@ -36,7 +38,7 @@ from bridge.doctext.head import COVERS, READ, SHA, bad_covers, parse_head
 from bridge.doctext.lines import COMMENT, TEXT, walk
 from bridge.doctext.marks import MARK, STRIP, target
 from bridge.doctext.repo import RepoError, git_z, gits, is_quoted, quoted_problem, read_many, tree
-from bridge.doctext.titles import XREF, first_h1, xref_index, xref_lookup
+from bridge.doctext.titles import XREF, bare_xrefs, first_h1, xref_index, xref_lookup
 
 # 근거 확인기가 11-06부터 쓰던 꼴. 사진 줄(![설명](경로))도 뺀다(설명의 근거는 사진 자체다)
 SKIP_LINE = re.compile(r"^\s*(#|>|\||```|---|!\[|\s*$)")
@@ -319,6 +321,18 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
             views[r] = GitView(repo, r)
         return views[r]
 
+    # 5의 「」 없는 참조: 기준 커밋 뒤 새 줄(없거나 못 읽으면 None, 모두 의심)
+    xb_base = ck.xref_base
+    xb_new: dict[str, set[int]] | None = None
+    xb_note: str | None = None
+    if xb_base:
+        try:
+            xb_new = dashdot.new_doc_rows(repo, xb_base, rev, tuple(d for d in sets.values() if d) or dashdot.DOC_DIRS,
+                                          (*tuple(cfg.records), *dashdot.TOOL_DIRS))
+        except dashdot.DashDotError as e:
+            err(None, None, f"「」 없는 편 사이 참조 검사를 돌리지 못했습니다: {e}")
+    xb = {"base": xb_base, "new": 0, "old": 0, "ran": xb_new is not None}
+
     # 2, 3, 5, 6, 7 편마다
     n_marks = 0
     for k, ps in checked.items():
@@ -346,6 +360,15 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
                     got = xref_lookup(idx, x["t"]) if idx else []
                     if len(got) != 1:
                         err(p, i, f"→ 「{x['t']}」 " + ("제목을 가진 편이 없습니다" if not got else f"제목이 여러 편에 있습니다({', '.join(got)})"))
+                for _col, t, inner in (bare_xrefs(ln, idx) if idx and kind == TEXT else []):
+                    what = bare_xref_what(t, inner)
+                    if xb_new is not None and i in xb_new.get(p, ()):
+                        xb["new"] += 1
+                        err(p, i, what)
+                    else:
+                        xb["old"] += 1
+                        suspects.append({"doc": p, "line": i, "what": f"{what}. 기준 커밋 앞 옛 줄", "xref": True,
+                                         "touched": bool(xb_new and xb_new.get(p))})
                 for g in IMG.finditer(ln):
                     src = g["src"]
                     if re.match(r"https?://", src):
@@ -400,6 +423,9 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
     # 8. 새 줄의 em dash와 가운뎃점
     dd = dashdot.for_repo(repo, ck.dashdot_base, sets, cfg.records, rev, not_code_skip(cfg.not_code))
     notes = [dd["note"]] if dd["note"] else []
+    if not xb_base and xb["old"]:
+        xb_note = f"{XREF_NO_BASE}. 「」 없는 편 사이 참조 {xb['old']}곳을 모두 의심으로 셌습니다"
+        notes.append(xb_note)
     if dd["error"]:
         err(None, None, f"줄표, 가운뎃점 검사를 돌리지 못했습니다: {dd['error']}")
     for p, i, name, s in dd["hits"]:
@@ -415,7 +441,34 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
     return {"errors": errors, "suspects": suspects, "sets": {k: len(ps) for k, ps in checked.items()},
             "marks": n_marks, "reads": reads, "cover": cover, "notes": notes,
             "dashdot": {"base": dd["base"], "hits": len(dd["hits"]), "ran": bool(dd["base"]) and not dd["error"]},
-            "readme": {"ran": rd_on}}
+            "xref_bare": xb, "readme": {"ran": rd_on}}
+
+
+XREF_NO_BASE = "기준 커밋이 없어 「」 없는 편 사이 참조를 틀림으로 세지 않았습니다(.foreman/docs.toml [check] xref_base)"
+
+
+def bare_xref_what(title: str, inner: bool) -> str:
+    """「」 없는 편 사이 참조 한 곳의 글(점검 틀림과 의심, 서기 지시문이 같이 쓴다)."""
+    if inner:
+        return f"「→ {title}」: 화살표가 「」 안에 있습니다(→ 「{title}」 꼴로 씁니다)"
+    return f"→ {title}: 편 사이 참조에 「」가 없습니다(→ 「{title}」 꼴로 씁니다)"
+
+
+def piece_bare_xrefs(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str], path: str) -> list[tuple[int, str, bool]]:
+    """편 하나의 「」 없는 편 사이 참조 (줄 번호 1부터, 제목, 화살표가 「」 안인가). 서기실이 그 편을 띄울 때 지시문에 넣는다.
+    점검(run)과 같은 묶음, 같은 색인(check.xref면 그 묶음 제목), 같은 판정(`titles.bare_xrefs`), 울타리 밖 줄만. 묶음 밖 편이면 빈 목록."""
+    ck = cfg.check
+    k = next((k for k, d in sorted(sets.items(), key=lambda x: -len(x[1] or "")) if d and path.startswith(d)), None)
+    if k is None or path.startswith(tuple(cfg.records)):
+        return []
+    g = ck.xref.get(k, k)
+    if not sets.get(g):
+        return []
+    ps = pieces_of(repo, rev, sets[g], g in ck.numbered_only, cfg.records)
+    bodies = read_many(repo, rev, sorted({*ps, path}))
+    idx = xref_index({p: first_h1(bodies.get(p, ""))[1] for p in ps})
+    lines = bodies.get(path, "").splitlines()
+    return [(i0 + 1, t, inner) for i0, kind in walk(lines) if kind == TEXT for _c, t, inner in bare_xrefs(lines[i0], idx)]
 
 
 def _mark_why(kind: str, v: str, kinds: list[str], view: FsView | GitView, docs_dir: str, log_dir: str, has) -> str | None:
@@ -437,6 +490,9 @@ def render(res: dict[str, Any], verbose: bool = False) -> str:
     dd = res.get("dashdot") or {}
     if dd.get("ran"):
         out.append(f"줄표, 가운뎃점 검사: 기준 커밋 {dd['base'][:10]} 뒤 새 줄에서 {dd['hits']}건")
+    xb = res.get("xref_bare") or {}
+    if xb.get("ran"):
+        out.append(f"「」 없는 편 사이 참조: 기준 커밋 {xb['base'][:10]} 뒤 새 줄 {xb['new']}곳(틀림), 옛 줄 {xb['old']}곳(의심)")
     for n in res.get("notes", []):
         out.append(f"알림  {n}")
     if res.get("readme", {}).get("ran") is False:
@@ -444,8 +500,9 @@ def render(res: dict[str, Any], verbose: bool = False) -> str:
     for e in res["errors"]:
         where = f"{e['doc']}:{e['line']}: " if e["doc"] and e["line"] else f"{e['doc']}: " if e["doc"] else ""
         out.append(f"틀림  {where}{e['what']}")
-    if verbose:
-        for s in res["suspects"]:
+    for s in res["suspects"]:
+        # 기준 커밋 뒤 고친 편의 옛 「」 없는 참조는 -v 없이도 보인다(그 편을 고쳐 쓰는 서기가 함께 맞추게)
+        if verbose or (s.get("xref") and s.get("touched")):
             out.append(f"의심  {s['doc']}:{s['line']}: {s['what']}")
     out.append(f"틀린 것 {len(res['errors'])}, 의심 {len(res['suspects'])}")
     return "\n".join(out)

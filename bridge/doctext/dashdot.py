@@ -5,6 +5,7 @@
 옮긴 줄(근거 표시만 떼면 지운 줄과 글이 똑같은 더한 줄)은 새 줄이 아니다(`removed_pool`, `same_text`).
 고친 덩어리는 지운 줄과 더한 줄의 기호 수를 맞대어 늘어난 기호만 건다(옛 줄을 고치기만 해도 옛 기호를 다 걷어야 하면
 11-17 하루치(커밋 41개) 82건 가운데 57건이 그런 줄이라 사람이 시험을 무시하게 된다. `log/foreman-4_manuscript_rules_20261117.md`).
+기준 커밋 뒤 새 문서 줄을 고르는 길(`new_doc_rows`)은 문서 점검의 「」 없는 편 사이 참조 검사도 함께 쓴다(그쪽 기준 커밋은 `xref_base`).
 
 - 문서: 문서 묶음 폴더(docs, notion, portfolio. 저장소 설정의 [sets]) 아래 `*.md`와 맨 위 `README.md`, `CLAUDE.md`.
   코드 울타리와 HTML 주석 안은 보지 않는다
@@ -22,6 +23,7 @@ import io
 import re
 import subprocess
 import tokenize
+from collections.abc import Callable
 from pathlib import Path
 
 from bridge.doctext.config import not_code_match
@@ -91,13 +93,19 @@ def same_text(line: str) -> str:
     return STRIP.sub("", line).strip()
 
 
-def removed_pool(repo: str | Path, base: str, rev: str | None = None) -> dict[str, list[Source]]:
+def _has_char(text: str) -> bool:
+    return any(ch in text for ch in CHARS)
+
+
+def removed_pool(repo: str | Path, base: str, rev: str | None = None,
+                 keep: Callable[[str], bool] = _has_char) -> dict[str, list[Source]]:
     """기준 커밋 뒤 브랜치 전체에서 지운 줄 가운데 기호(em dash, 가운뎃점)가 든 것: {`same_text`(앞뒤 공백과 근거 표시를 뗀 글): [지운 자리, ...]}.
 
     점검 밖 파일(기록 폴더, 코드, 설정)과 지워진 파일에서 지운 줄도 넣는다. 더한 줄이 이 글과 똑같으면 새 글이 아니라 옮긴 줄이다
     (11-17 런슈즈가 docs/09_chatbot_rag.md 안에서 절을 옮기기만 했는데 110건이 걸렸고, 곧 다른 파일 docs/archive/로 650줄을 더 옮긴다).
     덩어리 안에서만 맞대면 지운 쪽과 더한 쪽이 다른 덩어리나 다른 파일에 있는 옮김이 새 줄로 센다.
-    git이 이름 바꿈과 복사로 알아본 파일은 안 바뀐 줄이 덩어리에 나오지 않아 여기에도 없다(hunks와 같은 diff 인자)."""
+    git이 이름 바꿈과 복사로 알아본 파일은 안 바뀐 줄이 덩어리에 나오지 않아 여기에도 없다(hunks와 같은 diff 인자).
+    keep은 모을 줄 거름이다. 기본은 기호가 든 줄, 「」 없는 편 사이 참조 검사(new_doc_rows)는 화살표가 든 줄."""
     pool: dict[str, list[Source]] = {}
     old: str | None = None
     left_old = left_new = row = 0
@@ -106,7 +114,7 @@ def removed_pool(repo: str | Path, base: str, rev: str | None = None) -> dict[st
             if line.startswith("-"):
                 left_old -= 1
                 text = same_text(line[1:])
-                if old and any(ch in text for ch in CHARS):
+                if old and keep(text):
                     pool.setdefault(text, []).append((old, row))
                 row += 1
             elif line.startswith("+"):
@@ -349,6 +357,33 @@ def scan(repo: str | Path, base: str, strict: bool = False, rev: str | None = No
                 for name in hits_in(s):
                     if name in grew:
                         out.append((path, row, name, s.strip()[:80]))
+    return out
+
+
+def new_doc_rows(repo: str | Path, base: str, rev: str | None = None, doc_dirs: tuple[str, ...] = DOC_DIRS,
+                 skip: tuple[str, ...] = SKIP_DIRS, keep: Callable[[str], bool] = lambda t: "→" in t) -> dict[str, set[int]]:
+    """기준 커밋 뒤 더하거나 고친 문서(`*.md`) 줄: {경로: 줄 번호들}. 줄표 검사와 같은 덩어리(`hunks`)와 옮긴 줄 풀이(`removed_pool`)를 쓴다.
+    옮긴 줄(근거 표시만 떼면 지운 줄과 글이 같은 줄, keep에 드는 것만 맞댄다)은 새 줄이 아니다. 「」 없는 편 사이 참조 검사
+    (`bridge/doctext/check.py`)가 쓴다. 기준 커밋이 조상이 아니거나 git이 실패하면 DashDotError."""
+    pool = removed_pool(repo, base, rev, keep)
+    out: dict[str, set[int]] = {}
+    lines: dict[str, list[str]] = {}
+    for path, _old, _old_rows, new_rows in sorted(hunks(repo, base, rev, doc_dirs, skip), key=lambda h: (h[0], h[3].start)):
+        if not path.endswith(".md"):
+            continue
+        if path not in lines:
+            try:
+                text = _git(repo, "show", f"{rev}:{path}") if rev else (Path(repo) / path).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError, DashDotError):
+                text = ""
+            lines[path] = text.splitlines()
+        ls = lines[path]
+        for row in new_rows:
+            t = same_text(ls[row - 1]) if 0 < row <= len(ls) else ""
+            if t and pool.get(t):
+                pool[t].pop(0)
+                continue
+            out.setdefault(path, set()).add(row)
     return out
 
 
