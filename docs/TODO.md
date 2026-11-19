@@ -362,6 +362,9 @@
 - **foreman-149** 노션 게시에서 그림 여러 장을 나란히(열 블록) (2026-11-19)
   게시기(`bridge/notion.py`)는 원고의 그림 줄 하나를 그림 블록 하나로 만들어 위아래로 쌓는다. 포트폴리오 01편 세 테마 사진 세 장은 깃허브에서는 옆으로 붙지만 노션에서는 위아래다. 세 장이 커져 읽히게 하는 목적은 이뤘으니 지금은 위아래로 둔다. 한 문단의 그림 줄 여럿을 열 블록으로 나란히 놓는 길을 둔다.
   나온 곳: 사용자 11-19, `log/foreman-4_portfolio_photos_20261119.md`
+- **foreman-150** 문서 도구 밖에서 git 경로를 따옴표 없이 읽게 (2026-11-19)
+  문서 도구(`bridge/doctext/`, `bridge/docrefs.py`)는 11-19 `a7e0786`부터 git을 `core.quotepath=false`로 부르고 파일 목록을 `-z`로 읽어, 한글 같은 비아스키 이름 파일을 바른 이름으로 본다. 그 밖에서 git 경로를 `-z` 없이 줄 단위로 읽는 곳이 남아 있다: `bridge/overlap.py`(세션 겹침), `bridge/worktree.py`와 `bridge/mergeprep.py`(합치기 카드, 충돌 목록), `bridge/roleguard.py`, `bridge/evidence.py`, `bridge/handoff_state.py`, `bridge/promote.py`, `bridge/scribe.py`, `bridge/notion.py` 562. 한글 이름 파일이 겹침이나 카드에서 이름이 깨지거나 빠진다. `bridge/` 공용 git 함수 하나로 모은다. 한글 이름 파일은 지금 펫퍼민트에만 있어 급하지 않다.
+  나온 곳: 사용자 11-19, `log/foreman-6_hangul_paths_20261119.md`
 
 ## 7. 알림, 파이프라인, 사용량
 
