@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/approvals.py, bridge/api/approvals.py, scripts/foreman-decide.sh, migrations/0010_approval.sql, bridge/hookmiss.py, bridge/roleguard.py
-읽은 커밋: 5e0f7c5
+읽은 커밋: 6cc0e36
 -->
 # 기다리는 길: hook 두 개
 
@@ -302,7 +302,5 @@ hook은 아무것도 돌려주지 않고 끝난다. 이것이 중요하다. 시�
 `approval_req`와 `approval_res` 이벤트는 다른 이벤트와 같은 적재 길을 탄다(→ 적재와 내보내기). 기록이 실패해도 판정과 결정은 이미 CC에 돌아간 뒤라 바뀌지 않는다. 반대로 `approval` 행을 넣는 INSERT는 기다림을 시작하기 전에 꼭 성공해야 한다. 승인 번호가 없으면 화면도 텔레그램도 그 승인을 가리킬 수 없기 때문이다.
 
 ## 남은 빈틈
-
-코드를 읽으며 확인한 것과 아직 확인하지 않은 것을 나눠 적는다.
 
 브리지가 꺼진 동안 FOREMAN의 `ask` 규칙이 하나도 걸리지 않는 것은 여러 편에 걸리는 한계라 → 「17 알려진 한계」에 모았다. 「이것이 막히면 스스로 알리는가」라는 물음에 대한 답은 이 편의 코드가 아니라 브리지 바깥의 감시가 쥐고 있다. 지금은 판정 없이 지난 호출이 기록 파일에 남고, systemd가 다시 띄우기를 포기하면 텔레그램이 간다 [log:foreman-6_bridge_alert_20261115.md].

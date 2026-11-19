@@ -1,6 +1,6 @@
 <!--
 다루는 곳: scripts/foreman-decide.sh, bridge/roleguard.py, bridge/reposcope.py, bridge/inject.py, bridge/mask.py, bridge/assembler.py, bridge/overlap.py, bridge/evidence.py, bridge/uiver.py, config/approval.toml, config/roles.toml, deploy/mysql/backup.sh
-읽은 커밋: 6319b25
+읽은 커밋: 6cc0e36
 -->
 # 17 알려진 한계
 
@@ -42,7 +42,6 @@ python, node 같은 해석기 안에서 파일을 여는 쓰기는 판정하지 
 판정 장치는 모두 명령의 글을 본다. 끝까지 막으려면 작업 폴더 밖 쓰기를 운영체제 수준에서 막는 샌드박스여야 하는데, 일상 명령이 얼마나 막히는지 시험해 보기 전에는 들이지 않기로 했다 [log:repo_scope_readonly_20261109.md] [log:foreman-6_silent_delete_20261115.md]. 지금 장치는 「자주, 실제로 새던 꼴」을 정확하게 막는 데 맞춰져 있다.
 
 - hook은 명령의 글만 보므로, 글 판정으로는 다 막을 수 없는 꼴이 남는다(→ 「규칙: 실행과 글자」)
-- 다른 저장소 막기는 Bash의 git만 본다. git 밖의 명령으로 다른 저장소 파일을 고치는 것은 보지 않는다 [code:bridge/reposcope.py]
 
 ### 브리지가 답하지 못하면 통과한다
 
@@ -59,7 +58,7 @@ hook 스크립트는 브리지에게서 판정을 받지 못하면 아무것도 
 패널의 `!` 명령, 셸 패널, 세션 화면 창은 사람이 직접 치는 길이다. 사람이 CC 창 앞에 앉아 치는 것과 같은 길로 보고, 승인 카드를 거치게 하지 않았다 [docs:00_design.md].
 
 - `!` 명령은 승인 규칙이 묻기로 정한 것만 막는다. 묻지 않고 통과로 정한 명령은 패널에서 바로 실행된다 [code:bridge/inject.py]
-- `!`로 `sudo`와 여러 줄 명령은 보내지 않는다. `sudo`는 암호를 물어 입력이 멈추고, 여러 줄은 사용자 결정(2026-11-09)이다 [code:bridge/inject.py]
+- `!`로 `sudo`와 여러 줄 명령은 보내지 않는다. `sudo`는 암호를 물어 입력이 멈추기 때문이다. 여러 줄은 `&&`로 잇거나 스크립트 파일로 보내라고 거부 글이 안내하고, 여러 줄을 막는 까닭은 기록에 없다 [code:bridge/inject.py]
 - 셸 패널에서 친 명령은 승인 카드를 거치지 않는다 [code:bridge/static/js/terminal.js]
 - 세션 화면 창은 열고 닫은 시각과 대상만 남기고 친 키 하나하나는 남기지 않으며, 키에 제한을 두지 않는다 [code:bridge/api/terminal.py]
 
@@ -80,7 +79,7 @@ hook 스크립트는 브리지에게서 판정을 받지 못하면 아무것도 
 
 ### 두 프로젝트의 승인 규칙은 관찰만 한다
 
-승인 규칙으로 사람에게 묻게 하는 것은 FOREMAN과 인프라 세션이다. 런슈즈, 펫퍼민트 세션은 같은 규칙에 걸려도 기록만 남기고 CC에 판정을 돌려주지 않는다 [code:config/approval.toml]. 관찰로 시작하고 결과를 본 뒤 막기로 바꾼다는 사용자 결정(2026-11-02)이다. 언제 바꿀지의 기준은 기록에 없다.
+승인 규칙으로 사람에게 묻게 하는 것은 FOREMAN과 인프라 세션이다. 런슈즈, 펫퍼민트 세션은 같은 규칙에 걸려도 기록만 남기고 CC에 판정을 돌려주지 않는다 [code:config/approval.toml]. 관찰로 시작하고 결과를 본 뒤 막기로 바꾸기로 했다. 언제 바꿀지의 기준은 기록에 없다.
 
 - 두 프로젝트에서는 CC가 스스로 승인 창을 띄울 때만 사람에게 물음이 간다
 

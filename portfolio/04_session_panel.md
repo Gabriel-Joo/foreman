@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/opanel.js, bridge/static/js/render.js, bridge/static/js/md.js, bridge/static/js/slash.js, bridge/transcript/lookup.py, bridge/inject.py, bridge/api/sessions.py, bridge/api/dashboard.py
-읽은 커밋: 5e0f7c5
+읽은 커밋: 6cc0e36
 -->
 
 # 세션 패널: 대화와 활동
@@ -27,7 +27,7 @@ Claude Code의 답에는 표, 목록, 코드 블록이 많습니다. 패널은 �
 
 [활동] 탭은 세션이 부른 도구를 시각과 함께 한 줄씩 보여 줍니다. 「Bash git diff …」, 「Edit …/opanel.js」, 「Read …」처럼 무엇을 실행했고 어떤 파일을 읽고 고쳤는지가 시간 순서대로 쌓입니다. 줄을 누르면 그 자리에서 펼쳐져 도구에 들어간 입력 전체와 돌아온 결과 본문이 보입니다. Bash는 명령과 그 설명을, Edit는 지운 줄과 넣은 줄을 빨강과 초록으로, Read는 읽은 파일과 범위를 보여 줍니다.
 
-![[활동] 탭에서 Bash 줄 하나를 누른 모습입니다. 명령의 설명(「되돌림 확인과 JS 시험 다시 돌리기」), 실행한 명령 전체, 결과 149자(바뀐 파일 수와 시험 통과 193 · 실패 0), 맨 아래에 읽은 기록 파일과 「비밀값은 가림」이 보입니다 〔실제 화면, 서버 경로 글자는 찍기 전에 「…」로 가림〕](img/04_session_panel_activity.png)
+![[활동] 탭에서 Bash 줄 하나를 누른 모습입니다. 명령의 설명(「되돌림 확인과 JS 시험 다시 돌리기」), 실행한 명령 전체, 결과 149자(바뀐 파일 수와 시험 통과 193 · 실패 0), 맨 아래에 읽은 기록 파일과 「비밀값은 가림」이 보입니다 〔실제 화면〕](img/04_session_panel_activity.png)
 
 본문은 데이터베이스에 넣지 않습니다(→ 「알려진 한계」). 대신 줄을 누르는 순간 브리지(FOREMAN의 서버 프로그램)가 Claude Code가 남긴 대화 기록 파일(트랜스크립트)을 끝에서부터 거꾸로 훑어 그 도구 호출을 찾아 읽어 옵니다. 읽어 온 본문은 화면에 내기 전에 토큰이나 비밀번호처럼 보이는 값을 가리고, 펼친 칸 맨 아래에 「비밀값은 가림」과 읽는 데 걸린 시간을 적습니다 [code:bridge/transcript/lookup.py] [code:bridge/api/dashboard.py] [c:1540471].
 

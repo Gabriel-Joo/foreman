@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/roleguard.py, bridge/reposcope.py, bridge/schemalock.py, bridge/pgrep_guard.py, scripts/korean-check.py, .claude/settings.json, config/roles.toml, tests/test_roleguard.py, tests/test_roleguard_inspector.py, tests/test_pgrep_guard.py, tests/test_reposcope.py, tests/test_korean_check.py
-읽은 커밋: 9a7c22d
+읽은 커밋: 6cc0e36
 -->
 
 # 글이 아니라 권한으로
@@ -307,7 +307,7 @@ until ! pgrep -f "tools/screen.py"; do sleep 3; done
 
 이 장치들은 글을 보고 판정한다. 그래서 글로 가릴 수 없는 것은 지나간다. 알고 남겨 둔 구멍을 적어 둔다.
 
-저장소를 공개하기 전에, 따라 할 수 있는 꼴은 빼고 무엇이 남았는지만 적었다. 아직 안 고친 것은 「미해결」이다.
+「미해결」은 아직 고치지 않은 것이다.
 
 브리지가 답하지 못하면 네 장치가 함께 꺼지는 것, 해석기 안의 쓰기, 관리자 규칙이 보지 않는 자리와 막힌 뒤 돌아가는 길, 다른 프로젝트로 넓히지 않은 것, 샌드박스를 시험 뒤로 미룬 것은 여러 편에 걸려 → 「17 알려진 한계」에 모았다. 판정 없이 지난 호출은 갈래마다 기록에 한 줄씩 남는다 [log:foreman-6_bridge_alert_20261115.md] [log:foreman-4_hook_bytes_20261115.md]. 이 편에만 걸리는 구멍은 아래 하나다.
 

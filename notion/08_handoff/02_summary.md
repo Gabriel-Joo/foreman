@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/handoff.py, bridge/pointers.py, bridge/handoff_state.py, migrations/0014_handoff.sql, migrations/0024_summary_state.sql, tests/test_handoff_state.py, tests/test_pointers.py
-읽은 커밋: fb7121b
+읽은 커밋: 6cc0e36
 -->
 
 # 인계 요약과 읽을 곳
@@ -243,8 +243,6 @@ flowchart TD
 인계 글 자체도 기록에 남는다. 머리 `[FOREMAN 인계 r=…]` 덕분에 새 세션의 첫 턴은 출처 `handoff_in`으로 달리고, 대화 목록에서 무엇을 넘겼는지 나중에 그대로 볼 수 있다 [code:bridge/assembler.py].
 
 ## 남은 빈자리
-
-코드를 읽으며 확인한, 아직 메워지지 않은 곳을 적어 둔다.
 
 「문서와 다른 지금」이 인계를 쓰는 세션의 기억에서만 나오는 것은 세션 자신이 쓰게 한 결정의 값이라 → 「17 알려진 한계」에 모았다. 그 빈자리는 넘기기 전의 문서 옮기기와 압축 손실 재기가 메운다.
 

@@ -1,6 +1,6 @@
 <!--
 다루는 곳: config/approval.toml, scripts/foreman-decide.sh, bridge/inject.py, bridge/assembler.py, bridge/overlap.py, bridge/usage.py
-읽은 커밋: 6319b25
+읽은 커밋: 6cc0e36
 -->
 
 # 알려진 한계
@@ -27,7 +27,7 @@ FOREMAN이 띄우는 세션은 Claude Code의 auto mode(세션이 묻지 않고 
 
 - 브리지가 꺼진 동안은 묻기로 한 명령도 auto mode의 판단에 맡겨집니다. 허용 쪽으로 새지는 않지만 꼭 물어 준다고 할 수는 없습니다 [log:stage5_approval_result.md]
 - 화면 카드는 한 시간까지만 답을 기다립니다. 사람이 화면을 계속 보지 않는다는 사용자 판단(2026-11-06)으로 정한 길이이고, 지나면 Claude Code 창에서만 답합니다 [code:config/approval.toml]
-- 규칙으로 묻게 하는 것은 FOREMAN과 인프라 세션입니다. 런슈즈, 펫퍼민트는 관찰로 시작해 결과를 보고 바꾸기로 한 사용자 결정(2026-11-02)에 따라 기록만 남깁니다 [code:config/approval.toml]
+- 규칙으로 묻게 하는 것은 FOREMAN과 인프라 세션입니다. 런슈즈, 펫퍼민트는 관찰로 시작해 결과를 보고 바꾸기로 해서 기록만 남깁니다 [code:config/approval.toml]
 
 ## 3. 사람이 직접 치는 것은 승인 카드를 거치지 않습니다
 
@@ -36,7 +36,7 @@ FOREMAN이 띄우는 세션은 Claude Code의 auto mode(세션이 묻지 않고 
 치른 값은 이렇습니다.
 
 - 셸 패널에서 친 명령은 묻지 않고 실행됩니다(→ 「셸 패널」)
-- `!`로는 암호를 물어 멈추는 `sudo`와, 사용자 결정(2026-11-09)에 따라 여러 줄 명령을 보내지 않습니다
+- `!`로는 암호를 물어 멈추는 `sudo`와 여러 줄 명령을 보내지 않습니다. 여러 줄을 막는 까닭은 기록에 없습니다
 - 세션 화면 창은 열고 닫은 때만 남기고 친 키는 남기지 않으며, 키에 제한을 두지 않습니다(→ 「세션 화면 창」)
 
 ## 4. 교장은 부를 때만 뜨고, 겹쳐도 막지 않습니다

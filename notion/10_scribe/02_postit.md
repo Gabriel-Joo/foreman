@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/postit.py, bridge/todofile.py, bridge/api/postit.py, bridge/api/todo.py, bridge/static/js/postit.js, migrations/0027_todo_inbox.sql, migrations/0028_todo_inbox_assignee.sql, migrations/0033_postit.sql, migrations/0034_postit_repo_log.sql, tests/js/postit.test.mjs, tests/test_postit.py, tests/test_todofile.py
-읽은 커밋: 8cfa257
+읽은 커밋: 6cc0e36
 -->
 # 포스트잇
 
@@ -205,7 +205,7 @@ FOREMAN 자기 저장소도 같은 규칙이다. 관리자가 원본 폴더에�
 
 ### [한계로]: 편과 안 하는 까닭이 있어야 보낸다
 
-「알려진 한계」는 안 하기로 한 것만 적는 절이고, 줄마다 안 하는 까닭을 함께 적는다. 까닭을 쓸 수 없으면 그것은 한계가 아니라 아직 못 한 일이라 TODO로 보낸다 [docs:manuscript_rules.md]. [한계로]는 이 규칙이 저절로 지켜지게 짰다. 누르면 그 줄 밑에 칸이 열리고, 기술문서 원고와 포트폴리오 편 가운데 하나를 고르고 안 하는 까닭을 적는다. 까닭 칸이 비어 있으면 [보내기]가 꺼져 있고 「안 하는 까닭을 적어야 보낼 수 있습니다」가 보인다 [code:bridge/static/js/postit.js]. 화면을 거치지 않고 API를 바로 불러도 서버가 같은 까닭으로 거부한다 [code:bridge/postit.py]. 고른 편이 그 저장소에 없어도 거부한다.
+원고 기준은 한계로 보이는 줄을 넷으로 가른다. 한계는 하려 했는데 안 한 것이고 안 하는 까닭을 한 줄로 쓸 수 있다. 조건은 물리 서버가 한 대인 것처럼 우리가 고르지 않은 것이다. 설계는 그렇게 하기로 한 것이라 한계 절이 아니라 본문에 약속으로 쓴다. 할 일은 까닭이 없는 것이라 TODO로 보낸다. 문서에서 까닭을 못 찾으면 할 일이고, 까닭을 지어내지 않는다 [docs:manuscript_rules.md]. 「알려진 한계」 절에 오는 것은 한계와 조건이고, 줄마다 까닭을 함께 적는다. [한계로]는 이 규칙이 저절로 지켜지게 짰다. 누르면 그 줄 밑에 칸이 열리고, 기술문서 원고와 포트폴리오 편 가운데 하나를 고르고 안 하는 까닭을 적는다. 까닭 칸이 비어 있으면 [보내기]가 꺼져 있고 「안 하는 까닭을 적어야 보낼 수 있습니다」가 보인다 [code:bridge/static/js/postit.js]. 화면을 거치지 않고 API를 바로 불러도 서버가 같은 까닭으로 거부한다 [code:bridge/postit.py]. 고른 편이 그 저장소에 없어도 거부한다.
 
 보내면 서기 할 일 「알려진 한계 쓰기: 쓸 줄 N, 뺄 줄 M」에 잡힌다 [code:bridge/scribe_room.py]. 원고는 커밋이 필요한 파일이라 브리지가 바로 쓰지 않고, 서기 세션이 쌓인 줄을 모아 한 번에 쓴다. 서기는 고른 편의 「알려진 한계」 절에 그 줄을 쓰고 사람이 적은 까닭을 함께 적는다. 까닭을 바꾸거나 지어내지 말라고 일감에 적어 두었다. 서기가 줄을 가져가면 상태는 쓰는 중, 그 세션이 합쳐지면 씀이 되고, 그 세션이 버려지면 다시 보낸 상태로 돌아가 다음 서기가 가져간다. 보낼 때는 가져간 세션 칸을 비운다. 그 전에 코더가 가져갔던 줄이라도 이제 쓰는 서기가 새로 가져가야 하기 때문이다 [code:bridge/postit.py].
 
