@@ -279,4 +279,4 @@ flowchart LR
 
 ## 6. 알려진 한계
 
-- 녹화는 mp4로 만들지 않는다. 서버에 있는 ffmpeg는 VP9 WebM만 만들고, ffmpeg를 새로 깔지 않기로 한 것은 사용자 결정(2026-11-06)이다 [docs:13_demo_capture.md]
+- 녹화는 mp4로 만들지 않는다. 서버에 있는 ffmpeg는 VP9 WebM만 만들고, ffmpeg를 새로 깔지 않기로 했다 [docs:13_demo_capture.md]

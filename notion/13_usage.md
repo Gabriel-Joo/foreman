@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/usage.py, bridge/api/usage.py, bridge/model_choice.py, bridge/static/usage.html, bridge/static/js/modelpick.js, config/usage.toml, config/models.toml, migrations/0019_session_model.sql, migrations/0026_usage.sql, bridge/api/sessions.py, tests/js/modelmenu.test.mjs, tests/js/role_label.test.mjs, tests/test_model_choice.py, tests/test_usage.py
-읽은 커밋: fb7121b
+읽은 커밋: c061fd3
 -->
 
 # 13 사용량과 모델
@@ -276,7 +276,7 @@ id는 `claude --model`에 넘기는 값이자 세션 안에서 모델을 바꿀 
 
 1차에서 68개를 한 번에 주니 모델이 구간마다 몇 개만 훑고 말았다. 그래서 묶음을 20개로 줄이고, 빠짐없이 봤는지를 기계로 세게 했다. 2차에서는 이미 문서에 적힌 결정을 「끝남」으로 넘겨 버렸다. 3차 지시에 「결정, 금지, 기준, 선호는 끝남이 될 수 없다」를 넣어 고쳤다 [log:handoff_v2_d_result.md]. 모델을 바꾸기 전에 지시와 묶음 크기를 먼저 고친 것이다. 재현율이 0.29에서 0.71로 오른 것은 모델이 아니라 이 두 가지 덕이다.
 
-3차 결과를 보고 사용자가 Sonnet으로 정했다. 까닭은 이랬다. 재현율 0.71이면 충분하고, 정밀도가 0.91이라 없는 것을 만들어 내지 않는다. 놓친 것은 사람이 보다가 더하면 된다. Opus와 비교하는 데 10달러를 쓸 가치가 없고, 어차피 되살리기 전에 사람이 승인하므로 마지막 관문이 사람이다 [log:handoff_v2_d_result.md]. 이 판단의 핵심은 「뒤에 사람의 관문이 있으면 앞의 모델은 완벽할 필요가 없다」는 것이다.
+3차 결과를 보고 Sonnet으로 정했다. 까닭은 이랬다. 재현율 0.71이면 충분하고, 정밀도가 0.91이라 없는 것을 만들어 내지 않는다. 놓친 것은 사람이 보다가 더하면 된다. Opus와 비교하는 데 10달러를 쓸 가치가 없고, 어차피 되살리기 전에 사람이 승인하므로 마지막 관문이 사람이다 [log:handoff_v2_d_result.md]. 이 판단의 핵심은 「뒤에 사람의 관문이 있으면 앞의 모델은 완벽할 필요가 없다」는 것이다.
 
 이 방법을 쓰려면 실측 수치가 있어야 한다. 지금 실측이 log에 남은 일감은 이것 하나다. 역할별 기본값(2-2절)은 정답과 맞댄 결과가 아니라 일의 성격으로 정한 값이다.
 

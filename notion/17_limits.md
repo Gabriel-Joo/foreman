@@ -1,6 +1,6 @@
 <!--
 다루는 곳: scripts/foreman-decide.sh, bridge/roleguard.py, bridge/reposcope.py, bridge/inject.py, bridge/mask.py, bridge/assembler.py, bridge/overlap.py, bridge/evidence.py, bridge/uiver.py, config/approval.toml, config/roles.toml, deploy/mysql/backup.sh
-읽은 커밋: 6cc0e36
+읽은 커밋: c061fd3
 -->
 # 17 알려진 한계
 
@@ -58,7 +58,7 @@ hook 스크립트는 브리지에게서 판정을 받지 못하면 아무것도 
 패널의 `!` 명령, 셸 패널, 세션 화면 창은 사람이 직접 치는 길이다. 사람이 CC 창 앞에 앉아 치는 것과 같은 길로 보고, 승인 카드를 거치게 하지 않았다 [docs:00_design.md].
 
 - `!` 명령은 승인 규칙이 묻기로 정한 것만 막는다. 묻지 않고 통과로 정한 명령은 패널에서 바로 실행된다 [code:bridge/inject.py]
-- `!`로 `sudo`와 여러 줄 명령은 보내지 않는다. `sudo`는 암호를 물어 입력이 멈추기 때문이다. 여러 줄은 `&&`로 잇거나 스크립트 파일로 보내라고 거부 글이 안내하고, 여러 줄을 막는 까닭은 기록에 없다 [code:bridge/inject.py]
+- `!`로 `sudo`는 보내지 않는다. `sudo`는 암호를 물어 입력이 멈추기 때문이다 [code:bridge/inject.py]
 - 셸 패널에서 친 명령은 승인 카드를 거치지 않는다 [code:bridge/static/js/terminal.js]
 - 세션 화면 창은 열고 닫은 시각과 대상만 남기고 친 키 하나하나는 남기지 않으며, 키에 제한을 두지 않는다 [code:bridge/api/terminal.py]
 

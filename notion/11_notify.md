@@ -257,7 +257,7 @@ POST /api/sessions/{관리자 세션 id}/escalate
 
 텔레그램 봇 토큰과 채팅방 번호는 FOREMAN 저장소 맨 위 `.env.telegram` 한 파일에 있다. 키 이름은 `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`이고, 권한은 600(주인만 읽기), `.gitignore`의 `.env*`로 git에서 빠진다 [docs:operations.md]. 판정기는 이 파일에서 두 키만 골라 읽는다 [code:bridge/notify.py]. 어느 프로젝트의 알림인지는 토큰이 아니라 글 앞 접두어로 가른다. 네 프로젝트의 알림이 같은 봇, 같은 채팅방으로 온다.
 
-옛 방식에서는 런슈즈와 펫퍼민트 저장소에도 각자 `.env.telegram`이 있었다. 모델이 그 저장소 안에서 스크립트를 불렀으니 그 저장소에 토큰이 있어야 했다. 브리지가 보내게 바꾸자 그 파일들은 쓰는 곳이 없어졌고, 사용자 지시로 지웠다 [log:infra_20261102_host-changes.md]. 지금 결정은 「토큰은 FOREMAN의 `.env.telegram` 하나, 다른 저장소에 토큰 파일이나 보내는 스크립트를 되살리지 않는다」이다 [code:CLAUDE.md].
+옛 방식에서는 런슈즈와 펫퍼민트 저장소에도 각자 `.env.telegram`이 있었다. 모델이 그 저장소 안에서 스크립트를 불렀으니 그 저장소에 토큰이 있어야 했다. 브리지가 보내게 바꾸자 그 파일들은 쓰는 곳이 없어져 지웠다 [log:infra_20261102_host-changes.md]. 지금 결정은 「토큰은 FOREMAN의 `.env.telegram` 하나, 다른 저장소에 토큰 파일이나 보내는 스크립트를 되살리지 않는다」이다 [code:CLAUDE.md].
 
 되살리지 않는 까닭은 셋이다. 첫째, 보내는 쪽이 모두 FOREMAN 저장소 안에 있다. 브리지, `bridge.telegram`, 브리지 포기 알림 스크립트 셋이 모두 이 `.env.telegram`을 읽으니 토큰도 하나면 된다 [code:bridge/telegram.py] [code:scripts/foreman-bridge-alert.sh]. 둘째, 다른 저장소에 토큰과 스크립트가 다시 생기면 그 저장소의 세션이 직접 보낼 길이 열린다. 위에서 본 모델 판단의 문제가 그 저장소에서 되살아난다. 셋째, 토큰을 바꿔야 할 때 바꿀 곳이 하나다. 비밀값이 여러 곳에 흩어지면 하나를 바꾸고 하나를 잊는다. 실제로 이 결정은 한 번 흔들렸다. 압축 손실 점검(긴 대화가 요약될 때 빠진 결정을 찾는 점검)에서 CLAUDE.md에 「토큰 파일이 저장소마다 따로다」라는, 결정과 어긋나는 문장이 남아 있는 것이 드러났다. 그 문장을 결정대로 고치고, 런슈즈와 펫퍼민트에 토큰 파일이 없는 것을 다시 확인했다 [log:foreman_compaction_loss_20261105.md].
 
