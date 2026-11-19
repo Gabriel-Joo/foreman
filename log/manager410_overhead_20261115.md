@@ -585,6 +585,7 @@
 - 규칙 위반: 진행 글 영어 한 줄(여덟 번째)
 - 586 사람 승인 합침 `e2aa93d`(CLAUDE.md 33, 원고 01_roles 151). pytest 1492, push, docs_done
 - 펫퍼민트 관리자 물음(README 노션 반영 다섯 줄): 관리자가 코드로 맞대 답함(35행 반은 틀림: 지금 manual, create=true라 새 쪽 만듦. 나머지 맞음, 근거 `bridge/notion.py`, `docsync.py`, `notioncfg.py` `d2d0607` 판). 펫퍼민트가 그대로 고치겠다고 함
+- 587 사람 승인 합침 `1bcedbe`(CLAUDE.md 45 「GitHub Actions는 쓰지 않는다. 까닭은 `docs/00_design.md` 「3.12」」). heredoc 금지를 넣은 첫 일감에서 머리말과 log가 맞음. pytest 1492, push, docs_done. 도는 세션 없음
 - 사용자 셋: GitHub Actions는 TODO 아님(11-17 안 쓰기로, 까닭 `docs/00_design.md` 480, 한계 편 146) → CLAUDE.md 45를 그곳 가리키게, 서기 587(sonnet, `cc/foreman-4`). GIF 기본값 그대로. 커밋 메시지 heredoc도 금지, 메모리 고침(규칙이 두 벌이었음. 세 번 되풀이되면 규칙 쪽을 본다 → 메모리 `feedback-rule-not-session`)
 - 규칙 위반: 576 log push 때 push 전 검사와 `git push`를 한 명령에 묶음. 자동 모드 검사가 막아 돌지 않았고, 검사를 따로 돌려 0건 확인 뒤 push(CLAUDE.md 11-17 규칙)
 - 인프라 한계 편 둘 끝(인프라 origin/main `6f58229`): 기술문서 `notion/15_limits.md` 「15 알려진 한계」(`43d0a20`, 원고 19편 가리킴 `0007523`), 포트폴리오는 새 편 없이 `portfolio/11_limits.md` 「하지 않은 것과 한계」를 「알려진 한계」로 바꾸고 네 갈래로 다시 가름(`80a339f`, `0178345`, `6f58229`). 안과 다르게: S4 백업은 할 일(infra-6), X는 제자리(인프라 사용자 승인). 이어서 SSH 까닭, 앱 노드 둘, 09편, 조건 묶음 고치는 중
