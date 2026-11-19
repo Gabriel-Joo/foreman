@@ -586,10 +586,14 @@ def header_block(path: str, commit: str, ctx: Ctx, when: str) -> dict[str, Any]:
 
 def footer_block(path: str, commit: str, ctx: Ctx, when: str, read: str | None = None) -> dict[str, Any]:
     """맨 아래 회색 한 줄(11-09 펫퍼민트 — 사본 상자 대신 "마지막 갱신 커밋은 작게"). Notion API엔 글자 크기가 없어 회색으로.
-    read: 원고 머리 주석의 읽은 커밋(11-15). 이 글이 어느 코드 판을 보고 쓴 것인지. ctx.links가 꺼져 있으면(원고, 포트폴리오) 링크 없이 글자만."""
-    rich = _rt("마지막 갱신 — ") + _rt(commit, code=True, link=f"{ctx.gh}/commit/{commit}" if ctx.links else None) + _rt(f" · {when}")
+    read: 원고 머리 주석의 읽은 커밋(11-15). 이 글이 어느 코드 판을 보고 쓴 것인지. ctx.links가 꺼져 있으면(원고, 포트폴리오) 링크 없이 글자만.
+    꼴(11-19 foreman-136, 줄표와 가운뎃점을 뺐다): "마지막 갱신 c10a0ab(2026-11-19 13:34 KST), 읽은 커밋 f8cea0d".
+    옛 꼴("마지막 갱신 — c10a0ab · 시각 · 읽은 커밋 …")은 노션에 남아 있어 알아보기만 한다(is_footer_text)."""
+    rich = _rt(FOOTER_HEAD) + _rt(commit, code=True, link=f"{ctx.gh}/commit/{commit}" if ctx.links else None)
+    if when:
+        rich += _rt(f"({when})")
     if read:
-        rich += _rt(" · 읽은 커밋 ") + _rt(read, code=True)
+        rich += _rt(", 읽은 커밋 ") + _rt(read, code=True)
     for r in rich:
         r.setdefault("annotations", {})["color"] = "gray"
     return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rich}}
@@ -640,7 +644,19 @@ def adopt_notion_shape(old: list[dict[str, Any]], new: list[dict[str, Any]], kee
     return out
 
 
-FOOTER_HEAD = "마지막 갱신 — "
+FOOTER_HEAD = "마지막 갱신 "                 # 만드는 꼴의 첫머리. 알아볼 때는 이것만 보지 않는다(is_footer_text)
+_FOOTER_SHA = r"(?:[0-9a-f]{7,40}|HEAD)"
+# 갱신 줄로 알아보는 꼴 둘(11-19 foreman-136). 첫머리만 보면 본문 문단 「마지막 갱신 …」을 갱신 줄로 잘못 빼고,
+# 새 꼴만 보면 이미 올라간 쪽의 옛 줄을 사람이 쓴 블록으로 보아 쪽이 「사람이 고침」으로 멈춘다. 그래서 줄 전체 꼴을 둘 다 본다
+_FOOTER_NEW = re.compile(rf"마지막 갱신 {_FOOTER_SHA}(?:\([^()\n]*\))?(?:, 읽은 커밋 \S+)?")
+_FOOTER_OLD = re.compile(rf"마지막 갱신 — {_FOOTER_SHA}(?: ·(?: [^·\n]*)?)?(?: · 읽은 커밋 \S+)?")
+
+
+def is_footer_text(s: str) -> bool:
+    """이 글이 게시기가 붙인 맨 아래 갱신 줄인가. 새 꼴과 옛 꼴(줄표, 가운뎃점) 둘 다 본다. 줄 전체가 그 꼴이어야 한다."""
+    s = (s or "").strip()
+    return bool(_FOOTER_NEW.fullmatch(s) or _FOOTER_OLD.fullmatch(s))
+
 _CHECK = re.compile(r"(?m)^\s*\[[ xX]\]\s+")
 _NUMHEAD = re.compile(r"^[\d\-]+\.\s*")
 
@@ -689,7 +705,7 @@ def shape_text(flat: list[tuple[str, str]], subpage_titles: set[str]) -> str:
     def doc_list(t: str, c: str) -> bool:
         # 하위 페이지 제목과 같은 줄, 또는 그 제목으로 시작하는 목록 줄("모니터링 (Prometheus·Grafana)" ↔ "15. 모니터링")
         return c in keys or (t.endswith("list_item") and any(len(k) >= 2 and c.startswith(k) for k in keys))
-    return "".join(c for t, x in flat if t not in SUBPAGES and not x.startswith(FOOTER_HEAD)
+    return "".join(c for t, x in flat if t not in SUBPAGES and not is_footer_text(x)
                    and (c := compact(x)) and not doc_list(t, c))
 
 
@@ -706,7 +722,7 @@ async def shape_patch(client: Any, pid: str, prev: list[dict[str, Any]], new: li
     import difflib
     st = {"kept": 0, "updated": 0, "replaced": 0, "added": 0, "deleted": 0, "reset": 0}
     old = [b for b in await client.children(pid) if b.get("type") not in SUBPAGES
-           and not (b.get("type") == "paragraph" and _btext(b).startswith(FOOTER_HEAD))]
+           and not (b.get("type") == "paragraph" and is_footer_text(_btext(b)))]
     oc = [compact(_btext(b)) for b in old]
 
     def find(c: str, what: str) -> int:
@@ -1458,7 +1474,7 @@ class Publisher:
             return st
         kids = [b for b in await self.c.children(pid) if b.get("type") not in SUBPAGES]
         last = kids[-1] if kids else None
-        if last and last.get("type") == "paragraph" and plain(last["paragraph"].get("rich_text") or []).startswith(FOOTER_HEAD):
+        if last and last.get("type") == "paragraph" and is_footer_text(plain(last["paragraph"].get("rich_text") or [])):
             if _same(last, footer):
                 st["kept"] += 1
             else:

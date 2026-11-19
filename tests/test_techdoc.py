@@ -219,7 +219,7 @@ def test_tree_sync_parents_order_titles_and_clean_cut(tmp_path):
     assert "다루는 곳" not in body and "[code:" not in body and "[c:" not in body and "bridge/a.py" not in body
     links = [t["text"].get("link") for p in st["files"] for b in f.blocks[page[p]] for t in (b.get(b["type"]) or {}).get("rich_text", [])]
     assert not any(links)                                                                   # 비공개 저장소 — 링크 없음(꼬리 줄도)
-    assert any(t.startswith("마지막 갱신 — ") and "읽은 커밋" in t for t in _texts(f, page["notion/02_bridge.md"]))
+    assert any(nt.is_footer_text(t) and "읽은 커밋" in t and "—" not in t for t in _texts(f, page["notion/02_bridge.md"]))
     assert asyncio.run(ds.status(pub))["new"] == []
 
 
