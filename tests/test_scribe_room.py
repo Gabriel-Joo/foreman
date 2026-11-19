@@ -140,7 +140,7 @@ def test_writing_prompts_keep_user_rules():
         assert "비개발자도 읽는다" in p and "처음 나오는 자리에서 한 줄로 푼다" in p
     assert "다루는 범위가 좁다는 뜻이지 문장을 짧게 끊으라는 뜻이 아니다" in port
     for want in ("편마다 그 화면 사진을 한 장 이상", "영상", "docs/13_demo_capture.md", "portfolio/img/", "--record", "?demo=", "bridge/static/demo/",
-                 "5MB", "비밀값"):
+                 "FOREMAN 찍는 법", "비밀값"):   # 11-19 사진 크기 숫자는 지시문에 두지 않고 docs/style_guide.md 「FOREMAN 찍는 법」을 가리킨다
         assert want in port, want
 
 
