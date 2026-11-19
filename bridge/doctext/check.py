@@ -31,7 +31,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from bridge.doctext import dashdot, readme
-from bridge.doctext.config import DocsConfig, not_code_match
+from bridge.doctext.config import DocsConfig, not_code_match, not_code_skip
 from bridge.doctext.head import COVERS, READ, SHA, bad_covers, parse_head
 from bridge.doctext.lines import COMMENT, TEXT, walk
 from bridge.doctext.marks import MARK, STRIP, target
@@ -382,7 +382,7 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
         # README.md, 운영 절차서)은 코드는 아니어도 어느 편이 다루는지 보는 대상으로 남겨 둔다(판단은 log/foreman-6_cover_not_code_*.md)
         # 생성물(`[readme]`이 켜진 저장소의 README.md)은 원고에서 만들어지는 글이라 어느 편도 다루지 않는다. 저장소가 not_code에 적지 않아도 뺀다
         # `[readme] header_file`이 가리키는 파일은 README 머리글로 그대로 들어가는 원본이라 같은 까닭으로 뺀다(11-19, 사람이 쓰는 글이라 GENERATED에는 없다)
-        skip = [p for p in cfg.not_code if p != ".md"]
+        skip = not_code_skip(cfg.not_code)
         if cfg.readme is not None:
             skip += list(readme.GENERATED) + ([cfg.readme["header_file"]] if cfg.readme.get("header_file") else [])
         target_files = [f for f in files if not f.startswith(folders) and not not_code_match(f, skip)]
@@ -398,7 +398,7 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
             if f not in covered:
                 err(None, None, f"덮기 밖: {f}가 {', '.join(ck.cover_by)} 어느 편의 {COVERS}에도 들지 않습니다")
     # 8. 새 줄의 em dash와 가운뎃점
-    dd = dashdot.for_repo(repo, ck.dashdot_base, sets, cfg.records, rev)
+    dd = dashdot.for_repo(repo, ck.dashdot_base, sets, cfg.records, rev, not_code_skip(cfg.not_code))
     notes = [dd["note"]] if dd["note"] else []
     if dd["error"]:
         err(None, None, f"줄표, 가운뎃점 검사를 돌리지 못했습니다: {dd['error']}")

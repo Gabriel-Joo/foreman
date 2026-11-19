@@ -206,6 +206,35 @@ def test_only_grown_hunks_count(tmp_path):
     assert ("docs/a.md", 1, "가운뎃점") in {(p, r, n) for p, r, n, _ in dashdot.scan(tmp_path, base, strict=True)}
 
 
+def test_not_code_and_records_filter_untracked_and_tracked(tmp_path):
+    """추적하지 않는 파일도 `not_code`와 records로 거른다(덮기 검사와 같은 판정). 어디에도 안 드는 파일은 여전히 걸린다.
+    추적하는 고친 파일도 같은 거름을 받는다(11-19 펫퍼민트 data/search_experiments.py 틀림 6건)."""
+    g = ["git", "-C", str(tmp_path)]
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "data").mkdir()
+    (tmp_path / "hist").mkdir()
+    (tmp_path / "docs/a.md").write_text("그대로\n", encoding="utf-8")
+    (tmp_path / "data/tracked.py").write_text("# 옛\n", encoding="utf-8")
+    (tmp_path / "plain_tracked.py").write_text("# 옛\n", encoding="utf-8")
+    subprocess.run([*g, "add", "-A"], check=True)
+    subprocess.run([*g, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a"], check=True)
+    base = subprocess.run([*g, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    bad = "# 새 · 주석\n"
+    (tmp_path / "data/exp.py").write_text(bad, encoding="utf-8")          # 추적 안 함, not_code 글롭에 듦
+    (tmp_path / "hist/old.py").write_text(bad, encoding="utf-8")          # 추적 안 함, records 폴더에 듦
+    (tmp_path / "other.py").write_text(bad, encoding="utf-8")             # 추적 안 함, 어디에도 안 듦
+    (tmp_path / "data/tracked.py").write_text(bad, encoding="utf-8")      # 추적함, not_code에 듦
+    (tmp_path / "plain_tracked.py").write_text(bad, encoding="utf-8")     # 추적함, 어디에도 안 듦
+    nc = ["data/*.py", ".md"]
+    r = dashdot.for_repo(tmp_path, base, {"docs": "docs/"}, ["hist/"], None, dcfg.not_code_skip(nc))
+    assert {p for p, *_ in r["hits"]} == {"other.py", "plain_tracked.py"}
+    # not_code를 안 주면 옛 동작(거르지 않음)이라 셋이 더 걸린다
+    r0 = dashdot.for_repo(tmp_path, base, {"docs": "docs/"}, ["hist/"], None)
+    assert {p for p, *_ in r0["hits"]} == {"other.py", "plain_tracked.py", "data/exp.py", "data/tracked.py"}
+    assert dcfg.not_code_skip(nc) ==["data/*.py"]                       # `.md`만 뺀다(덮기 검사와 같은 함수)
+
+
 def test_base_must_be_ancestor(tmp_path):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     (tmp_path / "f").write_text("x", encoding="utf-8")

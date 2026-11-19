@@ -258,6 +258,12 @@ def not_code_match(path: str, patterns: list[str]) -> bool:
     return any(path.endswith(p) if _is_ext(p) else fnmatch.fnmatchcase(path, p) for p in patterns)
 
 
+def not_code_skip(patterns: list[str]) -> list[str]:
+    """`not_code`에서 확장자 `.md`만 뺀 거름 무늬. 덮기 검사(`check.py`)와 줄표, 가운뎃점 검사(`dashdot.py`)가 이 한 함수를 함께 쓴다.
+    `.md`는 문서라서 not_code에 들어 있어도 거르지 않는다(문서 묶음 밖 글은 덮기에서도 줄표 검사에서도 보는 대상이다)."""
+    return [p for p in patterns if p != ".md"]
+
+
 def load(repo: str | Path, rev: str | None = None) -> DocsConfig:
     """그 저장소의 docs.toml. rev가 없으면 작업 트리, 있으면 그 커밋의 파일(읽기만). 없으면 기본값(source "default")."""
     if rev is None:

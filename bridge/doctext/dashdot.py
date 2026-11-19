@@ -10,7 +10,8 @@
   코드 울타리와 HTML 주석 안은 보지 않는다
 - 코드 주석: `.py`(`#` 주석과 문자열만으로 된 문장, 곧 독스트링), `.js`와 `.css`(`//`, `/* */`), `.toml`과 `.sh`(`#`)
 - 세지 않는 것: 백틱 안, 「」와 『』와 큰따옴표 안(화면 글과 절 제목 인용), 기호 하나만 괄호로 감싼 것
-- 보지 않는 곳: 기록 폴더(FOREMAN `log/`, 저장소 설정의 records), 그 밖의 `*.md`와 확장자. 코드의 문자열(화면 글, 지시문)
+- 보지 않는 곳: 기록 폴더(FOREMAN `log/`, 저장소 설정의 records), 저장소 설정의 `not_code`에 드는 파일(추적하는 파일과 추적하지 않는
+  파일 모두. 덮기 검사와 같은 `config.not_code_match`, `.md`만 뺀다), 그 밖의 `*.md`와 확장자. 코드의 문자열(화면 글, 지시문)
 
 표준 라이브러리만 쓴다.
 """
@@ -23,6 +24,7 @@ import subprocess
 import tokenize
 from pathlib import Path
 
+from bridge.doctext.config import not_code_match
 from bridge.doctext.lines import TEXT, walk
 from bridge.doctext.repo import is_quoted, quoted_problem
 from bridge.doctext.marks import STRIP
@@ -64,9 +66,12 @@ def _header_path(line: str, prefix: str) -> str | None:
     return p[2:] if p.startswith(prefix) else None
 
 
-def wanted(path: str, doc_dirs: tuple[str, ...] = DOC_DIRS, skip: tuple[str, ...] = SKIP_DIRS) -> str | None:
-    """"doc", "code", 또는 None(보지 않는다). doc_dirs는 문서 묶음 폴더, skip은 기록 폴더와 도구 폴더."""
-    if path.startswith(skip):
+def wanted(path: str, doc_dirs: tuple[str, ...] = DOC_DIRS, skip: tuple[str, ...] = SKIP_DIRS,
+           not_code: tuple[str, ...] = ()) -> str | None:
+    """"doc", "code", 또는 None(보지 않는다). doc_dirs는 문서 묶음 폴더, skip은 기록 폴더와 도구 폴더.
+    not_code는 저장소 설정의 `not_code`에서 `.md`를 뺀 무늬(`config.not_code_skip`). 덮기 검사와 같은 판정(`config.not_code_match`)으로
+    거른다. 추적하는 파일과 추적하지 않는 파일이 모두 이 함수를 지나므로 둘 다 같은 거름을 받는다."""
+    if path.startswith(skip) or (not_code and not_code_match(path, list(not_code))):
         return None
     if path.endswith(".md"):
         return "doc" if path.startswith(doc_dirs) or path in ROOT_DOCS else None
@@ -129,7 +134,7 @@ def _diff_args(base: str, rev: str | None, only_wanted_kinds: bool = False) -> l
 
 
 def hunks(repo: str | Path, base: str, rev: str | None = None, doc_dirs: tuple[str, ...] = DOC_DIRS,
-          skip: tuple[str, ...] = SKIP_DIRS) -> list[Hunk]:
+          skip: tuple[str, ...] = SKIP_DIRS, not_code: tuple[str, ...] = ()) -> list[Hunk]:
     """기준 커밋과 작업 트리(rev가 있으면 그 커밋) 사이에 바뀐 덩어리. 작업 트리면 추적하지 않는 파일은 통째로 새 덩어리 하나.
     base가 HEAD(또는 rev)의 조상이 아니면 DashDotError(조용히 0줄로 지나가지 않게)."""
     tip = rev or "HEAD"
@@ -145,14 +150,14 @@ def hunks(repo: str | Path, base: str, rev: str | None = None, doc_dirs: tuple[s
             old = _header_path(line, "a/")
         elif line.startswith("+++ "):
             p = _header_path(line, "b/")
-            cur = p if p and wanted(p, doc_dirs, skip) else None
+            cur = p if p and wanted(p, doc_dirs, skip, not_code) else None
         elif cur and (m := HUNK.match(line)):
             a, b, c, d = (int(x) if x is not None else 1 for x in m.groups())
             out.append((cur, old, range(a, a + b), range(c, c + d)))
     if rev:
         return out
     for p in _git_z(repo, "ls-files", "--others", "--exclude-standard"):
-        if wanted(p, doc_dirs, skip):
+        if wanted(p, doc_dirs, skip, not_code):
             try:
                 n = len((Path(repo) / p).read_text(encoding="utf-8").splitlines())
             except (OSError, UnicodeDecodeError):
@@ -293,7 +298,8 @@ def _count(parts: dict[int, str], rows: range, skip: frozenset[int] | set[int] =
 
 
 def scan(repo: str | Path, base: str, strict: bool = False, rev: str | None = None,
-         doc_dirs: tuple[str, ...] = DOC_DIRS, skip: tuple[str, ...] = SKIP_DIRS) -> list[tuple[str, int, str, str]]:
+         doc_dirs: tuple[str, ...] = DOC_DIRS, skip: tuple[str, ...] = SKIP_DIRS,
+         not_code: tuple[str, ...] = ()) -> list[tuple[str, int, str, str]]:
     """(파일, 줄, 기호 이름, 그 줄 글 앞 80자). 기준 커밋 뒤 새 줄만. rev가 있으면 그 커밋 판을 읽는다.
 
     덩어리마다 지운 줄과 더한 줄의 기호 수를 맞대어, 그 기호가 늘어난 덩어리의 더한 줄만 낸다. 옛 줄을 고치기만 하고
@@ -307,7 +313,7 @@ def scan(repo: str | Path, base: str, strict: bool = False, rev: str | None = No
     new_parts: dict[str, dict[int, str]] = {}
     new_lines: dict[str, list[str]] = {}
     old_parts: dict[str, dict[int, str]] = {}
-    todo = sorted(hunks(repo, base, rev, doc_dirs, skip), key=lambda h: (h[0], h[3].start))
+    todo = sorted(hunks(repo, base, rev, doc_dirs, skip, not_code), key=lambda h: (h[0], h[3].start))
     pool = removed_pool(repo, base, rev)
     moved: dict[str, set[int]] = {}         # 새 경로 -> 옮긴 줄로 풀린 더한 줄
     gone: dict[str, set[int]] = {}          # 옛 경로 -> 더한 줄을 풀어 준 지운 줄
@@ -347,7 +353,7 @@ def scan(repo: str | Path, base: str, strict: bool = False, rev: str | None = No
 
 
 def for_repo(repo: str | Path, base: str | None, sets: dict[str, str], records: list[str],
-             rev: str | None = None) -> dict:
+             rev: str | None = None, not_code: list[str] | None = None) -> dict:
     """저장소 하나를 그 설정대로(문서 점검 `bridge/doctext/check.py`가 부른다). 돌려주는 것: {base, hits, note, error}.
 
     기준 커밋 칸이 없으면 검사하지 않고 note(NO_BASE)를 남긴다. 조용히 모든 줄을 걸거나(옛 줄 수백 건) 조용히 넘어가지 않게.
@@ -357,7 +363,7 @@ def for_repo(repo: str | Path, base: str | None, sets: dict[str, str], records: 
     doc_dirs = tuple(d for d in sets.values() if d) or DOC_DIRS
     skip = (*tuple(records), *TOOL_DIRS)
     try:
-        hits = scan(repo, base, rev=rev, doc_dirs=doc_dirs, skip=skip)
+        hits = scan(repo, base, rev=rev, doc_dirs=doc_dirs, skip=skip, not_code=tuple(not_code or ()))
     except DashDotError as e:
         return {"base": base, "hits": [], "note": None, "error": str(e)}
     return {"base": base, "hits": hits, "note": None, "error": None}
