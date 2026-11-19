@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/roles.py, config/roles.toml, config/models.toml, bridge/static/js/roles.js, bridge/foreman.py, bridge/inspector_close.py, .claude/agents/Explore.md, bridge/roleguard.py, bridge/hookmiss.py, bridge/docrefs.py, tests/test_inspector_close.py, tests/test_session_role.py
-읽은 커밋: fb7121b
+읽은 커밋: c2457ab
 -->
 
 # 역할 다섯
@@ -148,7 +148,7 @@ FOREMAN 밖(터미널에서 직접)에서 띄운 CC 세션은 조립기가 늘 �
 관리자가 직접 고쳐도 되는 것은 셋뿐이다.
 
 1. **합친 뒤 깨진 것을 바로 막는 일.** `git revert`나 몇 줄 고치기다. 시험이 실패했거나 브리지가 뜨지 않는 것처럼, 기다리면 다른 세션과 사람이 멈추는 경우다. 제대로 고치는 것은 다시 작업방으로 보낸다 [code:CLAUDE.md].
-2. **사용자가 시킨 설정 값(`config/*.toml`), 기록(`log/`), README의 나중에 할 일 줄** [code:CLAUDE.md].
+2. **사용자가 시킨 설정 값(`config/*.toml`), 기록(`log/`), `docs/TODO.md`의 할 일 줄** [code:CLAUDE.md].
 3. **주석이나 오타처럼 동작이 바뀌지 않는 한두 줄** [code:CLAUDE.md].
 
 새 기능, 화면, 브리지 동작, 마이그레이션, 여러 파일에 걸친 일, 시험을 새로 써야 하는 일은 작아도 작업방으로 보낸다. 작으면 Sonnet으로 띄운다. 관리자가 직접 짰지만 이 기준으로는 작업방 몫이었던 일이 실제로 있었고, 그 뒤에 이 기준을 글로 적었다.
