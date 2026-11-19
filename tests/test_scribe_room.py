@@ -226,6 +226,158 @@ class _FakeEngine:
         return _C()
 
 
+class _FakeSpawn:
+    """handoff 대신 spawn_new에 넘긴 이름, 지시문, 일 종류를 적어 두고 세션 번호를 준다(실제 세션은 띄우지 않는다)."""
+
+    def __init__(self):
+        self.calls, self.acts = [], []
+
+    async def spawn_new(self, repo, char, name, **kw):
+        self.calls.append({"repo": repo, "name": name, **kw})
+        return {"session_id": 900 + len(self.calls), "tmux": "cc-foreman-9"}
+
+    async def _act(self, sid, action, pid, ok, detail):
+        self.acts.append((sid, action, detail))
+
+
+class _Pub:
+    src = "notion/"
+
+
+def _piece_repo(tmp_path):
+    """notion/ 아래 하위 폴더 편까지 있는 원고와 portfolio/ 한 편. 다루는 코드를 읽은 커밋 뒤 feat로 바꿔 둔다."""
+    from bridge.manuscript import head_text
+    r = tmp_path / "pr"
+    for d in ("notion/10_scribe", "portfolio", "bridge"):
+        (r / d).mkdir(parents=True)
+    g = lambda *a: subprocess.run(["git", "-C", str(r), *a], check=True, capture_output=True, text=True).stdout.strip()  # noqa: E731
+    g("init", "-q", "-b", "main"), g("config", "user.email", "t@t"), g("config", "user.name", "t")
+    for f in ("a.py", "b.py"):
+        (r / "bridge" / f).write_text("0\n", encoding="utf-8")
+    g("add", "."), g("commit", "-qm", "feat: 처음")
+    base = g("rev-parse", "--short", "HEAD")
+    docs = {"notion/00_intro.md": ("bridge/b.py", "들어가며"), "notion/10_scribe.md": ("bridge/a.py", "서기"),
+            "notion/10_scribe/03_evidence.md": ("bridge/a.py", "근거 표시"), "portfolio/01_room.md": ("bridge/a.py", "서기실")}
+    for path, (cov, title) in docs.items():
+        (r / path).write_text(head_text([cov], base) + f"\n# {title}\n본문\n", encoding="utf-8")
+    g("add", "."), g("commit", "-qm", "docs: 원고")
+    (r / "bridge" / "a.py").write_text("1\n", encoding="utf-8")
+    g("add", "."), g("commit", "-qm", "fix: 서기 고침")
+    return r
+
+
+def _start(monkeypatch, r, task, topic=None, opened=None, note=None):
+    """가짜 세션 띄우기. 열린 일은 opened로 주고, dispatch 기록(맡을 파일)은 record_spawn을 가로채 본다."""
+    import asyncio
+    from bridge import foreman
+    rec = []
+
+    async def _open(engine, project):
+        return list(opened or [])
+
+    async def _spawn_rec(engine, origin, project, sess, res, *a):
+        rec.append(sess)
+    monkeypatch.setattr(sr, "open_tasks", _open)
+    monkeypatch.setattr(foreman, "record_spawn", _spawn_rec)
+    m = _FakeSpawn()
+    out = asyncio.run(sr.start(m, _FakeEngine({"foreman": str(r)}), "foreman", task, topic, note, publishers={"foreman": _Pub()}))
+    return out, m.calls[0], rec[0]
+
+
+def test_techdoc_one_piece_start_like_portfolio(tmp_path, monkeypatch):
+    """11-19 foreman-125. 기술문서 쓰기도 편 하나만 고쳐 쓴다. 맡을 파일, 지시문, 일 제목이 그 편 하나이고 다른 편은 안 건드린다.
+    포트폴리오와 같은 표(PIECE_TASKS)를 지난다."""
+    r = _piece_repo(tmp_path)
+    tps = sr.topics(str(r), "techdoc")
+    assert [t["slug"] for t in tps] == ["00_intro", "10_scribe", "10_scribe/03_evidence"]      # 하위 폴더 편도 편이다
+    assert [t["commits"] for t in tps] == [0, 1, 1]
+    out, call, rec = _start(monkeypatch, r, "techdoc", "10_scribe/03_evidence")
+    assert out["topic"] == "10_scribe/03_evidence"
+    assert call["name"] == "서기 — 기술문서 쓰기: 근거 표시"                                  # 일 제목에 편 이름
+    assert call["scribe_task"] == "techdoc 10_scribe/03_evidence"                                # open_tasks가 편을 되읽는다
+    assert rec["files"] == ["notion/10_scribe/03_evidence.md"]                                   # 그 편 파일만(같은 이름 부모 편은 아니다)
+    p = call["first_prompt"]
+    assert "한 편 「근거 표시」(`notion/10_scribe/03_evidence.md`)" in p and "이 편 하나만 고친다" in p
+    assert "고칠 곳은 `notion/10_scribe/03_evidence.md`뿐이다" in p and "고칠 곳은 `notion/`뿐이다" not in p
+    assert "다른 편은 고치지 않는다" in p and "「서기」(`notion/10_scribe.md`)" in p and "「들어가며」(`notion/00_intro.md`)" in p
+    assert "이 편 전체를 지금 코드와 맞대 읽었을 때만" in p and "올리지 않고 그대로 두고" in p      # 11-19 사용자 결정
+    assert "`bridge/a.py`" in p and "1개" in p
+    for keep in ("원고 쓰는 기준", "[code:경로]", "다루는 곳:", "읽은 커밋:", "Notion에 올리기", "비밀값"):   # 통째 쓰기의 나머지 약속은 그대로
+        assert keep in p, keep
+    assert "나무 규칙" not in p and "지금 원고(서기실이 센 것)" not in p and "통으로 쓴다" not in p
+    # 편 없이 시키면 지금처럼 통째 쓰기(폴더 통째로 맡는다)
+    _, whole, rec2 = _start(monkeypatch, r, "techdoc")
+    assert rec2["files"] == ["notion/"] and whole["scribe_task"] == "techdoc" and "통으로 쓴다" in whole["first_prompt"]
+
+
+def test_techdoc_piece_blocked_same_piece_only_and_refusals(tmp_path, monkeypatch):
+    """같은 편 두 번은 막고 다른 편은 막지 않는다. 통째 쓰기가 열려 있으면 모든 편과 겹친다. 없는 편, 원고 폴더 밖 경로는 거절."""
+    from bridge.inject import Refused
+    r = _piece_repo(tmp_path)
+    one = {"session_id": 5, "task": "techdoc", "topic": "10_scribe/03_evidence", "title": "서기",
+           "files": sr.touches("techdoc", "10_scribe/03_evidence")}
+    with pytest.raises(Refused, match="이미 열려"):
+        _start(monkeypatch, r, "techdoc", "10_scribe/03_evidence", [one])
+    _, call, _ = _start(monkeypatch, r, "techdoc", "10_scribe", [one])                           # 부모 편은 다른 파일
+    assert call["scribe_task"] == "techdoc 10_scribe"
+    assert "notion/" in sr.blocked("techdoc", [one])                                             # 통째 쓰기는 열린 편과 겹친다
+    assert "notion/" in sr.blocked("techdoc", [{"session_id": 6, "task": "techdoc", "topic": None, "title": "서기"}], "00_intro")
+    assert sr.blocked("portfolio", [one], "01_room") is None                                     # 다른 일, 다른 폴더
+    assert "기술문서 쓰기: 10_scribe/03_evidence" in sr.blocked("techdoc", [one], "10_scribe/03_evidence")
+    for bad in ("09_없음", "99_none", "../docs/00_design", "/etc/passwd", "10_scribe/../00_intro", "docs/00_design", "00_intro.md"):
+        with pytest.raises(Refused, match="기술문서 편을 찾지 못했습니다"):
+            _start(monkeypatch, r, "techdoc", bad)
+    assert not sr.topic_ok("techdoc", "../x") and not sr.topic_ok("techdoc", "a//b") and not sr.topic_ok("techdoc", "x" * 121)
+    assert sr.topic_ok("techdoc", "10_scribe/03_evidence") and not sr.topic_ok("portfolio", "10_scribe/03_evidence")
+    from bridge.api.scribe import StartIn
+    assert StartIn(project="foreman", task="techdoc", topic="09_dispatcher/02_note_wake_long_name_over_forty").topic
+
+
+def test_portfolio_start_unchanged_through_piece_table(tmp_path, monkeypatch):
+    """포트폴리오는 표로 모은 뒤에도 그대로다. 편 하나면 portfolio/<slug>*, 일 제목, 지시문이 전과 같다."""
+    r = _piece_repo(tmp_path)
+    out, call, rec = _start(monkeypatch, r, "portfolio", "01_room")
+    assert rec["files"] == ["portfolio/01_room*"] and call["name"] == "서기 — 포트폴리오 쓰기: 서기실"
+    assert call["scribe_task"] == "portfolio 01_room" and "`portfolio/01_room.md`" in call["first_prompt"]
+    _, whole, rec2 = _start(monkeypatch, r, "portfolio")
+    assert rec2["files"] == ["portfolio/"] and whole["scribe_task"] == "portfolio"
+
+
+def test_later_start_records_without_readme_rows(tmp_path, monkeypatch):
+    """「알려진 한계 쓰기」를 띄우면 어디까지 봤나(LATER_ACT)를 남기고 쓸 줄을 가져간다. 11-19 README 뺄 줄을 없앤 뒤
+    남은 len(rows)가 세션을 띄운 다음 NameError를 냈다(조용히 기록이 빠짐)."""
+    import asyncio
+    from bridge import scribe as sc
+    r = _piece_repo(tmp_path)
+    taken = []
+
+    async def _inbox(engine, project):
+        return [{"id": 3, "piece": "notion/00_intro.md", "reason": "까닭", "body": "글", "created_at": None, "todo": None}]
+
+    async def _since(engine, project):
+        return None
+
+    async def _take(engine, ids, sid):
+        taken.append((ids, sid))
+    monkeypatch.setattr(sr, "inbox_new", _inbox)
+    monkeypatch.setattr(sr, "later_since", _since)
+    monkeypatch.setattr(sr, "_inbox_take", _take)
+    monkeypatch.setattr(sc, "OUT_ROOT", tmp_path / "out")
+    monkeypatch.setattr(sc, "kst", lambda v: "11-19")
+    import bridge.foreman as fm
+
+    async def _rec(*a):
+        return None
+
+    async def _open(engine, project):
+        return []
+    monkeypatch.setattr(fm, "record_spawn", _rec)
+    monkeypatch.setattr(sr, "open_tasks", _open)
+    m = _FakeSpawn()
+    asyncio.run(sr.start(m, _FakeEngine({"foreman": str(r)}), "foreman", "later"))
+    assert m.acts and m.acts[0][1] == sr.LATER_ACT and m.acts[0][2].endswith("쓸 줄 1개") and taken == [([3], 901)]
+
+
 def test_later_task_is_known_limits():
     """11-15 포스트잇 — 미룬 말 그물은 bridge/postit.py(tests/test_postit.py). 서기 later는 「알려진 한계」 쓰기다(11-17부터 고른 편에)."""
     assert not hasattr(sr, "LATER")

@@ -50,21 +50,52 @@ TECHDOC_DAYS = 2               # 마지막으로 기술문서 서기 세션을 �
 
 
 SLUG = re.compile(r"[0-9a-z_]{1,40}")
+TOPIC_MAX = 120     # 편 이름(원고 폴더 아래 경로에서 .md를 뗀 것) 최대 길이. API topic 칸 한도도 이 값(bridge/api/scribe.py)
+
+# 편이 있는 일(11-19 foreman-125). 포트폴리오 쓰기와 기술문서 쓰기가 같은 길을 지난다: 편 목록(topics), 맡을 파일(touches),
+# 일 제목(_what), 막기(blocked), 띄우기의 편 찾기(start), 기록(_record). 일마다 다른 것은 이 표에만 둔다(판정을 두 벌로 두지 않는다).
+# - dir: 원고 폴더. 편 이름(topic, slug)은 그 아래 경로에서 .md를 뗀 것
+# - nested: 하위 폴더 편을 받나. 기술문서는 받는다(notion/10_scribe/03_evidence.md → 10_scribe/03_evidence). 포트폴리오는
+#   portfolio/img/ 아래가 편이 아니라 받지 않는다
+# - own: 편 하나가 맡을 파일. 포트폴리오는 portfolio/<slug>로 시작하는 것(11-15부터 그대로), 기술문서는 그 편 파일 하나
+#   (notion/<slug>*로 두면 같은 이름 폴더 아래 하위 편까지 맡아 다른 편과 막힌다)
+PIECE_TASKS: dict[str, dict[str, Any]] = {
+    "portfolio": {"dir": PORTFOLIO_DIR, "nested": False, "own": "{dir}{slug}*", "label": "포트폴리오 편"},
+    "techdoc": {"dir": TECHDOC_DIR, "nested": True, "own": "{dir}{slug}.md", "label": "기술문서 편"},
+}
 
 
-def topics(repo: str) -> list[dict[str, Any]]:
-    """포트폴리오 편 — main(HEAD)의 portfolio/ 바로 아래 .md, 파일 번호 차례(11-15: 정해진 주제 목록 없음).
-    편마다 머리 주석(bridge/manuscript.py)의 읽은 커밋 뒤 다루는 코드를 바꾼 feat · fix 커밋 수(commits, 셀 수 없으면 None과 why)."""
-    from bridge import manuscript as ms
+def topic_ok(task: str, topic: str) -> bool:
+    """편 이름 꼴: 칸마다 소문자, 숫자, 밑줄(1~40자). 하위 폴더는 nested인 일만. 「..」, 앞뒤 /, 빈 칸은 꼴에서 걸러진다."""
+    spec = PIECE_TASKS[task]
+    parts = topic.split("/")
+    return (len(topic) <= TOPIC_MAX and (spec["nested"] or len(parts) == 1)
+            and all(SLUG.fullmatch(p) for p in parts))
+
+
+def _topics_of(task: str, pcs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    d = PIECE_TASKS[task]["dir"]
     out = []
-    for p in ms.pieces(repo, PORTFOLIO_DIR, "HEAD"):
-        rel = p["path"][len(PORTFOLIO_DIR):]
-        slug = rel[:-3]
-        if "/" in rel or not SLUG.fullmatch(slug):
-            continue                                   # portfolio/img/ 아래 · 이름이 틀린 파일은 편이 아니다
+    for p in pcs:
+        slug = p["path"][len(d):-3]
+        if not p["path"].startswith(d) or not topic_ok(task, slug):
+            continue                                   # portfolio/img/ 아래, 이름이 틀린 파일은 편이 아니다
         out.append({"slug": slug, "title": p["title"], "read": p["read"], "covers": p["covers"],
                     "commits": p["commits"], "why": p["why"], "written": True})
     return out
+
+
+def topics(repo: str, task: str = "portfolio") -> list[dict[str, Any]]:
+    """편이 있는 일의 편: main(HEAD)의 원고 폴더 아래 .md, 파일 번호 차례(11-15: 정해진 주제 목록 없음).
+    편마다 머리 주석(bridge/manuscript.py)의 읽은 커밋 뒤 다루는 코드를 바꾼 feat, fix 커밋 수(commits, 셀 수 없으면 None과 why)."""
+    from bridge import manuscript as ms
+    return _topics_of(task, ms.pieces(repo, PIECE_TASKS[task]["dir"], "HEAD"))
+
+
+def topic_rows(task: str, tps: list[dict[str, Any]], opened: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """화면에 내릴 편 목록. 편마다 막힌 까닭(blocked)을 붙인다. 포트폴리오와 기술문서가 같은 꼴(scribe.js pieceButtons)."""
+    return [{**{k: t[k] for k in ("slug", "title", "written", "commits", "why", "read")}, "blocked": blocked(task, opened, t["slug"])}
+            for t in tps]
 
 
 def has_portfolio(repo: str) -> bool:
@@ -242,9 +273,7 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
         # 머리줄은 「글 N편 가운데 코드가 바뀐 편 M」(저장소 전체 커밋을 세던 것을 고쳤다)
         tps, portfolio = [], None
         if has_portfolio(repo):
-            for t in topics(repo):
-                tps.append({**{k: t[k] for k in ("slug", "title", "written", "commits", "why", "read")},
-                            "blocked": blocked("portfolio", opened, t["slug"])})
+            tps = topic_rows("portfolio", topics(repo, "portfolio"), opened)
             from bridge.manuscript import tally
             portfolio = {**tally(tps), "written": len(tps), "blocked": blocked("portfolio", opened),
                          "unread": f"커밋 기록을 {UNREAD}" if tps and not git_ok else None}
@@ -256,7 +285,9 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
             last_at, last_src = await last_techdoc_merge(engine, name, repo)
             techdoc = {**techdoc_state(pcs, last_at, datetime.now(UTC).replace(tzinfo=None)),
                        "last_at": _iso(last_at), "last_from": last_src,
-                       "pieces": [{k: p[k] for k in ("path", "title", "commits", "why")} for p in pcs]}
+                       "pieces": [{k: p[k] for k in ("path", "title", "commits", "why")} for p in pcs],
+                       # 11-19 foreman-125 편 하나 고쳐 쓰기([갱신], 편 목록 단추). 포트폴리오의 topics와 같은 꼴
+                       "topics": topic_rows("techdoc", _topics_of("techdoc", pcs), opened)}
             behind["techdoc"] = {"n": techdoc["need"], "stale": techdoc["due"], "unit": "편", "why": techdoc["why"]}
             if techdoc["due"]:
                 items.append({"kind": "techdoc", "title": f"기술문서 쓰기: 코드가 바뀐 편 {techdoc['need']}", "why": techdoc["why"]})
@@ -288,9 +319,10 @@ PLAN_TASK = "plan"             # 계획 [시작] · 직접 띄우기로 일 종�
 # worktree는 서로를 못 봐서 충돌은 합칠 때 난다 — 같은 파일을 고치는 두 일이 열려 있으면 뒤의 합치기가 rebase 충돌.
 # 파일 겹침은 계획 겹침과 같은 판단(foreman.files_overlap — 폴더는 끝에 /, 글롭 *)을 쓴다
 # later(알려진 한계 쓰기)는 여기에 docs/TODO.md만 두고(11-19 전에는 README.md도), 띄울 때 [한계로]에서 고른 편 파일을 더한다(start, blocked의 extra).
-# 원고 폴더 통째로 적으면 열린 포트폴리오, 기술문서 일과 늘 겹쳐 막힌다
+# 원고 폴더 통째로 적으면 열린 포트폴리오, 기술문서 일과 늘 겹쳐 막힌다.
+# 편이 있는 일(포트폴리오, 기술문서)의 맡을 파일은 여기가 아니라 PIECE_TASKS(편 없이 시키면 원고 폴더 통째로)
 TOUCHES = {"doccheck": ["log/doccheck_*"], "later": ["docs/TODO.md"],
-           "trim": ["CLAUDE.md", "docs/"], "docfix": ["README.md", "CLAUDE.md", "docs/"], "techdoc": [TECHDOC_DIR]}
+           "trim": ["CLAUDE.md", "docs/"], "docfix": ["README.md", "CLAUDE.md", "docs/"]}
 
 
 async def open_tasks(engine: Any, project: str) -> list[dict[str, Any]]:
@@ -321,25 +353,25 @@ async def open_tasks(engine: Any, project: str) -> list[dict[str, Any]]:
 
 
 def touches(task: str, topic: str | None = None) -> list[str]:
-    """그 일이 고치는 파일(files_overlap 꼴) — 포트폴리오 한 편은 그 편만(글 · 사진 모두 portfolio/<slug>로 시작), 편 없이 시키면 폴더 통째로."""
-    if task == "portfolio":
-        return [f"portfolio/{topic}*"] if topic else ["portfolio/"]
+    """그 일이 고치는 파일(files_overlap 꼴). 편이 있는 일(PIECE_TASKS)은 편 하나면 그 편 파일만(own), 편 없이 시키면 원고 폴더 통째로."""
+    if (spec := PIECE_TASKS.get(task)) is not None:
+        return [spec["own"].format(dir=spec["dir"], slug=topic)] if topic else [spec["dir"]]
     return list(TOUCHES.get(task, []))
 
 
 def _what(o: dict[str, Any]) -> str:
     if o["task"] in TASKS:
-        return TASKS[o["task"]]["title"] + (f": {o['topic']}" if o["task"] == "portfolio" and o.get("topic") else "")
+        return TASKS[o["task"]]["title"] + (f": {o['topic']}" if o["task"] in PIECE_TASKS and o.get("topic") else "")
     return o.get("title") or "서기 세션"
 
 
 def blocked(task: str, opened: list[dict[str, Any]], topic: str | None = None, extra: list[str] | None = None) -> str | None:
     """이 일을 지금 시킬 수 없는 까닭(없으면 None) — 화면 버튼과 서버가 같은 판단을 쓴다.
-    포트폴리오는 편이 다르면 다른 일이다(서로 다른 파일) — 같은 편만 막는다. 편 없이 시킨 포트폴리오(폴더 통째로)는 파일 겹침으로 모든 편과
-    막힌다. 일 종류 없는 서기 세션(plan)은 맡을 파일로만 본다. extra는 띄울 때 정해지는 파일(later의 고른 편)."""
+    편이 있는 일(포트폴리오, 기술문서)은 편이 다르면 다른 일이다(서로 다른 파일). 같은 편만 막는다. 편 없이 시킨 것(폴더 통째로)은
+    파일 겹침으로 모든 편과 막힌다. 일 종류 없는 서기 세션(plan)은 맡을 파일로만 본다. extra는 띄울 때 정해지는 파일(later의 고른 편)."""
     from bridge.foreman import files_overlap
     for o in opened:
-        if o["task"] == task and task != PLAN_TASK and (task != "portfolio" or o.get("topic") == topic):
+        if o["task"] == task and task != PLAN_TASK and (task not in PIECE_TASKS or o.get("topic") == topic):
             return f"「{_what(o)}」이 이미 열려 있습니다(세션 {o['session_id']}). 합치거나 버린 뒤에 시켜 주세요"
     mine = touches(task, topic) + list(extra or [])
     for o in opened:
@@ -597,25 +629,54 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
 - 커밋 메시지: CLAUDE.md 「커밋 메시지」 꼴(예: `docs: 서기실 화면 포트폴리오를 씀`)""" + (
             f"\n\n덧붙인 요청(사람이 관리자를 거쳐 넘긴 것)\n{e['note']}" if e.get("note") else "")
     elif task == "techdoc":
-        body = f"""할 일: 이 프로젝트의 노션 기술문서 원고를 `{TECHDOC_DIR}`에 통으로 쓴다. 없으면 처음부터, 있으면 지금 코드에 맞게 고친다.
+        slug = e.get("slug") or ""
+        if slug:
+            # 11-19 foreman-125 편 하나 고쳐 쓰기([갱신], 편 목록 단추). 포트폴리오 편 하나와 같은 꼴이고, 나머지 약속은 통째 쓰기와 같다
+            piece = f"{TECHDOC_DIR}{slug}.md"
+            what = f"""할 일: 노션 기술문서 원고 한 편 「{e.get('title') or slug}」(`{piece}`)을 지금 코드에 맞게 고쳐 쓴다. 이 편 하나만 고친다.
 원고 쓰기만 한다. Notion에 올리는 것은 사람이 서기실 「기술문서 게시」의 [Notion에 올리기]로 한다.
-
-{_rules_block("techdoc", repo)}
-
-일하는 순서
+- 이 편의 머리 주석이 말하는 다루는 곳: {e.get('covers') or '(없음 — 이번에 정해 적는다)'}. 읽은 커밋 뒤 그 코드를 바꾼 커밋: {e.get('commits') or '(셀 수 없음)'}
+- 다른 편: {e.get('siblings') or '(없음)'}. 다른 편은 고치지 않는다. 같은 내용을 다시 쓰지 말고 "→ 「제목」"으로 가리킨다.
+  다른 편이 지금 코드와 어긋나 보이면 고치지 말고 마지막 응답에 적는다
+- 파일 이름과 나무 자리는 바꾸지 않는다. 편을 옮기거나 쪼개야 할 것 같으면 고치지 말고 마지막 응답에 적는다"""
+            order = f"""일하는 순서
+1. `git rev-parse --short HEAD`를 적어 둔다
+2. 이 편 전체를 처음부터 끝까지 읽고, 다루는 곳의 코드를 지금 판으로 읽어 문단마다 맞댄다. 다루는 곳이 빠졌거나 너무 넓으면 머리 주석의 다루는 곳도 고친다
+3. 지금 코드와 다른 곳을 고친다. 서브에이전트(Agent 도구)에게 맡기면 위 「원고 쓰는 기준」과 아래 「머리 주석」 「쓰는 법」을 그대로 준다
+4. 머리 「읽은 커밋」은 이 편 전체를 지금 코드와 맞대 읽었을 때만 1의 값으로 올린다. 고친 자리만 보고 끝냈으면 올리지 않고 그대로 두고,
+   마지막 응답에 「읽은 커밋을 올리지 않았다」와 그 까닭을 적는다. 올리면 서기실이 이 편을 「그대로」로 센다
+5. 바꾼 원고(`{piece}`)를 커밋한다"""
+            tree, where, state = "", f"`{piece}`", ""
+        else:
+            what = f"""할 일: 이 프로젝트의 노션 기술문서 원고를 `{TECHDOC_DIR}`에 통으로 쓴다. 없으면 처음부터, 있으면 지금 코드에 맞게 고친다.
+원고 쓰기만 한다. Notion에 올리는 것은 사람이 서기실 「기술문서 게시」의 [Notion에 올리기]로 한다."""
+            order = """일하는 순서
 1. `git rev-parse --short HEAD`를 적어 둔다. 모든 편의 「읽은 커밋」은 이 값 하나다(한 벌이 한 커밋의 사진)
 2. 코드 지도를 읽고 목차(폴더 나무)를 정한다: 모듈 docstring, API 라우터, 화면 js, 마이그레이션, 설정 파일. 지난 원고가 있으면 그 나무를 고친다.
    편 수를 미리 정하지 않는다. 코드가 필요로 하는 만큼. 다른 프로젝트의 원고 구조를 베끼지 않는다
 3. 편마다 서브에이전트(Agent 도구)에게 한 편씩 맡긴다. 동시에 몇 개든 된다. 맡길 때 그 편의 다루는 곳, 읽은 커밋, 위 「원고 쓰는 기준」과 아래 「나무 규칙」 「머리 주석」 「쓰는 법」을 그대로 준다
 4. 돌아온 원고를 맞댄다: 편 사이 겹침, 어느 편에도 없는 코드, 다루는 곳이 실제 경로인지, 근거 표시가 맞는지
-5. 바꾼 원고를 커밋한다
-
-나무 규칙
+5. 바꾼 원고를 커밋한다"""
+            tree = f"""나무 규칙
 - `{TECHDOC_DIR}NN_이름.md` 한 편이 Notion [기술문서] 아래 페이지 하나다. `{TECHDOC_DIR}NN_이름/` 폴더 아래 글은 `NN_이름.md` 페이지의 하위 페이지다(폴더를 만들면 같은 이름 .md도 둔다)
 - 파일 이름 앞 번호가 차례다(00, 01, …, 사이에 끼울 때는 03a). 편 수와 깊이 제한은 없다
 - 제목은 각 글의 첫 `# ` 줄이다(Notion 페이지 제목이 된다)
 
-머리 주석(편마다 맨 위. 노션에는 나가지 않는다)
+"""
+            where = f"`{TECHDOC_DIR}`"
+            state = f"""
+
+지금 원고(서기실이 센 것)
+- 읽은 커밋 뒤 다루는 코드가 바뀐 편: {e.get('changed') or '(없음)'}
+- 머리 주석을 읽지 못한 편: {e.get('unknown') or '(없음)'}
+- 있는 편: {e.get('tree') or '(없음 — 처음 쓴다)'}"""
+        body = f"""{what}
+
+{_rules_block("techdoc", repo)}
+
+{order}
+
+{tree}머리 주석(편마다 맨 위. 노션에는 나가지 않는다)
 {MANUSCRIPT_HEAD}
 
 쓰는 법(기준은 위 「원고 쓰는 기준」)
@@ -623,13 +684,9 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
 - 코드에서 지금 상태를, docs/와 log/에서 까닭을 본다. 둘 다 본다. 코드 전체를 읽어도 된다. 코드와 다르게 쓰지 않는다
 - 근거는 근거 표시로만 단다: `[code:경로]` `[c:해시]` `[log:파일]` `[docs:파일]`. 노션 판에서는 떼어지고 git 원고에만 남는다. 합치기 전에 근거 확인기가 그 경로, 커밋이 있는지 본다
 - 비밀값, 토큰, 내부 주소는 쓰지 않는다
-- 고칠 곳은 `{TECHDOC_DIR}`뿐이다
-- 커밋 메시지: CLAUDE.md 「커밋 메시지」 꼴(예: `docs: 기술문서 원고를 지금 코드에 맞춤`)
-
-지금 원고(서기실이 센 것)
-- 읽은 커밋 뒤 다루는 코드가 바뀐 편: {e.get('changed') or '(없음)'}
-- 머리 주석을 읽지 못한 편: {e.get('unknown') or '(없음)'}
-- 있는 편: {e.get('tree') or '(없음 — 처음 쓴다)'}""" + (f"\n\n덧붙인 요청(사람이 관리자를 거쳐 넘긴 것)\n{e['note']}" if e.get("note") else "")
+- 고칠 곳은 {where}뿐이다
+- 커밋 메시지: CLAUDE.md 「커밋 메시지」 꼴(예: `docs: 기술문서 원고를 지금 코드에 맞춤`){state}""" + (
+            f"\n\n덧붙인 요청(사람이 관리자를 거쳐 넘긴 것)\n{e['note']}" if e.get("note") else "")
     else:
         raise ValueError(task)
     return head + body + "\n" + COMMON
@@ -655,7 +712,8 @@ async def _record(engine: Any, project: str, name: str, task: str, topic: str | 
 
 async def start(m: Any, engine: Any, project: str, task: str, topic: str | None = None, note: str | None = None,
                 publishers: dict[str, Any] | None = None) -> dict[str, Any]:
-    """서기 일을 worktree 세션으로 띄운다(handoff.spawn_new). 포트폴리오는 편(topic)이 있으면 그 편만, 없으면 폴더 통째로(11-15).
+    """서기 일을 worktree 세션으로 띄운다(handoff.spawn_new). 편이 있는 일(PIECE_TASKS: 포트폴리오, 11-19부터 기술문서)은
+    편(topic)이 있으면 그 편만, 없으면 원고 폴더 통째로(11-15). 편은 main의 원고 폴더에 있는 것만 받는다.
     기술문서 쓰기(techdoc, 11-15)는 게시기 원고 폴더(src)가 notion/인 프로젝트만 — publishers로 본다. note는 덧붙인 요청.
     문서 고치기(docfix, D2)는 고칠 목록이 있어야 한다 — topic에 문서 점검 결과 이름(log/doccheck_*.md) 또는 note에 물어보기 답."""
     from bridge import scribe as sc
@@ -680,25 +738,27 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
         raise Refused("이 프로젝트의 저장소를 찾지 못했습니다")
     tp = None
     tps: list[dict[str, Any]] = []
-    if task == "portfolio":
-        if not has_portfolio(repo):
-            raise Refused(f"이 저장소에는 {PORTFOLIO_DIR} 폴더가 없습니다. 포트폴리오를 쓰는 프로젝트가 아닙니다")
-        tps = topics(repo)
-        if topic:
-            tp = next((t for t in tps if t["slug"] == topic), None)
-            if tp is None:
-                raise Refused(f"포트폴리오 편을 찾지 못했습니다({topic}). main의 {PORTFOLIO_DIR}에 있는 편만 고쳐 쓸 수 있습니다")
+    if task == "portfolio" and not has_portfolio(repo):
+        raise Refused(f"이 저장소에는 {PORTFOLIO_DIR} 폴더가 없습니다. 포트폴리오를 쓰는 프로젝트가 아닙니다")
     if task == "techdoc":
         pub = (publishers or {}).get(project)
         if pub is None or getattr(pub, "src", "docs/") != TECHDOC_DIR:
             raise Refused(f"이 프로젝트는 기술문서 원고 폴더가 {TECHDOC_DIR}이 아닙니다(config/notion.toml src). 기술문서 쓰기를 시킬 수 없습니다")
-    if task in ("techdoc", "portfolio"):
+    spec = PIECE_TASKS.get(task)
+    if spec is not None:
+        # 편이 있는 일: 편은 main의 원고 폴더에 있는 것만. 없는 편, 원고 폴더 밖 경로(「..」, 다른 폴더)는 목록에 없어 거절된다
+        tps = topics(repo, task)
+        if topic:
+            tp = next((t for t in tps if t["slug"] == topic), None)
+            if tp is None:
+                form = "" if topic_ok(task, topic) else f". 편 이름은 {spec['dir']} 아래 경로에서 .md를 뗀 것입니다(소문자, 숫자, 밑줄)"
+                raise Refused(f"{spec['label']}을 찾지 못했습니다({topic}). main의 {spec['dir']}에 있는 편만 고쳐 쓸 수 있습니다{form}")
         note = (note or "").strip()[:NOTE_MAX]          # 덧붙인 요청(목차 결정 등 — 사람이 관리자를 거쳐 넘긴 것)
     extra_files: list[str] = []
     if task == "later":
         # [한계로]에서 고른 편 파일도 맡는다(겹침 판단과 dispatch 기록)
         extra_files = sorted({x["piece"] for x in await inbox_new(engine, project) if x.get("piece")})
-    why = blocked(task, await open_tasks(engine, project), topic if task == "portfolio" else None, extra_files)
+    why = blocked(task, await open_tasks(engine, project), topic if spec is not None else None, extra_files)
     if why:
         raise Refused(why)
     if task == "docfix" and topic and not Path(repo, "log", topic).is_file():
@@ -716,13 +776,13 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
         extra["materials"] = str(mat)
         prompt = task_prompt(task, project, repo, extra)
     else:
-        if task == "portfolio":
-            extra["siblings"] = ", ".join(f"「{t['title']}」(`portfolio/{t['slug']}.md`)" for t in tps if t is not tp)
+        if spec is not None:
+            extra["siblings"] = ", ".join(f"「{t['title']}」(`{spec['dir']}{t['slug']}.md`)" for t in tps if t is not tp)
             extra["note"] = note or ""
             if tp is not None:
                 extra.update(slug=tp["slug"], title=tp["title"], covers=", ".join(f"`{c}`" for c in tp["covers"]),
                              commits="" if tp["commits"] is None else f"{tp['commits']}개")
-        if task == "techdoc":
+        if task == "techdoc" and tp is None:
             from bridge import manuscript as ms
             pcs = ms.pieces(repo, TECHDOC_DIR, "HEAD")
             extra.update(changed=", ".join(f"`{p['path']}`({p['commits']}개)" for p in pcs if p["commits"]),
@@ -741,7 +801,7 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
     await _record(engine, project, name, task, tp["slug"] if tp else None, res, extra_files)
     if task == "later" and res.get("session_id"):
         # 어디까지 봤나 — 이 세션이 합쳐지면 다음 정리의 기준점이 된다(later_since)
-        await m._act(res["session_id"], LATER_ACT, res.get("pid"), True, f"{now.isoformat()} 뺄 줄 {len(rows)}개 쓸 줄 {len(inbox)}개")
+        await m._act(res["session_id"], LATER_ACT, res.get("pid"), True, f"{now.isoformat()} 쓸 줄 {len(inbox)}개")
         # 받은 할 일은 이 세션이 가져간다 — 합쳐지면 "옮김", 버려지면 다시 "새로"(상태는 계산, _INBOX_STATE)
         await _inbox_take(engine, [x["id"] for x in inbox], res["session_id"])
     return {"task": task, "project": project, "topic": tp["slug"] if tp else None, **{k: res.get(k) for k in ("tmux", "cc_session_id", "worktree", "note", "injected")}}

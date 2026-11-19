@@ -11,8 +11,24 @@ import { createPostitBlock } from './postit.js';
 // 기술문서 쓰기(techdoc, 11-15)는 원고 폴더가 notion/인 프로젝트만(서버가 pj.techdoc을 줄 때만 보인다)
 export const ORDER = ['doccheck', 'later', 'trim', 'techdoc'];
 const UNREAD = '읽지 못했습니다';
-// 기술문서 쓰기 줄에 [갱신]이 없는 까닭(11-19 S1). 서버가 편 하나를 고르는 주제(topic)를 포트폴리오 쓰기에서만 받는다(bridge/scribe_room.py)
-export const TECHDOC_NO_UPDATE = '포트폴리오 쓰기와 달리 [갱신]이 없습니다. 서버가 편 하나만 고쳐 쓰게 하는 길을 아직 포트폴리오 쓰기에만 두었습니다. 나중에 둡니다.';
+
+// 편이 있는 일(11-19 foreman-125, 서버 bridge/scribe_room.py PIECE_TASKS와 짝). 포트폴리오 쓰기와 기술문서 쓰기가 같은 [갱신]과
+// 편 목록 단추를 쓴다. tps는 서버가 준 편 목록({slug, title, commits, why, blocked}), title은 일 이름(「포트폴리오 쓰기」).
+// [갱신]은 코드가 가장 많이 바뀐 편 하나(막힌 편은 뺀다), 편 목록은 편마다 [고쳐 쓰기]. 막힌 편은 단추를 끄고 까닭을 호버로
+export function pieceButtons(task, title, tps, busy = false) {
+  const cnt = (t) => (t.commits === null || t.commits === undefined ? -1 : t.commits);
+  const cand = tps.filter((t) => !t.blocked && t.commits).sort((a, b) => cnt(b) - cnt(a))[0];
+  const upd = cand
+    ? `<button type="button" class="small" data-sc-task="${esc(task)}" data-topic="${esc(cand.slug)}" data-name="${esc(cand.title)}"${busy ? ' disabled' : ''} title="갱신 — 코드가 가장 많이 바뀐 편 「${esc(cand.title)}」(코드 바뀐 커밋 ${cand.commits}개)을 서기에게 고쳐 쓰게 합니다. 다른 편은 아래 목록에서 고릅니다.">갱신</button>`
+    : `<button type="button" class="small" disabled title="갱신 — 지금 고쳐 쓰게 할 편이 없습니다(코드가 바뀐 편이 없거나 모두 열려 있습니다).">갱신</button>`;
+  const rows = tps.map((t) => {
+    const n = t.commits === null || t.commits === undefined
+      ? `<span class="warn" title="${esc(t.why || '')}">셀 수 없음</span>` : t.commits ? `<span class="warn">코드 바뀐 커밋 ${t.commits}</span>` : '<span class="ok">그대로</span>';
+    return `<div class="sc-row"><div class="small"><b>${esc(t.title)}</b> <code>${esc(t.slug)}</code> ${n}${t.blocked ? ` <span class="muted">(${esc(t.blocked)})</span>` : ''}</div>
+        <button type="button" class="small" data-sc-task="${esc(task)}" data-topic="${esc(t.slug)}" data-name="${esc(t.title)}"${busy || t.blocked ? ' disabled' : ''} title="${esc(t.blocked ? `${title} — 지금은 시킬 수 없습니다. ${t.blocked}` : `${title} — 「${t.title}」을 서기에게 고쳐 쓰게 합니다.`)}">고쳐 쓰기</button></div>`;
+  }).join('');
+  return { upd, rows };
+}
 
 // 일마다 옆에 붙는 밀린 수 — 「알려진 한계 쓰기 — 13개 밀림」. 밀린 것이 없으면 이름만(빈 문자열)
 export function behindText(k, b) {
@@ -178,19 +194,9 @@ export function createScribe(store) {
     const tps = pj.topics || [];
     const pc = piecesText(pf);
     const state = pf.unread ? `<span class="bad">${esc(pf.unread)}</span>` : `<span class="${pc.cls}">${esc(pc.text)}</span>`;
-    const cnt = (t) => (t.commits === null || t.commits === undefined ? -1 : t.commits);
-    // [갱신] — 코드가 가장 많이 바뀐 편을 고쳐 쓰게 한다. 어느 편인지는 아래 목록에서 따로 고를 수도 있다
-    const cand = tps.filter((t) => !t.blocked && t.commits).sort((a, b) => cnt(b) - cnt(a))[0];
-    const upd = cand
-      ? `<button type="button" class="small" data-sc-task="portfolio" data-topic="${esc(cand.slug)}" data-name="${esc(cand.title)}"${busy ? ' disabled' : ''} title="갱신 — 코드가 가장 많이 바뀐 편 「${esc(cand.title)}」(코드 바뀐 커밋 ${cand.commits}개)을 서기에게 고쳐 쓰게 합니다. 다른 편은 아래 목록에서 고릅니다.">갱신</button>`
-      : `<button type="button" class="small" disabled title="갱신 — 지금 고쳐 쓰게 할 편이 없습니다(코드가 바뀐 편이 없거나 모두 열려 있습니다).">갱신</button>`;
+    // [갱신]은 코드가 가장 많이 바뀐 편을 고쳐 쓰게 한다. 어느 편인지는 아래 목록에서 따로 고를 수도 있다(기술문서 쓰기와 같은 pieceButtons)
+    const { upd, rows } = pieceButtons('portfolio', tasks.portfolio.title || '포트폴리오 쓰기', tps, busy);
     const whole = `<button type="button" class="small" data-sc-task="portfolio" data-name=""${busy || pf.blocked ? ' disabled' : ''} title="${esc(pf.blocked ? `포트폴리오 쓰기 — 지금은 시킬 수 없습니다. ${pf.blocked}` : '포트폴리오 쓰기 — 서기가 보여줄 화면이 있으면 화면마다, 없으면 결정마다 편 목록을 정해 portfolio/ 글을 새로 쓰거나 고쳐 씁니다.')}">시키기</button>`;
-    const rows = tps.map((t) => {
-      const n = t.commits === null || t.commits === undefined
-        ? `<span class="warn" title="${esc(t.why || '')}">셀 수 없음</span>` : t.commits ? `<span class="warn">코드 바뀐 커밋 ${t.commits}</span>` : '<span class="ok">그대로</span>';
-      return `<div class="sc-row"><div class="small"><b>${esc(t.title)}</b> <code>${esc(t.slug)}</code> ${n}${t.blocked ? ` <span class="muted">(${esc(t.blocked)})</span>` : ''}</div>
-        <button type="button" class="small" data-sc-task="portfolio" data-topic="${esc(t.slug)}" data-name="${esc(t.title)}"${busy || t.blocked ? ' disabled' : ''} title="${esc(t.blocked ? `포트폴리오 쓰기 — 지금은 시킬 수 없습니다. ${t.blocked}` : `포트폴리오 쓰기 — 「${t.title}」을 서기에게 고쳐 쓰게 합니다.`)}">고쳐 쓰기</button></div>`;
-    }).join('');
     return `<div class="sc-row"><div class="small" title="포트폴리오 쓰기 — 서기가 화면마다 한 편씩 portfolio/에 씁니다. 바깥 독자용이라 저장소 링크 없이 게시됩니다."><b>포트폴리오 쓰기</b> ${state}</div><div class="hand-btns">${upd}${whole}</div></div>
       <details class="hand"${keep(`scribe:${room}:topics`)}><summary class="small muted" title="글 목록 — 편마다 읽은 커밋 뒤 다루는 코드를 바꾼 커밋 수를 봅니다.">글 목록 ${tps.length}</summary>${rows || '<p class="small muted">아직 쓴 글이 없습니다.</p>'}</details>`;
   }
@@ -219,9 +225,15 @@ export function createScribe(store) {
       if (bt.text && (bt.cls === 'warn' || bt.cls === 'bad')) nBehind += 1;
       // 기술문서 쓰기는 일 설명 대신 지금 원고 상태(글 N편 가운데 코드가 바뀐 편 M, 마지막으로 합친 지 며칠)
       const sub = blocked[k] ? blocked[k] : k === 'techdoc' ? pj.techdoc.why : tasks[k].desc;
-      let extra = '';
-      // 11-19 사용자 결정 S1: 기술문서 쓰기에는 [갱신]을 지금 두지 않고 까닭만 한 줄(나중에 둔다, docs/TODO.md foreman-125)
-      if (k === 'techdoc') extra = `<div class="sc-row"><div class="small muted">${esc(TECHDOC_NO_UPDATE)}</div></div>`;
+      let extra = '', btns = go(k, '시키기', k === pick);
+      // 11-19 foreman-125 기술문서 쓰기도 포트폴리오 쓰기처럼 [갱신](코드가 가장 많이 바뀐 편 하나)과 펼치는 편 목록(편마다 [고쳐 쓰기]).
+      // [시키기]는 편 없이 통째로 쓰기 그대로
+      if (k === 'techdoc') {
+        const tps = pj.techdoc.topics || [];
+        const pb = pieceButtons('techdoc', tasks.techdoc.title, tps, busy);
+        btns = `<div class="hand-btns">${pb.upd}${btns}</div>`;
+        extra = `<details class="hand"${keep(`scribe:${room}:techdoc_topics`)}><summary class="small muted" title="편 목록 — 기술문서 원고 편마다 읽은 커밋 뒤 다루는 코드를 바꾼 커밋 수를 보고, 한 편만 골라 고쳐 쓰게 합니다.">편 목록 ${tps.length}</summary>${pb.rows || '<p class="small muted">아직 쓴 원고가 없습니다.</p>'}</details>`;
+      }
       if (k === 'doccheck' && pj.report) {          // 문서 점검 결과로 바로 고치기 — 찾기만 하고 끝나지 않게
         const r = pj.report;
         extra = r.fixed
@@ -234,7 +246,7 @@ export function createScribe(store) {
       const dup = k === 'techdoc' && !blocked[k] && !(behind[k] && behind[k].unread) && sub === pj.techdoc.why;
       const showBt = bt.text && !dup;
       return `<div class="sc-row${k === pick ? ' sc-pick' : ''}"><div class="small"><b>${esc(tasks[k].title)}</b>${showBt ? ` <span class="${bt.cls}"${bt.tip ? ` title="${esc(bt.tip)}"` : ''}>${esc(bt.text)}</span>` : ''} <span class="${dup && bt.text ? bt.cls : 'muted'}">${esc(sub)}</span></div>
-        ${go(k, '시키기', k === pick)}</div>${extra}`;
+        ${btns}</div>${extra}`;
     }).join('');
     // 11-15 받은 할 일 숫자 줄은 없앴다 — 아래 포스트잇이 그 목록이다(머리 탭 포스트잇과 같은 것)
     const inboxRow = '';

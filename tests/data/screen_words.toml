@@ -266,6 +266,13 @@ new = "(뺌, 포스트잇만 본다)"
 scope = "화면과 문서 인용"
 commit = "cc/foreman-4 11-19"
 
+# 11-19 foreman-125 기술문서 쓰기 줄에 [갱신]과 편 목록을 두고, [갱신]이 없다는 까닭 줄(TECHDOC_NO_UPDATE)을 뺌(cc/foreman-4)
+[[rename]]
+old = "서버가 편 하나만 고쳐 쓰게 하는 길을 아직 포트폴리오 쓰기에만 두었습니다"
+new = "(줄을 뺌. 기술문서 쓰기에도 [갱신]과 편 목록이 있다)"
+scope = "화면과 문서 인용"
+commit = "cc/foreman-4 11-19"
+
 [[rename]]
 old = "끝났다고 닫은 README 줄을 뺍니다"
 new = "(뺌, 서기는 [한계로] 보낸 줄을 쓰기만 한다)"

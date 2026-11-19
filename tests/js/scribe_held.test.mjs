@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { keepToggle, keepReset } from '../../bridge/static/js/render.js';
-import { createScribe, heldRows, TECHDOC_NO_UPDATE } from '../../bridge/static/js/scribe.js';
+import { createScribe, heldRows } from '../../bridge/static/js/scribe.js';
 
 globalThis.localStorage = (() => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) }; })();
 const TASKS = { doccheck: { title: '문서 점검', desc: 'd' } };
@@ -33,19 +33,30 @@ test('「할 일」을 접어 둬도 덮기 단추는 칸 밖 기술문서 게�
   assert.ok(list.includes('덮기 1(아래 기술문서 게시)'));
 });
 
-test('기술문서 쓰기 줄에는 [갱신] 대신 까닭 한 줄(11-19 S1)', async () => {
-  const h = await draw({ items: [], docs_pub: null, techdoc: { need: 1, due: true, why: '글 3편 가운데 코드가 바뀐 편 1' } });
+test('기술문서 쓰기 줄에도 포트폴리오처럼 [갱신]과 편 목록 단추(11-19 foreman-125)', async () => {
+  const h = await draw({ items: [], docs_pub: null, techdoc: null });
   const tasks = { ...TASKS, techdoc: { title: '기술문서 쓰기', desc: 't' } };
+  const topics = [
+    { slug: '00_intro', title: '들어가며', commits: 0, why: null, blocked: null },
+    { slug: '10_scribe/03_evidence', title: '근거 표시', commits: 4, why: null, blocked: '「기술문서 쓰기: 10_scribe/03_evidence」이 이미 열려 있습니다(세션 7). 합치거나 버린 뒤에 시켜 주세요' },
+    { slug: '10_scribe', title: '서기', commits: 2, why: null, blocked: null },
+    { slug: '20_x', title: '셀 수 없는 편', commits: null, why: '머리 주석이 없습니다', blocked: null }];
   keepReset();
   globalThis.fetch = async (u) => (u === '/api/scribe/todo'
-    ? { ok: true, json: async () => ({ tasks, projects: { infra: { items: [], open: [], blocked: {}, behind: {}, techdoc: { need: 1, due: true, why: '글 3편 가운데 코드가 바뀐 편 1' } } } }) }
+    ? { ok: true, json: async () => ({ tasks, projects: { infra: { items: [], open: [], blocked: {}, behind: {}, techdoc: { need: 3, due: true, why: '글 4편 가운데 코드가 바뀐 편 2', topics } } } }) }
     : { ok: true, json: async () => ({ enabled: true, docs: [], portfolio: {} }) });
   const sc = createScribe({ headers: () => ({}), touch() {} });
   sc.html('infra', 'I'); await settle();
   const h2 = sc.html('infra', 'I');
-  assert.ok(!h.includes(TECHDOC_NO_UPDATE), '기술문서 쓰기 줄이 없으면 까닭도 없다');
-  assert.ok(h2.includes(TECHDOC_NO_UPDATE));
-  assert.ok(!/data-sc-task="techdoc"[^>]*>갱신</.test(h2), '기술문서 쓰기에는 [갱신] 단추가 없다(포스트잇의 [갱신]은 다른 단추)');
+  assert.ok(!h.includes('data-sc-task="techdoc"'), '기술문서 쓰기 줄이 없으면 단추도 없다');
+  assert.ok(!h2.includes('[갱신]이 없습니다'), '옛 까닭 줄(TECHDOC_NO_UPDATE)은 지웠다');
+  // [갱신]은 막히지 않은 편 가운데 코드가 가장 많이 바뀐 편(근거 표시는 열려 있어 빠지고 「서기」)
+  assert.match(h2, /data-sc-task="techdoc" data-topic="10_scribe" data-name="서기"[^>]*title="갱신 — 코드가 가장 많이 바뀐 편 「서기」\(코드 바뀐 커밋 2개\)[^"]*">갱신</);
+  assert.match(h2, /data-sc-task="techdoc"[^>]*title="기술문서 쓰기 — 서기 세션을[^"]*">시키기</);     // 편 없이 통째로는 그대로
+  assert.match(h2, /<summary[^>]*>편 목록 4<\/summary>/);
+  for (const s of ['00_intro', '10_scribe', '20_x']) assert.match(h2, new RegExp(`data-sc-task="techdoc" data-topic="${s}"[^>]*title="기술문서 쓰기 — 「[^」]+」을 서기에게 고쳐 쓰게 합니다.">고쳐 쓰기<`), s);
+  assert.match(h2, /data-topic="10_scribe\/03_evidence"[^>]* disabled title="기술문서 쓰기 — 지금은 시킬 수 없습니다. 「기술문서 쓰기: 10_scribe\/03_evidence」이 이미 열려/);
+  assert.ok(h2.includes('셀 수 없음') && h2.includes('그대로'));
 });
 
 test('멈춤 N인데 덮을 편이 없거나 목록을 못 읽으면 그렇다고 쓴다', () => {

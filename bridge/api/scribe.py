@@ -20,7 +20,9 @@ _cache: dict[str, Any] = {"at": 0.0, "data": None}
 class StartIn(BaseModel):
     project: str = Field(min_length=1, max_length=64)
     task: str = Field(min_length=1, max_length=16)
-    topic: str | None = Field(default=None, max_length=40)     # 포트폴리오 쓰기의 편(portfolio/<slug>.md, 없으면 폴더 통째로) · 문서 고치기의 점검 결과 이름
+    # 편이 있는 일의 편(portfolio/<slug>.md, notion/<하위 폴더>/<slug>.md에서 원고 폴더와 .md를 뗀 것. 없으면 폴더 통째로),
+    # 문서 고치기의 점검 결과 이름. 11-19 기술문서 편이 하위 폴더 경로라 40자에서 sr.TOPIC_MAX로 늘렸다. 꼴은 start가 본다
+    topic: str | None = Field(default=None, max_length=sr.TOPIC_MAX)
     note: str | None = Field(default=None, max_length=sr.NOTE_MAX)   # 문서 고치기 — 물어보기 답(고칠 목록) · 기술문서 쓰기 — 덧붙인 요청
 
 
