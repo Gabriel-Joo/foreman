@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/bus.py, bridge/mask.py, bridge/ingest_health.py, bridge/api/ws.py, bridge/api/debug.py, bridge/static/debug.html, tests/test_secret_files.py
-읽은 커밋: 5e0f7c5
+읽은 커밋: 8593516
 -->
 
 # 적재와 내보내기
@@ -92,17 +92,17 @@ DB에 넣다 실패하면 쓰는 작업은 오류의 종류를 가른다. 다시
 
 CC 세션의 기록에는 비밀값이 섞일 수 있다. 사람이 프롬프트에 토큰을 붙여넣기도 하고, 모델이 `.env` 파일을 읽거나 비밀번호가 든 명령을 치기도 한다. 이것이 DB에 그대로 들어가면 DB 백업, 화면, 텔레그램 알림, 노션 원고까지 번진다. 그래서 `bridge/mask.py`의 `Masker`가 DB에 넣기 전에 문자열을 훑어 가린다 [code:bridge/mask.py].
 
-가리는 대상은 적재되는 글 거의 전부다. 사람의 프롬프트, assistant의 글, 도구 호출의 입력(문자열마다 2,000자로 자른 뒤), 작업 중에 보낸 입력(20,000자까지), 도구 오류의 앞 300자, 세션 제목, 서브에이전트 설명, 승인 판정의 대상, 세션에 넣은 글이 모두 지난다 [code:bridge/assembler.py] [code:bridge/approvals.py] [code:bridge/api/sessions.py]. 가리기는 세 겹이고, 이 차례로 돈다.
+가리는 대상은 적재되는 글 거의 전부다. 사람의 프롬프트, assistant의 글, 도구 호출의 입력(가린 뒤 문자열마다 2,000자로 자른다), 작업 중에 보낸 입력(가린 뒤 20,000자까지), 도구 오류(가린 뒤 앞 300자), 세션 제목, 서브에이전트 설명, 승인 판정의 대상, 세션에 넣은 글이 모두 지난다 [code:bridge/assembler.py] [code:bridge/approvals.py] [code:bridge/api/sessions.py]. 가리기는 세 겹이고, 이 차례로 돈다.
 
 ### 1. 정확한 값
 
-브리지가 뜰 때 저장소의 비밀값 파일을 골라 읽는다. 고르는 대상은 저장소 맨 위에서 이름이 `.env`로 시작하는 파일 가운데 예시 꼬리(`.example`, `.sample`, `.template`, `.dist`, 값 없이 키 이름만 적어 저장소에 올리는 견본 파일)가 붙은 것을 뺀 전부, 그리고 설정 파일이 경로를 가리키는 토큰 파일(`config/notify.toml`의 텔레그램 파일, `config/tokens.toml`의 프로젝트 토큰 파일)이다. 설정에서 경로를 바꾸면 그 경로를 따라간다. 지금(5e0f7c5) 고르는 파일은 `.env.db`, `.env.bridge`, `.env.telegram`, `.env.notion`, `.env.project_tokens` 다섯이다 [code:bridge/mask.py] [code:config/tokens.toml] [code:config/notify.toml]. 그 파일들에서 키 이름에 `PASSWORD`, `PASSWD`, `TOKEN`, `SECRET`, `KEY` 가운데 하나가 든 줄의 값을 모은다. 그 값이 글 어디에든 나오면 `«masked:키이름»`으로 바꾼다. 예를 들어 `.env`에 `DB_PASSWORD=예시값가짜123`이 있었다면, 어떤 글에 `예시값가짜123`이 나와도 `«masked:DB_PASSWORD»`가 된다. 키 이름을 남기는 까닭은 나중에 기록을 읽는 사람이 무엇이 있었는지는 알 수 있게 하려는 것이다 [code:bridge/mask.py].
+브리지가 뜰 때 저장소의 비밀값 파일을 골라 읽는다. 고르는 대상은 저장소 맨 위에서 이름이 `.env`로 시작하는 파일 가운데 예시 꼬리(`.example`, `.sample`, `.template`, `.dist`, 값 없이 키 이름만 적어 저장소에 올리는 견본 파일)가 붙은 것을 뺀 전부, 그리고 설정 파일이 경로를 가리키는 토큰 파일(`config/notify.toml`의 텔레그램 파일, `config/tokens.toml`의 프로젝트 토큰 파일)이다. 설정에서 경로를 바꾸면 그 경로를 따라간다. 지금 고르는 파일은 `.env.db`, `.env.bridge`, `.env.telegram`, `.env.notion`, `.env.project_tokens` 다섯이다 [code:bridge/mask.py] [code:config/tokens.toml] [code:config/notify.toml]. 그 파일들에서 키 이름에 `PASSWORD`, `PASSWD`, `TOKEN`, `SECRET`, `KEY` 가운데 하나가 든 줄의 값을 모은다. 그 값이 글 어디에든 나오면 `«masked:키이름»`으로 바꾼다. 예를 들어 `.env`에 `DB_PASSWORD=예시값가짜123`이 있었다면, 어떤 글에 `예시값가짜123`이 나와도 `«masked:DB_PASSWORD»`가 된다. 키 이름을 남기는 까닭은 나중에 기록을 읽는 사람이 무엇이 있었는지는 알 수 있게 하려는 것이다 [code:bridge/mask.py].
 
 값을 고르는 조건이 몇 있다. 8자보다 짧은 값, 숫자만 있는 값(포트 번호 같은 것), `true`와 `false`는 뺀다. 짧거나 흔한 값까지 가리면 평범한 글이 망가진다. 긴 값부터 바꾼다. 한 값이 다른 값 안에 들어 있을 때 짧은 것이 먼저 바뀌어 긴 것의 나머지가 드러나는 것을 막는다 [code:bridge/mask.py].
 
 처음에는 키 이름을 보지 않고 비밀 파일의 값을 모두 가렸다. 그랬더니 DB 사용자 이름처럼 비밀이 아닌 값까지 가려져, 평범한 설정 이야기가 `«masked»` 투성이가 되었다. 그래서 키 이름이 비밀인 줄만 고르도록 좁혔다 [log:stage2_transcript_result.md] [c:5650cca].
 
-읽을 파일도 11-17 전에는 DB, 브리지, 텔레그램용 셋을 손으로 적어 두었다. 그 사이 노션 토큰 파일과 프로젝트 토큰 파일이 새로 생겼는데 목록에 들지 않아, 그 두 파일의 값은 정확한 값 가리기에서 빠져 있었다. 손 목록은 새 파일이 생길 때마다 또 빠지므로 위처럼 이름의 꼴로 고르는 방식으로 바꿨다. 파일을 넓게 골라도 비밀이 아닌 키는 키 이름 판정에서 걸러진다. 비밀값 파일이 가리기 대상에서 빠지면 깨지는 시험이 이 약속을 지킨다 [c:5e3a51d] [code:tests/test_secret_files.py] [log:foreman-4_mask_env_files_20261117.md].
+읽을 파일도 처음에는 DB, 브리지, 텔레그램용 셋을 손으로 적어 두었다. 그 사이 노션 토큰 파일과 프로젝트 토큰 파일이 새로 생겼는데 목록에 들지 않아, 그 두 파일의 값은 정확한 값 가리기에서 빠져 있었다. 손 목록은 새 파일이 생길 때마다 또 빠지므로 위처럼 이름의 꼴로 고르는 방식으로 바꿨다. 파일을 넓게 골라도 비밀이 아닌 키는 키 이름 판정에서 걸러진다. 비밀값 파일이 가리기 대상에서 빠지면 깨지는 시험이 이 약속을 지킨다 [c:5e3a51d] [code:tests/test_secret_files.py] [log:foreman-4_mask_env_files_20261117.md].
 
 ### 2. 알려진 형식
 
@@ -115,7 +115,7 @@ CC 세션의 기록에는 비밀값이 섞일 수 있다. 사람이 프롬프트
 | Anthropic 키 | `sk-ant-`로 시작하고 20자 넘게 이어짐 | `«masked:anthropic-key»` |
 | GitHub 토큰 | `ghp_`, `gho_`, `ghs_`, `ghu_` 뒤 30자 넘게, 또는 `github_pat_` 뒤 40자 넘게 | `«masked:github-token»` |
 | AWS 접근 키 | `AKIA` 뒤 대문자와 숫자 16자 | `«masked:aws-key»` |
-| Notion 통합 토큰 | 지금 꼴 `ntn_`, 옛 꼴 `secret_` 뒤 영숫자 40자 넘게(40자 넘게라서 `secret_key` 같은 낱말에는 걸리지 않는다). 11-17에 더했다 [c:5e3a51d] | `«masked:notion-token»` |
+| Notion 통합 토큰 | 지금 꼴 `ntn_`, 옛 꼴 `secret_` 뒤 영숫자 40자 넘게(40자 넘게라서 `secret_key` 같은 낱말에는 걸리지 않는다). 노션 토큰 파일을 가리기에 넣을 때 함께 더했다 [c:5e3a51d] | `«masked:notion-token»` |
 | Bearer 헤더 | `Bearer` 뒤 16자 넘는 토큰 | `Bearer «masked»` |
 
 [code:bridge/mask.py]
@@ -176,7 +176,7 @@ FOREMAN은 조용한 고장을 잡으려고 만들었다. 그런데 FOREMAN 자�
 
 첫째, 텔레그램이다. FOREMAN 프로젝트의 알림 머리말을 붙여 바로 보낸다. 묶음 알림이나 턴 종료 판정을 거치지 않는 직접 보내기다 [code:bridge/ingest_health.py]. 알림이 어떻게 걸러지고 보내지는지는 「→ 11 알림」이 다룬다.
 
-둘째, 화면 머리의 띠다. 모니터의 상태(`snapshot()`)가 `/api/dashboard`의 `ingest` 칸으로 나가고, 상태가 바뀌면 그 캐시를 비워 화면이 바로 새 값을 받게 한다 [code:bridge/api/dashboard.py]. 픽셀 오피스 화면 머리에는 빨간 `⚠ 기록 못 읽는 세션 N`이나 `⚠ 화면 갱신 멈춤`이 뜨고, 마우스를 올리면 어느 세션이 몇 분째 몇 번 실패했는지와 오류가 보인다 [code:bridge/static/js/office.js]. 클래식 화면 머리에는 `⚠ 적재 막힘 N개 세션`, `⚠ 와처 멈춤`, 또는 노란 `적재 중 버린 줄 있음(24시간)`이 맨 앞에 뜬다 [code:bridge/static/js/render.js]. 맨 앞에 두는 까닭은 이 화면이 보여 주는 기록 자체가 멈췄다는 뜻이라, 화면의 다른 모든 숫자를 믿을 수 없게 되기 때문이다. 버린 줄 표시는 최근 24시간 것 가운데 5개까지만 들고 간다.
+둘째, 화면 머리의 띠다. 모니터의 상태(`snapshot()`)가 `/api/dashboard`의 `ingest` 칸으로 나가고, 상태가 바뀌면 그 캐시를 비워 화면이 바로 새 값을 받게 한다 [code:bridge/api/dashboard.py]. 픽셀 오피스 화면 머리에는 빨간 `⚠ 기록 못 읽는 세션 N`이나 `⚠ 화면 갱신 멈춤`이 뜨고, 마우스를 올리면 어느 세션이 몇 분째 몇 번 실패했는지와 오류가 보인다 [code:bridge/static/js/office.js]. 클래식 화면 머리에는 `⚠ 적재 막힘 N개 세션 · M분`(M은 가장 오래 막힌 세션의 분), `⚠ 와처 멈춤`, 또는 노란 `적재 중 버린 줄 있음(24시간)`이 맨 앞에 뜬다 [code:bridge/static/js/render.js]. 맨 앞에 두는 까닭은 이 화면이 보여 주는 기록 자체가 멈췄다는 뜻이라, 화면의 다른 모든 숫자를 믿을 수 없게 되기 때문이다. 버린 줄 표시는 최근 24시간 것 가운데 5개까지만 들고 간다.
 
 셋째, 자동 기상이다. 결정적 오류로 막힌 경우만 교장에게 "계획할 거리"로 넘긴다. DB 끊김과 시간 초과는 기다리면 돌아오므로 넘기지 않는다 [code:bridge/ingest_health.py] [code:bridge/main.py]. 넘긴 뒤의 일은 「→ 진행 중인 일과 자동 기상」이 다룬다.
 
