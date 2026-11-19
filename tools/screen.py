@@ -249,7 +249,8 @@ async def record(p: Page, a: argparse.Namespace, out: Path, report: dict) -> int
     bad += len(p.errors)
     gif = out / f"{name}.gif"
     r = subprocess.run(["python3", "-I", str(REPO / "tools" / "frames_to_gif.py"), str(frames), str(gif), "--fps", str(a.fps),
-                        "--colors", str(a.colors), "--every", str(a.every)] + (["--width", str(a.gif_width)] if a.gif_width else []),
+                        "--colors", str(a.colors), "--every", str(a.every)] + (["--width", str(a.gif_width)] if a.gif_width else [])
+                       + (["--delta", "--delta-threshold", str(a.delta_threshold)] if a.delta else []),
                        capture_output=True, text=True)
     print((r.stdout or r.stderr).strip())
     made = [gif] if r.returncode == 0 else []
@@ -465,6 +466,8 @@ def main() -> None:
     ap.add_argument("--gif-width", type=int, default=0)
     ap.add_argument("--colors", type=int, default=128, help="GIF 색 수 — 11-06 V2 비교: 64 이하는 작은 소품 색이 빠진다")
     ap.add_argument("--every", type=int, default=1, help="GIF에 n장마다 한 장")
+    ap.add_argument("--delta", action="store_true", help="GIF에 바뀐 곳만 담기(돌바닥처럼 잡음이 많은 테마용, tools/frames_to_gif.py)")
+    ap.add_argument("--delta-threshold", type=int, default=120, help="--delta 문턱(글씨가 바뀌는 장면은 24쯤)")
     ap.add_argument("--webm", action="store_true", help="WebM도(5MB 넘는 긴 장면용)")
     ap.add_argument("--max-mb", type=float, default=5.0)
     sys.exit(asyncio.run(run(ap.parse_args())))

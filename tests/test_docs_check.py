@@ -111,6 +111,21 @@ def test_cover_skips_generated_readme(foreman):
     assert any("덮기 밖: apps/README.md" in x for x in w)
 
 
+def test_cover_skips_readme_header_file(foreman):
+    """`[readme] header_file`이 가리키는 파일은 저장소가 not_code에 적지 않아도 덮기 대상이 아니다(11-19). 다른 `.md`는 그대로 대상."""
+    put(foreman, "top/readme_header.md", "[배지](x)\n")
+    put(foreman, "top/other.md", "다른 글\n")
+    put(foreman, ".foreman/docs.toml", '[readme]\ntitle = "가짜"\n')
+    commit(foreman)
+    w = whats(run(foreman))
+    assert any("덮기 밖: top/readme_header.md" in x for x in w), w                       # header_file을 안 적으면 대상
+    put(foreman, ".foreman/docs.toml", '[readme]\ntitle = "가짜"\nheader_file = "top/readme_header.md"\n')
+    commit(foreman)
+    w = whats(run(foreman))
+    assert not any("readme_header.md" in x and "덮기 밖" in x for x in w)                     # 적으면 빠짐
+    assert any("덮기 밖: top/other.md" in x for x in w)
+
+
 def test_foreman_errors(foreman):
     put(foreman, "bridge/c.py", "새 파일\n")
     put(foreman, "notion/01_a.md", (foreman / "notion/01_a.md").read_text(encoding="utf-8")

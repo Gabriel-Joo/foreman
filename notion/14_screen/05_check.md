@@ -1,5 +1,5 @@
 <!--
-다루는 곳: tools/, bridge/static/js/demo.js, bridge/static/demo/, tests/screen_words.py, tests/test_screen_words.py, tests/data/screen_words.toml, tests/js/merge_wait.test.mjs, tests/js/merge_wait_manager.test.mjs, tests/js/overhead_marks.test.mjs, tests/test_merge_wait.py, tests/test_merge_wait_manager.py, tests/test_merge_wait_off_remind.py, tests/test_overhead_marks.py
+다루는 곳: tools/, bridge/static/js/demo.js, bridge/static/demo/, tests/screen_words.py, tests/test_screen_words.py, tests/data/screen_words.toml, tests/data/gif_probe.py, tests/test_frames_to_gif.py, tests/js/merge_wait.test.mjs, tests/js/merge_wait_manager.test.mjs, tests/js/overhead_marks.test.mjs, tests/test_merge_wait.py, tests/test_merge_wait_manager.py, tests/test_merge_wait_off_remind.py, tests/test_overhead_marks.py
 읽은 커밋: fb7121b
 -->
 # 화면 점검과 시연
@@ -204,6 +204,8 @@ flowchart LR
 같은 영상의 WebM은 0.26MB였다. 64색 이하로 내리면 작은 소품 색이 빠졌다. 초록 상자가 회색이 되고 서버 랙의 불빛이 사라졌다. 폭을 640으로 줄이면 크기는 1.25MB로 줄지만 한글 이름표가 깨졌다. 그래서 기본값은 128색, 원래 크기다. 녹화기의 `--colors` 도움말에도 "64 이하는 작은 소품 색이 빠진다"를 적어 두었다 [code:tools/screen.py].
 
 카메라가 자리를 잡은 뒤 찍으면 화면 전체가 바뀌는 프레임이 없어 GIF가 더 작아진다. 녹화기에 `--lead`가 있는 또 하나의 까닭이다. 마법학교 테마는 촛불과 불꽃이 매 프레임 바뀌어 무겁다. 같은 7초 방 전체가 4.38MB였다 [log:stage13_demo_capture_result.md].
+
+돌바닥 무늬가 있는 마법학교 테마는 JPEG 잡음이 점마다 달라서 같은 설정에서도 오피스보다 GIF가 두 배쯤 커진다. 이럴 때를 위해 `--delta`를 두었다. 지금 보이는 화면과 거의 같은 점(빨강, 초록, 파랑 차의 합이 문턱 아래인 점)은 투명으로 비워 두고 바뀐 곳만 담는다. 문턱은 `--delta-threshold`로 고르고 기본은 120이며, 글씨가 바뀌는 장면은 잔상이 남아 24쯤으로 낮춘다. 투명 칸 하나를 쓰므로 색은 최대 255다. 옵션을 주지 않으면 위 네 가지만 지킨 예전 그대로 돈다 [code:tools/frames_to_gif.py] [code:tools/screen.py].
 
 ### 3-4. 녹화가 드러낸 것
 

@@ -375,7 +375,10 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
         # `not_code`에 드는 파일(사진, 잠금 파일 같은 것)은 덮을 대상이 아니다. 확장자 `.md`만은 뺀다. 문서 묶음 밖 글(CLAUDE.md,
         # README.md, 운영 절차서)은 코드는 아니어도 어느 편이 다루는지 보는 대상으로 남겨 둔다(판단은 log/foreman-6_cover_not_code_*.md)
         # 생성물(`[readme]`이 켜진 저장소의 README.md)은 원고에서 만들어지는 글이라 어느 편도 다루지 않는다. 저장소가 not_code에 적지 않아도 뺀다
-        skip = [p for p in cfg.not_code if p != ".md"] + (list(readme.GENERATED) if cfg.readme is not None else [])
+        # `[readme] header_file`이 가리키는 파일은 README 머리글로 그대로 들어가는 원본이라 같은 까닭으로 뺀다(11-19, 사람이 쓰는 글이라 GENERATED에는 없다)
+        skip = [p for p in cfg.not_code if p != ".md"]
+        if cfg.readme is not None:
+            skip += list(readme.GENERATED) + ([cfg.readme["header_file"]] if cfg.readme.get("header_file") else [])
         target_files = [f for f in files if not f.startswith(folders) and not not_code_match(f, skip)]
         covered: set[str] = set()
         for k in ck.cover_by:
