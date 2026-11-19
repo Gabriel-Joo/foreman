@@ -29,8 +29,8 @@ TASKS = {
     "doccheck": {"title": "문서 점검", "desc": "코드와 문서(README · docs · CLAUDE.md)가 안 맞는 곳을 찾아 보고합니다. 고치지는 않습니다."},
     "trim": {"title": "CLAUDE.md 정리", "desc": "꼭 지킬 것만 짧게 남기고 상세는 docs로 옮겨 가리킵니다."},
     # 11-17 문서 정리 E — 포스트잇 [한계로]로 보낸 줄을 고른 편의 「알려진 한계」 절에 까닭과 함께 쓴다(키는 later 그대로).
-    # TODO 항목에서 보낸 것은 같은 커밋에서 docs/TODO.md 항목을 지운다. [갱신]에서 끝났다고 닫은 README 줄 빼기는 그대로
-    "later": {"title": "알려진 한계 쓰기", "desc": "포스트잇에서 [한계로] 보낸 것을 고른 편의 「알려진 한계」에 까닭과 함께 쓰고, [갱신]에서 끝났다고 닫은 README 줄을 뺍니다."},
+    # TODO 항목에서 보낸 것은 같은 커밋에서 docs/TODO.md 항목을 지운다. 11-19 README 한계 줄 빼기는 없앴다(README가 생성물)
+    "later": {"title": "알려진 한계 쓰기", "desc": "포스트잇에서 [한계로] 보낸 것을 고른 편의 「알려진 한계」에 까닭과 함께 씁니다."},
     # 메뉴에는 없다(화면 ORDER 밖) — 물어보기 답 · 문서 점검 결과의 [바로 고치기]에서만 뜬다(D2, 11-11)
     "docfix": {"title": "문서 고치기", "desc": "물어보기 답이나 문서 점검 결과에 적힌 어긋남을 고칩니다."},
     # 11-15 화면 축 — 정해진 주제 목록(config/portfolio.toml)을 없앴다. 편 목록은 portfolio/ 폴더 파일과 머리 주석이 정한다
@@ -190,15 +190,15 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
             if lines > CLAUDE_MD_MAX:
                 items.append({"kind": "trim", "title": f"CLAUDE.md 정리: {lines}줄", "why": f"{CLAUDE_MD_MAX}줄을 넘었습니다"})
         # 11-15 포스트잇 — 열린 것은 할 일 목록 그 자체(서기 몫이 아니다). 서기 몫은 [한계로] 보내 아직 안 쓴 줄 ·
-        # [갱신]에서 끝났다고 닫은 README 한계 줄뿐. 쌓이면 서기 말풍선(bridge/postit.py nudge_of — 21시 묶음에는 넣지 않는다)
+        # 11-19 전에는 [갱신]에서 끝났다고 닫은 README 한계 줄도 셌다(README가 생성물이라 뺐다). 쌓이면 서기 말풍선(bridge/postit.py nudge_of — 21시 묶음에는 넣지 않는다)
         from bridge import postit as pi
-        pst = await pi.summary(engine, name, await later_since(engine, name))
+        pst = await pi.summary(engine, name)
         nudge = pst["nudge"]
-        lim, drop = pst["limit_pending"], pst["readme_drop"]
-        behind["later"] = {"n": lim + drop, "stale": bool(lim or drop), "unit": "줄", "why": f"쓸 줄 {lim}, 뺄 줄 {drop}"}
-        if lim or drop:
-            items.append({"kind": "later", "title": f"알려진 한계 쓰기: 쓸 줄 {lim}, 뺄 줄 {drop}",
-                          "why": "포스트잇 [한계로] 보낸 것과 [갱신]에서 끝났다고 닫은 README 줄입니다. 쓰는 것은 서기 세션입니다"})
+        lim = pst["limit_pending"]
+        behind["later"] = {"n": lim, "stale": bool(lim), "unit": "줄", "why": f"쓸 줄 {lim}"}
+        if lim:
+            items.append({"kind": "later", "title": f"알려진 한계 쓰기: 쓸 줄 {lim}",
+                          "why": "포스트잇 [한계로] 보낸 것입니다. 쓰는 것은 서기 세션입니다"})
         if pst["check"] and pst["check"]["state"] == "failed":
             items.append({"kind": "postit", "title": f"포스트잇 [갱신] 실패: 조사 세션 {pst['check']['session_id']}",
                           "why": pst["check"]["detail"] or "결과 없이 끝났습니다"})
@@ -287,9 +287,9 @@ PLAN_TASK = "plan"             # 계획 [시작] · 직접 띄우기로 일 종�
 # 동시에 시키기(11-06 판단, 11-15 상한을 뺐다) — 막는 것은 둘: 같은 일 · 같은 파일. 개수 상한은 두지 않는다(11-15 사용자).
 # worktree는 서로를 못 봐서 충돌은 합칠 때 난다 — 같은 파일을 고치는 두 일이 열려 있으면 뒤의 합치기가 rebase 충돌.
 # 파일 겹침은 계획 겹침과 같은 판단(foreman.files_overlap — 폴더는 끝에 /, 글롭 *)을 쓴다
-# later(알려진 한계 쓰기)는 여기에 README.md와 docs/TODO.md만 두고, 띄울 때 [한계로]에서 고른 편 파일을 더한다(start, blocked의 extra).
+# later(알려진 한계 쓰기)는 여기에 docs/TODO.md만 두고(11-19 전에는 README.md도), 띄울 때 [한계로]에서 고른 편 파일을 더한다(start, blocked의 extra).
 # 원고 폴더 통째로 적으면 열린 포트폴리오, 기술문서 일과 늘 겹쳐 막힌다
-TOUCHES = {"doccheck": ["log/doccheck_*"], "later": ["README.md", "docs/TODO.md"],
+TOUCHES = {"doccheck": ["log/doccheck_*"], "later": ["docs/TODO.md"],
            "trim": ["CLAUDE.md", "docs/"], "docfix": ["README.md", "CLAUDE.md", "docs/"], "techdoc": [TECHDOC_DIR]}
 
 
@@ -470,21 +470,12 @@ async def _inbox_take(engine: Any, ids: list[int], session_id: int) -> None:
                         .bindparams(bindparam("ids", expanding=True)), {"s": session_id, "ids": ids})
 
 
-async def later_prompts(engine: Any, project: str, since: datetime | None, limit: int = 300) -> list[dict[str, Any]]:
-    """「알려진 한계 쓰기」(start의 later)가 README에서 뺄 줄 — [갱신]에서 사람이 「끝남」으로 닫은 README 「알려진 한계」 줄.
-    11-15 포스트잇 전에는 「나중에 · 미루」 사람 턴이었다. 미룬 말은 이제 브리지 그물이 포스트잇에 바로 올리고(bridge/postit.py sweep)
-    서기 재료로 주지 않는다. 이름은 부르는 곳(start)에 맞춰 남긴다. 모양: {id, started_at, prompt_text, item, evidence}"""
-    rows = await _pi.readme_drop_pending(engine, project, since)
-    return [{"id": r["id"], "started_at": r["resolved_at"], "prompt_text": r["item_text"] or "", "item": r["item"],
-             "evidence": r["evidence"], "reason": r["reason"]} for r in rows][:limit]
-
-
-def later_material(project: str, when: datetime | None, rows: list[dict[str, Any]], inbox: list[dict[str, Any]], mk: Any = None) -> str:
-    """「알려진 한계 쓰기」 재료(later.md). 쓸 줄(포스트잇 [한계로]: 편, 까닭, TODO 번호)과 뺄 줄([갱신]에서 닫은 README 줄).
-    사람 말은 자르지 않는다(#14, 11-10)."""
+def later_material(project: str, when: datetime | None, inbox: list[dict[str, Any]], mk: Any = None) -> str:
+    """「알려진 한계 쓰기」 재료(later.md). 쓸 줄(포스트잇 [한계로]: 편, 까닭, TODO 번호)만 든다(11-19 전에는 [갱신]에서 닫은
+    README 줄을 뺄 줄로 더했다). 사람 말은 자르지 않는다(#14, 11-10)."""
     from bridge import scribe as sc
     m = mk.text if mk else (lambda s: s)
-    lines = [f"# 「{_pi.LIMIT_TITLE}」 — {project} ({(sc.kst(when) + ' 뒤') if when else '처음부터'}, 쓸 줄 {len(inbox)}개 · 뺄 줄 {len(rows)}개)",
+    lines = [f"# 「{_pi.LIMIT_TITLE}」 — {project} ({(sc.kst(when) + ' 뒤') if when else '처음부터'}, 쓸 줄 {len(inbox)}개)",
              "사람 말은 자르지 않은 원문이다 — 길면 쪽으로 나눠 끝까지 읽는다.", ""]
     if inbox:
         lines += ["# 쓸 줄 — 사람이 포스트잇에서 [한계로] 보낸 것(안 하기로 한 것과 그 까닭)", ""]
@@ -494,11 +485,6 @@ def later_material(project: str, when: datetime | None, rows: list[dict[str, Any
                       f"- 편: `{x['piece']}`" if x.get("piece") else "- 편: (없음. 11-17 전 [→]로 보낸 옛 줄이다. 쓰지 말고 마지막 응답에 적는다)",
                       f"- 안 하는 까닭(사람이 적음): {m(x['reason'])}" if x.get("reason") else "- 안 하는 까닭: (없음)",
                       "- 글:", m(x["body"]) or "", ""]
-    if rows:
-        lines += [f"# 뺄 줄 — [갱신] 조사 세션이 「끝남」으로 보고 사람이 닫은 README 「{_pi.README_LIMIT}」 줄", ""]
-        for x in rows:
-            lines += [f"## {x.get('item') or ''} (판정 #{x['id']} {sc.kst(x['started_at'])})", m(x["prompt_text"]) or "",
-                      f"근거: {x.get('evidence') or '(없음)'}" + (f" — {x['reason']}" if x.get("reason") else ""), ""]
     return "\n".join(lines)
 
 
@@ -554,18 +540,20 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
 - 옮긴 규칙마다 목적지를 표로: `log/trim_{today}.md`
 - 사용자 원문 인용 · 날짜 표시는 그대로 둔다"""
     elif task == "later":
-        body = f"""할 일: 사람이 포스트잇에서 [한계로] 보낸 줄을 고른 편의 「{_pi.LIMIT_TITLE}」 절에 쓴다. 안 하기로 한 것만 쓰는 절이다.
-- 재료(저장소 밖, 사람 말 원문): `{e.get('materials') or '(없음)'}` — 쓸 줄(편, 안 하는 까닭, 글) · 뺄 줄([갱신]에서 끝났다고 닫은 README 줄)
-- 쓸 줄: 재료가 고른 편(`편:`)의 「{_pi.LIMIT_TITLE}」 절에 글머리표 한 줄로 쓰고, 그 줄에 사람이 적은 안 하는 까닭을 함께 적는다.
-  할 일 말투(「할 것: …」)가 아니라 그 편을 읽는 사람에게 알리는 말투로 다시 쓴다. 까닭을 바꾸거나 지어내지 않는다.
-  절이 없으면 그 편 끝에 `## {_pi.LIMIT_TITLE}`을 만든다. 같은 한계가 이미 있으면 그 줄에 보탠다. 여러 편에 되풀이되는 것이면
-  그 묶음의 「{_pi.LIMIT_TITLE}」 편에 한 번만 적고 원래 자리는 그 편을 가리키는 한 줄로 둔다(원고 쓰는 기준 2절)
+        body = f"""할 일: 사람이 포스트잇에서 [한계로] 보낸 줄을 고른 편의 「{_pi.LIMIT_TITLE}」 절에 쓴다.
+- 재료(저장소 밖, 사람 말 원문): `{e.get('materials') or '(없음)'}` — 쓸 줄(편, 안 하는 까닭, 글)
+- 무엇이 한계이고 무엇을 한계 절에 쓰는지는 아래 「원고 쓰는 기준」이 정한다(한계, 조건, 설계, 할 일 넷으로 가르는 줄과 한계 편의 꼴).
+  사람이 [한계로]로 보냈어도 읽어 보고 한계가 아닌 줄(고르지 않은 조건, 하기로 정한 설계, 까닭 없는 할 일)이면 쓰지 말고
+  마지막 응답에 어느 갈래로 보이는지와 까닭을 적는다. 까닭을 지어내지 않는다
+- 쓸 줄: 재료가 고른 편(`편:`)의 「{_pi.LIMIT_TITLE}」 절에 쓰고, 그 줄에 사람이 적은 안 하는 까닭을 함께 적는다. 까닭을 바꾸지 않는다.
+  할 일 말투(「할 것: …」)가 아니라 그 편을 읽는 사람에게 알리는 말투로 다시 쓴다.
+  절이 없으면 그 편 끝에 `## {_pi.LIMIT_TITLE}`을 만든다. 같은 한계가 이미 있으면 그 줄에 보탠다
 - TODO 항목에서 온 줄(재료 제목이 「TODO 항목 번호」): 같은 커밋에서 `docs/TODO.md`의 그 항목(머리 줄과 들여 쓴 내용 줄)을 지우고,
   커밋 메시지 본문에 `(todo:번호)`를 적는다(포스트잇 창이 그 커밋을 끝낸 커밋으로 읽는다)
 - 편이 없는 옛 줄, 고른 편이 저장소에 없는 줄은 쓰지 말고 마지막 응답에 적는다
-- 뺄 줄: README 그 줄을 지운다. 재료의 근거(코드 자리)가 지금 저장소와 맞는지 한 번 본 뒤 지운다. 안 맞으면 지우지 말고 마지막 응답에 적는다
-- 원고 쓰는 기준은 FOREMAN `docs/manuscript_rules.md`다. 고른 편 묶음의 말투를 따르고 em dash와 가운뎃점을 쓰지 않는다
-- 고칠 곳: 재료가 고른 편 파일, `docs/TODO.md`(TODO에서 온 줄만), README.md(뺄 줄만)"""
+- 고칠 곳: 재료가 고른 편 파일, `docs/TODO.md`(TODO에서 온 줄만)
+
+{_rules_block("limit", repo)}"""
     elif task == "portfolio":
         slug = e.get("slug") or ""
         if slug:
@@ -720,12 +708,11 @@ async def start(m: Any, engine: Any, project: str, task: str, topic: str | None 
     extra: dict[str, str] = {}
     if task == "later":
         when = await later_since(engine, project)
-        rows = await later_prompts(engine, project, when)
         inbox = await inbox_new(engine, project)
-        if not rows and not inbox:         # 빈손으로 Opus 세션을 띄우지 않는다(11-06 — 범위가 비어 사람 턴 0개로 떴다)
-            raise Refused(f"{'지난 정리 뒤로' if when else '지금까지'} 포스트잇에서 [한계로] 보낸 것도, [갱신]에서 끝났다고 닫은 한계 줄도 없습니다. 띄우지 않았습니다")
+        if not inbox:                      # 빈손으로 Opus 세션을 띄우지 않는다(11-06 — 범위가 비어 사람 턴 0개로 떴다)
+            raise Refused(f"{'지난 정리 뒤로' if when else '지금까지'} 포스트잇에서 [한계로] 보낸 것이 없습니다. 띄우지 않았습니다")
         from bridge.mask import Masker
-        mat = sc.write(sc.OUT_ROOT / f"{project}_{day}" / "later.md", later_material(project, when, rows, inbox, Masker()))
+        mat = sc.write(sc.OUT_ROOT / f"{project}_{day}" / "later.md", later_material(project, when, inbox, Masker()))
         extra["materials"] = str(mat)
         prompt = task_prompt(task, project, repo, extra)
     else:

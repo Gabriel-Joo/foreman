@@ -56,7 +56,7 @@ def test_blocked_same_task_same_file_no_cap():
     assert "portfolio/01_a" in sr.blocked("later", [{"session_id": 5, "task": "portfolio", "topic": "01_a", "title": "서기"}], None,
                                           ["portfolio/01_a.md"])            # 고른 편이 열린 포트폴리오 편이면 막는다
     assert "이미 열려" in sr.blocked("trim", [trim])
-    assert "README.md" in sr.blocked("docfix", [later])                       # 문서 고치기와 나중에 할 일은 같은 파일
+    assert "docs/TODO.md" in sr.blocked("docfix", [later])                    # 문서 고치기(docs/)와 알려진 한계 쓰기(docs/TODO.md)는 겹친다
     assert sr.blocked("doccheck", [trim, later]) is None                      # 둘 열려 있어도 파일이 다르면 셋째를 막지 않는다
     many = [trim, later] + [{"session_id": 300 + i, "task": "portfolio", "topic": f"0{i}_x", "title": "서기"} for i in range(4)]
     assert sr.blocked("doccheck", many) is None and sr.blocked("portfolio", many, "09_y") is None
@@ -195,7 +195,10 @@ def test_later_prompt_writes_to_picked_piece_and_drops_todo(tmp_path):
     assert "고른 편의 「알려진 한계」 절" in p and "안 하는 까닭" in p
     assert "`docs/TODO.md`의 그 항목" in p and "`(todo:번호)`" in p
     assert "README 「6. 로드맵」" not in p                       # 옛 README 절 만들기 지시는 없다
-    assert sr.touches("later") == ["README.md", "docs/TODO.md"]          # 고른 편 파일은 띄울 때 더한다(blocked의 extra)
+    assert sr.touches("later") == ["docs/TODO.md"]                       # 고른 편 파일은 띄울 때 더한다(blocked의 extra). README는 11-19에 뺐다
+    # 11-19: 한계가 무엇인지는 기준 문서 줄이 정한다. 지시문 본문에 옛 두 갈래 말(안 하기로 한 것만, 뺄 줄)이 남지 않는다
+    assert "한계, 조건, 설계, 할 일 넷으로 가른다" in p and "한계 편은 결정으로 묶는다" in p
+    assert "안 하기로 한 것만 쓰는 절" not in p and "뺄 줄" not in p and "README" not in p.split("원고 쓰는 기준")[0]
 
 
 class _FakeEngine:
@@ -256,7 +259,7 @@ def test_docfix_blocked_with_readme_and_start_refuses_without_source():
     import asyncio
     from bridge.inject import Refused
     later = {"session_id": 5, "task": "later", "title": "서기"}
-    assert "README.md" in sr.blocked("docfix", [later])                        # README를 고치는 일과 같이 못 연다
+    assert "docs/TODO.md" in sr.blocked("docfix", [later])                     # docs/를 고치는 일과 같이 못 연다(알려진 한계 쓰기는 docs/TODO.md를 고친다)
     for topic, note in ((None, None), ("../etc/passwd", None), ("doccheck_x/../y.md", "a")):
         with pytest.raises(Refused):
             asyncio.run(sr.start(None, None, "foreman", "docfix", topic, note))

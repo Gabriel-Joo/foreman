@@ -155,24 +155,24 @@ def test_plan_scribe_counts_in_room_and_room_scribe_in_plan_conflicts(tmp_path, 
 
         opened = await sr.open_tasks(eng, proj)
         assert [(o["session_id"], o["task"]) for o in opened] == [(plan, "plan"), (old, "plan"), (room, "later")]
-        assert opened[0]["files"] == ["CLAUDE.md", "docs/style_guide.md"] and opened[2]["files"] == ["README.md", "docs/TODO.md"]
+        assert opened[0]["files"] == ["CLAUDE.md", "docs/style_guide.md"] and opened[2]["files"] == ["docs/TODO.md"]
         assert gone not in [o["session_id"] for o in opened] and done not in [o["session_id"] for o in opened]
         # 서기실 겹침 막기가 계획 길 서기를 안다
         assert f"세션 {plan}" in sr.blocked("trim", opened) and "CLAUDE.md" in sr.blocked("trim", opened)
         assert f"세션 {old}" in sr.blocked("doccheck", opened)
-        assert "이미 열려" in sr.blocked("later", opened) and "README.md" in sr.blocked("docfix", [opened[2]])
+        assert "이미 열려" in sr.blocked("later", opened) and "docs/TODO.md" in sr.blocked("docfix", [opened[2]])
         assert sr.blocked("portfolio", opened, "00_a") is None                    # 셋 열려 있어도 파일이 다르면 막지 않는다
         # 서기실 todo의 열린 일 · 막힘 글도 같은 판단(todo는 저장소가 있어야 돌아 여기서는 open_tasks · blocked만)
 
         # 계획 겹침이 서기실 서기를 안다(CC가 살아 있지 않아도 합치지 않은 worktree면)
         monkeypatch.setattr(fm, "live_sessions", lambda _d: {})
         d = fm.ForemanDispatcher(eng, tmp_path, None, lambda: [(str(tmp_path), 1, proj, 1)])
-        ov, fw = await d.file_conflicts(proj, fm.sessions_of({"title": "README 서기", "role": "scribe", "files": ["README.md", "CLAUDE.md"]}))
+        ov, fw = await d.file_conflicts(proj, fm.sessions_of({"title": "TODO 서기", "role": "scribe", "files": ["docs/TODO.md", "CLAUDE.md"]}))
         assert not fw
         got = {(o["with"], tuple(o["files"])) for o in ov if o["kind"] == "claimed"}
-        assert got == {(room, ("README.md",)), (plan, ("CLAUDE.md",))}
+        assert got == {(room, ("docs/TODO.md",)), (plan, ("CLAUDE.md",))}
         assert any("합치지 않은 세션" in o["text"] for o in ov)
-        ov, _ = await d.file_conflicts(proj, fm.sessions_of({"files": ["README.md"]}), exclude_session=room)
+        ov, _ = await d.file_conflicts(proj, fm.sessions_of({"files": ["docs/TODO.md"]}), exclude_session=room)
         assert ov == []
     _db(go)
 

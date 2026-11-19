@@ -171,13 +171,12 @@ export function listHtml(view, { busy = false, draft = '', note = null, label = 
   const items = view.items || [];
   const unconf = items.filter((x) => !x.confirmed);
   const done = items.filter((x) => x.check && x.check.verdict === 'done');
-  const rlim = (view.readme_checks || []).filter((k) => k.verdict === 'done');
   // view.todo가 없으면(옛 브리지) 읽지 못한 것으로 보인다(0으로 보이지 않게)
   const tg = todoGroups(view.todo, { busy, lim, pieces });
   // noHead: 서기실은 프로젝트 이름이 이미 위에 있어 머리줄을 안 그린다(읽지 못한 경고만 남김)
   const head = noHead ? (bad ? `<div class="pi-head small bad">지금 값을 ${UNREAD}. 지난 값입니다.</div>` : '') : `<div class="pi-head small"><b>${esc(label || view.project)}</b>${bad ? ` <span class="bad">(지금 값을 ${UNREAD}. 지난 값입니다)</span>` : ''}</div>`;
-  const doneHtml = done.length + rlim.length ? `<div class="pi-sec"><div class="small"><b>끝난 것 같음 ${done.length + rlim.length}</b> <span class="muted">근거가 코드 자리인 것만입니다. 사람이 줄마다 닫습니다.</span></div>
-    ${done.map((x) => checkHtml(x.check, x.body)).join('')}${rlim.map((k) => checkHtml(k, `README 「알려진 한계」 ${k.item}: ${k.item_text || ''}`)).join('')}</div>` : '';
+  const doneHtml = done.length ? `<div class="pi-sec"><div class="small"><b>끝난 것 같음 ${done.length}</b> <span class="muted">근거가 코드 자리인 것만입니다. 사람이 줄마다 닫습니다.</span></div>
+    ${done.map((x) => checkHtml(x.check, x.body)).join('')}</div>` : '';
   const rows = items.length ? items.map((x) => withForm(rowHtml(x, busy, view.project), 'postit', x.id, lim, pieces)).join('') : '<p class="small muted">아직 안 보낸 것이 없습니다.</p>';
   const closed = view.closed || [];
   const closedHtml = closed.length ? `<details class="pi-closed"${keep(`postit:${view.project}:closed`)}><summary class="small muted" title="끝낸 것 — 최근에 끝내거나 보내거나 지운 포스트잇을 다시 봅니다.">끝낸 것 ${closed.length}</summary>${
@@ -199,7 +198,7 @@ export function listHtml(view, { busy = false, draft = '', note = null, label = 
     <textarea class="pi-draft" rows="2" maxlength="${MAX}" placeholder="할 일을 메모합니다"${busy ? ' disabled' : ''}>${esc(draft)}</textarea>
     <div class="pi-foot"><span class="small">${checkState(s)}</span>
       <button type="button" class="small primary" data-pi-save="1"${busy ? ' disabled' : ''} title="${esc(saveTip)}">저장${unconf.length ? ` (확인 전 ${unconf.length})` : ''}</button>
-      <button type="button" class="small" data-pi-refresh="1"${busy || running ? ' disabled' : ''} title="${esc(running ? '갱신 — 조사 세션이 이미 보는 중입니다.' : '갱신 — 조사 세션을 띄워 코드를 보고 이미 끝난 것을 찾습니다. 포스트잇과 README 「알려진 한계」를 함께 봅니다. 지우는 것은 사람이 합니다.')}">갱신</button></div>
+      <button type="button" class="small" data-pi-refresh="1"${busy || running ? ' disabled' : ''} title="${esc(running ? '갱신 — 조사 세션이 이미 보는 중입니다.' : '갱신 — 조사 세션을 띄워 코드를 보고 이미 끝난 것을 찾습니다. 지우는 것은 사람이 합니다.')}">갱신</button></div>
     ${note ? `<div class="small ${note.bad ? 'bad' : 'ok'}">${esc(note.msg)}</div>` : ''}
     <div class="pi-list">${rows}</div></details>
     ${grp('todo', '할 일', tg.n, '할 일 — 저장소 docs/TODO.md의 항목입니다. 번호와 제목만 보이고 내용은 그 파일에 있습니다.')}
@@ -279,9 +278,9 @@ export async function act(ev, ctx) {
       return ctx.done({ msg: [j.id ? `#${j.id}을 저장했습니다.` : '', j.confirmed ? `확인 전 ${j.confirmed}줄을 받아들였습니다.` : ''].filter(Boolean).join(' ') });
     }
     if (rf) {
-      if (typeof confirm === 'function' && !confirm(`${ctx.project}의 포스트잇과 README 「알려진 한계」를 조사 세션이 코드를 보고 판정합니다. 원본 폴더에 조사 세션이 뜨고(역할 조사, 고치지 않음), 끝나면 「끝난 것 같음」이 여기 뜹니다.\n\n띄울까요?`)) return true;
+      if (typeof confirm === 'function' && !confirm(`${ctx.project}의 포스트잇을 조사 세션이 코드를 보고 판정합니다. 원본 폴더에 조사 세션이 뜨고(역할 조사, 고치지 않음), 끝나면 「끝난 것 같음」이 여기 뜹니다.\n\n띄울까요?`)) return true;
       const j = await api('/api/postit/refresh', { project: ctx.project });
-      return ctx.done({ msg: `[갱신]: 조사 세션 ${j.session_id || '?'}을 띄웠습니다(포스트잇 ${j.items} · README 줄 ${j.limits}).${j.note ? ` ${j.note}` : ''}` });
+      return ctx.done({ msg: `[갱신]: 조사 세션 ${j.session_id || '?'}을 띄웠습니다(포스트잇 ${j.items}).${j.note ? ` ${j.note}` : ''}` });
     }
     if (ck) {
       await api(`/api/postit/check/${ck.dataset.piCheck}`, { action: ck.dataset.act });

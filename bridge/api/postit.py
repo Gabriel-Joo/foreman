@@ -103,7 +103,7 @@ async def view(engine: Any, project: str) -> dict[str, Any]:
     cks = await pi.checks(engine, project)
     by = {k["item"]: k for k in cks}
     closed = await pi.items(engine, project, open_only=False, limit=20)
-    summ = await pi.summary(engine, project, await sr.later_since(engine, project))
+    summ = await pi.summary(engine, project)
     rlog = [{**{k: _iso(v) for k, v in r.items()}, "ok": bool(r["ok"])} for r in await pi.repo_log(engine, project, 60)]
     # 열린 포스트잇마다 마지막으로 저장소에 못 넣은 까닭(다시 열어도 보이게). 그 뒤 성공했으면 포스트잇이 닫혀 열린 줄에 없다
     last: dict[int, dict[str, Any]] = {}
@@ -115,7 +115,6 @@ async def view(engine: Any, project: str) -> dict[str, Any]:
         r = last.get(it["id"])
         it["repo_refused"] = r["note"] if r and not r["ok"] else None
     return {"project": project, "items": items,
-            "readme_checks": [_check(k) for k in cks if k["item"].startswith("L:")],
             "closed": [_row(x, None) for x in closed], "summary": sr._json_postit(summ),
             "todo": await pi.todo_view(engine, project), "repo_log": rlog[:20]}
 
@@ -133,7 +132,7 @@ async def postit_summary(request: Request) -> dict[str, Any]:
     engine = request.app.state.store.engine
     async with engine.connect() as c:
         names = [r[0] for r in (await c.execute(text("SELECT name FROM project ORDER BY id"))).all()]
-    return {"projects": {n: sr._json_postit(await pi.summary(engine, n, await sr.later_since(engine, n))) for n in names}}
+    return {"projects": {n: sr._json_postit(await pi.summary(engine, n)) for n in names}}
 
 
 @router.post("")

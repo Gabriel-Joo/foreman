@@ -131,7 +131,6 @@ test('목록 — 확인 전은 흐리게, 끝난 것 같음은 근거와 [닫기
       { id: 3, body: '시험 DB 나누기', source_label: '대화에서 올림', created_at: '2026-11-14T02:00:00Z', confirmed: true, state: 'new', label: '열림',
         recommend: true, check: { id: 32, verdict: 'left', label: '남음', reason: '반만 됐다', coder: true } },
     ],
-    readme_checks: [{ id: 40, item: 'L:2', item_text: '| CI 없음 |', verdict: 'done', evidence: '.github/workflows/test.yml:1', session_id: 9 }],
     closed: [],
   };
   const h = listHtml(view, { label: 'FOREMAN' });
@@ -142,8 +141,9 @@ test('목록 — 확인 전은 흐리게, 끝난 것 같음은 근거와 [닫기
   assert.ok(!listHtml({ ...view, summary: { ...view.summary, nudge: { why: '할 일 26장' } } }).includes('쌓였습니다'));
   assert.match(h, /class="pi-row pi-unconf" data-pi-row="1"/);
   assert.match(h, /\(대화에서 찾음, 11\/13, t:77\)/);
-  assert.match(h, /<b>끝난 것 같음 2<\/b>/);
-  assert.ok(h.includes('data-pi-check="31" data-act="close"') && h.includes('data-pi-check="40" data-act="keep"'));
+  assert.match(h, /<b>끝난 것 같음 1<\/b>/);
+  assert.ok(h.includes('data-pi-check="31" data-act="close"') && h.includes('data-pi-check="31" data-act="keep"'));
+  assert.ok(!h.includes('README'));                                           // 11-19 README 「알려진 한계」 줄 칸은 뺐다
   assert.ok(h.includes('<code>bridge/static/js/opanel.js:120</code>'));
   assert.ok(h.includes('data-pi-launch="3"') && !h.includes('data-pi-launch="2"'));
   for (const id of [1, 2, 3]) assert.ok(h.includes(`data-pi-close="${id}" data-reason="drop"`) && h.includes(`data-pi-todo="${id}"`) && h.includes(`data-pi-limit="${id}" data-kind="postit"`));

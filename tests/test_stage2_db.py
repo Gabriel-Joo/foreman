@@ -1379,7 +1379,7 @@ async def test_postit_states_close_and_limit(env, tmp_path):
     assert [x["id"] for x in pend] == [a] and pend[0]["piece"] == "notion/09_limits.md" and pend[0]["reason"] == "서버가 한 대다"
     assert pend[0]["todo"] is None
     todo = await sr.todo(engine)
-    assert any(i["title"] == "알려진 한계 쓰기: 쓸 줄 1, 뺄 줄 0" for i in todo[proj]["items"])
+    assert any(i["title"] == "알려진 한계 쓰기: 쓸 줄 1" for i in todo[proj]["items"])
     await sr._inbox_take(engine, [a], sid)
     assert (await state())[a] == "limit_writing" and await sr.inbox_new(engine, proj) == []
     async with engine.begin() as c:

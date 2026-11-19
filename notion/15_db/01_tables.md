@@ -380,7 +380,7 @@ erDiagram
 
 ### postit_check — 포스트잇 확인 판정
 
-포스트잇 창에서 [갱신]을 누르면 조사 세션이 코드를 읽고 열린 포스트잇과 README 「알려진 한계」 줄마다 끝났는지 판정한다. 그 판정 한 줄이 한 행이다 [code:migrations/0033_postit.sql]. `item`은 `p:<포스트잇 id>` 또는 `L:<README 줄 앞부분>`이다. README 줄은 DB에 없어서 판정할 때의 글 앞부분을 `item_text`에 남긴다. `verdict`는 done, left, unknown이고, done은 근거가 코드 자리일 때만 낸다. `coder`는 남은 일이면 코더에게 맡길 만한가다. 판정은 제안일 뿐이라, 사람이 줄마다 닫거나 남긴 결과를 `resolved`(closed, kept)에 적는다. 커밋만 보고 자동으로 지우지 않는다 [code:bridge/postit.py].
+포스트잇 창에서 [갱신]을 누르면 조사 세션이 코드를 읽고 열린 포스트잇마다 끝났는지 판정한다. 그 판정 한 줄이 한 행이다 [code:migrations/0033_postit.sql]. `item`은 `p:<포스트잇 id>`다. 예전에 README 「알려진 한계」 줄을 판정하던 때의 `L:<줄 앞부분>` 행이 남아 있을 수 있어도 지금은 읽지 않고 새로 만들지도 않는다 [code:bridge/postit.py]. `verdict`는 done, left, unknown이고, done은 근거가 코드 자리일 때만 낸다. `coder`는 남은 일이면 코더에게 맡길 만한가다. 판정은 제안일 뿐이라, 사람이 줄마다 닫거나 남긴 결과를 `resolved`(closed, kept)에 적는다. 커밋만 보고 자동으로 지우지 않는다 [code:bridge/postit.py].
 
 ### postit_repo_log: 저장소에 넣으려고 누른 기록
 

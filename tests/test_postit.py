@@ -1,4 +1,4 @@
-"""포스트잇(11-15, bridge/postit.py) — 그물 · 점검 판정 · README 한계 줄 · 쌓임 기준. DB 시험은 tests/test_stage2_db.py.
+"""포스트잇(11-15, bridge/postit.py) — 그물 · 점검 판정 · 쌓임 기준. DB 시험은 tests/test_stage2_db.py.
 
 그물 예문은 log/foreman-6_postit_proposal_20261115.md 1-2 판정 목록의 실제 말(턴 번호)이다. 그물이 깨져 늘 0이 되면 여기서 걸린다.
 """
@@ -57,26 +57,25 @@ def test_merge_card_is_not_human():
 
 
 def test_parse_check_needs_code_ref_for_done():
-    known = {"p:1": "a", "p:2": "b", "L:1": "| 한계 |", "p:3": "c"}
+    known = {"p:1": "a", "p:2": "b", "p:3": "c"}
     body = ('[{"id": "p:1", "verdict": "끝남", "evidence": "bridge/postit.py:120", "reason": "됐다"},'
             ' {"id": 2, "verdict": "끝남", "evidence": "c0ffee1 커밋 제목", "reason": "커밋이 있다"},'
-            ' {"id": "L:1", "verdict": "끝남", "evidence": "tests/test_postit.py::test_x"},'
+            ' {"id": "L:1", "verdict": "끝남", "evidence": "tests/test_postit.py::test_x"},'    # 재료에 없는 L:은 버린다(11-19 README 줄을 뺐다)
             ' {"id": "p:3", "verdict": "남음", "reason": "반만", "coder": true},'
             ' {"id": "p:9", "verdict": "끝남", "evidence": "a.py:1"}, {"id": "p:1", "verdict": "남음"}]')
     got = {g["item"]: g for g in pi.parse_check(body, known)}
-    assert set(got) == {"p:1", "p:2", "L:1", "p:3"}                 # 재료에 없던 p:9 · 두 번째 p:1은 버린다
-    assert got["p:1"]["verdict"] == "done" and got["L:1"]["verdict"] == "done"
+    assert set(got) == {"p:1", "p:2", "p:3"}                        # 재료에 없던 p:9, L:1 · 두 번째 p:1은 버린다
+    assert got["p:1"]["verdict"] == "done"
     assert got["p:2"]["verdict"] == "unknown" and "코드 자리" in got["p:2"]["reason"]   # 커밋만으로는 끝남이 아니다
     assert got["p:3"]["coder"] is True and got["p:1"]["coder"] is False
     assert pi.parse_check("JSON 아님", known) == []
 
 
-def test_readme_limits(tmp_path):
-    (tmp_path / "README.md").write_text("# x\n## 6. 로드맵\n### 알려진 한계\n| 무엇 | 까닭 |\n|---|---|\n| CI 없음 | 손으로 |\n"
-                                        "- 밖에서는 못 본다\n### 다음 절\n- 아님\n", encoding="utf-8")
-    assert pi.readme_limits(str(tmp_path)) == ["| CI 없음 | 손으로 |", "- 밖에서는 못 본다"]
-    (tmp_path / "README.md").write_text("# x\n## 나중에 할 일\n- a\n", encoding="utf-8")
-    assert pi.readme_limits(str(tmp_path)) is None                  # 절이 없으면 없다고(빈 목록과 다르다)
+def test_readme_limit_path_is_gone():
+    """11-19: README는 생성물이라 「알려진 한계」 절이 없다. [갱신]은 README 줄을 읽지 않고 서기도 README 줄을 빼지 않는다."""
+    assert not hasattr(pi, "readme_limits") and not hasattr(pi, "readme_drop_pending") and not hasattr(pi, "README_LIMIT")
+    m = pi.check_material("foreman", [], ["abc 2026-11-19 feat: x"], datetime(2026, 11, 19, 3))
+    assert "README" not in m and "L:" not in m
 
 
 def test_nudge_of(tmp_path):
@@ -120,7 +119,7 @@ def test_scribe_toml_drives_nudge(tmp_path, monkeypatch, caplog):
 def test_check_material_and_prompt():
     now = datetime(2026, 11, 15, 3)
     m = pi.check_material("foreman", [{"id": 7, "body": "질문 카드 접기", "created_at": now, "source": "chat", "confirmed": False}],
-                          None, ["abc 2026-11-15 feat: x"], now)
-    assert "### p:7 (대화에서 찾음" in m and "확인 전" in m and "아직 없다" in m and "끝남의 근거가 아니다" in m
-    p = pi.CHECK_PROMPT.format(req="r1", project="foreman", limit=pi.README_LIMIT, materials="/m.md", tag=pi.CHECK_TAG)
-    assert "<<<FOREMAN-POSTIT-CHECK r=r1>>>" in p and "파일을 고치지 마라" in p and "코드 자리" in p
+                          ["abc 2026-11-15 feat: x"], now)
+    assert "### p:7 (대화에서 찾음" in m and "확인 전" in m and "끝남의 근거가 아니다" in m
+    p = pi.CHECK_PROMPT.format(req="r1", project="foreman", materials="/m.md", tag=pi.CHECK_TAG)
+    assert "<<<FOREMAN-POSTIT-CHECK r=r1>>>" in p and "파일을 고치지 마라" in p and "코드 자리" in p and "README" not in p

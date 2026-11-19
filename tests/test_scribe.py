@@ -24,11 +24,10 @@ def test_full_keeps_every_char_and_wraps_long_lines():
 
 
 def test_later_material_not_clipped():
-    """「알려진 한계 쓰기」 재료(11-15 포스트잇, 11-17 [한계로]) — 쓸 줄은 편, 안 하는 까닭, 원문(자르지 않음). 뺄 줄은 근거와 함께."""
+    """「알려진 한계 쓰기」 재료(11-15 포스트잇, 11-17 [한계로]) — 쓸 줄은 편, 안 하는 까닭, 원문(자르지 않음). 뺄 줄은 11-19에 없앴다."""
     from bridge import scribe_room as sr
     t = datetime(2026, 11, 10, 3)
     body = sr.later_material("foreman", None,
-                             [{"id": 3, "started_at": t, "prompt_text": "| CI 없음 | 손으로 |", "item": "L:2", "evidence": "a.py:1", "reason": "됐다"}],
                              [{"id": 14, "created_at": t, "body": _long_prompt(), "piece": "notion/09_limits.md", "reason": "서버가 한 대다"},
                               {"id": 15, "created_at": t, "body": "- **foreman-2** 백업", "piece": "notion/01.md", "reason": "디스크가 하나", "todo": "foreman-2"},
                               {"id": 16, "created_at": t, "body": "옛 줄"}])
@@ -36,7 +35,7 @@ def test_later_material_not_clipped():
     assert "- 편: `notion/09_limits.md`" in body and "- 안 하는 까닭(사람이 적음): 서버가 한 대다" in body
     assert "## TODO 항목 foreman-2" in body
     assert "편: (없음. 11-17 전 [→]로 보낸 옛 줄이다" in body           # 편 없는 옛 줄은 쓰지 말라고 적는다
-    assert "## L:2 (판정 #3" in body and "근거: a.py:1 — 됐다" in body
+    assert "뺄 줄" not in body and "README" not in body
     assert "알려진 한계" in body.splitlines()[0]
 
 
