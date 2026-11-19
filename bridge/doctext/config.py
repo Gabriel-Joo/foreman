@@ -148,7 +148,7 @@ class DocsConfig:
     allowed_domains: list[str] = field(default_factory=list)
     not_code: list[str] = field(default_factory=lambda: [".md"])
     check: CheckConfig = field(default_factory=CheckConfig)
-    readme: dict[str, Any] | None = None    # [readme] 표(title, project, docs, docs_summary, docs_skip, docs_numbered_only). None이면 README 생성과 점검 9번이 꺼져 있다
+    readme: dict[str, Any] | None = None    # [readme] 표(title, project, docs, docs_summary, docs_skip, docs_numbered_only, header_file). None이면 README 생성과 점검 9번이 꺼져 있다
     source: str = "default"                # "default" 또는 읽은 파일(`.foreman/docs.toml`, rev가 있으면 `rev:.foreman/docs.toml`)
     warnings: list[str] = field(default_factory=list)
 
@@ -164,6 +164,11 @@ def _folder(v: Any, where: str) -> str:
     if not isinstance(v, str) or not v.endswith("/") or v.startswith("/") or ".." in PurePosixPath(v).parts or v == "/":
         raise DocsConfigError(f"{where}: 저장소 안 폴더(끝이 /)여야 합니다: {v!r}")
     return v
+
+
+def _repo_file(v: str) -> bool:
+    """저장소 안 파일 경로 꼴인가(끝이 /가 아니고, /로 시작하지 않고, ..이 없고, `-->`가 없다. 생성물 머리 주석에 그대로 적히기 때문)."""
+    return bool(v) and not v.endswith("/") and not v.startswith("/") and ".." not in PurePosixPath(v).parts and "-->" not in v
 
 
 def _strs(v: Any, where: str) -> list[str]:
@@ -195,10 +200,12 @@ def parse(text: str, source: str = PATH) -> DocsConfig:
                 cfg.readme[k] = v
             elif k == "docs_skip":
                 cfg.readme[k] = _strs(v, f"{source}: readme.docs_skip") if v != [] else []
-            elif k not in ("title", "project", "docs_summary"):
+            elif k not in ("title", "project", "docs_summary", "header_file"):
                 cfg.warnings.append(f"{source}: 모르는 칸 readme.{k}는 쓰지 않습니다")
             elif not isinstance(v, str) or not v.strip() or "\n" in v:
                 raise DocsConfigError(f"{source}: readme.{k}는 한 줄 글이어야 합니다: {v!r}")
+            elif k == "header_file" and not _repo_file(v.strip()):
+                raise DocsConfigError(f"{source}: readme.header_file은 저장소 안 파일 경로(폴더가 아니고 /로 시작하지 않고 ..이 없음)여야 합니다: {v!r}")
             elif k == "docs_summary" and not (v in ("para", "none") or (v.startswith("heading:") and v[8:].strip())):
                 raise DocsConfigError(f"{source}: readme.docs_summary는 para, none, heading:<글> 가운데 하나여야 합니다: {v!r}")
             else:

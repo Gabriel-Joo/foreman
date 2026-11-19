@@ -10,6 +10,7 @@ dashdot_base = "648ac08a0285c88626a2d5c16ae98732f47cb8a8"
 # 맨 위 README.md는 생성물이다(tools/docs.py readme, 점검 9번). 설계는 docs/00_design.md, 규칙은 CLAUDE.md(11-17 사용자)
 # 제목만 적는다. 안 적으면 origin 이름 foreman이 된다. 게시 기록 프로젝트 이름은 origin 이름 그대로라 칸이 없다
 title = "FOREMAN"
+# 칸 header_file = "저장소 안 파일 경로"를 적으면 제목 바로 아래에 그 파일 글을 그대로 넣는다(배지 등). FOREMAN은 아직 쓰지 않는다
 # docs 차례(11-17 사용자: 손으로 쓴 차례는 낡는다, 상태 칸은 두지 않는다). 요약은 첫 # 줄 뒤 첫 문단의 첫 문장.
 # FOREMAN docs 머리의 「> 상태: …」 인용은 상태라 요약으로 쓰지 않는다
 docs = true

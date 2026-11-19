@@ -312,3 +312,70 @@ def test_doc_summary_modes():
     assert rd.doc_summary(md, "none") == ""
     assert rd.doc_summary("# t\n\n" + "가" * 200 + "\n").endswith("…")
     assert rd.cell("a — b · `c · d` | e") == "a, b, `c · d` \\| e"                         # 백틱 안은 그대로
+
+
+# ── 머리글 칸 `[readme] header_file`(11-19 런슈즈 부탁) ──
+HEADER = "[![배지](https://example.invalid/b.svg)](https://example.invalid)  \n둘째 줄은 두 칸 뒤 줄바꿈 그대로.\n"
+
+
+def with_header(tmp_path, header=HEADER, line='header_file = ".foreman/readme_header.md"\n'):
+    files = {**FILES, ".foreman/docs.toml": FILES[".foreman/docs.toml"] + line}
+    if header is not None:
+        files[".foreman/readme_header.md"] = header
+    return make(tmp_path, files)
+
+
+def test_header_goes_between_title_and_intro_as_is(tmp_path, capsys):
+    r = with_header(tmp_path)
+    rc, out, _ = cli(capsys, "--repo", str(r), "--links", links_file(tmp_path), "readme")
+    assert rc == 0
+    text = (r / "README.md").read_text(encoding="utf-8")
+    assert text.split("\n")[0] == rd.top_comment(".foreman/readme_header.md")
+    assert ".foreman/readme_header.md" in text.split("\n")[0]
+    assert "# 가짜\n\n" + HEADER.rstrip("\n") + "\n\n**가짜는 시험용 저장소입니다**" in text      # 줄 끝 두 칸까지 그대로
+    assert check9(r)[0] == []
+
+
+def test_header_off_is_same_as_before(tmp_path, capsys):
+    r = make(tmp_path)
+    cli(capsys, "--repo", str(r), "--links", links_file(tmp_path), "readme")
+    text = (r / "README.md").read_text(encoding="utf-8")
+    assert text.split("\n")[0] == rd.TOP and "readme_header" not in text
+
+
+@pytest.mark.parametrize("header", [None, "", "  \n\n"])
+def test_header_missing_or_empty_is_wrong_not_silent(tmp_path, capsys, header):
+    r = with_header(tmp_path, header)
+    rc, out, err = cli(capsys, "--repo", str(r), "--links", links_file(tmp_path), "readme")
+    assert rc == 2 and "머리글 파일 .foreman/readme_header.md" in err and not (r / "README.md").exists()
+    put(r, "README.md", "# 옛 README\n")      # 점검은 README가 있어야 만들어 맞댄다
+    errs, _ = check9(r)
+    assert len(errs) == 1 and "README를 만들 수 없습니다: 머리글 파일" in errs[0]
+
+
+def test_header_change_makes_check_fail(tmp_path, capsys):
+    r = with_header(tmp_path)
+    cli(capsys, "--repo", str(r), "--links", links_file(tmp_path), "readme")
+    put(r, ".foreman/readme_header.md", "바뀐 머리글\n")
+    errs, _ = check9(r)
+    assert len(errs) == 1 and "다릅니다" in errs[0]
+
+
+@pytest.mark.parametrize("path", ["../out.md", "/etc/hosts", "a/../../b.md", ".foreman/", "x-->y.md"])
+def test_header_path_outside_repo_refused(tmp_path, path):
+    with pytest.raises(dcfg.DocsConfigError, match="header_file"):
+        dcfg.parse(f'[readme]\nheader_file = "{path}"\n')
+
+
+def test_header_symlink_out_of_repo_is_wrong(tmp_path, capsys):
+    secret = tmp_path / "outside.md"
+    secret.write_text("밖의 글\n", encoding="utf-8")
+    r = with_header(tmp_path, None)
+    (r / ".foreman/readme_header.md").symlink_to(secret)
+    put(r, "README.md", "# 옛 README\n")
+    errs, _ = check9(r)
+    assert len(errs) == 1 and "머리글 파일" in errs[0]
+
+
+def test_header_file_is_not_generated():
+    assert ".foreman/readme_header.md" not in rd.GENERATED

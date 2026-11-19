@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     foreman_api_token: SecretStr
     foreman_hook_token: SecretStr
 
-    # 바인드 — 개발 중에는 ssh -L로만 붙는다. 외부 노출은 브리프 02(터널 + Access)
+    # 바인드 — 개발 중에는 ssh -L로만 붙는다. 외부 노출은 브리프 02(터널 + Access, docs/history/02_cloudflare_tunnel.md)
     bind_host: str = "127.0.0.1"
     bind_port: int = 8000
 

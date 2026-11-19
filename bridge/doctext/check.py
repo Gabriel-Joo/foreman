@@ -185,6 +185,18 @@ def readme_project(repo: str, cfg: DocsConfig) -> str:
     return name or Path(gits(repo, "rev-parse", "--show-toplevel").strip()).name
 
 
+def _header_text(repo: str, rev: str | None, rel: str) -> str | None:
+    """`[readme] header_file`의 글. 없거나 못 읽거나 저장소 밖으로 풀리는 링크면 None(그러면 점검이 틀림으로 센다)."""
+    if not rev:
+        f = Path(repo) / rel
+        try:
+            if not f.resolve().is_relative_to(Path(repo).resolve()) or not f.is_file():
+                return None
+        except OSError:
+            return None
+    return read_many(repo, rev, [rel]).get(rel)
+
+
 def readme_build(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
                  links: dict[str, str | None]) -> readme.Built:
     """지금 원고로 만든 README 글. links는 {편 경로: 노션 주소}."""
@@ -202,7 +214,11 @@ def readme_build(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, st
         paths = pieces_of(repo, rev, folder, False, cfg.records)
         docs = readme.doc_rows(folder, paths, read_many(repo, rev, paths), rd.get("docs_summary", "para"),
                                tuple(rd.get("docs_skip", [])), bool(rd.get("docs_numbered_only", False)))
-    return readme.build(title, s, pieces, bodies, links, docs)
+    header = None
+    if rd.get("header_file"):
+        hp = rd["header_file"]
+        header = (hp, _header_text(repo, rev, hp))
+    return readme.build(title, s, pieces, bodies, links, docs, header)
 
 
 def readme_check(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],

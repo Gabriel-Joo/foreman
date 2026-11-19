@@ -1,7 +1,10 @@
 """README 생성(11-17 문서 정리 B, 사용자 지시). README는 「여기 무엇이 있는지」만 보이는 문지기이고, 파일 전체가 생성물이다.
 
-들어가는 것 넷, 이 차례로:
+들어가는 것 다섯, 이 차례로:
 1. 제목: 저장소 이름(`.foreman/docs.toml` `[readme] title`, 없으면 그 저장소의 게시 프로젝트 이름)
+1-1. 머리글(`[readme] header_file`을 적은 저장소만): 제목 줄 바로 뒤에 그 파일 글을 그대로 넣는다(배지, 링크, 줄바꿈을 고치지 않는다.
+   앞뒤 빈 줄만 뗀다). 그 파일은 사람이 쓰는 원본이라 생성물이 아니다(`GENERATED`에 넣지 않는다). 파일이 없거나 읽지 못하거나
+   공백뿐이면 만들지 않고 틀림으로 알린다(조용히 빈칸으로 두지 않는다, 11-19 사용자). 맨 위 주석이 어느 파일에서 왔는지 적는다
 2. 소개 문단: 포트폴리오 00편(`portfolio/00_*.md`)의 첫 문단. 첫 # 줄 뒤에서 처음 나오는 본문 문단이다. 인용(`>`),
    절 제목, 그림, 표, 목록 줄은 건너뛴다. 글은 그대로 두고 근거 표시만 뗀다(노션 판과 같은 `STRIP`). 문단 전체를 굵은 글 하나로 감쌌으면 그 표시만 벗긴다
 3. 포트폴리오와 기술문서 원고 편 목록: 표 칸은 번호, 제목(편 파일 링크), 하위. 번호는 첫 # 줄 앞 번호(`03 `, `02-01 `),
@@ -199,11 +202,30 @@ def top_rows(rs: list[tuple[str, str, str]]) -> tuple[list[tuple[str, str, str, 
     return tops, orphans
 
 
+def top_comment(header_path: str | None = None) -> str:
+    """생성물 맨 위 주석. 머리글 파일이 있으면 어느 파일에서 왔는지 한 마디 더한다."""
+    if not header_path:
+        return TOP
+    return TOP[:-len(" -->")] + f". 제목 바로 아래 머리글은 `{header_path}` 파일 글을 그대로 넣은 것이다 -->"
+
+
 def build(title: str, sets: dict[str, str], pieces: dict[str, list[str]], bodies: dict[str, str],
-          links: dict[str, str | None], docs: list[tuple[str, str, str]] | None = None) -> Built:
+          links: dict[str, str | None], docs: list[tuple[str, str, str]] | None = None,
+          header: tuple[str, str | None] | None = None) -> Built:
     """README 글 전체. sets는 {묶음: 폴더}(없는 묶음은 빠진다), pieces는 {묶음: 편 경로}, links는 {편 경로: 노션 주소}.
-    docs는 docs 차례 줄(doc_rows). None이면 그 절을 넣지 않는다(`[readme] docs`가 꺼진 저장소)."""
+    docs는 docs 차례 줄(doc_rows). None이면 그 절을 넣지 않는다(`[readme] docs`가 꺼진 저장소).
+    header는 (머리글 파일 경로, 그 글). 글이 None(파일이 없거나 못 읽음)이거나 공백뿐이면 만들지 않고 틀림으로 알린다.
+    None이면 머리글 칸이 꺼진 것이다."""
     b = Built()
+    head = ""
+    if header is not None:
+        hp, ht = header
+        if ht is None:
+            b.errors.append(f"머리글 파일 {hp}를 읽지 못했습니다(없거나 읽을 수 없음, .foreman/docs.toml [readme] header_file)")
+        elif not ht.strip():
+            b.errors.append(f"머리글 파일 {hp}가 비어 있습니다(칸을 쓰려면 글을 채우고, 안 쓰려면 header_file 줄을 지웁니다)")
+        else:
+            head = ht.strip("\n")
     tables: dict[str, list[tuple[str, str, str]]] = {}
     for k in ORDER:
         if not sets.get(k):
@@ -225,7 +247,10 @@ def build(title: str, sets: dict[str, str], pieces: dict[str, list[str]], bodies
         b.errors.append(f"{first}에 첫 # 줄 뒤 본문 문단이 없어 소개 문단을 가져올 수 없습니다")
     if b.errors:
         return b
-    out = [TOP, f"# {title}", "", para or ""]
+    out = [top_comment(header[0] if header else None), f"# {title}", ""]
+    if head:
+        out += [head, ""]
+    out.append(para or "")
     for k in ORDER:
         out += ["", f"## {NAME_KO[k]}", ""]
         url = links.get(b.tops.get(k, ""))
@@ -281,4 +306,4 @@ GENERATED = (PATH,)       # 생성기가 쓰는 파일 전부(저장소 맨 위 
 
 
 __all__ = ["Built", "DOCS_HEAD", "GENERATED", "NAME_KO", "NO_LINK", "ORDER", "PATH", "TOP", "build", "cell", "diff", "doc_rows",
-           "doc_summary", "intro", "links_in", "number", "rows", "top_piece", "top_rows"]
+           "doc_summary", "intro", "links_in", "number", "rows", "top_comment", "top_piece", "top_rows"]
