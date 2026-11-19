@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/approval.py, bridge/approvals.py, bridge/approval_summary.py, bridge/api/approvals.py, config/approval.toml, config/roles.toml
-읽은 커밋: 5e0f7c5
+읽은 커밋: 639f610
 -->
 # 04 승인
 
@@ -12,7 +12,7 @@ FOREMAN이 다루는 Claude Code(CC) 세션은 대부분 사람이 지켜보지 
 
 | 판정 | 무엇이 들어가나 | CC에서 일어나는 일 |
 |---|---|---|
-| `ask` | 되돌릴 수 없는 것. 홈, 프로젝트, 데이터 폴더를 통째로 지우기, 운영 DB의 `DROP`, `TRUNCATE`, WHERE 없는 `DELETE`, 재부팅과 종료, VM 파괴, `push --force`, `reset --hard`, `filter-branch` 같은 이력 날리기, 비밀 파일을 밖으로 보내기, 볼륨, PVC, 네임스페이스, helm 릴리스 지우기, CC나 tmux를 한꺼번에 끄기, `curl … \| sh`, `crontab -r` | 승인 창이 뜬다. 자동 모드의 자동 통과보다 앞선다 |
+| `ask` | 되돌릴 수 없는 것. 홈, 프로젝트, 데이터 폴더를 통째로 지우기, 운영 DB의 `DROP`, `TRUNCATE`, WHERE 없는 `DELETE`, 재부팅과 종료, VM 파괴, `push --force`, `reset --hard`, `filter-branch` 같은 이력 날리기, 비밀 파일을 밖으로 보내기, 볼륨, PVC, 네임스페이스, helm 릴리스 지우기, CC나 tmux를 한꺼번에 끄기, `curl … \| sh`, `crontab -r`, 도구로 `.git` 폴더 안 파일 고치기 | 승인 창이 뜬다. 자동 모드의 자동 통과보다 앞선다 |
 | `allow` | 되돌릴 수 있는 것과 읽기. Read, Grep, Glob, 파일 편집과 쓰기, `git status`, `log`, `diff`, `kubectl apply`, `rollout`, `git push`(강제 아님), `docker restart`, `systemctl restart` | 승인 창 없이 통과 |
 | `pass` | 그 밖 전부. `/tmp`나 작업 트리 밖의 평범한 삭제, 비밀 파일 읽기, 로컬 개발 DB, `kubectl delete pod`, `docker rm` 등 | 브리지는 아무것도 돌려주지 않는다. CC가 원래대로 정한다 |
 
@@ -28,7 +28,7 @@ FOREMAN이 다루는 Claude Code(CC) 세션은 대부분 사람이 지켜보지 
 
 두 번째 전환은 써 보고 나서 왔다. 위험 차단 규칙을 켜자 흐름이 계속 끊겼다. 오탐을 하나씩 고쳐 나갔다(실행과 글자, 따옴표 친 메시지, mktemp로 만든 임시 폴더, 스크래치패드 …). 그래도 끊김은 줄지 않았고, 승인 정책을 고치려고 시험하는 코드가 그 정책에 걸리는 일까지 되풀이됐다. 그때 그동안의 승인 이력 65건을 하나씩 다시 봤다. 거부는 1건이었고, 그것도 승인 창을 시험하려고 일부러 거부한 것이었다. **실제 작업 중 거부는 0건이었다** [log:stage5_approval_result.md].
 
-65번 물어 0번 거부했다면 그 65번은 안전이 아니라 소음이었다. 소음은 그 자체로 해롭다. 같은 창이 수십 번 떠서 매번 Yes를 누르다 보면 사람은 창을 읽지 않고 누르게 되고, 정말 위험한 한 번이 왔을 때도 같은 손놀림으로 Yes를 누른다. 그래서 기준을 「이론적으로 위험한 것」에서 **「사용자가 실제로 거부할 만한 것」**으로 바꿨다. 이 기준으로 다시 짜자 묻는 규칙이 22개에서 12개로 줄었고, 하나씩 고치던 오탐 패치 대부분이 필요 없어졌다 [log:stage5_approval_result.md].
+65번 물어 0번 거부했다면 그 65번은 안전이 아니라 소음이었다. 소음은 그 자체로 해롭다. 같은 창이 수십 번 떠서 매번 Yes를 누르다 보면 사람은 창을 읽지 않고 누르게 되고, 정말 위험한 한 번이 왔을 때도 같은 손놀림으로 Yes를 누른다. 그래서 기준을 「이론적으로 위험한 것」에서 **「사용자가 실제로 거부할 만한 것」**으로 바꿨다. 이 기준으로 다시 짜자 묻는 규칙이 22개에서 12개로 줄었고, 하나씩 고치던 오탐 패치 대부분이 필요 없어졌다 [log:stage5_approval_result.md]. 12개는 이름 붙은 묻는 규칙의 수다. 지금 설정에서 세면 `[ask.bash]`의 정규식 규칙 10개에 통째로 지우기(`통째로-삭제`)와 비밀을 밖으로 보내기(`비밀-외부전송`) 둘을 더한 것이다. 그 밖에 코드 안에서 정하는 좁은 ask(`.git` 안 편집, 따옴표 때문에 나눌 수 없는 `rm` 같은 `애매한-삭제`)는 이 수에 들지 않는다 [code:config/approval.toml] [code:bridge/approval.py].
 
 결과는 지난 21일 도구 호출 18,076개에 새 규칙을 다시 돌려 확인했다. 하루 승인 창이 런슈즈 10.7에서 0.1로, 펫퍼민트 6.8에서 0.2로, FOREMAN 26.3에서 1.3으로 줄었다. 남은 9건을 하나씩 봤고 모두 거부할 만한 것이었다. FOREMAN 운영 DB 전체 비우기 4건, 펫퍼민트의 `git filter-branch`와 `reflog expire` 2건, `kubectl delete pvc`와 `delete ns` 3건이다 [log:stage5_approval_result.md].
 
@@ -106,7 +106,7 @@ observe가 있는 까닭은 hook이 실행 중인 세션에 곧바로 걸리기 
 
 먼저 온 쪽만 기록한다는 규칙은 시험에서 찾은 경주 때문에 생겼다. 처음에는 터미널 응답을 본 쪽과 기다리던 쪽이 둘 다 기록하다가, 먼저 쓴 쪽이 터미널 결정 값 없이 행을 닫아 버렸다. 지금은 결정을 기다리던 쪽 한 곳에서만 쓴다 [log:stage5_approval_result.md].
 
-기다리는 시간은 세 값이 겹쳐 있어 함께 움직여야 한다. 브리지 `wait_s` 3600초보다 hook 스크립트의 curl 한도 3630초가 길고, 그보다 CC 설정의 PermissionRequest hook 한도가 길어야 한다 [code:scripts/foreman-decide.sh]. 순서가 어긋나면 CC가 먼저 hook을 끊어 화면에서 누른 결정이 허공에 뜬다. `wait_s`는 처음 600초였는데, 사람이 화면을 계속 보지 않아 10분 안에 답하지 못하는 일이 잦아 3600초로 늘렸다 [code:config/approval.toml].
+기다리는 시간은 세 값이 겹쳐 있어 함께 움직여야 한다. 브리지 `wait_s` 3600초보다 hook 스크립트의 curl 한도 3630초가 길고, 그보다 CC 설정의 PermissionRequest hook 한도(3660초)가 길어야 한다 [code:scripts/foreman-decide.sh]. 순서가 어긋나면 CC가 먼저 hook을 끊어 화면에서 누른 결정이 허공에 뜬다. `wait_s`는 처음 600초였는데, 사람이 화면을 계속 보지 않아 10분 안에 답하지 못하는 일이 잦아 3600초로 늘렸다 [code:config/approval.toml].
 
 세션이 사람에게 묻는 질문(AskUserQuestion)과 계획 승인(ExitPlanMode)도 승인 창과 같은 PermissionRequest 길로 들어온다. 질문은 승인이 아니지만 정책에서 빼면 텔레그램과 화면 알림이 없어 세션이 조용히 멈추므로 같은 길로 받고, 카드 모양과 돌려주는 값만 따로 둔다. hook 두 개가 어떻게 이어지는지, 질문과 계획 승인에 무엇을 붙여 돌려주는지는 → 「기다리는 길: hook 두 개」.
 
