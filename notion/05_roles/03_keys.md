@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/api/auth.py, bridge/scopetoken.py, config/tokens.toml, bridge/mask.py, tests/test_secret_files.py, .env.bridge.example, .env.db.example, tests/test_scopetoken.py, tests/test_publish_scope.py
-읽은 커밋: 39843c6
+다루는 곳: bridge/api/auth.py, bridge/scopetoken.py, config/tokens.toml, bridge/mask.py, tests/test_secret_files.py, .env.bridge.example, .env.db.example, tests/test_scopetoken.py, tests/test_publish_scope.py, bridge/api/ws.py
+읽은 커밋: 0ff287f
 -->
 # 열쇠와 비밀
 
@@ -87,7 +87,7 @@ flowchart LR
 | `GET /api/foreman/state`, `notes`, `context`, `merge-order`, `GET /api/merge-prep` | `?project=`가 이 프로젝트일 때 |
 | `/api/managers/…` | 읽기는 모두. 부탁 보내기는 보낸 쪽 이름이 이 프로젝트일 때(남의 이름으로 부탁할 수 없다) |
 | `GET /api/publish` | `?project=`가 이 프로젝트일 때(없으면 foreman으로 본다) |
-| `POST /api/publish` | 본문의 프로젝트가 이 프로젝트이고, 덮어쓰기(force)나 한꺼번에 맞추기, 한꺼번에 내리기가 아닐 때 |
+| `POST /api/publish` | 본문의 프로젝트가 이 프로젝트이고, 덮어쓰기(force)나 한꺼번에 맞추기(`action = docsync`)가 아닐 때. 원본이 없어진 페이지 내리기와 포트폴리오 번호순 다시 세우기도 한꺼번에 맞추기 안에서 하므로 함께 막힌다 |
 | `POST /api/publish/pair` | 본문의 프로젝트가 이 프로젝트일 때 |
 | `GET`, `POST /api/postit` | 이 프로젝트 포스트잇일 때 |
 | 그 밖의 모든 주소 | 막힘. 대시보드, 승인, 사용량, `/ws`, 셸 모두 관리 토큰만 |
