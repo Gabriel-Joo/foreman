@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/static/js/store.js, bridge/api/dashboard.py, bridge/uiver.py, bridge/static/js/handoff.js
+다루는 곳: bridge/static/js/store.js, bridge/api/dashboard.py, bridge/uiver.py, bridge/static/js/handoff.js, bridge/inject.py
 읽은 커밋: d7c6ce7
 -->
 # 데이터 계층
@@ -110,7 +110,16 @@ DB에는 끝난 세션이 수백 개 쌓여 있다. 이걸 모두 실으면 화�
 
 ## 3. 상태 판정을 두 곳에서 하는 까닭
 
-캐릭터 상태(`state`)를 정하는 규칙은 브리지의 `char_state`와 화면의 `charState`, 두 곳에 같은 내용으로 있다 [code:bridge/api/dashboard.py] [code:bridge/static/js/store.js]. 프로세스가 없으면 DORMANT, 멈춰 두었으면(T) SUSPENDED, 살아 있으면 CC가 스스로 적는 status가 busy일 때 ACTIVE이고 그 밖은 IDLE, status를 모를 때만 열린 턴이 있는지로 가른다.
+캐릭터 상태(`state`)를 정하는 규칙은 브리지의 `char_state`와 화면의 `charState`, 두 곳에 같은 내용으로 있다 [code:bridge/api/dashboard.py] [code:bridge/static/js/store.js]. 프로세스가 없으면 DORMANT, 멈춰 두었으면(T) SUSPENDED, 살아 있으면 CC가 스스로 적는 status가 busy일 때 ACTIVE이고 그 밖은 IDLE, status를 모를 때만 열린 턴이 있는지로 가른다. 정리하면 다음과 같다.
+
+| 상태 | 뜻 | 판정 근거 | 화면 |
+|---|---|---|---|
+| `ACTIVE` | 살아 있고 일하는 중 | CC가 스스로 적는 상태가 `busy`, 그것을 모르면 열린 턴이 있음 | 돌아다닌다 |
+| `IDLE` | 살아 있고 쉬는 중 | 프로세스는 있고 일하지 않음 | 책상에 앉아 있다 |
+| `SUSPENDED` | 프로세스가 정지됨(터미널에서 Ctrl+Z) | `/proc/<pid>/stat`의 상태 글자가 `T` | 자리에서 얼어붙는다(회색) |
+| `DORMANT` | 살아 있는 프로세스가 없다 | 프로세스를 찾지 못함 | 자리에 서 있다 |
+
+`DORMANT`는 설계 문서가 그린 「몇 시간 일이 없거나 대화가 너무 쌓이면 내리는 상태」가 아니라 그냥 「프로세스가 없으면」이다. `SUSPENDED`를 운영체제의 상태 글자 하나로만 가르는 까닭은 기록만 봐서는 멈춘 CC가 「그냥 쉬는 중」과 같아 보이기 때문이다. 멈춘 CC에 글을 넣으면 글이 CC가 아니라 그 아래 셸로 들어가 명령으로 실행되므로, `SUSPENDED` 세션에는 글 넣기를 막는다 [code:bridge/inject.py]. `IDLE`은 토큰을 쓰지 않는다. CC는 요청이 있을 때만 모델을 부르기 때문이다.
 
 한 곳에만 두지 않은 까닭은 WS 때문이다. 프로세스 상태는 2초마다 바뀐 것만 `session_state` 소식으로 오고, 턴이 열리고 닫히는 것은 `turn` 소식으로 온다. 이때 화면이 스스로 상태를 다시 계산하지 못하면 다음 스냅샷까지 최대 15초 동안 옛 상태로 보인다. 그래서 화면에도 같은 규칙을 두고, 소식을 받을 때마다 다시 계산한다 [code:bridge/session_state.py] [code:bridge/static/js/store.js].
 
