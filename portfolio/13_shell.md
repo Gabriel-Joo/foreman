@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/terminal.js, bridge/terminal.py, bridge/api/terminal.py, deploy/shell/
-읽은 커밋: 5e0f7c5
+읽은 커밋: b43e598
 -->
 
 # 셸 패널
