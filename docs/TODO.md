@@ -66,6 +66,9 @@
 - **foreman-152** 원고 폴더를 바꾸면 옛 폴더의 멈춘 편 행이 DB에 held로 남음 (2026-11-19)
   `.foreman/notion.toml` `src`를 바꾸면(펫퍼민트 docs/ → notion/, 11-19) 옛 폴더 경로의 멈춘 편 행(`@docs-held/docs/...`)이 held로 남는다. 11-20 포트폴리오 게시를 한 함수로 합친 뒤(`2a4f8e1`) 멈춘 편 행은 묶음 폴더로 걸러 읽어서 옛 폴더 행은 화면에 더 나오지 않는다. 그 대신 그 행을 released로 바꾸는 곳도 없어져, DB에 아무도 모르는 held 행이 남는다. 화면 증상만 풀린 조용한 고장 꼴이다(11-20 사용자: 지우지 말고 고친다). 원고 폴더가 바뀌면 옛 폴더 행을 released로 바꾼다.
   나온 곳: 펫퍼민트 관리자 F단계 부탁 11-19(21:45 auto로 읽은 뒤 21:52에도 held 5, 11-20 지금 맞추기로 풂), `log/foreman-4_portfolio_one_press_20261120.md` 4절
+- **foreman-158** 브리지를 다시 띄울 때마다 끄던 프로세스가 예외를 남김 (2026-11-20)
+  `systemctl --user restart foreman-bridge` 때 끄던 옛 프로세스가 열려 있던 세션 화면 웹소켓이 끊기며 `ERROR: Exception in ASGI application`과 Traceback 넷을 로그에 남긴다(`bridge/api/terminal.py` `terminal_ws`, `_pump`). 11-20 14:50, 15:05 두 번 모두 그랬다. 새 프로세스 오류는 아니지만, 다시 띄운 뒤 오류를 셀 때마다 이 줄을 걸러야 해 진짜 오류가 섞여도 놓치기 쉽다. 오류가 아닌 것이 오류로 보이면 다음에 진짜 오류를 못 본다(11-20 사용자). 끌 때 끊긴 연결은 예외가 아닌 한 줄로 남긴다.
+  나온 곳: 사용자 11-20, `log/manager410_overhead_20261115.md`
 
 ## 2. 세션과 승인
 
@@ -356,6 +359,9 @@
 - **foreman-150** 문서 도구 밖에서 git 경로를 따옴표 없이 읽게 (2026-11-19)
   문서 도구(`bridge/doctext/`, `bridge/docrefs.py`)는 11-19 `a7e0786`부터 git을 `core.quotepath=false`로 부르고 파일 목록을 `-z`로 읽어, 한글 같은 비아스키 이름 파일을 바른 이름으로 본다. 그 밖에서 git 경로를 `-z` 없이 줄 단위로 읽는 곳이 남아 있다: `bridge/overlap.py`(세션 겹침), `bridge/worktree.py`와 `bridge/mergeprep.py`(합치기 카드, 충돌 목록), `bridge/roleguard.py`, `bridge/evidence.py`, `bridge/handoff_state.py`, `bridge/promote.py`, `bridge/scribe.py`, `bridge/notion.py` 562. 한글 이름 파일이 겹침이나 카드에서 이름이 깨지거나 빠진다. `bridge/` 공용 git 함수 하나로 모은다. 한글 이름 파일은 지금 펫퍼민트에만 있어 급하지 않다.
   나온 곳: 사용자 11-19, `log/foreman-6_hangul_paths_20261119.md`
+- **foreman-159** Notion 짝을 새 경로로 옮기는 길 (2026-11-20)
+  원고 이름을 바꾸고 옛 Notion 페이지(와 그 링크)를 살리려면 게시 기록의 짝을 새 경로로 옮겨야 하는데 API가 없다. 짝 등록(`POST /api/publish/pair`)은 이미 다른 경로와 짝인 페이지를 거부한다. 11-12에 이어 11-20 펫퍼민트 `portfolio/08_limits.md` → `09_limits.md`도 관리자가 `doc_publish` 한 행을 손으로 고쳤다. 되풀이되는 일이라 짝 옮기기 길(관리 토큰, 한 행만, 전후 기록)을 둔다. 이름만 바꾼 포트폴리오 편은 지문이 같아 「바뀜」이 아니어서 Notion 제목의 번호가 옛 번호로 남을 수 있는지도 함께 본다.
+  나온 곳: 펫퍼민트 관리자 부탁 11-20, `log/manager410_overhead_20261115.md`
 
 ## 7. 알림, 파이프라인, 사용량
 
