@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/static/js/store.js, bridge/api/dashboard.py, bridge/uiver.py, tests/test_app_db.py, tests/test_human_needs.py, tests/test_escalate_number.py
-읽은 커밋: b0cc1d6
+다루는 곳: bridge/static/js/store.js, bridge/api/dashboard.py, bridge/uiver.py, bridge/static/js/handoff.js, tests/test_app_db.py, tests/test_human_needs.py, tests/test_escalate_number.py
+읽은 커밋: d7c6ce7
 -->
 # 데이터 계층
 
@@ -84,7 +84,7 @@ DB에는 끝난 세션이 수백 개 쌓여 있다. 이걸 모두 실으면 화�
 
 `escalate` 칸 안의 물음은 보고와 다르게 갈린다. 브리지는 물음마다 그 뒤에 사람이 그 관리자에게 입력한 턴을 찾아, 입력 글에 물음 번호(`#id`)가 있으면 끝난 것으로 보고 싣지 않는다. 사람 입력이 아직 없으면 `question`에 가장 최근 물음 하나를 싣고, 입력은 있었는데 번호가 없으면 `unseen` 목록에 싣는다 [code:bridge/api/dashboard.py] [code:tests/test_escalate_number.py]. 사람이 다른 얘기를 입력했다고 물음이 사라지지 않게 하려는 것이다. 이 판정도 브리지에서 하므로 데이터 계층은 받은 칸을 그대로 들고 있을 뿐이다. 사람이 「아직 안 본 물음」을 [봤다]로 지우면 데이터 계층은 서버에 기록을 보내고(`escalateSeen`), 다음 스냅샷을 기다리지 않고 자기 상태의 `unseen`에서도 그 물음을 뺀다 [code:bridge/static/js/store.js]. 물음 번호를 붙이고 사라지게 하는 규칙 전체는 → 「관리자에게 넘기기와 보고」가 다룬다.
 
-이 조건들을 화면이 아니라 브리지에서 거는 것은 일부러다. 화면은 그리는 쪽이 여럿이다. 테마마다 같은 조건을 다시 쓰면 언젠가 하나가 어긋난다. 브리지가 「보일 것만」 싣고 화면은 있으면 그리는 쪽으로 정해 두면, 판정이 바뀌어도 고칠 곳은 한 곳이다. 같은 까닭으로 `human_needs`는 텔레그램 알림과 사람 화면이 같은 신호를 쓰게 만든 함수이고, 합치기 카드를 관리자가 승인하는 카드인지 가르는 `manager_card`도 패널 쪽 같은 이름 함수와 기준을 맞춰 두었다 [code:bridge/api/dashboard.py] [code:bridge/static/js/handoff.js].
+이 조건들을 화면이 아니라 브리지에서 거는 것은 일부러다. 화면은 그리는 쪽이 여럿이다. 테마마다 같은 조건을 다시 쓰면 언젠가 하나가 어긋난다. 브리지가 「보일 것만」 싣고 화면은 있으면 그리는 쪽으로 정해 두면, 판정이 바뀌어도 고칠 곳은 한 곳이다. 같은 까닭으로 `human_needs`는 텔레그램 알림과 사람 화면이 같은 신호를 쓰게 만든 함수이고, 사람 화면에서 뺄 합치기 카드를 가르는 `manager_card`도 패널 쪽 같은 이름 함수와 기준을 맞춰 두었다. 관리자 세션이 승인하는 카드와 브리지가 스스로 합치는 카드(조사 세션의 기록 카드, 서기실 전체 줄이 띄운 편의 원고 카드)는 사람이 누를 것이 없어 빼고, 늘 사람이 승인해야 하는 까닭이 붙은 카드는 그대로 둔다 [code:bridge/api/dashboard.py] [code:bridge/static/js/handoff.js].
 
 ### 세션 밖의 칸
 
