@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/mergeprep.py, bridge/docrefs.py, tools/docs.py, bridge/doctext/config.py, bridge/inspector_close.py, bridge/coder_room.py, bridge/api/coder.py, bridge/static/js/coder.js, bridge/static/js/handoff.js, migrations/0032_merge_card.sql, tests/js/coder.test.mjs, tests/js/mergeprep.test.mjs, tests/test_mergeprep.py, tests/test_mergeprep_check.py, tests/test_mergeprep_db.py, tests/test_merge_remind_catchup.py, tests/test_docs_tool.py, tests/test_docs_config.py, tests/test_docrefs_config.py
-읽은 커밋: a6b77af
+읽은 커밋: b89b3b6
 -->
 
 # 합치기 카드
@@ -104,7 +104,7 @@ flowchart TD
 
 이렇게 바꾼 까닭은 문서가 밀리는 사슬이다. 코더가 코드를 고치면 docs가 밀리고, 서기가 docs를 고치면 원고가 밀리고, 다른 서기가 원고를 고치는 사이 코드가 또 바뀐다. 서기는 코더가 왜 그렇게 고쳤는지 다시 알아내야 했다. 그래서 이제 코드를 고친 코더가 그 코드를 가리키는 문서도 같은 브랜치에서 함께 고친다(→ 「역할 다섯」). 카드의 「안 고침」은 그 규칙이 지켜졌는지를 승인하는 사람이 바로 보게 하는 자리다. 옛 정리 후보는 바뀐 파일 이름이 나오는 docs 줄만 맞대고 원고와 포트폴리오는 보지 않아, 사슬의 뒤쪽이 카드에 보이지 않았다.
 
-한계도 있다. 근거 표시가 모두 파일이나 폴더 단위라서 걸린 문단이 이번 고침과 상관없어도 걸린다. 「안 고침」은 「낡았다」가 아니라 「보라」라는 뜻이다. 근거 표시의 경로 뒤에 코드 줄 번호가 붙으면(`:10-20`처럼) 도구는 바뀐 줄과 겹칠 때만 그 줄을 건다. FOREMAN 원고는 그런 표시를 쓰지 않고(근거 표시 꼴을 설명하는 보기 하나뿐이다), 줄 번호를 붙여 쓰는 인프라 원고에서 쓰인다 [code:bridge/docrefs.py]. 파일 단위로 남긴 까닭은 줄 번호를 지키는 품이다. 이 갈래를 정할 때 FOREMAN 근거 표시는 2,454개였고 코드가 인프라보다 자주 바뀐다 [log:foreman-6_doctext_20261117.md]. 그 수를 어떻게 셌는지는 기록에 없다. 지금 기술문서 원고 묶음에서 대괄호 안이 `code:`, `docs:`, `c:`, `log:`로 시작하는 표시를 모두 세면 4,232개이고, 그 가운데 `code:`와 `docs:`만 세면 3,019개다. 처음에는 README의 할 일 표 줄도 후보로 찾았지만, 그 표 자체가 없어지면서 함께 뺐다 [log:foreman-4_readme_cleanup_20261115.md]. 옛 카드 모양과 맞추려고 카드 JSON의 README 칸은 늘 빈 목록으로 남아 있다.
+한계도 있다. 근거 표시가 모두 파일이나 폴더 단위라서 걸린 문단이 이번 고침과 상관없어도 걸린다. 「안 고침」은 「낡았다」가 아니라 「보라」라는 뜻이다. 근거 표시의 경로 뒤에 코드 줄 번호가 붙으면(`:10-20`처럼) 도구는 바뀐 줄과 겹칠 때만 그 줄을 건다. FOREMAN 원고는 그런 표시를 쓰지 않고(근거 표시 꼴을 설명하는 보기 하나뿐이다), 줄 번호를 붙여 쓰는 인프라 원고에서 쓰인다 [code:bridge/docrefs.py]. 파일 단위로 남긴 까닭은 줄 번호를 지키는 품이다. 이 갈래를 정할 때 기록에는 FOREMAN 근거 표시가 2,454개로 적혀 있고 코드가 인프라보다 자주 바뀐다고 한다 [log:foreman-6_doctext_20261117.md]. 그 수를 어떻게 셌는지는 기록에 없다. 지금 기술문서 원고 묶음에서 대괄호 안이 `code:`, `docs:`, `c:`, `log:`로 시작하는 표시를 모두 세면 4,232개이고, 그 가운데 `code:`와 `docs:`만 세면 3,019개다. 처음에는 README의 할 일 표 줄도 후보로 찾았지만, 그 표 자체가 없어지면서 함께 뺐다 [log:foreman-4_readme_cleanup_20261115.md]. 옛 카드 모양과 맞추려고 카드 JSON의 README 칸은 늘 빈 목록으로 남아 있다.
 
 ### 규칙 파일
 

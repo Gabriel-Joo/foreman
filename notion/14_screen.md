@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/office.html, bridge/static/dashboard.html, bridge/static/css/panel.css, docs/10_office_design.md
-읽은 커밋: 67ed1c8
+읽은 커밋: b89b3b6
 -->
 # 14 화면
 
