@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/office.js, bridge/static/js/theme.js, bridge/static/js/grid.js, bridge/static/js/sprites.js, bridge/static/js/walk.js, bridge/static/js/aura.js, bridge/static/js/overhead.js, bridge/static/js/wrap.js, bridge/static/themes/, scripts/draw_props.py, LICENSES.md, tests/js/grid.test.mjs, tests/js/theme.test.mjs, tests/js/walk.test.mjs, tests/js/banner_wrap.test.mjs, tests/js/name_ink.test.mjs, tests/js/role_aura.test.mjs, tests/js/overhead_stack.test.mjs, tests/js/stack_side.test.mjs, tests/js/seat_host.test.mjs, tests/test_overhead_marks.py, tests/js/overhead_marks.test.mjs
-읽은 커밋: 482b98e
+읽은 커밋: 66fa9ae
 -->
 
 # 픽셀 오피스와 테마
@@ -97,6 +97,8 @@ flowchart LR
 세션 하나가 화면에서 어디에 서서 무엇을 하는지는 `theme.js`의 `resolveAction`이 정한다. 이 함수는 DOM도 캔버스도 모른다. 테마를 바꾸면 이 파일은 그대로이고 `theme.json`만 바뀐다 [code:bridge/static/js/theme.js].
 
 판정은 세 겹이다. 먼저 상태가 바탕을 깐다. 세션이 일하는 중(ACTIVE)일 때만 도구 규칙을 위에서부터 훑어 처음 맞는 하나를 덮는다. 마지막으로 켜진 플래그 가운데 우선순위가 가장 높은 하나가 위에 덮는다. 그래서 얼어붙은 세션도, 끝난 세션도 승인을 기다리면 손을 든다. 사람이 봐야 하는 것이 가장 위에 오게 한 것이다 [code:bridge/static/js/theme.js].
+
+바탕에는 역할이 한 번 끼어든다. 쉬는(IDLE) 세션의 역할이 테마 `roles.idle`에 있으면 쉼 방 대신 거기 적힌 방과 동작을 쓰고, 사람마다 다른 쉬는 모습(`variants`)은 섞지 않는다. 지금 세 테마 모두 서기 하나만 적혀 있어, 서기는 쉬어도 서기 방에서 읽는다 [code:bridge/static/js/theme.js] [code:bridge/static/themes/magic/theme.json].
 
 | 상태(서버 값) | 바탕 동작 | 현장 | 마법학교 | 오피스 |
 |---|---|---|---|---|
@@ -280,7 +282,7 @@ CC-BY의 출처 표시는 `LICENSES.md`에 작가 이름, 라이선스, 출처 �
 
 ### 자리를 고르는 법: 후보와 무게
 
-`placeStack`은 덩어리를 놓을 후보를 만든 뒤 가장 덜 나쁜 것을 고른다. 후보는 모두 머리 위다. 차례는 원래 크기로 한 줄 쌓기(가운데 → 옆으로 조금씩 → 조금씩 들어 올림), 동작 카드를 글씨 카드 옆에 붙이기, 0.85배로 줄이기, 마지막으로 점이다 [code:bridge/static/js/overhead.js]. 옆으로 미는 폭은 덩어리가 자기 머리 위에 걸쳐 있는 만큼까지라 누구 표시인지 헷갈리지 않는다. 들어 올리는 높이는 몸 키의 3배까지다 [code:bridge/static/js/office.js]. 줄여도 글씨는 화면 9px, 도는 막대는 6px 밑으로 가지 않는다.
+`office.js`의 `placeStack`은 `overhead.js`의 `stackCandidates`로 덩어리를 놓을 후보를 만들고, `pickStack`으로 가장 덜 나쁜 것을 고른다. 후보는 모두 머리 위다. 차례는 원래 크기로 한 줄 쌓기(가운데 → 옆으로 조금씩 → 조금씩 들어 올림), 동작 카드를 글씨 카드 옆에 붙이기, 0.85배로 줄이기, 마지막으로 점이다 [code:bridge/static/js/overhead.js]. 옆으로 미는 폭은 덩어리가 자기 머리 위에 걸쳐 있는 만큼까지라 누구 표시인지 헷갈리지 않는다. 들어 올리는 높이는 몸 키의 3배까지다 [code:bridge/static/js/office.js]. 줄여도 글씨는 화면 9px, 도는 막대는 6px 밑으로 가지 않는다.
 
 후보마다 덮는 넓이(px²)를 층별로 재고 무게를 곱해 더한다. 앞 층일수록 무겁다 [code:bridge/static/js/overhead.js].
 
@@ -329,7 +331,7 @@ CC-BY의 출처 표시는 `LICENSES.md`에 작가 이름, 라이선스, 출처 �
 
 ## 방 배너, [전체] 카드, 감독실, 방 바깥
 
-한 방을 볼 때 경고(승인 대기, 질문, 권한 거부, API 오류로 멈춤, 답 기다림, 사용자 답 기다림, 스키마 잠금, 파이프라인 실패, 배포 대기, 빌드 알림 끊김 의심, 빌드 알림 없음이나 늦음)는 캔버스 맨 위 폭 전체의 배너로 뜬다 [code:bridge/static/js/office.js]. 처음에는 방 윗벽 위 빈칸에 그리려다 모자라면 방 위에 겹쳤다. 지금은 배너 높이만큼 방을 아래로 내린다. 글이 폭을 넘으면 자르지 않고 `wrap.js`가 낱말 단위로 줄을 바꾸고, 낱말 하나가 폭보다 길면 그때만 글자로 자른다. 줄 수만큼 배너가 높아지고 방이 내려간다 [code:bridge/static/js/wrap.js]. 배포 대기 줄을 누르면 ArgoCD 앱 화면이 새 탭으로 열리고, 스키마 잠금 줄을 누르면 확인 창을 거쳐 잠금을 푼다.
+한 방을 볼 때 경고(승인 대기, 질문, 권한 거부, API 오류로 멈춤, 답 기다림, 사용자 답 기다림, 스키마 잠금, 파이프라인 실패, 배포 대기, 빌드 알림 끊김 의심, 빌드 알림 없음이나 늦음)는 캔버스 맨 위 폭 전체의 배너로 뜬다 [code:bridge/static/js/office.js]. 처음에는 방 윗벽 위 빈칸에 그리려다 모자라면 방 위에 겹쳤다. 지금은 배너 높이만큼 방을 아래로 내린다. 글이 폭을 넘으면 자르지 않고 `wrap.js`가 낱말 단위로 줄을 바꾸고, 낱말 하나가 폭보다 길면 그때만 글자로 자른다. 여는 괄호 앞도 끊는 자리로 본다. 「라운지(떠돌이)」는 「라운지」와 「(떠돌이)」 두 줄이 될 수 있다. 줄 수만큼 배너가 높아지고 방이 내려간다 [code:bridge/static/js/wrap.js]. 배포 대기 줄을 누르면 ArgoCD 앱 화면이 새 탭으로 열리고, 스키마 잠금 줄을 누르면 확인 창을 거쳐 잠금을 푼다.
 
 한 방의 배율은 0.25 계단이다. 연속값이면 창, 패널, 글씨 배율이 바뀔 때마다 방이 조금씩 다른 크기가 됐다. 지금은 폭으로 정하고 높이는 위 벽 한 칸까지 잘려도 된다고 본다 [code:bridge/static/js/office.js]. 잰 값은 아래와 같고, 글씨 배율 80~110%에서 모두 같다 [log:designer_grid_20261110.md].
 
@@ -367,21 +369,23 @@ CC-BY의 출처 표시는 `LICENSES.md`에 작가 이름, 라이선스, 출처 �
 
 **4단계, 머리 위 덩어리.** 이름표와 가구가 정리되자 머리 위 표시가 남았다. 앞의 「머리 위 표시 쌓기」대로 쌓기 틀과 무게를 만들고 `stackAudit`을 더했다. 카드와 사람 몸(자기 몸 포함), 카드가 정말 머리 위인지, 위 방으로 넘치는지, 동작 카드가 글씨 카드 아래 깔렸는지, 자리 말풍선이 놓였고 자리에서 멀지 않은지, 위에 자리가 있는데 옆으로 갔는지를 센다 [code:bridge/static/js/office.js]. 「캐릭터 위로만」으로 좁히자 처음에는 작은 방에서 0건이 나오지 않았다. 전에는 옆이나 발밑으로 비켜서 0이던 자리였다. 그래서 「위」 안에서 고를 폭을 넓혔다(옆으로 조금, 들어 올림, 막는 칸 바로 위 높이, 옆 붙이기, 줄이기, 점) [log:overhead_stack_20261113.md].
 
-지금 화면이 스스로 세는 점검은 아래와 같다. 모두 `window.office`로 부를 수 있고, 점검 도구가 화면마다 세어 「문제 N건」에 더한다 [code:bridge/static/js/office.js].
+지금 화면이 스스로 세는 점검은 아래와 같다. 모두 `window.office`로 부를 수 있다 [code:bridge/static/js/office.js]. 다만 점검 도구가 화면마다 불러 「문제 N건」에 더하는 것은 그 가운데 여덟이다. `audit`은 결과를 보고서에 남기기만 하고 건수에 넣지 않는다. 배너, 덩어리 하나하나, 걷기 점검은 도구가 스스로 부르지 않아서, 볼 때 `--eval`로 식을 넘겨 화면마다 결과를 보고서에 남긴다 [code:tools/screen.py]. 걷기는 한 프레임만 봐서는 알 수 없으므로 `walkWatch()`로 기록을 켠 뒤 `walkLog()`로 그동안 나온 문제를 모아 읽는다 [code:bridge/static/js/office.js].
 
-| 점검 | 보는 것 |
-|---|---|
-| `gridAudit` | 모눈, 걸어서 못 가는 자리, 방 밖 가구와 자리, 이름표 칸 |
-| `layoutAudit` | 모든 자리에 사람을 세웠을 때 가구, 소품, 이름표가 윗몸을 가리나 |
-| `audit` | 고정되지 않은 가림, 받침 없는 탁자 위 소품 |
-| `propAudit` | 모든 캐릭터와 소품 조합에서 소품이 얼굴 칸과 겹치나, 너무 크나 |
-| `labelAudit` | 지금 그린 이름표, 말풍선 ↔ 사람 몸, 이름표끼리, 이름표 ↔ 가구 |
-| `nameAudit` | 캐릭터 이름 ↔ 방 이름표, 다른 이름 |
-| `stackAudit`, `bubbleAudit` | 머리 위 덩어리(위 4단계) |
-| `cardAudit` | [전체] 카드 겹침, 잘림, 줄 높이, 현황판 이름, 방 바깥 띠와 풍경 |
-| `bannerAudit` | 배너 높이와 방 윗벽의 화면 자리 |
-| `tipAudit` | 화면의 모든 호버 글이 잘리나 |
-| `walkAudit` | 걷는 코더끼리 겹침, 가구 위를 걸음 |
+| 점검 | 보는 것 | 점검 도구가 세나 |
+|---|---|---|
+| `gridAudit` | 모눈, 걸어서 못 가는 자리, 방 밖 가구와 자리, 이름표 칸 | 센다 |
+| `layoutAudit` | 모든 자리에 사람을 세웠을 때 가구, 소품, 이름표가 윗몸을 가리나 | 센다 |
+| `propAudit` | 모든 캐릭터와 소품 조합에서 소품이 얼굴 칸과 겹치나, 너무 크나 | 센다 |
+| `labelAudit` | 지금 그린 이름표, 말풍선 ↔ 사람 몸, 이름표끼리, 이름표 ↔ 가구 | 센다 |
+| `nameAudit` | 캐릭터 이름 ↔ 방 이름표, 다른 이름(걷는 중인 이름표는 빼고) | 센다 |
+| `stackAudit` | 머리 위 덩어리(위 4단계) | 센다 |
+| `cardAudit` | [전체] 카드 겹침, 잘림, 줄 높이, 현황판 이름, 방 바깥 띠와 풍경 | 센다 |
+| `tipAudit` | 화면의 모든 호버 글이 잘리나 | 센다 |
+| `audit` | 고정되지 않은 가림, 받침 없는 탁자 위 소품 | 보고서에만 남긴다 |
+| `bubbleAudit` | 덩어리 하나하나가 이름표, 몸, 다른 표시, 화면 밖, 위 칸을 덮나 | `--eval`로 |
+| `bannerAudit` | 배너 높이와 방 윗벽의 화면 자리 | `--eval`로 |
+| `walkAudit` | 걷는 코더끼리 겹침, 가구 위를 걸음 | `--eval`로(`walkWatch`, `walkLog`) |
+| `walkNameAudit` | 걷는 중인 이름표가 무엇을 덮나 | `--eval`로 |
 
 [code:bridge/static/js/office.js] [code:tools/screen.py]
 
