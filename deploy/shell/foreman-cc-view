@@ -1,5 +1,5 @@
 #!/bin/bash
-# 「CC 화면」 띄우는 창 — ttyd(-b /ccscreen)가 브라우저 연결마다 띄운다(11-14, bridge/terminal.py _supervise).
+# 「세션 화면」 띄우는 창 — ttyd(-b /ccscreen)가 브라우저 연결마다 띄운다(11-14, bridge/terminal.py _supervise).
 #   foreman-cc-view <tmux 소켓> <쉴 때 크기 WxH> <창 %N> <탭>
 # 쉴 때 크기(80x24)는 브리지 상수 CC_REST_SIZE 하나에서 ttyd 고정 인자로 온다. 창 · 탭은 브라우저가 정하지 않는다 — 브라우저는
 # 세션 번호만 보내고, 브리지 WS 프록시(/ccscreen/ws)가 쿠키 · 같은 출처 · DB(살아 있는 FOREMAN CC 세션) · 그 프로세스의 tmux 창을
@@ -42,7 +42,7 @@ hold() {                          # 우리가 묶은 창(표시 있음)이거나
   T set-option -w -t "$win" window-size manual && T set-option -w -t "$win" "$MARK" 1 || return 0
   T set-hook -t "=$view:" client-resized "run-shell -C 'resize-window -t $win -x #{client_width} -y #{client_height}'"
 }
-others() {                        # 이 창을 보는 다른 CC 화면 세션(막 만들어져 붙는 중인 것도 센다)
+others() {                        # 이 창을 보는 다른 세션 화면 세션(막 만들어져 붙는 중인 것도 센다)
   T list-windows -a -F '#{window_id} #{session_name}' 2>/dev/null \
     | awk -v w="$win" -v me="$view" '$1 == w && $2 ~ /^ccv-/ && $2 != me { print $2 }'
 }

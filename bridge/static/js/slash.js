@@ -1,6 +1,7 @@
 // '/'로 시작하는 입력을 CC 명령으로 실행할지 글로 보낼지(11-05 사용자 요청 — '/ 명령' 체크박스를 없앴다).
 // 경로("/api/foo …")나 여러 줄은 글, 아는 명령은 명령, 맥락을 날리는 명령은 확인, 모르는 /낱말은 묻는다.
-// 서버(bridge/inject.guarded)는 그대로다 — command=false면 앞에 공백을 붙여 글로, true면 명령으로 보낸다. '!'는 언제나 막는다.
+// 서버(bridge/inject.guarded)는 이 판정을 command 값으로 받는다 — false면 앞에 공백을 붙여 글로, true면 그대로 명령으로 보낸다.
+// '!'(bash 모드)는 여기서 가르지 않는다. 입력 API가 bang_check로 승인 규칙 ask, sudo, 여러 줄, 빈 명령만 막고 나머지는 그대로 보낸다(11-09).
 
 // CC 내장 명령 중 자주 쓰는 것(+ 이 저장소 · 사용자 스킬은 모를 수 있다 → ask)
 export const KNOWN = new Set(['compact', 'model', 'cost', 'context', 'usage', 'status', 'memory', 'help', 'config', 'init',

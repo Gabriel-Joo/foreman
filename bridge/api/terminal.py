@@ -9,8 +9,8 @@
   DELETE /api/terminal/requests/{id}   부탁을 닫는다(결과를 전달하지 않는다)
   POST /api/terminal/requests/{id}/prefill   셸 입력 줄에 다시 채운다
   GET  /terminal/…  · WS /terminal/ws       쿠키를 확인하고 ttyd(UNIX 소켓)로 그대로 넘긴다
-  GET  /api/terminal/cc/{sid}    「CC 화면」 탭(11-14) — 그 세션 CC 창에 붙을 수 있나(안 되면 까닭)
-  GET  /ccscreen/…  · WS /ccscreen/ws?arg=<세션 번호>&arg=<탭>   CC 화면 ttyd. 브라우저가 준 세션 번호를 브리지가 확인된
+  GET  /api/terminal/cc/{sid}    「세션 화면」 탭(11-14) — 그 세션 CC 창에 붙을 수 있나(안 되면 까닭)
+  GET  /ccscreen/…  · WS /ccscreen/ws?arg=<세션 번호>&arg=<탭>   세션 화면 ttyd. 브라우저가 준 세션 번호를 브리지가 확인된
                                  tmux 창으로 바꿔 넘긴다(브라우저가 붙을 곳을 정하지 않는다). 열고 닫은 것만 session_action에
   POST /hooks/shell              셸 PROMPT_COMMAND(hook 토큰) — 친 명령 · 종료 코드 · 위치
 
@@ -56,7 +56,7 @@ def _mgr(request: Request) -> Any:
 async def open_session(request: Request) -> JSONResponse:
     m = _mgr(request)
     resp = JSONResponse({"ok": True, "running": m.running, "cc_running": m.cc_running})
-    # 같은 쿠키를 「CC 화면」(/ccscreen, 11-14)에도 — 경로마다 하나씩 붙인다(Path가 다르면 브라우저가 따로 보낸다)
+    # 같은 쿠키를 「세션 화면」(/ccscreen, 11-14)에도 — 경로마다 하나씩 붙인다(Path가 다르면 브라우저가 따로 보낸다)
     tok = m.new_cookie()
     for path in ("/terminal", "/ccscreen"):
         resp.set_cookie(COOKIE, tok, max_age=int(m.s.terminal_cookie_ttl_s), path=path,
@@ -151,7 +151,7 @@ async def clear(body: ClearIn, request: Request) -> dict[str, Any]:
 
 @api.get("/cc/{sid}")
 async def cc_state(sid: int, request: Request) -> dict[str, Any]:
-    """「CC 화면」 탭(11-14) — 그 세션 CC 창에 붙을 수 있나. {ok, tmux_session, size, running} 또는 {ok:false, reason, running}.
+    """「세션 화면」 탭(11-14) — 그 세션 CC 창에 붙을 수 있나. {ok, tmux_session, size, running} 또는 {ok:false, reason, running}.
     탭이 열려 있는 동안 화면이 다시 물어 끝남 · ttyd 꺼짐을 까닭으로 띄운다(조용히 빈 화면이 되지 않게)."""
     m = _mgr(request)
     try:
@@ -218,7 +218,7 @@ async def ccscreen_root() -> RedirectResponse:
 
 @router.get("/ccscreen/{path:path}", include_in_schema=False)
 async def ccscreen_http(path: str, request: Request) -> Response:
-    """「CC 화면」 ttyd의 화면 파일(11-14). 주소의 ?arg=<세션 번호>는 ttyd 화면이 WS 주소에 그대로 붙인다 — WS에서 확인한다."""
+    """「세션 화면」 ttyd의 화면 파일(11-14). 주소의 ?arg=<세션 번호>는 ttyd 화면이 WS 주소에 그대로 붙인다 — WS에서 확인한다."""
     m = getattr(request.app.state, "terminal", None)
     if not _cookie_ok(m, request.cookies):
         return Response("세션 화면은 대시보드 세션 패널에서 엽니다(인증 쿠키가 없습니다)", status_code=401,
@@ -298,7 +298,7 @@ async def terminal_ws(ws: WebSocket) -> None:
 
 
 def _cc_args(ws: WebSocket) -> tuple[int, str] | None:
-    """「CC 화면」 WS 주소의 ?arg=<세션 번호>&arg=<탭> — 모양이 맞을 때만. 브라우저가 tmux 대상을 줄 길은 없다(세션 번호뿐)."""
+    """「세션 화면」 WS 주소의 ?arg=<세션 번호>&arg=<탭> — 모양이 맞을 때만. 브라우저가 tmux 대상을 줄 길은 없다(세션 번호뿐)."""
     a = ws.query_params.getlist("arg")
     if len(a) != 2 or not re.fullmatch(r"[0-9]{1,12}", a[0]) or not TAB_RE.match(a[1]):
         return None
@@ -307,21 +307,21 @@ def _cc_args(ws: WebSocket) -> tuple[int, str] | None:
 
 @router.websocket("/ccscreen/ws")
 async def ccscreen_ws(ws: WebSocket) -> None:
-    """「CC 화면」(11-14) — 쿠키 · 같은 출처 → 세션 번호를 DB · 살아 있는 프로세스로 확인한 tmux 창으로 바꿔 ttyd에 넘긴다.
+    """「세션 화면」(11-14) — 쿠키 · 같은 출처 → 세션 번호를 DB · 살아 있는 프로세스로 확인한 tmux 창으로 바꿔 ttyd에 넘긴다.
     열고 닫은 것만 session_action(ccview-open · ccview-close)에 남긴다. 키 하나하나는 남기지 않는다(사람이 CC 창에 직접 치는 길이다)."""
     m = getattr(ws.app.state, "terminal", None)
     client = ws.client.host if ws.client else "?"
     if not _cookie_ok(m, ws.cookies):
-        log.warning("CC 화면 WS 거절 %s: 쿠키 없음 · 만료", client)
+        log.warning("세션 화면 WS 거절 %s: 쿠키 없음 · 만료", client)
         await ws.close(1008)
         return
     if not _same_origin(ws.headers):
-        log.warning("CC 화면 WS 거절 %s: Origin이 Host와 다르다", client)
+        log.warning("세션 화면 WS 거절 %s: Origin이 Host와 다르다", client)
         await ws.close(1008)
         return
     args = _cc_args(ws)
     if args is None:
-        log.warning("CC 화면 WS 거절 %s: 세션 번호 · 탭 모양이 틀렸다", client)
+        log.warning("세션 화면 WS 거절 %s: 세션 번호 · 탭 모양이 틀렸다", client)
         await ws.close(1008)
         return
     sid, tab = args
@@ -330,32 +330,32 @@ async def ccscreen_ws(ws: WebSocket) -> None:
     except Refused as e:
         t = {"ok": False, "reason": str(e)}
     if not t.get("ok") or not PANE_RE.match(t.get("pane") or ""):
-        log.warning("CC 화면 WS 거절 session=%d: %s", sid, t.get("reason"))
+        log.warning("세션 화면 WS 거절 session=%d: %s", sid, t.get("reason"))
         await ws.close(1008)
         return
     q = urlencode([("arg", t["pane"]), ("arg", tab)])
     try:
         await m.sweep_views(prefix=CC_VIEW_PREFIX)      # 붙기 전에 끊겨 남은 탭 세션(창은 CC 세션 쪽에 그대로)
     except Exception as e:  # noqa: BLE001 — 치우기 실패가 화면을 막지 않는다
-        log.warning("CC 화면 남은 탭 세션 치우기 실패: %s", type(e).__name__)
+        log.warning("세션 화면 남은 탭 세션 치우기 실패: %s", type(e).__name__)
     try:
         up = await unix_connect(str(m.s.ccscreen_socket), "ws://localhost/ccscreen/ws?" + q, subprotocols=["tty"],
                                 max_size=None, open_timeout=5, ping_interval=None)
     except Exception as e:  # noqa: BLE001
-        log.warning("CC 화면 WS: ttyd에 닿지 못했다: %s", type(e).__name__)
+        log.warning("세션 화면 WS: ttyd에 닿지 못했다: %s", type(e).__name__)
         await ws.close(1011)
         return
     await ws.accept(subprotocol="tty")
     started = time.monotonic()
     where = f"tmux {t['tmux_session']} {t['pane']} 크기 {t['size']} 탭 {tab}"
     await m.record_action(sid, CC_OPEN, True, where)
-    log.info("CC 화면 열림 session=%d %s", sid, where)
+    log.info("세션 화면 열림 session=%d %s", sid, where)
     try:
         await _pump(ws, up)
     finally:
         secs = round(time.monotonic() - started)
         await m.record_action(sid, CC_CLOSE, True, f"{where} · {secs}초")
-        log.info("CC 화면 닫힘 session=%d (%d초)", sid, secs)
+        log.info("세션 화면 닫힘 session=%d (%d초)", sid, secs)
 
 
 async def _pump(ws: WebSocket, up: Any) -> None:

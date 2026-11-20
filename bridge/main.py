@@ -611,7 +611,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # 새 terminal.js와 어긋났고, 그 오류로 대시보드 연결이 시작되지 않았다
         resp = await call_next(request)
         p = request.url.path
-        if p in ("/", "/debug", "/office", "/classic") or p.startswith("/static/"):
+        if p in ("/", "/debug", "/office", "/classic", "/usage") or p.startswith("/static/"):
             resp.headers["Cache-Control"] = "no-cache"
         return resp
 

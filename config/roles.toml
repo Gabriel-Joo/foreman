@@ -10,7 +10,7 @@
 [roles]
 mode = "observe"
 projects = ["foreman"]     # 이 프로젝트 세션만 본다. 다른 저장소는 그 저장소 CLAUDE.md 규칙과 함께 넓힌다
-manager_allow = ["config/*.toml", "log/*", "README.md"]       # 관리자(원본 폴더)가 Edit · Write로 고쳐도 되는 곳
+manager_allow = ["config/*.toml", "log/*", "docs/TODO.md"]       # 관리자(원본 폴더)가 Edit · Write로 고쳐도 되는 곳
 scribe_deny = ["bridge/*", "tests/*", "migrations/*", "tools/*"]   # 서기가 고치지 않는 곳
 inspector_allow = ["log/*"]   # 조사가 Edit, Write로 쓸 수 있는 곳(새 파일과 그 세션이 만든 파일만, 11-15)
 # mode가 observe여도 막는 규칙(11-15 사용자 「조사가 log를 쓸 수 있게」). 조사는 이제 읽기 전용(plan 모드)이 아니라 보통 모드로 뜨고

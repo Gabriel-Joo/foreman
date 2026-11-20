@@ -1,4 +1,7 @@
-"""event 테이블에 쓰는 곳은 여기 하나다(event에 FK가 없으므로 참조 무결성은 이 모듈이 맡는다 — 0001_init.sql)."""
+"""event 테이블에 쓰는 곳은 여기 말고도 있다. 이 모듈은 /emit 한 건씩 넣고(insert_event), debug 줄을 지운다.
+조립기(assembler.py)는 트랜스크립트와 hook에서 온 event를 덩어리로 넣고(INSERT, 같은 uuid는 건너뛴다) 부 에이전트 event의
+turn_id를 고친다. 파이프라인(pipeline.py)은 커밋이 잡히면 commit_sha를 채운다. event에 FK가 없으므로 참조 무결성은
+쓰는 쪽이 맡는다(0001_init.sql)."""
 
 import asyncio
 import json

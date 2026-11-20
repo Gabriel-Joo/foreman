@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     terminal_rcfile: Path = REPO / "deploy" / "shell" / "foreman-bashrc"
     # ttyd가 브라우저 연결마다 띄우는 것 — 탭마다 그룹 세션(보이는 창이 탭마다 따로, 11-10)
     terminal_view_script: Path = REPO / "deploy" / "shell" / "foreman-term-view"
-    # 「CC 화면」 탭(11-14) — 세션 CC 창을 보는 ttyd를 따로(셸 ttyd와 자리를 나누지 않게). 브리지 /ccscreen/*으로만 닿는다
+    # 「세션 화면」 탭(11-14) — 세션 CC 창을 보는 ttyd를 따로(셸 ttyd와 자리를 나누지 않게). 브리지 /ccscreen/*으로만 닿는다
     ccscreen_socket: Path = REPO / ".run" / "ttyd-cc.sock"
     ccscreen_view_script: Path = REPO / "deploy" / "shell" / "foreman-cc-view"
     terminal_request_ttl_s: float = 1800.0   # CC가 부탁한 명령을 이만큼 기다린다(그 뒤 친 명령은 결과를 전달하지 않는다)

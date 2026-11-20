@@ -143,6 +143,16 @@ def test_hooks_reject_paths(client):
     assert client.post("/hooks", json=body, headers=hook).status_code == 503  # 와처 꺼짐
 
 
+def test_hooks_reject_non_object_logs_reason(client, caplog):
+    """JSON이 객체가 아니어서 거절할 때도 이유를 로그에 남긴다(값은 남기지 않는다)."""
+    hook = _hook_auth()
+    with caplog.at_level("WARNING", logger="foreman.hooks"):
+        assert client.post("/hooks", json=["비밀 값"], headers=hook).status_code == 400
+    lines = [r.getMessage() for r in caplog.records if r.name == "foreman.hooks"]
+    assert any("객체가 아님(list)" in m for m in lines), lines
+    assert not any("비밀 값" in m for m in lines)
+
+
 def test_dashboard_snapshot_and_pages(client):
     """6단계 — 시험 DB를 읽기만 한다(다른 시험이 남긴 행이 있을 수 있다)."""
     assert client.get("/api/dashboard").status_code == 401
@@ -163,6 +173,8 @@ def test_dashboard_snapshot_and_pages(client):
     assert client.get("/classic").status_code == 200 and b"render.js" in client.get("/classic").content
     assert client.get("/static/css/panel.css").status_code == 200
     assert client.get("/debug").status_code == 200
+    for page in ("/", "/office", "/classic", "/debug", "/usage", "/static/js/render.js"):   # 화면 주소는 모두 no-cache(11-20, /usage 빠짐)
+        assert client.get(page).headers.get("cache-control") == "no-cache", page
     assert client.get("/static/js/render.js").status_code == 200
 
 

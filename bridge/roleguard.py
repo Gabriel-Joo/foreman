@@ -9,7 +9,7 @@ pgrep_guard · reposcope와 같은 자리(bridge/approvals.py).
   bash-file-edit  Bash로 저장소 파일 고치기 — `sed -i` · `perl -i` · `>`/`>>` 리디렉션(heredoc `cat >> f <<EOF` 포함) · `tee`
                   /tmp · 세션 스크래치 · git 저장소 밖(~/.claude 등)은 막지 않는다. 명령 안의 `cd`를 따라간다.
                   해석기(python -c 등) 안의 쓰기는 보지 않는다 — 데이터 만들기와 소스 고치기를 가를 수 없다
-  manager-code    관리자(원본 폴더)가 코드 고치기 — config/*.toml · log/ · README.md 밖을 Edit · Write
+  manager-code    관리자(원본 폴더)가 코드 고치기 — config/*.toml · log/ · docs/TODO.md 밖을 Edit · Write
                   (CLAUDE.md 「관리자는 코드를 고치지 않는다」. 합친 뒤 깨진 것 몇 줄 · 주석은 관찰에 걸릴 수 있다 — 그래서 처음엔 관찰)
   scribe-code     서기가 코드(bridge/ · tests/ · migrations/ · tools/) 고치기
   inspector-write 조사(inspector)가 저장소 파일 고치기(11-15 사용자 — 「조사가 log를 쓸 수 있게」). 조사는 전에 CC plan 모드(읽기 전용)로
@@ -61,7 +61,7 @@ class RolesConfig:
     mode: str = "observe"
     projects: list[str] = field(default_factory=lambda: ["foreman"])
     rules: dict[str, bool] = field(default_factory=lambda: {r: True for r in RULES})
-    manager_allow: list[str] = field(default_factory=lambda: ["config/*.toml", "log/*", "README.md"])
+    manager_allow: list[str] = field(default_factory=lambda: ["config/*.toml", "log/*", "docs/TODO.md"])
     scribe_deny: list[str] = field(default_factory=lambda: ["bridge/*", "tests/*", "migrations/*", "tools/*"])
     inspector_allow: list[str] = field(default_factory=lambda: ["log/*"])
     enforce: list[str] = field(default_factory=list)     # mode가 observe여도 막는 규칙(11-15 조사 규칙)

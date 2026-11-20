@@ -33,7 +33,7 @@ const WIDTH = {                                   // 기본 너비 · 창에 대
   wide: { def: () => Math.round(Math.min(window.innerWidth * 0.6, window.innerWidth - STAGE_MIN)), max: 0.6 },
 };
 const MIN_W = 280;
-// 「세션」 → 「세션 정리」(11-14 사용자). 「CC 화면」은 탭이 아니라 탭 줄 끝 단추 → 띄우는 창(11-14 사용자, ccscreen.js)
+// 「세션」 → 「세션 정리」(11-14 사용자). 「세션 화면」은 탭이 아니라 탭 줄 끝 단추 → 띄우는 창(11-14 사용자, ccscreen.js)
 const TABS = [['convo', '대화'], ['act', '활동'], ['sess', '세션 정리']];
 const TAB_TIP = {
   sess: '세션 정리 — 이 세션을 새 세션으로 넘기거나 끝냅니다.',
@@ -99,7 +99,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
   const scribe = createScribe(store);
   const fmp = createForemanPanel(store);       // 감독실 캐릭터(11-08) — 노트 · 지난 디스패치 · 자동 제안
   const coder = createCoder(store);           // 코더 상주(11-09) — 맡길 일 · 지금 일
-  // CC 화면 띄우는 창(11-14) — 패널을 접거나 다른 세션을 골라도 그대로 둔다(사용자 결정 — 띄운 세션 그대로, 머리줄에 번호 · 제목)
+  // 세션 화면 띄우는 창(11-14) — 패널을 접거나 다른 세션을 골라도 그대로 둔다(사용자 결정 — 띄운 세션 그대로, 머리줄에 번호 · 제목)
   const ccw = createCcWindow(store);
   $('pCcOpen').addEventListener('click', () => { if (store.state.selected != null) ccw.open(store.state.selected); });
   $('pSel').addEventListener('click', (ev) => {
@@ -348,7 +348,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
         ? '늦었습니다. 앞에서 정한 결정 · 금지가 이미 많이 빠졌을 수 있습니다.'
         : '넘어갈 때입니다. 처음에 정한 것이 빠지기 시작합니다.'}${c.short ? ' 요약 간격도 짧습니다.' : ''}</span>
       ${s.injectable ? `<button type="button" data-cmp="handoff" class="small primary" title="${esc(FLOW_TIP)}">새 세션으로 옮기기</button>` : ''}
-      <button type="button" data-cmp="loss" class="small" title="압축으로 잊은 것 찾기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. ${lossCost(' · ')}이 들고, 결과는 [세션 정리] 탭 「넘기기 전 정리」에 나옵니다.">압축으로 잊은 것 찾기</button>
+      <button type="button" data-cmp="loss" class="small" title="압축으로 잊은 것 찾기 — 압축으로 사라지거나 약해진 지시 · 결정을 판정합니다. ${lossCost(' · ')}이 들고, 결과는 [세션 정리] 탭 「옮기기 전 정리」에 나옵니다.">압축으로 잊은 것 찾기</button>
       <button type="button" data-cmp="later" class="ghost small" title="나중에 — 다음 압축까지 이 띠를 숨깁니다.">나중에</button>`;
     put('pCmp', 'cmp', html);
     $('pCmp').className = `pcmp small ${late ? 'late' : 'due'}`;
@@ -678,7 +678,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     const s = st.selected != null ? st.sessions.get(st.selected) : null;
     if (!s) { hand.setSession(null); sessionMode(false); drawHint(st); return; }
     const switched = lastSel !== s.id;
-    if (switched) { sessionMode(true); last.convo = last.feed = last.meta = last.info = ''; }   // CC 화면 창은 띄운 세션 그대로
+    if (switched) { sessionMode(true); last.convo = last.feed = last.meta = last.info = ''; }   // 세션 화면 창은 띄운 세션 그대로
     hand.setSession(s.id);
     // 머리줄 = 첫 줄 [역할] 세션 번호 + 버튼, 둘째 줄 제목(11-09 사용자 — 역할 + 지금 하는 일). 한 줄에 두면 좁은 패널에서 제목이 한 글자로 줄었다
     if (!pickingRole) drawRole({ kind: 'session' }, s);

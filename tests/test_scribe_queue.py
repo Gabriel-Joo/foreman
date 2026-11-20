@@ -422,9 +422,10 @@ def test_stalled_piece_is_told_once(world, monkeypatch):
                                        send_direct=lambda *a, **k: sent.append((a, k)))
         await w.q.begin(w.project, "techdoc", ["01_a"])
         async with w.engine.begin() as c:
-            await c.execute(text("UPDATE scribe_queue_item SET started_at = UTC_TIMESTAMP(3) - INTERVAL 90 MINUTE "
+            await c.execute(text("UPDATE scribe_queue_item SET started_at = UTC_TIMESTAMP(3) - INTERVAL 20 MINUTE "
                                  "WHERE session_id = :s"), {"s": w.sid_of("01_a")})
         s1 = w.sid_of("01_a")
+        assert sq.STALL_MIN == 15 and 20 > sq.STALL_MIN   # 잰 값(최대 268초의 3배쯤)에서 정한 15분. 20분 지난 편은 걸린다
         # 세션이 살아서 일하는 중(커밋 없음, 일을 마치지 않음)
         monkeypatch.setattr(sq, "live_sessions", lambda d: {w.h.sessions[s1].cc: SimpleNamespace(pid=1, state="S")})
 
@@ -435,7 +436,7 @@ def test_stalled_piece_is_told_once(world, monkeypatch):
         await w.q.tick(w.project)
         await settle(w.h, w.q, w.m)
         v, _ = await w.items()
-        assert v["current"]["stalled"] and v["current"]["minutes"] >= 60
+        assert v["current"]["stalled"] and v["current"]["minutes"] >= sq.STALL_MIN
         assert len(sent) == 1 and "끝나지 않습니다" in sent[0][0][3]
     world(go)
 

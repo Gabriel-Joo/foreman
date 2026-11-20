@@ -85,8 +85,10 @@ def test_manager_and_scribe_edits(repo):
     gd = g()
     ed = lambda role, path, cwd=repo: gd.check("foreman", role, str(cwd), "Edit", {"file_path": str(repo / path)})  # noqa: E731
     assert ed("manager", "bridge/x.py").rule == "역할-관리자코드"
-    for ok in ("config/notify.toml", "log/a.md", "README.md"):
+    for ok in ("config/notify.toml", "log/a.md", "docs/TODO.md"):
         assert ed("manager", ok) is None, ok
+    assert ed("manager", "README.md").rule == "역할-관리자코드"   # README는 생성물이라 관리자 허용에서 뺐다(11-20)
+    assert ed("manager", "docs/00_design.md").rule == "역할-관리자코드"
     assert ed("coder", "bridge/x.py") is None
     assert ed("scribe", "bridge/x.py").rule == "역할-서기코드"
     assert ed("scribe", "docs/a.md") is None

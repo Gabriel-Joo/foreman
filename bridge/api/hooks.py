@@ -37,6 +37,7 @@ async def _authed_body(request: Request) -> tuple[dict | None, JSONResponse | No
         log.warning("hook 거절 %s %s: JSON이 아님", client, request.url.path)
         return None, JSONResponse({"error": "JSON이 아님"}, status_code=400)
     if not isinstance(body, dict):
+        log.warning("hook 거절 %s %s: 객체가 아님(%s)", client, request.url.path, type(body).__name__)
         return None, JSONResponse({"error": "객체가 아님"}, status_code=400)
     return body, None
 

@@ -588,11 +588,11 @@ export class Store {
     if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
     return j;
   }
-  // 「CC 화면」 탭(11-14) — 그 세션 CC 창에 붙을 수 있나. {ok, tmux_session, size} 또는 {ok:false, reason}
+  // 「세션 화면」 탭(11-14) — 그 세션 CC 창에 붙을 수 있나. {ok, tmux_session, size} 또는 {ok:false, reason}
   async ccState(sid) {
     const r = await fetch(`/api/terminal/cc/${sid}`, { headers: this.headers() });
     const j = await r.json().catch(() => ({}));
-    // 404 — 도는 브리지가 CC 화면을 모른다(옛 코드 · worktree 미리보기). 세션이 없을 때는 200 + 까닭이다
+    // 404 — 도는 브리지가 세션 화면을 모른다(옛 코드 · worktree 미리보기). 세션이 없을 때는 200 + 까닭이다
     if (r.status === 404) throw new Error('도는 브리지에 세션 화면 길이 없습니다. 브리지를 새 코드로 다시 띄워야 합니다');
     if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
     return j;

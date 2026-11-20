@@ -19,7 +19,7 @@ V2 = """## 지금 상태
 
 def test_prompts_are_handoff_turns_and_carry_diff():
     p = pm.list_prompt("abc123", pm.diff_section(V2), 42)
-    assert p.startswith("[FOREMAN 인계 요청 r=abc123] 대화 결정 문서에 적기 1/2")
+    assert p.startswith("[FOREMAN 인계 요청 r=abc123] 대화에서만 정한 것 문서에 적기 1/2")
     assert "<<<FOREMAN-PROMOTE r=abc123>>>" in p and "<<<END r=abc123>>>" in p
     assert "인계(#42)" in p and "  > - 시험 세션은 끝낸 뒤" in p
     assert Assembler._origin({}, p) == "handoff"          # 보통 응답 · 알림과 가른다

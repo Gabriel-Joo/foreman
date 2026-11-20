@@ -31,7 +31,7 @@
 | 디자이너 | 코더와 같다. 픽셀 화면에서는 고정 자리(`office.js` `FIXED_SEAT_ROLES`) | 저장소 전체(화면만 고치는 것은 글 규칙, 막지 않는다) | 역할 규칙 없음(공통만) | 턴 끝을 관리자에게 넘긴다 |
 | 서기 | 코더와 같다(교장은 서기를 작업방으로 띄운다) | `bridge/` · `tests/` · `migrations/` · `tools/` 밖 | `scribe-code`: 위 네 곳(`scribe_deny`)을 Edit · Write — **기록만** | 턴 끝을 관리자에게 넘긴다. 띄울 때 서기 일 종류를 남긴다(`scribe-task`) |
 | 조사 | 코더와 같다 | `log/` 아래 새 파일 · 이 세션이 만든 파일(`inspector_allow`) | `inspector-write` — **막는다**: log 밖 Edit · Write, Bash 저장소 쓰기(리디렉션 · `sed -i` · `rm` · `mv` …), `git push`, 저장소를 바꾸는 git, log 밖 `git add` · 섞인 `git commit` | 교장 계획: log만 막는 프로젝트면 보통 모드, 아니면 읽기 전용(plan 모드), 자동 기상 계획은 늘 읽기 전용(`foreman.py`). log 새 파일만이면 브리지가 승인 없이 합친다(`mergeprep.py`) |
-| 관리자 | **원본 폴더만, 프로젝트에 하나**(`handoff.py` — worktree로 띄우면 거부) | `config/*.toml` · `log/*` · `README.md`(`manager_allow`) | `manager-code`: 그 밖 Edit · Write — **기록만** | 다른 저장소 문서 push 예외(`approval.toml [repo_scope.manager_push]`), 합치기 카드 승인자(`mergeprep.py`), 작업 세션 보고를 받는 곳(`notify.py` · `managers.py` · `xmsg.py`) |
+| 관리자 | **원본 폴더만, 프로젝트에 하나**(`handoff.py` — worktree로 띄우면 거부) | `config/*.toml` · `log/*` · `docs/TODO.md`(`manager_allow`) | `manager-code`: 그 밖 Edit · Write — **기록만** | 다른 저장소 문서 push 예외(`approval.toml [repo_scope.manager_push]`), 합치기 카드 승인자(`mergeprep.py`), 작업 세션 보고를 받는 곳(`notify.py` · `managers.py` · `xmsg.py`) |
 
 공통(역할 무관):
 

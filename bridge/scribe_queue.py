@@ -33,7 +33,7 @@ from bridge.liveness import live_sessions
 log = logging.getLogger("foreman.scribe_queue")
 
 NOTIFY_KIND = "squeue"       # notification.kind(8자까지)
-STALL_MIN = 60               # 지금 편이 이만큼(분) 넘게 안 끝나면 「오래 안 끝남」. 한 편 고쳐 쓰기는 보통 이보다 짧다(log 참고)
+STALL_MIN = 15               # 지금 편이 이만큼(분) 넘게 안 끝나면 「오래 안 끝남」. 잰 값(전체 줄 38편): 편마다 서기 시간 최소 74초, 가운데 162초, 최대 268초. 15분은 최대의 3배쯤이다(log 참고)
 NOCOMMIT_GRACE_S = 120.0     # 살아 있는 세션이 커밋 없이 일을 마친 채 이만큼(초) 그대로면 「커밋 없이 끝남」으로 본다
 START_GRACE_S = 180.0       # 띄운 뒤 이만큼(초)은 그물이 그 편을 보지 않는다
 EVERY_S = 60.0              # 그물(놓친 합침, 커밋 없이 끝남, 오래 안 끝남, 브리지를 다시 띄운 뒤 이어가기)

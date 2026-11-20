@@ -287,7 +287,7 @@ async def clear_screen(t: Target, busy: bool, tries: int = ESC_TRIES) -> tuple[i
       - Esc가 결정이 되는 창(DECISION — 폴더 신뢰 · 도구 권한 · 보류 메시지 승인 · 끝내기 확인)과 모르는 창:
         Esc도 글도 보내지 않고 Refused(조용히 실패하지 않게 까닭을 돌려준다)
     **작업 중이면 Esc를 보내지 않는다** — Esc는 작업을 끊고, 승인 · 질문 창에서는 거부 · 취소가 된다.
-    입력 칸에 이미 글이 있으면(사람이 CC 화면 · VNC에서 치던 글, 11-14) 넣지 않는다 — 붙여넣기가 그 글과 섞여 함께 제출된다.
+    입력 칸에 이미 글이 있으면(사람이 세션 화면 · VNC에서 치던 글, 11-14) 넣지 않는다 — 붙여넣기가 그 글과 섞여 함께 제출된다.
     (보낸 Esc 수, 닫은 창 이름)을 돌려준다."""
     raw = await _capture(t, color=True)
     kind, name = screen_state(plain(raw))

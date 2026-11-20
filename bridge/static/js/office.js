@@ -3600,7 +3600,7 @@ export async function createOffice(root, store, themeUrl = '/static/themes/offic
       const pend = a.fm && a.fm.pending[0];
       if (window.foremanChat) (pend ? window.foremanChat.openDispatch(pend.dispatch_id) : window.foremanChat.open(room));
     } else if (a.kind === 'scribe') {
-      // 서기실 — 무엇을 시킬지 고르는 창 · 할 일 · 포스트잇 · Notion 게시. "포스트잇 쌓임"이 떠 있으면 포스트잇을 편 채(11-15)
+      // 서기실 — 물어보기, 할 일 한 목록(시킬 일), 포스트잇, 전체 줄, 포트폴리오 쓰기와 게시, 기술문서 쓰기와 게시(scribe.js). "포스트잇 쌓임"이 떠 있으면 포스트잇을 편 채(11-15)
       panel.show({ kind: 'scribe', room: a.room, pick: null });
     } else if (a.kind === 'coder') {
       panel.show({ kind: 'coder', room: a.room });            // 코더 — 맡길 일 · 지금 일(11-09)

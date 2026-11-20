@@ -162,4 +162,4 @@ def test_promote_list_failure_notifies_now(monkeypatch, why):
     monkeypatch.setattr(pr, "_wait", wait)
     monkeypatch.setattr(pr, "_save", save)
     asyncio.run(pr._wait_list(SimpleNamespace(project="foreman"), 1, "r", "p", 0, None))
-    assert m.calls == [(f"대화 결정 문서에 적기 — 목록 실패: {why}", True)]
+    assert m.calls == [(f"대화에서만 정한 것 문서에 적기 — 목록 실패: {why}", True)]

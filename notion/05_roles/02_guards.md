@@ -77,7 +77,7 @@ flowchart TD
 [roles]
 mode = "observe"
 projects = ["foreman"]
-manager_allow = ["config/*.toml", "log/*", "README.md"]
+manager_allow = ["config/*.toml", "log/*", "docs/TODO.md"]
 scribe_deny = ["bridge/*", "tests/*", "migrations/*", "tools/*"]
 inspector_allow = ["log/*"]
 enforce = ["inspector-write"]
@@ -102,7 +102,7 @@ inspector-write = true
 |---|---|---|---|
 | `worktree-push` | 작업방(worktree)에서 뜬 모든 세션 | Bash의 `git push` | 관찰 |
 | `bash-file-edit` | 모든 역할 | Bash로 저장소 파일 쓰기: `sed -i`, `perl -i`, `>`와 `>>` 리디렉션(heredoc 포함), `tee` | 관찰 |
-| `manager-code` | 원본 폴더의 관리자 | `config/*.toml`, `log/`, `README.md` 밖을 Edit, Write | 관찰 |
+| `manager-code` | 원본 폴더의 관리자 | `config/*.toml`, `log/`, `docs/TODO.md` 밖을 Edit, Write | 관찰 |
 | `scribe-code` | 서기 | `bridge/`, `tests/`, `migrations/`, `tools/`를 Edit, Write | 관찰 |
 | `inspector-write` | 조사 | `log/` 밖 쓰기와 저장소를 바꾸는 git 전부 | **막음** |
 
@@ -113,7 +113,7 @@ inspector-write = true
 | 코더 | 작업방에서 push(관찰), Bash로 저장소 파일 고치기(관찰) |
 | 디자이너 | 코더와 같다 |
 | 서기 | 코드 폴더 Edit, Write(관찰), Bash로 파일 고치기(관찰), 작업방에서 push(관찰) |
-| 관리자 | 원본 폴더에서 설정, log, README 밖 Edit, Write(관찰), Bash로 파일 고치기(관찰) |
+| 관리자 | 원본 폴더에서 설정, log, 할 일 목록(`docs/TODO.md`) 밖 Edit, Write(관찰), Bash로 파일 고치기(관찰) |
 | 조사 | log 밖 쓰기, 남이 커밋한 log 고치기, push, 저장소를 바꾸는 git(막음) |
 
 ### Bash로 파일 고치기를 어떻게 알아보나
@@ -130,7 +130,7 @@ inspector-write = true
 
 ### 관리자 규칙은 왜 막지 않나
 
-관리자는 코드를 고치지 않고 worktree 코더에게 맡긴다는 것이 이 프로젝트의 선이다. 관리자가 직접 고쳐도 되는 것은 설정 값, 기록, README뿐이다. 그래서 `manager-code`는 그 밖을 Edit, Write하면 걸린다.
+관리자는 코드를 고치지 않고 worktree 코더에게 맡긴다는 것이 이 프로젝트의 선이다. 관리자가 직접 고쳐도 되는 것은 설정 값, 기록, 할 일 목록(`docs/TODO.md`)뿐이다. 그래서 `manager-code`는 그 밖을 Edit, Write하면 걸린다.
 
 그런데 관찰 기록 21건을 하나씩 갈라 보니 진짜 위반은 1건뿐이었다 [log:inspect_roleguard_20261114.md]. 나머지 20건은 사용자가 관리자에게 직접 "CLAUDE.md 이 줄을 고쳐라"고 시킨 것(10건), 사람이 패널에서 승인한 인계 카드로 docs에 쓴 것(7건), 합친 뒤 깨진 시험을 몇 줄 고친 것(3건, 원래 허용된 예외)이었다. 관리자가 원본 폴더에서 설정, 기록, README 밖을 고치는 일은 대부분 사람이 시킨 일이다.
 
@@ -292,7 +292,7 @@ until ! pgrep -f "tools/screen.py"; do sleep 3; done
 |---|---|
 | `역할-worktree push` | 작업방 세션은 커밋만 하고 push하지 않습니다. 합치기는 관리자가 하고 push는 합친 뒤 원본 폴더에서 관리자가 합니다. 커밋을 마치고 보고하면 합치기 카드가 생깁니다 |
 | `역할-Bash파일고침` | 파일은 Edit, Write로 고칩니다. Bash로 저장소 파일(경로)을 고치려 했습니다. Edit, Write로 고치면 기록, 승인, 되돌리기가 그대로 돕니다. 임시 파일은 /tmp나 세션 스크래치에 씁니다 |
-| `역할-관리자코드` | 관리자는 코드를 고치지 않습니다. 직접 고쳐도 되는 것은 설정, log, README입니다. 코드는 작업방 코더에게 맡깁니다 |
+| `역할-관리자코드` | 관리자는 코드를 고치지 않습니다. 직접 고쳐도 되는 것은 설정, log, 할 일 목록(docs/TODO.md)입니다. 코드는 작업방 코더에게 맡깁니다 |
 | `역할-서기코드` | 서기는 코드를 고치지 않습니다. 문서만 고칩니다. 코드 고칠 것은 포스트잇이나 관리자에게 보냅니다 |
 | `역할-조사쓰기` | 조사 세션은 log 파일만 쓸 수 있습니다. 결과는 log/ 아래 새 파일에 Write로 쓰고 `git add log/<파일>` 뒤 커밋합니다. 고칠 것은 log와 보고에 적어 관리자에게 올립니다 |
 | `다른저장소-쓰기` | 이 세션은 다른 저장소를 읽기만 합니다. 고칠 것은 그 저장소 세션에 맡기거나(세션 간 메시지) 사용자에게 요청하세요. 상태는 `git ls-remote`로, 손볼 시험은 /tmp나 스크래치 복제본에서 합니다 |

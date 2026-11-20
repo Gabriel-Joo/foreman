@@ -8,7 +8,7 @@
   브리지 /terminal/*       ← 쿠키 인증을 거쳐 ttyd 소켓으로 그대로 넘긴다(xterm.js 화면 그대로 — 파싱하지 않는다)
   화면 이름은 「셸」(11-14 — 「터미널」에서 바꿈). [셸 비우기]는 셸을 새로 띄우지 않고 화면 · 스크롤백만 비운다(clear)
 
-「CC 화면」(11-14, 세션 패널 [CC 화면] 단추 → 띄우는 창) — 세션 CC 창(권한 · 계획 승인 · 고르기 창 포함)을 브라우저에서 보고 키를 보낸다
+「세션 화면」(11-14, 세션 패널 [세션 화면] 단추 → 띄우는 창) — 세션 CC 창(권한 · 계획 승인 · 고르기 창 포함)을 브라우저에서 보고 키를 보낸다
   ttyd를 하나 더(.run/ttyd-cc.sock, -b /ccscreen) — 같은 _supervise 틀. 연결마다 deploy/shell/foreman-cc-view가 그 CC 세션의
   tmux 세션에 그룹 세션 ccv-<탭>을 만들어 붙는다. 보는 동안 CC 창을 띄운 창 크기에 맞추고, 마지막 보기가 나가면
   CC_REST_SIZE(80×24)로 되돌린다(11-14 사용자). 브라우저는 세션 번호만 주고,
@@ -56,10 +56,10 @@ COOKIE = "foreman_term"
 TERM_PROJECTS = ("runshoes", "petmint-rag-chatbot", "foreman", "ronanlab-infra")
 # 브라우저 탭 id(11-10) — iframe 주소 · API로 온다. 이 모양만 tmux 세션 이름 · ttyd 인자로 쓴다(deploy/shell/foreman-term-view와 같은 규칙)
 TAB_RE = re.compile(r"^[A-Za-z0-9_-]{6,40}$")
-# 「CC 화면」(11-14) — 탭 그룹 세션 이름 머리(deploy/shell/foreman-cc-view와 같다) · tmux 창 모양 · 기록 이름(session_action.action은 12자까지)
+# 「세션 화면」(11-14) — 탭 그룹 세션 이름 머리(deploy/shell/foreman-cc-view와 같다) · tmux 창 모양 · 기록 이름(session_action.action은 12자까지)
 CC_VIEW_PREFIX = "ccv-"
 CC_MARK = "@foreman_ccview"        # 보는 동안 창 크기를 띄우는 창에 맞춰 묶었다는 표시(foreman-cc-view hold · release)
-# 마지막 CC 화면이 나갈 때 CC 창을 되돌리는 크기(11-14 사용자) — 이 한 곳. 보기 스크립트에는 ttyd 고정 인자로 넘긴다
+# 마지막 세션 화면이 나갈 때 CC 창을 되돌리는 크기(11-14 사용자) — 이 한 곳. 보기 스크립트에는 ttyd 고정 인자로 넘긴다
 CC_REST_SIZE = (80, 24)
 PANE_RE = re.compile(r"^%[0-9]{1,7}$")
 CC_OPEN, CC_CLOSE = "ccview-open", "ccview-close"
@@ -296,7 +296,7 @@ class TerminalManager:
         self._seen_turns: set[int] = set()
         self._cookies: dict[str, float] = {}
         self._tasks: set[asyncio.Task[Any]] = set()
-        # ttyd 둘(11-14) — "shell"(화면 아래 셸, /terminal) · "cc"(세션 패널 「CC 화면」, /ccscreen). 따로 두어 서로 자리(-m)를 나누지 않는다
+        # ttyd 둘(11-14) — "shell"(화면 아래 셸, /terminal) · "cc"(세션 패널 「세션 화면」, /ccscreen). 따로 두어 서로 자리(-m)를 나누지 않는다
         self._procs: dict[str, asyncio.subprocess.Process] = {}
         self._sups: list[asyncio.Task[None]] = []
         self._stopping = False
@@ -319,7 +319,7 @@ class TerminalManager:
         if self.engine is not None:
             await self._shell_session()
         if not os.access(self.s.ttyd_bin, os.X_OK):
-            log.warning("ttyd 없음(%s) — 터미널 패널 화면 · CC 화면은 꺼진다. 기록 · 감지는 그대로", self.s.ttyd_bin)
+            log.warning("ttyd 없음(%s) — 터미널 패널 화면 · 세션 화면은 꺼진다. 기록 · 감지는 그대로", self.s.ttyd_bin)
             return
         self._sups = [
             asyncio.create_task(self._supervise("shell", self._shell_ttyd_args(), self.s.terminal_socket), name="foreman-ttyd"),
@@ -355,7 +355,7 @@ class TerminalManager:
 
     @property
     def cc_running(self) -> bool:
-        """「CC 화면」 ttyd가 떠 있나(11-14) — 꺼져 있으면 탭이 까닭을 띄운다."""
+        """「세션 화면」 ttyd가 떠 있나(11-14) — 꺼져 있으면 탭이 까닭을 띄운다."""
         return self._alive("cc", self.s.ccscreen_socket)
 
     def _shell_cmd(self) -> str:
@@ -431,7 +431,7 @@ class TerminalManager:
     async def sweep_views(self, min_age: float = 30.0, prefix: str | None = None) -> list[str]:
         """붙은 사람 없이 남은 그룹 세션을 치운다 — 보통은 destroy-unattached로 사라지지만, 붙기 전에 끊기면 남는다.
         막 만들어져 아직 붙는 중인 것(min_age초 안)은 두고 본다. 창 · 셸은 기준 세션에 그대로 남는다.
-        prefix=CC_VIEW_PREFIX면 「CC 화면」 탭 세션(ccv-<탭>) — 창(CC)은 CC 세션 쪽에 그대로 남는다."""
+        prefix=CC_VIEW_PREFIX면 「세션 화면」 탭 세션(ccv-<탭>) — 창(CC)은 CC 세션 쪽에 그대로 남는다."""
         pre = prefix or f"{self.s.terminal_tmux_session}-v-"
         try:
             rows = (await tmux(self.socket, "list-sessions", "-F",
@@ -455,7 +455,7 @@ class TerminalManager:
         return gone
 
     async def release_cc_windows(self) -> list[str]:
-        """「CC 화면」이 보는 동안 묶은 창 크기(window-size manual, 표시 @foreman_ccview)를 보는 CC 화면 세션이 없는데 남아 있으면
+        """「세션 화면」이 보는 동안 묶은 창 크기(window-size manual, 표시 @foreman_ccview)를 보는 세션 화면 세션이 없는데 남아 있으면
         쉴 때 크기(CC_REST_SIZE, 80×24)로 되돌리고 푼다 — 보기 스크립트가 마지막에 하는 것과 같다.
         보통은 foreman-cc-view가 연결이 끝날 때 하지만, 죽거나(kill -9) 함께 끝나 서로 남겨 둔 경우가 있다."""
         try:
@@ -475,7 +475,7 @@ class TerminalManager:
             except Refused:
                 pass
         if freed:
-            log.info("CC 화면이 묶고 남긴 창 크기를 %dx%d로 되돌리고 풂: %s", *CC_REST_SIZE, ", ".join(freed))
+            log.info("세션 화면이 묶고 남긴 창 크기를 %dx%d로 되돌리고 풂: %s", *CC_REST_SIZE, ", ".join(freed))
         return freed
 
     async def open_project(self, project: str | None, tab: str | None = None) -> dict[str, Any]:
@@ -612,7 +612,7 @@ class TerminalManager:
         log.info("터미널 창 비움: %s%s", project, f" (지운 것: {b})" if b else "")
         return {"cleared": True, "busy": b, **await self.current(t)}
 
-    # ── 「CC 화면」 탭(11-14 — 세션에 CC 창이 떠 있으면 FOREMAN에서 볼 수 없어 사용자가 VNC로 들어가 Esc로 닫았다) ──
+    # ── 「세션 화면」 탭(11-14 — 세션에 CC 창이 떠 있으면 FOREMAN에서 볼 수 없어 사용자가 VNC로 들어가 Esc로 닫았다) ──
     # 브라우저는 세션 번호만 보낸다. 붙을 tmux 창은 여기서 정한다: DB의 FOREMAN CC 세션 → 살아 있는 claude 프로세스 → 그 프로세스의
     # TMUX · TMUX_PANE(같은 tmux 서버) → 그 창이 실제로 있고 그 프로세스의 창인지. 그렇게 확인한 창만 ttyd 인자로 넘긴다
     async def cc_target(self, session_id: int) -> dict[str, Any]:
@@ -659,7 +659,7 @@ class TerminalManager:
         return {"ok": True, "pane": pane, "tmux_session": info[0], "size": info[2], "running": self.cc_running}
 
     async def record_action(self, session_id: int, action: str, ok: bool, detail: str) -> None:
-        """session_action 한 줄(「CC 화면」을 열고 닫은 것 — 키 하나하나는 남기지 않는다)."""
+        """session_action 한 줄(「세션 화면」을 열고 닫은 것 — 키 하나하나는 남기지 않는다)."""
         if self.engine is None:
             return
         try:
@@ -668,7 +668,7 @@ class TerminalManager:
                                      "VALUES (:s, :a, NULL, :o, :d)"),
                                 {"s": session_id, "a": action, "o": ok, "d": detail[:512]})
         except Exception as e:  # noqa: BLE001 — 기록 실패가 화면을 막지 않는다
-            log.warning("CC 화면 기록 실패 %s: %s", action, type(e).__name__)
+            log.warning("세션 화면 기록 실패 %s: %s", action, type(e).__name__)
 
     def _shell_ttyd_args(self) -> list[str]:
         # -a: iframe 주소의 ?arg=<탭>&arg=<프로젝트>가 명령 뒤에 붙는다(WS 프록시가 모양을 거른다) → 탭마다 그룹 세션(11-10)
@@ -678,14 +678,14 @@ class TerminalManager:
                 str(self.s.terminal_view_script), self.socket, self.s.terminal_tmux_session, str(self.s.terminal_rcfile)]
 
     def _cc_ttyd_args(self) -> list[str]:
-        # 「CC 화면」(11-14) — -a 인자는 브라우저가 아니라 브리지 WS 프록시가 정한다(확인된 tmux 창 · 탭, api/terminal.py cc_ws)
+        # 「세션 화면」(11-14) — -a 인자는 브라우저가 아니라 브리지 WS 프록시가 정한다(확인된 tmux 창 · 탭, api/terminal.py cc_ws)
         return [str(self.s.ttyd_bin), "-i", str(self.s.ccscreen_socket), "-W", "-a", "-b", "/ccscreen", "-m", "8", "-d", "3",
                 "-t", "disableLeaveAlert=true", "-t", "disableResizeOverlay=true", "-t", "titleFixed=세션 화면",
                 "-t", "fontSize=13",
                 str(self.s.ccscreen_view_script), self.socket, "%dx%d" % CC_REST_SIZE]
 
     async def _supervise(self, key: str, args: list[str], sock: Path) -> None:
-        """ttyd 하나를 띄우고 죽으면 다시 띄운다(1초부터 30초까지 늘려 가며). 셸 · CC 화면이 같은 틀을 쓴다."""
+        """ttyd 하나를 띄우고 죽으면 다시 띄운다(1초부터 30초까지 늘려 가며). 셸 · 세션 화면이 같은 틀을 쓴다."""
         delay = 1.0
         env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "TMUX_PANE")}
         logf = sock.parent / ("ttyd.log" if key == "shell" else f"ttyd-{key}.log")

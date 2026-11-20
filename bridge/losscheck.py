@@ -468,7 +468,7 @@ class LossChecker:
         else:
             # 11-17 묶음 일부가 실패했으면(bad) 끝난 알림이어도 바로 보낸다. 건너뛴 프롬프트만 있으면 실패가 아니다
             self.m._notify(row, f"압축으로 잊은 것 찾기 끝 — 사라짐 {cnt.get('사라짐', 0)} · 약해짐 {cnt.get('약해짐', 0)}"
-                                f"{' (' + err + ')' if err else ''} — 패널 [세션 정리] 탭 「넘기기 전 정리」에서 보고 「대화 결정 문서에 적기」로 넘길 수 있습니다",
+                                f"{' (' + err + ')' if err else ''} — 패널 [세션 정리] 탭 「옮기기 전 정리」에서 보고 「대화에서만 정한 것 문서에 적기」로 넘길 수 있습니다",
                            fail=bool(bad))
 
     async def list(self, sid: int, limit: int = 3) -> list[dict[str, Any]]:
