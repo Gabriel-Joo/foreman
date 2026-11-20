@@ -1,6 +1,6 @@
 <!--
 다루는 곳: tools/screen.py, tools/frames_to_gif.py, tools/demo_from_db.py, bridge/static/js/demo.js, bridge/static/demo/, tests/screen_words.py, tests/test_screen_words.py, tests/data/screen_words.toml, tests/data/gif_probe.py, tests/data/gif_probe_lossy.py, tests/test_frames_to_gif.py, tests/js/merge_wait.test.mjs
-읽은 커밋: a66acc5
+읽은 커밋: 9a555ed
 -->
 # 화면 점검과 시연
 
@@ -243,7 +243,7 @@ flowchart LR
 | 문서 [버튼] | 문서가 대괄호로 인용한 버튼 글이 지금 코드에 없음 | 문서를 지금 이름으로. 버튼이 아닌 대괄호나 만들지 않은 계획이면 `[[button_exception]]` |
 | 호버 약속 `[[promise]]` | 호버 설명이 끌기, 더블클릭, 두 번 누르기, ↑↓, Esc, Enter, Ctrl, 휠 같은 조작을 말함 | 약속 목록에 한 줄. CC에 보내는 키를 설명할 뿐이면 `[[promise_skip]]` |
 
-지금 목록에는 바꾼 이름 43줄, 호버 약속 7줄과 건너뛰기 4줄, 코드 예외 7줄, 버튼 예외 5줄이 있고, 서기 몫은 0줄이다. 수는 목록 파일의 `[[rename]]`, `[[promise]]` 같은 머리를 센 것이다 [code:tests/data/screen_words.toml]. 서기 몫이 빈 것은 아래 4-4의 장치가 돈 결과다. 서기 몫 일곱 줄이 모두 옛 포트폴리오 원고에 걸려 있었는데, 새 포트폴리오가 들어오며 옛 글이 사라지자 시험이 "이 줄을 지웁니다"로 실패해 모두 지웠다 [c:6fcf7ad].
+지금 목록에는 바꾼 이름 47줄, 호버 약속 7줄과 건너뛰기 4줄, 코드 예외 7줄, 버튼 예외 5줄이 있고, 서기 몫은 0줄이다. 수는 목록 파일의 `[[rename]]`, `[[promise]]` 같은 머리를 센 것이다 [code:tests/data/screen_words.toml]. 서기 몫이 빈 것은 아래 4-4의 장치가 돈 결과다. 서기 몫 일곱 줄이 모두 옛 포트폴리오 원고에 걸려 있었는데, 새 포트폴리오가 들어오며 옛 글이 사라지자 시험이 "이 줄을 지웁니다"로 실패해 모두 지웠다 [c:6fcf7ad].
 
 **바꾼 이름.** 이름을 바꾸는 코더가 같은 브랜치에서 한 줄(`old`, `new`, `scope`, `commit`)을 적는다. 범위는 둘이다. `화면`은 코드만 본다. 디스패처나 일꾼처럼 화면에서는 쓰지 않지만 문서에서는 그대로 쓰는 말이 여기 든다. `화면과 문서 인용`은 문서(`docs/*.md`, `README.md`, 노션 원고 `notion/` 아래 모든 글, 포트폴리오 원고)의 인용 「…」 "…" […] 안까지 본다. 다만 README를 원고에서 자동으로 만드는 저장소에서는 README를 보지 않는다. 그 글은 원고 제목과 포트폴리오 첫 문단을 옮긴 것이라, 고칠 곳은 원고이기 때문이다 [code:tests/screen_words.py]. 옛 이름이 다른 뜻으로도 흔히 쓰이면 `whole = true`로 문자열 전체가 그 낱말일 때만 건다. 역할 이름이 바뀐 낱말이 화면 점검, 문서 점검처럼 다른 뜻으로도 쓰여서 생긴 장치다 [docs:11_worktree.md].
 
@@ -262,7 +262,7 @@ flowchart LR
 남은 서기 몫과 호버 약속 수는 pytest 끝 요약 줄에 늘 찍힌다. 서기 몫 수는 서기 몫 목록과 맞아 통과한 걸림의 수라서, 목록이 빈 지금은 0줄로 나온다. 지금 판에서 찍히는 줄은 이렇다 [code:tests/screen_words.py].
 
 ```
-화면 말 시험: 서기 몫 0줄 남음(docs/operations.md · style_guide.md · 원고 notion/ · portfolio/), 호버 약속 7곳 중 시험 없음 6 · 일부만 1, 1.00초
+화면 말 시험: 서기 몫 0줄 남음(docs/operations.md · style_guide.md · 원고 notion/ · portfolio/), 호버 약속 7곳 중 시험 없음 6 · 일부만 1, 1.02초
 ```
 
 손으로 전체를 보려면 `.venv/bin/python tests/screen_words.py`를 돌린다. 실패 글이 갈래마다 무엇을 어느 목록에 적을지까지 알려 준다.
