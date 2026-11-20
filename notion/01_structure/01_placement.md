@@ -1,5 +1,5 @@
 <!--
-다루는 곳: deploy/systemd/foreman-bridge.service, deploy/systemd/foreman-bridge-alert.service, scripts/foreman-bridge-alert.sh, deploy/mysql/, docs/history/02_cloudflare_tunnel.md
+다루는 곳: bridge/config.py, bridge/main.py, deploy/systemd/foreman-bridge.service, deploy/systemd/foreman-bridge-alert.service, scripts/foreman-bridge-alert.sh, deploy/mysql/, docs/history/02_cloudflare_tunnel.md
 읽은 커밋: 0dc84b9
 -->
 # 어디에 두었나

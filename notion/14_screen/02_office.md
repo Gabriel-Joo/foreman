@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/static/js/office.js, bridge/static/js/theme.js, bridge/static/js/grid.js, bridge/static/js/sprites.js, bridge/static/js/walk.js, bridge/static/js/aura.js, bridge/static/js/overhead.js, bridge/static/js/wrap.js, bridge/static/themes/, scripts/draw_props.py, LICENSES.md
+다루는 곳: bridge/static/js/office.js, bridge/static/js/theme.js, bridge/static/js/grid.js, bridge/static/js/sprites.js, bridge/static/js/walk.js, bridge/static/js/aura.js, bridge/static/js/overhead.js, bridge/static/js/wrap.js, bridge/static/js/render.js, bridge/static/themes/, scripts/draw_props.py, LICENSES.md
 읽은 커밋: 66fa9ae
 -->
 
@@ -265,6 +265,8 @@ CC-BY의 출처 표시는 `LICENSES.md`에 작가 이름, 라이선스, 출처 �
 | 9 | 관리자에게 보고함, 관리자 답 기다림 | 작업 세션 | 흐린 회색, 작은 글씨 |
 
 [code:bridge/static/js/render.js] [docs:10_office_design.md]
+
+권한 거부와 API 오류는 관리자를 거치지 않고 작업 세션 머리 위에 그대로 뜬다. 세션이 막혔다는 신호라 관리자가 대신 풀 수 없기 때문이다. 앞의 것일수록 세션이 막혀 있어 사람 손이 먼저 필요한 것이다. 마지막 줄의 두 표시는 사람 몫이 아니라서 방 화면에서는 작은 글씨와 흐린 색, 전체 지도에서는 작은 회색 점으로 그린다. 같은 턴을 보고로도 물음으로도 넘겼으면 관리자에게 보고함이 이긴다 [code:bridge/static/js/render.js].
 
 「아직 안 본 물음 N」은 관리자가 올린 물음을 사람이 물음 번호 없이 다른 입력으로 넘긴 것이 N개 남았다는 뜻이다. 사용자 답 기다림 바로 다음, 합치기 기다림과 보고보다 위에 둔 것은 사람이 아직 읽지 않은 물음이기 때문이다. 호버에 물음마다 번호와 글이 붙고, 관리자 패널에서 [봤다]로 하나씩 지운다 [code:bridge/static/js/render.js]. 무엇이 안 본 물음이 되는지는 → 「관리자에게 넘기기와 보고」가 다룬다.
 

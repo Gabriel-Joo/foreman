@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/foreman.py, bridge/foreman_note.py, bridge/wake.py, config/wake.toml, bridge/static/js/fmpanel.js, migrations/0025_foreman_note.sql, migrations/0029_seed_ronanlab_infra.sql
+다루는 곳: bridge/foreman.py, bridge/foreman_note.py, bridge/wake.py, bridge/main.py, bridge/ingest_health.py, config/wake.toml, bridge/static/js/fmpanel.js, migrations/0025_foreman_note.sql, migrations/0029_seed_ronanlab_infra.sql
 읽은 커밋: a511e6f
 -->
 # 진행 중인 일과 자동 기상
