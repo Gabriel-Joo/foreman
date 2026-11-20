@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/transcript/, bridge/assembler.py, bridge/bus.py, bridge/store.py, bridge/api/hooks.py
-읽은 커밋: c4e12d0
+다루는 곳: bridge/transcript/, bridge/assembler.py, bridge/bus.py, bridge/store.py, bridge/api/hooks.py, scripts/foreman-hook.sh, bridge/ingest_health.py, bridge/mask.py, bridge/api/ws.py
+읽은 커밋: d92f448
 -->
 # 02 기록 모으기
 
@@ -71,7 +71,7 @@ flowchart LR
 
 와처는 `~/.claude/projects` 아래 폴더들에 inotify(리눅스 커널이 파일 변경을 알려 주는 기능)를 건다. 파일이 아니라 폴더에 거는 까닭은 새 세션 파일이 생기는 순간도 잡기 위해서다. 거는 자리는 맨 위 폴더, 프로젝트 폴더, 세션 폴더, 그 아래 `subagents/` 넷이고, 새 폴더에 감시를 건 직후 그 안을 한 번 훑어 감시보다 먼저 생긴 파일을 놓치지 않는다. 바뀐 파일은 DB에 저장해 둔 읽은 자리(offset)부터 이어 읽고, 한 번에 최대 8MB씩 「덩어리」로 잘라 조립기에 넘긴다 [code:bridge/transcript/watcher.py] [code:bridge/config.py]. 쓰는 중이라 개행으로 끝나지 않은 마지막 줄은 다음 차례로 미루고, 트랜스크립트 용량의 76%를 차지하는 `api-request` 줄은 JSON을 풀기 전에 바이트 비교로 버린다 [code:bridge/transcript/reader.py]. 파일 읽기는 스레드에서 돌려 브리지 전체를 붙잡지 않는다. 경로 규칙, 이어 읽기, 순서를 잡는 법은 → 「트랜스크립트 읽기」.
 
-hook 쪽은 더 단순하다. CC가 hook 스크립트(`scripts/foreman-hook.sh`)를 부르면, 스크립트는 받은 JSON을 그대로 브리지에 POST한다. 브리지는 토큰을 확인하고 형식이 맞으면 **본문을 처리하기 전에 202를 돌려준다**. 실제 적재는 뒤 작업으로 돌린다 [code:bridge/api/hooks.py]. hook이 기다리는 동안 CC도 기다리기 때문이다. 토큰이 틀리면 401, JSON이 아니거나 `hook_event_name`과 `session_id`가 없으면 400, 와처가 꺼져 있으면 503을 돌려주고, 거절할 때는 언제나 까닭을 로그에 남기되 받은 값은 남기지 않는다 [code:bridge/api/hooks.py]. 스크립트도 같은 약속을 지킨다. 2초가 지나면 포기하고, 아무것도 출력하지 않고(UserPromptSubmit의 출력은 모델 맥락에 들어간다), 브리지가 꺼져 있어도 늘 정상 종료한다 [code:scripts/foreman-hook.sh]. 이 약속들의 까닭과 hook 토큰을 따로 둔 까닭은 → 「CC hook 받기」.
+hook 쪽은 더 단순하다. CC가 hook 스크립트(`scripts/foreman-hook.sh`)를 부르면, 스크립트는 받은 JSON을 그대로 브리지에 POST한다. 브리지는 토큰을 확인하고 형식이 맞으면 **본문을 처리하기 전에 202를 돌려준다**. 실제 적재는 뒤 작업으로 돌린다 [code:bridge/api/hooks.py]. hook이 기다리는 동안 CC도 기다리기 때문이다. 토큰이 틀리면 401, 본문이 JSON이 아니거나 JSON이어도 객체(`{…}`)가 아니거나 `hook_event_name`과 `session_id`가 없으면 400, 와처가 꺼져 있으면 503을 돌려주고, 거절할 때는 언제나 까닭을 로그에 남기되 받은 값은 남기지 않는다 [code:bridge/api/hooks.py]. 스크립트도 같은 약속을 지킨다. 2초가 지나면 포기하고, 아무것도 출력하지 않고(UserPromptSubmit의 출력은 모델 맥락에 들어간다), 브리지가 꺼져 있어도 늘 정상 종료한다 [code:scripts/foreman-hook.sh]. 이 약속들의 까닭과 hook 토큰을 따로 둔 까닭은 → 「CC hook 받기」.
 
 ### 2. 대기열
 
@@ -108,7 +108,7 @@ DB가 잠깐 죽으면 어떻게 되나. Pipeline은 그 이벤트를 붙든 채
 
 이 넷의 관계에는 몇 가지 눈여겨볼 점이 있다. CC는 API 응답 하나를 내용 블록마다 한 줄씩 쪼개 쓰고, 쪼개진 줄들은 같은 토큰 수를 똑같이 들고 있다. 그래서 토큰은 줄이 아니라 `message.id` 단위로 한 번만 센다 [code:bridge/assembler.py]. 서브에이전트는 결과가 나중에 다른 턴으로 돌아오지만, 토큰과 이벤트는 **띄운 턴**에 귀속한다. 자식 파일이 부모보다 먼저 읽혀 띄운 턴을 아직 모를 때는 30초마다 도는 연결 작업이 나중에 채우고, 같은 작업이 서브에이전트마다 토큰 합계를 다시 낸다 [code:bridge/assembler.py] [code:bridge/config.py].
 
-이벤트 테이블에는 외래 키를 두지 않았다. hook 이벤트가 그 사건의 트랜스크립트 줄보다 먼저 오는 일이 흔하고, 가장 자주 쓰는 테이블에서 행마다 부모를 조회하는 비용을 없애기 위해서다 [log:stage1_bridge_db_result.md]. 대신 이벤트를 쓰는 곳을 두 군데로 정해 두고 그 코드가 참조를 지킨다. Pipeline이 부르는 `Store.insert_event`가 CC 바깥의 이벤트를 한 줄씩 쓰고, 조립기는 트랜스크립트와 hook에서 나온 이벤트를 덩어리의 트랜잭션 안에서 한꺼번에 쓴다. 조립기 쪽은 같은 uuid가 다시 오면 아무것도 바꾸지 않고 넘어간다 [code:bridge/store.py] [code:bridge/assembler.py]. 턴의 열기와 닫기, 끝난 이유의 종류, 서브에이전트를 잇는 법은 → 「턴 조립」.
+이벤트 테이블에는 외래 키를 두지 않았다. hook 이벤트가 그 사건의 트랜스크립트 줄보다 먼저 오는 일이 흔하고, 가장 자주 쓰는 테이블에서 행마다 부모를 조회하는 비용을 없애기 위해서다 [log:stage1_bridge_db_result.md]. 대신 참조는 이벤트를 쓰는 쪽이 저마다 지킨다. 새 이벤트 줄을 넣는 곳은 둘이다. Pipeline이 부르는 `Store.insert_event`가 CC 바깥의 이벤트를 한 줄씩 넣고, 조립기는 트랜스크립트와 hook에서 나온 이벤트를 덩어리의 트랜잭션 안에서 한꺼번에 넣는다. 조립기 쪽은 같은 uuid가 다시 오면 아무것도 바꾸지 않고 넘어간다. 이미 들어간 줄을 고치는 곳은 따로 있다. 조립기는 서브에이전트 이벤트의 턴을 나중에 띄운 턴으로 바꾸고, CI/CD 쪽(`bridge/pipeline.py`)은 그 이벤트에서 나온 커밋을 찾으면 커밋 해시 칸을 채운다. `Store`는 화면 확인용 디버그 줄을 지우는 일도 맡는다 [code:bridge/store.py] [code:bridge/assembler.py] [code:bridge/pipeline.py]. 턴의 열기와 닫기, 끝난 이유의 종류, 서브에이전트를 잇는 법은 → 「턴 조립」.
 
 ## 흐름이 스스로 멈춘 것을 알린다
 
