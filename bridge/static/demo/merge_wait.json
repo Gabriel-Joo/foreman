@@ -1,7 +1,7 @@
 {
  "title": "합치기 기다림 — 캐릭터 머리 위 말풍선 · 승인 막대 건수",
  "source": "script",
- "note": "11-11 점검용(log/coder_merge_wait_20261111.md). FOREMAN: 981 합치기 기다림(가장 오래됨, 보라), 982 합치기+답 기다림(답 기다림이 보임), 983 합치기+보고 옴(합치기 기다림이 보임). 막대는 「합치기 대기 3」, 누르면 981 패널",
+ "note": "11-11 점검용(log/coder_merge_wait_20261111.md). FOREMAN: 981 합치기 기다림(가장 오래됨, 보라), 982 합치기+답 기다림(답 기다림이 보임), 983 합치기+보고 옴(합치기 기다림이 보임). 막대는 「합치기 대기 3」, 누르면 981 패널. 11-20 api에 981의 합치기 카드 응답(merge_prep)을 더함: portfolio/img/07_merge_card.png를 다시 내려면 tools/screen.py --demo merge_wait --themes magic --sizes 1920x830 --panel wide --views foreman --session 981 --no-term --clip 772,219,820,360 --eval '[세션 정리] 탭 누르기 + 「자세히」 열기'(로그 foreman-5_portfolio_photos_batch_20261120.md 「07」). 카드 내용(브랜치, 파일, 걸린 문서)은 시연용",
  "snapshot": {
   "generated_at": "@+0",
   "projects": [
@@ -43,6 +43,23 @@
  },
  "steps": [{"at": 60000, "end": true}],
  "api": {
+  "/api/sessions/981/handoff": {
+   "controls": {"live": true, "pid": 10981, "state": "S", "tmux": true, "busy": false, "pending_req": null, "foreman_stopped": false, "why": "살아 있음",
+    "can": {"summary": true, "promote": true, "headless": false, "compact": false, "exit": true, "stop": true, "resume": false, "interrupt": true, "spawn": true},
+    "worktree": null, "reads": null, "losscheck": true},
+   "summaries": [], "promotions": [], "promotions_error": null, "promote_inputs": [], "losschecks": [], "losschecks_error": null,
+   "merge_prep": {"health": {"ok": true}, "stage": 1, "card": {
+    "status": "ready", "branch": "cc/foreman-5", "base": "main", "head": "a1b2c3d4e5f6", "live": true, "approver": "human",
+    "ahead": 3, "behind": 2, "ff": false, "conflict": [], "asks": null, "note": "", "manager_told": true,
+    "commits": ["a1b2c3d 화면 글을 고침", "b2c3d4e 시험을 더함", "c3d4e5f 문서를 맞춤"],
+    "files": ["bridge/static/js/render.js", "tests/js/render.test.mjs", "docs/10_office_design.md", "docs/style_guide.md"],
+    "why": "세션이 응답을 마쳤고 커밋하지 않은 변경이 없습니다.",
+    "human_why": ["늘 사람 경로(docs/style_guide.md): docs/style_guide.md"], "rule_files": [], "rule_files_error": null,
+    "docs": {"total": 2, "unfixed": 1, "by": {"code": {"total": 2, "unfixed": 1}},
+     "docs": [
+      {"where": "docs/10_office_design.md", "kind": "docs", "by": "code", "lines": [212], "count": 1, "files": ["bridge/static/js/render.js"], "stale": false, "hits": []},
+      {"where": "portfolio/02_overhead.md", "kind": "portfolio", "by": "code", "lines": [41], "count": 1, "files": ["bridge/static/js/render.js"], "stale": true, "hits": []}],
+     "check": {"new": 0, "old": 3, "lines": []}}}}},
   "/api/coder/todo": {"projects": {
    "runshoes": {"inbox": [], "rested": []},
    "petmint-rag-chatbot": {"inbox": [], "rested": []},

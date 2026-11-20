@@ -1,0 +1,38 @@
+{
+ "title": "셸 부탁: 세션이 부탁한 명령이 셸에 미리 채워지고 부탁 띠가 뜬다",
+ "source": "script",
+ "note": "11-20 포트폴리오 13편 시연(log/foreman-5_portfolio_photos_batch_20261120.md). FOREMAN 방의 코더 981이 사람이 쳐야 하는 명령 `sudo systemctl restart docker`를 부탁한다. 실제 셸(ttyd)은 시연에서 열리지 않으므로 셸 칸 안 글은 srcdoc 한 장짜리 그림이다(0초에 빈 줄, 2.4초에 명령이 채워진 줄). 막대, 「부탁 1」, 부탁 띠, 셸이 저절로 펴지는 동작은 실제 화면 코드(terminal.js, store.js)가 그린다. 찍기: tools/screen.py --record shell_request --themes magic --sizes 1366x768 --views foreman",
+ "snapshot": {
+  "generated_at": "@+0",
+  "projects": [
+   {"name": "runshoes", "label": "런슈즈", "sessions": []},
+   {"name": "petmint-rag-chatbot", "label": "펫퍼민트", "sessions": []},
+   {"name": "foreman", "label": "FOREMAN", "sessions": [
+    {"id": 981, "cc_session_id": "demo-0981", "short": "demo0981", "character": "코더 foreman-5", "project": "foreman", "title": "코더 — 화면 고침",
+     "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman/.worktrees/foreman-5", "pid": 10981, "proc": "S", "cc_status": "idle",
+     "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null, "open_turn": null, "activity": null,
+     "subagents_running": 0, "subagent_descs": [], "background": [],
+     "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
+     "last_ts": "@-30000", "attached_at": "@-600000", "detached_at": null}
+   ]},
+   {"name": "ronanlab-infra", "label": "인프라", "sessions": []}
+  ],
+  "approvals": [],
+  "hidden_dormant": 0,
+  "terminal": {"enabled": true, "running": true, "pending": []},
+  "ingest": null
+ },
+ "steps": [
+  {"at": 0, "js": "document.getElementById('termFrame').srcdoc = '<!doctype html><meta charset=utf-8><body style=\"margin:0;background:#000;color:#ddd;font:15px/1.6 ui-monospace,monospace;padding:10px 14px\">$ <span style=\"background:#ddd\">&nbsp;</span>'"},
+  {"at": 1500, "msg": {"type": "terminal_request", "request": {"id": 1, "session_id": 981, "project": "foreman", "title": "코더 — 화면 고침",
+    "cmd": "sudo systemctl restart docker", "prefilled": true, "blank": false, "others": []}}},
+  {"at": 2400, "js": "document.getElementById('termFrame').srcdoc = '<!doctype html><meta charset=utf-8><body style=\"margin:0;background:#000;color:#ddd;font:15px/1.6 ui-monospace,monospace;padding:10px 14px\">$ sudo systemctl restart docker<span style=\"background:#ddd\">&nbsp;</span>'"},
+  {"at": 7000, "end": true}
+ ],
+ "api": {
+  "/api/terminal/session": {"running": true},
+  "/api/terminal/open": {"project": "foreman", "window": "foreman", "cwd": null, "view": true, "scrolling": false, "shell_old": null},
+  "/api/terminal/window": {"project": "foreman", "window": "foreman", "cwd": null, "view": true, "scrolling": false, "shell_old": null}
+ }
+}

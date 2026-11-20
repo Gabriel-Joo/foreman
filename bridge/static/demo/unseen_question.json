@@ -1,0 +1,48 @@
+{
+ "title": "아직 안 본 물음: 번호 없이 넘어간 관리자의 물음이 관리자 머리 위와 패널 띠에 남는다",
+ "source": "script",
+ "note": "11-20 포트폴리오 02편 시연(log/foreman-5_portfolio_photos_batch_20261120.md). FOREMAN 관리자 980이 올린 물음 둘(#3 #4)을 사람이 번호 없이 다른 입력으로 넘어가서 escalate.unseen에 남은 장면. 관리자 머리 위 「아직 안 본 물음 2」와 관리자 패널 띠(「❔ 아직 안 본 물음 2」, 물음마다 [봤다])를 본다. 물음 글은 시연용(FOREMAN에 있을 만한 일). 찍기: tools/screen.py --demo unseen_question --themes magic --sizes 1920x830 --panel wide --views foreman --session 980",
+ "snapshot": {
+  "generated_at": "@+0",
+  "projects": [
+   {"name": "runshoes", "label": "런슈즈", "sessions": []},
+   {"name": "petmint-rag-chatbot", "label": "펫퍼민트", "sessions": []},
+   {"name": "foreman", "label": "FOREMAN", "sessions": [
+    {"id": 980, "cc_session_id": "demo-0980", "short": "demo0980", "character": "관리자", "project": "foreman", "title": "관리자",
+     "custom_title": null, "cc_name": null, "role": "manager", "crew": "manager", "cwd": "/demo/foreman", "pid": 10980, "proc": "S", "cc_status": "idle",
+     "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null, "open_turn": null, "activity": null,
+     "subagents_running": 0, "subagent_descs": [], "background": [],
+     "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
+     "last_ts": "@-120000", "attached_at": "@-600000", "detached_at": null,
+     "escalate": {"unseen": [
+      {"id": 3, "at": "@-1500000", "text": "적재 막힘 알림을 10분에서 5분으로 줄일지 정해 주십시오"},
+      {"id": 4, "at": "@-420000", "text": "세션 982의 합치기를 오늘 하시겠습니까, 내일로 미루시겠습니까"}]}},
+    {"id": 981, "cc_session_id": "demo-0981", "short": "demo0981", "character": "코더 foreman-5", "project": "foreman", "title": "코더 — 화면 고침",
+     "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman/.worktrees/foreman-5", "pid": 10981, "proc": "S", "cc_status": "idle",
+     "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null, "open_turn": null, "activity": null,
+     "subagents_running": 0, "subagent_descs": [], "background": [],
+     "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
+     "last_ts": "@-600000", "attached_at": "@-600000", "detached_at": null},
+    {"id": 982, "cc_session_id": "demo-0982", "short": "demo0982", "character": "코더 foreman-6", "project": "foreman", "title": "코더 — 시험",
+     "custom_title": null, "cc_name": null, "role": "coder", "cwd": "/demo/foreman/.worktrees/foreman-6", "pid": 10982, "proc": "S", "cc_status": "idle",
+     "state": "IDLE", "stuck_turn": false, "injectable": true, "tmux_pane": null, "open_turn": null, "activity": null,
+     "subagents_running": 0, "subagent_descs": [], "background": [],
+     "tokens": {"input": 0, "output": 0, "today_output": 0, "today_input": 0, "subagent_input": 0, "subagent_output": 0, "by_model": []},
+     "model": "claude-opus-5-5", "model_label": "Opus 5.5", "model_family": "opus", "model_req": "opus", "compact": null, "overlap": null,
+     "last_ts": "@-600000", "attached_at": "@-600000", "detached_at": null}
+   ]},
+   {"name": "ronanlab-infra", "label": "인프라", "sessions": []}
+  ],
+  "approvals": [],
+  "hidden_dormant": 0,
+  "terminal": {"enabled": false},
+  "ingest": null
+ },
+ "steps": [{"at": 60000, "end": true}],
+ "api": {
+  "/api/coder/todo": {"projects": {"foreman": {"inbox": [], "rested": []}}},
+  "/api/scribe/todo": {"tasks": {}, "projects": {}}
+ }
+}
