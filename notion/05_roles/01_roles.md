@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/roles.py, config/roles.toml, config/models.toml, bridge/static/js/roles.js, bridge/foreman.py, bridge/inspector_close.py, .claude/agents/Explore.md, bridge/roleguard.py, bridge/hookmiss.py, bridge/docrefs.py, tests/test_inspector_close.py, tests/test_session_role.py
-읽은 커밋: c2457ab
+읽은 커밋: 0010c39
 -->
 
 # 역할 다섯
