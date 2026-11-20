@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/roleguard.py, bridge/reposcope.py, bridge/schemalock.py, bridge/pgrep_guard.py, bridge/approvals.py, scripts/korean-check.py, .claude/settings.json, config/roles.toml, config/worktree.toml, config/approval.toml, tests/test_roleguard.py, tests/test_roleguard_inspector.py, tests/test_pgrep_guard.py, tests/test_reposcope.py, tests/test_korean_check.py
+다루는 곳: bridge/roleguard.py, bridge/reposcope.py, bridge/schemalock.py, bridge/pgrep_guard.py, bridge/approvals.py, scripts/korean-check.py, .claude/settings.json, config/roles.toml, config/worktree.toml, config/approval.toml
 읽은 커밋: 64bee3d
 -->
 
@@ -307,10 +307,8 @@ until ! pgrep -f "tools/screen.py"; do sleep 3; done
 
 이 장치들은 글을 보고 판정한다. 그래서 글로 가릴 수 없는 것은 지나간다. 알고 남겨 둔 구멍을 적어 둔다.
 
-「미해결」은 아직 고치지 않은 것이다.
-
 브리지가 답하지 못하면 네 장치가 함께 꺼지는 것, 해석기 안의 쓰기, 관리자 규칙이 보지 않는 자리와 막힌 뒤 돌아가는 길, 다른 프로젝트로 넓히지 않은 것, 샌드박스를 시험 뒤로 미룬 것은 여러 편에 걸려 → 「17 알려진 한계」에 모았다. 판정 없이 지난 호출은 갈래마다 기록에 한 줄씩 남는다 [log:foreman-6_bridge_alert_20261115.md] [log:foreman-4_hook_bytes_20261115.md]. 이 편에만 걸리는 구멍은 아래 하나다.
 
-**그 밖의 쓰기 명령.** 역할 권한의 Bash 규칙은 몇 가지 쓰기 꼴만 본다. 그 밖의 쓰기 명령은 보지 않는다(**미해결**). 가장 흔한 것은 그림을 넣는 쓰기라 넣으면 헛걸림이 크다. 그림(png, gif)은 Edit, Write로 쓸 수 없어 셸 명령으로 넣는 것이 유일한 길이기 때문이다 [log:inspect_roleguard_20261114.md]. 조사 규칙만 예외로 Bash로 저장소 파일을 쓰는 명령을 모두 막는다. 조사가 그림을 넣을 일은 없다.
+**그 밖의 쓰기 명령.** 역할 권한의 Bash 규칙은 몇 가지 쓰기 꼴만 본다. 그 밖의 쓰기 명령은 보지 않는다. 일부러 막지 않은 것이다. 가장 흔한 것은 그림을 넣는 쓰기라 넣으면 헛걸림이 크다. 그림(png, gif)은 Edit, Write로 쓸 수 없어 셸 명령으로 넣는 것이 유일한 길이기 때문이다 [log:inspect_roleguard_20261114.md]. 조사 규칙만 예외로 Bash로 저장소 파일을 쓰는 명령을 모두 막는다. 조사가 그림을 넣을 일은 없다.
 
 지금의 장치들은 "자주, 실제로 새던 꼴"을 정확하게 막는 데 맞춰져 있다. 실제 기록에서 Bash 파일 고치기 10건과 다른 저장소 쓰기 20건을 모두 잡았고, 헛걸림은 관찰 단계에서 걸러 냈다 [log:inspect_roleguard_20261114.md] [log:repo_scope_readonly_20261109.md].

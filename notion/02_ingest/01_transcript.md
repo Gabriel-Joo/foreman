@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/transcript/, bridge/ingest.py, tests/test_lookup.py
+다루는 곳: bridge/transcript/, bridge/ingest.py
 읽은 커밋: e5d584b
 -->
 

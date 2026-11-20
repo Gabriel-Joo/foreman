@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/pipeline.py, bridge/api/webhooks.py, config/pipeline.toml, deploy/cicd/argocd-notifications-foreman.yaml, migrations/0012_pipeline.sql, bridge/static/js/shipstate.js, tests/js/shipstate.test.mjs, tests/test_pipeline.py, bridge/static/js/render.js, bridge/static/js/office.js, bridge/main.py, bridge/foreman.py
+다루는 곳: bridge/pipeline.py, bridge/api/webhooks.py, config/pipeline.toml, deploy/cicd/argocd-notifications-foreman.yaml, migrations/0012_pipeline.sql, bridge/static/js/shipstate.js, bridge/static/js/render.js, bridge/static/js/office.js, bridge/main.py, bridge/foreman.py
 읽은 커밋: a511e6f
 -->
 

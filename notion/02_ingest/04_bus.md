@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/bus.py, bridge/mask.py, bridge/ingest_health.py, bridge/api/ws.py, bridge/api/debug.py, bridge/static/debug.html, tests/test_secret_files.py
+다루는 곳: bridge/bus.py, bridge/mask.py, bridge/ingest_health.py, bridge/api/ws.py, bridge/api/debug.py, bridge/static/debug.html
 읽은 커밋: 8593516
 -->
 

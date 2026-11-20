@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/handoff.py, bridge/pointers.py, bridge/static/js/moveflow.js, docs/11_handoff.md, docs/11_handoff_v2.md
+다루는 곳: bridge/handoff.py, bridge/pointers.py, bridge/static/js/moveflow.js
 읽은 커밋: ff16b55
 -->
 # 08 인계와 압축 손실

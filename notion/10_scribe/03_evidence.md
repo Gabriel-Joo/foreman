@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/evidence.py, bridge/scribe_ask.py, bridge/doctext/, tools/docs.py, .foreman/docs.toml, tests/test_evidence.py, tests/test_scribe_ask.py, tests/test_doctext.py, tests/test_techdoc.py, tests/test_docs_check.py, tests/test_docs_selfcheck.py, tests/test_docs_readme.py, tests/test_docs_hangul.py, tests/test_docs_xref_bare.py, tests/test_root_mark.py, README.md
+다루는 곳: bridge/evidence.py, bridge/scribe_ask.py, bridge/doctext/, tools/docs.py, .foreman/docs.toml, README.md
 읽은 커밋: b9c80ef
 -->
 # 근거 확인과 물어보기

@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/losscheck.py, bridge/compactwatch.py, bridge/static/js/losscheck.js, migrations/0021_loss_check.sql, tests/js/losscheck.test.mjs, tests/test_compactwatch.py, tests/test_losscheck.py
+다루는 곳: bridge/losscheck.py, bridge/compactwatch.py, bridge/static/js/losscheck.js, migrations/0021_loss_check.sql
 읽은 커밋: e062e45
 -->
 

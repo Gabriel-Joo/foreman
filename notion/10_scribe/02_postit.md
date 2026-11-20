@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/postit.py, bridge/todofile.py, bridge/api/postit.py, bridge/api/todo.py, bridge/static/js/postit.js, migrations/0027_todo_inbox.sql, migrations/0028_todo_inbox_assignee.sql, migrations/0033_postit.sql, migrations/0034_postit_repo_log.sql, tests/js/postit.test.mjs, tests/test_postit.py, tests/test_todofile.py
+다루는 곳: bridge/postit.py, bridge/todofile.py, bridge/api/postit.py, bridge/api/todo.py, bridge/static/js/postit.js, migrations/0027_todo_inbox.sql, migrations/0028_todo_inbox_assignee.sql, migrations/0033_postit.sql, migrations/0034_postit_repo_log.sql
 읽은 커밋: 3a77328
 -->
 # 포스트잇

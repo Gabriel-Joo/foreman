@@ -1,5 +1,5 @@
 <!--
-다루는 곳: tests/conftest.py, tests/testdb.py, tests/screen_words.py, tests/test_js.py, tests/test_live_config_shape.py, tests/test_public_secret_shapes.py, tests/test_bridge_alert.py, tests/test_coder_docs_rule.py, tests/test_docrefs.py, tests/test_fail_notify_scan.py, tests/test_hook_timeouts.py, tests/test_hookmiss.py, tests/test_roles_agree.py, pyproject.toml, requirements.lock, deploy/systemd/foreman-bridge.service
+다루는 곳: pyproject.toml, requirements.lock, deploy/systemd/foreman-bridge.service
 읽은 커밋: 9debe49
 -->
 # 16 시험과 배포

@@ -1,5 +1,5 @@
 <!--
-다루는 곳: tools/screen.py, tools/frames_to_gif.py, tools/demo_from_db.py, bridge/static/js/demo.js, bridge/static/demo/, tests/screen_words.py, tests/test_screen_words.py, tests/data/screen_words.toml, tests/data/gif_probe.py, tests/data/gif_probe_lossy.py, tests/test_frames_to_gif.py, tests/js/merge_wait.test.mjs
+다루는 곳: tools/screen.py, tools/frames_to_gif.py, tools/demo_from_db.py, bridge/static/js/demo.js, bridge/static/demo/
 읽은 커밋: 9a555ed
 -->
 # 화면 점검과 시연
@@ -177,7 +177,7 @@ flowchart LR
 
 ### 3-2. 왜 이렇게 두 갈래로 바꾸나
 
-처음 조사에서 가진 도구가 정해 버린 것이 많다. 서버에는 Playwright가 받아 둔 ffmpeg가 있었는데, 이 ffmpeg는 VP9 WebM만 만들고, 입력은 JPEG를 파이프로 흘리는 꼴(`image2pipe -c:v mjpeg`)만 받았다. 파일 묶음 입력, PNG 입력, H.264, mp4, GIF는 안 됐다 [docs:13_demo_capture.md]. ffmpeg를 새로 까는 것은 하지 않기로 해서 mp4는 쓰지 않는다. GIF는 시스템 파이썬에 있는 PIL(이미지 라이브러리)로 만든다. 저장소의 가상 환경(`.venv`)에는 PIL이 없어서, 녹화기는 GIF 변환을 시스템 `python3 -I`로 따로 돌린다.
+처음 조사에서 가진 도구가 정해 버린 것이 많다. 서버에는 Playwright가 받아 둔 ffmpeg가 있었는데, 이 ffmpeg는 VP9 WebM만 만들고, 입력은 JPEG를 파이프로 흘리는 꼴(`image2pipe -c:v mjpeg`)만 받았다. 파일 묶음 입력, PNG 입력, H.264, mp4, GIF는 안 됐다 [docs:13_demo_capture.md]. ffmpeg를 새로 까는 것은 하지 않기로 했다. 그래서 녹화는 mp4로 만들지 않는다. 서버에 있는 ffmpeg로는 VP9 WebM까지만 만들 수 있다. ffmpeg를 새로 깔지 않기로 한 까닭은 기록에 없다. GIF는 시스템 파이썬에 있는 PIL(이미지 라이브러리)로 만든다. 저장소의 가상 환경(`.venv`)에는 PIL이 없어서, 녹화기는 GIF 변환을 시스템 `python3 -I`로 따로 돌린다.
 
 | | GIF | WebM |
 |---|---|---|
@@ -282,7 +282,3 @@ flowchart LR
 ## 5. 세 장치가 함께 막는 것
 
 세 장치는 서로 다른 고장을 본다. `screen.py`는 "화면이 이 크기, 이 테마에서 겹치거나 넘치는가"를, 시연 재생은 "이 장면을 실제 데이터 없이 만들어 보이고 찍을 수 있는가"를, 화면 말 시험은 "화면이 하는 말과 문서가 하는 말이 같은가"를 본다. 공통점은 모두 사람이 화면을 열어 보지 않아도 숫자나 실패로 알린다는 것이다. 이 프로젝트가 만들어진 까닭이 조용한 고장을 잡는 것이고, 화면도 예외가 아니다. 화면 코드를 바꾼 세션은 `screen.py`로 세 테마 0건을 보고, 화면 말을 바꾼 세션은 목록에 한 줄을 적어 pytest가 남은 옛 이름을 찾게 한다. 사람이 하는 일은 결과 줄의 숫자를 확인하는 것으로 줄었다 [repo:CLAUDE.md].
-
-## 6. 알려진 한계
-
-- 녹화는 mp4로 만들지 않는다. 서버에 있는 ffmpeg는 VP9 WebM만 만들고, ffmpeg를 새로 깔지 않기로 했다 [docs:13_demo_capture.md]

@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/usage.py, bridge/api/usage.py, bridge/model_choice.py, bridge/static/usage.html, bridge/static/js/modelpick.js, config/usage.toml, config/models.toml, migrations/0019_session_model.sql, migrations/0026_usage.sql, bridge/api/sessions.py, tests/js/modelmenu.test.mjs, tests/js/role_label.test.mjs, tests/test_model_choice.py, tests/test_usage.py
+다루는 곳: bridge/usage.py, bridge/api/usage.py, bridge/model_choice.py, bridge/static/usage.html, bridge/static/js/modelpick.js, config/usage.toml, config/models.toml, migrations/0019_session_model.sql, migrations/0026_usage.sql, bridge/api/sessions.py
 읽은 커밋: c061fd3
 -->
 

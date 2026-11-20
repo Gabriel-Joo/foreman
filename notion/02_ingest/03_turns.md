@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/assembler.py, bridge/store.py, bridge/models.py, tests/test_stage2_db.py
+다루는 곳: bridge/assembler.py, bridge/store.py, bridge/models.py
 읽은 커밋: 1e7e7ea
 -->
 # 턴 조립

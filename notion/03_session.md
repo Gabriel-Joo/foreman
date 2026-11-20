@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/liveness.py, bridge/session_state.py, bridge/stallwatch.py, bridge/human_wait.py, bridge/api_error.py, bridge/bang_watch.py, bridge/xmsg.py, bridge/inject.py, bridge/api/sessions.py, bridge/static/js/slash.js, tests/js/input_check.test.mjs, tests/js/slash.test.mjs, tests/js/xmsg.test.mjs, tests/test_api_error.py, tests/test_bang_watch.py, tests/test_human_wait.py, tests/test_inject.py, tests/test_inject_late.py, tests/test_inject_paths.py, tests/test_inject_screen.py, tests/test_stallwatch.py, tests/test_stallwatch_bg.py, tests/test_xmsg.py
+다루는 곳: bridge/liveness.py, bridge/session_state.py, bridge/stallwatch.py, bridge/human_wait.py, bridge/api_error.py, bridge/bang_watch.py, bridge/xmsg.py, bridge/inject.py, bridge/api/sessions.py, bridge/static/js/slash.js
 읽은 커밋: 7dee4fa
 -->
 

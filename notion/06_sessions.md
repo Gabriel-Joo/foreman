@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/handoff.py, bridge/worktree.py, bridge/preview.py, bridge/previews.py, bridge/api/handoff.py, config/worktree.toml, bridge/static/js/newsession.js, bridge/docrefs.py, tests/test_handoff.py, tests/test_manager_seat.py, tests/test_preview.py, tests/test_worktree.py, tests/test_wt_end.py, tests/test_wt_truth.py
+다루는 곳: bridge/handoff.py, bridge/worktree.py, bridge/preview.py, bridge/previews.py, bridge/api/handoff.py, config/worktree.toml, bridge/static/js/newsession.js, bridge/docrefs.py
 읽은 커밋: b04b0ca
 -->
 

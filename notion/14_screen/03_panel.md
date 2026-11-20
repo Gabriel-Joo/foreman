@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/static/js/opanel.js, bridge/static/js/render.js, bridge/static/js/md.js, bridge/static/js/tip.js, bridge/static/js/uiscale.js, bridge/static/js/grip.js, tests/js/grip.test.mjs, tests/js/md.test.mjs, tests/js/render.test.mjs, tests/js/convo_state.test.mjs, tests/js/uiscale_range.test.mjs, tests/js/term_cell.test.mjs, tests/js/api_stop.test.mjs, tests/js/appr_place.test.mjs, tests/js/bg_line.test.mjs, tests/js/escalate_unseen.test.mjs, tests/js/now_doing.test.mjs, tests/js/fold_keep.test.mjs
+다루는 곳: bridge/static/js/opanel.js, bridge/static/js/render.js, bridge/static/js/md.js, bridge/static/js/tip.js, bridge/static/js/uiscale.js, bridge/static/js/grip.js
 읽은 커밋: 9971b0f
 -->
 

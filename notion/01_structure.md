@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/main.py, bridge/__main__.py, bridge/config.py, tests/test_units.py, .gitignore
+다루는 곳: bridge/main.py, bridge/__main__.py, bridge/config.py, .gitignore
 읽은 커밋: dec9160
 -->
 

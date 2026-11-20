@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/foreman.py, bridge/api/foreman.py, bridge/static/js/foremanchat.js, migrations/0016_foreman_dispatch.sql, migrations/0030_dispatch_session.sql, migrations/0029_seed_ronanlab_infra.sql, bridge/scribe_room.py, bridge/docrefs.py, tests/js/foremanchat_drop.test.mjs, tests/js/foremanchat_multi.test.mjs, tests/test_foreman.py, tests/test_foreman_ctx.py, tests/test_foreman_fail.py, tests/test_foreman_multi.py, tests/test_foreman_redo.py, tests/test_no_wait_prompt.py
+다루는 곳: bridge/foreman.py, bridge/api/foreman.py, bridge/static/js/foremanchat.js, migrations/0016_foreman_dispatch.sql, migrations/0030_dispatch_session.sql, migrations/0029_seed_ronanlab_infra.sql, bridge/scribe_room.py, bridge/docrefs.py
 읽은 커밋: aaa2de7
 -->
 

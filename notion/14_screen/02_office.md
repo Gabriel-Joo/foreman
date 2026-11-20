@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/static/js/office.js, bridge/static/js/theme.js, bridge/static/js/grid.js, bridge/static/js/sprites.js, bridge/static/js/walk.js, bridge/static/js/aura.js, bridge/static/js/overhead.js, bridge/static/js/wrap.js, bridge/static/themes/, scripts/draw_props.py, LICENSES.md, tests/js/grid.test.mjs, tests/js/theme.test.mjs, tests/js/walk.test.mjs, tests/js/banner_wrap.test.mjs, tests/js/name_ink.test.mjs, tests/js/role_aura.test.mjs, tests/js/overhead_stack.test.mjs, tests/js/stack_side.test.mjs, tests/js/seat_host.test.mjs, tests/test_overhead_marks.py, tests/js/overhead_marks.test.mjs
+다루는 곳: bridge/static/js/office.js, bridge/static/js/theme.js, bridge/static/js/grid.js, bridge/static/js/sprites.js, bridge/static/js/walk.js, bridge/static/js/aura.js, bridge/static/js/overhead.js, bridge/static/js/wrap.js, bridge/static/themes/, scripts/draw_props.py, LICENSES.md
 읽은 커밋: 66fa9ae
 -->
 

@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/db/migrate.py, bridge/schemalock.py, tests/test_testdb.py, tests/testdb.py, tests/conftest.py
+다루는 곳: bridge/db/migrate.py, bridge/schemalock.py
 읽은 커밋: e5d584b
 -->
 

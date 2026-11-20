@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/static/js/moveflow.js, bridge/static/js/handoff.js, bridge/switchwatch.py, bridge/handoff.py, config/handoff.toml, bridge/losscheck.py, tests/js/moveflow.test.mjs, tests/js/handoff_flow.test.mjs, tests/test_moveflow.py, tests/test_switchwatch.py
+다루는 곳: bridge/static/js/moveflow.js, bridge/static/js/handoff.js, bridge/switchwatch.py, bridge/handoff.py, config/handoff.toml, bridge/losscheck.py
 읽은 커밋: dc97f49
 -->
 # 새 세션으로 옮기기

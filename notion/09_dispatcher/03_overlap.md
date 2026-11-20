@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/overlap.py, tests/test_overlap.py, tests/test_overlap_base.py
+다루는 곳: bridge/overlap.py
 읽은 커밋: 5e0f7c5
 -->
 

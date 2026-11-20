@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/api/auth.py, bridge/scopetoken.py, config/tokens.toml, bridge/mask.py, tests/test_secret_files.py, .env.bridge.example, .env.db.example, tests/test_scopetoken.py, tests/test_publish_scope.py, bridge/api/ws.py
+다루는 곳: bridge/api/auth.py, bridge/scopetoken.py, config/tokens.toml, bridge/mask.py, .env.bridge.example, .env.db.example, bridge/api/ws.py, bridge/config.py
 읽은 커밋: 0ff287f
 -->
 # 열쇠와 비밀

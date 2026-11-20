@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/approval_summary.py, migrations/0013_approval_summary.sql, tests/test_approval_summary.py
+다루는 곳: bridge/approval_summary.py, migrations/0013_approval_summary.sql
 읽은 커밋: e5d584b
 -->
 # 승인 요약
