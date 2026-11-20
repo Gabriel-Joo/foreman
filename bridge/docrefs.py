@@ -48,6 +48,7 @@ from bridge.doctext import readme as _readme
 from bridge.doctext.lines import TEXT, walk
 from bridge.doctext.marks import MARK as ANY_MARK
 from bridge.doctext.marks import REF_MARK as MARK
+from bridge.doctext.marks import mark_target
 from bridge.doctext.marks import split_range as _split_range
 from bridge.doctext.repo import RepoError as DocrefsError
 from bridge.doctext.repo import git_z, is_quoted, quoted_problem
@@ -192,8 +193,9 @@ def refs_in(md: str, docs_dir: str = DOCS_DIR) -> list[dict[str, Any]]:
             out.append({"line": i, "target": target, "range": rng, "how": how, "ref": ref})
 
         for mk in MARK.finditer(ln):
-            p, rng = _split_range(_clean(mk["v"]))
-            add(p if mk["k"] == "code" else docs_dir + p, rng, "mark", mk.group(0))
+            t = mark_target(mk["k"], _clean(mk["v"]), docs_dir)      # 점검, 노션 판과 같은 풀기(code, repo는 맨 위 기준)
+            if t:
+                add(t[0], (t[1], t[2] or t[1]) if t[1] else None, "mark", mk.group(0))
         rest = ANY_MARK.sub(" ", ln)
         for tk in TICK.finditer(rest):
             for t in TOKEN.findall(tk.group(1)):

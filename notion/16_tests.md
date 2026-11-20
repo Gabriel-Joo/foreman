@@ -8,7 +8,7 @@ FOREMAN의 시험과 배포는 둘 다 손으로 한다. 저장소를 GitHub에 
 
 ## 1. CI가 없다
 
-CI(지속 통합, 커밋이 올라올 때마다 시험을 자동으로 돌려 주는 장치)는 없다. 저장소에 GitHub Actions 워크플로 폴더(`.github/workflows`)가 없다 [code:CLAUDE.md]. GitHub Actions는 쓰지 않는다 [docs:00_design.md]. Jenkins, Harbor, ArgoCD를 익히려고 그 묶음을 골랐고, 채용 공고에서도 이 도구들이 자주 보였다. 그리고 GitHub Actions는 깃허브 쪽 러너에서 돌아 사설망 안의 Harbor에 닿지 않는다. 닿게 하려면 러너를 따로 세워야 하는데, 그러면 Jenkins를 세우는 것과 다르지 않다 [log:foreman-5_todo_collect_20261117.md]. 그래서 지금 시험을 돌리는 사람은 관리자(원본 폴더에서 도는 메인 세션)다. 작업방(git worktree, 따로 떨어진 작업 폴더)에서 일한 코더의 브랜치를 관리자가 합친 뒤, 원본 폴더에서 pytest와 node 시험을 손으로 돌린다. 통과하면 push하고, 실패하면 되돌리거나 몇 줄로 막고 제대로 고치는 일은 다시 작업방으로 보낸다 [code:CLAUDE.md].
+CI(지속 통합, 커밋이 올라올 때마다 시험을 자동으로 돌려 주는 장치)는 없다. 저장소에 GitHub Actions 워크플로 폴더(`.github/workflows`)가 없다 [repo:CLAUDE.md]. GitHub Actions는 쓰지 않는다 [docs:00_design.md]. Jenkins, Harbor, ArgoCD를 익히려고 그 묶음을 골랐고, 채용 공고에서도 이 도구들이 자주 보였다. 그리고 GitHub Actions는 깃허브 쪽 러너에서 돌아 사설망 안의 Harbor에 닿지 않는다. 닿게 하려면 러너를 따로 세워야 하는데, 그러면 Jenkins를 세우는 것과 다르지 않다 [log:foreman-5_todo_collect_20261117.md]. 그래서 지금 시험을 돌리는 사람은 관리자(원본 폴더에서 도는 메인 세션)다. 작업방(git worktree, 따로 떨어진 작업 폴더)에서 일한 코더의 브랜치를 관리자가 합친 뒤, 원본 폴더에서 pytest와 node 시험을 손으로 돌린다. 통과하면 push하고, 실패하면 되돌리거나 몇 줄로 막고 제대로 고치는 일은 다시 작업방으로 보낸다 [repo:CLAUDE.md].
 
 코드가 서버에 반영되기까지의 길을 그리면 아래와 같다. 사람 손이 닿는 칸이 셋이고, 자동으로 넘어가는 칸은 없다.
 
@@ -110,7 +110,7 @@ FOREMAN에는 「배포」라는 단계가 따로 없다. 브리지는 systemd �
 
 ## 6. GitLab과 Jenkins에 태우지 않는다
 
-이 서버에는 GitLab과 Jenkins로 이어지는 CI/CD 길이 이미 있다. 런슈즈 같은 서비스는 그 길로 이미지를 만들어 Harbor(이미지 저장소)에 올리고 클러스터에 배포한다. FOREMAN은 이 길에 태우지 않았다 [docs:00_design.md][code:CLAUDE.md].
+이 서버에는 GitLab과 Jenkins로 이어지는 CI/CD 길이 이미 있다. 런슈즈 같은 서비스는 그 길로 이미지를 만들어 Harbor(이미지 저장소)에 올리고 클러스터에 배포한다. FOREMAN은 이 길에 태우지 않았다 [docs:00_design.md][repo:CLAUDE.md].
 
 까닭은 그 길이 하는 일이 FOREMAN에 하나도 해당되지 않기 때문이다. 그 길의 끝은 이미지인데 FOREMAN에는 이미지가 없다. 화면은 번들러 없는 순수 JS를 저장소에서 그대로 내고, 브리지는 작업 폴더에서 바로 돈다. 태우려면 Jenkinsfile을 새로 쓰고, Jenkins 쪽에 시험 DB를 마련하고, 인프라 저장소를 고쳐야 한다. 얻는 것 없이 「다른 프로젝트와 같게」만 맞추는 일이 된다 [docs:00_design.md]. 브리지와 DB를 클러스터 밖 호스트에 둔 까닭(감시하는 쪽이 감시받는 쪽과 함께 죽지 않게)과도 이어진다. 클러스터가 흔들릴 때 FOREMAN의 배포 길까지 같이 흔들리면 안 된다(→ 「어디에 두었나」). FOREMAN은 거꾸로 그 CI/CD 길을 지켜보는 쪽이다(→ 「12 CI/CD 인과 체인」).
 

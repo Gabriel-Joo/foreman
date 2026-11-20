@@ -36,7 +36,7 @@ from bridge.doctext import dashdot, readme
 from bridge.doctext.config import DocsConfig, not_code_match, not_code_skip
 from bridge.doctext.head import COVERS, READ, SHA, bad_covers, parse_head
 from bridge.doctext.lines import COMMENT, TEXT, walk
-from bridge.doctext.marks import MARK, STRIP, target
+from bridge.doctext.marks import MARK, STRIP, code_doc, mark_path, mark_target, repo_problem
 from bridge.doctext.repo import RepoError, git_z, gits, is_quoted, quoted_problem, read_many, tree
 from bridge.doctext.titles import XREF, bare_xrefs, first_h1, xref_index, xref_lookup
 
@@ -103,15 +103,19 @@ def _glob(p: str) -> bool:
 
 # ── 근거 확인기와 같이 쓰는 판정 ─────────────────────────────
 def mark_problem(kind: str, v: str, view: FsView | GitView, docs_dir: str = "docs/", log_dir: str = "log/") -> str | None:
-    """파일 종류 근거 표시(`log`, `docs`, `code`)의 틀린 까닭. 맞으면 None."""
-    t = target(v)
+    """파일 종류 근거 표시(`log`, `docs`, `code`, `repo`)의 틀린 까닭. 맞으면 None. 경로 풀기는 `marks.mark_target` 한 곳이다.
+    `[code:]`가 문서(.md)를 가리키는 것은 여기서 세지 않는다(옛 줄이 많은 저장소가 있어 점검이 기준 커밋으로 가른다, `code_doc`)."""
+    t = mark_target(kind, v, docs_dir, log_dir)
     if not t:
         return "모양을 알아보지 못했습니다"
-    name, ta, tb = t
-    rel = PurePosixPath(name)
+    path, ta, tb = t
+    rel = PurePosixPath(path)
     if rel.is_absolute() or ".." in rel.parts:
         return "저장소 밖을 가리킵니다"
-    path = name if kind == "code" else (docs_dir if kind == "docs" else log_dir) + name
+    if kind == "repo":
+        why = repo_problem(v, docs_dir, log_dir)
+        if why:
+            return why
     if kind == "code" and ta is None and view.is_dir(path):
         return None                                   # 폴더 [code:bridge/static/js/]
     if not view.is_file(path):
@@ -332,6 +336,20 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
         except dashdot.DashDotError as e:
             err(None, None, f"「」 없는 편 사이 참조 검사를 돌리지 못했습니다: {e}")
     xb = {"base": xb_base, "new": 0, "old": 0, "ran": xb_new is not None}
+    # 3의 문서를 가리키는 [code:]: 같은 길, 기준 커밋은 check.code_doc_base(11-20). 다른 저장소의 옛 줄이 점검을 깨지 않게
+    cd_base = ck.code_doc_base
+    cd_new: dict[str, set[int]] | None = None
+    if cd_base and cd_base == xb_base:
+        cd_new = xb_new
+    elif cd_base:
+        try:
+            cd_new = dashdot.new_doc_rows(repo, cd_base, rev, tuple(d for d in sets.values() if d) or dashdot.DOC_DIRS,
+                                          (*tuple(cfg.records), *dashdot.TOOL_DIRS))
+        except dashdot.DashDotError as e:
+            err(None, None, f"문서를 가리키는 [code:] 검사를 돌리지 못했습니다: {e}")
+    cd = {"base": cd_base, "new": 0, "old": 0, "ran": cd_new is not None}
+    docs_dir = sets.get("docs") or "docs/"
+    log_dir = cfg.records[0] if cfg.records else "log/"
 
     # 2, 3, 5, 6, 7 편마다
     n_marks = 0
@@ -352,10 +370,17 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
                 i, ln = i0 + 1, lines[i0]
                 for m in MARK.finditer(ln):
                     n_marks += 1
-                    why = _mark_why(m["k"], m["v"], ck.kinds, v, sets.get("docs") or "docs/",
-                                    (cfg.records[0] if cfg.records else "log/"), has)
+                    why = _mark_why(m["k"], m["v"], ck.kinds, v, docs_dir, log_dir, has)
                     if why:
                         err(p, i, f"{m.group(0)} {why}")
+                    if code_doc(m["k"], m["v"]):
+                        what = f"{m.group(0)} {code_doc_what(m['v'], docs_dir, log_dir)}"
+                        if cd_new is not None and i in cd_new.get(p, ()):
+                            cd["new"] += 1
+                            err(p, i, what)
+                        else:
+                            cd["old"] += 1
+                            suspects.append({"doc": p, "line": i, "what": f"{what}. 기준 커밋 앞 옛 줄", "code_doc": True})
                 for x in XREF.finditer(ln):
                     got = xref_lookup(idx, x["t"]) if idx else []
                     if len(got) != 1:
@@ -426,6 +451,8 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
     if not xb_base and xb["old"]:
         xb_note = f"{XREF_NO_BASE}. 「」 없는 편 사이 참조 {xb['old']}곳을 모두 의심으로 셌습니다"
         notes.append(xb_note)
+    if not cd_base and cd["old"]:
+        notes.append(f"{CODE_DOC_NO_BASE}. 문서를 가리키는 [code:] {cd['old']}곳을 모두 의심으로 셌습니다")
     if dd["error"]:
         err(None, None, f"줄표, 가운뎃점 검사를 돌리지 못했습니다: {dd['error']}")
     for p, i, name, s in dd["hits"]:
@@ -441,10 +468,21 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
     return {"errors": errors, "suspects": suspects, "sets": {k: len(ps) for k, ps in checked.items()},
             "marks": n_marks, "reads": reads, "cover": cover, "notes": notes,
             "dashdot": {"base": dd["base"], "hits": len(dd["hits"]), "ran": bool(dd["base"]) and not dd["error"]},
-            "xref_bare": xb, "readme": {"ran": rd_on}}
+            "xref_bare": xb, "code_doc": cd, "readme": {"ran": rd_on}}
 
 
 XREF_NO_BASE = "기준 커밋이 없어 「」 없는 편 사이 참조를 틀림으로 세지 않았습니다(.foreman/docs.toml [check] xref_base)"
+CODE_DOC_NO_BASE = "기준 커밋이 없어 문서를 가리키는 [code:]를 틀림으로 세지 않았습니다(.foreman/docs.toml [check] code_doc_base)"
+
+
+def code_doc_what(v: str, docs_dir: str = "docs/", log_dir: str = "log/") -> str:
+    """문서(.md)를 가리키는 `[code:]` 한 곳의 글. 바꿀 꼴을 함께 알린다(docs, 기록 폴더 안이면 그 종류, 밖이면 [repo:])."""
+    p = mark_path("code", v) or v
+    rest = v[len(p):]                                  # 줄 범위와 절(:10-20#…). code 경로는 값의 앞머리 그대로다
+    for k, d in (("docs", docs_dir), ("log", log_dir)):
+        if d and p.startswith(d):
+            return f"코드가 아닌 문서를 가리킵니다([{k}:{p[len(d):]}{rest}]로 씁니다)"
+    return f"코드가 아닌 문서를 가리킵니다([repo:{v}]로 씁니다)"
 
 
 def bare_xref_what(title: str, inner: bool) -> str:
@@ -493,6 +531,9 @@ def render(res: dict[str, Any], verbose: bool = False) -> str:
     xb = res.get("xref_bare") or {}
     if xb.get("ran"):
         out.append(f"「」 없는 편 사이 참조: 기준 커밋 {xb['base'][:10]} 뒤 새 줄 {xb['new']}곳(틀림), 옛 줄 {xb['old']}곳(의심)")
+    cd = res.get("code_doc") or {}
+    if cd.get("ran"):
+        out.append(f"문서를 가리키는 [code:]: 기준 커밋 {cd['base'][:10]} 뒤 새 줄 {cd['new']}곳(틀림), 옛 줄 {cd['old']}곳(의심)")
     for n in res.get("notes", []):
         out.append(f"알림  {n}")
     if res.get("readme", {}).get("ran") is False:

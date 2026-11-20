@@ -42,7 +42,7 @@ def test_marks_all_kinds():
     got = [(k, v) for k, v, _ in dt.marks(ln)]
     assert got == [("c", "1a2b3c4"), ("t", "12"), ("log", "a_20261117.md"), ("docs", "11_worktree.md:5-9"), ("code", "bridge/x.py:3")]
     assert [m["v"] for m in dt.CODE_MARK.finditer(ln)] == ["bridge/x.py:3"]
-    assert dt.KINDS == ("c", "t", "log", "docs", "code")
+    assert dt.KINDS == ("c", "t", "log", "docs", "code", "repo")
 
 
 @pytest.mark.parametrize("v,want", [

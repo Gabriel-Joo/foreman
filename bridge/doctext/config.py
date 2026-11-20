@@ -18,7 +18,8 @@
     numbered_only = []                    # 이 묶음은 바로 아래 NN_*.md만 본다(["docs", "portfolio"])
     head_at = "first"                     # 머리 주석: 울타리 밖 첫 주석("first") 또는 파일 맨 앞 주석만("top")
     fenced = false                        # 코드 울타리 안의 근거 표시, 참조, 금지어도 본다(true)
-    kinds = ["c", "t", "log", "docs", "code"]   # 쓸 수 있는 근거 종류(["c", "docs", "code"])
+    kinds = ["c", "t", "log", "docs", "code", "repo"]   # 쓸 수 있는 근거 종류(["c", "docs", "code"]). code를 쓰면 repo도 쓴다
+                                          # (repo는 code에서 문서를 떼어 낸 종류다, 11-20 bridge/doctext/marks.py)
     xref = {}                             # 묶음 건너 참조: 그 묶음의 참조를 다른 묶음 제목으로 찾는다({ docs = "notion" })
     files_at = "worktree"                 # 근거와 다루는 곳의 파일이 있는지 보는 판: 작업 트리 또는 읽은 커밋("read")
     claim = '\\d|“|”|"[^"]{4,}"|「[^」]{2,}」'   # 근거가 있어야 할 줄(의심)의 꼴('\\d|“|”')
@@ -29,6 +30,7 @@
     dashdot_base = "648ac08…"             # 새 줄 em dash와 가운뎃점 검사의 기준 커밋(4단계). 없으면 검사하지 않고 점검 결과에 알린다
     xref_base = "8593516…"                # 「」 없는 편 사이 참조(→ 제목)를 틀림으로 셀 기준 커밋. 이 뒤에 더하거나 고친 줄만 틀림, 옛 줄은 의심.
                                           # 없으면 모두 의심으로 세고 점검 결과에 알린다(main의 틀린 것 0을 깨지 않게)
+    code_doc_base = "a511e6f…"            # 문서(.md)를 가리키는 [code:]를 틀림으로 셀 기준 커밋(11-20). xref_base와 같은 길, 없으면 모두 의심
 
     [readme]                    # README 생성(tools/docs.py readme, 점검 9번, 문서 정리 B). 이 표가 있어야 켜진다.
     title = "FOREMAN"           # README 제목. 없으면 project
@@ -70,7 +72,7 @@ class CheckConfig:
     numbered_only: list[str] = field(default_factory=list)
     head_at: str = "first"
     fenced: bool = False
-    kinds: list[str] = field(default_factory=lambda: ["c", "t", "log", "docs", "code"])
+    kinds: list[str] = field(default_factory=lambda: ["c", "t", "log", "docs", "code", "repo"])
     xref: dict[str, str] = field(default_factory=dict)
     files_at: str = "worktree"
     claim: str = FOREMAN_CLAIM
@@ -80,6 +82,7 @@ class CheckConfig:
     cover_by: list[str] = field(default_factory=lambda: ["notion"])
     dashdot_base: str | None = None       # 기본값 없음: 저장소마다 넣는 때의 main이 다르다(`bridge/doctext/dashdot.py`)
     xref_base: str | None = None          # 「」 없는 편 사이 참조를 틀림으로 셀 기준 커밋. 없으면 모두 의심(`bridge/doctext/titles.py` bare_xrefs)
+    code_doc_base: str | None = None      # 문서를 가리키는 [code:]를 틀림으로 셀 기준 커밋. 없으면 모두 의심(`bridge/doctext/marks.py` code_doc)
 
     def as_dict(self) -> dict[str, Any]:
         return {k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v) for k, v in self.__dict__.items()}
@@ -116,7 +119,8 @@ def _check(raw: Any, source: str, warnings: list[str]) -> CheckConfig:
             ks = _strs(v, where)
             if [x for x in ks if x not in KINDS]:
                 raise DocsConfigError(f"{where}: 근거 종류는 {', '.join(KINDS)}만 됩니다: {ks}")
-            c.kinds = ks
+            # repo는 code에서 문서를 떼어 낸 종류라 code를 쓰는 저장소는 설정을 고치지 않아도 쓴다(11-20, 다른 저장소 설정을 건드리지 않게)
+            c.kinds = ks + ["repo"] if "code" in ks and "repo" not in ks else ks
         elif k == "xref":
             if not isinstance(v, dict) or any(a not in SET_NAMES or b not in SET_NAMES for a, b in v.items()):
                 raise DocsConfigError(f"{where}는 {{묶음 = \"찾을 묶음\"}} 표여야 합니다: {v!r}")
@@ -133,7 +137,7 @@ def _check(raw: Any, source: str, warnings: list[str]) -> CheckConfig:
             if not isinstance(v, int) or isinstance(v, bool) or v < 0:
                 raise DocsConfigError(f"{where}는 0 이상 정수여야 합니다: {v!r}")
             c.claim_min = v
-        elif k in ("dashdot_base", "xref_base"):
+        elif k in ("dashdot_base", "xref_base", "code_doc_base"):
             if not isinstance(v, str) or not re.fullmatch(r"[0-9a-f]{7,40}", v):
                 raise DocsConfigError(f"{where}는 커밋 해시(소문자 16진수 7~40자)여야 합니다: {v!r}")
             setattr(c, k, v)

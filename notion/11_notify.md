@@ -40,7 +40,7 @@ flowchart LR
 
 ### CLAUDE.md의 알림 절은 지우지 않고 바꿨다
 
-옛 방식을 걷어 낼 때 한 가지 함정이 있었다. 세 저장소에는 이미 CC 세션이 떠 있었고, 그 세션들은 예전 CLAUDE.md를 읽은 채였다. 스크립트만 지우면 떠 있는 세션이 지워진 스크립트를 계속 부르려 할 것이었다. 시험 세션에서 확인해 보니 **실행 중인 CC는 CLAUDE.md가 바뀌면 다음 턴에 그 변경을 읽는다**(트랜스크립트에 바뀐 내용이 첨부로 들어갔다). 그래서 알림 절을 지우지 않고 「브리지가 보낸다, 직접 보내지 않는다」는 두 줄 안내로 바꿨다 [log:stage4_notify_result.md]. 지금 FOREMAN의 CLAUDE.md 「알림(텔레그램)」 절이 그 두 줄의 후손이다 [code:CLAUDE.md].
+옛 방식을 걷어 낼 때 한 가지 함정이 있었다. 세 저장소에는 이미 CC 세션이 떠 있었고, 그 세션들은 예전 CLAUDE.md를 읽은 채였다. 스크립트만 지우면 떠 있는 세션이 지워진 스크립트를 계속 부르려 할 것이었다. 시험 세션에서 확인해 보니 **실행 중인 CC는 CLAUDE.md가 바뀌면 다음 턴에 그 변경을 읽는다**(트랜스크립트에 바뀐 내용이 첨부로 들어갔다). 그래서 알림 절을 지우지 않고 「브리지가 보낸다, 직접 보내지 않는다」는 두 줄 안내로 바꿨다 [log:stage4_notify_result.md]. 지금 FOREMAN의 CLAUDE.md 「알림(텔레그램)」 절이 그 두 줄의 후손이다 [repo:CLAUDE.md].
 
 ## 무엇을 보낼지: 규칙 표
 
@@ -243,7 +243,7 @@ POST /api/sessions/{관리자 세션 id}/escalate
 
 첫 인자가 제목이고 나머지가 한 줄씩 붙는다. 규칙과 토큰은 브리지와 같은 것(`config/notify.toml`, `.env.telegram`)을 읽고, 접두어는 FOREMAN 프로젝트의 것을 쓴다(규칙이 없으면 `[포먼]`). 글은 비밀값 가리기를 거친다. 브리지 서버가 꺼져 있어도 텔레그램으로 바로 보낸다. 보낸 뒤 DB에 `kind = 'direct'`로 기록을 남기되, DB가 5초 안에 답하지 않으면 기록 없이 넘어간다. 기록은 덤이고, 알림이 먼저다 [code:bridge/telegram.py]. 성공하면 0, 실패하면 1로 끝난다.
 
-백업 스크립트는 이 명령을 30초 제한으로 부르고 끝에 `|| true`를 붙였다 [code:deploy/mysql/backup.sh]. 알림을 보내다 멈추거나 실패해도 백업 스크립트 자체의 실패 처리(종료 코드 1)는 그대로 지나가게 하기 위해서다. 스크립트 주석에 그 까닭이 적혀 있다. 「실패는 조용히 지나가면 안 된다(milvus-port-forward 교훈)」. port-forward가 56만 번 재시작하는 것을 한 달 넘게 몰랐던 일이 이 프로젝트의 출발점이다 [code:CLAUDE.md].
+백업 스크립트는 이 명령을 30초 제한으로 부르고 끝에 `|| true`를 붙였다 [code:deploy/mysql/backup.sh]. 알림을 보내다 멈추거나 실패해도 백업 스크립트 자체의 실패 처리(종료 코드 1)는 그대로 지나가게 하기 위해서다. 스크립트 주석에 그 까닭이 적혀 있다. 「실패는 조용히 지나가면 안 된다(milvus-port-forward 교훈)」. port-forward가 56만 번 재시작하는 것을 한 달 넘게 몰랐던 일이 이 프로젝트의 출발점이다 [repo:CLAUDE.md].
 
 브리지 밖 길은 하나 더 있다. 브리지 자신이 거듭 죽어 systemd(서버의 서비스 관리자)가 다시 띄우기를 포기한 때다. 이때는 브리지가 없으니 브리지의 알림은 나가지 않는다. 위 명령도 브리지와 같은 코드와 파이썬 환경을 쓰니 같은 까닭으로 함께 못 돌 수 있다. 그래서 브리지 유닛에 `OnFailure`(유닛이 실패하면 systemd가 대신 띄울 유닛을 적는 설정)를 걸어, 포기하는 순간 `scripts/foreman-bridge-alert.sh`가 돌게 했다 [code:deploy/systemd/foreman-bridge.service] [c:cd14ed6]. 이 스크립트는 브리지 코드, 파이썬 가상환경, `config/notify.toml`을 하나도 읽지 않고 curl과 `.env.telegram`만 쓴다. 그래서 `bridge.telegram`과 달리 `notification` 표에 기록이 남지 않고, 접두어도 스크립트에 적어 둔 `[FOREMAN]`이다. 비밀값 가리기를 거치지 않는 대신 journal(systemd가 모으는 로그) 줄은 싣지 않고 유닛 상태, 다시 띄운 횟수, 오류 종류(예외 이름과 횟수)만 싣는다. 보내지 못하면 까닭을 journal에 쓰고 실패 코드로 끝난다 [code:scripts/foreman-bridge-alert.sh]. 언제 불리고 무엇을 못 잡는지는 → 「어디에 두었나」.
 
@@ -251,7 +251,7 @@ POST /api/sessions/{관리자 세션 id}/escalate
 
 이 명령은 누구든 부를 수 있는 셸 명령이니, CC 세션의 모델도 부를 수는 있다. 그러나 그렇게 쓰지 않는다. 모델이 「이건 알릴 만하다」고 판단해 이 명령을 부르기 시작하면, 이 편 맨 처음의 문제가 그대로 되살아난다. 무엇을 언제 알릴지를 다시 모델이 정하게 되고, 같은 일이 어떤 때는 오고 어떤 때는 안 오며, 오지 않았을 때 그것이 판단인지 누락인지 가릴 수 없게 된다. 또 브리지를 거치지 않으니 규칙 표의 거르기도, 하루 묶음도, 관리자 중계도 모두 건너뛴다. 사람에게 무언가를 올려야 하는 관리자는 escalate를 쓴다.
 
-그래서 이 명령은 「턴과 무관한 기계적 사건」에만 쓴다. 지금 그 쓰임은 백업 실패 하나다 [code:deploy/mysql/backup.sh]. CLAUDE.md에도 「`python -m bridge.telegram`은 브리지 밖 알림(백업 실패 등)용이다 — 모델이 판단해 부르는 용도가 아니다」로 적혀 있다 [code:CLAUDE.md]. 브리지가 죽었을 때의 알림은 이 명령이 아니라 위 스크립트가 보낸다. 이것도 systemd가 부르는 기계적 사건이라 모델이 끼지 않는다 [code:deploy/systemd/foreman-bridge.service].
+그래서 이 명령은 「턴과 무관한 기계적 사건」에만 쓴다. 지금 그 쓰임은 백업 실패 하나다 [code:deploy/mysql/backup.sh]. CLAUDE.md에도 「`python -m bridge.telegram`은 브리지 밖 알림(백업 실패 등)용이다 — 모델이 판단해 부르는 용도가 아니다」로 적혀 있다 [repo:CLAUDE.md]. 브리지가 죽었을 때의 알림은 이 명령이 아니라 위 스크립트가 보낸다. 이것도 systemd가 부르는 기계적 사건이라 모델이 끼지 않는다 [code:deploy/systemd/foreman-bridge.service].
 
 브리지 안에서 턴과 무관하게 바로 알려야 하는 것은 이 명령이 아니라 판정기의 `send_direct`를 쓴다. 규칙 판정 없이 기록하고 보내는 길이다. 계획으로 여러 세션을 띄우다 일부만 뜬 것 같은 실패는 이 길로 `kind = 'direct'`가 되어 나간다 [code:bridge/api/foreman.py]. 아래 「어디서 오나」 표의 알림들이 모두 이 길을 탄다.
 
@@ -259,7 +259,7 @@ POST /api/sessions/{관리자 세션 id}/escalate
 
 텔레그램 봇 토큰과 채팅방 번호는 FOREMAN 저장소 맨 위 `.env.telegram` 한 파일에 있다. 키 이름은 `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`이고, 권한은 600(주인만 읽기), `.gitignore`의 `.env*`로 git에서 빠진다 [docs:operations.md]. 판정기는 이 파일에서 두 키만 골라 읽는다 [code:bridge/notify.py]. 어느 프로젝트의 알림인지는 토큰이 아니라 글 앞 접두어로 가른다. 네 프로젝트의 알림이 같은 봇, 같은 채팅방으로 온다.
 
-옛 방식에서는 런슈즈와 펫퍼민트 저장소에도 각자 `.env.telegram`이 있었다. 모델이 그 저장소 안에서 스크립트를 불렀으니 그 저장소에 토큰이 있어야 했다. 브리지가 보내게 바꾸자 그 파일들은 쓰는 곳이 없어져 지웠다 [log:infra_20261102_host-changes.md]. 지금 결정은 「토큰은 FOREMAN의 `.env.telegram` 하나, 다른 저장소에 토큰 파일이나 보내는 스크립트를 되살리지 않는다」이다 [code:CLAUDE.md].
+옛 방식에서는 런슈즈와 펫퍼민트 저장소에도 각자 `.env.telegram`이 있었다. 모델이 그 저장소 안에서 스크립트를 불렀으니 그 저장소에 토큰이 있어야 했다. 브리지가 보내게 바꾸자 그 파일들은 쓰는 곳이 없어져 지웠다 [log:infra_20261102_host-changes.md]. 지금 결정은 「토큰은 FOREMAN의 `.env.telegram` 하나, 다른 저장소에 토큰 파일이나 보내는 스크립트를 되살리지 않는다」이다 [repo:CLAUDE.md].
 
 되살리지 않는 까닭은 셋이다. 첫째, 보내는 쪽이 모두 FOREMAN 저장소 안에 있다. 브리지, `bridge.telegram`, 브리지 포기 알림 스크립트 셋이 모두 이 `.env.telegram`을 읽으니 토큰도 하나면 된다 [code:bridge/telegram.py] [code:scripts/foreman-bridge-alert.sh]. 둘째, 다른 저장소에 토큰과 스크립트가 다시 생기면 그 저장소의 세션이 직접 보낼 길이 열린다. 위에서 본 모델 판단의 문제가 그 저장소에서 되살아난다. 셋째, 토큰을 바꿔야 할 때 바꿀 곳이 하나다. 비밀값이 여러 곳에 흩어지면 하나를 바꾸고 하나를 잊는다. 실제로 이 결정은 한 번 흔들렸다. 압축 손실 점검(긴 대화가 요약될 때 빠진 결정을 찾는 점검)에서 CLAUDE.md에 「토큰 파일이 저장소마다 따로다」라는, 결정과 어긋나는 문장이 남아 있는 것이 드러났다. 그 문장을 결정대로 고치고, 런슈즈와 펫퍼민트에 토큰 파일이 없는 것을 다시 확인했다 [log:foreman_compaction_loss_20261105.md].
 

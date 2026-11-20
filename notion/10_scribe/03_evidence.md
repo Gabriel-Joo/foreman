@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/evidence.py, bridge/scribe_ask.py, bridge/doctext/, tools/docs.py, .foreman/docs.toml, tests/test_evidence.py, tests/test_scribe_ask.py, tests/test_doctext.py, tests/test_techdoc.py, tests/test_docs_check.py, tests/test_docs_selfcheck.py, tests/test_docs_readme.py, tests/test_docs_hangul.py, tests/test_docs_xref_bare.py, README.md
+다루는 곳: bridge/evidence.py, bridge/scribe_ask.py, bridge/doctext/, tools/docs.py, .foreman/docs.toml, tests/test_evidence.py, tests/test_scribe_ask.py, tests/test_doctext.py, tests/test_techdoc.py, tests/test_docs_check.py, tests/test_docs_selfcheck.py, tests/test_docs_readme.py, tests/test_docs_hangul.py, tests/test_docs_xref_bare.py, tests/test_root_mark.py, README.md
 읽은 커밋: b89b3b6
 -->
 # 근거 확인과 물어보기
@@ -16,17 +16,18 @@
 
 문서를 AI에게 맡기면 같은 일이 글에서 일어난다. 실제로 일어난 예도 있다. 서기 설계 문서에는 하루 사람 턴이 34개, 9.3만 자라고 적혀 있었는데 DB로 세어 보니 51개, 2.3만 자였다. 회고 기간이 달랐고 DB 본문은 비밀값을 가린 글이라 차이가 났지만, 글만 보고는 어느 숫자가 맞는지 알 수 없었다 [log:stage12_scribe_result.md]. 모델 고르기 창의 안내 글은 브리지를 다시 띄우면 모델이 기본값으로 돌아간다고 적었는데, 실제로는 세션이 브리지와 따로 tmux에서 돌고 고른 모델은 세션 행에 남아 그대로 쓰인다 [log:foreman-3_model_menu_20261114.md]. 모델의 컨텍스트 창 크기를 200k로 짐작해 적었다가 실측이 223k로 나와 「모름」으로 바꾼 일도 있다 [log:manager318_overhead_20261114.md]. 반대 방향도 있다. docs에 「아직 확인하지 않았다」고 남은 줄이 실제로는 며칠 전에 이미 확인된 일이었고, 「없다」고 적힌 기능이 이미 만들어져 있었다 [log:done_lines_cleanup_20261114.md].
 
-이런 틀림은 아무 소리도 내지 않는다. FOREMAN이 있는 까닭은 조용한 고장을 잡는 것이다. 포트 포워딩 하나가 한 달 넘게 수십만 번 재시작하는 것을 아무도 몰랐던 일이 출발점이었다 [code:CLAUDE.md]. 틀린 문장은 그 고장의 문서판이다. 그러다 회고를 바깥 사람이 읽을 포트폴리오로 쓰기로 하자 사람이 짚었다. 「지금은 사람이 diff 보는 게 유일한 관문이잖아. 포트폴리오로 쓸 거면 근거가 틀리면 안 되니까」 [log:stage12_scribe_result.md]. 근거 확인기는 이 말에서 나왔다.
+이런 틀림은 아무 소리도 내지 않는다. FOREMAN이 있는 까닭은 조용한 고장을 잡는 것이다. 포트 포워딩 하나가 한 달 넘게 수십만 번 재시작하는 것을 아무도 몰랐던 일이 출발점이었다 [repo:CLAUDE.md]. 틀린 문장은 그 고장의 문서판이다. 그러다 회고를 바깥 사람이 읽을 포트폴리오로 쓰기로 하자 사람이 짚었다. 「지금은 사람이 diff 보는 게 유일한 관문이잖아. 포트폴리오로 쓸 거면 근거가 틀리면 안 되니까」 [log:stage12_scribe_result.md]. 근거 확인기는 이 말에서 나왔다.
 
 ## 근거 표시: 문장마다 어디서 왔는지 단다
 
-서기 글의 약속은 단순하다. 주장이 있는 문장 끝에 그 주장이 어디서 왔는지 대괄호로 단다 [docs:12_scribe.md]. 대괄호 안은 종류와 값을 쌍점으로 이은 꼴이고, 종류는 다섯 가지다 [code:bridge/doctext/marks.py]. 아래는 그 꼴을 보인 것이다. 이 글은 근거 확인기가 읽는 원고라서, 예시를 본문에 그대로 쓰면 확인기가 진짜 표시로 읽고 없는 커밋이라며 틀림으로 띄운다. 그래서 예시는 코드 블록 안에만 둔다. 확인기는 코드 블록 안을 읽지 않는다 [code:bridge/evidence.py] [code:bridge/doctext/lines.py].
+서기 글의 약속은 단순하다. 주장이 있는 문장 끝에 그 주장이 어디서 왔는지 대괄호로 단다 [docs:12_scribe.md]. 대괄호 안은 종류와 값을 쌍점으로 이은 꼴이고, 종류는 여섯 가지다 [code:bridge/doctext/marks.py]. 아래는 그 꼴을 보인 것이다. 이 글은 근거 확인기가 읽는 원고라서, 예시를 본문에 그대로 쓰면 확인기가 진짜 표시로 읽고 없는 커밋이라며 틀림으로 띄운다. 그래서 예시는 코드 블록 안에만 둔다. 확인기는 코드 블록 안을 읽지 않는다 [code:bridge/evidence.py] [code:bridge/doctext/lines.py].
 
 ```
 커밋은 49개였다 [c:e223f2e]
 결과는 기록에 있다 [log:stage12_scribe_result.md]
 설계의 그 절 [docs:12_scribe.md:97-125]
 지금 코드 [code:bridge/evidence.py]  폴더면 [code:bridge/static/js/]
+맨 위 규칙 문서 [repo:CLAUDE.md]
 사람이 그렇게 말했다 [t:5787]
 ```
 
@@ -35,16 +36,17 @@
 | c | 커밋 | 값이 6~40자리 16진수이고 `git cat-file -e 값^{commit}`이 성공하는가 | 그 커밋이 저장소에 없습니다 |
 | log | `log/` 아래 기록 파일 이름 | 그 파일이 있는가, 줄 범위를 적었으면 그 줄이 파일 안에 있는가 | log/… 파일이 없습니다, 줄 범위가 맞지 않습니다(파일은 N줄) |
 | docs | `docs/` 아래 설계 문서 이름 | log와 같다 | docs/… 파일이 없습니다 |
-| code | 저장소 맨 위 기준 경로 | 파일이면 있는가와 줄 범위, 끝이 /인 폴더면 폴더가 있는가 | … 파일이 없습니다 |
+| code | 저장소 맨 위 기준 코드 경로 | 파일이면 있는가와 줄 범위, 끝이 /인 폴더면 폴더가 있는가 | … 파일이 없습니다 |
+| repo | 저장소 맨 위 기준 문서 경로(docs와 log 폴더 밖의 .md) | code와 같고, 값이 .md인가, docs나 log 폴더 아래가 아닌가 | 문서(.md)가 아닙니다, docs/ 아래 파일은 docs 종류로 씁니다(바꿀 꼴을 함께 보인다) |
 | t | DB의 대화 턴 번호 | 숫자인가, DB의 turn 표에 그 id가 있는가 | 턴 번호가 숫자가 아닙니다, 그 턴이 DB에 없습니다 |
 
-파일을 가리키는 세 종류는 같은 함수가 본다 [code:bridge/evidence.py]. 이 함수는 문서 점검 명령(`tools/docs.py check`)도 함께 쓰도록 문서 문법 묶음에 있다 [code:bridge/doctext/check.py]. 값에서 파일 이름, 줄 범위, 뒤에 붙은 # 앵커를 나누는 규칙은 문서 문법 묶음에 있고 [code:bridge/doctext/marks.py], 확인기는 나눈 값을 받아 절대 경로이거나 .. 이 섞여 저장소 밖을 가리키면 「저장소 밖을 가리킵니다」로 거부한다. log와 docs는 그 폴더 아래에서 찾고, code는 저장소 맨 위에서 찾는다. 그래서 README.md나 CLAUDE.md처럼 맨 위에 있는 파일은 code 종류로 가리켜야 하고, docs 종류로 위 폴더를 거슬러 올라가 가리키면 저장소 밖으로 보고 실패한다 [code:bridge/evidence.py]. 줄 범위는 파일을 실제로 읽어 줄 수를 세고, 시작이 1보다 작거나 끝이 파일 길이를 넘거나 거꾸로 적혔으면 틀림이다. 다만 줄 번호는 코드가 바뀌면 곧 어긋나서, 원고에서는 되도록 파일까지만 적는다.
+파일을 가리키는 네 종류는 같은 함수가 본다 [code:bridge/evidence.py]. 이 함수는 문서 점검 명령(`tools/docs.py check`)도 함께 쓰도록 문서 문법 묶음에 있다 [code:bridge/doctext/check.py]. 값에서 파일 이름, 줄 범위, 뒤에 붙은 # 앵커를 나누는 규칙은 문서 문법 묶음에 있고 [code:bridge/doctext/marks.py], 확인기는 나눈 값을 받아 절대 경로이거나 .. 이 섞여 저장소 밖을 가리키면 「저장소 밖을 가리킵니다」로 거부한다. log와 docs는 그 폴더 아래에서 찾고, code와 repo는 저장소 맨 위에서 찾는다. 표시를 저장소 경로로 푸는 일은 함수 하나가 맡고, 근거 확인기, 문서 점검, 거꾸로 찾기, 노션 게시기가 모두 그 함수를 쓴다 [code:bridge/doctext/marks.py]. 그래서 README.md나 CLAUDE.md처럼 맨 위에 있는 문서는 repo 종류로 가리킨다. docs 종류는 언제나 docs 폴더 아래로 풀리므로 docs 종류로 CLAUDE.md를 적으면 docs 폴더 안의 CLAUDE.md를 찾다가 「파일이 없습니다」로 실패한다 [code:bridge/doctext/check.py]. 맨 위 문서가 없을 때 docs 폴더로 넘어가 찾게 하지 않은 것은, 다른 저장소들이 docs 폴더 안에 README.md를 따로 두고 docs 종류로 가리키고 있어서 같은 표시가 저장소마다 다른 파일을 뜻하게 되기 때문이다 [code:bridge/doctext/marks.py]. 같은 까닭으로 code 종류가 .md 문서를 가리키면 문서 점검이 바꿀 꼴을 알려 주며 잡는다. 이 검사가 들어오기 전에 쓴 줄은 기준 커밋(`[check] code_doc_base`)으로 갈라 틀림이 아니라 의심으로 센다. 다른 저장소에는 옛 줄이 많아 이 칸을 아직 두지 않았다 [code:bridge/doctext/check.py] [code:bridge/doctext/config.py]. 줄 범위는 파일을 실제로 읽어 줄 수를 세고, 시작이 1보다 작거나 끝이 파일 길이를 넘거나 거꾸로 적혔으면 틀림이다. 다만 줄 번호는 코드가 바뀌면 곧 어긋나서, 원고에서는 되도록 파일까지만 적는다.
 
-턴 표시는 다른 넷과 결이 다르다. 턴은 사람과 AI가 주고받은 대화 한 차례이고, 그 번호는 이 브리지의 DB에만 있다 [code:bridge/evidence.py]. 내부 회고에서는 「사람이 그때 그렇게 말했다」를 가리키는 가장 정확한 근거였지만, 바깥 사람은 그 번호로 아무것도 찾아볼 수 없다. 그래서 포트폴리오와 노션 원고에서는 턴 표시를 쓰지 않는다 [docs:style_guide.md]. 확인기는 여전히 턴 표시를 읽고, DB에 연결된 채 돌 때(합치기 전 검토)는 그 턴이 실제로 있는지까지 본다. 명령 줄에서 DB 없이 돌리면 숫자인지만 본다 [code:bridge/evidence.py].
+턴 표시는 다른 다섯과 결이 다르다. 턴은 사람과 AI가 주고받은 대화 한 차례이고, 그 번호는 이 브리지의 DB에만 있다 [code:bridge/evidence.py]. 내부 회고에서는 「사람이 그때 그렇게 말했다」를 가리키는 가장 정확한 근거였지만, 바깥 사람은 그 번호로 아무것도 찾아볼 수 없다. 그래서 포트폴리오와 노션 원고에서는 턴 표시를 쓰지 않는다 [docs:style_guide.md]. 확인기는 여전히 턴 표시를 읽고, DB에 연결된 채 돌 때(합치기 전 검토)는 그 턴이 실제로 있는지까지 본다. 명령 줄에서 DB 없이 돌리면 숫자인지만 본다 [code:bridge/evidence.py].
 
-code 종류는 가장 늦게 붙었다. 처음 근거 확인기는 커밋, 기록, 설계 문서, 턴 네 가지만 알았다 [c:fe1f843]. 노션 기술문서 원고를 쓰기로 하면서 「지금 코드가 이렇다」를 가리킬 표시가 필요해졌고, 저장소 맨 위 기준 파일과 폴더를 가리키는 code 종류를 더했다 [c:16dcb3a] [log:foreman-4_techdoc_portfolio_path_20261115.md]. 같은 커밋 하나를 여러 줄에서 가리켜도 git은 한 번만 부른다. 한 글 안에서 본 커밋과 턴은 결과를 기억해 두고 다시 쓴다 [code:bridge/evidence.py].
+code와 repo 종류는 나중에 붙었다. 처음 근거 확인기는 커밋, 기록, 설계 문서, 턴 네 가지만 알았다 [c:fe1f843]. 노션 기술문서 원고를 쓰기로 하면서 「지금 코드가 이렇다」를 가리킬 표시가 필요해졌고, 저장소 맨 위 기준 파일과 폴더를 가리키는 code 종류를 더했다 [c:16dcb3a] [log:foreman-4_techdoc_portfolio_path_20261115.md]. 원고가 규칙 문서 CLAUDE.md까지 code 종류로 가리키자 코드와 문서가 한 표시에 섞였고, 그 문서 쪽만 떼어 낸 것이 repo 종류다 [log:foreman-6_root_mark_20261120.md]. 같은 커밋 하나를 여러 줄에서 가리켜도 git은 한 번만 부른다. 한 글 안에서 본 커밋과 턴은 결과를 기억해 두고 다시 쓴다 [code:bridge/evidence.py].
 
-근거 표시는 git의 원고에만 남는다. 노션에 올릴 때는 게시기가 다섯 종류의 표시를 모두 떼고 올린다 [code:bridge/notion.py] [docs:12_scribe.md]. git 원고에 남기는 것은 확인기가 그 표시를 읽기 때문이다 [code:bridge/notion.py]. 노션 판에서 떼기로 정한 11-15 설계 기록에는 「뗀다」는 결정만 있고 까닭은 적혀 있지 않다 [log:foreman-7_scribe_design_20261115.md]. 그때 저장소는 비공개였고 지금은 공개다. 노션 판이 저장소 링크를 걸지 않는 일은 → 「노션 게시」가 다룬다.
+근거 표시는 git의 원고에만 남는다. 노션에 올릴 때는 게시기가 여섯 종류의 표시를 모두 떼고 올린다 [code:bridge/notion.py] [docs:12_scribe.md]. git 원고에 남기는 것은 확인기가 그 표시를 읽기 때문이다 [code:bridge/notion.py]. 노션 판에서 떼기로 정한 11-15 설계 기록에는 「뗀다」는 결정만 있고 까닭은 적혀 있지 않다 [log:foreman-7_scribe_design_20261115.md]. 그때 저장소는 비공개였고 지금은 공개다. 노션 판이 저장소 링크를 걸지 않는 일은 → 「노션 게시」가 다룬다.
 
 ## 왜 LLM 없이 보나
 

@@ -151,7 +151,7 @@ WAITING은 서버에 없는 상태다. 서버 상태 값은 늘리지 않기로 
 
 ### 원본 그대로 넣고 가공은 렌더러가
 
-에셋 PNG는 저장소에 원본 그대로 들어 있다. 자르기, 외곽선, 색 바꾸기는 모두 `sprites.js`가 브라우저에서 하고 결과를 캔버스로 캐시한다 [code:bridge/static/js/sprites.js] [code:LICENSES.md]. 이렇게 한 까닭은 둘이다. 라이선스가 가리키는 대상이 「원본 파일」로 분명해지고, 외곽선 색이나 두께를 바꿔도 파일을 다시 만들 필요가 없다 [log:stage10_office_result.md]. 원본 압축 파일은 저장소에 넣지 않는다(`.assets-raw/`는 `.gitignore`). 쓰는 것만 골라 복사했다. Ninja Adventure 압축만 해도 음악, 효과음, 캐릭터 95종이 들어 89MB였다 [log:stage10_office_result.md].
+에셋 PNG는 저장소에 원본 그대로 들어 있다. 자르기, 외곽선, 색 바꾸기는 모두 `sprites.js`가 브라우저에서 하고 결과를 캔버스로 캐시한다 [code:bridge/static/js/sprites.js] [repo:LICENSES.md]. 이렇게 한 까닭은 둘이다. 라이선스가 가리키는 대상이 「원본 파일」로 분명해지고, 외곽선 색이나 두께를 바꿔도 파일을 다시 만들 필요가 없다 [log:stage10_office_result.md]. 원본 압축 파일은 저장소에 넣지 않는다(`.assets-raw/`는 `.gitignore`). 쓰는 것만 골라 복사했다. Ninja Adventure 압축만 해도 음악, 효과음, 캐릭터 95종이 들어 89MB였다 [log:stage10_office_result.md].
 
 그림 하나는 `theme.json`의 `sprites.defs`에 `[시트, x, y, w, h, 외곽선, 프레임 수, 초당 프레임]` 한 줄로 적는다. 프레임은 오른쪽으로 `w`씩 이어진다 [code:bridge/static/js/sprites.js]. 캐릭터는 Ninja Adventure 꼴을 그대로 받는다. `Walk.png`는 64×64로 열이 아래, 위, 왼쪽, 오른쪽, 행이 걸음 프레임 넷이고, `Idle.png`는 64×16으로 열이 방향이다.
 
@@ -188,7 +188,7 @@ WAITING은 서버에 없는 상태다. 서버 상태 값은 늘리지 않기로 
 
 그래서 기준을 한 번 넓혔다. CC-BY(출처 표시 조건, 같은 조건 공유 SA는 아님)와 유료 팩을 더했다. 유료 팩은 「공개 GitHub 저장소에 에셋 파일을 넣어도 되고 상업적 사용이 허용될 것」을 조건으로 걸었고, 못 맞추면 뺐다 [docs:10_office_design.md]. LPC처럼 같은 조건 공유(SA)이거나 GPL만 되는 팩, 32px라 16px 화풍과 섞이지 않는 팩도 뺐다. 다시 따져 본 결과 마법학교가 무료만으로 약 80% 덮였고, 유료 팩은 사지 않기로 했다. 조건을 통과한 유료 팩은 마법학교를 조금 더 채울 뿐 오피스와 현장의 진짜 구멍(서버랙, 모니터 벽, 지게차, 셔터)을 깨끗하게 덮지 못했다 [docs:10_office_design.md].
 
-지금 저장소에 든 것은 아래와 같다. CC-BY는 Calciumtrice 하나이고, 나머지는 모두 CC0다 [code:LICENSES.md].
+지금 저장소에 든 것은 아래와 같다. CC-BY는 Calciumtrice 하나이고, 나머지는 모두 CC0다 [repo:LICENSES.md].
 
 | 테마 | 팩 | 라이선스 | 쓰는 것 |
 |---|---|---|---|
@@ -198,13 +198,13 @@ WAITING은 서버에 없는 상태다. 서버 상태 값은 늘리지 않기로 
 | 오피스 | 2dPig Pixel Office | CC0 | 책상, 컴퓨터, 화분, 사람 5명 |
 | 세 테마 | FOREMAN이 직접 그림 | CC0 | 아래 「없는 소품은 직접 그렸다」 |
 
-[code:LICENSES.md] [code:bridge/static/themes/]
+[repo:LICENSES.md] [code:bridge/static/themes/]
 
-CC-BY의 출처 표시는 `LICENSES.md`에 작가 이름, 라이선스, 출처 주소와 함께 「렌더러가 표시할 때 1px 바깥 외곽선을 덧그린다(파일 자체는 원본)」는 변경 표시까지 적었다. CC0 팩은 표시 의무가 없지만 저작자와 링크를 남겼고, 원본 `LICENSE.txt`를 함께 넣었다 [code:LICENSES.md]. 0x72 팩은 압축 안에 라이선스 문장이 없어 배포 페이지의 라이선스 칸을 근거로 적었다.
+CC-BY의 출처 표시는 `LICENSES.md`에 작가 이름, 라이선스, 출처 주소와 함께 「렌더러가 표시할 때 1px 바깥 외곽선을 덧그린다(파일 자체는 원본)」는 변경 표시까지 적었다. CC0 팩은 표시 의무가 없지만 저작자와 링크를 남겼고, 원본 `LICENSE.txt`를 함께 넣었다 [repo:LICENSES.md]. 0x72 팩은 압축 안에 라이선스 문장이 없어 배포 페이지의 라이선스 칸을 근거로 적었다.
 
 한 테마 안에서는 한 화풍만 쓴다. 테마끼리는 화풍이 달라도 된다. 테마를 바꾸면 전부 바뀌기 때문이다 [docs:10_office_design.md]. 마법학교는 「0x72와 Ninja만」 안과 「Calciumtrice 가구까지」 안을 나란히 그려 본 뒤 뒤쪽을 골랐다. 0x72에는 탁자, 의자, 책장이 하나도 없어 앞쪽 안이면 가구를 거의 다 그려야 했다. 0x72 캐릭터(16×28)는 Ninja 캐릭터(16×16)와 키가 달라 쓰지 않았다 [log:stage10_office_result.md]. 현장은 새 팩을 받지 않았다. 맞는 무료 팩은 화풍이 Ninja와 달랐고, 지게차, 셔터, 안전모 같은 핵심은 어차피 없었다 [log:stage10_office_result.md].
 
-받는 길에서도 막혔다. itch에 올라온 「원하는 만큼(0 가능)」 팩을 스크립트로 받으려 하자 itch가 막았다. 몇 번 고쳐 보다 사이트를 두드리지 않으려 멈췄고, 다른 공식 경로도 없어 사용자가 서버 브라우저로 직접 받았다 [log:stage10_office_result.md] [code:LICENSES.md].
+받는 길에서도 막혔다. itch에 올라온 「원하는 만큼(0 가능)」 팩을 스크립트로 받으려 하자 itch가 막았다. 몇 번 고쳐 보다 사이트를 두드리지 않으려 멈췄고, 다른 공식 경로도 없어 사용자가 서버 브라우저로 직접 받았다 [log:stage10_office_result.md] [repo:LICENSES.md].
 
 ### 없는 소품은 직접 그렸다
 
@@ -216,7 +216,7 @@ CC-BY의 출처 표시는 `LICENSES.md`에 작가 이름, 라이선스, 출처 �
 | 오피스 | 서버랙(LED 깜빡임 2프레임), 화이트보드, 복합기, 빈백, 커피머신, 빌드 모니터, 폰 |
 | 현장 | 지게차, 롤셔터(닫힘과 반쯤 열림), 컴프레서, 기름통 두 색, 공구벽, 철제 작업대와 바이스, 간이침대, 검사대(합격과 불합격 램프), 도면 탁자, 철제 선반, 선풍기, 고깔, 팔레트, 트럭, 게이지, 안전모 걸이, 무전기, 머그, 신문 |
 
-[code:scripts/draw_props.py] [code:LICENSES.md]
+[code:scripts/draw_props.py] [repo:LICENSES.md]
 
 다시 만들 때는 Pillow가 깔린 파이썬으로 `scripts/draw_props.py`를 돌린다 [code:scripts/draw_props.py]. 16px를 코드로 그려 음영이 한두 단계뿐이라 Calciumtrice나 2dPig 옆에서 평평하게 보인다(이 편 끝 「한계」) [log:stage10_office_result.md]. 바닥과 벽, 복도 융단, 마법진처럼 사각형과 빛으로 충분한 것은 PNG도 만들지 않고 엔진이 테마 색으로 직접 칠한다.
 
@@ -385,7 +385,7 @@ CC-BY의 출처 표시는 `LICENSES.md`에 작가 이름, 라이선스, 출처 �
 
 [code:bridge/static/js/office.js] [code:tools/screen.py]
 
-이 점검들이 0건이어야 한다는 것이 규칙이 됐다. 테마의 자리나 가구를 바꾼 세션은 직접 화면 점검 도구로 세 테마 모두 0건인지 본다 [code:CLAUDE.md]. 기본 실행은 `.venv/bin/python tools/screen.py`이고, 세 테마 × 세 크기(1920×1080, 1366×768, 1024×700) × 패널 좁게와 넓게를 찍고 센다. 문제가 하나라도 있으면 종료 코드가 1이다 [code:tools/screen.py]. 머리 위 표시를 바꿨다면 시연 장면으로 `--demo overhead_marks --views foreman,ronanlab-infra,map --no-term`을 붙여 18조합 × 세 화면을 본다 [docs:10_office_design.md]. 도구가 어떻게 헤드리스 브라우저를 몰고 시연 장면을 재생하는지는 → 「화면 점검과 시연」이 다룬다.
+이 점검들이 0건이어야 한다는 것이 규칙이 됐다. 테마의 자리나 가구를 바꾼 세션은 직접 화면 점검 도구로 세 테마 모두 0건인지 본다 [repo:CLAUDE.md]. 기본 실행은 `.venv/bin/python tools/screen.py`이고, 세 테마 × 세 크기(1920×1080, 1366×768, 1024×700) × 패널 좁게와 넓게를 찍고 센다. 문제가 하나라도 있으면 종료 코드가 1이다 [code:tools/screen.py]. 머리 위 표시를 바꿨다면 시연 장면으로 `--demo overhead_marks --views foreman,ronanlab-infra,map --no-term`을 붙여 18조합 × 세 화면을 본다 [docs:10_office_design.md]. 도구가 어떻게 헤드리스 브라우저를 몰고 시연 장면을 재생하는지는 → 「화면 점검과 시연」이 다룬다.
 
 돌아보면 길은 한 방향이었다. 눈에 띈 겹침을 좌표로 고치는 것에서, 재는 것을 먼저 만들고 0건을 기준으로 삼는 것으로, 다시 자리를 고르는 일 자체를 줄이는 것으로 갔다. 이름표는 고정 칸이 됐고, 사람 자리는 재배치 계획이 찾고, 머리 위 표시는 무게를 단 후보 가운데 고른다 [log:designer_grid_20261110.md] [log:overhead_stack_20261113.md]. 점검이 0건인데 실제로 겹친 일을 겪은 뒤로는 「무엇을 재지 않는가」도 함께 본다. 이 프로젝트가 잡으려는 것이 조용한 고장이라면, 화면에서는 조용한 겹침이 그것이었다.
 

@@ -8,6 +8,9 @@ dashdot_base = "648ac08a0285c88626a2d5c16ae98732f47cb8a8"
 # 「」 없는 편 사이 참조(→ 제목)를 틀림으로 셀 기준 커밋. 이 검사가 들어오기 바로 전 main(11-19). 이 커밋 뒤에 더하거나 고친 줄만 틀림, 옛 줄은 의심.
 # 합칠 때 main이 이보다 앞서 있으면 합친 판의 main으로 올린다(앞선 줄 커밋의 옛 줄이 틀림으로 세어지지 않게, log/foreman-6_xref_bare_20261119.md)
 xref_base = "f003bde0780744a803e9633a893d4544dff75902"
+# 문서(.md)를 가리키는 [code:](맨 위 문서는 [repo:]로 쓴다)를 틀림으로 셀 기준 커밋. 이 검사가 들어오기 바로 전 main(11-20).
+# FOREMAN은 이 검사를 넣으며 옛 줄을 모두 [repo:]로 바꿨다(log/foreman-6_root_mark_20261120.md)
+code_doc_base = "a511e6f36e44989c6e86d642c0f7d70ad226123a"
 
 [readme]
 # 맨 위 README.md는 생성물이다(tools/docs.py readme, 점검 9번). 설계는 docs/00_design.md, 규칙은 CLAUDE.md(11-17 사용자)

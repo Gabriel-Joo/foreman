@@ -147,7 +147,7 @@ def foreman(tmp_path):
     put(r, "docs/11_x.md", "# 11 설계\n\n`bridge/a.py`를 본다. `docs/12_y.md`도 본다.\n")
     put(r, "docs/12_y.md", "# 12 다른 설계\n\n[docs:11_x.md] 자기와 다른 문서를 가리킨다.\n")
     put(r, "notion/11_x.md", "<!--\n다루는 곳: docs/11_x.md, bridge/a.py\n읽은 커밋: abc1234\n-->\n# 11 설계\n\n"
-        "규칙을 따른다 [code:CLAUDE.md]. 설계는 [docs:11_x.md]. 맨글 docs/12_y.md는 걸지 않는다.\n")
+        "규칙을 따른다 [repo:CLAUDE.md]. 설계는 [docs:11_x.md]. 맨글 docs/12_y.md는 걸지 않는다.\n")
     put(r, "log/r.md", "[docs:11_x.md]\n")
     commit(r, "init")
     return r
@@ -200,7 +200,7 @@ def test_config_records_and_not_code(foreman):
 def test_generated_readme_is_not_trigger(foreman):
     """[readme] 표가 켜지면 맨 위 README.md는 생성물이라 걸지 않는다. 다른 폴더의 README.md는 그대로 문서 트리거다."""
     put(foreman, "README.md", "# 손으로 쓴 README\n")
-    put(foreman, "notion/20_r.md", "# 20 읽기\n\n안내를 따른다 [code:README.md].\n")
+    put(foreman, "notion/20_r.md", "# 20 읽기\n\n안내를 따른다 [repo:README.md].\n")
     commit(foreman, "readme")
     assert dr.trigger_kind("README.md", dr.resolve_sets(foreman, dcfg.load(foreman)), dcfg.load(foreman)) == "doc"
     assert "notion/20_r.md" in by_doc(dr.scan(foreman, files=["README.md"]))

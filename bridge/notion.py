@@ -26,7 +26,7 @@ from typing import Any
 from bridge.doctext.head import parse_head, strip_comments
 from bridge.doctext.marks import KINDS_RE as MARK_KINDS
 from bridge.doctext.marks import STRIP as MARK_STRIP
-from bridge.doctext.marks import STRIP_TURN, mark_file
+from bridge.doctext.marks import STRIP_TURN, mark_file, mark_path
 from bridge.doctext.titles import first_h1, xref_index, xref_lookup, xref_pattern
 
 API ="https://api.notion.com/v1"
@@ -196,12 +196,9 @@ def _runs(text: str, ctx: Ctx, bold: bool) -> list[dict[str, Any]]:
             k, v = m["evk"], m["evv"]
             if k == "c":
                 out += _rt(v, code=True, bold=bold, link=f"{ctx.gh}/commit/{v}" if ctx.links else None)
-            elif k == "code":                       # 코드 경로(11-15) — 파일 · 폴더 그대로(줄 범위는 떼고)
-                f = mark_file(v)
+            else:                                 # code, repo, log, docs: 저장소 경로(줄 범위와 절은 뗀다). 풀기는 marks.mark_path 한 곳(11-20)
+                f = mark_path(k, v) or f"{k}/{mark_file(v)}"
                 out += _rt(f, code=True, bold=bold, link=ctx.blob(f) if ctx.links else None)
-            else:                                 # log · docs — 파일(줄 범위 · 절은 떼고 파일만 잇는다)
-                f = mark_file(v)
-                out += _rt(f"{k}/{f}", code=True, bold=bold, link=ctx.blob(f"{k}/{f}") if ctx.links else None)
         elif m["xref"]:
             out += _rt(m["xa"], bold=bold) + _rt(f"「{m['xt']}」", bold=bold, link=url)   # 화살표는 글자, 「제목」에 그 편 페이지
         elif m["link"]:

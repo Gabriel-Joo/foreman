@@ -202,7 +202,7 @@ def infra(tmp_path):
 
 def test_infra_config_parsed(infra):
     c = dcfg.load(infra).check
-    assert c.head_at == "top" and c.fenced and c.kinds == ["c", "docs", "code"] and c.xref == {"docs": "notion"}
+    assert c.head_at == "top" and c.fenced and c.kinds == ["c", "docs", "code", "repo"] and c.xref == {"docs": "notion"}
     assert c.files_at == "read" and c.claim == r"\d|“|”" and c.claim_min == 0 and c.domains_in == ["portfolio"]
     assert dcfg.DocsConfig().check.as_dict() == dcfg.CheckConfig().as_dict()
 

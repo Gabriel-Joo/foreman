@@ -138,7 +138,7 @@ flowchart TB
   O --> C
 ```
 
-전에는 이 길들이 서로를 몰랐다. 서기실은 `scribe-task` 기록만 봤고 계획 겹침은 `dispatch_session`만 봤다. 서기실 [시키기]는 `dispatch` 기록을 남기지 않았고, 계획 길 서기는 `scribe-task`를 남기지 않았다. 그래서 관리자가 계획 길로 띄운 서기 열댓 개를 서기실이 하나도 몰랐고, 거꾸로 서기실에서 README를 고치는 서기가 도는 동안 관리자가 README 서기를 또 띄워도 계획 겹침이 아무 말도 하지 않았다 [log:foreman-7_scribe_design_20261115.md] [log:foreman-4_scribe_two_paths_20261115.md]. 프로젝트 규칙 맨 위에 「포먼은 이미 같은 일을 하는 세션을 알아챈다」가 있는데 [code:CLAUDE.md], 판단이 두 벌이면 한쪽이 조용히 모른다.
+전에는 이 길들이 서로를 몰랐다. 서기실은 `scribe-task` 기록만 봤고 계획 겹침은 `dispatch_session`만 봤다. 서기실 [시키기]는 `dispatch` 기록을 남기지 않았고, 계획 길 서기는 `scribe-task`를 남기지 않았다. 그래서 관리자가 계획 길로 띄운 서기 열댓 개를 서기실이 하나도 몰랐고, 거꾸로 서기실에서 README를 고치는 서기가 도는 동안 관리자가 README 서기를 또 띄워도 계획 겹침이 아무 말도 하지 않았다 [log:foreman-7_scribe_design_20261115.md] [log:foreman-4_scribe_two_paths_20261115.md]. 프로젝트 규칙 맨 위에 「포먼은 이미 같은 일을 하는 세션을 알아챈다」가 있는데 [repo:CLAUDE.md], 판단이 두 벌이면 한쪽이 조용히 모른다.
 
 두 가지 안을 놓고 비교했다. 하나는 서기실이 두 기록을 모두 읽는 것(고칠 곳이 적다), 다른 하나는 기록 자체를 한 곳으로 모으는 것이다. 앞의 안은 계획 길이 서기실 세션을 계속 모르고, 겹침 판단이 `TOUCHES`와 `files_overlap` 두 벌로 남아 다시 어긋난다. 그래서 고칠 곳이 많아도 뒤의 안을 골랐다 [log:foreman-7_scribe_design_20261115.md] [c:9fce185].
 

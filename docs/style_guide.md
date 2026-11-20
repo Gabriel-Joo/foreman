@@ -72,6 +72,7 @@
 - 두세 단계까지 들여 쓴다
 - **근거를 바로 단다** — 숫자 · 커밋 · 경로
   - 서기가 쓰는 글은 문장 끝에 근거 표시: `[c:e223f2e]`(커밋) · `[t:5871]`(턴 id) · `[log:stage11_roles_result.md]` · `[docs:12_scribe.md]`
+  - 코드는 `[code:bridge/x.py]`, 맨 위 문서(`CLAUDE.md`, `README.md`, `LICENSES.md`, `.claude/agents/Explore.md`처럼 docs와 `log/` 밖의 `.md`)는 `[repo:CLAUDE.md]`로 단다. `[docs:CLAUDE.md]`는 `docs/CLAUDE.md`로 풀려 틀린다(11-20, `bridge/doctext/marks.py`)
   - 브리지가 표시가 실제로 있는지 확인한다(12b). 표시 없는 주장은 쓰지 않는다
 - 사용자가 정한 것은 `(11-06 사용자 결정)`과 함께 원문 한 줄을 인용한다
 - **쓰지 않는 것**

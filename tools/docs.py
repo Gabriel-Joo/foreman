@@ -46,7 +46,7 @@ try:
     from bridge.doctext.repo import tree as _tree
     from bridge.doctext.head import parse_head
     from bridge.doctext.lines import text_lines
-    from bridge.doctext.marks import marks, target
+    from bridge.doctext.marks import mark_path, marks, target
     from bridge.doctext.titles import XREF, first_h1, xref_index, xref_lookup
 except ImportError as e:      # FOREMAN 밖으로 옮긴 파일, tomllib가 없는 옛 파이썬
     print(f"문서 도구를 불러오지 못했습니다(FOREMAN 저장소의 tools/docs.py를 FOREMAN .venv 파이썬으로 불러야 합니다): {e}",
@@ -114,7 +114,9 @@ def cmd_marks(repo: str, rev: str | None, cfg: dcfg.DocsConfig, sets: dict[str, 
             for i, ln in text_lines(bodies.get(p, "").splitlines()):
                 for kind, v, _ in marks(ln):
                     t = target(v) if kind != "c" and kind != "t" else None
+                    # path: 저장소 맨 위 기준 경로(점검, 거꾸로 찾기와 같은 풀기 marks.mark_target). file은 값의 파일 부분 그대로
                     out.append({"doc": p, "set": k, "line": i, "kind": kind, "value": v,
+                                "path": mark_path(kind, v, sets.get("docs") or "docs/", cfg.records[0] if cfg.records else "log/"),
                                 "file": t[0] if t else None, "from": t[1] if t else None, "to": (t[2] or t[1]) if t else None,
                                 "shape_ok": t is not None or kind in ("c", "t")})
                 for x in XREF.finditer(ln):
@@ -207,7 +209,7 @@ def render_marks(res: dict) -> str:
         else:
             rng = f" 줄 {m['from']}" + (f"-{m['to']}" if m["to"] != m["from"] else "") if m.get("from") else ""
             bad = "" if m["shape_ok"] else " (모양을 알아보지 못함)"
-            out.append(f"{m['doc']}:{m['line']} [{m['kind']}] {m['file'] or m['value']}{rng}{bad}")
+            out.append(f"{m['doc']}:{m['line']} [{m['kind']}] {m.get('path') or m['file'] or m['value']}{rng}{bad}")
     for p in res["not_in_sets"]:
         out.append(f"⚠ 문서 묶음 밖이라 읽지 않았습니다: {p}")
     out.append(f"근거 표시와 참조 {len(res['marks'])}")

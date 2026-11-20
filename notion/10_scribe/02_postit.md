@@ -83,7 +83,7 @@ flowchart LR
 
 ### 관리자가 올리기: POST /api/postit
 
-사람이 관리자에게 「포스트잇에 올려라」나 「나중에 할 일에 넣어라」라고 말하면, 관리자는 그 턴 안에서 아래처럼 API를 부른다. 이것은 CLAUDE.md의 작업 규칙 한 줄로 정해 두었다 [code:CLAUDE.md].
+사람이 관리자에게 「포스트잇에 올려라」나 「나중에 할 일에 넣어라」라고 말하면, 관리자는 그 턴 안에서 아래처럼 API를 부른다. 이것은 CLAUDE.md의 작업 규칙 한 줄로 정해 두었다 [repo:CLAUDE.md].
 
 ```
 POST /api/postit

@@ -17,12 +17,13 @@
 
 from bridge.doctext.head import COVERS, READ, bad_covers, head_text, parse_head, strip_comments
 from bridge.doctext.lines import comments, text_lines, walk
-from bridge.doctext.marks import (CODE_MARK, KINDS, MARK, REF_MARK, STRIP, STRIP_TURN, mark_file, mark_re, marks,
-                                  split_range, target)
+from bridge.doctext.marks import (CODE_MARK, KINDS, MARK, REF_MARK, STRIP, STRIP_TURN, code_doc, mark_file, mark_path,
+                                  mark_re, mark_target, marks, split_range, target)
 from bridge.doctext.repo import RepoError, read_many, tree
 from bridge.doctext.titles import XREF, bare_title, first_h1, xref_index, xref_lookup
 
 __all__ = ["CODE_MARK", "COVERS", "KINDS", "MARK", "READ", "REF_MARK", "RepoError", "STRIP", "STRIP_TURN", "XREF",
            "bad_covers", "bare_title", "read_many", "tree",
-           "comments", "first_h1", "head_text", "mark_file", "mark_re", "marks", "parse_head", "split_range",
+           "code_doc", "comments", "first_h1", "head_text", "mark_file", "mark_path", "mark_re", "mark_target", "marks",
+           "parse_head", "split_range",
            "strip_comments", "target", "text_lines", "walk", "xref_index", "xref_lookup"]
