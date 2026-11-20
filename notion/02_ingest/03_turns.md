@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/assembler.py, bridge/store.py, bridge/models.py, tests/test_stage2_db.py
-읽은 커밋: c6bee08
+읽은 커밋: 1e7e7ea
 -->
 # 턴 조립
 
@@ -165,7 +165,7 @@ CC의 `--resume`이나 fork로 만든 세션은 앞 세션의 기록을 새 파�
 
 먼저 조립기 안의 쓰기는 한 줄로 선다. 조립기는 `asyncio.Lock` 하나를 갖고, 트랜스크립트 덩어리 적용, hook 적용, 훑기, 서브에이전트 연결 모두 이 자물쇠 안에서 돈다 [code:bridge/assembler.py]. 트랜스크립트와 hook은 `bridge/bus.py`의 대기열을 거치지 않고 조립기가 직접 DB에 쓴다. 대기열은 승인, 입력 넣기, 셸, 웹훅처럼 조립기 밖에서 생긴 이벤트의 길이다(12절, → 「적재와 내보내기」).
 
-덩어리(파일에서 한 번에 읽는 양, 최대 8MB) 하나가 DB 트랜잭션 하나다 [code:bridge/config.py]. 그 덩어리의 모든 턴, 메시지, 이벤트를 넣고, 같은 트랜잭션에서 `transcript_file.read_offset`을 덩어리 끝으로 옮긴다. 중간에 무엇이 실패하면 전부 롤백되고 offset도 덩어리 앞에 그대로 남는다. 커밋되지 않은 줄은 다음에 다시 읽힐 뿐이다. 실패하면 그 세션의 메모리 상태(열린 턴, 아는 promptId 등)도 버리고 다음에 DB에서 다시 읽는다 [code:bridge/assembler.py].
+덩어리(파일에서 한 번에 읽는 양, 최대 8MB) 하나가 DB 트랜잭션 하나다 [code:bridge/config.py]. 그 덩어리의 모든 턴, 메시지, 이벤트를 넣고, 같은 트랜잭션에서 `transcript_file.read_offset`을 덩어리 끝으로 옮긴다. 중간에 무엇이 실패하면 전부 롤백되고 offset도 덩어리 앞에 그대로 남는다. 커밋되지 않은 줄은 다음에 다시 읽힐 뿐이다. 실패하면 그 세션의 메모리 상태(열린 턴, 아는 promptId 등)도 버리고 다음에 DB에서 다시 읽는다 [code:bridge/assembler.py]. 같은 덩어리가 되풀이해 실패할 때를 위한 길도 조립기에 둘 있다. 줄마다 SAVEPOINT(트랜잭션 안에 둔 되돌릴 자리)를 걸어 실패한 줄만 버리고 나머지를 넣는 너그러운 모드와, 마지막 수단으로 그 덩어리를 넣지 않고 offset만 넘기는 `skip_chunk`다 [code:bridge/assembler.py]. 언제 그 길로 가는지는 → 「트랜스크립트 읽기」, 사람에게 어떻게 알리는지는 → 「적재와 내보내기」.
 
 다시 읽어도 행이 늘지 않는 것은 표마다 유일한 열쇠가 있어서다.
 
@@ -206,7 +206,9 @@ CC가 붙이는 세션 제목(`ai-title` 줄)은 같은 제목이 수천 번 되
 
 `EventIn`은 hook, 와처, 폴링, 디버그처럼 조립기 밖의 생산자가 이벤트를 넣을 때 쓰는 모양이다. 시간대가 없는 시각은 UTC로 본다. 트랜스크립트 timestamp는 UTC(`Z`)인데 서버 로컬 시각은 KST라, 섞이면 9시간 어긋나기 때문이다 [code:bridge/models.py]. DB에는 모두 시간대 없는 UTC로 들어간다 [code:bridge/store.py].
 
-`bridge/store.py`의 `Store.insert_event`는 조립기를 거치지 않는 이벤트를 한 건씩 넣는다. 부르는 쪽은 `bridge/bus.py`의 대기열(`Pipeline`)이고, 그 대기열에 이벤트를 넣는 것은 승인 기다리기, 세션에 글 넣기, 셸 패널, CI/CD 웹훅, 디버그 확인 같은 브리지 쪽 생산자다 [code:bridge/bus.py]. `event` 표에는 외래 키가 없어 참조가 맞는지는 쓰는 코드가 지켜야 한다. 이 모듈 머리 주석은 「event에 쓰는 곳은 여기 하나」라고 하지만 지금 코드와 다르다. 조립기의 `_flush`도 `event`에 직접 묶음 INSERT를 하므로, 실제로 `event`에 쓰는 곳은 대기열의 쓰는 작업과 조립기 둘이다 [code:bridge/store.py] [code:bridge/assembler.py]. 둘은 서로 다른 자물쇠 아래서 돌고, 겹치지 않는 것은 uuid가 서로 다른 이벤트를 쓰기 때문이다. `insert_event`는 중복 uuid면 1062 오류를 그대로 올린다. 조립기처럼 조용히 넘기지 않는 것은 이 길의 이벤트가 다시 읽기를 하지 않는 일회성이라 중복이 곧 버그이기 때문이다 [code:bridge/store.py].
+`bridge/store.py`의 `Store.insert_event`는 조립기를 거치지 않는 이벤트를 한 건씩 넣는다. 부르는 쪽은 `bridge/bus.py`의 대기열(`Pipeline`)이고, 그 대기열에 이벤트를 넣는 것은 승인 기다리기, 세션에 글 넣기, 셸 패널, CI/CD 웹훅, 디버그 확인 같은 브리지 쪽 생산자다 [code:bridge/bus.py]. 이 모듈은 그 밖에 디버그 확인으로 넣은 줄(`source = 'debug'`)을 지우는 일(`delete_debug_events`)도 맡는다 [code:bridge/store.py].
+
+`event` 표에는 외래 키(가리키는 다른 표의 행이 실제로 있는지 DB가 검사하는 약속)가 없어, 참조가 맞는지는 쓰는 코드가 지켜야 한다. `event`에 쓰는 곳은 이 모듈 하나가 아니라 셋이다. 이 모듈이 대기열 이벤트를 한 건씩 넣고, 조립기가 트랜스크립트와 hook에서 온 이벤트를 덩어리째 넣으며(`_flush`) 늦게 안 서브에이전트 이벤트의 턴을 나중에 채우고(`link`), CI/CD 쪽(`bridge/pipeline.py`)이 커밋이 잡히면 이미 있는 이벤트의 `commit_sha`를 채운다. 이 모듈의 머리 주석도 이 셋을 그대로 적는다 [code:bridge/store.py] [code:bridge/assembler.py] [code:bridge/pipeline.py]. 새로 행을 넣는 대기열과 조립기는 서로 다른 자물쇠 아래서 돌고, 겹치지 않는 것은 uuid가 서로 다른 이벤트를 쓰기 때문이다. `insert_event`는 중복 uuid면 1062 오류를 그대로 올린다. 조립기처럼 조용히 넘기지 않는 것은 이 길의 이벤트가 다시 읽기를 하지 않는 일회성이라 중복이 곧 버그이기 때문이다 [code:bridge/store.py].
 
 ## 13. 막혔던 것: 시험은 통과했는데 행 수만 비교했다
 
