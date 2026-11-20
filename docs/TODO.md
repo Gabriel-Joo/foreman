@@ -69,6 +69,9 @@
 - **foreman-158** 브리지를 다시 띄울 때마다 끄던 프로세스가 예외를 남김 (2026-11-20)
   `systemctl --user restart foreman-bridge` 때 끄던 옛 프로세스가 열려 있던 세션 화면 웹소켓이 끊기며 `ERROR: Exception in ASGI application`과 Traceback 넷을 로그에 남긴다(`bridge/api/terminal.py` `terminal_ws`, `_pump`). 11-20 14:50, 15:05 두 번 모두 그랬다. 새 프로세스 오류는 아니지만, 다시 띄운 뒤 오류를 셀 때마다 이 줄을 걸러야 해 진짜 오류가 섞여도 놓치기 쉽다. 오류가 아닌 것이 오류로 보이면 다음에 진짜 오류를 못 본다(11-20 사용자). 끌 때 끊긴 연결은 예외가 아닌 한 줄로 남긴다.
   나온 곳: 사용자 11-20, `log/manager410_overhead_20261115.md`
+- **foreman-160** 설정 파일 셋은 문법만 틀려도 브리지 전체가 안 뜸 (2026-11-20)
+  알림 규칙(`config/notify.toml`), 승인 정책(`config/approval.toml`), 따로 작업 설정(`config/worktree.toml`)은 브리지가 `try`로 감싸지 않은 자리에서 읽어, 사람이 고치다 문법 하나만 틀려도 브리지 전체가 뜨지 않는다. `config/handoff.toml`, `config/roles.toml`처럼 그 기능만 빼고 띄운 뒤 텔레그램으로 알린다(11-20 사용자: 설정 하나가 틀려 브리지 전체가 안 뜨는 것은 그 기능만 빼고 알리는 쪽이 맞다). 승인 정책은 빠지면 승인이 열리는 쪽이 되지 않게 따로 본다.
+  나온 곳: `notion/01_structure/02_startup.md` 115(`bd620cf` 판), 전체 대조 줄 3 서기 658, 사용자 11-20
 
 ## 2. 세션과 승인
 
