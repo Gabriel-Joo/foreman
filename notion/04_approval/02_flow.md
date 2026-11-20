@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/approvals.py, bridge/api/approvals.py, scripts/foreman-decide.sh, migrations/0010_approval.sql, bridge/hookmiss.py, bridge/roleguard.py
-읽은 커밋: 6cc0e36
+다루는 곳: bridge/approvals.py, bridge/api/approvals.py, bridge/api/hooks.py, scripts/foreman-decide.sh, deploy/hooks/foreman-hooks.json, migrations/0010_approval.sql, bridge/hookmiss.py, bridge/roleguard.py
+읽은 커밋: eea3bd7
 -->
 # 기다리는 길: hook 두 개
 
@@ -66,7 +66,7 @@ PreToolUse는 위험한 명령에만 불리는 것이 아니다. 파일 하나 �
 
 이 과정에서 DB를 기다리는 곳은 없다. 판정 결과를 `event` 표에 `approval_req`로 남기는 일은 `_bg()`로 따로 띄운 작업이 하고, 판정 함수는 그 작업이 끝나기를 기다리지 않고 바로 답을 돌려준다. 기록이 실패해도 판정은 바뀌지 않는다. 코드 주석이 이 원칙을 「기록 실패가 판정을 바꾸지 않는다」고 적어 둔다 [code:bridge/approvals.py].
 
-예외가 하나 있다. 다른 저장소에 `git push`가 보일 때는 그 세션이 관리자인지 알아야 해서 DB에서 세션 역할을 읽는다. 이것도 push가 보일 때만 읽고, 못 읽으면 예외를 던지지 않고 「역할 없음」(막힘 쪽)으로 간다 [code:bridge/approvals.py].
+DB를 읽는 곳은 둘 있다. 하나는 역할 권한이 켜져 있을 때 세션 역할을 읽는 일이다. 도구 호출마다 DB를 치지 않도록 세션마다 읽은 역할을 60초 동안 기억해 두고, 그 사이에는 메모리에서 꺼낸다. 못 읽으면 「역할 없음」으로 판정하고, 역할 규칙이 그 호출에서 빠졌다는 한 줄(역할 읽기 실패)을 따로 남긴다 [code:bridge/api/hooks.py] [code:bridge/roleguard.py]. 다른 하나는 `git push`가 보일 때다. 다른 저장소 push는 원본 폴더의 관리자에게만 열려 있어서 그 세션의 역할과 worktree 여부를 DB에서 읽는다. 이것은 push가 보일 때만 읽고, 못 읽으면 예외를 던지지 않고 「역할 없음」(막힘 쪽)으로 간다 [code:bridge/approvals.py].
 
 ### 판정이 남기는 기억: 최근 판정표
 
@@ -85,7 +85,7 @@ PreToolUse는 판정하면서 한 가지를 기억해 둔다. 「세션 id, 도�
 
 `ask`의 이유 글은 「무엇을 대상으로」가 맨 앞이다. 승인 창에서 사람이 가장 먼저 보아야 할 것이 명령 원문이 아니라 대상이기 때문이다. 규칙 이름과 이유는 대괄호 안에 뒤로 뺐다 [code:bridge/approvals.py].
 
-프로젝트가 관찰 모드면 판정은 똑같이 하고 `event`에 남기지만 CC에는 아무것도 돌려주지 않는다. 이 기록을 쌓아 두었다가 사람이 「이 프로젝트를 강제(enforce)로 올려도 되겠다」고 판단하는 근거로 쓴다. 지금 강제 모드는 FOREMAN 하나다 [code:config/approval.toml].
+프로젝트가 관찰 모드면 판정은 똑같이 하고 `event`에 남기지만 CC에는 아무것도 돌려주지 않는다. 이 기록을 쌓아 두었다가 사람이 「이 프로젝트를 강제(enforce)로 올려도 되겠다」고 판단하는 근거로 쓴다. 지금 강제 모드는 FOREMAN과 ronanlab-infra 둘이고, 런슈즈와 펫퍼민트는 관찰 모드다 [code:config/approval.toml].
 
 ### 브리지가 꺼져 있으면: 허용 쪽으로 새지 않는다
 
@@ -95,7 +95,7 @@ PreToolUse는 판정하면서 한 가지를 기억해 둔다. 「세션 id, 도�
 
 ### 판정 없이 지난 호출은 한 줄씩 남긴다
 
-통과는 설계지만, 통과했다는 사실까지 조용히 사라지면 「브리지가 몇 시간째 판정을 못 하고 있다」를 아무도 모른다. 그래서 판정 없이 지나는 갈래마다 저장소의 `.run/hook_miss.log`에 한 줄을 남긴다. 스크립트 쪽 갈래는 토큰 없음, 연결 거부, 시간 초과, 인증 실패, 서버 오류, 그 밖의 연결 오류, 빈 본문, 쓸 수 없는 본문이고, 브리지 쪽 갈래는 승인 판정기가 꺼져 있거나 아직 준비되지 않음, 세션 역할 읽기 실패, 늘 막는 판정 중 예외, 역할 판정 중 예외, 스크립트가 이미 포기한 뒤에야 끝난 늦은 판정이다 [code:scripts/foreman-decide.sh] [code:bridge/hookmiss.py] [code:bridge/api/hooks.py]. 브리지가 「판정하지 않기로」 정해 본문 없이 답한 204는 정상 길이라 남기지 않는다.
+통과는 설계지만, 통과했다는 사실까지 조용히 사라지면 「브리지가 몇 시간째 판정을 못 하고 있다」를 아무도 모른다. 그래서 판정 없이 지나는 갈래마다 저장소의 `.run/hook_miss.log`에 한 줄을 남긴다. 스크립트 쪽 갈래는 토큰 없음, 연결 거부, 시간 초과, 인증 실패, 서버 오류, 그 밖의 연결 오류, 빈 본문, 쓸 수 없는 본문이고, 브리지 쪽 갈래는 승인 판정기가 꺼져 있거나 아직 준비되지 않음, 세션 역할 읽기 실패, 늘 막는 판정 중 예외, 역할 판정 중 예외, 스크립트가 이미 포기한 뒤에야 끝난 늦은 판정이다 [code:scripts/foreman-decide.sh] [code:bridge/hookmiss.py] [code:bridge/api/hooks.py]. 브리지가 「판정하지 않기로」 정해 본문 없이 답한 204는 정상 길이라 남기지 않는다. 브리지가 받은 본문을 JSON으로 읽지 못하거나 JSON 객체가 아니어서 400으로 거절할 때는 두 곳에 남는다. 브리지 로그에는 거절한 까닭(JSON이 아님, 객체가 아님과 받은 꼴의 이름)이 값 없이 남고, 스크립트는 그 400을 「그 밖의 연결 오류」 갈래로 기록 파일에 한 줄 남긴다 [code:bridge/api/hooks.py] [code:scripts/foreman-decide.sh].
 
 한 줄에는 시각, 출처(스크립트인지 브리지인지), 갈래, 까닭(오류 종류나 걸린 시간처럼 코드가 만든 값), 세션 id, 도구 이름만 들어간다. 명령 글과 입력 값은 쓰지 않는다. 그 안에 비밀값이 섞여 있을 수 있기 때문이다. 세션 id와 도구 이름도 정해진 글자 꼴에 맞을 때만 적고, 아니면 `-`로 둔다. 파일은 1MB를 넘으면 한 벌만 옆으로 돌려 두어, 오래 쌓여도 두 벌을 넘지 않는다. 브리지가 꺼져 있어도 스크립트가 직접 쓰므로 기록은 남는다. 정상으로 판정을 받은 호출에서는 아무것도 쓰지 않아, 평소 길이 느려지지 않는다.
 
@@ -208,7 +208,7 @@ API는 API 토큰을 요구한다. 이 길은 원격에서 명령 실행을 허�
 
 순서가 바뀌면 일이 꼬인다. CC가 먼저 hook을 끊으면 브리지는 연결이 사라진 줄 모르고 계속 기다리다가 나중에 시간 초과를 기록한다. curl이 브리지보다 먼저 끊으면 브리지가 정한 결정이 CC에 닿지 못한다. 브리지가 가장 먼저 포기해야 「시간 초과」가 한 곳에서 깔끔하게 정해진다. 셋 가운데 CC 쪽 값은 저장소 밖 사용자 설정이라 코드가 맞출 수 없다. 그래서 `approval.toml`의 `wait_s` 주석에 「바꾸면 스크립트와 사용자 설정도 그보다 길게」를 적어 두었다 [code:config/approval.toml].
 
-저장소의 hook 견본 `deploy/hooks/foreman-hooks.json`에는 PermissionRequest `timeout`이 한동안 900초로 남아 있었다. 실제로 쓰는 사용자 설정(3660초)보다 짧아, 견본을 그대로 다시 깔면 CC가 15분에 hook을 끊고 위에서 말한 「브리지만 모르고 기다리는」 꼴이 될 뻔했다. 11-15에 견본을 3660초로 맞췄고, 이제 시험이 지킨다. 시험은 브리지 기다림 < 스크립트 curl 기다림 < 견본의 CC 한도 순서가 깨지면 실패한다 [code:deploy/hooks/foreman-hooks.json] [code:tests/test_hook_timeouts.py].
+저장소의 hook 견본 `deploy/hooks/foreman-hooks.json`에는 PermissionRequest `timeout`이 한동안 900초로 남아 있었다. 실제로 쓰는 사용자 설정(3660초)보다 짧아, 견본을 그대로 다시 깔면 CC가 15분에 hook을 끊고 위에서 말한 「브리지만 모르고 기다리는」 꼴이 될 뻔했다. 지금 견본은 3660초로 맞춰져 있고, 시험이 지킨다. 시험은 브리지 기다림 < 스크립트 curl 기다림 < 견본의 CC 한도 순서가 깨지면 실패한다 [code:deploy/hooks/foreman-hooks.json] [code:tests/test_hook_timeouts.py].
 
 ### 10분에서 60분으로
 
