@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/foreman_note.py, bridge/wake.py, config/wake.toml, bridge/static/js/fmpanel.js, migrations/0025_foreman_note.sql, migrations/0029_seed_ronanlab_infra.sql, tests/js/fmpanel_notes.test.mjs, tests/test_foreman_note.py, tests/test_note_auto_retire.py, tests/test_wake_url.py, tests/test_instructions_note_threads.py
-읽은 커밋: 722861f
+다루는 곳: bridge/foreman.py, bridge/foreman_note.py, bridge/wake.py, config/wake.toml, bridge/static/js/fmpanel.js, migrations/0025_foreman_note.sql, migrations/0029_seed_ronanlab_infra.sql, tests/js/fmpanel_notes.test.mjs, tests/test_foreman_note.py, tests/test_note_auto_retire.py, tests/test_wake_url.py, tests/test_instructions_note_threads.py
+읽은 커밋: a511e6f
 -->
 # 진행 중인 일과 자동 기상
 

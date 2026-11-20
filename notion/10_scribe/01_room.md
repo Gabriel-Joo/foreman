@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/scribe_room.py, bridge/scribe_queue.py, migrations/0035_scribe_queue.sql, tests/test_scribe_queue.py, tests/js/scribe_queue.test.mjs, bridge/manuscript_rules.py, tests/test_manuscript_rules.py, bridge/scribe.py, bridge/api/scribe.py, config/scribe.toml, bridge/static/js/scribe.js, migrations/0023_scribe_review.sql, tests/js/scribe.test.mjs, tests/js/scribe_held.test.mjs, tests/test_scribe.py, tests/test_scribe_room.py, tests/test_scribe_two_paths.py
-읽은 커밋: 0ae0c01
+다루는 곳: bridge/mergeprep.py, bridge/manuscript.py, bridge/scribe_room.py, bridge/scribe_queue.py, migrations/0035_scribe_queue.sql, tests/test_scribe_queue.py, tests/js/scribe_queue.test.mjs, bridge/manuscript_rules.py, tests/test_manuscript_rules.py, bridge/scribe.py, bridge/api/scribe.py, config/scribe.toml, bridge/static/js/scribe.js, migrations/0023_scribe_review.sql, tests/js/scribe.test.mjs, tests/js/scribe_held.test.mjs, tests/test_scribe.py, tests/test_scribe_room.py, tests/test_scribe_two_paths.py
+읽은 커밋: a511e6f
 -->
 # 서기실과 일감
 

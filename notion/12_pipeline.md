@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/pipeline.py, bridge/api/webhooks.py, config/pipeline.toml, deploy/cicd/argocd-notifications-foreman.yaml, migrations/0012_pipeline.sql, bridge/static/js/shipstate.js, tests/js/shipstate.test.mjs, tests/test_pipeline.py
-읽은 커밋: 613f70c
+다루는 곳: bridge/pipeline.py, bridge/api/webhooks.py, config/pipeline.toml, deploy/cicd/argocd-notifications-foreman.yaml, migrations/0012_pipeline.sql, bridge/static/js/shipstate.js, tests/js/shipstate.test.mjs, tests/test_pipeline.py, bridge/static/js/render.js, bridge/static/js/office.js, bridge/main.py, bridge/foreman.py
+읽은 커밋: a511e6f
 -->
 
 # 12 CI/CD 인과 체인
@@ -302,9 +302,9 @@ FOREMAN이 클러스터 안이 아니라 호스트에 있다는 것도 이 편�
 
 ## 11. 지금 없는 것
 
-설계 문서의 구조 그림에는 받는 웹훅이 「GitLab, Jenkins, Harbor, ArgoCD」로 적혀 있다 [docs:00_design.md]. 실제와 다르다. GitLab은 돌고 있지 않고 원격 저장소는 GitHub 하나다. 커밋 단계는 GitLab 웹훅이 아니라 로컬 저장소 폴링(`git_commit`)이 맡는다 [code:migrations/0012_pipeline.sql]. GitHub에서 FOREMAN으로 오는 웹훅도 없다. 운영 도구가 바깥 인증 관문 뒤에 있어 GitHub가 직접 닿지 못하고, FOREMAN은 같은 서버의 로컬 저장소를 보면 되므로 필요하지 않다.
+설계 문서의 구조 그림은 받는 웹훅을 Jenkins, Harbor, ArgoCD 셋으로 적고 GitLab 길은 없다고 밝힌다 [docs:00_design.md]. 실제도 그렇다. GitLab은 돌고 있지 않고 원격 저장소는 GitHub 하나다. 커밋 단계는 웹훅이 아니라 로컬 저장소 폴링(`git_commit`)이 맡는다 [code:migrations/0012_pipeline.sql]. GitHub에서 FOREMAN으로 오는 웹훅도 없다. 운영 도구가 바깥 인증 관문 뒤에 있어 GitHub가 직접 닿지 못하고, FOREMAN은 같은 서버의 로컬 저장소를 보면 되므로 필요하지 않다.
 
-설계 문서의 「캐릭터가 작업을 마치고 파이프라인 구역으로 걸어간다」는 배송 담당 한 명의 모양으로 바뀌었다(9절) [docs:00_design.md]. 인프라 캐릭터 행은 DB에 프로젝트마다 있고 생존 폴링도 그 행을 기준으로 한다.
+설계 문서도 화면에서 캐릭터가 파이프라인 구역으로 걸어가지 않는다고 적는다. 방 아래쪽 출하 라인에서 세션 캐릭터가 일감을 넘기고 배송 담당 한 명이 지금 단계 앞으로 걸어간다(9절) [docs:00_design.md]. 인프라 캐릭터 행은 DB에 프로젝트마다 있고 생존 폴링도 그 행을 기준으로 한다.
 
 알려진 한계도 적어 둔다.
 

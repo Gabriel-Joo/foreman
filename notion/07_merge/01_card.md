@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/mergeprep.py, bridge/docrefs.py, tools/docs.py, bridge/doctext/config.py, bridge/inspector_close.py, bridge/coder_room.py, bridge/api/coder.py, bridge/static/js/coder.js, bridge/static/js/handoff.js, migrations/0032_merge_card.sql, tests/js/coder.test.mjs, tests/js/mergeprep.test.mjs, tests/test_mergeprep.py, tests/test_mergeprep_check.py, tests/test_mergeprep_db.py, tests/test_merge_remind_catchup.py, tests/test_docs_tool.py, tests/test_docs_config.py, tests/test_docrefs_config.py
+다루는 곳: bridge/mergeprep.py, bridge/docrefs.py, tools/docs.py, bridge/doctext/config.py, bridge/inspector_close.py, bridge/coder_room.py, bridge/api/coder.py, bridge/static/js/coder.js, bridge/static/js/handoff.js, migrations/0032_merge_card.sql, tests/js/coder.test.mjs, tests/js/mergeprep.test.mjs, tests/test_mergeprep.py, tests/test_mergeprep_check.py, tests/test_mergeprep_db.py, tests/test_merge_remind_catchup.py, tests/test_merge_wait.py, tests/test_merge_wait_manager.py, tests/test_merge_wait_off_remind.py, tests/js/merge_wait_manager.test.mjs, tests/test_docs_tool.py, tests/test_docs_config.py, tests/test_docrefs_config.py
 읽은 커밋: b89b3b6
 -->
 

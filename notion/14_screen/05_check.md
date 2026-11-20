@@ -1,5 +1,5 @@
 <!--
-다루는 곳: tools/screen.py, tools/frames_to_gif.py, tools/demo_from_db.py, bridge/static/js/demo.js, bridge/static/demo/, tests/screen_words.py, tests/test_screen_words.py, tests/data/screen_words.toml, tests/data/gif_probe.py, tests/data/gif_probe_lossy.py, tests/test_frames_to_gif.py, tests/js/merge_wait.test.mjs, tests/js/merge_wait_manager.test.mjs, tests/js/overhead_marks.test.mjs, tests/test_merge_wait.py, tests/test_merge_wait_manager.py, tests/test_merge_wait_off_remind.py, tests/test_overhead_marks.py
+다루는 곳: tools/screen.py, tools/frames_to_gif.py, tools/demo_from_db.py, bridge/static/js/demo.js, bridge/static/demo/, tests/screen_words.py, tests/test_screen_words.py, tests/data/screen_words.toml, tests/data/gif_probe.py, tests/data/gif_probe_lossy.py, tests/test_frames_to_gif.py, tests/js/merge_wait.test.mjs
 읽은 커밋: a66acc5
 -->
 # 화면 점검과 시연
