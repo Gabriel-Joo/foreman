@@ -52,11 +52,12 @@ export class Store {
        conn:      { status: 'idle'|'connecting'|'up'|'down'|'auth', since, attempt, nextIn, reason }
        projects:  [{ name, label, sessionIds: [id…] }]       프로젝트 순서 · 세션 순서(스냅샷 기준)
        sessions:  Map<id, session>                            session은 /api/dashboard의 세션 + feed · replyPreview
-       approvals: Map<id, approval>                           대기 중 + 막 끝난 것(status, 30초 뒤 사라짐)
+       approvals: Map<id, approval>                           대기 중 + 답한 것(status). 답한 것은 그 세션 패널에 접힌 줄로 남고 세션마다 FOLD_KEEP개까지
        selected:  세션 id | null
        convo:     Map<id, { turns, loading, error }>
        generatedAt, hiddenDormant, lastInput: { sessionId, text, ok, ts }
-       ver:       { grid, approvals, panel, conn } — 영역별로 바뀌면 1씩 늘어난다(그리는 쪽이 그 영역만 다시 그린다) */
+       terminal, pipeline                                     셸 패널, 파이프라인(아래 칸 주석)
+       ver:       { grid, approvals, panel, conn, term, pipe }. 영역별로 바뀌면 1씩 늘어난다(그리는 쪽이 그 영역만 다시 그린다) */
     this.state = {
       conn: { status: 'idle', since: null, attempt: 0, nextIn: 0, reason: '' },
       projects: [], sessions: new Map(), approvals: new Map(), selected: null, convo: new Map(),

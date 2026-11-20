@@ -4,7 +4,8 @@
        "set"(인프라 전환 동안만)은 원고와 docs가 하나, 포트폴리오끼리 하나
     2. 다루는 곳: 적힌 파일, 폴더, 글롭이 있다(files_at 판)
     3. 근거 표시: 쓸 수 있는 종류(check.kinds), 커밋이 있다, 파일이 있고 줄 범위가 맞다(files_at 판), 턴 번호는 숫자
-    4. 덮기: 문서 묶음과 기록 밖 추적 파일 하나하나가 check.cover_by 묶음 어느 편의 다루는 곳에 든다
+    4. 덮기: 문서 묶음과 기록 밖 추적 파일 하나하나가 check.cover_by 묶음 어느 편의 다루는 곳에 든다.
+       시험 파일(check.tests 무늬)은 다루는 곳에 들지 않아도 덮은 것으로 친다(11-20)
     5. 편 사이 참조: → 「제목」이 같은 묶음(check.xref면 그 묶음) 편 하나의 첫 # 줄과 같다
        「」 없이 쓴 참조(→ 07 합치기, 「→ 포스트잇」. 판정은 `titles.bare_xrefs`)는 check.xref_base 뒤에 더하거나 고친 줄만 틀림이고
        옛 줄은 의심이다(줄표 검사와 같은 새 줄, `dashdot.new_doc_rows`). 칸이 없으면 모두 의심으로 세고 notes에 알린다
@@ -414,7 +415,7 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
                     suspects.append({"doc": p, "line": i, "what": "숫자나 인용이 있는데 근거 표시가 없습니다"})
 
     # 4. 덮기
-    cover = {"target": 0, "covered": 0}
+    cover = {"target": 0, "covered": 0, "tests": 0}
     if ck.cover_by:
         r0 = (reads.get("main") or [None])[0] if cfg.read_commit == "set" and ck.files_at == "read" else None
         files = sorted(GitView(repo, r0).files) if r0 and len(reads.get("main", [])) == 1 else (
@@ -441,7 +442,11 @@ def run(repo: str, rev: str | None, cfg: DocsConfig, sets: dict[str, str],
                 h = heads.get(p) or parse_head(bodies.get(p) or read_many(repo, rev, [p]).get(p, ""), ck.head_at) or {}
                 for c in h.get("covers", []):
                     covered.update(cover_matches(c, target_files))
-        cover = {"target": len(target_files), "covered": len(covered)}
+        # 시험 파일은 어느 편의 다루는 곳에 들지 않아도 덮은 것으로 친다(11-20 사용자 결정). 본문이 설명하지 않는 시험 파일이 이 검사
+        # 때문에 다루는 곳에 남아 있었다. 다루는 곳에 든 시험 파일은 그대로 세고, 따로 센 수(tests)는 결과 줄에 보인다
+        tests = {f for f in target_files if f not in covered and not_code_match(f, ck.tests)}
+        covered |= tests
+        cover = {"target": len(target_files), "covered": len(covered), "tests": len(tests)}
         for f in target_files:
             if f not in covered:
                 err(None, None, f"덮기 밖: {f}가 {', '.join(ck.cover_by)} 어느 편의 {COVERS}에도 들지 않습니다")
@@ -524,7 +529,8 @@ def render(res: dict[str, Any], verbose: bool = False) -> str:
     sets = ", ".join(f"{k} {n}" for k, n in res["sets"].items())
     reads = "; ".join(f"{k} {len(v)}가지" for k, v in res["reads"].items())
     out.append(f"편 {sum(res['sets'].values())}({sets}), 근거 표시 {res['marks']}, 읽은 커밋 {reads or '없음'}, "
-               f"덮기 대상 파일 {res['cover']['target']} 가운데 {res['cover']['covered']} 덮음")
+               f"덮기 대상 파일 {res['cover']['target']} 가운데 {res['cover']['covered']} 덮음"
+               + (f"(다루는 곳 없이 덮은 것으로 친 시험 파일 {res['cover']['tests']})" if res['cover'].get('tests') else ""))
     dd = res.get("dashdot") or {}
     if dd.get("ran"):
         out.append(f"줄표, 가운뎃점 검사: 기준 커밋 {dd['base'][:10]} 뒤 새 줄에서 {dd['hits']}건")

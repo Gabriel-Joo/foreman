@@ -352,7 +352,7 @@ export function mountHandoff(el, store,{ open: open0 = false, onToggle } = {}) {
       ...f.bad.map((b) => `<div class="small bad">✗ ${esc(f.path)}:${b.line} <code>${esc(b.mark)}</code>: ${esc(b.why)}</div>`),
       ...f.unsupported.slice(0, 8).map((u) => `<div class="small muted">? ${esc(f.path)}:${u.line} ${esc(u.text)}</div>`),
     ].join('')).join('');
-    return `<div class="small" title="근거 확인 — 서기 글의 [c:커밋] · [log:파일] · [docs:파일] · [t:턴]이 실제로 있는지 기계로 봅니다. 근거 없는 줄은 숫자 · 인용이 있는데 근거 표시가 없는 줄입니다(의심).">${head}</div>
+    return `<div class="small" title="근거 확인 — 서기 글의 [c:커밋] · [t:턴] · [log:파일] · [docs:파일] · [code:경로] · [repo:파일]이 실제로 있는지 기계로 봅니다. 근거 없는 줄은 숫자 · 인용이 있는데 근거 표시가 없는 줄입니다(의심).">${head}</div>
       ${rows ? `<details${keep(`hand:${sid}:review`, !!rv.bad)}><summary class="small muted">자세히</summary>${rows}</details>` : ''}`;
   }
 

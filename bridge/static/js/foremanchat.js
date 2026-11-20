@@ -9,6 +9,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const MODE = { new: '새로 시작', handoff: '옮기기용 요약 넣고 시작', attach: '살아 있는 세션에 보내기', ask: '되묻기(시작하지 않음)' };
 const OPK = { add: '더하기', update: '바꾸기', retire: '내리기', touch: '아직 맞음' };
 import { ROLE_PICK as ROLE, bindRoleModel, modelOptions } from './modelpick.js';
+import { MOVE_TIP } from './moveflow.js';
 
 // 감독실 캐릭터 이름 — 테마마다(오피스 팀장 · 마법학교 교장 · 현장 소장 · 기본 디스패처)
 export const fmName = () => (window.office && window.office.theme && window.office.theme.foreman && window.office.theme.foreman.name) || '감독';   // 화면엔 "디스패처"를 쓰지 않는다(11-09)
@@ -77,7 +78,7 @@ function mount(dlg) {
     <div class="row fm-row"><button type="button" id="fmAsk" class="primary">계획 받기</button></div>
     <div id="fmMsg" class="fm-status" hidden></div>
     <div id="fmPlan" class="fm-plan" hidden></div>
-    <div id="fmHand" class="fm-hand" hidden></div>`;
+    <div id="fmMove" class="fm-hand" hidden></div>`;
   h2.after(fm, manual);
   const $ = (id) => box.querySelector('#' + id);
   let disp = null, opts = null, room = null;
@@ -102,17 +103,19 @@ function mount(dlg) {
   function drawHand() {
     const st = window.foreman && window.foreman.state;
     const ss = !room || !st ? [] : [...st.sessions.values()].filter((s) => s.project === room && s.state !== 'DORMANT' && s.injectable);
-    $('fmHand').hidden = !ss.length;
-    if (!ss.length) { $('fmHand').innerHTML = ''; return; }
-    const tip = window.foremanHandoffTip || '새 세션으로 옮기기 — 지금까지를 요약해 보여 드리고, 확인하면 새 세션을 띄워 요약을 넣은 뒤 이 세션을 끝냅니다.';
-    $('fmHand').innerHTML = `<div class="small muted">이 방 세션을 새 세션으로 옮기기</div>` + ss.map((s) => {
+    $('fmMove').hidden = !ss.length;
+    if (!ss.length) { $('fmMove').innerHTML = ''; return; }
+    const tip = window.foremanHandoffTip || MOVE_TIP;     // 패널(opanel.js)이 아직 안 떴어도 같은 호버(11-20, 옛 흐름 글이 남아 있었다)
+    $('fmMove').innerHTML = `<div class="small muted">이 방 세션을 새 세션으로 옮기기</div>` + ss.map((s) => {
       const k = s.context && s.context.tokens ? Math.round(s.context.tokens / 1000) : null;
       const lv = s.context && s.context.level;
       return `<div class="fm-hand-row"><span class="small">${esc(s.custom_title || s.title || s.short)}${k != null ? ` · <span class="${lv === 'late' ? 'bad' : lv ? 'warn' : 'muted'}">맥락 ${k}k</span>` : ''}</span>
         <button type="button" class="small" data-hand="${s.id}" title="${esc(tip)}">새 세션으로 옮기기</button></div>`;
     }).join('');
   }
-  $('fmHand').addEventListener('click', (ev) => {
+  // 11-20 이 목록의 id는 fmMove다. 계획 카드의 [관리자에게 보내기](fmHand)와 같은 id를 쓰던 때는 카드가 떠 있으면 그 id로 찾을 때
+  // 먼저 나오는 카드 단추가 잡혀, 목록이 단추 안에 그려지고 [새 세션으로 옮기기]가 조용히 듣지 않았다
+  $('fmMove').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-hand]');
     if (!b || !window.foremanHandoff) return;
     dlg.classList.remove('on');

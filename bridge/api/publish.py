@@ -1,4 +1,5 @@
-"""/api/publish — Notion 게시(12c, 11-06, bridge/notion.py). [게시] 버튼으로만 부른다. API 토큰이 필요하다."""
+"""/api/publish: Notion 게시(12c, 11-06, bridge/notion.py). 서기실 [Notion에 올리기]와 덮기 단추, 다른 프로젝트 관리자의 한 편 게시가
+부른다. API 토큰이 필요하다."""
 
 from __future__ import annotations
 
@@ -43,7 +44,7 @@ def _halted(p: Any) -> JSONResponse | None:
 
 @router.get("/publish")
 async def publish_list(request: Request, project: str = "foreman") -> dict[str, Any]:
-    """게시 상태 읽기. ?project= 없으면 FOREMAN(서기 화면 [게시] — 지금까지와 같음). 프로젝트 토큰은 자기 프로젝트만(scopetoken)."""
+    """게시 상태 읽기. ?project= 없으면 FOREMAN(서기 화면 포트폴리오 편 목록, 지금까지와 같음). 프로젝트 토큰은 자기 프로젝트만(scopetoken)."""
     if project == "foreman":
         p = getattr(request.app.state, "publisher", None)
     else:
@@ -74,7 +75,8 @@ async def forget_repo_config(request: Request, project: str) -> JSONResponse:
     if cfg is None:
         raise HTTPException(503, getattr(request.app.state, "publisher_off", None) or "Notion 게시가 꺼져 있습니다")
     pub = (getattr(request.app.state, "publishers", None) or {}).get(project)
-    lock = getattr(getattr(request.app.state, "docsync", None), "_lock", None)
+    ds = getattr(request.app.state, "docsync", None)
+    lock = ds.lock(project) if ds is not None else None
     if lock is not None:
         async with lock:                              # 맞추기 도중에 칸이 바뀌지 않게
             had = cfg.forget(project, pub)
@@ -125,7 +127,7 @@ async def publish_do(body: PublishIn, request: Request) -> JSONResponse:
         return stop
     when = (datetime.now(UTC) + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M KST")
     ds = getattr(request.app.state, "docsync", None)
-    # 11-20 묶음(기술문서 원고 폴더, portfolio/)에 든 편은 한 편 게시도 묶음 게시와 같은 함수(docsync.sync)로 간다. 한 잠금 안에서
+    # 11-20 묶음(기술문서 원고 폴더, portfolio/)에 든 편은 한 편 게시도 묶음 게시와 같은 함수(docsync.sync)로 간다. 프로젝트 잠금 안에서
     # 돌아 잇달아 눌러도 같은 페이지에 두 요청이 함께 쓰지 않고, 멈춤 줄, 「마지막으로 올림」, 텔레그램이 같은 자리에 남는다
     group = dsm.PORT if body.action == "docsync" and body.path.startswith(dsm.PORT) else (
         dsm.src_of(p) if body.action == "docsync" else dsm.group_of(p, body.path) if body.action == "publish" else None)
@@ -138,12 +140,16 @@ async def publish_do(body: PublishIn, request: Request) -> JSONResponse:
         if group != dsm.PORT and p.docs_mode == "off":
             return JSONResponse({"refused": f"{body.project}는 기술문서 게시가 꺼져 있습니다(config/notion.toml docs)"}, status_code=409)
         force = {body.path} if body.force else frozenset()
-        if body.action == "docsync":
-            r = await ds.run_one(body.project, force, src=group)
-            # warnings: 링크로 못 바꾼 「→ 「제목」」(없는 제목, 겹치는 제목, 끝내 안 올라간 편, 11-17)
-            return JSONResponse({"action": "docsync", "src": group, **{k: r[k] for k in ("done", "held", "failed")},
-                                 "warnings": r.get("warnings", [])})
-        return _one_reply(body, await ds.run_one(body.project, force, src=group, only={body.path}))
+        try:
+            # 11-20 같은 프로젝트의 다른 게시가 돌면 API_WAIT_S초만 기다린다. 넘으면 무엇이 몇 초째 도는지 409로(부른 쪽이 끊기 전에)
+            if body.action == "docsync":
+                r = await ds.run_one(body.project, force, src=group, wait=dsm.API_WAIT_S)
+                # warnings: 링크로 못 바꾼 「→ 「제목」」(없는 제목, 겹치는 제목, 끝내 안 올라간 편, 11-17)
+                return JSONResponse({"action": "docsync", "src": group, **{k: r[k] for k in ("done", "held", "failed")},
+                                     "warnings": r.get("warnings", [])})
+            return _one_reply(body, await ds.run_one(body.project, force, src=group, only={body.path}, wait=dsm.API_WAIT_S))
+        except dsm.Busy as e:
+            return JSONResponse({"refused": str(e), "busy": {"what": e.what, "for_s": int(e.waited)}}, status_code=409)
     try:
         if body.action == "move" and not body.section:
             return JSONResponse({"refused": "옮길 묶음 페이지 이름이 없습니다"}, status_code=409)
@@ -190,4 +196,8 @@ def _one_reply(body: PublishIn, r: dict[str, Any]) -> JSONResponse:
             return JSONResponse({"refused": f"Notion이 거부했습니다: {fail['error']}"}, status_code=502)
         return JSONResponse({"refused": fail["error"]}, status_code=409)
     done = next((d for d in r["done"] if d["path"] == body.path), {"path": body.path, "action": "unchanged"})
-    return JSONResponse({**done, "warnings": warns})
+    # 11-20 그 편을 기다리던 편을 다시 이은 것(relinked)과 그 편 밖의 멈춤, 실패(차례 세우기 등)도 함께 보인다. 조용히 묻히지 않게
+    others = {"done": [d for d in r["done"] if d["path"] != body.path],
+              "held": [{"path": h["path"], "count": h.get("count")} for h in r["held"] if h["path"] != body.path],
+              "failed": [f for f in r["failed"] if f["path"] != body.path]}
+    return JSONResponse({**done, "warnings": warns, **({"others": others} if any(others.values()) else {})})

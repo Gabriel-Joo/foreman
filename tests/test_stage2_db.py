@@ -1270,7 +1270,7 @@ async def test_notion_publish_update_unchanged_archive_and_scope(env, tmp_path):
     fake.pages[p1["page_id"]]["parent"] = oldsec
     await pub._save("portfolio/01_loss.md", parent_page_id=oldsec, title="압축 손실")
     again = await pub.publish("portfolio/01_loss.md")
-    assert again["action"] == "unchanged" and fake.pages[p1["page_id"]]["parent"] == "root"   # 내용이 같아도 옮기고
+    assert again["action"] == "retitled" and fake.pages[p1["page_id"]]["parent"] == "root"    # 내용이 같아도 옮기고(제목만 바뀜, 11-20)
     assert fake.pages[p1["page_id"]]["title"] == "01 압축 손실"                               # 제목도 고친다
     assert (await pub.archive_section("포트폴리오"))["action"] == "archived"                  # 비었으니 내린다
     with pytest.raises(nt.OutOfScope):

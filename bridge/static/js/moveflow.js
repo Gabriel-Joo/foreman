@@ -80,7 +80,7 @@ export function lossNote(lc) {
   if (o === 'found') return { tone: 'ok', msg: `잊은 것 찾기: 잊은 것 ${lc.lost_total}개를 찾아 문서 후보를 물을 때 같이 넣었습니다.` };
   if (o === 'clean') return { tone: 'ok', msg: '잊은 것 찾기: 끝까지 찾았고 잊은 것이 없습니다.' };
   if (o === 'nothing') return { tone: 'muted', msg: '잊은 것 없음' };   // 11-14 사용자 — 줄은 남기고 글만 짧게
-  if (o === 'partial') return { tone: 'warn', msg: `잊은 것 찾기가 일부만 끝났습니다${why}. ${lc.lost_total ? `찾은 ${lc.lost_total}개만 같이 넣었습니다` : '찾은 것은 없지만 「없음」은 아닙니다'}. 「옮기기 전 정리」에서 다시 찾을 수 있습니다.` };
+  if (o === 'partial') return { tone: 'warn', msg: `잊은 것 찾기가 일부만 끝났습니다${why}. ${lc.lost_total ? `찾은 ${lc.lost_total}개만 같이 넣었습니다` : '찾은 것은 없지만 「없음」은 아닙니다'}. 흐름은 그대로 이어 갑니다. 다시 찾으려면 [멈추기]를 누른 뒤 [세션 정리] 탭 「옮기기 전 정리」에서 찾습니다.` };
   if (o === 'failed') return { tone: 'bad', msg: `잊은 것 찾기가 실패했습니다${why}. 그 결과 없이 문서 후보를 물었습니다.` };
   return null;
 }

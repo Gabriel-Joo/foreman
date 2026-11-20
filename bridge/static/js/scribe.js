@@ -1,7 +1,7 @@
 // 서기실 창(12a, 11-06) — 서기를 누르면 패널에 뜬다. D2(11-11)에 한 목록으로 정리했다:
 //   물어보기 · 할 일 한 목록(밀린 수는 줄 옆, 받은 할 일은 숫자만) · 포트폴리오 쓰기(11-15: 글 N편 가운데 코드가 바뀐 편 M + [갱신])
 //   · 포트폴리오 게시 / 기술문서 게시(둘로 나눔, 접힘 기본 — 접은 채 숫자만).
-// 시킬 일은 worktree 서기 세션을 띄운다(합치기가 사람의 검토). Notion 게시는 세션 없이 [게시] 버튼(bridge/notion.py).
+// 시킬 일은 worktree 서기 세션을 띄운다(합치기가 사람의 검토). Notion 게시는 세션 없이 [Notion에 올리기](bridge/docsync.py, bridge/notion.py).
 // 조용한 고장 금지: 못 읽은 수는 0이 아니라 「읽지 못했습니다」로 보인다.
 
 import { esc, ago, keep, keepSet } from './render.js';
@@ -467,12 +467,13 @@ export function createScribe(store) {
     const warnTxt = warns.length ? ` 링크로 못 바꾼 참조 ${warns.length}: ${warns[0]}` : '';
     if (r.ok && j.action === 'docsync') {
       const arch = j.done.filter((x) => x.action === 'archived').length;
+      const gone = j.done.filter((x) => x.action === 'gone').length;     // 11-20 사람이 Notion에서 이미 지운 페이지(기록만 맞춤)
       note = { bad: !!(j.held.length || j.failed.length || warns.length),
-        msg: `${what}를 맞췄습니다: 올림 ${j.done.length - arch}${arch ? ` · 휴지통으로 ${arch}` : ''}${j.held.length ? ` · 사람이 고쳐 멈춤 ${j.held.length}` : ''}${j.failed.length ? ` · 실패 ${j.failed.length}(${j.failed[0].path})` : ''}${warns.length ? '.' : ''}${warnTxt}` };
+        msg: `${what}를 맞췄습니다: 올림 ${j.done.length - arch - gone}${arch ? ` · 휴지통으로 ${arch}` : ''}${gone ? ` · 이미 지운 페이지 ${gone}` : ''}${j.held.length ? ` · 사람이 고쳐 멈춤 ${j.held.length}` : ''}${j.failed.length ? ` · 실패 ${j.failed.length}(${j.failed[0].path})` : ''}${warns.length ? '.' : ''}${warnTxt}` };
       await load(true, room);
       return;
     }
-    note = r.ok ? { bad: !!warns.length, msg: ({ created: '새 페이지로 올렸습니다.', updated: '같은 페이지에 덮어썼습니다.', unchanged: '바뀐 것이 없어 건너뛰었습니다.', archived: '휴지통으로 보냈습니다.' }[j.action] || '마쳤습니다.') + warnTxt }
+    note = r.ok ? { bad: !!warns.length, msg: ({ created: '새 페이지로 올렸습니다.', updated: '같은 페이지에 덮어썼습니다.', retitled: '글은 같고 제목만 맞췄습니다.', unchanged: '바뀐 것이 없어 건너뛰었습니다.', archived: '휴지통으로 보냈습니다.' }[j.action] || '마쳤습니다.') + warnTxt }
       : { bad: true, msg: `${j.refused || j.detail || r.status}` };
     await load(true, room);
   }

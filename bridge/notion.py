@@ -407,13 +407,26 @@ class NotionClient:
         self._h = {"Authorization": f"Bearer {token}", "Notion-Version": VERSION, "Content-Type": "application/json"}
         self._c = httpx.AsyncClient(base_url=API, headers=self._h, timeout=30)
         self.gap = gap
+        # 11-20 요청 시작 간격을 부르는 쪽 모두에 걸쳐 한 줄로 세운다. 게시 잠금이 프로젝트마다 갈라져(bridge/docsync.py) 두 프로젝트가
+        # 함께 올릴 수 있는데, 클라이언트는 프로젝트끼리 하나라 부르는 쪽마다 따로 쉬면 초당 한도를 넘는다
+        self._pace = asyncio.Lock()
+        self._next = 0.0
 
     async def close(self) -> None:
         await self._c.aclose()
 
+    async def _wait_turn(self) -> None:
+        async with self._pace:
+            loop = asyncio.get_running_loop()
+            now = loop.time()
+            start = max(self._next, now)                 # 앞 요청 시작에서 gap이 지난 뒤
+            self._next = start + self.gap
+            if start > now:
+                await asyncio.sleep(start - now)
+
     async def _call(self, method: str, url: str, body: Any = None) -> dict[str, Any]:
         for attempt in range(4):
-            await asyncio.sleep(self.gap)
+            await self._wait_turn()
             r = await self._c.request(method, url, json=body)
             if r.status_code == 429 and attempt < 3:
                 await asyncio.sleep(float(r.headers.get("Retry-After", "1")))
@@ -515,6 +528,25 @@ class Scope:
             par = p.get("parent") or {}
             if par.get("type") != "page_id":
                 return False                       # 워크스페이스 · 데이터베이스 · 블록 아래 — 우리가 만들지 않는 자리
+            cur = norm(par["page_id"])
+        return False
+
+    async def gone(self, pid: str) -> bool:
+        """사람이 Notion에서 지운 페이지인가(11-20). 그 페이지가 없거나(404), 그 페이지나 루트까지의 윗 페이지가 휴지통에 있으면 True.
+        범위 밖으로 옮긴 것(지우지 않음)과 읽지 못한 것(권한, 5xx)은 False다. 지웠다고 짐작하지 않는다."""
+        cur = norm(pid)
+        for _ in range(self.max_depth):
+            if cur == self.root:
+                return False
+            try:
+                p = await self.c.page(cur)
+            except NotionError as e:
+                return e.status == 404
+            if p.get("archived") or p.get("in_trash"):
+                return True
+            par = p.get("parent") or {}
+            if par.get("type") != "page_id":
+                return False
             cur = norm(par["page_id"])
         return False
 
@@ -1244,6 +1276,27 @@ class Publisher:
             title = portfolio_title(path, title)
         return title if h1 else (planned or title)
 
+    def title_for(self, path: str, body: str) -> str:
+        """이미 짝이 있는 편을 올리면 붙을 제목(11-20). docsync.status가 포트폴리오의 「제목만 바뀜」을 가리는 데 쓴다.
+        포트폴리오 제목은 파일 번호를 붙이므로 글이 같아도 파일 이름만 바꾸면(`08_limits.md` → `09_limits.md`) 제목이 바뀐다.
+        지문(글)으로만 견주면 그 편이 「바뀌지 않음」으로 남아 게시기의 제목 맞추기까지 가지 못했다(펫퍼민트 「08 알려진 한계」)."""
+        ctx = self._ctx(path, "HEAD", links=not path.startswith(MANUSCRIPTS))
+        md_title, _ = md_to_blocks(body, ctx)
+        return self._title(path, md_title, None, ctx)
+
+    async def gone(self, path: str) -> bool:
+        """그 편의 짝 페이지를 사람이 Notion에서 지웠는가(없음, 휴지통). 짝이 없으면 False(11-20, Scope.gone)."""
+        row = await self._row(path)
+        if not row or row["status"] != "published" or not row["notion_page_id"]:
+            return False
+        return await self.scope.gone(row["notion_page_id"])
+
+    async def mark_gone(self, path: str) -> dict[str, Any]:
+        """사람이 Notion에서 지운 편의 게시 기록을 그에 맞게 바꾼다(status archived). Notion에는 쓰지 않는다(11-20).
+        error 칸에 누가 지웠는지 남겨, 게시기가 휴지통으로 보낸 행과 가를 수 있게 한다."""
+        await self._save(path, status="archived", error="원본이 사라졌고 Notion 페이지도 사람이 지웠습니다(휴지통 또는 없음)")
+        return {"path": path, "action": "gone"}
+
     async def reserve(self, path: str, title: str | None = None) -> bool:
         """새 편의 빈 페이지를 먼저 만들고 짝을 적는다(11-20). 묶음을 한 번에 올릴 때(docsync.sync) 글을 채우기 전에 모든 새 편의
         url이 생겨 「→ 「제목」」이 첫 게시에서 걸린다. 그래서 한 요청 안에서 같은 페이지에 두 번 쓰지 않는다(전에는 링크를 다시 걸려고
@@ -1389,12 +1442,14 @@ class Publisher:
                 if not self.keep_order and (portfolio or path.startswith(self.src)) and norm(row["parent_page_id"] or "") != want:
                     await self.c.move_page(pid, want)
                     await self._save(path, parent_page_id=want)
-                if not self.keep_title and row["title"] != title:
+                retitled = not self.keep_title and row["title"] != title
+                if retitled:
                     await self.c.set_title(pid, title)
                     await self._save(path, title=title)
                 if row["content_hash"] == digest:
-                    return {"path": path, "action": "unchanged", "page_id": pid, "url": row["url"], "commit": commit,
-                            "title": title, **xref}
+                    # 11-20 글은 같고 제목만 바꿨으면 retitled(「바뀐 것이 없어 건너뛰었습니다」로 보이지 않게)
+                    return {"path": path, "action": "retitled" if retitled else "unchanged", "page_id": pid, "url": row["url"],
+                            "commit": commit, "title": title, **xref}
                 if "shape" in self.keep_notion:
                     return {**await self._publish_shape(path, pid, row, blocks, commit, saved, title, force), **xref}
                 prev = None if force else self.prev_blocks(path, row)

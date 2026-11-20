@@ -34,7 +34,11 @@ class FakeDocSync:
     def __init__(self, pubs=None):
         self.calls, self.pubs = [], pubs or {}
 
-    async def run_one(self, name, force=frozenset(), src=None, only=None):
+    def lock(self, name):
+        import asyncio
+        return asyncio.Lock()
+
+    async def run_one(self, name, force=frozenset(), src=None, only=None, wait=None):
         if only is None:
             self.calls.append((name, set(force)))
             return {"done": [], "held": [], "failed": []}

@@ -245,7 +245,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception as e:  # noqa: BLE001 — 0021 전이면 표가 없다. 브리지는 뜬다
             log.warning("잃은 것 점검 정리 못 함: %s", type(e).__name__)
         # 11-06 — Notion 게시(12c). 토큰(.env.notion)이 없으면 꺼 두고 사유를 보인다. 토큰 값은 찍지 않는다
-        # 11-09 — 프로젝트마다 게시기 하나(root · [기술문서] · [포트폴리오]). FOREMAN 것은 app.state.publisher로도(서기 화면의 [게시])
+        # 11-09 프로젝트마다 게시기 하나(root, [기술문서], [포트폴리오]). FOREMAN 것은 app.state.publisher로도(서기 화면 포트폴리오 편 목록)
         app.state.publisher, app.state.publisher_off, app.state.publishers, app.state.docsync = None, None, {}, None
         docsync_task = None
         root_dir = Path(__file__).resolve().parent.parent

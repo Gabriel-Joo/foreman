@@ -77,7 +77,7 @@ def foreman(tmp_path):
 def test_foreman_default_clean(foreman):
     res = run(foreman)
     assert res["errors"] == [] and res["sets"] == {"notion": 2, "portfolio": 1}
-    assert res["cover"] == {"target": 3, "covered": 3}                       # bridge/a.py, b.py, .foreman/notion.toml. docs/, log/, 원고 밖만
+    assert res["cover"] == {"target": 3, "covered": 3, "tests": 0}           # bridge/a.py, b.py, .foreman/notion.toml. docs/, log/, 원고 밖만
     assert res["reads"]["piece"] and res["marks"] == 6                         # 울타리 안은 세지 않는다(FOREMAN)
 
 
@@ -94,6 +94,28 @@ def test_cover_skips_not_code(foreman):
     assert not any("assets/" in x or "skip.txt" in x for x in w)             # 글롭, 경로, 확장자로 빠짐
     assert any("static/keep.txt" in x and "덮기 밖" in x for x in w)         # 안 든 파일은 그대로 덮기 밖
     assert any("CLAUDE.md" in x and "덮기 밖" in x for x in w)               # .md는 not_code에 있어도 덮기 대상에 남는다
+
+
+def test_cover_counts_test_files_without_covers(foreman):
+    """시험 파일은 어느 편의 다루는 곳에 들지 않아도 덮은 것으로 친다(11-20 사용자 결정). 네 저장소 자리를 기본 무늬가 덮는다."""
+    tests = ["tests/test_a.py", "tests/js/b.test.mjs", "chatbot/tests/test_c.py", "backend/src/test/java/X.java",
+             "conftest.py", "web/d.spec.ts"]
+    for t in tests:
+        put(foreman, t, "x\n")
+    put(foreman, "bridge/c.py", "y\n")                                       # 시험이 아닌 파일은 그대로 덮기 밖
+    commit(foreman)
+    res = run(foreman)
+    w = whats(res)
+    assert not any(t in x for t in tests for x in w)
+    assert any("bridge/c.py" in x and "덮기 밖" in x for x in w)
+    assert res["cover"] == {"target": 10, "covered": 9, "tests": 6}
+    assert "다루는 곳 없이 덮은 것으로 친 시험 파일 6" in ck.render(res)
+    # 저장소가 빈 목록을 적으면 시험 파일도 다른 파일처럼 다룬다
+    put(foreman, ".foreman/docs.toml", "[check]\ntests = []\n")
+    commit(foreman)
+    w = whats(run(foreman))
+    assert any("tests/js/b.test.mjs" in x and "덮기 밖" in x for x in w)
+    assert dcfg.parse("[check]\ntests = [\"qa/*\"]\n").check.tests == ["qa/*"]
 
 
 def test_cover_skips_generated_readme(foreman):
@@ -211,7 +233,7 @@ def test_infra_clean(infra):
     res = run(infra)
     assert res["errors"] == [] and res["sets"] == {"notion": 1, "portfolio": 1, "docs": 1}
     assert res["reads"] == {"main": [res["reads"]["main"][0]], "portfolio": [res["reads"]["main"][0]]}
-    assert res["cover"] == {"target": 2, "covered": 2}
+    assert res["cover"] == {"target": 2, "covered": 2, "tests": 0}
 
 
 def test_infra_rules(infra):

@@ -66,15 +66,16 @@ def test_clean_branch_counts_zero(tmp_path):
 
 
 def test_new_error_is_counted_and_shown(tmp_path):
-    """새 파일이 어느 편의 다루는 곳에도 안 들면(535가 test_docsync_last.py에서 본 일) 그 브랜치에서 바로 보인다."""
+    """새 파일이 어느 편의 다루는 곳에도 안 들면(535가 test_docsync_last.py에서 본 일) 그 브랜치에서 바로 보인다.
+    11-20부터 시험 파일은 다루는 곳 없이 덮은 것으로 치므로(check.tests) 보기는 시험이 아닌 파일이다."""
     r, _ = make(tmp_path)
     branch(r)
-    put(r, "tests/test_new.py", "x\n")
+    put(r, "bridge/new.py", "x\n")
     commit(r)
     back(r)
     c = mp.doc_check(str(r), "main", "cc/w")
     assert (c["total"], c["new"], c["old"]) == (1, 1, 0)
-    assert "덮기 밖: tests/test_new.py" in c["lines"][0]
+    assert "덮기 밖: bridge/new.py" in c["lines"][0]
     assert mp.check_line(c) == "문서 점검, 이 브랜치로 새로 생긴 틀린 것 1" and mp._check_bad(c)
 
 
@@ -85,12 +86,12 @@ def test_old_errors_are_split_from_new(tmp_path):
     commit(r, "원래 틀림")
     branch(r)
     put(r, "notion/01_a.md", head("bridge/a.py, .foreman/", c0) + "# 01 가\n\n앞에 한 줄 더.\n\n두 줄이다 [code:bridge/a.py:1-2]. 없다 [code:bridge/none.py].\n")
-    put(r, "tests/test_new.py", "x\n")
+    put(r, "bridge/new.py", "x\n")
     commit(r)
     back(r)
     c = mp.doc_check(str(r), "main", "cc/w")
     assert (c["total"], c["new"], c["old"]) == (2, 1, 1)
-    assert "tests/test_new.py" in c["lines"][0]
+    assert "bridge/new.py" in c["lines"][0]
     assert mp.check_line(c) == "문서 점검, 이 브랜치로 새로 생긴 틀린 것 1, 원래 있던 것 1"
 
 
@@ -123,7 +124,7 @@ def test_lines_are_capped_but_count_is_full(tmp_path):
     r, _ = make(tmp_path)
     branch(r)
     for i in range(mp.CHECK_SHOW + 3):
-        put(r, f"tests/test_n{i}.py", "x\n")
+        put(r, f"bridge/n{i}.py", "x\n")
     commit(r)
     back(r)
     c = mp.doc_check(str(r), "main", "cc/w")

@@ -2,7 +2,7 @@
 
 시킬 일은 아래 TASKS 한 곳이다(11-17 기준 문서 점검, 문서 고치기, CLAUDE.md 정리, 알려진 한계 쓰기, 포트폴리오 쓰기, 기술문서 쓰기,
 Notion 게시). 회고 쓰기와 README 갱신은 11-15에 뺐다(docs/12_scribe.md 「0.」).
-Notion 게시는 세션 없이 [게시] 버튼(bridge/notion.py)이고, 나머지는 서기 세션을 worktree로 띄운다. 합치기가 사람의 검토 관문이다.
+Notion 게시는 세션 없이 [Notion에 올리기] 단추(bridge/docsync.py, bridge/notion.py)이고, 나머지는 서기 세션을 worktree로 띄운다. 합치기가 사람의 검토 관문이다.
 할 일(docs/12_scribe.md 「2. 언제 일하나」 2): 기계로 센다 — 서기 머리 위 "할 일 N", 누르면 목록. 자동으로 돌리지는 않는다.
 다른 저장소(런슈즈 · 펫퍼민트)는 읽기만 하고, 일은 사람이 그 방 서기를 눌렀을 때만 띄운다(그 저장소의 CLAUDE.md를 따르게 한다).
 """
@@ -34,11 +34,11 @@ TASKS = {
     # 메뉴에는 없다(화면 ORDER 밖) — 물어보기 답 · 문서 점검 결과의 [바로 고치기]에서만 뜬다(D2, 11-11)
     "docfix": {"title": "문서 고치기", "desc": "물어보기 답이나 문서 점검 결과에 적힌 어긋남을 고칩니다."},
     # 11-15 화면 축 — 정해진 주제 목록(config/portfolio.toml)을 없앴다. 편 목록은 portfolio/ 폴더 파일과 머리 주석이 정한다
-    "portfolio": {"title": "포트폴리오 쓰기", "desc": "보여줄 화면이 있으면 화면마다, 없으면 결정마다 편 목록을 정해 비개발자도 읽을 글을 portfolio/에 씁니다. 게시는 [게시] 버튼으로 합니다."},
+    "portfolio": {"title": "포트폴리오 쓰기", "desc": "보여줄 화면이 있으면 화면마다, 없으면 결정마다 편 목록을 정해 비개발자도 읽을 글을 portfolio/에 씁니다. 게시는 [Notion에 올리기]로 합니다."},
     # 11-15 노션 기술문서 — 서기 세션 하나가 목차를 정하고 편마다 서브에이전트가 notion/ 원고를 쓴다. 메뉴에는 원고 폴더가 notion/인
     # 프로젝트만 보인다(todo의 techdoc). 게시는 사람이 [Notion에 올리기]
     "techdoc": {"title": "기술문서 쓰기", "desc": "코드를 읽고 notion/ 원고를 통으로 씁니다. 목차는 서기가 정하고 편마다 서브에이전트가 씁니다. 게시는 [Notion에 올리기]로 합니다."},
-    "publish": {"title": "Notion 게시", "desc": "포트폴리오와 기술문서를 Notion에 올립니다. 세션 없이 [게시] 버튼으로 합니다."},
+    "publish": {"title": "Notion 게시", "desc": "포트폴리오와 기술문서를 Notion에 올립니다. 세션 없이 [Notion에 올리기]로 합니다."},
 }
 PORTFOLIO_DIR = "portfolio/"   # 이 폴더가 있는 저장소만 「포트폴리오 쓰기」를 보인다(11-15 전에는 config/portfolio.toml)
 TECHDOC_DIR = "notion/"        # 기술문서 원고 폴더(게시기 src가 이것인 프로젝트만 「기술문서 쓰기」)
@@ -243,7 +243,7 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
         docs_pub: dict[str, Any] | None = None
         pub_error: str | None = None
         if (pub := publishers.get(name)) is not None:
-            # 11-09 런슈즈 요청 3-1 — 파일마다 한 줄이던 것을 묶음마다 한 줄로. 포트폴리오는 사람이 [게시](바깥 독자에게 내는 글)
+            # 11-09 런슈즈 요청 3-1 — 파일마다 한 줄이던 것을 묶음마다 한 줄로. 포트폴리오는 사람이 [Notion에 올리기](바깥 독자에게 내는 글)
             # D2: Notion이 꺼져 있어도 다른 할 일은 센다 — 다만 삼키지 않고 pub_error로 내려 화면이 「읽지 못했습니다」를 보인다
             # 11-17 포트폴리오도 프로젝트마다(전에는 FOREMAN만). 따로 잡아 포트폴리오를 못 읽어도 기술문서 줄은 남는다
             # 11-20 포트폴리오 게시도 기술문서와 같은 함수(bridge/docsync.py, 묶음 PORT)로 센다. 뒤처짐 한 줄, 멈춘 편 덮기 줄,
@@ -658,7 +658,7 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
 
 쓰는 법(기준은 위 「원고 쓰는 기준」)
 - 코드에서 지금 상태를, docs/와 log/에서 까닭을 본다. 코드와 다르게 쓰지 않는다
-- 근거는 근거 표시로만 단다: `[code:경로]` `[c:해시]` `[log:파일]` `[docs:파일]`. 노션 판에서는 떼어지고 git 원고에만 남는다. `[t:턴]`은 쓰지 않는다
+- 근거는 근거 표시로만 단다: `[code:경로]` `[c:해시]` `[log:파일]` `[docs:파일]` `[repo:파일]`(맨 위 문서, 예: CLAUDE.md). 노션 판에서는 떼어지고 git 원고에만 남는다. `[t:턴]`은 쓰지 않는다
 - 독자에게 뜻 없는 것(서버 IP, `/home/…`, 포트, tmux 이름)은 쓰지 않는다
 - 구조는 ```mermaid 블록으로 그려도 된다(Notion에 코드로 올라가고 사람이 한 번 미리보기로 바꾼다)
 - 커밋 메시지: CLAUDE.md 「커밋 메시지」 꼴(예: `docs: 서기실 화면 포트폴리오를 씀`)""" + (
@@ -717,7 +717,7 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
 쓰는 법(기준은 위 「원고 쓰는 기준」)
 - 노션 화면에서 보기 좋게 소제목과 표를 쓰되 설명은 문단으로 쓴다. 실제 명령어, 설정 값, 수치를 넣는다
 - 코드에서 지금 상태를, docs/와 log/에서 까닭을 본다. 둘 다 본다. 코드 전체를 읽어도 된다. 코드와 다르게 쓰지 않는다
-- 근거는 근거 표시로만 단다: `[code:경로]` `[c:해시]` `[log:파일]` `[docs:파일]`. 노션 판에서는 떼어지고 git 원고에만 남는다. 합치기 전에 근거 확인기가 그 경로, 커밋이 있는지 본다
+- 근거는 근거 표시로만 단다: `[code:경로]` `[c:해시]` `[log:파일]` `[docs:파일]` `[repo:파일]`(맨 위 문서, 예: CLAUDE.md). 노션 판에서는 떼어지고 git 원고에만 남는다. 합치기 전에 근거 확인기가 그 경로, 커밋이 있는지 본다
 - 비밀값, 토큰, 내부 주소는 쓰지 않는다
 - 고칠 곳은 {where}뿐이다
 - 커밋 메시지: CLAUDE.md 「커밋 메시지」 꼴(예: `docs: 기술문서 원고를 지금 코드에 맞춤`){state}""" + (

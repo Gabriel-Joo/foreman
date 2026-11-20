@@ -27,6 +27,7 @@
     banned = []                           # 금지어(IP, 도메인, 홈 경로, 토큰 꼴, 포트)를 보는 묶음(["notion", "portfolio"])
     domains_in = ["portfolio"]            # allowed_domains를 받는 묶음
     cover_by = ["notion"]                 # 덮기 검사: 문서 묶음과 기록 밖 추적 파일은 이 묶음 어느 편의 다루는 곳에 들어야 한다
+    tests = ["tests/*", "*/tests/*", …]   # 덮기 검사에서 다루는 곳 없이 덮은 것으로 치는 시험 파일(11-20, 기본값은 TEST_FILES)
     dashdot_base = "648ac08…"             # 새 줄 em dash와 가운뎃점 검사의 기준 커밋(4단계). 없으면 검사하지 않고 점검 결과에 알린다
     xref_base = "8593516…"                # 「」 없는 편 사이 참조(→ 제목)를 틀림으로 셀 기준 커밋. 이 뒤에 더하거나 고친 줄만 틀림, 옛 줄은 의심.
                                           # 없으면 모두 의심으로 세고 점검 결과에 알린다(main의 틀린 것 0을 깨지 않게)
@@ -59,6 +60,11 @@ READ_COMMIT = ("piece", "set")
 HEAD_AT = ("first", "top")
 FILES_AT = ("worktree", "read")
 FOREMAN_CLAIM = r"\d|“|”|\"[^\"]{4,}\"|「[^」]{2,}」"      # bridge/evidence.py가 11-06부터 쓰던 꼴
+# 시험 파일 무늬(11-20 사용자 결정: 시험 파일은 어느 편의 다루는 곳에 들지 않아도 덮은 것으로 친다). not_code와 같은 꼴(글롭의 `*`는 `/`도
+# 넘는다). 기본값은 네 저장소의 지금 자리를 덮는다: FOREMAN과 펫퍼민트 `tests/`, FOREMAN `tests/js/*.test.mjs`, 런슈즈 `chatbot/tests/`와
+# `backend/src/test/java/`. 저장소가 `[check] tests`로 바꾼다(빈 목록이면 시험 파일도 다른 파일처럼 다루는 곳에 들어야 한다)
+TEST_FILES = ("tests/*", "*/tests/*", "test/*", "*/test/*", "test_*.py", "*/test_*.py", "*_test.py", "*.test.*", "*.spec.*",
+              "conftest.py", "*/conftest.py")
 
 
 class DocsConfigError(ValueError):
@@ -80,6 +86,7 @@ class CheckConfig:
     banned: list[str] = field(default_factory=list)
     domains_in: list[str] = field(default_factory=lambda: ["portfolio"])
     cover_by: list[str] = field(default_factory=lambda: ["notion"])
+    tests: list[str] = field(default_factory=lambda: list(TEST_FILES))   # 덮기 검사에서 다루는 곳 없이 덮은 것으로 치는 시험 파일
     dashdot_base: str | None = None       # 기본값 없음: 저장소마다 넣는 때의 main이 다르다(`bridge/doctext/dashdot.py`)
     xref_base: str | None = None          # 「」 없는 편 사이 참조를 틀림으로 셀 기준 커밋. 없으면 모두 의심(`bridge/doctext/titles.py` bare_xrefs)
     code_doc_base: str | None = None      # 문서를 가리키는 [code:]를 틀림으로 셀 기준 커밋. 없으면 모두 의심(`bridge/doctext/marks.py` code_doc)
@@ -111,6 +118,8 @@ def _check(raw: Any, source: str, warnings: list[str]) -> CheckConfig:
             if v not in allowed:
                 raise DocsConfigError(f"{where}는 {' 또는 '.join(allowed)}여야 합니다: {v!r}")
             setattr(c, k, v)
+        elif k == "tests":
+            c.tests = _strs(v, where)
         elif k == "fenced":
             if not isinstance(v, bool):
                 raise DocsConfigError(f"{where}는 true 또는 false여야 합니다")

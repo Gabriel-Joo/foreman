@@ -124,7 +124,7 @@ def test_publish_title_follows_h1_for_new_and_paired_pages(patched):
     rows["docs/a.md"]["content_hash"] = str(hash(PAGES["docs/a.md"]))
     rows["docs/a.md"]["title"] = "옛 제목"
     r3 = _run(pub.publish("docs/a.md"))
-    assert r3["action"] == "unchanged" and pub.c.pages[pid]["title"] == "바뀐 제목"
+    assert r3["action"] == "retitled" and pub.c.pages[pid]["title"] == "바뀐 제목"   # 11-20 글은 같고 제목만 맞춤
     # H1이 없는 문서 → README 표 제목 방식으로 돌아간다
     r4 = _run(pub.publish("docs/b.md", title="b — 표 설명"))
     assert pub.c.pages[r4["page_id"]]["title"] == "b — 표 설명"

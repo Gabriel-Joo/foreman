@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
@@ -37,6 +38,9 @@ MARK = "@docs-sync"          # doc_publish 행 — commit_sha = 마지막으로 
 # docs/archive/는 늘(런슈즈 docs/README "노션 · 발표 자료에 옮기지 않는다"), 프로젝트 skip의 "…/"로 끝나는 항목은 폴더 통째로
 LAST_MARK = "@docs-last"    # doc_publish 행. title = 마지막 맞추기의 멈춤, 실패 수(JSON), error = 첫 실패. 때는 행의 updated_at
 LAST_WINDOW = timedelta(minutes=10)     # 「올림 N」으로 세는 한 묶음의 길이(마지막으로 올린 때에서 거슬러)
+# 사람이 누른 게시(API)가 같은 프로젝트의 다른 게시를 기다리는 한도(초, 11-20). 펫퍼민트 관리자의 curl이 300초에 끊었다.
+# 그보다 넉넉히 짧게 두어 끊기기 전에 「무엇이 몇 초째 돌고 있다」는 409가 돌아가게 한다
+API_WAIT_S = 120
 # 11-19 사람 수정으로 멈춘 편마다 한 행(덮기 단추 자료). @docs-last에는 수만 남아, 브리지를 다시 띄우면 단추가 사라졌다.
 # path = 앞붙이 + 원고 경로, kind mark, status held(풀리면 released), title = {"count": n}, error = 고친 곳 앞부분(JSON 목록),
 # url = Notion 페이지, commit_sha = 비운다(옛 한 쪽 게시가 남긴 행만 ref가 있다)
@@ -164,7 +168,8 @@ async def status(pub: Any, src: str | None = None) -> dict[str, Any]:
     """한 묶음의 상태. new, changed, deleted 파일, 뒤처진 커밋 수, 마지막 원고 커밋 시각.
     원고(notion/, portfolio/, 11-15)는 편마다 머리 주석으로 「읽은 커밋 뒤 다루는 코드가 바뀐 편」(code_changed)과 셀 수 없는 편(code_unknown)도.
     relink(11-20): changed 가운데 글은 그대로이고 링크만 다시 걸면 되는 편(notion.link_only).
-    포트폴리오는 제목을 따로 정하지 않는다(첫 H1에 번호를 붙인다, notion.portfolio_title). 그래서 제목 비교 없이 지문으로만 바뀜을 가린다."""
+    포트폴리오는 제목을 따로 주지 않는다(게시기가 첫 H1에 번호를 붙인다, notion.portfolio_title). 그 제목은 게시기의 title_for로 세어
+    게시 기록과 견준다. 파일 이름만 바꾼 편도 「바뀜」에 든다(titles에는 그 값이 들지만 sync는 포트폴리오에 제목을 넘기지 않는다)."""
     from bridge.doctext.head import parse_head
     from bridge.manuscript import code_commits
     from bridge.notion import MANUSCRIPTS
@@ -206,9 +211,13 @@ async def status(pub: Any, src: str | None = None) -> dict[str, Any]:
                 log.warning("첫 H1이 없어 README 표 제목을 씁니다(%s): %s", pub.project, f)
         if not port and getattr(pub, "keep_title", False) and r:
             names[f] = r["title"]                                    # 제목 유지(사람이 붙인 "00. 모델 준비" — 사이드바 순서)
+        if port and r and not getattr(pub, "keep_title", False) and (title_for := getattr(pub, "title_for", None)):
+            # 11-20 포트폴리오는 제목을 주지 않지만 게시기가 붙일 제목(파일 번호 + 첫 H1)과 견준다. 파일 이름만 바꾼 편이 「바뀜」에 들어
+            # 제목이 맞춰진다. 전에는 지문으로만 견주어 「바뀌지 않음」으로 남았다(펫퍼민트 09_limits.md가 「08 알려진 한계」로 남음)
+            names[f] = title_for(f, body)
         if not r or r["status"] != "published":
             new.append(f)
-        elif r["content_hash"] != dg or (not port and r["title"] != names[f]):   # 제목만 바뀌어도(README 표 설명) 맞춘다
+        elif r["content_hash"] != dg or (f in names and r["title"] != names[f]):   # 제목만 바뀌어도(README 표 설명, 파일 번호) 맞춘다
             changed.append(f)
             if link_only(r, sha):
                 relink.append(f)
@@ -224,6 +233,29 @@ async def status(pub: Any, src: str | None = None) -> dict[str, Any]:
 
 def behind(st: dict[str, Any]) -> int:
     return len(st["new"]) + len(st["changed"]) + len(st["deleted"])
+
+
+def waiting_on(pub: Any, cands: list[str], posted: list[str]) -> list[str]:
+    """cands(「링크만」 편) 가운데 posted 편의 제목을 「→ 「제목」」으로 가리키는 편(11-20, 한 편 게시 뒤 다시 잇기).
+    다른 편을 기다리는 「링크만」 편까지 다시 쓰면 한 편을 올릴 때마다 같은 페이지를 헛되이 다시 쓴다. 그래서 방금 올린 편을 가리키는 것만."""
+    from bridge.doctext.titles import XREF, bare_title, xref_key
+    keys: set[str] = set()
+    for p in posted:
+        try:
+            h1 = first_h1(git_show(pub.repo, p, pub.ref)[0])[1]
+        except (FileNotFoundError, OutOfScope):
+            continue
+        if h1:
+            keys |= {xref_key(h1), xref_key(bare_title(h1))}
+    out = []
+    for f in cands if keys else ():
+        try:
+            body = git_show(pub.repo, f, pub.ref)[0]
+        except (FileNotFoundError, OutOfScope):
+            continue
+        if any(xref_key(m.group("t")) in keys or xref_key(bare_title(m.group("t"))) in keys for m in XREF.finditer(body)):
+            out.append(f)
+    return out
 
 
 def _fail(f: str, e: BaseException) -> dict[str, Any]:
@@ -287,8 +319,33 @@ async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset
         if r.get("pending"):
             # 빈 페이지를 먼저 만들었어도 Notion에 없는 편(그 편이 막혔다, 다른 묶음 밖). 지문이 비어 「링크를 다시 걸어야 함」으로 남는다
             warnings.append({"path": f, "warning": "가리킨 편이 아직 Notion에 없어 링크를 못 걸었습니다: " + ", ".join(r["pending"])})
+    if only is not None:
+        # 11-20 한 편 게시도 그 편을 기다리던 「링크만」 편을 다시 건다. 그 편들은 글이 이미 올라간 git 판 그대로라 새 글을 올리는 일이
+        # 아니다(「한꺼번에」가 막는 force 덮기, 여러 편의 새 글, 휴지통과 다르다). 하지 않으면 프로젝트 토큰은 이 어긋남을 고칠 길이 없다
+        # (펫퍼민트 00편의 「→ 「운영과 모니터링」」이 링크 없는 글자로 남음). 그 편이 바뀌었으면(「원본이 바뀜」) 건드리지 않는다
+        posted = [d["path"] for d in done if d["path"] in only]
+        for f in waiting_on(pub, [x for x in st.get("relink", []) if x not in only], posted):
+            try:
+                r = await pub.publish(f, when, title=None if port else names.get(f))
+            except HumanEdited as e:
+                held.append({"path": f, "edits": e.edits[:5], "count": len(e.edits), "url": e.url})
+                continue
+            except Exception as e:  # noqa: BLE001
+                failed.append(_fail(f, e))
+                continue
+            done.append({"path": f, "action": "relinked", "url": r.get("url"), "page_id": r.get("page_id")})
+            warnings += [{"path": f, "warning": w} for w in r.get("warnings") or []]
     tree = src == "notion/"
     for f in st["deleted"] if only is None else ():
+        gone = getattr(pub, "gone", None)
+        try:
+            if gone and await gone(f):
+                # 11-20 사람이 Notion에서 이미 지운 페이지(없음, 휴지통). 휴지통으로 보낼 것도 실패로 남길 것도 없다. 기록만 맞춘다.
+                # 전에는 archive = false 프로젝트에서 「원본이 사라졌습니다」 실패가 계속 남았다(런슈즈 portfolio/09_limits.md)
+                done.append(await pub.mark_gone(f))
+                continue
+        except Exception as e:  # noqa: BLE001 (읽지 못하면 지웠다고 짐작하지 않고 아래 길을 그대로 간다)
+            log.warning("지운 페이지인지 읽지 못했습니다(%s) %s: %s: %s", pub.project, f, type(e).__name__, str(e)[:120])
         if tree and any(x.startswith(f"{f[:-3]}/") for x in st["files"]):
             # 11-15 나무 — 부모 페이지를 휴지통으로 보내면 Notion이 그 아래 페이지까지 함께 보낸다. 아래 글이 남아 있으면 내리지 않는다
             failed.append({"path": f, "error": f"원고가 사라졌지만 그 아래 글({f[:-3]}/)이 남아 있어 내리지 않습니다. "
@@ -308,8 +365,10 @@ async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset
             failed.append(_fail(f, e))
     failed += [{"path": b["path"], "error": b["error"], "kind": "scope"} for b in st["broken"] if only is None or b["path"] in only]
     place = getattr(pub, "portfolio_page" if port else "docs_page", None)
-    # 차례가 이미 맞으면 reorder가 옮기지 않는다. keep_order면 사람 차례 그대로. 한 편만 올릴 때는 다른 편을 옮기지 않는다
-    if done and place and only is None and not getattr(pub, "keep_order", False):
+    # 차례가 이미 맞으면 reorder가 옮기지 않는다. keep_order면 사람 차례 그대로.
+    # 11-20 한 편 게시도 그 편이 놓인 부모 아래 차례를 맞춘다. 새 편은 Notion이 부모 끝에 붙이고, 이름을 바꾼 편은 옛 번호 자리에 남아
+    # 차례가 어긋난다(펫퍼민트 [포트폴리오] 「08 알려진 한계, 08 운영과 모니터링」). 페이지를 옮기기만 하고 글은 쓰지 않는다
+    if done and place and not getattr(pub, "keep_order", False) and hasattr(pub, "reorder"):
         async with pub.e.connect() as c:
             got = (await c.execute(text(
                 "SELECT path, notion_page_id, parent_page_id FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' "
@@ -322,7 +381,8 @@ async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset
             for f in st["files"]:
                 if f in pages:
                     groups.setdefault(parent_of[f], []).append((f, pages[f]))
-            plan = list(groups.items())
+            mine = {parent_of[f] for f in only if f in parent_of} if only is not None else None
+            plan = [(p, rows_) for p, rows_ in groups.items() if mine is None or p in mine]   # 한 편이면 그 편의 부모만
         else:
             plan = [(place, [(f, pages[f]) for f in st["files"] if f in pages])]
         for parent, rows_ in plan:
@@ -335,17 +395,33 @@ async def sync(pub: Any, when: str, force: set[str] | frozenset[str] = frozenset
     return {"project": pub.project, "src": src, "ref_sha": st["ref_sha"], "done": done, "held": held, "failed": failed, "warnings": warnings}
 
 
+class Busy(Exception):
+    """같은 프로젝트의 다른 게시가 도는 동안 기다릴 수 있는 시간(wait)이 지났다(11-20). what은 도는 게시, since는 시작한 때(time.time)."""
+
+    def __init__(self, project: str, what: str, since: float, waited: float) -> None:
+        self.project, self.what, self.since, self.waited = project, what, since, waited
+        super().__init__(f"{project}의 다른 Notion 게시({what})가 {int(time.time() - since)}초째 돌고 있어 {int(waited)}초 기다리다 "
+                         "그만두었습니다. 그 게시가 끝난 뒤 다시 눌러 주세요")
+
+
 class DocSync:
     """docs_mode = auto인 프로젝트의 기술문서를 주기적으로 맞추고, 사람이 누른 게시(기술문서, 포트폴리오)도 이 길로 돈다.
-    결과(막힘, 실패)는 last에 두고 서기 할 일과 텔레그램으로 알린다. 게시는 모두 한 잠금 안에서 돈다. 잇달아 눌러도 같은 페이지에
-    두 요청이 함께 쓰지 않는다(11-20, TODO 「Can't edit block that is archived」)."""
+    결과(막힘, 실패)는 last에 두고 서기 할 일과 텔레그램으로 알린다. 한 프로젝트의 게시는 그 프로젝트 잠금 안에서 차례로 돈다.
+    잇달아 눌러도 같은 페이지에 두 요청이 함께 쓰지 않는다(11-20, TODO 「Can't edit block that is archived」).
+    11-20 잠금을 프로젝트마다로 나눴다. 프로젝트끼리는 페이지가 겹치지 않는데 잠금 하나를 함께 써서, FOREMAN 기술문서 49편 맞추기가
+    도는 동안 펫퍼민트 포트폴리오 한 편 게시가 300초 넘게 기다려 응답 전에 끊겼다. Notion 요청 간격은 클라이언트가 함께 지킨다."""
 
     def __init__(self, publishers: dict[str, Any], notifier: Any = None, every_s: float = 300) -> None:
         self.pubs, self.notifier, self.every = publishers, notifier, every_s
         self.last: dict[str, dict[str, Any]] = {}       # 프로젝트(포트폴리오는 "프로젝트#portfolio/") → 마지막 맞추기 결과(+ at)
         self._sent: set[str] = set()                    # 같은 막힘을 두 번 알리지 않는다(ref 커밋 · 경로 · 종류)
-        self._lock = asyncio.Lock()
+        self._locks: dict[str, asyncio.Lock] = {}
+        self.busy: dict[str, dict[str, Any]] = {}       # 프로젝트 → 지금 도는 게시 {"what", "since"}(기다리다 그만둘 때 까닭으로 보인다)
         self.before_tick: Any = None                    # 11-12 — 맞추기 전에 저장소 설정 다시 읽기(bridge/notioncfg.py NotionConfig.refresh)
+
+    def lock(self, name: str) -> asyncio.Lock:
+        """그 프로젝트의 게시 잠금."""
+        return self._locks.setdefault(name, asyncio.Lock())
 
     def _key(self, name: str, src: str | None) -> str:
         """last의 열쇠. 기술문서는 프로젝트 이름 그대로(전과 같음), 포트폴리오는 뒤에 #portfolio/."""
@@ -356,7 +432,9 @@ class DocSync:
         while True:
             try:
                 if self.before_tick:
-                    async with self._lock:              # 게시 도중에 칸이 바뀌지 않게
+                    async with contextlib.AsyncExitStack() as stack:     # 게시 도중에 칸이 바뀌지 않게(모든 프로젝트, 이름 차례로)
+                        for n in sorted(self.pubs):
+                            await stack.enter_async_context(self.lock(n))
                         self.before_tick()
                 await self.tick()
             except Exception as e:  # noqa: BLE001 — 한 번 실패해도 다음에 다시
@@ -377,16 +455,33 @@ class DocSync:
                 await self.run_one(name)
 
     async def run_one(self, name: str, force: set[str] | frozenset[str] = frozenset(), src: str | None = None,
-                      only: set[str] | frozenset[str] | None = None) -> dict[str, Any]:
-        """한 묶음 맞추기(sync)와 그 뒤 기록, 알림. only면 그 편만 올리고, 다른 편의 멈춤 줄(덮기 단추)은 그대로 둔다."""
+                      only: set[str] | frozenset[str] | None = None, wait: float | None = None) -> dict[str, Any]:
+        """한 묶음 맞추기(sync)와 그 뒤 기록, 알림. only면 그 편만 올리고, 다른 편의 멈춤 줄(덮기 단추)은 그대로 둔다.
+        wait(초, 11-20): 같은 프로젝트의 다른 게시가 돌면 이만큼만 기다리고 Busy를 올린다(API가 응답이 끊기기 전에 까닭을 돌려주게).
+        없으면 끝까지 기다린다(자동 맞추기)."""
         pub = self.pubs[name]
         src = src or src_of(pub)
         key = self._key(name, src)
         when = (datetime.now(UTC) + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M KST")
         if only is not None:
             await self.last_for(name, src)              # 다시 띄운 뒤면 DB의 멈춘 편을 먼저 되살린다(다른 편 행을 잘못 풀지 않게)
-        async with self._lock:
+        lk = self.lock(name)
+        if lk.locked():
+            b = self.busy.get(name) or {"what": "설정 다시 읽기", "since": time.time()}
+            log.warning("%s Notion 게시가 다른 게시(%s, %d초째)를 기다립니다", name, b["what"], int(time.time() - b["since"]))
+        t0 = time.time()
+        try:
+            await (asyncio.wait_for(lk.acquire(), wait) if wait is not None else lk.acquire())
+        except TimeoutError:
+            b = self.busy.get(name) or {"what": "설정 다시 읽기", "since": t0}
+            raise Busy(name, b["what"], b["since"], time.time() - t0) from None
+        what = f"{label(src)} {'한 편 ' + ', '.join(sorted(only)) if only is not None else '한꺼번에'}"
+        self.busy[name] = {"what": what, "since": time.time()}
+        try:
             res = await sync(pub, when, force, src, only)
+        finally:
+            self.busy.pop(name, None)
+            lk.release()
         res["at"] = time.time()
         if only is not None:
             keep = [h for h in (self.last.get(key) or {}).get("held", []) if h["path"] not in only]
