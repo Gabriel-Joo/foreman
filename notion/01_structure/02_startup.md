@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/main.py, bridge/__main__.py, bridge/config.py, bridge/api/health.py, bridge/uiver.py, deploy/systemd/, scripts/foreman-bridge-alert.sh
-읽은 커밋: 21c83d7
+읽은 커밋: 2ca89d7
 -->
 # 브리지가 뜨는 차례
 
