@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/static/office.html, bridge/static/dashboard.html, bridge/static/css/panel.css, docs/10_office_design.md
-읽은 커밋: b89b3b6
+다루는 곳: bridge/static/office.html, bridge/static/dashboard.html, bridge/static/css/panel.css, bridge/static/js/uiscale.js, bridge/main.py, docs/10_office_design.md
+읽은 커밋: 371411d
 -->
 # 14 화면
 
@@ -75,7 +75,7 @@ flowchart LR
 
 **머리말**은 두 줄이다. 첫 줄은 어디로 갈지다. 감독실로 가는 [⌂], 모든 현장을 한 화면에 보는 [전체], 프로젝트마다 하나씩인 방 탭, 새 세션을 띄우는 [＋ 세션], 포스트잇이 이 줄에 있다. 포스트잇은 사람이 적거나 대화에서 미룬 일을 받아 두는 편지함이면서 저장소 할 일 목록(`docs/TODO.md`)의 번호와 제목을 보는 창이다 [code:bridge/static/js/postit.js]. 그 뒤에 승인 대기, 질문, 합치기 대기, 적재 막힘 같은 경고가 붙는다 [code:bridge/static/js/office.js]. 방 탭에는 그 방에서 일하는 세션 수와 승인 대기 수가 작은 칩으로 붙고, 승인이 기다리면 노랗게 깜빡인다. 둘째 줄은 상태와 설정이다. 작업 중인 세션 수와 오늘 출력 토큰, 한도 칩, 테마 고르기, 글씨 배율 [가−] [가+], 연결 표시, 접속 키가 있다. 화면 이름을 말할 때는 이 탭 글자를 그대로 쓴다. 감독실 카드를 고치라는 말을 [⌂] 화면으로 알아듣고 [전체] 화면을 고치지 않은 일이 있어서다 [docs:style_guide.md].
 
-**지도와 패널은 겹치지 않는다.** 패널은 지도 위에 덮이지 않고 옆에 선다. 패널을 펴거나 접으면 지도 칸의 크기가 바뀌고, 카메라가 그 크기에 맞춰 다시 맞춘다 [code:bridge/static/office.html] [log:stage10_office_result.md]. 패널은 기본 폭 360px이고, 접으면 34px 띠가 되어 승인 대기 수만 깜빡인다. 휴대폰처럼 폭이 760px 아래면 패널이 지도 아래 판으로 내려간다 [code:bridge/static/office.html].
+**지도와 패널은 겹치지 않는다.** 패널은 지도 위에 덮이지 않고 옆에 선다. 패널을 펴거나 접으면 지도 칸의 크기가 바뀌고, 카메라가 그 크기에 맞춰 다시 맞춘다 [code:bridge/static/office.html] [log:stage10_office_result.md]. 패널 폭은 손으로 끌어 정하지 않고 좁게와 넓게 두 값만 있다. 좁게는 창 폭의 40%, 넓게는 60%다. 다만 넓게에서도 지도 칸이 464px 밑으로 줄지 않게 한다. 464px은 방 모눈 28칸이 원래 그림 크기 그대로 들어가는 폭이라, 폭 1024 창에서는 넓게가 6 대 4가 아니라 지도 464, 패널 560으로 나뉜다. 어느 쪽이든 패널은 280px보다 좁아지지 않는다 [code:bridge/static/js/opanel.js]. 처음에는 손잡이를 끌어 폭을 정했는데, 끌기를 없애고 두 값으로 바꾸면서 방 배율이 패널 폭으로만 정해지게 됐다 [c:aee6c03]. 두 값의 비율은 그 뒤 한 번 더 바뀌었다. 좁게 둔 패널이 420px 남짓이라 너무 작아 쓰지 않게 되어 지금의 40%와 60%로 바꿨다 [code:bridge/static/js/opanel.js] [log:designer_polish_seven_20261111.md]. 패널 머리의 [⇤ 넓게] 단추나 패널 왼쪽 가장자리를 두 번 눌러 바꾸고, 고른 값은 이 브라우저에 기억한다. 접으면 34px 띠가 되어 승인 대기 수만 깜빡인다. 휴대폰처럼 폭이 760px 아래면 패널이 지도 아래 판(화면 높이의 40%)으로 내려간다 [code:bridge/static/office.html].
 
 **셸은 아래에서 위로 펼쳐진다.** 펼치면 그 높이만큼 화면 전체가 줄어들 뿐 패널이나 지도를 덮지 않는다. 처음에는 셸이 펴지면 패널도 같이 줄어, 폭 1024 창에서 패널이 101px까지 줄고 입력 칸이 패널 밖으로 넘쳐 셸 글자를 덮었다 [code:bridge/static/office.html]. 지금은 셸이 패널 왼쪽까지만 펼쳐지고, 패널은 셸 높이만큼 아래로 늘어나 창 바닥까지 닿는다. 패널 입력 칸은 늘 패널 바닥에 붙어 보인다.
 
