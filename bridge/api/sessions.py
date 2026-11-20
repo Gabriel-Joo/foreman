@@ -18,7 +18,7 @@ from sqlalchemy import text
 
 from bridge.api.auth import require_api_token
 from bridge.approval import load_policy
-from bridge.inject import Refused, _status, _tmux_env, bang_check, deliver, tmux
+from bridge.inject import Refused, _status, _tmux_env, bang_check, check_state, deliver, tmux
 from bridge.liveness import live_sessions
 from bridge.mask import Masker
 from bridge.models import EventIn, EventSource, EventStatus, EventType
@@ -37,7 +37,7 @@ class InputIn(BaseModel):
 async def _row(request: Request, session_id: int) -> Any:
     async with request.app.state.store.engine.connect() as c:
         return (await c.execute(text(
-            "SELECT cs.id, cs.cc_session_id, cs.character_id, tf.path, p.name, ch.name "
+            "SELECT cs.id, cs.cc_session_id, cs.character_id, tf.path, p.name, ch.name, cs.cwd "
             "FROM character_session cs JOIN `character` ch ON ch.id = cs.character_id "
             "LEFT JOIN project p ON p.id = ch.project_id LEFT JOIN transcript_file tf ON tf.id = cs.transcript_file_id "
             "WHERE cs.id = :id"), {"id": session_id})).first()
@@ -76,8 +76,14 @@ async def inject_input(session_id: int, body: InputIn, request: Request) -> JSON
     row = await _row(request, session_id)
     if row is None:
         raise HTTPException(404, "세션이 없습니다")
-    sid, cc, char_id, transcript, project, char = row
+    sid, cc, char_id, transcript, project, char, cwd = row
+    if not transcript and cc and cwd:
+        # 11-20 세션 692. 새로 띄운 세션은 첫 글을 받을 때 CC가 트랜스크립트를 처음 만든다. DB에는 아직 경로가 없어
+        # 제출 확인을 건너뛰고 바로 504였다(글은 들어갔다). CC가 쓰는 자리를 그대로 본다
+        from bridge.handoff import transcript_path
+        transcript = transcript_path(cwd, cc)
     payload: dict[str, Any] = {"chars": len(body.text), "lines": body.text.count("\n") + 1, "command": body.command}
+    app = request.app
     try:
         if not cc:
             raise Refused("CC 세션 ID가 없습니다")
@@ -88,19 +94,52 @@ async def inject_input(session_id: int, body: InputIn, request: Request) -> JSON
             sent = bang_check(body.text.strip(), lambda tool, inp: pol.decide(tool, inp, None, None, project))
             command = True
             payload["bang"] = True
-        res = await deliver(cc, sent, sessions_dir=s.sessions_dir, transcript=transcript, command=command)
+
+        async def late(found: dict[str, Any] | None) -> None:
+            # 늦게 다시 본 결과를 활동 줄로 남긴다. 화면(활동 탭)과 사람이 「실제로 갔나」를 여기서 안다
+            _record(pipeline, sid, char_id, f"(늦게 확인) {'들어갔습니다' if found else '기록에서 찾지 못했습니다'}: {body.text}",
+                    {"late": ("queued" if found["as"] == "queued" else "delivered") if found else "not_found",
+                     "check": check_id[0], "delivered": found},
+                    EventStatus.WORKING if found else EventStatus.ERROR, turn_id=await _turn_for_app(app, sid, found))
+
+        check_id: list[str | None] = [None]
+        res = await deliver(cc, sent, sessions_dir=s.sessions_dir, transcript=transcript, command=command, on_late=late)
+        check_id[0] = res.get("check")
     except Refused as e:
         log.warning("주입 거부 session=%d(%s): %s", sid, (cc or "")[:8], e)
         payload["refused"] = str(e)
         _record(pipeline, sid, char_id, body.text, payload, EventStatus.ERROR)
         return JSONResponse({"refused": str(e)}, status_code=409)
-    payload |= {k: res[k] for k in ("queued", "guarded", "pane")} | {"delivered": res["delivered"], "esc": res.get("esc", 0), "dialog": res.get("dialog")}
+    payload |= {k: res[k] for k in ("queued", "guarded", "pane")} | {"delivered": res["delivered"], "esc": res.get("esc", 0), "dialog": res.get("dialog"),
+                                                                       "outcome": res["outcome"], "check": res.get("check")}
     turn_id = await _turn_for(request, sid, res["delivered"])
-    _record(pipeline, sid, char_id, body.text, payload,
-            EventStatus.WAITING if res["queued"] else (EventStatus.WORKING if res["delivered"] else EventStatus.ERROR),
-            turn_id=turn_id)
-    status = 202 if res["delivered"] else 504
-    return JSONResponse(res | {"verified": bool(res["delivered"])}, status_code=status)
+    _record(pipeline, sid, char_id, body.text, payload, _input_status(res), turn_id=turn_id)
+    return JSONResponse(res | {"verified": bool(res["delivered"])}, status_code=input_http_status(res))
+
+
+def input_http_status(res: dict[str, Any]) -> int:
+    """제출 확인 결과 → HTTP(11-20). 기록으로 확인했거나 입력 칸이 비었으면(unconfirmed) 202. 실패가 아니다.
+    unconfirmed는 verified=false와 check 번호가 붙고, 뒤에서 기록을 다시 본 결과를 GET …/input/{check}와 활동 줄로 알린다.
+    입력 칸에 글이 남았거나(left) 화면도 기록도 못 읽었으면(unknown) 504."""
+    return 202 if res["delivered"] or res["outcome"] == "unconfirmed" else 504
+
+
+def _input_status(res: dict[str, Any]) -> EventStatus:
+    if res["queued"]:
+        return EventStatus.WAITING
+    return EventStatus.WORKING if res["delivered"] or res["outcome"] == "unconfirmed" else EventStatus.ERROR
+
+
+@router.get("/{session_id}/input/{check_id}")
+async def input_check(session_id: int, check_id: str, request: Request) -> JSONResponse:
+    """보낸 글을 뒤에서 다시 본 결과(11-20). state: checking(아직 보는 중), delivered, queued, not_found.
+    번호는 POST …/input 응답의 check. 브리지를 다시 띄웠거나 오래돼 밀려난 번호면 404."""
+    row = await _row(request, session_id)
+    c = check_state(check_id)
+    if row is None or c is None or c.get("session") != row[1]:
+        raise HTTPException(404, "그 확인 번호가 없습니다(브리지를 다시 띄웠거나 오래됐습니다)")
+    c.pop("session", None)
+    return JSONResponse(c)
 
 
 class ModelIn(BaseModel):
@@ -231,9 +270,13 @@ def _restore_model_setting(before: tuple[bool, Any] | None) -> bool:
 
 
 async def _turn_for(request: Request, sid: int, delivered: dict[str, Any] | None) -> int | None:
+    return await _turn_for_app(request.app, sid, delivered)
+
+
+async def _turn_for_app(app: Any, sid: int, delivered: dict[str, Any] | None) -> int | None:
     """주입이 들어간 턴 — 새 턴이면 그 promptId의 턴(조립기가 이미 적재했을 수 있다), 대기열이면 열린 턴."""
     try:
-        async with request.app.state.store.engine.connect() as c:
+        async with app.state.store.engine.connect() as c:
             if delivered and delivered.get("prompt_id"):
                 r = (await c.execute(text("SELECT id FROM turn WHERE prompt_id = :p"), {"p": delivered["prompt_id"]})).first()
                 if r:

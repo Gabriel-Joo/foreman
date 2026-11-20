@@ -721,7 +721,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     // 대화 — 바뀔 때만
     const c = $('pConvo');
     const follow = switched || nearBottom(c);
-    const html = convoHtml(st.convo.get(s.id)) || '<p class="small muted">불러오는 중…</p>';
+    const html = convoHtml(st.convo.get(s.id));     // 비었음, 불러오는 중, 실패는 convoHtml이 가른다(11-20)
     if (put('pConvo', 'convo', html)) {
       if (follow) c.scrollTop = c.scrollHeight;
       else if (tab === 'convo') $('pNew').hidden = false;

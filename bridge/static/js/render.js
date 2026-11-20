@@ -645,14 +645,23 @@ export function endLabel(x) {
   const tip = `${e.label} — ${e.action}.${e.reset ? ` ${e.reset}에 풀립니다.` : ''}${e.request_id ? ` 요청 번호는 ${e.request_id}입니다.` : ''}`;
   return `<span class="warn" title="${esc(tip)}">${esc(name)}</span>`;
 }
+// 세 상태를 가른다(11-20 foreman-161). 아직 안 받음(c 없음)과 받는 중은 「불러오는 중」, 받았는데 비었으면 「아직 대화가 없습니다」,
+// 못 받았으면 실패 글. 전에는 빈 결과도 ''를 돌려 패널이 「불러오는 중…」으로 바꿔 그렸다. 새로 띄운 세션(692)이 첫 글 전에 그 화면에 멈췄다
 export function convoHtml(c) {
-  if (!c) return '';
-  return (c.error ? `<p class="bad small">${esc(c.error)}</p>` : '') + (c.turns || []).map((x) => `
+  if (!c) return LOADING_HTML;
+  const turns = c.turns || [];
+  if (!turns.length) {
+    if (c.loading) return LOADING_HTML;
+    if (c.error) return `<p class="bad small">대화를 불러오지 못했습니다(${esc(c.error)}).</p>`;
+    return '<p class="small muted convo-empty">아직 대화가 없습니다.</p>';
+  }
+  return (c.error ? `<p class="bad small">대화를 불러오지 못했습니다(${esc(c.error)}).</p>` : '') + turns.map((x) => `
       <div class="msg in o-${esc(x.origin)}"><div class="who small muted">${esc(ORIGIN_LABEL[x.origin] || x.origin)} · ${clock(x.started_at)}</div>${longText(`${x.id}i`, promptText(x.prompt))}</div>${queuedHtml(x)}
       ${x.reply ? `<div class="msg out"><div class="who small muted">CC${x.end_reason ? ' · ' + endLabel(x) : ' · 진행 중'}${x.tools ? ` · 도구 ${x.tools}` : ''}${x.subagents ? ` · 서브 ${x.subagents}` : ''}</div>${
         x.mid && x.mid.length ? `<details class="mid"${OPEN_MSG.has(`${x.id}m`) ? ' open' : ''} data-mid="${x.id}m"><summary class="small muted">중간 글 ${x.mid.length}</summary>${x.mid.map((m, i) => `<div class="mid-one">${longText(`${x.id}m${i}`, m)}</div>`).join('')}</details>` : ''}${longText(`${x.id}o`, x.reply)}</div>`
-        : (x.end_reason ? `<div class="msg out small muted">${endLabel(x)}${x.tools ? ` · 도구 ${x.tools}` : ''}</div>` : '')}`).join('') + (c.loading ? '<p class="small muted">불러오는 중…</p>' : '');
+        : (x.end_reason ? `<div class="msg out small muted">${endLabel(x)}${x.tools ? ` · 도구 ${x.tools}` : ''}</div>` : '')}`).join('') + (c.loading ? LOADING_HTML : '');
 }
+const LOADING_HTML = '<p class="small muted">불러오는 중…</p>';
 
 // 승인 이력(11-03) — 무엇이 몇 번 걸렸고 다 승인했는지. 늘 Yes만 누르는 규칙은 손볼 후보로 표시. <details>를 열 때만 읽는다
 export function mountApprovalHistory(det, head, body, store) {

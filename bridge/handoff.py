@@ -26,7 +26,7 @@ from bridge import handoff_state as hs
 from bridge import pointers as ptr
 from bridge import roles
 from bridge import worktree as wt
-from bridge.inject import Refused, _status, _tmux_env, deliver, resolve, tmux
+from bridge.inject import Refused, _status, _tmux_env, deliver, resolve, submitted, tmux
 from bridge.liveness import _proc_stat, live_sessions
 from bridge.model_choice import Models
 
@@ -802,12 +802,33 @@ class HandoffManager:
         if inj["cut"]:
             self._write_full(s["req"], s["body"])
         res = await deliver(cc_session_id, inj["text"] + rule + note_block(note), sessions_dir=self.sessions_dir,
-                            transcript=transcript_path(cwd, cc_session_id), verify_s=15.0)
+                            transcript=transcript_path(cwd, cc_session_id), verify_s=15.0,
+                            on_late=lambda found: self._mark_injected(summary_id, cc_session_id, inj["drift"]) if found else None)
         if res.get("delivered"):
-            async with self.engine.begin() as c:
-                await c.execute(text("UPDATE summary SET injected_cc_session = :c, injected_at = NOW(3), drift = :d WHERE id = :i"),
-                                {"c": cc_session_id, "i": summary_id, "d": json.dumps(inj["drift"], ensure_ascii=False)})
-        return {"delivered": bool(res.get("delivered")), "queued": res.get("queued"), "cut": inj["cut"], "drift": inj["drift"]}
+            await self._mark_injected(summary_id, cc_session_id, inj["drift"])
+        return {"delivered": submitted(res), "verified": bool(res.get("delivered")), "queued": res.get("queued"),
+                "outcome": res.get("outcome"), "cut": inj["cut"], "drift": inj["drift"]}
+
+    async def _send_first(self, cc: str, cwd: str, body: str, summary_id: int | None, drift: list[Any]) -> dict[str, Any]:
+        """계획 카드로 띄운 세션에 첫 글(+ 인계 요약)을 넣는다. 넣음 기록(summary.injected_*)은 제출을 확인한 뒤에(foreman-41, 11-20).
+        전에는 보내기 전에 적어 첫 글이 입력 칸에 남아도 넣은 것으로 남았고, 「바뀐 것」(drift)을 적지 않아 받은 세션 패널이
+        빈 목록이었다. 기록에서 늦게 찾으면(unconfirmed, 뒤에서 다시 봄) 그때 적는다."""
+        mark = (lambda found: self._mark_injected(summary_id, cc, drift) if found else None) if summary_id is not None else None
+        r = await deliver(cc, body, sessions_dir=self.sessions_dir, transcript=transcript_path(cwd, cc), verify_s=15.0,
+                          on_late=mark)
+        out: dict[str, Any] = {"injected": submitted(r), "verified": bool(r.get("delivered"))}
+        if r.get("delivered") and summary_id is not None:
+            await self._mark_injected(summary_id, cc, drift)
+        if not out["injected"]:
+            out["note"] = ("첫 글이 입력 칸에 남아 제출되지 않았습니다. 그 세션 대화창에서 Enter를 눌러 주세요." if r.get("outcome") == "left"
+                           else "첫 글을 보냈지만 제출을 확인하지 못했습니다. 입력 칸을 확인해 주세요.")
+        return out
+
+    async def _mark_injected(self, summary_id: int, cc_session_id: str, drift: list[Any]) -> None:
+        """넣음 기록 — 제출을 기록으로 확인했을 때만(바로 또는 늦게). 받은 세션 패널의 「바뀐 것」이 drift에서 온다."""
+        async with self.engine.begin() as c:
+            await c.execute(text("UPDATE summary SET injected_cc_session = :c, injected_at = NOW(3), drift = :d WHERE id = :i"),
+                            {"c": cc_session_id, "i": summary_id, "d": json.dumps(drift, ensure_ascii=False)})
 
     # ── 새로 띄우기 ──────────────────────────────────────
     async def spawn(self, row: SessionRow, summary_id: int | None, replace: bool = False, note: str | None = None) -> dict[str, Any]:
@@ -991,25 +1012,19 @@ class HandoffManager:
         if first_prompt:
             # 포먼이 쓴 첫 글(+ 고른 인계 요약) — 사람이 계획 카드에서 확인 · 고친 글 그대로
             body = first_prompt + rule
+            inj = None
             if summary_id is not None:
                 inj = await self.ensure_injectable(summary_id, cwd, confirm=False)   # 계획 카드에서 이미 봤다(11-10)
                 s = await self.summary(summary_id)
                 if inj["cut"]:
                     self._write_full(s["req"], s["body"])
                 body += "\n\n" + inj["text"]
-                async with self.engine.begin() as c:
-                    await c.execute(text("UPDATE summary SET injected_cc_session = :c, injected_at = NOW(3) WHERE id = :i"),
-                                    {"c": cc, "i": summary_id})
             await asyncio.sleep(1.0)
-            r = await deliver(cc, body, sessions_dir=self.sessions_dir, transcript=transcript_path(cwd, cc), verify_s=15.0)
-            out["injected"] = bool(r.get("delivered"))
-            if not out["injected"]:
-                out["note"] = "첫 글을 보냈지만 제출을 확인하지 못했습니다. 입력 칸을 확인해 주세요."
-            return out
+            return out | await self._send_first(cc, cwd, body, summary_id if inj else None, inj["drift"] if inj else [])
         if summary_id is not None:
             await asyncio.sleep(1.0)
             r = await self.inject(summary_id, cc, cwd, note, rule=rule)
-            out["injected"] = r["delivered"]
+            out["injected"], out["verified"] = r["delivered"], r["verified"]
             if not r["delivered"]:
                 out["note"] = "인계 글을 보냈지만 제출을 확인하지 못했습니다. 입력 칸을 확인해 주세요."
             else:

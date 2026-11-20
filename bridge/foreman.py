@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from bridge import foreman_note as notes
 from bridge.handoff import HandoffManager
-from bridge.inject import Refused, _tmux_env, deliver
+from bridge.inject import Refused, _tmux_env, deliver, submitted
 from bridge.liveness import live_sessions
 from bridge.mask import Masker
 from bridge.roles import ROLE_KO, SESSION_ROLES, role_line
@@ -781,7 +781,9 @@ class ForemanDispatcher:
                 r = (await c.execute(text("SELECT cc_session_id, cwd FROM character_session WHERE id = :i"), {"i": plan["attach_session"]})).first()
             from bridge.handoff import transcript_path
             res = await deliver(r[0], ss[on[0]]["first_prompt"], sessions_dir=self.sessions_dir, transcript=transcript_path(r[1] or "", r[0]))
-            out = {"mode": "attach", "session_id": plan["attach_session"], "injected": bool(res.get("delivered")), "queued": res.get("queued")}
+            # 입력 칸이 비었으면 넣은 것으로(11-20 bridge/inject.submitted). 기록으로 확인했는지는 verified
+            out = {"mode": "attach", "session_id": plan["attach_session"], "injected": submitted(res),
+                   "verified": bool(res.get("delivered")), "queued": res.get("queued")}
             done[on[0]] = {"session_id": plan["attach_session"], "cwd": r[1]}
         else:
             # 차례대로 띄운다. 첫 세션이 못 뜨면 아무것도 안 띄운 것이라 그대로 거절(계획은 planned로 남아 다시 누를 수 있다).

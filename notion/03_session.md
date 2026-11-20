@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/liveness.py, bridge/session_state.py, bridge/stallwatch.py, bridge/human_wait.py, bridge/api_error.py, bridge/bang_watch.py, bridge/xmsg.py, bridge/inject.py, bridge/api/sessions.py, bridge/static/js/slash.js, tests/js/slash.test.mjs, tests/js/xmsg.test.mjs, tests/test_api_error.py, tests/test_bang_watch.py, tests/test_human_wait.py, tests/test_inject.py, tests/test_inject_screen.py, tests/test_stallwatch.py, tests/test_stallwatch_bg.py, tests/test_xmsg.py
+다루는 곳: bridge/liveness.py, bridge/session_state.py, bridge/stallwatch.py, bridge/human_wait.py, bridge/api_error.py, bridge/bang_watch.py, bridge/xmsg.py, bridge/inject.py, bridge/api/sessions.py, bridge/static/js/slash.js, tests/js/slash.test.mjs, tests/js/xmsg.test.mjs, tests/test_api_error.py, tests/test_bang_watch.py, tests/test_human_wait.py, tests/test_inject.py, tests/test_inject_late.py, tests/test_inject_screen.py, tests/test_stallwatch.py, tests/test_stallwatch_bg.py, tests/test_xmsg.py
 읽은 커밋: 7dee4fa
 -->
 
@@ -207,7 +207,9 @@ flowchart TD
   G --> H[방법 C: load-buffer, 괄호 붙여넣기, 0.15초, Enter]
   H --> I[트랜스크립트에서 10초 동안 찾는다]
   I -- 찾음 --> J[202: 새 턴 또는 대기열]
-  I -- 못 찾음 --> K[화면 입력 칸을 본다. 504]
+  I -- 못 찾음 --> K[화면 입력 칸을 본다]
+  K -- 비었음 --> L[202, 확인 번호. 뒤에서 2분 동안 기록을 다시 본다]
+  K -- 글이 남음, 화면도 못 읽음 --> M[504]
   E & F & D -. 걸리면 .-> R[409: 아무것도 보내지 않고 까닭을 돌려준다]
 ```
 
@@ -366,13 +368,21 @@ CC는 입력 칸 대신, 또는 입력 칸 위에 여러 창을 띄운다. `/mod
 
 Enter를 보냈다고 끝이 아니다. 폭 없는 공백 시험에서 보았듯 Enter가 먹히지 않으면 글이 입력 칸에 남고, 다음 넣기가 그 뒤에 이어 붙는다 [log:stage3_inject_result.md]. 그래서 보내기 전에 트랜스크립트 파일 크기를 재 두고, 보낸 뒤 10초 동안 0.25초마다 그 뒤에 새로 쓰인 줄에서 보낸 글을 찾는다 [code:bridge/inject.py]. 사람 글 줄(`user`, 메타 줄 제외)로 있으면 새 턴, 대기열 줄(`queue-operation enqueue`)로 있으면 대기열이다.
 
+새로 띄운 세션은 첫 글을 받을 때 CC가 트랜스크립트 파일을 처음 만든다. 그 순간에는 DB에 파일 경로가 아직 없다. 입력 API는 이때 CC가 파일을 쓰는 자리(작업 폴더와 세션 ID로 정해진다)를 그대로 보고 확인한다. 전에는 경로가 없으면 확인을 건너뛰고 바로 504를 돌려, 글은 들어갔는데 패널은 「확인하지 못했습니다」를 띄웠다 [code:bridge/api/sessions.py] [log:foreman-5_inject_unconfirmed_20261120.md].
+
 맞댈 때는 CC가 글을 기록하는 모양으로 바꿔 본다. 여러 줄은 `<pasted_content id=…>` 감싸기를 벗긴다. 탭은 공백 4칸으로 바꾼다. 앞뒤 공백과 빈 줄은 CC가 다듬어 기록하므로 양쪽 다 떼고 맞댄다. 끝에 줄바꿈이 붙은 「확인\n」이 「확인」으로 기록되는 것을 실측으로 보고 넣은 규칙이다. `!` 명령은 `<bash-input>…</bash-input>` 모양도 함께 본다 [code:bridge/inject.py].
 
 ### 10-2. 못 찾았으면 화면을 본다, 그래도 지우지 않는다
 
-10초 안에 못 찾으면 화면의 입력 칸을 본다(`left_in_box`). 보낸 글의 앞 20자(공백 뺌)가 입력 칸 안에 보이면 제출되지 않고 남은 것이다. 안 보이면 제출은 됐는데 기록 모양이 달라 맞대지 못한 것으로 본다. 끝 공백 때문에 실제로 그런 일이 있었다 [code:bridge/inject.py].
+10초 안에 못 찾으면 화면의 입력 칸을 본다(`left_in_box`). 보낸 글의 앞 20자(공백 뺌)가 입력 칸 안에 보이면 제출되지 않고 남은 것이다. 안 보이면 제출된 것으로 본다. 기록 모양이 달라 맞대지 못한 일(끝 공백)도 있었고, CC가 기록을 10초 넘게 늦게 쓴 일도 있었다. 늦게 쓴 경우는 하루에 스무 번 났고, 스무 번 모두 입력 칸은 비어 있었으며 나중에 보니 기록도 남아 있었다 [code:bridge/inject.py] [log:foreman-5_inject_unconfirmed_20261120.md].
 
 이때도 입력 칸을 자동으로 비우지 않는다. 그 창에 사람이 쓰던 초안이 있을 수 있기 때문이다. 시험에서 입력 칸을 비우는 법(줄 수만큼 `C-u`, `BSpace`)은 찾아 두었지만 쓰지 않는다 [log:stage3_inject_result.md].
+
+### 10-3. 확인 못 함은 실패와 다르다
+
+결과는 넷으로 가른다. 기록에서 찾았으면 들어감(새 턴 또는 대기열), 못 찾았지만 입력 칸이 비었으면 확인 못 함, 입력 칸에 글이 남았으면 안 들어감, 화면도 기록도 못 읽었으면 모름이다 [code:bridge/inject.py]. 확인 못 함을 실패로 돌려주면 보낸 쪽은 다시 보낼지 망설이고, 다시 보내면 같은 글이 두 번 들어간다. 그래서 확인 못 함은 들어간 것으로 다루되, 기록으로 확인하지는 못했다는 표시(`verified: false`)와 확인 번호(`check`)를 붙인다.
+
+확인 번호가 붙으면 브리지는 뒤에서 2분 동안 1초마다 기록을 다시 본다. 찾으면 들어감으로, 끝내 없으면 찾지 못함으로 결과를 바꾼다. 결과는 세 곳에서 알 수 있다. 패널 활동 탭에 「(늦게 확인) 들어갔습니다」나 「(늦게 확인) 기록에서 찾지 못했습니다」 줄이 붙고, `GET /api/sessions/{id}/input/{check}`가 지금 상태(확인 중, 들어감, 대기열, 찾지 못함)를 돌려주며, 관리자 부탁과 중계는 찾지 못했을 때 텔레그램으로 알린다 [code:bridge/api/sessions.py] [code:bridge/managers.py]. 확인 번호는 브리지 메모리에만 있어 브리지를 다시 띄우면 사라진다. 슬래시 명령은 기록 모양이 달라 끝내 맞대지 못하므로 다시 보지 않는다(11절).
 
 응답 코드와 패널 결과 글은 이렇게 짝지어진다 [code:bridge/api/sessions.py].
 
@@ -380,12 +390,12 @@ Enter를 보냈다고 끝이 아니다. 폭 없는 공백 시험에서 보았듯
 |---|---|---|---|
 | 202 | 트랜스크립트에서 찾음(새 턴) | 보냈습니다. | 비운다 |
 | 202 | 대기열로 들어감 | 보냈습니다. 작업이 끝나면 이어서 전달됩니다. | 비운다 |
-| 504 | 못 찾음, 입력 칸에 없음 | 보냈습니다. | 비운다 |
+| 202 | 못 찾음, 입력 칸에 없음(확인 못 함, 뒤에서 다시 봄) | 보냈습니다. | 비운다 |
 | 504 | 못 찾음, 입력 칸에 남음 | 제출되지 않았습니다. 입력 칸에 글이 남아 있으니 대화창에서 Enter를 누르거나 지워 주세요. | 남긴다 |
 | 504 | 못 찾음, 화면도 못 읽음 | 제출됐는지 확인하지 못했습니다. 대화창에서 입력 칸을 확인해 주세요. | 남긴다 |
 | 409 | 거부 | 보내지 못했습니다. (까닭) | 남긴다 |
 
-잘 갔으면 한 마디만 하고, 잘못됐을 때만 무엇이 왜인지와 할 일을 쓴다. 내부 동작(기록 확인 등)은 화면 글에 쓰지 않는다. 패널의 입력 칸은 보낸 것이 확인됐을 때만 비우므로, 실패하면 사람이 쓴 글이 패널에 그대로 남아 다시 보낼 수 있다.
+잘 갔으면 한 마디만 하고, 잘못됐을 때만 무엇이 왜인지와 할 일을 쓴다. 내부 동작(기록 확인 등)은 화면 글에 쓰지 않는다. 패널의 입력 칸은 보낸 것이 확인됐을 때만 비우므로, 실패하면 사람이 쓴 글이 패널에 그대로 남아 다시 보낼 수 있다. 확인 못 함일 때 패널 결과 글은 「보냈습니다.」 한 마디이고, 뒤에서 다시 본 결과는 활동 탭 줄로만 보인다.
 
 ## 11. 같은 길을 쓰는 것: 모델 바꾸기
 

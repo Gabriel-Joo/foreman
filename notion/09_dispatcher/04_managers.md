@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/handover.py, bridge/managers.py, bridge/api/managers.py, config/managers.toml, migrations/0031_handover_todo_edit.sql, tests/js/handover.test.mjs, tests/test_handover.py, tests/test_managers.py, tests/test_escalate_number.py, bridge/api/dashboard.py
+다루는 곳: bridge/handover.py, bridge/managers.py, bridge/api/managers.py, config/managers.toml, migrations/0031_handover_todo_edit.sql, tests/js/handover.test.mjs, tests/test_handover.py, tests/test_managers.py, tests/test_inject_late.py, tests/test_escalate_number.py, bridge/api/dashboard.py
 읽은 커밋: 646c5fb
 -->
 # 관리자에게 넘기기와 보고
@@ -89,7 +89,7 @@ sequenceDiagram
 
 넘기는 길에서 일이 사라질 수 있는 곳은 두 군데다. 관리자에게 넣지 못한 경우와, 넣었는데 관리자가 띄우지 않는 경우다.
 
-넣지 못하면(관리자가 없음, 입력 칸이 막힘, 넣었는지 확인하지 못함) 방금 적은 `handed_to`와 `handed_at`을 비워 넘기지 않은 것으로 되돌린다. 카드에는 "관리자에게 넘기지 못했습니다(사유). [이대로 시작]으로 직접 띄울 수 있습니다"가 뜨고, 텔레그램이 한 번 간다 [code:bridge/handover.py]. 관리자가 아예 없으면 처음부터 단추가 꺼진 채로 보이고, 호버에 "관리자에게 보내기 — (프로젝트)에 관리자 세션이 없습니다. [이대로 시작]으로 직접 띄웁니다."가 나온다 [code:bridge/static/js/foremanchat.js].
+넣지 못하면(관리자가 없음, 입력 칸이 막힘, 글이 입력 칸에 남음, 화면도 기록도 못 읽음) 방금 적은 `handed_to`와 `handed_at`을 비워 넘기지 않은 것으로 되돌린다. 카드에는 "관리자에게 넘기지 못했습니다(사유). [이대로 시작]으로 직접 띄울 수 있습니다"가 뜨고, 텔레그램이 한 번 간다 [code:bridge/handover.py]. 관리자가 아예 없으면 처음부터 단추가 꺼진 채로 보이고, 호버에 "관리자에게 보내기 — (프로젝트)에 관리자 세션이 없습니다. [이대로 시작]으로 직접 띄웁니다."가 나온다 [code:bridge/static/js/foremanchat.js].
 
 넣은 뒤에는 감시가 1분마다(`every_s = 60`) 돈다. 넘긴 지 `wait_min`분(기본 15분)이 지났는데 아직 `planned`인 계획을 찾아 "교장 계획 #N을 관리자(세션 M)에게 넘긴 지 N분이 지났는데 아직 시작하지 않았습니다"를 텔레그램으로 보낸다 [code:bridge/handover.py] [code:config/managers.toml]. 이 알림은 계획마다 한 번이다. 보낸 시각을 메모리가 아니라 DB(`handed_alert_at`)에 적기 때문에, 그사이 브리지를 다시 띄워도 같은 알림이 또 가지 않는다. 감시 자체가 예외로 실패해도 감시는 멈추지 않고 다음 분에 다시 돈다. 실패는 시간마다 한 번만 텔레그램으로 알리고, `GET /api/foreman/handover`의 `health` 칸에 남긴다 [code:bridge/handover.py].
 
@@ -149,7 +149,7 @@ FOREMAN API는 관리 토큰 하나와 프로젝트마다 범위가 좁은 프�
 
 ### 실패는 사람에게, 기록은 DB에
 
-관리자가 없거나 넣지 못하면 응답에 사유를 담고, 텔레그램을 한 번 보낸다. 텔레그램에는 넣으려던 글 앞부분(1500자)이 함께 실려, 사람이 그 글을 손으로 전할 수 있다 [code:bridge/managers.py]. 성공이든 실패든 모든 부탁은 `session_action` 표에 `mgr-ask`로 남는다(보낸 쪽, 받는 쪽, 실패 사유, 본문 앞 300자). 기록에 실패해도 부탁은 막지 않는다.
+관리자가 없거나 넣지 못하면 응답에 사유를 담고, 텔레그램을 한 번 보낸다. 텔레그램에는 넣으려던 글 앞부분(1500자)이 함께 실려, 사람이 그 글을 손으로 전할 수 있다 [code:bridge/managers.py]. 기록에서 아직 못 찾았어도 관리자 입력 칸이 비었으면 넣은 것으로 돌려준다(`verified: false`와 확인 번호를 함께). 실패로 돌려주면 보낸 쪽이 다시 보내 같은 부탁이 두 번 들어가기 때문이다. 그 뒤 브리지가 2분 동안 기록을 다시 보고, 끝내 없으면 그때 실패로 남기고 텔레그램을 보낸다. 작업 세션 중계도 같다 [code:bridge/managers.py] [log:foreman-5_inject_unconfirmed_20261120.md]. 성공이든 실패든 모든 부탁은 `session_action` 표에 `mgr-ask`로 남는다(보낸 쪽, 받는 쪽, 실패 사유, 본문 앞 300자). 기록에 실패해도 부탁은 막지 않는다.
 
 ### 부탁으로 연 턴은 알림을 보내지 않는다
 

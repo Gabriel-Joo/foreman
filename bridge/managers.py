@@ -18,6 +18,10 @@
 - `relay(project, "question", …)` 작업 세션이 사람에게 묻는 말을 「[사람에게 올릴 물음 — …]」로. **관리자는 답하지 않고** 모아 사람에게 올린다
 - 넣지 못하면 delivered=False만 돌려준다 — 텔레그램은 부른 쪽(notify)이 바로 보낸다
 - 같은 관리자에게 동시에 둘이 붙여 넣지 않게 관리자마다 잠근다
+
+제출 확인(11-20, bridge/inject.py 머리). 기록에서 아직 못 찾았어도 입력 칸이 비었으면(outcome unconfirmed) 넣은 것으로
+돌려준다(delivered=True, verified=False, check). 전에는 실패로 돌려 텔레그램 「넣지 못했습니다」가 갔고, 다시 보내면 두 번
+들어갔다. 뒤에서 기록을 다시 봐도 없으면 그때 session_action에 실패로 남기고 텔레그램을 보낸다(부탁과 중계 둘 다)
 """
 
 from __future__ import annotations
@@ -31,9 +35,20 @@ from typing import Any
 
 from sqlalchemy import bindparam, text
 
-from bridge.inject import Refused, deliver
+from bridge.inject import Refused, deliver, submitted
 
-log = logging.getLogger("foreman.managers")
+
+def _why_not(r: dict[str, Any]) -> str:
+    return ("입력 칸에 글이 남아 제출되지 않았습니다" if r.get("outcome") == "left"
+            else "입력 칸에 넣었는지 확인하지 못했습니다")
+
+
+def _verified(r: dict[str, Any]) -> dict[str, Any]:
+    """기록으로 확인했나와 늦게 다시 보는 번호(GET /api/sessions/{관리자}/input/{check})."""
+    return {"verified": bool(r.get("delivered")), "check": r.get("check")} if r else {}
+
+
+log =logging.getLogger("foreman.managers")
 REPO = Path(__file__).resolve().parent.parent
 CONFIG = REPO / "config" / "managers.toml"
 NOTIFY_KIND = "manager"   # notification.kind 칼럼 8자
@@ -156,9 +171,10 @@ class Managers:
             from bridge.handoff import transcript_path
             try:
                 r = await deliver(m["cc_session_id"], msg, sessions_dir=self.h.sessions_dir,
-                                  transcript=transcript_path(m["cwd"] or "", m["cc_session_id"]), verify_s=15.0)
-                if not (r.get("delivered") or r.get("queued")):
-                    reason = "입력 칸에 넣었는지 확인하지 못했습니다"
+                                  transcript=transcript_path(m["cwd"] or "", m["cc_session_id"]), verify_s=15.0,
+                                  on_late=self._late(m["session_id"], to_project, f"{from_project or '사람'}→{to_project}", body, msg))
+                if not submitted(r):
+                    reason = _why_not(r)
             except Refused as e:
                 reason = f"넣지 못했습니다: {e}"
             except Exception as e:  # noqa: BLE001
@@ -170,7 +186,7 @@ class Managers:
             self._notify(to_project, f"⚠ {to_project} 관리자에게 부탁을 넣지 못했습니다({reason}) — {msg[:1500]}")
             log.warning("관리자 부탁 실패 %s → %s: %s", from_project, to_project, reason)
         return {"delivered": ok, "reason": reason, "to_session": m["session_id"] if m else None,
-                "queued": bool(r.get("queued")), "notified": not ok and self.notifier is not None}
+                "queued": bool(r.get("queued")), "notified": not ok and self.notifier is not None} | _verified(r)
 
     async def relay(self, project: str, kind: str, from_session: int, from_label: str, body: str) -> dict[str, Any]:
         """작업 세션 턴 끝 보고 · 사람에게 올릴 물음을 관리자 입력 칸에. 텔레그램은 보내지 않는다(부른 쪽이 정한다)."""
@@ -189,9 +205,11 @@ class Managers:
         try:
             async with lock:
                 r = await deliver(m["cc_session_id"], msg, sessions_dir=self.h.sessions_dir,
-                                  transcript=transcript_path(m["cwd"] or "", m["cc_session_id"]), verify_s=15.0)
-            if not (r.get("delivered") or r.get("queued")):
-                reason = "입력 칸에 넣었는지 확인하지 못했습니다"
+                                  transcript=transcript_path(m["cwd"] or "", m["cc_session_id"]), verify_s=15.0,
+                                  on_late=self._late(m["session_id"], project, f"{kind} 세션 {from_session}→{project}", body, msg,
+                                                     action="mgr-relay"))
+            if not submitted(r):
+                reason = _why_not(r)
         except Refused as e:
             reason = f"넣지 못했습니다: {e}"
         except Exception as e:  # noqa: BLE001
@@ -199,7 +217,18 @@ class Managers:
         ok = reason is None
         await self._record(m["session_id"], ok, f"{kind} 세션 {from_session}→{project}"
                            + ("" if ok else f" 실패: {reason}") + f" · {body[:300]}", action="mgr-relay")
-        return {"delivered": ok, "reason": reason, "manager": True, "to_session": m["session_id"]}
+        return {"delivered": ok, "reason": reason, "manager": True, "to_session": m["session_id"]} | _verified(r)
+
+    def _late(self, sid: int, project: str, label: str, body: str, msg: str, action: str = "mgr-ask") -> Any:
+        """늦게 다시 본 결과(bridge/inject._watch_late) — 들어갔으면 남기기만, 없으면 실패로 남기고 텔레그램."""
+        async def late(found: dict[str, Any] | None) -> None:
+            if found:
+                await self._record(sid, True, f"{label} 늦게 확인: 들어감 · {body[:300]}", action=action)
+                return
+            await self._record(sid, False, f"{label} 실패: 늦게 확인해도 기록에 없음 · {body[:300]}", action=action)
+            self._notify(project, f"⚠ {project} 관리자 입력 칸에 넣은 글이 기록에 남지 않았습니다. 대화창을 확인해 주세요 — {msg[:1500]}")
+            log.warning("관리자 %s 늦게 확인 실패 %s", action, label)
+        return late
 
     async def _record(self, sid: int | None, ok: bool, detail: str, action: str = "mgr-ask") -> None:
         try:

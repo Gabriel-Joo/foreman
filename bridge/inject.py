@@ -14,6 +14,14 @@ tmux는 셸이 아니라 인자 목록으로 부른다(따옴표 · $ · 백틱 
   - pane의 포그라운드가 claude가 아니다(#{pane_current_command})
   - 그 pane의 claude가 이 세션의 프로세스가 아니다(pane_pid의 자손인지)
 바쁜 세션(CC가 sessions json에 status=busy)에 보낸 입력은 새 턴이 아니라 대기열로 들어간다 — queued=True로 알린다.
+
+제출 확인(11-20). 보낸 뒤 결과를 outcome 하나로 가른다(deliver):
+  delivered, queued   트랜스크립트에 그 글이 프롬프트나 대기열로 남았다
+  unconfirmed         기록에서는 아직 못 찾았지만 화면의 입력 칸이 비었다(제출된 것으로 보임)
+  left                입력 칸에 글이 그대로 남았다(제출 안 됨)
+  unknown             기록도 화면도 읽지 못했다
+delivered, queued가 아니면 뒤에서 LATE_S초 동안 기록을 다시 본다(check 번호, check_state). 11-20 하루 20번 기록이
+늦게 쓰여 10초 안에 못 찾았고(입력 칸은 늘 비어 있었다), 사람이 다시 보낼지 망설였다.
 """
 
 import asyncio
@@ -21,9 +29,12 @@ import json
 import logging
 import os
 import re
+import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from bridge.liveness import LiveSession, live_sessions
 
@@ -243,9 +254,77 @@ async def paste_and_submit(t: Target, text: str, *, delay_s: float = 0.15, guard
     return steps
 
 
+LATE_S = 120.0          # 제출을 못 맞췄을 때 뒤에서 기록을 다시 보는 상한(11-20)
+LATE_EVERY_S = 1.0
+CHECKS_MAX = 500
+_checks: dict[str, dict[str, Any]] = {}       # 확인 번호 → {"state": checking|delivered|queued|not_found, …}
+_late_tasks: set[asyncio.Task[Any]] = set()
+OnLate = Callable[[dict | None], Awaitable[None] | None]
+
+
+def outcome_of(delivered: dict | None, left: bool | None) -> str:
+    """제출 확인 결과 하나(모듈 머리 설명). left = left_in_box 결과."""
+    if delivered:
+        return "queued" if delivered.get("as") == "queued" else "delivered"
+    return "left" if left else "unconfirmed" if left is False else "unknown"
+
+
+def submitted(res: dict) -> bool:
+    """넣은 것으로 다뤄도 되나. 기록으로 확인했거나(delivered, queued) 입력 칸이 비었다(unconfirmed, 뒤에서 다시 본다).
+    unconfirmed를 실패로 다루면 보낸 쪽이 다시 보내 두 번 들어간다(11-20 관리자 부탁과 화면)."""
+    return bool(res.get("delivered")) or bool(res.get("queued")) or res.get("outcome") == "unconfirmed"
+
+
+def check_state(check_id: str) -> dict[str, Any] | None:
+    """늦게 다시 보기의 지금 상태. 모르는 번호(브리지를 다시 띄웠거나 오래돼 밀려남)면 None."""
+    c = _checks.get(check_id)
+    return dict(c) if c else None
+
+
+def _start_late(session_id: str, transcript: str, offset: int, send: str, late_s: float, on_late: OnLate | None) -> str:
+    cid = uuid.uuid4().hex[:12]
+    while len(_checks) >= CHECKS_MAX:
+        _checks.pop(next(iter(_checks)))
+    _checks[cid] = {"id": cid, "state": "checking", "session": session_id, "started": time.time(), "until_s": late_s}
+    t = asyncio.get_running_loop().create_task(_watch_late(cid, transcript, offset, send, late_s, on_late))
+    _late_tasks.add(t)
+    t.add_done_callback(_late_tasks.discard)
+    return cid
+
+
+async def _watch_late(cid: str, transcript: str, offset: int, send: str, late_s: float, on_late: OnLate | None) -> None:
+    loop = asyncio.get_running_loop()
+    end = loop.time() + late_s
+    found = None
+    while loop.time() < end:
+        await asyncio.sleep(LATE_EVERY_S)
+        found = find_delivery(transcript, offset, send) if os.path.exists(transcript) else None
+        if found:
+            break
+    c = _checks.get(cid)
+    waited = time.time() - c["started"] if c else late_s
+    if c is not None:
+        c |= {"state": ("queued" if found["as"] == "queued" else "delivered") if found else "not_found",
+              "delivered": found, "waited_s": round(waited, 1)}
+    if found:
+        log.info("늦게 확인: 제출됨 %s(%s) %.1f초 뒤", cid, found["as"], waited)
+    else:
+        log.warning("늦게 확인: %g초 동안 기록에 없음 %s", late_s, cid)
+    if on_late is not None:
+        try:
+            r = on_late(found)
+            if asyncio.iscoroutine(r):
+                await r
+        except Exception as e:  # noqa: BLE001  늦은 결과를 알리는 쪽이 실패해도 확인 결과(check_state)는 남는다
+            log.warning("늦게 확인 결과 알리기 실패 %s: %s", cid, type(e).__name__)
+
+
 async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, transcript: str | None,
-                  command: bool = False, delay_s: float = 0.15, verify_s: float = 10.0) -> dict:
-    """확인 → 보호 → 방법 C → 제출 확인. 거부면 Refused. 결과 dict: queued · guarded · delivered(as/uuid)."""
+                  command: bool = False, delay_s: float = 0.15, verify_s: float = 10.0,
+                  late_s: float = LATE_S, on_late: OnLate | None = None) -> dict:
+    """확인 → 보호 → 방법 C → 제출 확인. 거부면 Refused. 결과 dict: queued, guarded, delivered(as/uuid), outcome.
+    기록으로 확인하지 못하면(outcome이 delivered나 queued가 아님) 뒤에서 late_s초 동안 다시 보고 check 번호를 준다.
+    on_late(찾은 것 또는 None)는 그 결과가 나올 때 한 번 불린다."""
     if not text.strip():
         # 빈칸 · 공백만 — 붙여넣을 것 없이 Enter만 가는 셈이다. 입력 칸에 CC의 프롬프트 제안(회색)이 떠 있으면
         # Enter가 그 제안을 제출하는지 문서에 없다(11-05) — 사람이 쓰지 않은 글이 실행될 수 있으니 보내지 않는다
@@ -269,10 +348,17 @@ async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, trans
            "steps": (["Escape"] * escs) + steps, "esc": escs, "dialog": dialog, "delivered": delivered, "chars": len(text), "lines": text.count("\n") + 1}
     if transcript and not delivered:
         # 기록에서 못 찾았다 — 화면의 입력 칸을 직접 본다(11-05). 보낸 글 앞부분이 입력 칸(❯ 줄 아래)에 보이면 남은 것,
-        # 안 보이면 제출된 것(기록 모양이 달라 못 맞췄을 뿐 — 11-05 끝 공백 건이 그랬다). 사람이 쓰던 글일 수 있어 지우지 않는다
+        # 안 보이면 제출된 것(기록 모양이 달라 못 맞췄을 뿐 — 11-05 끝 공백 건이 그랬다). 사람이 쓰던 글일 수 있어 지우지 않는다.
+        # 11-20 실측: 하루 20번 모두 입력 칸이 비었고, 기록은 나중에 보니 남아 있었다(CC가 10초 넘게 늦게 썼다).
+        # 그래서 뒤에서 기록을 다시 보고(check) 그 결과로 실제 갔는지 알린다
         out["left_in_box"] = await left_in_box(t, send)
-        log.warning("주입 제출 확인 안 됨 %s %s(%d자) — 입력 칸에 %s", session_id[:8], t.pane, len(text),
-                    "남아 있다" if out["left_in_box"] else "없다(제출된 것으로 보임)" if out["left_in_box"] is False else "모름")
+        # 슬래시 명령은 글과 다른 모양으로 남아(/model 등) 기록으로는 끝내 못 맞춘다. 다시 보지 않는다
+        if not send.startswith("/"):
+            out["check"] = _start_late(session_id, transcript, offset or 0, send, late_s, on_late)
+        log.warning("주입 제출 확인 안 됨 %s %s(%d자) — 입력 칸에 %s%s", session_id[:8], t.pane, len(text),
+                    "남아 있다" if out["left_in_box"] else "없다(제출된 것으로 보임)" if out["left_in_box"] is False else "모름",
+                    f", 기록을 {late_s:g}초 더 본다({out['check']})" if out.get("check") else "")
+    out["outcome"] = outcome_of(delivered, out.get("left_in_box"))
     return out
 
 

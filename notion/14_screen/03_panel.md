@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/static/js/opanel.js, bridge/static/js/render.js, bridge/static/js/md.js, bridge/static/js/tip.js, bridge/static/js/uiscale.js, bridge/static/js/grip.js, tests/js/grip.test.mjs, tests/js/md.test.mjs, tests/js/render.test.mjs, tests/js/uiscale_range.test.mjs, tests/js/term_cell.test.mjs, tests/js/api_stop.test.mjs, tests/js/appr_place.test.mjs, tests/js/bg_line.test.mjs, tests/js/escalate_unseen.test.mjs, tests/js/now_doing.test.mjs, tests/js/fold_keep.test.mjs
+다루는 곳: bridge/static/js/opanel.js, bridge/static/js/render.js, bridge/static/js/md.js, bridge/static/js/tip.js, bridge/static/js/uiscale.js, bridge/static/js/grip.js, tests/js/grip.test.mjs, tests/js/md.test.mjs, tests/js/render.test.mjs, tests/js/convo_state.test.mjs, tests/js/uiscale_range.test.mjs, tests/js/term_cell.test.mjs, tests/js/api_stop.test.mjs, tests/js/appr_place.test.mjs, tests/js/bg_line.test.mjs, tests/js/escalate_unseen.test.mjs, tests/js/now_doing.test.mjs, tests/js/fold_keep.test.mjs
 읽은 커밋: 9971b0f
 -->
 
@@ -40,6 +40,8 @@ flowchart TB
 패널의 처음 모습은 지금과 달랐다. 세션 정보 표, 인계, 최근 활동, 대화가 한 칸에 위아래로 쌓여 있었고, 대화는 그 가운데 높이가 정해진 작은 상자였다. 사람이 패널을 여는 까닭은 거의 언제나 "세션이 뭐라고 했나"인데, 그 글이 다른 정보 사이에서 몇 줄밖에 보이지 않았다. 그래서 패널을 다시 짜면서 대화를 주인공으로 올렸다 [log:stage11_handoff_result.md]. 지금은 [대화] 탭이 기본이고, 이 탭을 고르면 탭 줄 바로 아래부터 입력 칸 바로 위까지 대화가 다 차지한다. CSS로는 대화 상자가 남는 높이를 모두 받는 `flex:1 1 0`이고 자기 안에서 스크롤한다 [code:bridge/static/office.html].
 
 대화 안에서 사람이 보낸 글은 오른쪽 말풍선, 세션(CC)의 답은 왼쪽 카드로 그린다. 서브에이전트 결과, 완료 알림, 다른 세션이 보낸 말처럼 사람이 쓰지 않은 입력은 점선의 작은 글로 그려 곁가지임을 드러낸다. 입력이 누구에게서 왔는지는 서버가 턴마다 붙이는 출처 값으로 가른다. 「나」, 「완료 알림」, 「서브에이전트 결과」, 「다른 세션」, 「관리자 부탁」, 「작업 세션 보고」, 「합치기 카드(FOREMAN)」 같은 이름표가 글 위에 붙는다 [code:bridge/static/js/render.js]. 세션이 일하는 동안 사람이 더 보낸 글은 그 턴 안에 「나 · 작업 중에 보냄」으로 끼워 넣는다. CC가 붙이는 내부 포장(`<agent-message>`, `<task-notification>`)은 벗기고 요약과 본문만 보인다.
+
+대화를 받기 전과 받는 동안은 「불러오는 중…」, 받았는데 턴이 하나도 없으면 「아직 대화가 없습니다.」, 받지 못했으면 「대화를 불러오지 못했습니다(까닭).」를 보인다 [code:bridge/static/js/render.js]. 셋을 가르지 않으면 새로 띄워 아직 첫 글을 받지 않은 세션이 「불러오는 중…」에 머문다. 대화 요청은 턴 0개로 잘 돌아왔는데 빈 결과를 불러오는 중과 같은 빈 글로 그렸기 때문이다 [log:foreman-5_inject_unconfirmed_20261120.md].
 
 답 카드 머리에는 턴이 어떻게 끝났는지가 붙는다. 「끝남」, 「중단」, 「API 오류」, 「프로세스 사라짐」 같은 말이다. API 오류로 끝난 턴은 오류의 종류(안전 분류기 거부, 사용량 한도, 과부하 등)를 글자로 쓰고, 할 일과 요청 번호는 호버로 뺀다 [code:bridge/static/js/render.js]. 오류를 가르는 판단은 → 「03 세션 지켜보기와 글 넣기」에서 다룬다. 한 턴 안에서 세션이 마지막 답 전에 쓴 글들은 「중간 글 N」 접는 칸에 모은다.
 
