@@ -1,6 +1,6 @@
 <!--
 다루는 곳: config/approval.toml, scripts/foreman-decide.sh, bridge/inject.py, bridge/assembler.py, bridge/overlap.py, bridge/usage.py
-읽은 커밋: c061fd3
+읽은 커밋: 2b56124
 -->
 
 # 알려진 한계
@@ -54,7 +54,7 @@ FOREMAN이 띄우는 세션은 Claude Code의 auto mode(세션이 묻지 않고 
 
 치른 값은 이렇습니다.
 
-- 대화 기록 파일이 지워진 뒤(기본 120일)에는 도구 결과 본문을 볼 수 없습니다(→ 「세션 패널: 대화와 활동」)
+- 대화 기록 파일이 지워진 뒤에는 도구 결과 본문을 볼 수 없습니다. Claude Code는 기본으로 30일 뒤 이 파일을 지우는데, 서버 설정으로 120일까지 늘려 두었습니다(→ 「세션 패널: 대화와 활동」) [docs:00_design.md]
 
 ## 6. 조건: 물리 서버 한 대, 다 볼 수 없는 사용량
 
