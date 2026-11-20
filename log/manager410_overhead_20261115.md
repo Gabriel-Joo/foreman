@@ -624,6 +624,8 @@
     - 「」 없는 편 사이 참조: 602 합칠 때 379 → 줄 끝 111(점검 요약 줄). `-v` 편별로 남은 곳은 줄에 들지 않은 편(15_db, 13_usage, 04_approval/02_flow, 02_ingest/01_transcript, 05_roles/01_roles, 07_merge/02_reconcile, 05_roles/02_guards, 15_db/02_migrate, 04_approval/03_summary)과 점검 전에 지나간 01_structure 1곳. 서기 지시문에 목록이 들어간 뒤 지나간 편은 0으로 줄었다(07_merge 7→0, 07_merge/01_card 19→0)
     - 줄 서기가 보고에만 적은 규칙 위반(log 없음): 599 커밋 메시지 heredoc, 601 커밋 메시지 heredoc(amend로 바로잡음), 629 영어 진행 글, 631 영어 낱말 섞은 진행 글. CLAUDE.md heredoc 한 줄(`02eeb63`, 20:28) 뒤 뜬 서기 604~632에서 heredoc 0. 영어 진행 글은 줄에서 둘, 오늘 관리자 아홉, 602 하나 — 셋을 넘었으니 규칙 쪽을 볼 거리
   - 펫퍼민트 F단계: 사람이 (가) 새 페이지(짝 옮기기 없음). 34편 created, 실패 0. docs = auto(214214d) 뒤 21:45:56 설정 다시 읽음, 그러나 맞추기는 돌지 않음 — 뒤처짐은 파일 수(new, changed, deleted)라 0. 관리자가 앞 답에서 「첫 tick에 돈다」고 틀리게 말했고 바로잡아 보냄. 옛 docs/ 멈춘 편 표시 5개 held 그대로 → TODO foreman-152. [지금 맞추기]는 사용자에게 묻는 중
+  - 펫퍼민트 사람 승인(펫퍼민트 관리자가 사람 글을 그대로 전함, 사용자가 이 세션에 붙여 넣음): 관리자 토큰으로 [지금 맞추기] 한 번. 응답 done 0, held 0, failed 0, warnings 0. `docs/02_pipeline/12~16` 표시 5개 held → released, `@docs-last` 멈춤 0 실패 0. 결과를 펫퍼민트 관리자에게 보냄. 첫 호출은 포트를 잘못 적어(8770, 브리지는 8000) 아무 일도 안 함
+  - 관리자 규칙 위반: 맞추기 누르기 직전 진행 글 한 줄을 영어로 씀(훅이 잡음, 다음 글부터 한국어)
   - 관리자 규칙 위반: 615 합친 뒤 push 명령에 빈 heredoc(`<<'X'`)을 넣음(세션 대화 기록을 찾다가). 아무것도 하지 않는 빈 입력이었다. 펫퍼민트 맞추기 시각을 코드 일부만 읽고 단정해 보냄(틀림, 바로잡음)
 - 사용자 셋: GitHub Actions는 TODO 아님(11-17 안 쓰기로, 까닭 `docs/00_design.md` 480, 한계 편 146) → CLAUDE.md 45를 그곳 가리키게, 서기 587(sonnet, `cc/foreman-4`). GIF 기본값 그대로. 커밋 메시지 heredoc도 금지, 메모리 고침(규칙이 두 벌이었음. 세 번 되풀이되면 규칙 쪽을 본다 → 메모리 `feedback-rule-not-session`)
 - 규칙 위반: 576 log push 때 push 전 검사와 `git push`를 한 명령에 묶음. 자동 모드 검사가 막아 돌지 않았고, 검사를 따로 돌려 0건 확인 뒤 push(CLAUDE.md 11-17 규칙)
