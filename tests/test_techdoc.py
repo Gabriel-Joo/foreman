@@ -291,22 +291,22 @@ def test_portfolio_links_to_published_notion_piece(tmp_path):
 
 # ── 포트폴리오 옛 편 내리기 ─────────────────────────────────────
 
-def test_prune_portfolio_archives_only_gone_sources(tmp_path):
+def test_portfolio_sync_archives_only_gone_sources(tmp_path):
+    """포트폴리오 [Notion에 올리기] 한 번(11-20)이 git에서 지운 편만 휴지통으로 보낸다(전에는 따로 누르던 [원본 없는 페이지 내리기])."""
     _git(tmp_path, "init", "-q", "-b", "main")
     _commit(tmp_path, {"portfolio/00_old.md": "# 옛\n", "portfolio/01_keep.md": "# 남김\n"}, "docs: 옛 판")
     db, f = FakeDB(), _fake_notion()
     pub = _pub(tmp_path, db, f)
-    for p in ("portfolio/00_old.md", "portfolio/01_keep.md"):
-        asyncio.run(pub.publish(p, "지금"))
+    assert [d["action"] for d in asyncio.run(ds.sync(pub, "지금", src=ds.PORT))["done"]] == ["created", "created"]
     _commit(tmp_path, {"portfolio/00_old.md": None, "portfolio/02_new.md": "# 새\n"}, "docs: 새 판")
     lst = {d["path"]: d for d in asyncio.run(pub.list())}
     assert lst["portfolio/00_old.md"]["gone"] and not lst["portfolio/01_keep.md"]["gone"] and not lst["portfolio/02_new.md"]["gone"]
-    r = asyncio.run(pub.prune_portfolio())
-    assert r == {"action": "prune", "done": ["portfolio/00_old.md"], "failed": []}
+    r = asyncio.run(ds.sync(pub, "지금", src=ds.PORT))
+    assert sorted((d["path"], d["action"]) for d in r["done"]) == [("portfolio/00_old.md", "archived"), ("portfolio/02_new.md", "created")]
     old = db.rows[("foreman", "portfolio/00_old.md")]
     assert old["status"] == "archived" and f.pages[old["notion_page_id"]]["archived"]
     assert not f.pages[db.rows[("foreman", "portfolio/01_keep.md")]["notion_page_id"]]["archived"]
-    assert asyncio.run(pub.prune_portfolio())["done"] == []                           # 두 번 눌러도 더 내리지 않는다
+    assert asyncio.run(ds.sync(pub, "지금", src=ds.PORT))["done"] == []                # 두 번 눌러도 더 하지 않는다
 
 
 # ── 근거 확인기 ─────────────────────────────────────────────

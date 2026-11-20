@@ -141,8 +141,8 @@ def _publish_why(scope: str, method: str, query: dict[str, str], body: Any) -> s
     if p != scope:
         return f"프로젝트 토큰({scope})으로는 이 프로젝트 문서만 게시할 수 있습니다 — 받은 project: {p}"
     # force는 거짓이 분명한 값만 통과(pydantic이 "true" · 1도 True로 받는다). 라우터(bridge/api/publish.py)도 한 번 더 본다
-    # prune(11-15 원본 없는 포트폴리오 페이지 한꺼번에 내리기)도 한꺼번에 하는 일이라 관리 토큰만
-    if b.get("force") not in (None, False, 0, "", "false", "False", "0") or b.get("action") in ("docsync", "prune"):
+    # 11-20 포트폴리오 한꺼번에 올리기(원본 없는 페이지 내리기, 번호순 다시 세우기 포함)도 action = docsync라 관리 토큰만
+    if b.get("force") not in (None, False, 0, "", "false", "False", "0") or b.get("action") == "docsync":
         return f"프로젝트 토큰({scope})으로는 할 수 없습니다 — {PUBLISH_ADMIN_ONLY}"
     return None
 

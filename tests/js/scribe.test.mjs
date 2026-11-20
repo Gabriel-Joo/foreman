@@ -112,25 +112,37 @@ test('기술문서(11-15) — notion/ 원고면 [Notion에 올리기]와 코드�
   assert.ok(ask.startsWith('FOREMAN의 notion/ 원고를 Notion [기술문서]에 올립니다(새 1, 바뀜 2)') && !ask.includes('코드가 바뀐 편'));
 });
 
-test('원본 없는 포트폴리오 페이지(11-15) — 숫자와 [원본 없는 페이지 내리기]', async () => {
-  const docs = [{ path: 'portfolio/00_old.md', status: 'published', changed: null, gone: true }, { path: 'portfolio/01_a.md', status: 'published', changed: false }];
-  const sc = mk({ foreman: PJ }, { enabled: true, docs });
+// 포트폴리오 게시 요약(11-20 서버 docsync.summary(src=portfolio/)) — 기술문서 docs_pub과 같은 꼴
+const PP = (extra) => ({ src: 'portfolio/', total: 2, published: 2, new: 0, changed: 0, relink: 0, deleted: 0, broken: 0, code_changed: 0, code_unknown: 0,
+  behind_commits: null, last: { at: 1.7e9, done: 2, held: 0, failed: 0, failed_first: null }, last_error: null, held_buttons: 0, ...extra });
+const GONE_DOCS = [{ path: 'portfolio/00_old.md', status: 'published', changed: null, gone: true },
+  { path: 'portfolio/01_a.md', status: 'published', changed: true, relink: true }, { path: 'portfolio/02_b.md', status: 'published', changed: true }];
+
+test('포트폴리오 게시(11-20) — 기술문서와 같은 꼴: [Notion에 올리기] 하나, 마지막으로 올림, 실패. 한 편씩 단추와 따로 내리기는 없다', async () => {
+  const pj = { ...PJ, port_pub: PP({ total: 2, changed: 2, relink: 1, deleted: 1, last: { at: 1.7e9, done: 3, held: 0, failed: 1, failed_first: 'portfolio/02_b.md: 거부' } }) };
+  const sc = mk({ foreman: pj }, { enabled: true, portfolio: { has_dir: true, place: true, ref: 'HEAD' }, docs: GONE_DOCS });
   sc.html('foreman', 'F'); await settle();
   const h = sc.html('foreman', 'F');
-  assert.match(h, /<b>포트폴리오 게시<\/b> <span class="warn">게시됨 2, 원본 없음 1/);
-  assert.ok(h.includes('data-pub="prune"') && h.includes('원본 없음</span>'));
-  const none = mk({ foreman: PJ }, { enabled: true, docs: [docs[1]] });
-  none.html('foreman', 'F'); await settle();
-  assert.ok(!none.html('foreman', 'F').includes('data-pub="prune"'));
+  assert.match(h, /<b>포트폴리오 게시<\/b> <span class="warn">게시됨 2 · 바뀜 1 · 링크만 1 · 지워짐 1<\/span>/);
+  const btn = /<button[^>]*data-pub="docsync" data-proj="foreman" data-path="portfolio\/" data-ask="([^"]*)"[^>]*>Notion에 올리기</.exec(h);
+  assert.ok(btn, '[Notion에 올리기] 하나');
+  assert.ok(btn[1].includes('portfolio/ 글을 Notion [포트폴리오]에 올립니다(바뀜 1, 링크만 1, 지워짐 1)') && btn[1].includes('휴지통') && btn[1].includes('번호순'));
+  assert.ok(!h.includes('data-pub="prune"') && !h.includes('원본 없는 페이지 내리기') && !h.includes('>다시 게시<') && !h.includes('>게시<'));
+  assert.ok(!/data-pub="publish"(?![^>]*data-force)/.test(h), '한 편씩 올리는 단추가 없다(덮기만 남는다)');
+  assert.ok(h.includes('마지막으로 올림') && h.includes('실패: portfolio/02_b.md: 거부'));
+  assert.ok(h.includes('원본 없음</span>') && h.includes('링크를 다시 걸어야 함</span>') && h.includes('원본이 바뀜</span>'));
+  assert.match(h, /<summary[^>]*>편 목록 3<\/summary>/);
+  assert.ok(h.includes('data-pub="archive"'));                            // 내리기와 열기는 편 목록에 남는다
 });
 
-test('Notion 게시는 둘 — 포트폴리오 게시(접힘, 게시됨 N)와 기술문서 게시(숫자 · 마지막 맞춤)', async () => {
+test('Notion 게시는 둘 — 포트폴리오 게시(편 목록 접힘, 게시됨 N)와 기술문서 게시(숫자 · 마지막 맞춤)', async () => {
   const docs = Array.from({ length: 10 }, (_, i) => ({ path: `portfolio/${i}.md`, status: 'published', changed: false }));
-  const sc = mk({ foreman: PJ }, { enabled: true, docs });
+  const sc = mk({ foreman: { ...PJ, port_pub: PP({ total: 10, published: 10 }) } }, { enabled: true, docs });
   sc.html('foreman', 'F'); await settle();
   const h = sc.html('foreman', 'F');
-  assert.match(h, /<b>포트폴리오 게시<\/b> <span class="muted">게시됨 10<\/span>/);
-  assert.ok(!/<details class="hand"[^>]*data-keep="scribe:foreman:pubport"[^>]* open/.test(h));      // 접힘이 기본
+  assert.match(h, /<b>포트폴리오 게시<\/b> <span class="ok">게시됨 10<\/span>/);
+  assert.ok(!h.includes('data-path="portfolio/"'), '올릴 것이 없으면 단추가 없다');
+  assert.ok(!/<details class="hand"[^>]*data-keep="scribe:foreman:pubport"[^>]* open/.test(h));      // 편 목록은 접힘이 기본
   assert.match(h, /<b>기술문서 게시<\/b> <span class="warn">게시됨 14 · 새 1 · 바뀜 1<\/span>/);
   assert.ok(h.includes('push 대기 커밋 4개') && h.includes('실패 1') && h.includes('docs/a.md: 거부'));
   assert.ok(h.includes('data-pub="docsync"'));
@@ -150,57 +162,80 @@ test('펫퍼민트처럼 portfolio/가 없으면 포트폴리오 게시는 아�
   assert.ok(un.html('petmint', 'P').includes('<b>포트폴리오 게시</b>: 원본 커밋 origin/main을 읽지 못했습니다.'));
 });
 
-test('포트폴리오 게시는 고른 프로젝트로(11-17): 목록, 게시, 원본 없는 페이지 내리기 모두 그 프로젝트', async () => {
+test('포트폴리오 게시는 고른 프로젝트로(11-17, 11-20 한 단추): 목록, [Notion에 올리기], 덮기 모두 그 프로젝트', async () => {
   const calls = [];
-  const infra = { enabled: true, portfolio: { has_dir: true, place: true, ref: 'origin/main' },
-    docs: [{ path: 'portfolio/01_a.md', status: 'new', changed: null }, { path: 'portfolio/00_old.md', status: 'published', changed: null, gone: true }] };
+  const infra = { enabled: true, portfolio: { has_dir: true, place: true, ref: 'origin/main' }, docs: GONE_DOCS };
+  const pj = { ...PJ, port_pub: PP({ new: 1, deleted: 1 }) };
   globalThis.fetch = async (u, o = {}) => {
     calls.push({ u, body: o.body ? JSON.parse(o.body) : null });
-    if (u === '/api/scribe/todo') return { ok: true, json: async () => ({ tasks: TASKS, projects: { 'ronanlab-infra': PJ, foreman: PJ } }) };
-    if (o.method === 'POST') return { ok: true, json: async () => ({ action: 'created', done: [], failed: [] }) };
+    if (u === '/api/scribe/todo') return { ok: true, json: async () => ({ tasks: TASKS, projects: { 'ronanlab-infra': pj, foreman: PJ } }) };
+    if (o.method === 'POST') return { ok: true, json: async () => ({ action: 'docsync', src: 'portfolio/', done: [{ path: 'portfolio/01_a.md', action: 'created' }, { path: 'portfolio/00_old.md', action: 'archived' }], held: [], failed: [], warnings: [] }) };
     return { ok: true, json: async () => (u.includes('ronanlab-infra') ? infra : { enabled: true, docs: [] }) };
   };
-  globalThis.confirm = () => true;
+  const asked = [];
+  globalThis.confirm = (m) => { asked.push(m); return true; };
   const sc = createScribe({ headers: () => ({}), touch() {} });
   sc.html('ronanlab-infra', '인프라'); await settle();
   const h = sc.html('ronanlab-infra', '인프라');
   assert.ok(calls.some((c) => c.u === '/api/publish?project=ronanlab-infra'));
   assert.ok(!calls.some((c) => c.u === '/api/publish' || c.u === '/api/publish?project=foreman'));
-  assert.match(h, /data-pub="publish" data-proj="ronanlab-infra" data-path="portfolio\/01_a.md"/);
-  assert.match(h, /data-pub="prune" data-proj="ronanlab-infra"/);
+  assert.match(h, /data-pub="docsync" data-proj="ronanlab-infra" data-path="portfolio\/"/);
+  const ask = /data-path="portfolio\/" data-ask="([^"]*)"/.exec(h)[1];
   const btn = (sel) => ({ target: { closest: (q) => (q === '[data-pub]' ? sel : null) }, preventDefault() {} });
-  await sc.onClick(btn({ dataset: { pub: 'publish', proj: 'ronanlab-infra', path: 'portfolio/01_a.md' } }), 'ronanlab-infra', '인프라');
-  await sc.onClick(btn({ dataset: { pub: 'prune', proj: 'ronanlab-infra' } }), 'ronanlab-infra', '인프라');
-  await sc.onClick(btn({ dataset: { pub: 'publish', path: 'portfolio/01_a.md' } }), 'ronanlab-infra', '인프라');    // data-proj가 없어도 고른 방
+  await sc.onClick(btn({ dataset: { pub: 'docsync', proj: 'ronanlab-infra', path: 'portfolio/', ask } }), 'ronanlab-infra', '인프라');
+  assert.ok(asked[0].startsWith('인프라의 portfolio/ 글을 Notion [포트폴리오]에 올립니다'));
+  assert.match(sc.html('ronanlab-infra', '인프라'), /포트폴리오를 맞췄습니다: 올림 1 · 휴지통으로 1/);
+  await sc.onClick(btn({ dataset: { pub: 'publish', force: '1', path: 'portfolio/02_b.md' } }), 'ronanlab-infra', '인프라');  // 덮기, data-proj 없어도 고른 방
   const posts = calls.filter((c) => c.body).map((c) => c.body);
-  assert.deepEqual(posts.map((b) => [b.action, b.project]), [['publish', 'ronanlab-infra'], ['prune', 'ronanlab-infra'], ['publish', 'ronanlab-infra']]);
+  assert.deepEqual(posts, [{ path: 'portfolio/', action: 'docsync', project: 'ronanlab-infra', force: false },
+    { path: 'portfolio/02_b.md', action: 'docsync', project: 'ronanlab-infra', force: true }]);
   // 다시 읽기도 그 프로젝트(FOREMAN을 부르지 않는다)
   assert.ok(!calls.some((c) => c.u.startsWith('/api/publish?project=foreman')));
 });
 
-test('Notion 자리가 정해지지 않은 프로젝트(11-17): 상태는 보이고 [게시]는 까닭과 함께 막힌다', async () => {
-  const sc = mk({ newproj: PJ }, { enabled: true, portfolio: { has_dir: true, place: false, place_why: 'Notion 자리가 정해지지 않았습니다(config/notion.toml portfolio_page)' },
-    docs: [{ path: 'portfolio/01_a.md', status: 'new', changed: null }] });
+test('Notion 자리가 정해지지 않은 프로젝트(11-17): 상태는 보이고 [Notion에 올리기]는 까닭과 함께 막힌다', async () => {
+  const sc = mk({ newproj: { ...PJ, port_pub: PP({ total: 1, published: 0, new: 1, last: null }) } },
+    { enabled: true, portfolio: { has_dir: true, place: false, place_why: 'Notion 자리가 정해지지 않았습니다(config/notion.toml portfolio_page)' },
+      docs: [{ path: 'portfolio/01_a.md', status: 'new', changed: null }] });
   sc.html('newproj', 'N'); await settle();
   const h = sc.html('newproj', 'N');
   assert.match(h, /<b>포트폴리오 게시<\/b> <span class="warn">게시됨 0 · 새 1, Notion 자리 없음<\/span>/);
-  assert.ok(h.includes('게시할 수 없습니다: Notion 자리가 정해지지 않았습니다'));
-  assert.match(h, /data-pub="publish"[^>]* disabled title="게시 — 지금은 할 수 없습니다\. Notion 자리가 정해지지 않았습니다/);
+  assert.ok(h.includes('게시할 수 없습니다: Notion 자리가 정해지지 않았습니다') && h.includes('Notion에 올린 기록이 없습니다'));
+  assert.match(h, /data-path="portfolio\/"[^>]* disabled title="Notion에 올리기 — 지금은 할 수 없습니다\. Notion 자리가 정해지지 않았습니다/);
 });
 
-test('FOREMAN은 그대로: 자리 있음이면 [게시]가 열려 있고 FOREMAN으로 부른다', async () => {
+test('포트폴리오 덮기 단추는 포트폴리오 게시 줄 아래, 기술문서 덮기는 기술문서 줄 아래(11-20 서버가 줄마다 src)', async () => {
+  const items = [
+    { kind: 'publish', act: 'force', project: 'foreman', path: 'portfolio/01_a.md', src: 'portfolio/', title: 'Notion에서 사람이 고친 곳 1개: portfolio/01_a.md', why: '덮지 않았습니다' },
+    { kind: 'publish', act: 'force', project: 'foreman', path: 'docs/b.md', src: 'docs/', title: 'Notion에서 사람이 고친 곳 2개: docs/b.md', why: '덮지 않았습니다' }];
+  const sc = mk({ foreman: { ...PJ, items, port_pub: PP({ changed: 1, held_buttons: 1, last: { at: 1.7e9, done: 0, held: 1, failed: 0 } }) } },
+    { enabled: true, portfolio: { has_dir: true, place: true, ref: 'HEAD' }, docs: GONE_DOCS });
+  sc.html('foreman', 'F'); await settle();
+  const h = sc.html('foreman', 'F');
+  const port = h.indexOf('<b>포트폴리오 게시</b>'), docs = h.indexOf('<b>기술문서 게시</b>');
+  const pf = h.indexOf('data-path="portfolio/01_a.md"'), df = h.indexOf('data-force="1" data-proj="foreman" data-path="docs/b.md"');
+  assert.ok(port < pf && pf < docs && docs < df, '각 묶음 줄 아래');
+  assert.ok(h.includes('사람이 고쳐 멈춤 1') && h.includes('덮기 2(아래 게시 칸)'));
+});
+
+test('FOREMAN은 그대로: 자리 있음이면 [Notion에 올리기]가 열려 있고 FOREMAN으로 부른다', async () => {
   const calls = [];
   globalThis.fetch = async (u) => {
     calls.push(u);
-    if (u === '/api/scribe/todo') return { ok: true, json: async () => ({ tasks: TASKS, projects: { foreman: PJ } }) };
+    if (u === '/api/scribe/todo') return { ok: true, json: async () => ({ tasks: TASKS, projects: { foreman: { ...PJ, port_pub: PP({ changed: 1 }) } } }) };
     return { ok: true, json: async () => ({ enabled: true, portfolio: { has_dir: true, place: true, ref: 'HEAD' }, docs: [{ path: 'portfolio/01_a.md', status: 'published', changed: true }] }) };
   };
   const sc = createScribe({ headers: () => ({}), touch() {} });
   sc.html('foreman', 'F'); await settle();
   const h = sc.html('foreman', 'F');
   assert.ok(calls.includes('/api/publish?project=foreman'));
-  assert.match(h, /data-pub="publish" data-proj="foreman" data-path="portfolio\/01_a.md" title="게시 — main에 커밋된 원본을/);
-  assert.ok(h.includes('>다시 게시<') && !h.includes('Notion 자리 없음'));
+  assert.match(h, /data-pub="docsync" data-proj="foreman" data-path="portfolio\/" data-ask="[^"]*" title="Notion에 올리기 — portfolio\/ 글 가운데 바뀐 편만/);
+  assert.ok(!h.includes('Notion 자리 없음'));
+});
+
+test('바뀜 가운데 링크만 다시 걸면 되는 편은 따로 센다(11-20, 기술문서도 같다)', () => {
+  assert.equal(pubCounts({ published: 5, new: 0, changed: 3, relink: 2 }).text, '게시됨 5 · 바뀜 1 · 링크만 2');
+  assert.equal(pubCounts({ published: 5, new: 0, changed: 2, relink: 2 }).text, '게시됨 5 · 링크만 2');
 });
 
 test('물어보기 답 · 문서 점검 결과에서 바로 고치기', async () => {

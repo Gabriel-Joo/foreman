@@ -80,7 +80,7 @@ def test_docsync_result_survives_restart(tmp_path, monkeypatch):
     held = [{"path": "docs/b.md", "edits": ["x"], "count": 1, "url": None}]
     failed = [{"path": "docs/c.md", "error": "거부됨"}]
 
-    async def fake_sync(p, when, force=frozenset()):
+    async def fake_sync(p, when, force=frozenset(), src=None, only=None):
         await p.publish("docs/a.md", when)
         return {"project": "infra", "ref_sha": "f" * 40, "done": [{"path": "docs/a.md"}], "held": held, "failed": failed, "warnings": []}
     monkeypatch.setattr(ds, "sync", fake_sync)
@@ -101,7 +101,7 @@ def test_one_piece_publish_after_sync_is_the_latest(tmp_path, monkeypatch):
     pub, db, st = _world(tmp_path)
     failed = [{"path": "docs/c.md", "error": "거부됨"}]
 
-    async def fake_sync(p, when, force=frozenset()):
+    async def fake_sync(p, when, force=frozenset(), src=None, only=None):
         return {"project": "infra", "ref_sha": "f" * 40, "done": [], "held": [], "failed": failed, "warnings": []}
     monkeypatch.setattr(ds, "sync", fake_sync)
     d = ds.DocSync({"infra": pub})
@@ -117,7 +117,7 @@ def test_summary_reads_db_and_marks_unreadable(tmp_path, monkeypatch):
     """summary: DB에서 읽은 값을 last로, 못 읽으면 last는 비우고 last_error를 둔다(없다고 하지 않는다)."""
     pub, db, st = _world(tmp_path)
 
-    async def fake_status(p):
+    async def fake_status(p, src=None):
         return {"project": "infra", "files": ["docs/a.md"], "new": [], "changed": [], "deleted": [], "broken": [], "ref_sha": "f" * 40,
                 "synced": None, "behind_commits": None, "last_commit_at": None, "mode": "manual", "ref": "HEAD"}
     monkeypatch.setattr(ds, "status", fake_status)

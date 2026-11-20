@@ -30,7 +30,7 @@ test('「할 일」을 접어 둬도 덮기 단추는 칸 밖 기술문서 게�
   assert.ok(!list.includes('data-force="1"'), '단추는 접는 칸 안에 없다');
   const after = h.slice(h.indexOf(list) + list.length);
   assert.ok(after.includes('data-force="1"') && after.includes('data-path="docs/b.md"') && after.includes('Notion 수정 버리고 덮기'));
-  assert.ok(list.includes('덮기 1(아래 기술문서 게시)'));
+  assert.ok(list.includes('덮기 1(아래 게시 칸)'));
 });
 
 test('기술문서 쓰기 줄에도 포트폴리오처럼 [갱신]과 편 목록 단추(11-19 foreman-125)', async () => {

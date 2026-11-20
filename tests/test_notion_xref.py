@@ -161,67 +161,80 @@ def _page_links(pub, pid):
     return out
 
 
-def test_publish_pending_then_relinked_when_target_goes_up(patched):
+def test_publish_pending_is_link_only_until_target_goes_up(patched):
+    """한 편만 올리면(가리킨 편이 Notion에 없음) 지문을 비워 둔다. 글은 그대로라 link_only. 화면이 「원본이 바뀜」이 아니라
+    「링크를 다시 걸어야 함」으로 보인다(11-20). 11-20부터 다른 편을 따라 다시 거는 길(relink)은 없다. 묶음 게시가 건다."""
     PAGES["portfolio/00_a.md"] = "# 한눈에\n\n자세한 것은 → 「승인 카드」.\n\n→ 「없는 편」도 있다.\n"
     PAGES["portfolio/01_b.md"] = "# 승인 카드\n\n처음으로 → 「한눈에」.\n"
     rows: dict = {}
     pub = _Pub(rows)
     r1 = asyncio.run(pub.publish("portfolio/00_a.md"))
-    assert r1["action"] == "created" and r1["pending"] == ["portfolio/01_b.md"]
+    assert r1["action"] == "created" and r1["pending"] == ["portfolio/01_b.md"] and "relinked" not in r1
     assert any("없는 편" in w for w in r1["warnings"])
-    assert rows["portfolio/00_a.md"]["content_hash"] is None          # 기억 — 「바뀜」으로 남는다
-    a_pid = r1["page_id"]
-    assert _page_links(pub, a_pid) == []
+    a = rows["portfolio/00_a.md"]
+    assert a["content_hash"] is None and nt.link_only(a, "c" * 7)            # 글은 그대로, 링크만
+    assert not nt.link_only(a, "d" * 7)                                       # 그 뒤 커밋이 있으면 원본이 바뀐 것
+    assert not nt.link_only({**a, "commit_sha": None}, "c" * 7)              # 빈 페이지만 만든 편(reserve)은 링크만이 아니다
     r2 = asyncio.run(pub.publish("portfolio/01_b.md"))
     assert r2["pending"] == [] and _page_links(pub, r2["page_id"]) == [("「한눈에」", r1["url"])]
-    assert [d["path"] for d in r2["relinked"]] == ["portfolio/00_a.md"] and not r2["relink_failed"]
-    assert _page_links(pub, a_pid) == [("「승인 카드」", r2["url"])]          # 같은 페이지에 링크가 걸렸다
-    assert rows["portfolio/00_a.md"]["content_hash"] == str(hash(PAGES["portfolio/00_a.md"]))
-    # 다시 올리면 바뀐 것 없음
-    assert asyncio.run(pub.publish("portfolio/00_a.md"))["action"] == "unchanged"
+    assert _page_links(pub, r1["page_id"]) == []                              # a는 다음 묶음 게시까지 그대로
 
 
-def test_relink_skips_pages_waiting_for_other_targets(patched):
-    PAGES["portfolio/00_a.md"] = "# 한눈에\n\n→ 「셋째」\n"
-    PAGES["portfolio/01_b.md"] = "# 승인 카드\n\n본문\n"
-    PAGES["portfolio/02_c.md"] = "# 셋째\n\n본문\n"
-    rows: dict = {}
-    pub = _Pub(rows)
-    asyncio.run(pub.publish("portfolio/00_a.md"))
-    r = asyncio.run(pub.publish("portfolio/01_b.md"))
-    assert r["relinked"] == []                       # a는 c를 기다린다 — b가 올라가도 다시 올리지 않는다
-    r = asyncio.run(pub.publish("portfolio/02_c.md"))
-    assert [d["path"] for d in r["relinked"]] == ["portfolio/00_a.md"]
+def _one_pass(pub, monkeypatch, files, new, changed=()):
+    st = {"project": "x", "files": list(files), "new": list(new), "changed": list(changed), "deleted": [], "broken": [],
+          "ref_sha": "f" * 40, "titles": {}, "src": pub.src}
 
-
-def test_docsync_two_passes_link_new_pages(patched, monkeypatch):
-    """기술문서 한 번 게시 — 처음 편이 뒤 편을 가리켜도 다 올린 뒤 두 번째 돌기에서 걸린다. 끝내 없는 제목은 경고로."""
-    PAGES["notion/00_a.md"] = "# 00 처음\n\n→ 「둘째」와 → 「없는 편」.\n"
-    PAGES["notion/01_b.md"] = "# 01 둘째\n\n→ 「00 처음」\n"
-    rows: dict = {}
-    pub = _Pub(rows, opts={"src": "notion/", "title": "h1", "header": "footer"})
-    pub.docs_page = None                              # 차례 세우기는 이 시험 밖
-    st = {"project": "x", "files": list(PAGES), "new": list(PAGES), "changed": [], "deleted": [], "broken": [],
-          "ref_sha": "f" * 40, "titles": {}, "src": "notion/"}
-
-    async def fake_status(p):
+    async def fake_status(p, src=None):
         return st
     monkeypatch.setattr(ds, "status", fake_status)
     calls = []
     orig = pub.publish
 
     async def spy(path, when="", **kw):
-        calls.append((path, kw.get("relink")))
+        calls.append(path)
         return await orig(path, when, **kw)
     pub.publish = spy
+    return calls
+
+
+def test_docsync_one_pass_links_new_pages_and_writes_each_page_once(patched, monkeypatch):
+    """기술문서 한 번 게시(11-20). 새 편의 빈 페이지를 먼저 만들어(reserve) 처음 편이 뒤 편을 가리켜도 첫 게시에서 걸린다.
+    한 요청 안에서 페이지마다 글은 한 번만 쓴다(전에는 두 번째 돌기가 같은 페이지에 다시 썼다). 끝내 없는 제목은 경고로."""
+    PAGES["notion/00_a.md"] = "# 00 처음\n\n→ 「둘째」와 → 「없는 편」.\n"
+    PAGES["notion/01_b.md"] = "# 01 둘째\n\n→ 「00 처음」\n"
+    rows: dict = {}
+    pub = _Pub(rows, opts={"src": "notion/", "title": "h1", "header": "footer"})
+    pub.docs_page = None                              # 차례 세우기는 이 시험 밖
+    calls = _one_pass(pub, monkeypatch, PAGES, PAGES)
     r = asyncio.run(ds.sync(pub, "지금"))
-    assert calls == [("notion/00_a.md", False), ("notion/01_b.md", False), ("notion/00_a.md", False)]
-    a = rows["notion/00_a.md"]
-    assert a["content_hash"] == str(hash(PAGES["notion/00_a.md"]))
-    links = _page_links(pub, a["notion_page_id"])
-    assert links == [("「둘째」", rows["notion/01_b.md"]["url"])]
+    assert calls == ["notion/00_a.md", "notion/01_b.md"]
+    a, b = rows["notion/00_a.md"], rows["notion/01_b.md"]
+    assert a["content_hash"] == str(hash(PAGES["notion/00_a.md"])) and b["content_hash"]
+    assert _page_links(pub, a["notion_page_id"]) == [("「둘째」", b["url"])]
+    assert _page_links(pub, b["notion_page_id"]) == [("「00 처음」", a["url"])]
+    appends = [c[1] for c in pub.c.calls if c[0] == "append"]
+    assert sorted(appends) == sorted([a["notion_page_id"], b["notion_page_id"]])   # 페이지마다 한 번
+    assert [c for c in pub.c.calls if c[0] == "create"] == [("create", "root", "00 처음"), ("create", "root", "01 둘째")]
     assert [w["path"] for w in r["warnings"]] == ["notion/00_a.md"] and "없는 편" in r["warnings"][0]["warning"]
-    assert [d["path"] for d in r["done"]] == ["notion/00_a.md", "notion/01_b.md"]
+    assert [(d["path"], d["action"]) for d in r["done"]] == [("notion/00_a.md", "created"), ("notion/01_b.md", "created")]
+
+
+def test_portfolio_one_pass_relinks_waiting_piece(patched, monkeypatch):
+    """포트폴리오 묶음 게시(11-20). 앞서 한 편만 올라가 링크를 못 건 편(바뀜, 링크만)과 새 편을 한 번에 올리면 둘 다 걸리고,
+    포트폴리오 제목은 번호와 첫 H1(게시기가 정한다)."""
+    PAGES["portfolio/00_a.md"] = "# 한눈에\n\n→ 「승인 카드」\n"
+    PAGES["portfolio/01_b.md"] = "# 승인 카드\n\n→ 「한눈에」\n"
+    rows: dict = {}
+    pub = _Pub(rows)
+    pub.keep_order = True                             # 차례 세우기는 이 시험 밖(DB 없는 가짜 게시기)
+    asyncio.run(pub.publish("portfolio/00_a.md"))
+    assert rows["portfolio/00_a.md"]["content_hash"] is None
+    calls = _one_pass(pub, monkeypatch, PAGES, ["portfolio/01_b.md"], ["portfolio/00_a.md"])
+    r = asyncio.run(ds.sync(pub, "지금", src=ds.PORT))
+    assert sorted(calls) == ["portfolio/00_a.md", "portfolio/01_b.md"] and not r["warnings"] and not r["failed"]
+    a, b = rows["portfolio/00_a.md"], rows["portfolio/01_b.md"]
+    assert a["content_hash"] and _page_links(pub, a["notion_page_id"]) == [("「승인 카드」", b["url"])]
+    assert pub.c.pages[b["notion_page_id"]]["title"] == "01 승인 카드"
 
 
 def test_docs_projects_do_not_read_refs(patched):

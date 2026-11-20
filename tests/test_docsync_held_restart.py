@@ -14,7 +14,7 @@ def run(c):
 
 
 def _fake_status(monkeypatch, changed=("docs/b.md",), sha=SHA):
-    async def fake_status(p):
+    async def fake_status(p, src=None):
         return {"project": "infra", "files": ["docs/a.md", "docs/b.md"], "new": [], "changed": list(changed), "deleted": [], "broken": [],
                 "ref_sha": sha, "synced": None, "behind_commits": None, "last_commit_at": None, "mode": "manual", "ref": "HEAD"}
     monkeypatch.setattr(ds, "status", fake_status)
@@ -25,7 +25,7 @@ def _forces(items):
 
 
 def _sync_holding(monkeypatch, held):
-    async def fake_sync(p, when, force=frozenset()):
+    async def fake_sync(p, when, force=frozenset(), src=None, only=None):
         return {"project": "infra", "ref_sha": SHA, "done": [], "held": held, "failed": [], "warnings": []}
     monkeypatch.setattr(ds, "sync", fake_sync)
 
@@ -48,23 +48,28 @@ def test_held_from_sync_survives_new_docsync(tmp_path, monkeypatch):
     assert run(ds.last_published(pub, last))["held"] == 1
 
 
-def test_one_sided_hold_and_release_reach_db(tmp_path, monkeypatch):
-    """한 쪽 게시가 멈춘 줄(ref_sha가 있는 것)도 남고, 풀면 DB 행도 released가 되어 다시 띄워도 되살아나지 않는다."""
+def test_one_piece_hold_and_release_reach_db(tmp_path, monkeypatch):
+    """한 편 게시(only, 11-20 묶음 게시와 같은 함수)가 멈춘 줄도 DB에 남고(고친 곳 목록은 512자 안), 그 편이 풀리면 released가 되어
+    다시 띄워도 되살아나지 않는다. 다른 편의 멈춤 줄은 한 편 게시가 건드리지 않는다."""
     pub, db, _ = _world(tmp_path)
-    _fake_status(monkeypatch)
-    monkeypatch.setattr(ds, "ref_sha", lambda repo, ref: SHA)
+    _fake_status(monkeypatch, changed=("docs/a.md", "docs/b.md"))
+    _sync_holding(monkeypatch, [{"path": "docs/a.md", "edits": ["a 고침"], "count": 1, "url": None}])
     d = ds.DocSync({"infra": pub})
-    assert d.hold("infra", "docs/b.md", ["x" * 300] * 9, None)
-    run(d.save_held("infra"))
+    run(d.run_one("infra"))
+    _sync_holding(monkeypatch, [{"path": "docs/b.md", "edits": ["x" * 300] * 5, "count": 9, "url": None}])
+    run(d.run_one("infra", only={"docs/b.md"}))
     row = db.rows[("infra", ds.HELD_PRE + "docs/b.md")]
-    assert row["status"] == "held" and row["commit_sha"] == SHA and len(row["error"]) <= 512
+    assert row["status"] == "held" and len(row["error"]) <= 512
+    assert db.rows[("infra", ds.HELD_PRE + "docs/a.md")]["status"] == "held"            # 다른 편 줄은 그대로
     d2 = ds.DocSync({"infra": pub})
     last, _ = run(d2.last_for("infra"))
-    assert last["held"][0]["count"] == 9 and len(_forces(run(ds.todo_items(pub, last)))) == 1
-    d2.release("infra", "docs/b.md")
-    run(d2.save_held("infra"))
+    assert sorted(h["path"] for h in last["held"]) == ["docs/a.md", "docs/b.md"] and len(_forces(run(ds.todo_items(pub, last)))) == 2
+    _sync_holding(monkeypatch, [])
+    run(d2.run_one("infra", only={"docs/b.md"}))
     assert db.rows[("infra", ds.HELD_PRE + "docs/b.md")]["status"] == "released"
-    assert run(ds.DocSync({"infra": pub}).last_for("infra")) == (None, None)
+    assert db.rows[("infra", ds.HELD_PRE + "docs/a.md")]["status"] == "held"
+    last, _ = run(ds.DocSync({"infra": pub}).last_for("infra"))
+    assert [h["path"] for h in last["held"]] == ["docs/a.md"]
 
 
 def test_next_sync_without_hold_releases_rows(tmp_path, monkeypatch):

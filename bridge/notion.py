@@ -8,7 +8,8 @@
 - 원본은 main에 커밋된 것만(`git show HEAD:<경로>`). 같은 원본은 같은 페이지에 내용을 갈아 끼운다(URL 그대로). 내용이 같으면 건너뛴다.
 - 근거 표시: [c:sha] → GitHub 커밋 링크, [log:…] · [docs:…] → 게시한 커밋의 파일 링크, [t:…] → 뺀다(사용자만 볼 수 있는 DB 번호, 11-06 결정).
 - 편 사이 참조(11-17): 원고의 「→ 「제목」」은 같은 묶음(기술문서 원고 폴더, portfolio/) 편의 첫 # 줄로 찾아 그 Notion 페이지를 건다
-  (Ctx.xref_url). 없거나 겹친 제목은 글자로 두고 경고, 아직 안 올린 편은 그 편이 올라간 뒤 다시 건다(Publisher.relink, docsync 두 번째 돌기).
+  (Ctx.xref_url). 없거나 겹친 제목은 글자로 두고 경고. 묶음을 한 번에 올릴 때(docsync.sync) 새 편의 빈 페이지를 먼저 만들어
+  (Publisher.reserve) 첫 게시에서 링크가 걸린다. 그래도 Notion에 없는 편을 가리키면 「링크를 다시 걸어야 함」으로 남는다(link_only, 11-20).
 """
 
 from __future__ import annotations
@@ -1066,6 +1067,13 @@ def file_order(path: str) -> tuple[int, int] | None:
     return (int(m.group(1)), ord(m.group(2)) - 96 if m.group(2) else 0) if m else None
 
 
+def link_only(row: dict[str, Any] | None, sha: str | None) -> bool:
+    """「바뀜」 가운데 글은 그대로이고 링크만 다시 걸면 되는 편인가(11-20, TODO 「링크를 다시 걸어야 함」과 「원본이 바뀜」 가르기).
+    올릴 때 가리킨 편이 Notion에 없어 지문(content_hash)을 비워 두었고, 그때 올린 커밋(commit_sha)이 지금 그 파일의 마지막 커밋이다.
+    빈 페이지만 먼저 만든 편(reserve)과 짝만 지은 편(pair)은 커밋이 비어 있어 들지 않는다."""
+    return bool(row and not row.get("content_hash") and row.get("commit_sha") and sha and row["commit_sha"] == sha)
+
+
 class Publisher:
     """doc_publish 기록 + 범위 확인 + 게시 · 다시 게시 · 내리기. DB는 store(engine)로, Notion은 client로."""
 
@@ -1218,7 +1226,7 @@ class Publisher:
 
     async def _page_urls(self) -> dict[str, str]:
         """게시된 원고(notion/ · portfolio/)의 경로 → Notion url — 원고끼리 상대 링크와 「→ 「제목」」(11-17)을 Notion 페이지로 잇는다
-        (11-15). 아직 안 올린 원고를 가리키면 글자만 남는다. 「→ 「제목」」은 그 편이 올라간 뒤 다시 건다(relink)."""
+        (11-15). 아직 안 올린 원고를 가리키면 글자만 남는다. 묶음을 올릴 때는 새 편의 빈 페이지가 먼저 생겨(reserve) 여기에 든다."""
         from sqlalchemy import text
         out: dict[str, str] = {}
         async with self.e.connect() as c:
@@ -1229,40 +1237,36 @@ class Publisher:
                 out.update({r[0]: r[1] for r in rows if r[1]})
         return out
 
-    async def _pending_paths(self, group: str) -> list[str]:
-        """그 묶음에서 링크를 다 걸지 못한 채 올라간 편. publish가 content_hash를 비워 둔 것(commit_sha는 있다).
-        짝만 지은 페이지(pair, commit_sha도 비어 있다)는 들지 않는다."""
-        from sqlalchemy import text
-        async with self.e.connect() as c:
-            rows = (await c.execute(text(
-                "SELECT path FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' "
-                "AND content_hash IS NULL AND commit_sha IS NOT NULL AND path LIKE :pre ORDER BY path"),
-                {"p": self.project, "pre": group + "%"})).all()
-        return [r[0] for r in rows]
+    def _title(self, path: str, md_title: str | None, given: str | None, ctx: Ctx, planned: str | None = None) -> str:
+        """페이지 제목. 게시(_publish_one)와 빈 페이지 먼저 만들기(reserve)가 같게 정한다.
+        title = "h1"이고 첫 H1이 있으면 그것, 아니면 준 제목(docsync가 준 README 표 제목), 첫 H1, 파일 이름 차례. 포트폴리오는 번호를 붙이고,
+        새 페이지면 new_title = numbered가 정한 제목(planned)이 H1이 아닐 때 앞선다."""
+        h1 = ctx.h1_title and bool(md_title)
+        title = md_title if h1 else (given or md_title or PurePosixPath(path).stem)
+        if path.startswith("portfolio/"):
+            title = portfolio_title(path, title)
+        return title if h1 else (planned or title)
 
-    async def relink(self, published: str, when: str = "") -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """published 편이 막 올라갔다. 그 편을 「→ 「제목」」으로 가리키는데 아직 링크를 못 건 편을 다시 게시한다(11-17).
-        (다시 건 것, 못 건 것). 다시 게시는 relink 없이 한 번만(서로 기다리는 편끼리 돌지 않게). 사람 수정이 있으면 덮지 않고 못 건 것으로."""
-        g = self.xref_group(published)
-        done: list[dict[str, Any]] = []
-        failed: list[dict[str, Any]] = []
-        if not g:
-            return done, failed
-        for p in await self._pending_paths(g):
-            if p == published:
-                continue
-            try:
-                body, commit = git_show(self.repo, p, self.ref)
-                ctx = await self._publish_ctx(p, commit or "HEAD")
-                md_to_blocks(body, ctx)
-                if published not in ctx.refs:
-                    continue
-                # 제목은 지금 것 그대로(docsync가 준 README 표 제목을 첫 H1이나 파일 이름으로 바꾸지 않게. title = "h1"이면 어차피 H1)
-                r = await self.publish(p, when, title=(await self._row(p) or {}).get("title"), relink=False)
-                done.append({"path": p, "action": r["action"], "pending": r.get("pending", [])})
-            except (HumanEdited, OutOfScope, NotionError, FileNotFoundError, OSError) as e:
-                failed.append({"path": p, "error": str(e)[:200]})
-        return done, failed
+    async def reserve(self, path: str, title: str | None = None) -> bool:
+        """새 편의 빈 페이지를 먼저 만들고 짝을 적는다(11-20). 묶음을 한 번에 올릴 때(docsync.sync) 글을 채우기 전에 모든 새 편의
+        url이 생겨 「→ 「제목」」이 첫 게시에서 걸린다. 그래서 한 요청 안에서 같은 페이지에 두 번 쓰지 않는다(전에는 링크를 다시 걸려고
+        한 번 더 썼다). 편 사이 참조를 쓰는 묶음(xref_group)만, 짝이 없거나 Notion에서 사라졌을 때만 만든다. 만들었으면 True.
+        짝을 먼저 적으므로 글을 채우다 실패해도 짝 없는 페이지가 남지 않는다. 지문(content_hash)과 커밋은 비워 「바뀜」으로 남는다."""
+        if not self.xref_group(path) or not self.create:
+            return False
+        row = await self._row(path)
+        if row and row["status"] == "published" and row["notion_page_id"] and await self.scope.under_root(row["notion_page_id"]):
+            return False
+        body, commit = git_show(self.repo, path, self.ref)
+        ctx = self._ctx(path, commit or "HEAD", links=not path.startswith(MANUSCRIPTS))
+        md_title, _ = md_to_blocks(body, ctx)
+        parent, planned = await self.new_page_plan(path)
+        title = self._title(path, md_title, title, ctx, planned)
+        await self.scope.require(parent, not_root=parent != self.root)
+        p = await self.c.create_page(parent, title, [])
+        await self._save(path, kind="doc", title=title, notion_page_id=norm(p["id"]), parent_page_id=parent, commit_sha=None,
+                         content_hash=None, status="published", url=p.get("url"), error=None)
+        return True
 
     async def _save(self, path: str, **kw: Any) -> None:
         from sqlalchemy import text
@@ -1342,18 +1346,16 @@ class Publisher:
                 out.append(plain((b.get(t) or {}).get("rich_text") or [])[:60] or f"({t})")
         return out
 
-    async def publish(self, path: str, when: str = "", force: bool = False, title: str | None = None,
-                      relink: bool = True) -> dict[str, Any]:
-        """force — Notion에서 사람이 고친 블록이 있어도 git 원본으로 덮는다([Notion 수정 버리고 덮기]). 아니면 HumanEdited.
+    async def publish(self, path: str, when: str = "", force: bool = False, title: str | None = None) -> dict[str, Any]:
+        """한 페이지 쓰기. 기술문서 원고와 포트폴리오는 이것을 바로 부르지 않고 docsync.sync가 부른다(11-20, 묶음을 한 함수로).
+        force — Notion에서 사람이 고친 블록이 있어도 git 원본으로 덮는다([Notion 수정 버리고 덮기]). 아니면 HumanEdited.
         title — 페이지 제목을 정해 준다(기술문서: "파일 이름 — README 표 설명", bridge/docsync.titles). 없으면 첫 H1 · 파일 이름.
         결과의 warnings: 링크로 못 바꾼 「→ 「제목」」(없는 제목, 겹치는 제목), pending: 가리키지만 아직 Notion에 없는 편(11-17).
-        relink: 올린 뒤 이 편을 기다리던 편을 다시 건다(Publisher.relink). docsync는 끄고 다 올린 뒤 한 번 더 돈다."""
+        11-20 올린 뒤 이 편을 기다리던 다른 편을 다시 거는 길(relink)은 없앴다. 묶음은 새 편 페이지를 먼저 만들어(reserve) 한 번에 건다."""
         res = await self._publish_one(path, when, force, title)
         if res.get("warnings"):
             logging.getLogger("foreman.notion").warning("편 사이 참조를 링크로 못 바꿨습니다(%s) %s: %s",
                                                         self.project, path, " / ".join(res["warnings"])[:400])
-        if relink and res.get("action") != "unchanged" and self.xref_group(path):
-            res["relinked"], res["relink_failed"] = await self.relink(path, when)
         return res
 
     async def _publish_one(self, path: str, when: str, force: bool, title: str | None) -> dict[str, Any]:
@@ -1363,17 +1365,17 @@ class Publisher:
         portfolio = path.startswith("portfolio/")      # 바깥 사람이 읽는 글 — 저장소 링크 없이, 맨 위 "사본" 안내 없이(11-06)
         # 원고(notion/, portfolio/, 11-15)는 저장소 링크를 걸지 않는다(Ctx 참고). 머리 주석과 근거 표시는 _ctx가 뗀다
         ctx = await self._publish_ctx(path, commit or "HEAD")
-        title, blocks = md_to_blocks(body, ctx)
+        md_title, blocks = md_to_blocks(body, ctx)
         xref = {"warnings": ctx.warnings, "pending": ctx.pending}
-        # 아직 안 올린 편을 가리키면 지문을 비워 둔다(11-17). 이 편은 「바뀜」으로 남아 다음 게시(그 편이 올라간 뒤 relink,
-        # docsync 두 번째 돌기, 사람의 [게시])에서 다시 걸린다. 그 편이 끝내 안 올라가면 계속 바뀜으로 보인다(조용히 묻히지 않게)
+        # 아직 안 올린 편을 가리키면 지문을 비워 둔다(11-17). 이 편은 「링크를 다시 걸어야 함」으로 남아 다음 [Notion에 올리기]에서
+        # 다시 걸린다. 그 편이 끝내 안 올라가면 계속 그렇게 보인다(조용히 묻히지 않게)
         saved = None if ctx.pending else digest
-        h1 = ctx.h1_title and bool(title)               # title = "h1": 첫 H1이 있으면 그것이 제목(docsync가 준 README 표 제목보다 앞선다)
-        if ctx.h1_title and not title:
+        # title = "h1": 첫 H1이 있으면 그것이 제목(docsync가 준 README 표 제목보다 앞선다, _title)
+        if ctx.h1_title and not md_title:
             logging.getLogger("foreman.notion").warning("첫 H1이 없어 README 표 제목 방식으로 돌아갑니다(title = h1): %s", path)
-        title = title if h1 else (given or title or PurePosixPath(path).stem)
+        title = self._title(path, md_title, given, ctx)
         if portfolio:
-            title = portfolio_title(path, title)
+            pass                                         # 바깥 독자용이라 머리 상자도 아래 갱신 줄도 없다
         elif self.footer:
             read = (parse_head(body) or {}).get("read") if ctx.manuscript else None
             blocks = blocks + [footer_block(path, commit or "HEAD", ctx, when, read)]     # 11-09 펫퍼민트 — 포트폴리오로 보여 줄 문서
@@ -1416,14 +1418,16 @@ class Publisher:
             # 11-09 펫퍼민트 — 사람이 옮겨 둔 페이지에만 맞춘다. 짝이 없거나 범위 밖이면 새로 만들지 않고 멈춘다(사용자: 새 페이지 0)
             raise OutOfScope(f"짝 페이지가 없거나 범위 밖입니다. 새 페이지를 만들지 않습니다(create = false): {path}")
         parent, planned = await self.new_page_plan(path)                # 정할 수 없으면 여기서 멈춘다(아무것도 쓰기 전)
-        title = title if h1 else (planned or title)      # h1이 있으면 new_title = numbered보다 앞선다
+        title = self._title(path, md_title, given, ctx, planned)        # h1이 있으면 new_title = numbered보다 앞선다
         blocks = await resolve_uploads(self.c, self.repo, blocks, await self._upload_limit(), self.ref)
         await self.scope.require(parent, not_root=parent != self.root)
         p = await self.c.create_page(parent, title, [])
         pid = norm(p["id"])
+        # 11-20 짝을 먼저 적는다. 글을 채우다 실패해도 짝 없는 페이지가 남지 않고 「바뀜」으로 보인다(런슈즈 「08 관리 화면」이 둘이 된 일)
+        await self._save(path, kind="doc", title=title, notion_page_id=pid, parent_page_id=parent, commit_sha=None,
+                         content_hash=None, status="published", url=p.get("url"), error=None)
         n = await append_tree(self.c, pid, blocks)
-        await self._save(path, kind="doc", title=title, notion_page_id=pid, parent_page_id=parent, commit_sha=commit,
-                         content_hash=saved, status="published", url=p.get("url"), error=None)
+        await self._save(path, commit_sha=commit, content_hash=saved)
         return {"path": path, "action": "created", "page_id": pid, "url": p.get("url"), "commit": commit, "blocks": n, **xref}
 
     async def _publish_shape(self, path: str, pid: str, row: dict[str, Any], blocks: list[dict[str, Any]], commit: str | None,
@@ -1541,16 +1545,6 @@ class Publisher:
         await self._save(path, parent_page_id=dest)
         return {"path": path, "action": "moved", "page_id": row["notion_page_id"], "section": section}
 
-    async def reorder_portfolio(self) -> dict[str, Any]:
-        """포트폴리오를 번호(파일 이름)순으로 다시 세운다(11-06 — 사이에 새 주제를 끼웠다). Notion은 만든 · 옮긴 순서로 쌓고
-        API로 자리를 정할 수 없어서, 모두 임시 묶음 「정렬 중」으로 옮겼다가 번호순으로 루트에 되돌린다(페이지 · URL · 블록 그대로)."""
-        from sqlalchemy import text
-        async with self.e.connect() as c:
-            rows = (await c.execute(text(
-                "SELECT path, notion_page_id FROM doc_publish WHERE project = :p AND kind = 'doc' AND status = 'published' "
-                "AND path LIKE :pre ORDER BY path"), {"p": self.project, "pre": "portfolio/%"})).all()
-        return await self.reorder([(r[0], r[1]) for r in rows], self.portfolio_place(), force=True)
-
     async def reorder(self, rows: list[tuple[str, str]], parent: str, force: bool = False) -> dict[str, Any]:
         """rows(경로, 페이지) 순서대로 parent 아래에 다시 세운다 — 임시 묶음 「정렬 중」으로 옮겼다가 순서대로 되돌린다(페이지 · URL ·
         블록 그대로). parent 아래 우리 페이지들의 지금 순서가 이미 같으면 옮기지 않는다(force면 늘). 사람이 만든 페이지는 건드리지 않는다."""
@@ -1624,31 +1618,19 @@ class Publisher:
         out = []
         for f in sorted(set(files) | set(rows)):
             r = rows.get(f)
-            changed = None
+            changed, relink = None, False
             if r and r["status"] == "published":
                 try:
-                    body, _ = git_show(self.repo, f, self.ref)
+                    body, sha = git_show(self.repo, f, self.ref)
                     changed = content_digest(self.repo, f, body, self.ref) != r["content_hash"]
+                    relink = changed and link_only(r, sha)
                 except (FileNotFoundError, OutOfScope):
                     changed = None
             out.append({"path": f, "title": r["title"] if r else None, "status": r["status"] if r else "new",
                         "url": r["url"] if r else None, "commit": r["commit_sha"] if r else None, "changed": changed,
-                        # 원본이 git에서 사라졌는데 Notion에는 아직 있다(11-15 — 새 판을 올린 뒤 옛 편을 내릴 자리)
+                        # 11-20 「바뀜」 가운데 글은 그대로이고 링크만 다시 걸면 되는 편(link_only). 화면이 「원본이 바뀜」과 가른다
+                        "relink": relink,
+                        # 원본이 git에서 사라졌는데 Notion에는 아직 있다(11-15). 다음 [Notion에 올리기]가 휴지통으로 보낸다(11-20)
                         "gone": bool(r and r["status"] == "published" and f not in files),
                         "updated_at": r["updated_at"].isoformat() + "Z" if r and r["updated_at"] else None})
         return out
-
-    async def prune_portfolio(self) -> dict[str, Any]:
-        """원본 없는 포트폴리오 페이지 내리기(11-15) — git에서 사라진 portfolio/*.md의 Notion 페이지를 휴지통으로(30일 안에 되살린다).
-        화면 축 새 판을 올린 뒤 옛 편을 치우는 길이다. 원본이 남은 글 · 기록 없는(사람이 만든) 페이지는 건드리지 않는다.
-        한 편이 막혀도 나머지는 내리고 막힌 것을 돌려준다."""
-        done, failed = [], []
-        for d in await self.list():
-            if not d["gone"]:
-                continue
-            try:
-                await self.archive(d["path"])
-                done.append(d["path"])
-            except (OutOfScope, NotionError) as e:
-                failed.append({"path": d["path"], "error": str(e)[:200]})
-        return {"action": "prune", "done": done, "failed": failed}

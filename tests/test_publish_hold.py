@@ -43,7 +43,7 @@ def _setup(monkeypatch, sha=SHA, mode="manual"):
     state = {"sha": sha}
     monkeypatch.setattr(ds, "ref_sha", lambda repo, ref: state["sha"])
 
-    async def fake_status(pub):
+    async def fake_status(pub, src=None):
         return {"project": pub.project, "files": ["docs/09.md"], "new": [], "changed": ["docs/09.md"], "deleted": [], "broken": [],
                 "ref_sha": state["sha"], "synced": None, "behind_commits": None, "last_commit_at": None, "mode": mode, "ref": "origin/main"}
     monkeypatch.setattr(ds, "status", fake_status)
@@ -94,11 +94,13 @@ def test_force_clears_line(monkeypatch):
     assert dsync.last["infra"]["held"] == []
 
 
-def test_git_moves_on_line_disappears(monkeypatch):
+def test_git_moves_on_line_stays_until_next_publish(monkeypatch):
+    """11-20 한 편 게시도 묶음 게시와 같은 함수라 멈춤 줄이 git 커밋에 묶이지 않는다. git이 다시 바뀌어도 그 편이 아직 바뀜이면
+    덮기 단추가 남고(페이지는 여전히 사람이 고친 채다), 다음 게시가 풀거나 다시 멈춘다. 전에는 한 쪽 게시 줄만 사라졌다."""
     c, pub, dsync, n, state = _setup(monkeypatch)
     _post(c, action="publish")
     state["sha"] = "b" * 40                              # git이 다시 바뀜
-    assert _forces(_todo(dsync, pub)) == []
+    assert len(_forces(_todo(dsync, pub))) == 1
 
 
 def test_docsync_route_still_works_and_no_duplicate(monkeypatch):
@@ -115,8 +117,9 @@ def test_docsync_route_still_works_and_no_duplicate(monkeypatch):
 def test_no_hold_means_nothing_changes(monkeypatch):
     c, pub, dsync, n, _ = _setup(monkeypatch)
     pub.held = set()
-    assert _post(c, action="publish").status_code == 200
-    assert dsync.last == {} and n.sent == [] and _forces(_todo(dsync, pub)) == []
+    r = _post(c, action="publish")
+    assert r.status_code == 200 and r.json()["action"] == "updated"
+    assert dsync.last["infra"]["held"] == [] and n.sent == [] and _forces(_todo(dsync, pub)) == []
 
 
 def test_docs_off_or_non_docs_path_leaves_nothing(monkeypatch):

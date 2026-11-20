@@ -246,18 +246,17 @@ async def todo(engine: Any, publishers: dict[str, Any] | None = None, docsync: A
             # 11-09 런슈즈 요청 3-1 — 파일마다 한 줄이던 것을 묶음마다 한 줄로. 포트폴리오는 사람이 [게시](바깥 독자에게 내는 글)
             # D2: Notion이 꺼져 있어도 다른 할 일은 센다 — 다만 삼키지 않고 pub_error로 내려 화면이 「읽지 못했습니다」를 보인다
             # 11-17 포트폴리오도 프로젝트마다(전에는 FOREMAN만). 따로 잡아 포트폴리오를 못 읽어도 기술문서 줄은 남는다
+            # 11-20 포트폴리오 게시도 기술문서와 같은 함수(bridge/docsync.py, 묶음 PORT)로 센다. 뒤처짐 한 줄, 멈춘 편 덮기 줄,
+            # 「마지막으로 올림」이 기술문서와 같은 꼴로 나온다(port_pub). 화면이 포트폴리오 칸에 단다
             try:
-                docs = await pub.list()
-                port_pub = {"total": len(docs), "published": sum(d["status"] == "published" for d in docs),
-                            "new": sum(d["status"] == "new" for d in docs), "changed": sum(bool(d["changed"]) for d in docs)}
-                pend = [d for d in docs if d["status"] == "new" or d["changed"]]
-                if pend:
-                    nn = sum(d["status"] == "new" for d in pend)
-                    place = "" if getattr(pub, "portfolio_page", None) else " Notion 자리가 정해지지 않아 아직 올릴 수 없습니다."
-                    items.append({"kind": "publish", "title": f"Notion 포트폴리오: 파일 {len(pend)}개 뒤처짐"
-                                  f"({' · '.join(x for x in (f'새 {nn}' if nn else '', f'바뀜 {len(pend) - nn}' if len(pend) - nn else '') if x)})",
-                                  "why": ", ".join(Path(d["path"]).name for d in pend[:4]) + (" …" if len(pend) > 4 else "")
-                                  + ". 아래 「포트폴리오 게시」에서 올립니다." + place})
+                last_port, port_held_err = await docsync.last_for(name, ds.PORT) if docsync else (None, None)
+                port_pub = await ds.summary(pub, last_port, ds.PORT)
+                got = await ds.todo_items(pub, last_port, ds.PORT)
+                items += got
+                port_pub["held_buttons"] = sum(1 for x in got if x.get("act") == "force")
+                port_pub["held_error"] = port_held_err
+                port_pub["held_list_missing"] = ds.held_list_missing(port_pub, last_port, port_held_err)
+                port_pub["place"] = bool(getattr(pub, "portfolio_page", None))
             except Exception as e:  # noqa: BLE001
                 port_pub = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
             try:
@@ -633,7 +632,7 @@ def task_prompt(task: str, project: str, repo: str, extra: dict[str, str] | None
             what = f"""할 일: 포트폴리오를 `portfolio/`에 쓴다. 정해진 주제 목록은 없다. 먼저 아래 「축 고르기」로 축을 정하고, 그 축으로 편 목록을 정해 새로 쓰거나 고쳐 쓴다.
 - 지금 있는 편: {e.get('siblings') or '(없음)'}
 - 편 목록은 `portfolio/` 폴더 파일이 정한다. 파일 이름 `NN_이름.md`(앞 번호가 차례). 필요한 만큼 늘린다
-- 고른 축이 아닌 옛 편은 새 편으로 바꿔 쓰고, 쓸 데가 없어진 편 파일은 지운다. Notion에 남은 옛 페이지는 사람이 서기실 「포트폴리오 게시」의 [원본 없는 페이지 내리기]로 치운다
+- 고른 축이 아닌 옛 편은 새 편으로 바꿔 쓰고, 쓸 데가 없어진 편 파일은 지운다. Notion에 남은 옛 페이지는 사람이 서기실 「포트폴리오 게시」의 [Notion에 올리기]를 누를 때 휴지통으로 간다
 - 서브에이전트(Agent 도구)에게 편마다 맡겨도 된다. 맡길 때 아래 「원고 쓰는 기준」 「쓰는 법」 「머리 주석」을 그대로 준다
 - 고칠 곳은 `portfolio/`뿐이다"""
         body = f"""{what}

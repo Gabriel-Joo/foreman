@@ -159,7 +159,7 @@ def _status(monkeypatch, **kw):
     st = {"project": "runshoes", "files": [], "new": [], "changed": [], "deleted": [], "broken": [], "ref_sha": "f" * 40,
           "synced": None, "behind_commits": None, "last_commit_at": None, "mode": "auto", "ref": "origin/main", **kw}
 
-    async def fake(pub):
+    async def fake(pub, src=None):
         return st
     monkeypatch.setattr(ds, "status", fake)
 

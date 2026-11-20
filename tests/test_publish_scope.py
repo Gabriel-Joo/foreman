@@ -29,24 +29,17 @@ class FakePub:
 
 
 class FakeDocSync:
-    def __init__(self):
-        self.calls = []
+    """calls에는 한꺼번에 맞추기만 적는다. 한 편 게시(only, 11-20 같은 함수)는 게시기 publish를 불러 게시기 calls에 남는다."""
 
-    def hold(self, name, path, edits, url):
-        return True
+    def __init__(self, pubs=None):
+        self.calls, self.pubs = [], pubs or {}
 
-    def release(self, name, path):
-        pass
-
-    async def last_for(self, name):
-        return None, None
-
-    async def save_held(self, name):
-        pass
-
-    async def run_one(self, name, force=frozenset()):
-        self.calls.append((name, set(force)))
-        return {"done": [], "held": [], "failed": []}
+    async def run_one(self, name, force=frozenset(), src=None, only=None):
+        if only is None:
+            self.calls.append((name, set(force)))
+            return {"done": [], "held": [], "failed": []}
+        done = [await self.pubs[name].publish(p, "지금", force=p in force) for p in sorted(only)]
+        return {"done": done, "held": [], "failed": [], "warnings": []}
 
 
 def _app(tmp_path):
@@ -59,7 +52,7 @@ def _app(tmp_path):
     app.state.token_book = st.TokenBook(st.TokenConfig(enabled=True, file=f))
     app.state.publishers = {n: FakePub(n) for n in ("foreman", "runshoes", "petmint-rag-chatbot")}
     app.state.publisher = app.state.publishers["foreman"]
-    app.state.docsync = FakeDocSync()
+    app.state.docsync = FakeDocSync(app.state.publishers)
     return TestClient(app), app
 
 

@@ -180,7 +180,7 @@ def test_api_refuses_publish_pair_docsync_when_halted(tmp_path):
     p = app.state.publishers["runshoes"]
     p.config_halt = nc.halt_message("runshoes", "origin/main에 파일이 없습니다")
     for body in ({"path": "docs/a.md"}, {"path": "docs/a.md", "action": "docsync"}, {"path": "docs/a.md", "force": True},
-                 {"path": "portfolio/", "action": "reorder"}):
+                 {"path": "portfolio/", "action": "docsync"}):
         r = c.post("/api/publish", json={"project": "runshoes", **body}, headers=h(ADMIN))
         assert r.status_code == 409 and r.json()["halted"] and "게시를 멈췄습니다" in r.json()["refused"]
     r = c.post("/api/publish/pair", json={"project": "runshoes", "path": "docs/a.md", "page_id": "a" * 32}, headers=h(RUN))
@@ -238,7 +238,7 @@ class _SyncPub:
 def test_auto_sync_and_sync_do_nothing_when_halted(monkeypatch):
     called = []
 
-    async def fake_status(pub):
+    async def fake_status(pub, src=None):
         called.append(pub.project)
         return {"new": ["docs/a.md"], "changed": [], "deleted": [], "broken": [], "last_commit_at": None}
     monkeypatch.setattr(ds, "status", fake_status)

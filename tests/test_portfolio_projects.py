@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
+from bridge import docsync as ds
 from bridge import notion as nt
 from bridge import scopetoken as st
 from bridge.api import publish as pub_api
@@ -83,23 +84,33 @@ def test_scope_refuses_other_projects_page(world):
         run(w.pubs["ronanlab-infra"].pair("portfolio/02_y.md", a["page_id"]))
 
 
-def test_prune_and_reorder_touch_only_own_project(world):
+def _kids(f, parent):
+    return [pid for pid, p in f.pages.items() if p["parent"] == parent and not p["archived"]]
+
+
+def test_one_sync_prunes_and_reorders_only_own_project(world):
+    """포트폴리오 [Notion에 올리기] 한 번(docsync.sync, 11-20)이 새 편을 올리고 번호순으로 다시 세우고, 원본 없는 편을 휴지통으로 보낸다.
+    다른 프로젝트의 페이지는 건드리지 않는다(전에는 [원본 없는 페이지 내리기]와 번호순 다시 세우기가 따로였다)."""
     w = world
     a = run(w.pubs["foreman"].publish("portfolio/01_a.md", "t"))
+    y = run(w.pubs["ronanlab-infra"].publish("portfolio/02_y.md", "t"))      # 일부러 거꾸로 올린다(Notion 차례 y, x)
     x = run(w.pubs["ronanlab-infra"].publish("portfolio/01_x.md", "t"))
-    y = run(w.pubs["ronanlab-infra"].publish("portfolio/02_y.md", "t"))
     _commit(w.fr, {"portfolio/01_a.md": None, "portfolio/02_b.md": "# 새 글\n"}, "rename")   # FOREMAN 쪽에도 원본 없는 페이지를 만든다
+    _commit(w.ir, {"portfolio/03_z.md": "# 인프라 셋\n"}, "add")
+    moves = len(w.f.calls)
+    r = run(ds.sync(w.pubs["ronanlab-infra"], "t", src=ds.PORT))
+    assert [(d["path"], d["action"]) for d in r["done"]] == [("portfolio/03_z.md", "created")] and not r["failed"]
+    z = w.db.rows[("ronanlab-infra", "portfolio/03_z.md")]["notion_page_id"]
+    back = [c[1] for c in w.f.calls[moves:] if c[0] == "move" and c[2] == "iport"]
+    assert back == [x["page_id"], y["page_id"], z]                               # 번호순으로 다시 섰다(임시 묶음에서 차례대로 되돌림)
+    assert set(_kids(w.f, "iport")) == {x["page_id"], y["page_id"], z}
+    assert w.db.rows[("ronanlab-infra", ds.PORT_MARK)]["commit_sha"]              # 다 맞춘 커밋(포트폴리오 행)
     _commit(w.ir, {"portfolio/02_y.md": None}, "drop")
-    r = run(w.pubs["ronanlab-infra"].prune_portfolio())
-    assert r["done"] == ["portfolio/02_y.md"] and w.f.pages[y["page_id"]]["archived"]
-    assert not w.f.pages[a["page_id"]]["archived"] and not w.f.pages[x["page_id"]]["archived"]
+    r = run(ds.sync(w.pubs["ronanlab-infra"], "t", src=ds.PORT))
+    assert r["done"] == [{"path": "portfolio/02_y.md", "action": "archived"}] and w.f.pages[y["page_id"]]["archived"]
+    assert not w.f.pages[a["page_id"]]["archived"] and w.f.pages[a["page_id"]]["parent"] == "port"
     assert w.db.rows[("foreman", "portfolio/01_a.md")]["status"] == "published"
-    moves = len([c for c in w.f.calls if c[0] == "move"])
-    r = run(w.pubs["ronanlab-infra"].reorder_portfolio())
-    assert r["order"] == ["portfolio/01_x.md"] and w.f.pages[x["page_id"]]["parent"] == "iport"
-    assert w.f.pages[a["page_id"]]["parent"] == "port"
-    moved = [c[1] for c in w.f.calls[moves:] if c[0] == "move"]
-    assert x["page_id"] in moved and a["page_id"] not in moved
+    assert run(ds.sync(w.pubs["ronanlab-infra"], "t", src=ds.PORT))["done"] == []      # 두 번 눌러도 더 하지 않는다
 
 
 def test_no_place_refuses_and_writes_nothing(world):
@@ -109,8 +120,8 @@ def test_no_place_refuses_and_writes_nothing(world):
     n = len(w.f.pages)
     with pytest.raises(nt.OutOfScope, match="포트폴리오 Notion 자리가 정해지지 않았습니다"):
         run(w.pubs["plain"].publish("portfolio/01_p.md", "t"))
-    with pytest.raises(nt.OutOfScope, match="자리가 정해지지 않았습니다"):
-        run(w.pubs["plain"].reorder_portfolio())
+    r = run(ds.sync(w.pubs["plain"], "t", src=ds.PORT))
+    assert r["done"] == [] and "자리가 정해지지 않았습니다" in r["failed"][0]["error"]
     assert len(w.f.pages) == n and not [c for c in w.f.calls if c[0] == "create"] and ("plain", "portfolio/01_p.md") not in w.db.rows
     assert w.pubs["plain"].portfolio_state()["place"] is False
 
@@ -147,6 +158,7 @@ def _app(tmp_path, pubs):
     app.state.token_book = st.TokenBook(st.TokenConfig(enabled=False, file=f))
     app.state.publishers = pubs
     app.state.publisher = pubs["foreman"]
+    app.state.docsync = ds.DocSync(pubs)          # 11-20 포트폴리오 한 편 게시도 묶음 게시와 같은 함수로 간다
     return TestClient(app)
 
 
@@ -165,5 +177,8 @@ def test_api_get_and_post_by_project(tmp_path, world):
     _commit(w.nr, {"portfolio/01_p.md": "# 글\n"}, "add")
     r = c.post("/api/publish", json={"project": "plain", "path": "portfolio/01_p.md"}, headers=h(ADMIN))
     assert r.status_code == 409 and "Notion 자리가 정해지지 않았습니다" in r.json()["refused"]
-    r = c.post("/api/publish", json={"project": "plain", "path": "portfolio/", "action": "reorder"}, headers=h(ADMIN))
+    r = c.post("/api/publish", json={"project": "plain", "path": "portfolio/", "action": "docsync"}, headers=h(ADMIN))
     assert r.status_code == 409 and "자리가 정해지지 않았습니다" in r.json()["refused"]
+    # 없앤 갈래(11-20)는 받지 않는다. 둘 다 포트폴리오 docsync 한 번에 들었다
+    for act in ("reorder", "prune"):
+        assert c.post("/api/publish", json={"project": "foreman", "path": "portfolio/", "action": act}, headers=h(ADMIN)).status_code == 422

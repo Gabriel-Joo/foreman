@@ -1275,13 +1275,14 @@ async def test_notion_publish_update_unchanged_archive_and_scope(env, tmp_path):
     assert (await pub.archive_section("포트폴리오"))["action"] == "archived"                  # 비었으니 내린다
     with pytest.raises(nt.OutOfScope):
         await pub.archive_section("회고")                                                     # 아래에 다시 게시한 회고(r4)가 남았다
-    # 사이에 끼운 새 주제 — 다시 세우면 번호순으로 루트 끝에 차례로 붙는다(페이지 id 그대로)
+    # 사이에 끼운 새 주제. 포트폴리오 [Notion에 올리기] 한 번(11-20 docsync.sync)이 새 편을 올리고 번호순으로 다시 세운다(페이지 id 그대로)
+    from bridge import docsync as ds
     (repo / "portfolio" / "00_5_mid.md").write_text("# 끼운 글\n\n- 가운데\n", encoding="utf-8")
     g("add", "."), g("commit", "-qm", "mid")
-    pm = await pub.publish("portfolio/00_5_mid.md")
     fake.calls.clear()
-    ro = await pub.reorder_portfolio()
-    assert ro["order"] == ["portfolio/00_5_mid.md", "portfolio/00_overview.md", "portfolio/01_loss.md"]
+    r = await ds.sync(pub, "t", src=ds.PORT)
+    assert [(d["path"], d["action"]) for d in r["done"]] == [("portfolio/00_5_mid.md", "created")] and not r["failed"]
+    pm = r["done"][0]
     back = [c[1] for c in fake.calls if c[0] == "move" and c[2] == "root"]
     assert back == [pm["page_id"], p0["page_id"], p1["page_id"]]                              # 번호(파일 이름)순으로 되돌림
     assert all(fake.pages[x]["parent"] == "root" for x in back)
