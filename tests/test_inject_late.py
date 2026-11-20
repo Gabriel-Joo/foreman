@@ -72,7 +72,9 @@ async def test_unconfirmed_then_found_late(monkeypatch, tmp_path):
         f.write(_user_line("보낸 글"))
     c = await _wait_check(out["check"])
     assert c["state"] == "delivered" and c["delivered"]["uuid"] == "u1"
-    assert got == [{"as": "prompt", "uuid": "u1", "prompt_id": "p1"}]
+    # 찾은 것에는 걸린 초(waited_s)가 붙는다. 120초(LATE_S)를 맞출 근거다
+    assert len(got) == 1 and {k: got[0][k] for k in ("as", "uuid", "prompt_id")} == {"as": "prompt", "uuid": "u1", "prompt_id": "p1"}
+    assert isinstance(got[0]["waited_s"], float) and got[0]["waited_s"] == c["waited_s"]
 
 
 async def test_unconfirmed_never_found(monkeypatch, tmp_path):
@@ -133,7 +135,7 @@ def test_http_status(res, code):
 
 async def test_input_api_new_session_and_late_line(monkeypatch):
     """입력 API. DB에 트랜스크립트 경로가 없으면(새 세션 692) CC가 쓰는 자리로 확인하고, unconfirmed는 202에
-    check 번호. 늦게 찾으면 「(늦게 확인) 들어갔습니다」 활동 줄(input 이벤트)을 남기고, 번호로 물으면 결과를 준다."""
+    check 번호. 늦게 찾으면 「들어갔습니다」 활동 줄(input 이벤트, payload.late)을 남기고, 번호로 물으면 결과를 준다."""
     from types import SimpleNamespace
 
     from fastapi import HTTPException
@@ -165,12 +167,16 @@ async def test_input_api_new_session_and_late_line(monkeypatch):
     assert resp.status_code == 202 and j["verified"] is False and j["check"] == "c9"
     assert seen["transcript"] == transcript_path("/r/portfolio", SID)
     assert events[-1].status == EventStatus.WORKING and events[-1].payload["outcome"] == "unconfirmed"
-    await seen["on_late"]({"as": "prompt", "uuid": "u1", "prompt_id": "p1"})
+    # 「늦게 확인:」 앞말은 화면이 payload.late로 붙인다(11-20). 걸린 시간은 payload.waited_s로 남는다(LATE_S를 맞출 근거)
+    monkeypatch.setattr(api, "check_state", lambda cid: {"id": cid, "state": "delivered", "waited_s": 12.3})
+    await seen["on_late"]({"as": "prompt", "uuid": "u1", "prompt_id": "p1", "waited_s": 12.3})
     ev = events[-1]
-    assert ev.target.startswith("(늦게 확인) 들어갔습니다: 첫 글") and ev.payload["late"] == "delivered"
-    assert ev.payload["check"] == "c9" and ev.turn_id == 55
+    assert ev.target.startswith("들어갔습니다: 첫 글") and ev.payload["late"] == "delivered"
+    assert ev.payload["check"] == "c9" and ev.turn_id == 55 and ev.payload["waited_s"] == 12.3
+    monkeypatch.setattr(api, "check_state", lambda cid: {"id": cid, "state": "not_found", "waited_s": 120.0})
     await seen["on_late"](None)
-    assert events[-1].status == EventStatus.ERROR and events[-1].target.startswith("(늦게 확인) 기록에서 찾지 못했습니다")
+    assert events[-1].status == EventStatus.ERROR and events[-1].target.startswith("기록에서 찾지 못했습니다")
+    assert events[-1].payload["waited_s"] == 120.0
 
     monkeypatch.setattr(api, "check_state", lambda cid: {"id": cid, "state": "delivered", "session": SID} if cid == "c9" else None)
     got = json.loads((await api.input_check(692, "c9", req)).body)

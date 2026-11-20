@@ -223,7 +223,7 @@ class Managers:
         """늦게 다시 본 결과(bridge/inject._watch_late) — 들어갔으면 남기기만, 없으면 실패로 남기고 텔레그램."""
         async def late(found: dict[str, Any] | None) -> None:
             if found:
-                await self._record(sid, True, f"{label} 늦게 확인: 들어감 · {body[:300]}", action=action)
+                await self._record(sid, True, f"{label} 늦게 확인: 들어감({found.get('waited_s', '?')}초 뒤) · {body[:300]}", action=action)
                 return
             await self._record(sid, False, f"{label} 실패: 늦게 확인해도 기록에 없음 · {body[:300]}", action=action)
             self._notify(project, f"⚠ {project} 관리자 입력 칸에 넣은 글이 기록에 남지 않았습니다. 대화창을 확인해 주세요 — {msg[:1500]}")

@@ -24,7 +24,7 @@ from sqlalchemy import text
 
 from bridge import handoff as ho
 from bridge import pointers as ptr
-from bridge.inject import Refused, deliver, resolve
+from bridge.inject import Refused, deliver, resolve, submitted
 from bridge.liveness import live_sessions
 
 KINDS = ("결정", "금지", "기준", "선호", "미완")
@@ -377,8 +377,10 @@ class Promoter:
         path = row.transcript or ho.transcript_path(row.cwd or "", row.cc)
         offset = os.path.getsize(path) if os.path.exists(path) else 0
         res = await deliver(row.cc, prompt, sessions_dir=self.m.sessions_dir, transcript=path)
-        if not res.get("delivered"):
-            raise Refused("제출이 확인되지 않았습니다. 입력 칸에 남았을 수 있습니다")
+        if not submitted(res):             # 넣었는지 판정은 inject.submitted 한 곳(11-20). 입력 칸이 비었으면(unconfirmed) 기다린다
+            raise Refused("입력 칸에 글이 남아 제출되지 않았습니다. 그 세션 대화창에서 Enter를 눌러 주세요" if res.get("outcome") == "left"
+                          else "제출이 확인되지 않았습니다. 입력 칸에 남았을 수 있습니다")
+        # unconfirmed면 prompt_id가 없다. 기록에 끝내 안 남으면 아래 기다림(_wait)이 시간 초과로 실패와 알림을 남긴다
         return path, offset, (res["delivered"] or {}).get("prompt_id")
 
     async def _wait(self, row: ho.SessionRow, tag: str, req: str, path: str, offset: int,

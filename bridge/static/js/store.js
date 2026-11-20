@@ -18,6 +18,8 @@ export const PROBE = (() => {
 const EMIT_MS = 250;          // 그리기 알림 최소 간격
 const RESNAP_MS = 15000;      // 스냅샷으로 맞추는 주기
 const FEED_MAX = 40;          // 세션별 최근 활동 줄 수
+// 입력 확인 결과를 묻는 간격(ms, 11-20). 합이 서버의 늦게 다시 보기 상한(bridge/inject.py LATE_S, 잰 값이 아님)보다 조금 길다
+const INPUT_POLL_MS = [2000, 3000, 5000, 5000, 10000, 10000, 15000, 15000, 15000, 15000, 15000, 15000, 15000];
 export const FOLD_KEEP = 3;   // 세션마다 남기는 답한 카드(접힌 줄) 수(11-10) — 넘으면 오래된 것부터 지운다. 다시 보기는 승인 기록에
 export function pruneResolved(approvals, sid) {
   const done = [...approvals.values()].filter((x) => x.status !== 'pending' && x.session_id === sid).sort((x, y) => x.id - y.id);
@@ -70,6 +72,8 @@ export class Store {
       ver: { grid: 0, approvals: 0, panel: 0, conn: 0, term: 0, pipe: 0 },
     };
     this.subs = new Set();
+    this.inputPollMs = INPUT_POLL_MS;                       // 시험에서 바꾼다
+    this.sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
     this.dirty = false;
     this.emitTimer = null;
     this.lastEmit = 0;
@@ -374,6 +378,13 @@ export class Store {
         return;
       case 'input': {
         const pl = e.payload || {};
+        if (pl.late) {
+          // 늦게 다시 본 결과(11-20). 「주입:」이 아니라 「늦게 확인:」으로, 걸린 시간을 붙인다(120초 상한을 맞출 근거)
+          const body = (e.target || '').replace(/^\(늦게 확인\) /, '');      // 옛 줄은 글 앞에 이 말이 붙어 있었다
+          const waited = pl.waited_s != null ? ` (${Math.round(pl.waited_s)}초 뒤)` : '';
+          this.pushFeed(s, e.ts, pl.late === 'not_found' ? 'error' : 'input', `늦게 확인: ${body}${waited}`);
+          break;
+        }
         this.pushFeed(s, e.ts, 'input', pl.refused ? `주입 거부: ${pl.refused}` : `주입${pl.queued ? '(대기열)' : ''}: ${e.target || ''}`);
         break;
       }
@@ -518,30 +529,59 @@ export class Store {
     const r = await fetch(`/api/sessions/${id}/input`, { method: 'POST', headers: this.headers(true), body: JSON.stringify({ text, command }) });
     const j = await r.json().catch(() => ({}));
     // 결과 글(11-05) — 잘 갔으면 한 마디("보냈습니다."), 잘못됐을 때만 무엇이 왜인지와 할 일. 내부 동작(기록 확인 등)은 말하지 않는다
+    // 202 + verified:false + check(11-20) = 입력 칸은 비었지만 기록에서는 아직 못 찾았다. 서버가 뒤에서 다시 보고 있으므로
+    // 「확인 중」으로 띄우고 결과를 물어 바꾼다(followInput). 504는 입력 칸에 글이 남았거나(left) 화면도 기록도 못 읽은 것뿐이다
+    const checking = r.status === 202 && j.verified === false && !!j.check;
+    const sent = j.queued ? '보냈습니다. 작업이 끝나면 이어서 전달됩니다.' : '보냈습니다.';
     const res = r.status === 409 ? { ok: false, msg: `보내지 못했습니다. ${j.refused}` }
-      : r.status === 202 ? { ok: true, msg: j.queued ? '보냈습니다. 작업이 끝나면 이어서 전달됩니다.' : '보냈습니다.' }
-      : r.status === 504 ? (j.left_in_box === false
-          ? { ok: true, msg: '보냈습니다.' }
-          : j.left_in_box ? { ok: false, msg: '제출되지 않았습니다. 입력 칸에 글이 남아 있으니 대화창에서 Enter를 누르거나 지워 주세요.' }
+      : r.status === 202 ? { ok: true, msg: checking ? `${sent} 기록을 확인하는 중입니다.` : sent, pending: checking }
+      : r.status === 504 ? (j.left_in_box
+          ? { ok: false, msg: '제출되지 않았습니다. 입력 칸에 글이 남아 있으니 대화창에서 Enter를 누르거나 지워 주세요.' }
           : { ok: false, msg: '제출됐는지 확인하지 못했습니다. 대화창에서 입력 칸을 확인해 주세요.' })
       : { ok: false, msg: `보내지 못했습니다 (HTTP ${r.status}).` };
     // 11-09 — 입력 줄을 가리던 창을 Esc로 닫고 보냈다(bridge/inject.clear_screen). 반복되는지 알 수 있게 한 마디. 11-13부터 창 이름도
     if (j.esc && r.status !== 409) res.msg += ` 떠 있던 ${j.dialog ? `${j.dialog} 창` : '설정 화면'}을 Esc ${j.esc}번으로 닫고 보냈습니다.`;
-    this.state.lastInput = { sessionId: id, ts: Date.now(), ...res };
+    const mine = this.state.lastInput = { sessionId: id, ts: Date.now(), ...res };
     if (res.ok) this.convoLater(id);           // 새 턴이든 대기열이든 대화에 내 글이 뜨게
     this.touch('panel');
+    if (checking) this.followInput(id, j.check, mine, j.queued).catch(() => { /* 물음이 실패해도 보냈다는 글은 남는다 */ });
     return res;
+  }
+  // 늦게 다시 보기의 결과를 물어 「확인 중」 글을 바꾼다(GET /api/sessions/{id}/input/{check}). 서버가 120초(inject.LATE_S) 안에 끝내므로
+  // 그 뒤까지 물으면 멈춘다. 그 사이에 새로 보낸 글이 있으면(lastInput이 바뀜) 그 글을 덮지 않는다
+  async followInput(id, check, mine, queued) {
+    const end = (msg, ok) => {
+      if (this.state.lastInput !== mine) return;
+      this.state.lastInput = { sessionId: id, ts: Date.now(), ok, msg };
+      this.touch('panel');
+    };
+    for (const ms of this.inputPollMs) {
+      await this.sleep(ms);
+      const r = await fetch(`/api/sessions/${id}/input/${encodeURIComponent(check)}`, { headers: this.headers() });
+      if (r.status === 404) return end('보냈습니다. 기록 확인 결과를 알 수 없습니다. 대화에서 내 글이 보이는지 확인해 주세요.', true);
+      if (!r.ok) continue;
+      const c = await r.json();
+      if (c.state === 'checking') continue;
+      if (c.state === 'not_found') return end('보냈지만 기록에서 찾지 못했습니다. 대화창에서 입력 칸을 확인해 주세요.', false);
+      this.convoLater(id);                     // 늦게 기록된 글이 대화에 뜨게
+      return end(queued ? '보냈습니다. 작업이 끝나면 이어서 전달됩니다.' : '보냈습니다.', true);
+    }
+    return end('보냈습니다. 기록 확인이 끝나지 않았습니다. 대화에서 내 글이 보이는지 확인해 주세요.', true);
   }
   // 모델 바꾸기(11-05) — 그 세션에 /model <id>. 화면은 다음 응답의 모델이 고른 것과 같아질 때까지 "→ 고른 모델"을 보인다
   async switchModel(id, model, label) {
     const r = await fetch(`/api/sessions/${id}/model`, { method: 'POST', headers: this.headers(true), body: JSON.stringify({ model }) });
     const j = await r.json().catch(() => ({}));
-    const ok = r.status === 202 || (r.status === 504 && j.left_in_box === false);
+    // 11-20: 입력 칸이 비었으면(unconfirmed) 서버가 202로 준다. 슬래시 명령은 기록 모양이 달라 늦게 다시 보기도 없다(check 없음).
+    // 504는 입력 칸에 명령이 남았거나(left_in_box) 화면도 기록도 못 읽은 것뿐이다
+    const ok = r.status === 202;
+    const left = r.status === 504 && !!j.left_in_box;
     const res = r.status === 409 ? { ok: false, msg: `모델을 바꾸지 못했습니다. ${j.refused}` }
       : ok ? { ok: true, msg: j.queued ? `${label}(으)로 바꾸기를 대기열에 넣었습니다. 지금 작업이 끝나면 바뀝니다.` : `${label}(으)로 바꿨습니다. 다음 응답부터 적용됩니다.` }
+      : left ? { ok: false, msg: '모델 바꾸기가 제출되지 않았습니다. 입력 칸에 명령이 남아 있으니 대화창에서 Enter를 누르거나 지워 주세요.' }
       : r.status === 504 ? { ok: false, msg: '모델 바꾸기가 제출됐는지 확인하지 못했습니다. 대화창에서 입력 칸을 확인해 주세요.' }
       : { ok: false, msg: `모델을 바꾸지 못했습니다 (HTTP ${r.status}).` };
-    if (ok || r.status === 504) this.state.pendingModel.set(id, { model, label, queued: !!j.queued, ts: Date.now() });
+    if (ok || (r.status === 504 && !left)) this.state.pendingModel.set(id, { model, label, queued: !!j.queued, ts: Date.now() });
     this.state.lastInput = { sessionId: id, ts: Date.now(), ...res };
     this.touch('panel');
     return res;

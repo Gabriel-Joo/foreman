@@ -165,8 +165,10 @@ tmux send-keys -t <pane> Enter       # 제출
   - Esc가 결정이 되는 창(폴더 신뢰, 도구 권한, 보류된 세션 메시지 승인, 끝내기 확인, 계획 승인)과 모르는 창: Esc도 글도 보내지 않고 거부한다. "○○ 창이 떠 있어 넣지 못했습니다 … 그 세션 대화창에서 확인해 주세요"
   - **작업 중(busy)이면 Esc를 보내지 않는다.** Esc는 작업을 끊는다. 권한 창이 떠 있을 때 상태 파일 status는 `busy`가 아니라 `waiting`이라 창 종류로 거른다. 바뀐 내력은 [옮긴 기록](log/design_history_20261117.md) 4절 [log:plan_dialog_escape_retry_20261109.md] [log:prompt_vs_dialog_20261113.md]
 - **제출 확인**: 보낸 글이 트랜스크립트에 프롬프트나 대기열(`queue-operation enqueue`)로 기록됐는지 본다. 입력 칸은 자동으로 비우지 않는다(사람의 초안을 지울 수 있다)
-  - 결과를 넷으로 가른다(`inject.deliver`의 `outcome`): 기록에서 찾음(delivered, queued), 못 찾았지만 입력 칸이 빔(unconfirmed), 입력 칸에 남음(left), 둘 다 못 읽음(unknown). unconfirmed는 실패가 아니다. 입력 API는 202에 `verified: false`와 `check` 번호를, 관리자 부탁과 중계는 넣은 것으로 돌려준다(`inject.submitted`). 실패로 돌리면 보낸 쪽이 다시 보내 두 번 들어간다
-  - 기록에서 못 찾으면 뒤에서 2분 동안 다시 본다(`LATE_S`, 슬래시 명령은 빼고). 결과는 `GET /api/sessions/{id}/input/{check}`, 활동 줄 「(늦게 확인) …」, 관리자 길은 못 찾았을 때 텔레그램. 11-20 하루 20번 CC가 기록을 10초 넘게 늦게 썼다 [log:foreman-5_inject_unconfirmed_20261120.md]
+  - 결과를 넷으로 가른다(`inject.deliver`의 `outcome`): 기록에서 찾음(delivered, queued), 못 찾았지만 입력 칸이 빔(unconfirmed), 입력 칸에 남음(left), 둘 다 못 읽음(unknown). unconfirmed는 실패가 아니다. 입력 API는 202에 `verified: false`와 `check` 번호를 돌려준다. 실패로 돌리면 보낸 쪽이 다시 보내 두 번 들어간다
+  - **넣었는지 판정은 `inject.submitted` 한 곳**이다. 입력 API, 관리자 부탁과 중계, 합치기 준비의 알림(`mergeprep._deliver`), 셸 패널 결과(`terminal`), 문서로 옮기기 요청(`promote._send`), 인계 요청과 읽을 곳 다시 보내기(`handoff`)가 모두 이것으로 판정한다(11-20). 새 넣기 길은 `delivered`나 `queued`를 따로 보지 않는다
+  - 기록에서 못 찾으면 뒤에서 2분 동안 다시 본다(`LATE_S`, 슬래시 명령은 빼고). **2분은 잰 값이 아니다.** 늦게 찾으면 걸린 초(`waited_s`)를 활동 줄과 로그에 남겨 나중에 맞출 근거로 쓴다. 결과는 `GET /api/sessions/{id}/input/{check}`, 활동 줄 「늦게 확인: …」(화면이 `payload.late`로 붙인다), 끝내 못 찾았을 때 길마다 알림이다(관리자 길은 텔레그램과 `session_action`, 합치기 알림은 텔레그램, 셸 결과는 「전달 못 함」 줄, 읽을 곳 다시 보내기는 인계 알림, 문서 옮기기와 인계 요청은 응답을 기다리는 일이 시간 초과로 알림). 11-20 하루 20번 CC가 기록을 10초 넘게 늦게 썼다 [log:foreman-5_inject_unconfirmed_20261120.md]
+  - 화면은 202에 `verified: false`와 `check`가 오면 「보냈습니다. 기록을 확인하는 중입니다.」로 띄우고 확인 번호로 결과를 물어 바꾼다(`store.js` `followInput`)
   - DB에 트랜스크립트 경로가 아직 없으면(새 세션의 첫 글) CC가 쓰는 자리(`handoff.transcript_path`)로 본다
 - **바쁨 판정은 CC가 `~/.claude/sessions/<pid>.json`에 적는 `status`(busy, idle, shell)**. 바쁠 때 보낸 입력에도 UserPromptSubmit hook이 불린다. 열린 턴이 있으면 새 턴을 열지 않는다
 

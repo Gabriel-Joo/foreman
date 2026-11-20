@@ -580,8 +580,9 @@ class HandoffManager:
         except Refused as e:
             await self._finish(sid, "failed", None, None, f"보내지 못함: {e}")
             raise
-        if not res.get("delivered"):
-            await self._finish(sid, "failed", None, None, "제출이 확인되지 않았다. 입력 칸에 남았을 수 있다")
+        if not submitted(res):             # 넣었는지 판정은 inject.submitted 한 곳(11-20). unconfirmed면 아래 기다림이 시간 초과로 알린다
+            await self._finish(sid, "failed", None, None, "입력 칸에 글이 남아 제출되지 않았다" if res.get("outcome") == "left"
+                               else "제출이 확인되지 않았다. 입력 칸에 남았을 수 있다")
             return {"summary_id": sid, "req": req, "status": "failed"}
         self._spawn_task(self._wait_live(row, sid, req, path, offset, (res["delivered"] or {}).get("prompt_id")))
         return {"summary_id": sid, "req": req, "status": "requested", "pid": ls.pid}
@@ -785,9 +786,15 @@ class HandoffManager:
             raise Refused("다시 보낼 곳이 없습니다(읽을 곳이 있는 요약을 받은 세션이 아니거나 모두 읽었습니다)")
         msg = ("[FOREMAN 인계] 「읽을 곳」 중 아직 읽지 않은 곳이 있다. 지금 Read로 읽고, 각각 이 일에 걸리는 규칙 · 결정을 "
                "2줄씩 말해라:\n" + "\n".join(f"- `{p}`" for p in r["missing"]))
+        def late(found: dict[str, Any] | None) -> None:
+            # 넣었다고 본 글이(unconfirmed) 늦게 봐도 기록에 없다. 이 길은 뒤에 기다림이 없어 여기서 알린다
+            if not found:
+                self._notify(row, "읽을 곳 다시 보내기가 세션 기록에 남지 않았습니다. 그 세션 대화창을 확인해 주세요", fail=True)
+
         res = await deliver(row.cc or "", msg, sessions_dir=self.sessions_dir,
-                            transcript=row.transcript or transcript_path(row.cwd or "", row.cc or ""))
-        return {"delivered": bool(res.get("delivered")), "queued": res.get("queued"), "missing": r["missing"]}
+                            transcript=row.transcript or transcript_path(row.cwd or "", row.cc or ""), on_late=late)
+        return {"delivered": submitted(res), "verified": bool(res.get("delivered")), "queued": res.get("queued"),
+                "outcome": res.get("outcome"), "missing": r["missing"]}
 
     def _write_full(self, req: str, body: str) -> None:
         HANDOFF_DIR.mkdir(parents=True, exist_ok=True)

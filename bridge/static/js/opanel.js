@@ -749,7 +749,7 @@ export function createSidePanel(host, store, { onSelectSession, onToggle, onClea
     $('pWhy').textContent = blocked ? '보낼 수 없음' : (s.state === 'ACTIVE' ? '작업 중, 끝나면 전달' : '');
     $('pWhy').className = `pwhy small${blocked ? ' bad' : s.state === 'ACTIVE' ? ' busy' : ''}`;
     if (blocked) $('pWhy').dataset.tip = `보낼 수 없음 — ${why_}`; else if (s.state === 'ACTIVE') $('pWhy').dataset.tip = '작업 중 — 지금 보내면 하던 일이 끝난 뒤 이어서 전달됩니다.'; else delete $('pWhy').dataset.tip;
-    const li = st.lastInput && st.lastInput.sessionId === s.id && Date.now() - st.lastInput.ts < (st.lastInput.ok ? 8000 : 60000) ? st.lastInput : null;
+    const li = st.lastInput && st.lastInput.sessionId === s.id && Date.now() - st.lastInput.ts < (st.lastInput.pending ? 150000 : st.lastInput.ok ? 8000 : 60000) ? st.lastInput : null;
     $('pResult').innerHTML = blocked ? `<span class="muted">${esc(why_)}</span>` : li ? `<span class="${li.ok ? 'ok' : 'bad'}">${esc(li.msg)}</span>` : '';
     if (switched) { $('pText').value = ''; lastSel = s.id; $('pNew').hidden = true; }
   }

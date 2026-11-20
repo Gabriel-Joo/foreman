@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import hashlib
 import json
 import logging
 import os
@@ -54,7 +55,7 @@ from bridge import docrefs
 from bridge import worktree as wt
 from bridge.doctext import check as dcheck
 from bridge.doctext import config as dcfg
-from bridge.inject import Refused, _status, deliver
+from bridge.inject import Refused, _status, deliver, submitted
 from bridge.liveness import live_sessions
 
 log = logging.getLogger("foreman.mergeprep")
@@ -1439,11 +1440,21 @@ class MergePrep:
             return False
         from bridge.handoff import transcript_path
         try:
-            r = await deliver(cc, msg, sessions_dir=self.sessions_dir, transcript=transcript_path(cwd or "", cc), verify_s=15.0)
+            r = await deliver(cc, msg, sessions_dir=self.sessions_dir, transcript=transcript_path(cwd or "", cc), verify_s=15.0,
+                              on_late=lambda found: self._late_failed(cc, msg) if not found else None)
         except Refused as e:
             log.warning("합치기 결과를 보내지 못함 %s: %s", cc[:8], e)
             return False
-        return bool(r.get("delivered") or r.get("queued"))
+        # 넣었는지 판정은 inject.submitted 한 곳(11-20). 입력 칸이 비었는데 기록만 늦으면(unconfirmed) 성공으로 보고,
+        # 뒤에서 끝내 못 찾으면 _late_failed가 알린다. 전에는 delivered, queued만 성공이라 헛된 「알리지 못함」 텔레그램이 갔다
+        return submitted(r)
+
+    def _late_failed(self, cc: str, msg: str) -> None:
+        """넣었다고 본 글이 늦게 다시 봐도 기록에 없다(bridge/inject._watch_late). 받은 쪽 입력 칸을 사람이 봐야 한다."""
+        log.warning("합치기 알림이 늦게 확인해도 기록에 없음 %s", cc[:8])
+        digest = hashlib.sha1(msg.encode("utf-8")).hexdigest()[:10]
+        self._notify(None, f"mergeprep:late:{cc[:8]}:{digest}",
+                     f"⚠ 합치기 알림이 받는 세션 기록에 남지 않았습니다. 그 세션 대화창을 확인해 주세요 — {msg[:1500]}", later=False)
 
     async def manager_of(self, repo: str) -> tuple[str, str] | None:
         """원본 폴더에 살아 있는 역할 관리자 (cc, cwd). 여럿이면 마지막 행."""

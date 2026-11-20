@@ -96,10 +96,12 @@ async def inject_input(session_id: int, body: InputIn, request: Request) -> JSON
             payload["bang"] = True
 
         async def late(found: dict[str, Any] | None) -> None:
-            # 늦게 다시 본 결과를 활동 줄로 남긴다. 화면(활동 탭)과 사람이 「실제로 갔나」를 여기서 안다
-            _record(pipeline, sid, char_id, f"(늦게 확인) {'들어갔습니다' if found else '기록에서 찾지 못했습니다'}: {body.text}",
+            # 늦게 다시 본 결과를 활동 줄로 남긴다. 화면(활동 탭)과 사람이 「실제로 갔나」를 여기서 안다.
+            # 「늦게 확인:」 앞말과 걸린 시간은 화면(store.js)이 payload.late, waited_s로 붙인다. 걸린 시간은 LATE_S를 맞출 근거다
+            waited = (check_state(check_id[0] or "") or {}).get("waited_s")
+            _record(pipeline, sid, char_id, f"{'들어갔습니다' if found else '기록에서 찾지 못했습니다'}: {body.text}",
                     {"late": ("queued" if found["as"] == "queued" else "delivered") if found else "not_found",
-                     "check": check_id[0], "delivered": found},
+                     "check": check_id[0], "delivered": found, "waited_s": waited},
                     EventStatus.WORKING if found else EventStatus.ERROR, turn_id=await _turn_for_app(app, sid, found))
 
         check_id: list[str | None] = [None]

@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/liveness.py, bridge/session_state.py, bridge/stallwatch.py, bridge/human_wait.py, bridge/api_error.py, bridge/bang_watch.py, bridge/xmsg.py, bridge/inject.py, bridge/api/sessions.py, bridge/static/js/slash.js, tests/js/slash.test.mjs, tests/js/xmsg.test.mjs, tests/test_api_error.py, tests/test_bang_watch.py, tests/test_human_wait.py, tests/test_inject.py, tests/test_inject_late.py, tests/test_inject_screen.py, tests/test_stallwatch.py, tests/test_stallwatch_bg.py, tests/test_xmsg.py
+다루는 곳: bridge/liveness.py, bridge/session_state.py, bridge/stallwatch.py, bridge/human_wait.py, bridge/api_error.py, bridge/bang_watch.py, bridge/xmsg.py, bridge/inject.py, bridge/api/sessions.py, bridge/static/js/slash.js, tests/js/input_check.test.mjs, tests/js/slash.test.mjs, tests/js/xmsg.test.mjs, tests/test_api_error.py, tests/test_bang_watch.py, tests/test_human_wait.py, tests/test_inject.py, tests/test_inject_late.py, tests/test_inject_paths.py, tests/test_inject_screen.py, tests/test_stallwatch.py, tests/test_stallwatch_bg.py, tests/test_xmsg.py
 읽은 커밋: 7dee4fa
 -->
 
@@ -382,7 +382,11 @@ Enter를 보냈다고 끝이 아니다. 폭 없는 공백 시험에서 보았듯
 
 결과는 넷으로 가른다. 기록에서 찾았으면 들어감(새 턴 또는 대기열), 못 찾았지만 입력 칸이 비었으면 확인 못 함, 입력 칸에 글이 남았으면 안 들어감, 화면도 기록도 못 읽었으면 모름이다 [code:bridge/inject.py]. 확인 못 함을 실패로 돌려주면 보낸 쪽은 다시 보낼지 망설이고, 다시 보내면 같은 글이 두 번 들어간다. 그래서 확인 못 함은 들어간 것으로 다루되, 기록으로 확인하지는 못했다는 표시(`verified: false`)와 확인 번호(`check`)를 붙인다.
 
-확인 번호가 붙으면 브리지는 뒤에서 2분 동안 1초마다 기록을 다시 본다. 찾으면 들어감으로, 끝내 없으면 찾지 못함으로 결과를 바꾼다. 결과는 세 곳에서 알 수 있다. 패널 활동 탭에 「(늦게 확인) 들어갔습니다」나 「(늦게 확인) 기록에서 찾지 못했습니다」 줄이 붙고, `GET /api/sessions/{id}/input/{check}`가 지금 상태(확인 중, 들어감, 대기열, 찾지 못함)를 돌려주며, 관리자 부탁과 중계는 찾지 못했을 때 텔레그램으로 알린다 [code:bridge/api/sessions.py] [code:bridge/managers.py]. 확인 번호는 브리지 메모리에만 있어 브리지를 다시 띄우면 사라진다. 슬래시 명령은 기록 모양이 달라 끝내 맞대지 못하므로 다시 보지 않는다(11절).
+확인 번호가 붙으면 브리지는 뒤에서 2분 동안 1초마다 기록을 다시 본다. 찾으면 들어감으로, 끝내 없으면 찾지 못함으로 결과를 바꾼다. 결과는 세 곳에서 알 수 있다. 패널 활동 탭에 「늦게 확인: 들어갔습니다: …」나 「늦게 확인: 기록에서 찾지 못했습니다: …」 줄이 붙고(찾은 때까지 걸린 초가 끝에 붙는다), `GET /api/sessions/{id}/input/{check}`가 지금 상태(확인 중, 들어감, 대기열, 찾지 못함)를 돌려주며, 관리자 부탁과 중계는 찾지 못했을 때 텔레그램으로 알린다 [code:bridge/api/sessions.py] [code:bridge/managers.py] [code:bridge/static/js/store.js]. 확인 번호는 브리지 메모리에만 있어 브리지를 다시 띄우면 사라진다. 슬래시 명령은 기록 모양이 달라 끝내 맞대지 못하므로 다시 보지 않는다(11절).
+
+2분은 잰 값이 아니다. 늦게 쓰인 스무 번이 10초를 넘겼다는 것만 알고 몇 초였는지는 기록에 없어서, 사람의 반응보다 길게 잡은 어림이다. 그래서 늦게 찾았을 때 걸린 초를 활동 줄과 로그에 남겨, 나중에 이 값을 맞출 근거로 쓴다 [code:bridge/inject.py].
+
+글을 넣는 길은 입력 API 말고도 있다. 합치기 준비의 알림, 셸 패널의 결과 전달, 대화에서만 정한 것 문서에 적기의 요청, 인계 요청과 읽을 곳 다시 보내기다. 이 길들도 「넣었는가」를 `submitted()` 한 곳에서 판단한다. 기록으로 확인했거나 대기열에 들어갔거나 입력 칸이 비었으면 넣은 것이다. 입력 칸에 글이 남았거나 화면도 기록도 못 읽었으면 넣지 못한 것이고, 이때만 실패로 남긴다. 확인 못 함이 끝내 기록에 나타나지 않으면 길마다 알린다. 합치기 알림은 텔레그램으로, 셸 결과는 「전달 못 함」 결과 줄로, 읽을 곳 다시 보내기는 인계 알림으로 알린다. 문서에 적기와 인계 요청은 기록에서 응답 표지를 기다리는 일이 이어지므로 그 기다림이 시간 초과로 실패와 알림을 남긴다 [code:bridge/inject.py] [code:bridge/mergeprep.py] [code:bridge/terminal.py] [code:bridge/promote.py] [code:bridge/handoff.py].
 
 응답 코드와 패널 결과 글은 이렇게 짝지어진다 [code:bridge/api/sessions.py].
 
@@ -390,12 +394,14 @@ Enter를 보냈다고 끝이 아니다. 폭 없는 공백 시험에서 보았듯
 |---|---|---|---|
 | 202 | 트랜스크립트에서 찾음(새 턴) | 보냈습니다. | 비운다 |
 | 202 | 대기열로 들어감 | 보냈습니다. 작업이 끝나면 이어서 전달됩니다. | 비운다 |
-| 202 | 못 찾음, 입력 칸에 없음(확인 못 함, 뒤에서 다시 봄) | 보냈습니다. | 비운다 |
+| 202 | 못 찾음, 입력 칸에 없음(확인 못 함, 뒤에서 다시 봄) | 보냈습니다. 기록을 확인하는 중입니다. (결과가 나오면 아래 둘 중 하나로 바뀐다) | 비운다 |
+| 확인 결과 | 늦게 찾음 | 보냈습니다. | 이미 비웠다 |
+| 확인 결과 | 끝내 못 찾음 | 보냈지만 기록에서 찾지 못했습니다. 대화창에서 입력 칸을 확인해 주세요. | 이미 비웠다 |
 | 504 | 못 찾음, 입력 칸에 남음 | 제출되지 않았습니다. 입력 칸에 글이 남아 있으니 대화창에서 Enter를 누르거나 지워 주세요. | 남긴다 |
 | 504 | 못 찾음, 화면도 못 읽음 | 제출됐는지 확인하지 못했습니다. 대화창에서 입력 칸을 확인해 주세요. | 남긴다 |
 | 409 | 거부 | 보내지 못했습니다. (까닭) | 남긴다 |
 
-잘 갔으면 한 마디만 하고, 잘못됐을 때만 무엇이 왜인지와 할 일을 쓴다. 내부 동작(기록 확인 등)은 화면 글에 쓰지 않는다. 패널의 입력 칸은 보낸 것이 확인됐을 때만 비우므로, 실패하면 사람이 쓴 글이 패널에 그대로 남아 다시 보낼 수 있다. 확인 못 함일 때 패널 결과 글은 「보냈습니다.」 한 마디이고, 뒤에서 다시 본 결과는 활동 탭 줄로만 보인다.
+잘 갔으면 한 마디만 하고, 잘못됐을 때만 무엇이 왜인지와 할 일을 쓴다. 내부 동작(기록 확인 등)은 화면 글에 쓰지 않는다. 패널의 입력 칸은 보낸 것이 확인됐을 때만 비우므로, 실패하면 사람이 쓴 글이 패널에 그대로 남아 다시 보낼 수 있다. 확인 못 함일 때 패널 결과 글은 「보냈습니다. 기록을 확인하는 중입니다.」로 먼저 뜬다. 화면이 확인 번호로 결과를 몇 번 물어(2초부터 15초 간격으로 모두 140초) 위 표의 두 줄 중 하나로 바꾼다. 그 사이 다른 글을 보냈으면 새 글의 결과를 덮지 않는다. 확인 번호가 사라졌으면(브리지를 다시 띄움) 결과를 알 수 없다고 하고 대화에서 확인하라고 한다. 뒤에서 다시 본 결과는 활동 탭 줄로도 남는다.
 
 ## 11. 같은 길을 쓰는 것: 모델 바꾸기
 

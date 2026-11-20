@@ -254,7 +254,10 @@ async def paste_and_submit(t: Target, text: str, *, delay_s: float = 0.15, guard
     return steps
 
 
-LATE_S = 120.0          # 제출을 못 맞췄을 때 뒤에서 기록을 다시 보는 상한(11-20)
+# 제출을 못 맞췄을 때 뒤에서 기록을 다시 보는 상한(11-20). 잰 값이 아니다. 11-20 하루 20번이 10초 안에 못 찾았지만 몇 초 만에
+# 쓰였는지는 기록에 없었다. 관리자 중계 기다림(RELAY_GRACE 30초)이나 사람 반응보다 길게 잡은 어림이다.
+# 맞출 근거는 늦게 찾았을 때 on_late에 넘기는 waited_s(걸린 초)다. 활동 줄(「늦게 확인: … (N초 뒤)」)과 로그에 남는다
+LATE_S = 120.0
 LATE_EVERY_S = 1.0
 CHECKS_MAX = 500
 _checks: dict[str, dict[str, Any]] = {}       # 확인 번호 → {"state": checking|delivered|queued|not_found, …}
@@ -312,7 +315,7 @@ async def _watch_late(cid: str, transcript: str, offset: int, send: str, late_s:
         log.warning("늦게 확인: %g초 동안 기록에 없음 %s", late_s, cid)
     if on_late is not None:
         try:
-            r = on_late(found)
+            r = on_late(found | {"waited_s": round(waited, 1)} if found else None)   # 찾았으면 걸린 초를 함께(LATE_S 근거)
             if asyncio.iscoroutine(r):
                 await r
         except Exception as e:  # noqa: BLE001  늦은 결과를 알리는 쪽이 실패해도 확인 결과(check_state)는 남는다
@@ -324,7 +327,8 @@ async def deliver(session_id: str, text: str, *, sessions_dir: str | Path, trans
                   late_s: float = LATE_S, on_late: OnLate | None = None) -> dict:
     """확인 → 보호 → 방법 C → 제출 확인. 거부면 Refused. 결과 dict: queued, guarded, delivered(as/uuid), outcome.
     기록으로 확인하지 못하면(outcome이 delivered나 queued가 아님) 뒤에서 late_s초 동안 다시 보고 check 번호를 준다.
-    on_late(찾은 것 또는 None)는 그 결과가 나올 때 한 번 불린다."""
+    on_late(찾은 것 또는 None)는 그 결과가 나올 때 한 번 불린다. 찾은 것에는 걸린 초(waited_s)가 붙는다.
+    넣었는지 판단은 submitted(res) 한 곳이다. 부르는 쪽이 delivered나 queued만 보면 unconfirmed가 실패로 남는다."""
     if not text.strip():
         # 빈칸 · 공백만 — 붙여넣을 것 없이 Enter만 가는 셈이다. 입력 칸에 CC의 프롬프트 제안(회색)이 떠 있으면
         # Enter가 그 제안을 제출하는지 문서에 없다(11-05) — 사람이 쓰지 않은 글이 실행될 수 있으니 보내지 않는다

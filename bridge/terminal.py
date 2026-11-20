@@ -37,7 +37,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from bridge.config import Settings
-from bridge.inject import Refused, _ancestors, _tmux_env, deliver, tmux
+from bridge.inject import Refused, _ancestors, _tmux_env, deliver, submitted, tmux
 from bridge.liveness import live_sessions
 from bridge.mask import Masker
 from bridge.models import EventIn, EventSource, EventStatus, EventType
@@ -826,11 +826,24 @@ class TerminalManager:
             cc, transcript = await self._session_target(r.session_id)
             if not cc:
                 raise Refused("CC 세션 ID가 없다")
-            res = await deliver(cc, msg, sessions_dir=self.s.sessions_dir, transcript=transcript)
-            ok = bool(res.get("delivered")) or bool(res.get("queued"))
+            def late_failed(found: dict[str, Any] | None) -> None:
+                # 입력 칸이 비어 넣은 것으로 보았는데(unconfirmed) 늦게 다시 봐도 기록에 없다. 결과 줄을 실패로 한 번 더 남긴다
+                if found:
+                    return
+                w = "늦게 다시 봐도 세션 기록에 없다"
+                log.warning("터미널 결과가 %s → session=%d", w, r.session_id)
+                self._record(source=EventSource.BRIDGE, type=EventType.TERM_RESULT, session_id=r.session_id,
+                             turn_id=r.turn_id, target=masked, status=EventStatus.ERROR,
+                             payload={"request_id": r.id, "exit": ec, "delivered": False, "refused": w, "output": body[-3000:]})
+                self.publish({"type": "terminal_result", "request_id": r.id, "session_id": r.session_id, "ok": False,
+                              "exit": ec, "msg": f"세션에 전달 못 함: {w}", "output": body[-3000:]})
+                self.on_change()
+
+            res = await deliver(cc, msg, sessions_dir=self.s.sessions_dir, transcript=transcript, on_late=late_failed)
+            ok = submitted(res)           # 넣었는지 판정은 inject.submitted 한 곳(11-20). unconfirmed도 넣은 것으로 본다
             info = {"queued": res.get("queued"), "verified": bool(res.get("delivered"))}
             if not ok:
-                why = "제출이 확인되지 않았다"
+                why = ("입력 칸에 글이 남아 제출되지 않았다" if res.get("outcome") == "left" else "제출이 확인되지 않았다")
         except Refused as e:
             why = str(e)
         except Exception as e:  # noqa: BLE001
