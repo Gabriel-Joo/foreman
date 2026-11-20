@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/roleguard.py, bridge/reposcope.py, bridge/schemalock.py, bridge/pgrep_guard.py, scripts/korean-check.py, .claude/settings.json, config/roles.toml, tests/test_roleguard.py, tests/test_roleguard_inspector.py, tests/test_pgrep_guard.py, tests/test_reposcope.py, tests/test_korean_check.py
-읽은 커밋: 6cc0e36
+다루는 곳: bridge/roleguard.py, bridge/reposcope.py, bridge/schemalock.py, bridge/pgrep_guard.py, bridge/approvals.py, scripts/korean-check.py, .claude/settings.json, config/roles.toml, config/worktree.toml, config/approval.toml, tests/test_roleguard.py, tests/test_roleguard_inspector.py, tests/test_pgrep_guard.py, tests/test_reposcope.py, tests/test_korean_check.py
+읽은 커밋: 64bee3d
 -->
 
 # 글이 아니라 권한으로
@@ -94,7 +94,7 @@ inspector-write = true
 
 ## 3. 역할 권한(roleguard)
 
-세션의 역할은 DB `character_session.role`에서 읽는다. 도구 호출마다 DB를 치지 않게 세션마다 60초 동안 기억한다. 역할 권한이 켜져 있을 때만 읽는다 [code:bridge/api/hooks.py].
+세션의 역할은 DB `character_session.role`에서 읽는다. 도구 호출마다 DB를 치지 않게 세션마다 60초 동안 기억한다. 역할 권한이 켜져 있을 때만 읽는다. DB에서 역할을 읽지 못하면 그 호출은 역할 없음으로 판정한다. 그러면 관리자, 서기, 조사 규칙은 걸리지 않으니, 읽지 못했다는 한 줄을 판정 없는 통과 기록 파일(아래 「판정이 실패하면」)에 남긴다 [code:bridge/api/hooks.py].
 
 ### 규칙 다섯
 
@@ -161,7 +161,7 @@ inspector-write = true
 
 판정 코드에서 예외가 나면 막지 않고 통과시킨다. 판정 실패로 모든 세션이 묶이는 것이 더 나쁘다. 대신 로그 error와 텔레그램을 보낸다. 같은 오류로 텔레그램이 쏟아지지 않게 한 시간에 한 번만 보낸다 [code:bridge/roleguard.py]. 텔레그램은 한 시간에 한 번이라 그 사이 몇 번이나 판정 없이 지났는지는 알 수 없었다. 그래서 예외가 날 때마다 「판정 없이 지났다」는 한 줄을 판정 없는 통과 기록 파일에 따로 남긴다. 줄에는 오류 종류, 세션 id, 도구 이름만 들어가고 명령 글은 들어가지 않는다 [code:bridge/roleguard.py] [code:bridge/hookmiss.py].
 
-스키마 잠금, 다른 저장소 막기, `pgrep -f` 막기도 같다. 판정 중 예외가 나면 통과시키고 어느 장치에서 났는지를 같은 파일에 남긴다. 전에는 이 예외가 브리지의 서버 오류로 나가 스크립트가 아무 흔적 없이 통과시켰다 [code:bridge/approvals.py]. 이 기록 파일의 갈래와 꼴은 → 「기다리는 길: hook 두 개」 편이 다룬다.
+스키마 잠금, 다른 저장소 막기, `pgrep -f` 막기도 같다. 판정 중 예외가 나면 통과시키고 어느 장치에서 났는지를 같은 파일에 남긴다. 이 셋은 한 줄로 이어 판정하므로, 셋 가운데 하나에서 예외가 나면 그 호출은 뒤에 오는 역할 규칙의 막기와 승인 판정까지 건너뛰고 CC에는 아무것도 돌아가지 않는다(CC는 자기 권한 설정대로 한다). 전에는 이 예외가 브리지의 서버 오류로 나가 스크립트가 아무 흔적 없이 통과시켰다 [code:bridge/approvals.py]. 이 기록 파일의 갈래와 꼴은 → 「기다리는 길: hook 두 개」 편이 다룬다.
 
 ### 역할 권한을 hook으로 한 까닭
 
@@ -175,7 +175,7 @@ FOREMAN 세션은 런슈즈, 펫퍼민트, 인프라 저장소를 읽을 수는 
 
 "읽기"는 목록으로 정했다. `status`, `log`, `show`, `diff`, `ls-remote`, `rev-parse`, `blame` 같은 것들이다. 그 밖에 인자에 따라 읽기인 것도 있다. `git branch`는 목록 보기면 읽기고 `-d`가 붙으면 쓰기다. `git fetch`는 그 저장소의 `.git`에 쓰므로 막지만 `--dry-run`이면 읽기다. 이 갈래는 처음 만든 판을 일주일치 호출로 다시 돌렸을 때 나온 헛거부 4건(`git reflog show`, `$(…)` 안의 `git remote get-url origin`, `git apply --check`, `git fetch --dry-run`)을 보고 더한 것이다. 고친 뒤 남은 20건은 모두 막으려던 일이었다 [log:repo_scope_readonly_20261109.md].
 
-`/tmp`와 스크래치 아래는 막지 않는다. 다른 저장소를 손대 보고 싶으면 그곳에 복제해서 하면 된다. 커밋 글 안에 "git push"라는 낱말이 들어 있는 경우를 헛걸림으로 치지 않으려고 명령 안의 여러 줄 글을 통째로 보지 않는데, 그 때문에 놓치는 꼴도 있다(**미해결**) [code:bridge/reposcope.py].
+`/tmp`와 스크래치 아래는 막지 않는다. 다른 저장소를 손대 보고 싶으면 그곳에 복제해서 하면 된다. 명령은 줄마다 나눠 보고, heredoc 본문은 빼고 본다. 커밋 글을 heredoc으로 넘길 때 그 안의 "git push" 같은 낱말에 걸리지 않게 하려는 것이다. 그 대신 `bash <<EOF`처럼 heredoc으로 셸에 넘긴 git 명령은 보지 못한다 [code:bridge/reposcope.py].
 
 ### 예외 둘
 
@@ -187,7 +187,7 @@ FOREMAN 세션은 런슈즈, 펫퍼민트, 인프라 저장소를 읽을 수는 
 
 ### 한계
 
-reposcope는 Bash의 git만 본다. git 밖의 명령으로 다른 저장소 파일을 고치는 것은 보지 않고, 역할 권한의 Bash 파일 고치기 규칙이 일부 맡지만 그 규칙은 자기 저장소 안만 본다. 샌드박스를 미룬 까닭은 → 「17 알려진 한계」에 모았다. 변수로 가리킨 git 쓰기는 어디인지 알 수 없어 거꾸로 막는다.
+reposcope는 Bash의 git만 본다. git 밖의 명령으로 다른 저장소 파일을 고치는 것은 보지 않고, 역할 권한의 Bash 파일 고치기 규칙이 일부 맡지만 그 규칙은 자기 저장소 안만 본다. 샌드박스를 미룬 까닭은 → 「17 알려진 한계」에 모았다. 변수로 가리킨 git 쓰기(`git -C $X commit` 등)는 어디인지 알 수 없어 거꾸로 막는다. 그런데 `cd $X`는 따라가지 않고 앞의 폴더를 그대로 쓴다. 그래서 `cd $X && git commit`은 `cd` 앞 폴더에서 판정한다. 실행 때 정해지는 폴더를 따라가는 일은 아직 하지 않았다 [code:bridge/reposcope.py].
 
 ## 5. 스키마는 한 세션만(schemalock)
 
@@ -218,7 +218,7 @@ reposcope는 Bash의 git만 본다. git 밖의 명령으로 다른 저장소 파
 
 ### 막힌 것이 보이게
 
-처음 만든 잠금은 거부만 하고 화면이 없었다. 원본 폴더 세션이 쥔 잠금 때문에 작업방 코더가 막혔는데, 설계는 "사람이 푼다"였지만 누를 곳이 없었고, 막힌 것도 그 코더가 메시지를 보내서야 알았다 [docs:11_worktree.md]. 그래서 막힌 세션을 잠금 상태에 남기고, 화면 방 배너에 "멈춤: 세션 M이 스키마 잠금에 막혔습니다(쥔 세션 N)"을 띄우고, 막힌 세션마다 텔레그램을 한 번 보낸다 [code:bridge/approvals.py]. 배너를 누르면 확인 창 뒤 잠금이 풀린다. 합치기나 버리기로 잠금이 풀리면 결과 글에 "스키마 잠금도 풀었습니다"가 붙는다.
+처음 만든 잠금은 거부만 하고 화면이 없었다. 원본 폴더 세션이 쥔 잠금 때문에 작업방 코더가 막혔는데, 설계는 "사람이 푼다"였지만 누를 곳이 없었고, 막힌 것도 그 코더가 메시지를 보내서야 알았다 [docs:11_worktree.md]. 그래서 막힌 세션을 잠금 상태에 남기고, 화면 방 배너에 "멈춤: 세션 M이 스키마 잠금에 막혔습니다(쥔 세션 N). 눌러서 풉니다"를 띄우고, 막힌 세션마다 텔레그램을 한 번 보낸다 [code:bridge/approvals.py] [code:bridge/static/js/office.js]. 막힌 세션이 없을 때도 잠금을 쥔 세션이 살아 있으면 배너에 "DB 구조 잠금: 세션 N이 시각부터 쥐고 있습니다"가 흐리게 뜬다. 배너를 누르면 확인 창 뒤 잠금이 풀린다. 합치기나 버리기로 잠금이 풀리면 결과 글에 "스키마 잠금도 풀었습니다"가 붙는다.
 
 막힌 세션은 이 글을 받는다.
 
