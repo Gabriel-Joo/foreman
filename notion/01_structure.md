@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/main.py, bridge/__main__.py, bridge/config.py, .gitignore
-읽은 커밋: dec9160
+읽은 커밋: 81afc11
 -->
 
 # 01 전체 구조
@@ -81,7 +81,7 @@ FOREMAN을 처음 보면 가장 이상해 보이는 점이 이것이다. 글은 
 
 브리지는 처음부터 지금까지 프로세스 하나다. 수집하는 쪽과 화면을 내주는 쪽을 나누는 설계도 검토했지만 버렸다. 떼어낼 수 있는 화면이 사실상 없기 때문이다. 실시간 상태는 브리지 안의 메모리 대기열과 WebSocket에 있고, 승인 대기는 PreToolUse hook이 브리지의 응답을 기다리며 연결을 붙들고 있는 상태이고, 셸 패널은 브리지만 닿을 수 있는 UNIX 소켓 뒤에 있다. 화면 쪽으로 떼어낼 수 있는 것은 정적 HTML과 JS뿐이라, 따로 띄워도 그것은 브리지 앞에 선 프록시에 지나지 않는다. 배포 단위가 둘이 되면 둘 사이 약속과 한쪽만 죽은 상태를 따로 다뤄야 하는데, 물리 서버가 하나라 얻는 가용성도 없다 [docs:00_design.md]. 이 판단과 브리지를 파드로 띄울 수 없는 까닭은 → 「어디에 두었나」에서 깊게 다룬다.
 
-프로세스 하나로 두면서 생긴 약속이 있다. 한 기능이 고장 나도 브리지 전체가 죽지 않아야 하고, 그렇다고 고장이 조용히 묻혀서도 안 된다. 셸 패널, 파이프라인, 노션 게시, 합치기 준비, 서기실 전체 줄, 사용량 읽기 같은 기능은 각자 켜다가 실패하면 로그를 남기고 그 기능만 꺼진 채로 브리지는 뜬다. 그 가운데 사람이 모르면 안 되는 것(합치기 준비, 조사 세션 스스로 끝내기, 서기실 전체 줄, 역할 권한, 프로젝트별 관리자와 계획 넘기기, 사용량 읽기, `claude` 실행 파일을 못 찾음 등)은 텔레그램으로도 한 번 알린다 [code:bridge/main.py]. 이 「뜨되 조용하지 않게」는 FOREMAN이 존재하는 이유(조용한 고장을 잡는다)를 브리지 자신에게 적용한 것이다. 실제로 `claude`가 systemd의 PATH에 없어 계획 세우기가 이틀 동안 실패만 하고 아무도 몰랐던 일이 있었고, 그 뒤 뜰 때 `shutil.which("claude")`로 한 번 찾아 보고 없으면 알리게 했다 [log:stage14_dispatcher_note_wake_result.md] [c:8907665].
+프로세스 하나로 두면서 생긴 약속이 있다. 한 기능이 고장 나도 브리지 전체가 죽지 않아야 하고, 그렇다고 고장이 조용히 묻혀서도 안 된다. 셸 패널, 파이프라인, 노션 게시, 합치기 준비, 서기실 전체 줄, 사용량 읽기 같은 기능은 각자 켜다가 실패하면 로그를 남기고 그 기능만 꺼진 채로 브리지는 뜬다. 그 가운데 사람이 모르면 안 되는 것(합치기 준비, 조사 세션 스스로 끝내기, 서기실 전체 줄, 역할 권한, 프로젝트별 관리자와 계획 넘기기, 사용량 읽기, `claude` 실행 파일을 못 찾음, 자동 기상 알림에 실을 주소 이름이 풀리지 않음 등)은 텔레그램으로도 한 번 알린다 [code:bridge/main.py]. 이 「뜨되 조용하지 않게」는 FOREMAN이 존재하는 이유(조용한 고장을 잡는다)를 브리지 자신에게 적용한 것이다. 실제로 `claude`가 systemd의 PATH에 없어 계획 세우기가 이틀 동안 실패만 하고 아무도 몰랐던 일이 있었고, 그 뒤 뜰 때 `shutil.which("claude")`로 한 번 찾아 보고 없으면 알리게 했다 [log:stage14_dispatcher_note_wake_result.md] [c:8907665].
 
 ## 한 앱, 두 문
 
@@ -90,7 +90,7 @@ FOREMAN을 처음 보면 가장 이상해 보이는 점이 이것이다. 글은 
 | 문 | 주소 | 받는 것 | 인증 |
 |---|---|---|---|
 | 주 문 | 127.0.0.1:8000 | 화면, API, WebSocket, hook, 셸 패널 | API 토큰(화면, API), hook 토큰(hook) |
-| 웹훅 문 | VM 망 쪽 주소(virbr0):8001 | `/webhooks/*`만 | 웹훅 토큰 + 보낸 곳이 VM 망이어야 함 |
+| 웹훅 문 | VM 망 쪽 주소(virbr0):8001 | `/webhooks/*`만 | 웹훅 토큰 + 보낸 곳이 허용 망(VM 망 둘과 루프백)이어야 함 |
 
 주 문은 루프백 주소에만 묶여 있어 서버 PC 밖에서는 닿지 않는다. 집 PC에서는 ssh 포트 포워딩으로 붙는다. 밖으로 터널을 열지 않기로 한 결정은 → 「어디에 두었나」.
 
@@ -100,7 +100,7 @@ FOREMAN을 처음 보면 가장 이상해 보이는 점이 이것이다. 글은 
 
 ## 설정은 한 곳에서
 
-브리지 설정은 `bridge/config.py`의 `Settings` 하나에 모여 있다 [code:bridge/config.py]. pydantic-settings라는 도구로 만든 것인데, 읽는 차례는 단순하다. 비밀값(DB 비밀번호, API 토큰, hook 토큰, 웹훅 토큰)은 저장소 맨 위의 `.env.db`와 `.env.bridge` 파일에서 읽는다. 비밀이 아닌 값(포트, 주기, 시간 상한, 기능 켜고 끄기, 규칙 파일 경로)은 코드에 기본값이 있고, 같은 이름의 환경 변수가 있으면 그것으로 덮는다. 비밀값은 `SecretStr`이라는 형으로 감싸 있어 로그나 오류 메시지에 찍혀도 값 대신 별표가 나온다. 토큰은 32자보다 짧으면 브리지가 아예 뜨지 않고, 이 약속은 짧은 토큰으로 `Settings`를 만들면 검증 오류가 나는지 보는 시험으로 지킨다 [code:tests/test_units.py]. 비밀값 파일은 `.gitignore`가 `.env*`를 모두 빼서 커밋되지 않는다. 다만 키 이름만 적은 견본(`.env.db.example`, `.env.bridge.example`)은 예외로 커밋해, 새로 받는 사람이 어떤 키를 채워야 하는지 알 수 있게 했다 [code:.gitignore]. 같은 파일이 ttyd 같은 내려받은 도구(`.tools/`)와 실행 중에 생기는 소켓 자리(`.run/`)도 뺀다.
+브리지 설정은 `bridge/config.py`의 `Settings` 하나에 모여 있다 [code:bridge/config.py]. pydantic-settings라는 도구로 만든 것인데, 읽는 차례는 단순하다. 비밀값(DB 비밀번호, API 토큰, hook 토큰, 웹훅 토큰)은 저장소 맨 위의 `.env.db`와 `.env.bridge` 파일에서 읽는다. 비밀이 아닌 값(포트, 주기, 시간 상한, 기능 켜고 끄기, 규칙 파일 경로)은 코드에 기본값이 있고, 같은 이름의 환경 변수가 있으면 그것으로 덮는다. 비밀값은 `SecretStr`이라는 형으로 감싸 있어 로그나 오류 메시지에 찍혀도 값 대신 별표가 나온다. 토큰은 32자보다 짧으면 브리지가 아예 뜨지 않고, 이 약속은 짧은 토큰으로 `Settings`를 만들면 검증 오류가 나는지 보는 시험으로 지킨다 [code:tests/test_units.py]. 웹훅 토큰은 없어도 되지만(그때는 웹훅 문을 열지 않는다), 있으면 같은 길이 검사를 받는다. DB 이름에도 검사가 하나 붙어 있다. 값이 시험용 이름(`foreman_test`)이고 시험 도구가 `FOREMAN_TEST_DB` 환경 변수를 넣었을 때만 그 이름으로 바꾼다. 세션마다 시험 DB를 따로 쓰게 하려는 것이고, 바꿀 이름은 `foreman_test_`로 시작해야 한다. 운영 DB 이름은 이 검사가 건드리지 않는다 [code:bridge/config.py]. 비밀값 파일은 `.gitignore`가 `.env*`를 모두 빼서 커밋되지 않는다. 다만 키 이름만 적은 견본(`.env.db.example`, `.env.bridge.example`)은 예외로 커밋해, 새로 받는 사람이 어떤 키를 채워야 하는지 알 수 있게 했다 [code:.gitignore]. 같은 파일이 ttyd 같은 내려받은 도구(`.tools/`)와 실행 중에 생기는 소켓 자리(`.run/`)도 뺀다.
 
 여기서 눈여겨볼 약속이 둘 있다. 하나는 **모든 바깥 호출에 시간 상한이 있다**는 것이다. DB 연결 5초, 쿼리 5초, 재시도 최대 10초, WebSocket 인증 5초 같은 값이 설정에 있다 [code:bridge/config.py]. 시간 상한이 없는 클라이언트는 상대가 답하지 않을 때 끝없이 멈추고, 그 멈춤은 겉으로 드러나지 않는다. 다른 하나는 **토큰을 쓰임새마다 가른다**는 것이다. hook 토큰은 hook 스크립트가 쓰고, API 토큰은 화면과 API가 쓴다. hook 토큰은 세션이 도는 셸 환경에 있으므로 새기 쉬운데, 새도 그것으로는 세션에 글을 넣거나 승인을 누를 수 없다 [log:stage1_bridge_db_result.md]. 토큰을 더 잘게 가른 지금 모습은 → 「열쇠와 비밀」.
 
@@ -182,10 +182,10 @@ API는 기능별 라우터(주소 묶음)로 나뉘어 있고, `main.py`는 그�
 |---|---|---|---|
 | `/ws` | `bridge/api/ws.py` | API 토큰(첫 메시지) | → 「적재와 내보내기」 |
 | `/hooks`, `/hooks/pre`, `/hooks/permission` | `bridge/api/hooks.py` | hook 토큰 | → 「CC hook 받기」, → 「04 승인」 |
-| `/hooks/shell`, `/terminal/*`, `/ccscreen/*`, `/api/terminal/*` | `bridge/api/terminal.py` | 쿠키, API 토큰 | → 「셸 패널과 세션 화면」 |
+| `/hooks/shell`, `/terminal/*`, `/ccscreen/*`, `/api/terminal/*` | `bridge/api/terminal.py` | hook 토큰(`/hooks/shell`), 쿠키(`/terminal/*`, `/ccscreen/*`), API 토큰(`/api/terminal/*`) | → 「셸 패널과 세션 화면」 |
 | `/api/sessions`(목록, 입력, 모델) | `bridge/api/sessions.py` | API 토큰 | → 「03 세션 지켜보기와 글 넣기」 |
 | `/api/dashboard`, `/api/sessions/{id}/conversation` 등, `/api/sessions/{id}/escalate` | `bridge/api/dashboard.py` | API 토큰 | → 「데이터 계층」 |
-| `/api/sessions/{id}/spawn`, `/worktree`, `/handoff`, `/merge-prep`, `/schema-lock` 등 | `bridge/api/handoff.py` | API 토큰 | → 「06 세션 띄우기와 따로 작업」, → 「07 합치기」, → 「08 인계와 압축 손실」 |
+| `/api/sessions/{id}/spawn`, `/worktree`, `/handoff`, `/merge-prep`, 그리고 `/api/spawn`, `/api/merge-prep`, `/api/schema-lock`, `/api/summaries` 등 | `bridge/api/handoff.py` | API 토큰 | → 「06 세션 띄우기와 따로 작업」, → 「07 합치기」, → 「08 인계와 압축 손실」 |
 | `/api/approvals` | `bridge/api/approvals.py` | API 토큰 | → 「기다리는 길: hook 두 개」 |
 | `/api/foreman` | `bridge/api/foreman.py` | API 토큰 | → 「계획 한 번」 |
 | `/api/managers` | `bridge/api/managers.py` | API 토큰 | → 「관리자에게 넘기기와 보고」 |
