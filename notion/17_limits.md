@@ -1,6 +1,6 @@
 <!--
 다루는 곳: scripts/foreman-decide.sh, bridge/roleguard.py, bridge/reposcope.py, bridge/inject.py, bridge/mask.py, bridge/assembler.py, bridge/overlap.py, bridge/evidence.py, bridge/uiver.py, config/approval.toml, config/roles.toml, deploy/mysql/backup.sh
-읽은 커밋: 74a9706
+읽은 커밋: 6f8bc6f
 -->
 # 17 알려진 한계
 
@@ -181,10 +181,13 @@ GitHub에서 FOREMAN으로 오는 웹훅은 없다. 운영 도구가 바깥 인�
 
 ### CC에는 tmux로 붙는다
 
-실행 중인 CC 세션에 글을 넣는 길로 tmux의 키 보내기를 골랐다. 사람이 터미널에서 보는 세션과 FOREMAN이 다루는 세션이 같은 것이어야 맥락이 이어지기 때문이다 [docs:00_design.md].
+실행 중인 CC 세션에 글을 넣는 길로 tmux의 키 보내기를 골랐다. 사람이 터미널에서 보는 세션과 FOREMAN이 다루는 세션이 같은 것이어야 맥락이 이어지기 때문이다 [docs:00_design.md]. 키 보내기는 받았다는 답을 돌려주지 않는다. 그래서 글이 들어갔는지는 넣은 뒤 트랜스크립트에서 그 글을 찾고, 못 찾으면 화면의 입력 칸을 보고 가른다. 기록에서는 못 찾았지만 입력 칸이 비었으면 들어간 것으로 다룬다. CC가 기록을 10초 넘게 늦게 쓰는 일이 잦고, 이것을 실패로 돌려주면 보낸 쪽이 다시 보내 같은 글이 두 번 들어가기 때문이다. 대신 뒤에서 2분 동안 기록을 다시 본다 [code:bridge/inject.py] [log:foreman-5_inject_unconfirmed_20261120.md]. 첫 글 넣기, 인계, 관리자 부탁, 셸 결과, 합치기 알림이 모두 이 한 판정(`submitted`)을 쓴다(→ 「03 세션 지켜보기와 글 넣기」).
 
 - tmux 밖에서 띄운 세션은 지켜보기는 되지만 글 넣기와 창 판정은 안 된다(→ 「03 세션 지켜보기와 글 넣기」)
 - 세션 화면 창도 tmux 안의 세션만 연다. tmux 밖에서 돌거나 다른 tmux 서버에서 도는 세션은 볼 수 없고, 화면은 그 까닭을 띄운다 [code:bridge/terminal.py]
+- 브리지가 「넣었다」고 돌려준 글 가운데 기록으로 확인하지 못한 것이 섞인다(`verified: false`). 끝내 기록에 없을 수도 있고, 그 결과는 뒤에서 다시 본 뒤에야 알 수 있다 [code:bridge/api/sessions.py] [code:bridge/managers.py]
+- 뒤에서 다시 보는 확인 번호는 브리지 메모리에만 있다. 브리지를 다시 띄우면 사라지고, 500개가 넘으면 오래된 것부터 밀려난다 [code:bridge/inject.py]
+- 슬래시 명령은 기록에 보낸 글과 다른 모양으로 남아 제출을 끝내 맞대지 못하므로, 뒤에서 다시 보지도 않는다 [code:bridge/inject.py]
 
 ### 조건: CC의 화면과 파일 모양
 
