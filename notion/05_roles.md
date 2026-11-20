@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/roles.py, config/roles.toml, bridge/static/js/roles.js, docs/roles.md, bridge/roleguard.py, bridge/hookmiss.py
-읽은 커밋: 82cc2be
+읽은 커밋: a1493f4
 -->
 
 # 05 역할과 권한
@@ -64,7 +64,7 @@ flowchart LR
   G -->|걸림, 막는 규칙| DENY[거부<br/>무엇이 왜 막혔고 어떻게 하면 되는지 세션에 돌려줌]
 ```
 
-지금 규칙은 다섯이다 [code:config/roles.toml]. 작업방 세션의 `git push`(`worktree-push`), Bash로 저장소 파일 고치기(`bash-file-edit`), 관리자가 허용된 곳 밖을 고치기(`manager-code`), 서기가 코드 폴더를 고치기(`scribe-code`), 조사가 `log/` 밖을 쓰기(`inspector-write`)다. 브리지는 세션 역할을 DB에서 읽되 도구 호출마다 DB를 치지 않게 60초 동안 기억한다 [code:bridge/roleguard.py]. 판정 자체가 실패하면 세션을 묶지 않고 통과시킨 뒤 브리지 로그와 시간마다 한 번 텔레그램으로 알린다. 텔레그램은 한 시간에 한 번이라, 실패할 때마다 판정 없는 통과 기록 파일(`.run/hook_miss.log`)에도 한 줄을 남긴다. 줄에는 오류 종류, 세션 id, 도구 이름만 들어가고 명령 글은 들어가지 않는다 [code:bridge/roleguard.py] [code:bridge/hookmiss.py] [c:cd14ed6]. 권한 검사가 고장 나서 모든 세션이 멈추는 쪽이 더 나쁘다고 봤다.
+지금 규칙은 다섯이다 [code:config/roles.toml]. 작업방 세션의 `git push`(`worktree-push`), Bash로 저장소 파일 고치기(`bash-file-edit`), 관리자가 허용된 곳 밖을 고치기(`manager-code`), 서기가 코드 폴더를 고치기(`scribe-code`), 조사가 `log/` 밖을 쓰기(`inspector-write`)다. 관리자에게 허용된 곳은 설정 파일(`config/*.toml`), 기록(`log/` 아래), 할 일 목록(`docs/TODO.md`) 셋이다(`manager_allow`). `CLAUDE.md`가 관리자에게 허락한 예외 셋 가운데 설정 값, 기록, 할 일 목록의 줄과 같은 범위다. 한때 `README.md`가 이 목록에 있었지만, README는 도구가 만드는 생성물이라 사람이 손으로 고칠 줄이 없어서 빼고 할 일 목록을 넣었다 [code:config/roles.toml] [repo:CLAUDE.md]. 서기가 고치지 않는 코드 폴더는 `bridge/`, `tests/`, `migrations/`, `tools/` 넷이다(`scribe_deny`). 브리지는 세션 역할을 DB에서 읽되 도구 호출마다 DB를 치지 않게 60초 동안 기억한다 [code:bridge/roleguard.py]. 판정 자체가 실패하면 세션을 묶지 않고 통과시킨 뒤 브리지 로그와 시간마다 한 번 텔레그램으로 알린다. 텔레그램은 한 시간에 한 번이라, 실패할 때마다 판정 없는 통과 기록 파일(`.run/hook_miss.log`)에도 한 줄을 남긴다. 줄에는 시각, 오류 종류, 세션 id, 도구 이름만 들어가고 명령 글은 들어가지 않는다. 명령 글에는 비밀값이 섞일 수 있어서다 [code:bridge/roleguard.py] [code:bridge/hookmiss.py] [c:cd14ed6]. 이 파일은 역할 판정만의 것이 아니다. 스키마 잠금, 다른 저장소 막기 같은 다른 막기가 판정 없이 통과할 때와, 브리지가 꺼져 있거나 늦어 훅 스크립트가 답을 못 받을 때도 같은 파일에 한 줄씩 쌓인다. 파일이 1MB를 넘으면 한 벌만 돌려 두고 새로 쓴다 [code:bridge/hookmiss.py]. 훅 스크립트 쪽 갈래는 → 「기다리는 길: hook 두 개」에서 다룬다. 권한 검사가 고장 나서 모든 세션이 멈추는 쪽이 더 나쁘다고 봤다.
 
 ### 막지 않고 먼저 지켜보았다
 
