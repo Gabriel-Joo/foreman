@@ -1,6 +1,6 @@
 <!--
 다루는 곳: scripts/foreman-decide.sh, bridge/roleguard.py, bridge/reposcope.py, bridge/inject.py, bridge/mask.py, bridge/assembler.py, bridge/overlap.py, bridge/evidence.py, bridge/uiver.py, config/approval.toml, config/roles.toml, deploy/mysql/backup.sh
-읽은 커밋: c061fd3
+읽은 커밋: 74a9706
 -->
 # 17 알려진 한계
 
@@ -17,7 +17,7 @@ FOREMAN은 물리 서버 한 대 위에 있다. 호스트가 죽으면 브리지
 
 ### 관제 화면을 밖에 열지 않는다
 
-브리지는 루프백에만 귀를 열고, 터널로 밖에 열지 않았다. 관제실은 호스트 셸과 승인 권한을 쥐고 있다. 여기가 한 번 뚫리면 네 저장소 전부에 push할 수 있고, 위험 작업을 통과시킬 수 있고, 비밀값이 든 설정도 만질 수 있다. 다른 서비스는 뚫려도 그 서비스 하나에서 끝나지만 여기는 나머지 전부로 번진다. 그래서 인증 관문을 앞에 두는 데서 그치지 않고 아예 열지 않았고, 밖에서 필요한 것은 텔레그램으로 받는다 [docs:00_design.md] [log:foreman-5_todo_collect_20261117.md]. 열 줄도 알고 열 길도 있다. 열었을 때 잃을 것과 얻을 것을 따져 열지 않은 것이다. 다시 열 때의 조건은 → 「어디에 두었나」.
+브리지의 화면과 API는 루프백(이 PC 안에서만 닿는 주소)에만 귀를 열고, 터널로 밖에 열지 않았다. 루프백 밖에 연 것은 클러스터 VM이 CI/CD 웹훅을 보내는 포트 하나뿐이다. 이 포트는 웹훅 길만 받고, VM 망에서 온 요청만 들이고, 화면과 API와 다른 토큰을 요구한다 [code:bridge/config.py] [code:bridge/main.py]. 관제실은 호스트 셸과 승인 권한을 쥐고 있다. 여기가 한 번 뚫리면 네 저장소 전부에 push할 수 있고, 위험 작업을 통과시킬 수 있고, 비밀값이 든 설정도 만질 수 있다. 다른 서비스는 뚫려도 그 서비스 하나에서 끝나지만 여기는 나머지 전부로 번진다. 그래서 인증 관문을 앞에 두는 데서 그치지 않고 아예 열지 않았고, 밖에서 필요한 것은 텔레그램으로 받는다 [docs:00_design.md] [log:foreman-5_todo_collect_20261117.md]. 열 줄도 알고 열 길도 있다. 열었을 때 잃을 것과 얻을 것을 따져 열지 않은 것이다. 다시 열 때의 조건은 → 「어디에 두었나」.
 
 - 밖에서는 화면을 열 수 없다. 사람은 서버 PC 앞에서 보거나 ssh 포트 포워딩으로 붙는다 [code:bridge/config.py]
 - 터널을 여는 작업 지시서는 끝까지 써 두었지만 「보류, 필요해지면」 표시를 단 채 남겼다 [docs:history/02_cloudflare_tunnel.md]
@@ -57,8 +57,8 @@ hook 스크립트는 브리지에게서 판정을 받지 못하면 아무것도 
 
 패널의 `!` 명령, 셸 패널, 세션 화면 창은 사람이 직접 치는 길이다. 사람이 CC 창 앞에 앉아 치는 것과 같은 길로 보고, 승인 카드를 거치게 하지 않았다 [docs:00_design.md].
 
-- `!` 명령은 승인 규칙이 묻기로 정한 것만 막는다. 묻지 않고 통과로 정한 명령은 패널에서 바로 실행된다 [code:bridge/inject.py]
-- `!`로 `sudo`는 보내지 않는다. `sudo`는 암호를 물어 입력이 멈추기 때문이다 [code:bridge/inject.py]
+- `!` 명령은 승인 규칙이 묻기로 정한 것, `sudo`, 여러 줄 명령만 막는다. 묻지 않고 통과로 정한 명령은 패널에서 바로 실행된다 [code:bridge/inject.py]
+- `!`로 `sudo`는 보내지 않는다. `sudo`는 암호를 물어 그 세션의 입력이 멈추기 때문이다. 여러 줄 명령은 거부하고 `&&`로 잇거나 스크립트 파일로 돌리라고 돌려준다 [code:bridge/inject.py]
 - 셸 패널에서 친 명령은 승인 카드를 거치지 않는다 [code:bridge/static/js/terminal.js]
 - 세션 화면 창은 열고 닫은 시각과 대상만 남기고 친 키 하나하나는 남기지 않으며, 키에 제한을 두지 않는다 [code:bridge/api/terminal.py]
 
