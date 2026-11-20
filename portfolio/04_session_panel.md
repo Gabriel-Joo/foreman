@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/static/js/opanel.js, bridge/static/js/render.js, bridge/static/js/md.js, bridge/static/js/slash.js, bridge/transcript/lookup.py, bridge/inject.py, bridge/api/sessions.py, bridge/api/dashboard.py
-읽은 커밋: 6cc0e36
+다루는 곳: bridge/static/js/opanel.js, bridge/static/js/render.js, bridge/static/js/md.js, bridge/static/js/slash.js, bridge/static/js/store.js, bridge/transcript/lookup.py, bridge/inject.py, bridge/api/sessions.py, bridge/api/dashboard.py
+읽은 커밋: 07f6d8d
 -->
 
 # 세션 패널: 대화와 활동
@@ -27,7 +27,7 @@ Claude Code의 답에는 표, 목록, 코드 블록이 많습니다. 패널은 �
 
 [활동] 탭은 세션이 부른 도구를 시각과 함께 한 줄씩 보여 줍니다. 「Bash git diff …」, 「Edit …/opanel.js」, 「Read …」처럼 무엇을 실행했고 어떤 파일을 읽고 고쳤는지가 시간 순서대로 쌓입니다. 줄을 누르면 그 자리에서 펼쳐져 도구에 들어간 입력 전체와 돌아온 결과 본문이 보입니다. Bash는 명령과 그 설명을, Edit는 지운 줄과 넣은 줄을 빨강과 초록으로, Read는 읽은 파일과 범위를 보여 줍니다.
 
-![[활동] 탭에서 Bash 줄 하나를 누른 모습입니다. 명령의 설명(「되돌림 확인과 JS 시험 다시 돌리기」), 실행한 명령 전체, 결과 149자(바뀐 파일 수와 시험 통과 193 · 실패 0), 맨 아래에 읽은 기록 파일과 「비밀값은 가림」이 보입니다 〔실제 화면〕](img/04_session_panel_activity.png)
+![[활동] 탭에서 Bash 줄 하나를 누른 모습입니다. 명령의 설명(「되돌림 확인과 JS 시험 다시 돌리기」), 실행한 명령 전체, 결과 149자(바뀐 파일 수와 시험 통과 193, 실패 0), 맨 아래에 읽은 기록 파일과 「비밀값은 가림」이 보입니다 〔실제 화면〕](img/04_session_panel_activity.png)
 
 본문은 데이터베이스에 넣지 않습니다(→ 「알려진 한계」). 대신 줄을 누르는 순간 브리지(FOREMAN의 서버 프로그램)가 Claude Code가 남긴 대화 기록 파일(트랜스크립트)을 끝에서부터 거꾸로 훑어 그 도구 호출을 찾아 읽어 옵니다. 읽어 온 본문은 화면에 내기 전에 토큰이나 비밀번호처럼 보이는 값을 가리고, 펼친 칸 맨 아래에 「비밀값은 가림」과 읽는 데 걸린 시간을 적습니다 [code:bridge/transcript/lookup.py] [code:bridge/api/dashboard.py] [c:1540471].
 
@@ -37,7 +37,7 @@ Claude Code의 답에는 표, 목록, 코드 블록이 많습니다. 패널은 �
 
 ![시연 장면에서 일하는 중인 코더 세션을 고른 모습입니다. 왼쪽 픽셀 화면에서 고른 캐릭터에 네모가 쳐지고, 오른쪽 패널의 대화 말풍선 아래 입력 칸에는 「작업 중, 끝나면 전달」이 보입니다 〔시연 재생〕](img/04_session_panel_input.png)
 
-보내기 전에는 매번 대상을 다시 확인합니다. 살아 있는 Claude Code 프로세스가 없으면, 사람이 Ctrl+Z로 멈춰 둔 세션이면, tmux 밖에서 도는 세션이면, 그 tmux 창에서 지금 도는 것이 그 세션의 Claude Code가 아니면 아무것도 보내지 않고 까닭을 입력 칸 아래에 「보낼 수 없음」으로 적습니다. 멈춘 세션을 따로 막는 것은, 그 상태에서 글을 넣으면 Claude Code가 아니라 그 아래 셸이 받아 명령으로 실행해 버리기 때문입니다. 사람이 그 세션의 입력 칸에 무언가 치다 만 글이 있을 때도 덮어쓰지 않고 넣지 않습니다. 보낸 뒤에는 10초 동안 대화 기록 파일을 지켜보며 글이 정말 프롬프트로 기록됐는지 봅니다. 기록에서 못 찾으면 그 창 화면을 직접 읽어 글이 입력 칸에 남아 있는지 확인하고, 「제출되지 않았습니다. 입력 칸에 글이 남아 있으니 대화창에서 Enter를 누르거나 지워 주세요.」와 「제출됐는지 확인하지 못했습니다. 대화창에서 입력 칸을 확인해 주세요.」를 갈라 알립니다. 보낸 것이 조용히 사라지지 않게 하려는 장치입니다 [code:bridge/inject.py] [code:bridge/api/sessions.py].
+보내기 전에는 매번 대상을 다시 확인합니다. 살아 있는 Claude Code 프로세스가 없으면, 사람이 Ctrl+Z로 멈춰 둔 세션이면, tmux 밖에서 도는 세션이면, 그 tmux 창에서 지금 도는 것이 그 세션의 Claude Code가 아니면 아무것도 보내지 않고 까닭을 입력 칸 아래에 「보낼 수 없음」으로 적습니다. 멈춘 세션을 따로 막는 것은, 그 상태에서 글을 넣으면 Claude Code가 아니라 그 아래 셸이 받아 명령으로 실행해 버리기 때문입니다. 사람이 그 세션의 입력 칸에 무언가 치다 만 글이 있을 때도 덮어쓰지 않고 넣지 않습니다. 보낸 뒤에는 10초 동안 대화 기록 파일을 지켜보며 글이 정말 프롬프트로 기록됐는지 봅니다. 기록에서 못 찾으면 그 창 화면을 직접 읽어 글이 입력 칸에 남아 있는지 확인하고, 「제출되지 않았습니다. 입력 칸에 글이 남아 있으니 대화창에서 Enter를 누르거나 지워 주세요.」와 「제출됐는지 확인하지 못했습니다. 대화창에서 입력 칸을 확인해 주세요.」를 갈라 알립니다. 보낸 것이 조용히 사라지지 않게 하려는 장치입니다 [code:bridge/inject.py] [code:bridge/api/sessions.py] [code:bridge/static/js/store.js].
 
 ## 입력 칸의 `/`와 `!`
 
