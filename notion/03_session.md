@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/liveness.py, bridge/session_state.py, bridge/stallwatch.py, bridge/human_wait.py, bridge/api_error.py, bridge/bang_watch.py, bridge/xmsg.py, bridge/inject.py, bridge/api/sessions.py, bridge/static/js/slash.js, tests/js/slash.test.mjs, tests/js/xmsg.test.mjs, tests/test_api_error.py, tests/test_bang_watch.py, tests/test_human_wait.py, tests/test_inject.py, tests/test_inject_screen.py, tests/test_stallwatch.py, tests/test_stallwatch_bg.py, tests/test_xmsg.py
-읽은 커밋: 3f3dd05
+읽은 커밋: 7dee4fa
 -->
 
 # 03 세션 지켜보기와 글 넣기
@@ -92,14 +92,14 @@ FOREMAN은 정지된 세션을 깨우지 않는다(SIGCONT를 보내지 않는�
 | `exit_confirm` | 끝내기 확인 창에서 멈춤 | 쉬는 세션에 CC 끝내기 확인 창이 떠 있다 | 2분 뒤 |
 | `dialog` | 창에서 답을 기다림 | 쉬는 세션에 결정 창이 떠 있는데 패널에 답할 승인 카드가 없다 | 2분 뒤 |
 | `notice` | 안내 창이 떠 있음 | 쉬는 세션에 안내 창(자동 압축 권유, `/model` 등)이 떠 있다 | 2분 뒤 |
-| `bg_long` | 뒤에서 도는 일이 오래 걸림 | 백그라운드 명령이 30분 넘게 끝 알림 없이 돈다 | 바로(조건 있음) |
+| `bg_long` | 뒤에서 도는 일이 오래 걸림 | 백그라운드 명령이 30분 넘게 끝 알림 없이 돈다(출력이 15분 안에 바뀌고 있으면 뺀다) | 바로 |
 | `long` | 긴 작업 | 한 턴이 2시간을 넘었다 | 화면에만 |
 
 숫자는 모두 `bridge/stallwatch.py` 맨 위의 값이다(`SILENT` 30분, `LOOP_SAME` 6, `LOOP_ERRORS` 8, `LONG` 2시간, `BG_LONG` 30분, `BG_QUIET` 15분, 창 알림 2분) [code:bridge/stallwatch.py]. 설정 파일로 빼지 않은 것은 헛경보가 나면 판정 코드와 함께 고쳐야 하는 값이라서다.
 
 ### 3-3. 작업 중에 끊김
 
-열린 턴이 있는데 프로세스가 사라졌다는 것은 「일이 끝났다」는 신호 없이 끊겼다는 뜻이다. 터미널이 닫혔거나 프로세스가 죽었거나 컴퓨터 자원이 모자랐을 수 있다. 정상으로 끝난 세션은 턴을 닫고 끝나므로 이 판정은 헛경보가 적다. 실제로 감시를 만들 때 지난 기록을 보니, 정상으로 끝난 세션에 열린 턴이 남은 경우는 없었다 [log:coder_screen_state_20261111.md]. 알림에는 「다시 띄우거나 새로 띄우기로 이어 갑니다」를 붙인다.
+열린 턴이 있는데 프로세스가 사라졌다는 것은 「일이 끝났다」는 신호 없이 끊겼다는 뜻이다. 터미널이 닫혔거나 프로세스가 죽었거나 컴퓨터 자원이 모자랐을 수 있다. 정상으로 끝난 세션은 턴을 닫고 끝나므로 이 판정은 헛경보가 적다. 실제로 감시를 만들 때 지난 기록을 보니, 정상으로 끝난 세션에 열린 턴이 남은 경우는 없었다 [log:coder_screen_state_20261111.md]. 알림에는 「다시 띄우거나 [새로 띄우기]로 이어 갑니다」를 붙인다 [code:bridge/stallwatch.py].
 
 ### 3-4. 응답 없음
 
@@ -139,7 +139,7 @@ CC는 오래 걸리는 Bash 명령을 백그라운드로 옮긴다. 한 세션�
 
 모든 멈춤 알림은 DB `notification` 표의 `rule` 칸을 열쇠로 한 번만 보낸다. 열쇠는 `stall:<종류>:<세션>:<그 상태가 시작된 때>`이고, 뒤에서 도는 일은 `stall:bg_long:<세션>:<task>`이다 [code:bridge/stallwatch.py]. 열쇠가 DB에 있으니 브리지를 다시 띄워도 같은 알림이 다시 가지 않는다. 다만 창 세 가지의 시작 시각은 브리지 메모리라, 다시 띄우면 한 번 더 갈 수 있다.
 
-알림 글은 세 줄이다. 머리(프로젝트 접두, ⏸, 화면 이름, 세션 제목과 번호), ▶ 뒤의 자세한 까닭, 할 일. 할 일은 종류마다 정해 두었다. 예를 들어 끝내기 확인 창이면 「대화창에서 고릅니다. 뒤에서 도는 일이 끝나도 되면 1, 남기려면 3」이다 [code:bridge/stallwatch.py].
+알림 글은 세 줄이다. 머리(프로젝트 접두, ⏸, 화면 이름, 세션 제목과 번호), ▶ 뒤의 자세한 까닭, 할 일. 할 일은 종류마다 정해 두었다. 예를 들어 끝내기 확인 창이면 「대화창에서 고릅니다 — 뒤에서 도는 일이 끝나도 되면 1, 남기려면 3」이다. 안내 창(`notice`)에는 따로 정한 할 일이 없어 셋째 줄이 비고, 둘째 줄의 까닭이 「대화창을 확인해 주세요」로 끝난다 [code:bridge/stallwatch.py].
 
 ## 4. 사람이 필요한데 조용한 때
 
@@ -151,7 +151,7 @@ CC에는 자동 모드(auto mode)가 있어 위험해 보이는 도구 호출을
 
 권한 거부 감시(`DeniedWatch`)는 1분마다 화면과 같은 판정(`human_needs`)을 써서, 마지막 사람 입력 뒤에 남은 거부를 찾는다 [code:bridge/human_wait.py]. 거부 뒤 30분이 지났고, 그 세션이 살아 있고, 정지가 아니고, 지금 `busy`가 아니면 텔레그램을 한 번 보낸다. `busy`를 빼는 까닭은 거부 뒤 CC가 다른 방법으로 이어 가는 일이 많아서다. 그건 막힌 것이 아니다. 화면 쪽 판정도 같은 생각을 따른다. 거부 뒤에 도구 결과가 하나라도 더 있거나 새 턴이 시작됐으면 풀린 것으로 본다 [code:bridge/api/dashboard.py].
 
-글로 묻고 끝난 응답(답 기다림)은 이 감시가 알리지 않는다. 턴 끝 알림이 이미 가고, 그 글이 곧 물음이기 때문이다. 같은 거부는 `denied:<세션>:<거부 시각>` 열쇠로 한 번만 보낸다. 알림 글은 막힌 도구와 CC가 단 까닭(예: External System Writes)을 싣고, 「FOREMAN 승인 카드로 오지 않습니다. 그 세션에 허용하거나 다른 방법을 지시해 주세요」로 끝난다 [log:alerts_denied_xmsg_bang_20261109.md].
+글로 묻고 끝난 응답(답 기다림)은 이 감시가 알리지 않는다. 턴 끝 알림이 이미 가고, 그 글이 곧 물음이기 때문이다. 같은 거부는 `denied:<세션>:<거부 시각>` 열쇠로 한 번만 보낸다. 알림 글은 막힌 도구와 CC가 단 까닭(예: External System Writes)을 싣고, 「FOREMAN 승인 카드로 오지 않습니다. 그 세션에 허용하거나 다른 방법을 지시해 주세요(대화창 입력 칸)」로 끝난다 [code:bridge/human_wait.py] [log:alerts_denied_xmsg_bang_20261109.md].
 
 ### 4-2. API 오류: 「API 오류」 한 마디로는 모른다
 
@@ -193,7 +193,7 @@ CC 세션은 `SendMessage` 도구로 다른 세션에 메시지를 보낼 수 �
 
 ## 5. 글 넣기: 큰 그림
 
-패널의 입력 칸에 글을 쓰고 보내면 `POST /api/sessions/{id}/input`이 불린다 [code:bridge/api/sessions.py]. 같은 길을 새 세션으로 옮기기의 넣기, 모델 바꾸기, 세션 끝내기도 쓴다. 한 번 보내는 데 거치는 차례는 이렇다.
+패널의 입력 칸에 글을 쓰고 보내면 `POST /api/sessions/{id}/input`이 불린다 [code:bridge/api/sessions.py]. 이 입력 API는 `!` 검사와 기록을 맡고, 실제로 넣는 일은 `bridge/inject.py`의 `deliver()`에 맡긴다. 모델 바꾸기(11절)는 입력 API를 그대로 거친다. 브리지가 스스로 보내는 글은 입력 API를 거치지 않고 `deliver()`를 바로 부른다. 세션 끝내기의 `/exit`, 새 세션으로 옮기기의 넣기와 인계 요청, 교장이 띄운 세션의 첫 지시, 관리자에게 넘기기, 합치기 결과 알리기, 셸 패널에서 실행한 명령 결과 돌려주기가 그렇다 [code:bridge/handoff.py] [code:bridge/managers.py] [code:bridge/mergeprep.py] [code:bridge/terminal.py]. 그래서 대상 확인, 창 판정, 첫 글자 보호, 제출 확인(7절부터 10절)은 모든 보내기에 같고, `!` 검사와 입력 이벤트 기록은 패널에서 사람이 보낸 글에만 있다. 패널에서 한 번 보내는 데 거치는 차례는 이렇다.
 
 ```mermaid
 flowchart TD
@@ -291,11 +291,11 @@ CC 입력 칸은 첫 글자에 따라 다르게 군다. 실측 결과는 이렇�
 | 글 | 판정 | 패널이 하는 일 |
 |---|---|---|
 | `/`로 시작하지 않음, 여러 줄, `/api/foo`처럼 경로, `/ 뭐`처럼 기호 | 글 | 공백을 붙여 글로 보낸다 |
-| 아는 CC 명령(`compact`, `model`, `context`, `usage` 등 40여 개), `plugin:skill` 꼴 | 명령 | 그대로 명령으로 |
+| 아는 CC 명령(`compact`, `model`, `context`, `usage` 등 42개), `plugin:skill` 꼴 | 명령 | 그대로 명령으로 |
 | 맥락을 날리거나 세션을 끝내는 명령(`clear`, `exit`, `quit`, `logout`, `login`) | 확인 | 「이 세션의 대화 맥락이 사라지거나 세션이 끝날 수 있습니다」를 묻고 예면 명령으로 |
 | 모르는 `/낱말` | 묻기 | 「모르는 명령입니다. [확인]은 명령으로, [취소]는 글자 그대로」 |
 
-서버(`guarded`)는 그대로다. 패널이 고른 결과를 `command` 값으로 받아, 거짓이면 공백을 붙이고 참이면 그대로 보낸다. 판정 규칙은 화면 한 곳에만 있다.
+서버(`guarded`)는 스스로 가르지 않는다. 패널이 고른 결과를 `command` 값으로 받아, 거짓이면 공백을 붙이고 참이면 그대로 보낸다. `/` 판정 규칙은 화면 한 곳에만 있다. 패널의 이 판정은 `/`만 본다. `!`는 패널이 가르지 않고 입력 API가 따로 본다(8-2) [code:bridge/static/js/slash.js].
 
 ### 8-2. `!`: 늘 막다가, 막을 것만 막기로
 
