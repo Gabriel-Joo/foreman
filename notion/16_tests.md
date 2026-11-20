@@ -1,6 +1,6 @@
 <!--
 다루는 곳: tests/conftest.py, tests/testdb.py, tests/screen_words.py, tests/test_js.py, tests/test_live_config_shape.py, tests/test_public_secret_shapes.py, tests/test_bridge_alert.py, tests/test_coder_docs_rule.py, tests/test_docrefs.py, tests/test_fail_notify_scan.py, tests/test_hook_timeouts.py, tests/test_hookmiss.py, tests/test_roles_agree.py, pyproject.toml, requirements.lock, deploy/systemd/foreman-bridge.service
-읽은 커밋: 83e6a34
+읽은 커밋: 9debe49
 -->
 # 16 시험과 배포
 
@@ -40,7 +40,7 @@ js 시험은 따로 돌리지 않아도 pytest 한 번에 같이 돈다. `tests/
 
 ## 3. 시험 묶음의 짜임
 
-지금 `tests/` 아래 파이썬 시험 파일(`test_*.py`)은 115개이고, pytest가 모으는 시험은 1,521개다(`pytest --collect-only -q`의 끝 줄. 값을 바꿔 여러 번 도는 시험을 하나씩 센 수이고, js 시험을 부르는 시험 하나를 포함한다) [code:tests/]. js 시험은 `tests/js/` 아래 43개 파일, 250개다(`node --test tests/js/`의 `# tests` 줄) [code:tests/js/]. 시험 파일 하나하나는 그 시험이 지키는 기능을 설명하는 편이 머리 주석 「다루는 곳」에 둔다. 이 편은 아래 시험 장치와 여러 기능에 걸친 시험만 맡는다. 전에는 이 편이 시험 폴더 전체를 맡아서 시험 하나만 바뀌어도 이 편이 다시 볼 편으로 떴다 [log:foreman-5_docs_check_20261117.md]. 시험 파일 말고 시험을 돕는 파일과 폴더는 아래와 같다.
+지금 `tests/` 아래 파이썬 시험 파일(`test_*.py`)은 117개이고, pytest가 모으는 시험은 1,537개다(`pytest --collect-only -q`의 끝 줄. 값을 바꿔 여러 번 도는 시험을 하나씩 센 수이고, js 시험을 부르는 시험 하나를 포함한다) [code:tests/]. js 시험은 `tests/js/` 아래 43개 파일, 252개다(`node --test tests/js/`의 `# tests` 줄) [code:tests/js/]. 시험 파일 하나하나는 그 시험이 지키는 기능을 설명하는 편이 머리 주석 「다루는 곳」에 둔다. 이 편은 아래 시험 장치와 여러 기능에 걸친 시험만 맡는다. 전에는 이 편이 시험 폴더 전체를 맡아서 시험 하나만 바뀌어도 이 편이 다시 볼 편으로 떴다 [log:foreman-5_docs_check_20261117.md]. 시험 파일 말고 시험을 돕는 파일과 폴더는 아래와 같다.
 
 | 자리 | 하는 일 |
 |---|---|
@@ -49,6 +49,7 @@ js 시험은 따로 돌리지 않아도 pytest 한 번에 같이 돈다. `tests/
 | `tests/screen_words.py` | 화면 말 검사기. 손으로도 돌릴 수 있다 [code:tests/screen_words.py] |
 | `tests/fixtures/` | 승인 정책 시험용 설정 파일 둘 [code:tests/fixtures/] |
 | `tests/data/screen_words.toml` | 바꾼 화면 이름, 예외, 호버 약속 목록 [code:tests/data/screen_words.toml] |
+| `tests/data/gif_probe.py`, `gif_probe_lossy.py` | 시연 화면을 찍은 프레임 폴더를 GIF로 만드는 도구의 시험이 부르는 도우미. `.venv`에는 그림 라이브러리(PIL)가 없어 시스템 파이썬으로 따로 돌리고, 가짜 프레임으로 GIF를 만든 결과를 JSON 한 줄로 찍는다 [code:tests/data/gif_probe.py] |
 
 ### 파이썬 시험
 
@@ -74,7 +75,7 @@ DB를 쓰는 시험은 pytest를 돌릴 때마다 새로 만든 시험 DB에서 
 
 다른 시험은 대부분 실제 `config/*.toml`을 읽지 않고 임시 파일이나 고정물을 읽는다. 설정을 켜고 끌 때마다 시험이 깨지면 안 되기 때문이다. 실제로 합치기 설정 시험이 실제 설정의 값(사람 승인인지 관리자 승인인지)을 기대하다가, 사용자가 설정을 바꾸자 깨진 적이 있다 [log:test_live_config_20261112_result.md]. 그런데 그렇게만 하면 반대쪽 고장을 못 잡는다. 브리지는 설정을 못 읽으면 많은 곳에서 기본값으로 조용히 넘어간다. 역할 설정을 못 읽으면 역할 검사가 꺼지는 식이다.
 
-그래서 실제 설정을 읽는 시험을 하나 따로 두었다. 이 시험은 값을 보지 않고 모양만 본다. 모든 `config/*.toml`이 읽히는지, 승인 규칙에 묻는 규칙이 하나라도 있는지, 알림 설정에 프로젝트마다 머리말이 있는지, 역할 설정이 오류 없이 읽히고 모드가 셋 가운데 하나인지, 사용량 가격과 한도 칸이 다 있는지 같은 것이다 [code:tests/test_live_config_shape.py]. 켬과 끔, 문턱, 가격을 바꾸는 것으로는 깨지지 않고, 오타나 빠진 칸이 생기면 깨진다. 작업방에서 돌리면 그 작업방의 `config/`를 읽는다.
+그래서 실제 설정을 읽는 시험을 하나 따로 두었다. 이 시험은 값을 보지 않고 모양만 본다. 모든 `config/*.toml`이 읽히는지, 승인 규칙에 묻는 규칙이 하나라도 있는지, 알림 설정에 프로젝트마다 머리말이 있는지, 역할 설정이 오류 없이 읽히고 모드가 셋 가운데 하나인지, 스키마 잠금 규칙에 FOREMAN 항목이 있고 경로와 명령 꼴이 읽히는지, 사용량 가격과 한도 칸이 다 있는지, CI/CD 인과 체인 설정에 인프라와 프로젝트 칸이 있는지 같은 것이다 [code:tests/test_live_config_shape.py]. 켬과 끔, 문턱, 가격을 바꾸는 것으로는 깨지지 않고, 오타나 빠진 칸이 생기면 깨진다. 작업방에서 돌리면 그 작업방의 `config/`를 읽는다.
 
 실제 설정 값을 읽되 값 자체가 아니라 값끼리의 순서만 보는 시험도 하나 있다. 승인을 기다리는 한도는 세 곳에 겹쳐 있다. 브리지가 사람의 결정을 기다리는 시간, 훅 스크립트가 브리지 답을 기다리는 시간, Claude Code가 훅 스크립트를 기다리는 시간이다. 바깥쪽이 안쪽보다 길어야 사람이 결정할 때까지 끊기지 않는다. 그런데 저장소에 둔 훅 설정 견본의 한도가 실제 설정보다 훨씬 짧아, 그 견본으로 다시 깔면 Claude Code가 먼저 훅을 끊고 브리지만 계속 기다리는 상태였다 [log:foreman-7_hook_timeout_20261115.md]. 견본을 고치고, 실제 승인 설정과 스크립트, 견본의 세 값이 안쪽부터 차례로 길어지는지 보는 시험을 더했다 [code:tests/test_hook_timeouts.py]. 순서만 지키면 값을 바꿔도 깨지지 않는다. 사용자 홈의 Claude Code 설정은 기계마다 달라 이 시험이 읽지 않는다.
 
