@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/roles.py, config/roles.toml, config/models.toml, bridge/static/js/roles.js, bridge/foreman.py, bridge/inspector_close.py, .claude/agents/Explore.md, bridge/roleguard.py, bridge/hookmiss.py, bridge/docrefs.py
-읽은 커밋: 0010c39
+다루는 곳: bridge/roles.py, config/roles.toml, config/models.toml, bridge/static/js/roles.js, bridge/foreman.py, bridge/inspector_close.py, .claude/agents/Explore.md, bridge/roleguard.py, bridge/hookmiss.py, bridge/docrefs.py, bridge/handoff.py, bridge/static/js/office.js, bridge/static/js/render.js
+읽은 커밋: 9d70744
 -->
 
 # 역할 다섯
