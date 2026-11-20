@@ -1,6 +1,6 @@
 <!--
-다루는 곳: bridge/notify.py, bridge/telegram.py, config/notify.toml, migrations/0005_notification.sql, deploy/mysql/backup.sh, deploy/systemd/foreman-bridge.service, scripts/foreman-bridge-alert.sh, bridge/mergeprep.py, bridge/handoff.py, tests/test_fail_now_unpriced.py
-읽은 커밋: 5517e75
+다루는 곳: bridge/notify.py, bridge/telegram.py, config/notify.toml, migrations/0005_notification.sql, deploy/mysql/backup.sh, deploy/systemd/foreman-bridge.service, scripts/foreman-bridge-alert.sh, bridge/mergeprep.py, bridge/handoff.py, tests/test_fail_now_unpriced.py, tests/test_fail_notify_scan.py
+읽은 커밋: ea3778d
 -->
 # 11 알림
 
@@ -104,7 +104,7 @@ CC 세션은 서브에이전트(세션이 일을 나눠 맡기는 작은 에이�
 다른 하나는 **백그라운드 서브에이전트 묶음**이다. 백그라운드로 띄운 서브에이전트는 부모 턴이 끝난 뒤에 끝난다. 부모 턴 알림에는 「진행 2」로만 실리고, 그 세션의 서브에이전트가 모두 끝났을 때 한 번 묶어서 보낸다 [log:stage4_notify_result.md].
 
 ```
-[포먼] 백그라운드 서브에이전트 2개 모두 끝남
+[FOREMAN] 백그라운드 서브에이전트 2개 모두 끝남
 서브에이전트 2 — 완료 2
 - 넷째-가 (완료)
 - 넷째-나 (완료)
@@ -245,7 +245,7 @@ POST /api/sessions/{관리자 세션 id}/escalate
 
 백업 스크립트는 이 명령을 30초 제한으로 부르고 끝에 `|| true`를 붙였다 [code:deploy/mysql/backup.sh]. 알림을 보내다 멈추거나 실패해도 백업 스크립트 자체의 실패 처리(종료 코드 1)는 그대로 지나가게 하기 위해서다. 스크립트 주석에 그 까닭이 적혀 있다. 「실패는 조용히 지나가면 안 된다(milvus-port-forward 교훈)」. port-forward가 56만 번 재시작하는 것을 한 달 넘게 몰랐던 일이 이 프로젝트의 출발점이다 [repo:CLAUDE.md].
 
-브리지 밖 길은 하나 더 있다. 브리지 자신이 거듭 죽어 systemd(서버의 서비스 관리자)가 다시 띄우기를 포기한 때다. 이때는 브리지가 없으니 브리지의 알림은 나가지 않는다. 위 명령도 브리지와 같은 코드와 파이썬 환경을 쓰니 같은 까닭으로 함께 못 돌 수 있다. 그래서 브리지 유닛에 `OnFailure`(유닛이 실패하면 systemd가 대신 띄울 유닛을 적는 설정)를 걸어, 포기하는 순간 `scripts/foreman-bridge-alert.sh`가 돌게 했다 [code:deploy/systemd/foreman-bridge.service] [c:cd14ed6]. 이 스크립트는 브리지 코드, 파이썬 가상환경, `config/notify.toml`을 하나도 읽지 않고 curl과 `.env.telegram`만 쓴다. 그래서 `bridge.telegram`과 달리 `notification` 표에 기록이 남지 않고, 접두어도 스크립트에 적어 둔 `[FOREMAN]`이다. 비밀값 가리기를 거치지 않는 대신 journal(systemd가 모으는 로그) 줄은 싣지 않고 유닛 상태, 다시 띄운 횟수, 오류 종류(예외 이름과 횟수)만 싣는다. 보내지 못하면 까닭을 journal에 쓰고 실패 코드로 끝난다 [code:scripts/foreman-bridge-alert.sh]. 언제 불리고 무엇을 못 잡는지는 → 「어디에 두었나」.
+브리지 밖 길은 하나 더 있다. 브리지 자신이 거듭 죽어 systemd(서버의 서비스 관리자)가 다시 띄우기를 포기한 때다. 이때는 브리지가 없으니 브리지의 알림은 나가지 않는다. 위 명령도 브리지와 같은 코드와 파이썬 환경을 쓰니 같은 까닭으로 함께 못 돌 수 있다. 그래서 브리지 유닛에 `OnFailure`(유닛이 실패하면 systemd가 대신 띄울 유닛을 적는 설정)를 걸어, 포기하는 순간 `scripts/foreman-bridge-alert.sh`가 돌게 했다 [code:deploy/systemd/foreman-bridge.service] [c:cd14ed6]. 다만 이 서버의 systemd에서 실제로 보니 `OnFailure`는 포기할 때만이 아니라 다시 띄우기 전의 실패마다 불렸다. 그래서 스크립트는 먼저 유닛 상태를 읽어, 다시 띄우는 중이면 보내지 않고 끝내고, 포기해 `failed`에 머물러 있을 때만 보낸다. 상태를 읽지 못하면 보내는 쪽으로 간다. 조용히 지나가는 것보다 한 통 더 오는 편이 낫기 때문이다 [code:scripts/foreman-bridge-alert.sh]. 이 스크립트는 브리지 코드, 파이썬 가상환경, `config/notify.toml`을 하나도 읽지 않고 curl과 `.env.telegram`만 쓴다. 그래서 `bridge.telegram`과 달리 `notification` 표에 기록이 남지 않고, 접두어도 스크립트에 적어 둔 `[FOREMAN]`이다. 비밀값 가리기를 거치지 않는 대신 journal(systemd가 모으는 로그) 줄은 싣지 않고 유닛 상태, 다시 띄운 횟수, 오류 종류(예외 이름과 횟수)만 싣는다. 보내지 못하면 까닭을 journal에 쓰고 실패 코드로 끝난다 [code:scripts/foreman-bridge-alert.sh]. 언제 불리고 무엇을 못 잡는지는 → 「어디에 두었나」.
 
 ### 모델이 판단해 부르는 용도가 아니다
 
@@ -319,10 +319,11 @@ FOREMAN의 텔레그램은 한 방향이다. 브리지는 텔레그램으로 보
 | 겹침(같은 파일, 다른 프로젝트에 같은 글) | `overlap` | `bridge/overlap.py` | 바로 | → 「겹침 알림」 |
 | 계획 넘긴 뒤 안 띄움, 관리자 부탁 못 넣음 | `manager` | `bridge/handover.py`, `bridge/managers.py` | 바로 | → 「관리자에게 넘기기와 보고」 |
 | ❓ 관리자가 사용자 답을 기다립니다, 📋 관리자 보고 | `escalate` | `bridge/api/dashboard.py` | 물음 바로, 보고 묶음 | → 「관리자에게 넘기기와 보고」 |
-| 계획 세션 일부만 뜸 등 | `direct` | `bridge/api/foreman.py` | 바로 | → 「계획 한 번」 |
+| 계획 세션 일부만 뜸, 띄우기 기록 실패 | `direct` | `bridge/api/foreman.py` | 바로 | → 「계획 한 번」 |
+| ⚠ 브리지가 뜰 때 장치를 켜지 못함(합치기 준비, 서기실 전체 줄, 역할 권한과 관리자 등), claude 실행 파일을 찾지 못함 | `direct` | `bridge/main.py` | 바로 | → 「브리지가 뜨는 차례」 |
 | 자동 기상 계획 제안 | `wake` | `bridge/wake.py` | 바로 | → 「진행 중인 일과 자동 기상」 |
 | ✋ Notion 문서를 덮지 않음, ⚠ 게시 실패, 게시 설정 깨짐 | `docsync`, `publish` | `bridge/docsync.py`, `bridge/notioncfg.py`, `bridge/api/publish.py` | ✋는 묶음, ⚠는 바로 | → 「노션 게시」 |
-| 사용 한도 80%, 95%, 한도 줄이 6시간 없음 | `usage` | `bridge/usage.py` | 바로 | → 「13 사용량과 모델」 |
+| 사용 한도 80%, 95%, 한도 줄이 6시간 없음, ⚠ 사용량 읽기를 켜지 못함 | `usage` | `bridge/usage.py`, `bridge/main.py` | 바로 | → 「13 사용량과 모델」 |
 | ⚠ 하루 묶음 실패, 26시간 늦음 | `digest` | `bridge/notify.py` | 바로 | 이 편 |
 | DB 백업 실패 | `direct` | `deploy/mysql/backup.sh` → `bridge.telegram` | 브리지를 거치지 않음 | 이 편 |
 | 브리지가 멈췄습니다(systemd가 다시 띄우기를 포기) | 없음(표에 남지 않음) | `deploy/systemd/foreman-bridge.service` `OnFailure` → `scripts/foreman-bridge-alert.sh` | 브리지를 거치지 않음 | 이 편, → 「어디에 두었나」 |
