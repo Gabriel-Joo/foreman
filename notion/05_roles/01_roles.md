@@ -1,5 +1,5 @@
 <!--
-다루는 곳: bridge/roles.py, config/roles.toml, config/models.toml, bridge/static/js/roles.js, bridge/foreman.py, bridge/inspector_close.py, .claude/agents/Explore.md, bridge/roleguard.py, bridge/hookmiss.py, bridge/docrefs.py, bridge/handoff.py, bridge/static/js/office.js, bridge/static/js/render.js
+다루는 곳: bridge/roles.py, config/roles.toml, config/models.toml, bridge/static/js/roles.js, bridge/foreman.py, bridge/inspector_close.py, .claude/agents/Explore.md, bridge/roleguard.py, bridge/hookmiss.py, bridge/docrefs.py, bridge/handoff.py, bridge/static/js/office.js
 읽은 커밋: 9d70744
 -->
 
@@ -230,7 +230,7 @@ FOREMAN 밖(터미널에서 직접)에서 띄운 CC 세션은 조립기가 늘 �
 
 테마는 다른 값이 필요한 역할만 `theme.json`의 `roles.colors`에 적는다. 지금은 현장 테마의 감독(흰 안전모 `#f4f4f4`)과 코더(`#2f6fb0`)뿐이다 [code:bridge/static/js/roles.js]. 옷 표에도 테마에도 없는 역할은 배지 색으로 그린다. 새 역할을 더하면서 옷 색을 빠뜨려도 캐릭터가 색 없이 그려지지는 않는다.
 
-배지 CSS는 따로 적지 않고, `render.js`가 `ROLE_COLOR`에서 역할마다 `.rolebadge.role-<값>` 규칙을 만들어 문서에 넣는다 [code:bridge/static/js/render.js]. 화면 역할 고르기 칸의 「이름 — 설명」 글도 `ROLE_LABEL`과 `ROLE_DESC`로 만든다.
+배지 CSS는 따로 적지 않고 패널을 그리는 쪽이 `ROLE_COLOR`에서 만든다(→ 「옆 패널」). 화면 역할 고르기 칸의 「이름 — 설명」 글도 `ROLE_LABEL`과 `ROLE_DESC`로 만든다.
 
 ### 왜 서버가 내려주지 않고 JS에 한 벌 더 두는가
 

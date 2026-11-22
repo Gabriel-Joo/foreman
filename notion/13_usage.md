@@ -83,8 +83,8 @@ Fable 주간 한도는 이 때문에 하한을 구하지 못한다. 하한은 FO
 | 한도 key | 화면 이름 | 줄 머리 | 창 | 세는 모델 |
 |---|---|---|---|---|
 | `session_5h` | 5시간 세션 | Current session | 5시간 | 전부 |
-| `weekly_all` | 주간 · 전체 | Current week (all models) | 168시간 | 전부 |
-| `weekly_fable` | 주간 · Fable | Current week (Fable) | 168시간 | 이름에 fable이 든 모델만 |
+| `weekly_all` | 「주간 · 전체」 | Current week (all models) | 168시간 | 전부 |
+| `weekly_fable` | 「주간 · Fable」 | Current week (Fable) | 168시간 | 이름에 fable이 든 모델만 |
 
 [code:config/usage.toml]
 
@@ -148,7 +148,7 @@ CC가 `/usage` 글에서 어떤 한도의 줄을 통째로 빼는 일이 있다.
 
 픽셀 화면 머리줄에 사용량 칩이 있다. 지금 모양은 이렇다.
 
-> 한도: 5시간 약 42% · 주간 91%
+> 「한도: 5시간 약 42% · 주간 91%」
 
 리셋 전에 100%가 될 것 같으면 그 한도 뒤에 「오늘 18:14 소진 예상」이나 「화 19시 소진 예상」이 붙는다 [code:bridge/static/js/office.js]. 오늘이면 시각만, 아니면 요일과 시를 쓴다. 80% 넘으면 노랑, 95% 넘으면 빨강이다. 누르면 `/usage` 화면으로 간다. Fable 주간은 1% 이상일 때만 칩에 넣는다. 머리 칩은 `/usage`를 못 읽거나 값이 낡았으면 숫자 앞에 ⚠를 붙이고 빨강으로 바뀐다.
 
