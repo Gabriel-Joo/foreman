@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/overhead.js, bridge/static/js/render.js, bridge/static/js/office.js, bridge/static/js/store.js, bridge/api/dashboard.py, bridge/uiver.py, bridge/ingest_health.py
-읽은 커밋: 98e4c3a
+읽은 커밋: 46b1678
 -->
 # 머리 위 표시와 띠
 
