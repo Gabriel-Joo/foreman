@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/ccscreen.js, bridge/api/terminal.py, bridge/terminal.py, deploy/shell/foreman-cc-view
-읽은 커밋: 1d7d127
+읽은 커밋: be444fc
 -->
 
 # 세션 화면 창
