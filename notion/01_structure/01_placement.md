@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/config.py, bridge/main.py, deploy/systemd/foreman-bridge.service, deploy/systemd/foreman-bridge-alert.service, scripts/foreman-bridge-alert.sh, deploy/mysql/, docs/history/02_cloudflare_tunnel.md
-읽은 커밋: 0dc84b9
+읽은 커밋: 35518b7
 -->
 # 어디에 두었나
 
@@ -147,7 +147,7 @@ systemd로 옮기고 나서 숨은 고장이 하나 생겼다. 손으로 띄울 
 
 만들면서 예상과 다른 점이 하나 나왔다. systemd는 포기할 때만이 아니라 `Restart`로 다시 띄우기 전의 실패마다 OnFailure 유닛을 불렀다. 그대로 두면 브리지가 한 번 죽었다 바로 다시 떠도 「포기했다」는 알림이 간다. 그래서 스크립트가 먼저 유닛 상태를 읽고, 정말 실패 상태에 머물러 있을 때만 보낸다. 상태를 읽지 못하면 보내는 쪽을 고른다. 조용히 지나가는 것보다 한 번 더 울리는 편이 낫다고 보았다 [code:scripts/foreman-bridge-alert.sh][log:foreman-6_bridge_alert_20261115.md].
 
-알림 글에는 유닛 이름, 상태, 다시 띄운 횟수, 끝난 결과, 그리고 journal 마지막 50줄에 나온 오류 종류(예외 이름과 그 횟수)만 싣는다. journal 줄을 그대로 싣지 않는 것은 그 안에 비밀값이 섞일 수 있어서다. 토큰은 명령줄에 싣지 않고, 텔레그램 보내기가 실패하면 까닭을 journal에 남기고 실패 코드로 끝난다. 글 끝에는 다시 띄우는 법(`systemctl --user reset-failed` 뒤 `start`)을 붙인다 [code:scripts/foreman-bridge-alert.sh].
+알림 글에는 유닛 이름, 상태, 다시 띄운 횟수, 끝난 결과와 종료 코드(systemd가 알림 유닛에 넘겨 줄 때), 보낸 시각, 그리고 journal 마지막 50줄에 나온 오류 종류(예외 이름과 그 횟수, 많은 것부터 셋)만 싣는다. journal 줄을 그대로 싣지 않는 것은 그 안에 비밀값이 섞일 수 있어서다. 토큰은 명령줄에 싣지 않고, 텔레그램 보내기가 실패하면 까닭을 journal에 남기고 실패 코드로 끝난다. 글 끝에는 다시 띄우는 법(`systemctl --user reset-failed` 뒤 `start`)을 붙인다 [code:scripts/foreman-bridge-alert.sh].
 
 이 알림은 systemd가 포기한 때만 울린다. 브리지가 포기 문턱 아래로 느리게 죽고 살기를 되풀이하거나, 프로세스는 살아 있는데 답하지 않는 멈춤에는 불리지 않는다 [code:deploy/systemd/foreman-bridge-alert.service]. 그런 때를 잡을 바깥 감시 타이머는 아직 없고, 할 일 목록에 있다 [docs:TODO.md].
 
@@ -272,7 +272,7 @@ WebSocket도 따로 확인하게 했다. FOREMAN 화면은 WebSocket이 핵심�
 
 셋째, 승인은 그때도 밖에서 하지 않는다. 승인은 텔레그램이나 서버 앞에서만 한다.
 
-그 전에 끄고 열어야 할 것도 하나 있다. 브리지에는 내부 상태를 들여다보는 디버그 경로(`/api/debug/*`)가 있고, 설정 주석은 「터널로 내보내기 전에 끈다」고 적고 있다. 이 경로의 기본값은 꺼짐(`debug_endpoints = False`)이라, 열 때 이 값이 켜져 있지 않은지 본다 [code:bridge/config.py]. 다시 볼 조건은 VNC 원격 화면 없이 밖에서 FOREMAN을 봐야 할 때다 [docs:00_design.md]. 그때도 답은 파드가 아니라 호스트 브리지에 바로 붙이는 것이다.
+그 전에 끄고 열어야 할 것도 하나 있다. 브리지에는 내부 상태를 들여다보는 디버그 경로(`/api/debug/*`)가 있고, 설정 주석은 「터널로 내보내기 전에 끈다」고 적고 있다. 이 경로의 기본값은 꺼짐(`debug_endpoints = False`)이라, 열 때 이 값이 켜져 있지 않은지 본다 [code:bridge/config.py]. 같은 설정 파일의 바인드 주석은 아직 「외부 노출은 터널 지시서로」라고 적고 있어 열지 않기로 한 지금 상태와 맞지 않는다. 이 주석을 고치는 일도 할 일 목록에 있다 [docs:TODO.md]. 다시 볼 조건은 VNC 원격 화면 없이 밖에서 FOREMAN을 봐야 할 때다 [docs:00_design.md]. 그때도 답은 파드가 아니라 호스트 브리지에 바로 붙이는 것이다.
 
 ## 남은 빈틈
 
