@@ -1,6 +1,6 @@
 <!--
-다루는 곳: config/approval.toml, scripts/foreman-decide.sh, bridge/inject.py, bridge/assembler.py, bridge/overlap.py, bridge/usage.py
-읽은 커밋: 2b56124
+다루는 곳: config/approval.toml, scripts/foreman-decide.sh, bridge/inject.py, bridge/terminal.py, bridge/assembler.py, bridge/overlap.py, bridge/usage.py
+읽은 커밋: 7b8adb7
 -->
 
 # 알려진 한계
@@ -56,7 +56,17 @@ FOREMAN이 띄우는 세션은 Claude Code의 auto mode(세션이 묻지 않고 
 
 - 대화 기록 파일이 지워진 뒤에는 도구 결과 본문을 볼 수 없습니다. Claude Code는 기본으로 30일 뒤 이 파일을 지우는데, 서버 설정으로 120일까지 늘려 두었습니다(→ 「세션 패널: 대화와 활동」) [docs:00_design.md]
 
-## 6. 조건: 물리 서버 한 대, 다 볼 수 없는 사용량
+## 6. 세션에 글을 넣는 길은 tmux 하나입니다
+
+FOREMAN은 Claude Code를 고치지 않고, 세션이 떠 있는 tmux 창(터미널 하나를 여러 창으로 나눠 띄워 두는 프로그램)에 글을 붙여 넣고 Enter를 치는 길 하나로 세션에 글을 넣습니다. 사람이 터미널에서 보는 세션과 FOREMAN이 다루는 세션이 같은 것이어야 대화가 이어지기 때문입니다 [docs:00_design.md]. 그런데 이 길은 받았다는 답을 돌려주지 않습니다. 그래서 브리지는 넣은 뒤 대화 기록에서 그 글을 찾고, 못 찾으면 화면의 입력 칸을 봅니다. 기록에서는 아직 못 찾았어도 입력 칸이 비었으면 넣은 것으로 다루고, 뒤에서 2분 동안 기록을 더 봅니다. Claude Code가 기록을 10초 넘게 늦게 쓰는 일이 잦은데, 이것을 실패로 알리면 보낸 쪽이 다시 보내 같은 글이 두 번 들어가기 때문입니다 [code:bridge/inject.py] [log:foreman-5_inject_unconfirmed_20261120.md]. 세션 패널 입력 칸뿐 아니라 새 세션에 넣는 요약과 인계 글, 교장이 살아 있는 세션에 보내는 글, 관리자에게 넘기는 부탁, 셸 결과 전달, 합치기 알림이 모두 같은 판정을 씁니다 [code:bridge/handoff.py] [code:bridge/foreman.py] [code:bridge/managers.py] [code:bridge/terminal.py] [code:bridge/mergeprep.py] [log:foreman-4_inject_paths_20261120.md].
+
+치른 값은 이렇습니다.
+
+- 「보냈습니다」로 알린 글 가운데 끝내 기록에서 찾지 못하는 것이 섞일 수 있습니다. 그 결과는 뒤에서 다시 본 뒤에야 화면에 나옵니다(→ 「세션 패널: 대화와 활동」)
+- `/` 명령은 기록에 보낸 글과 다른 모양으로 남아 끝내 맞대 볼 수 없으므로, 뒤에서 다시 보지도 않습니다 [code:bridge/inject.py]
+- tmux 밖에서 띄운 세션은 지켜보기만 되고, 글을 넣을 수도 세션 화면 창으로 열 수도 없습니다 [code:bridge/inject.py] [code:bridge/terminal.py]
+
+## 7. 조건: 물리 서버 한 대, 다 볼 수 없는 사용량
 
 이것은 고른 것이 아니라 바꿀 수 없는 조건입니다. FOREMAN은 물리 서버 한 대 위에 있어 서버가 죽으면 화면, 기록, 세션이 함께 멈춥니다. 그래서 화면과 기록 수집을 나눠 띄워도 얻는 것이 없어 하나로 두었습니다 [docs:00_design.md]. 서버 한 대라는 조건이 무엇을 묶는지는 인프라 기술문서의 알려진 한계 편에 자세히 있습니다. 사용량도 다 볼 수 없습니다. Anthropic은 한도를 토큰 수로 밝히지 않고, FOREMAN은 이 PC의 Claude Code만 봅니다 [code:bridge/usage.py].
 
