@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/js/office.js, bridge/static/js/theme.js, bridge/static/js/grid.js, bridge/static/js/sprites.js, bridge/static/js/walk.js, bridge/static/js/aura.js, bridge/static/js/overhead.js, bridge/static/js/wrap.js, bridge/static/js/render.js, bridge/static/themes/, scripts/draw_props.py, LICENSES.md
-읽은 커밋: 66fa9ae
+읽은 커밋: 3b643de
 -->
 
 # 픽셀 오피스와 테마
@@ -50,7 +50,7 @@ flowchart LR
 | `palette` | 경고(노랑), 실패(빨강), 진행(파랑), 성공(초록) 같은 색 이름 → 값 |
 | `layout` | 한 칸 크기(`tile` 16), 모눈 파일 경로(`grid`), 구역마다 자리(`zones`) |
 | `tags` | 방 이름(`zones`), 방 → 하는 일(`roles`), 이름표 꾸밈(`style`), 출하 단계 이름(`infra`) |
-| `states` · `tools` · `flags` | 상태, 도구, 깃발 → 동작(다음 절) |
+| `states`, `tools`, `flags` | 상태, 도구, 깃발 → 동작(다음 절) |
 | `roles` | 역할 색을 어디에 칠할지(`mode`: 로브, 사원증 끈, 안전모), 테마만 다른 색, 역할별 쉼 자리 |
 | `sprites` | 시트 파일, 그림 이름 → 시트 안 사각형, 가구 목록(`decor`), 동작마다 곁에 놓는 소품(`props`), 캐릭터 목록 |
 | `hq`, `outside`, `aura`, `courier`, `foreman` | 감독실 모양, 방 바깥 풍경, 발밑 문양, 출하 담당 이름, 감독 이름(소장, 교장, 팀장) |
