@@ -1,6 +1,6 @@
 <!--
 다루는 곳: bridge/static/office.html, bridge/static/js/office.js, bridge/static/js/opanel.js, bridge/static/js/terminal.js
-읽은 커밋: 9e24a8f
+읽은 커밋: 1402e3d
 -->
 # 한눈에 보는 FOREMAN
 
