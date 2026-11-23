@@ -86,7 +86,7 @@ skip = ["docs/README.md", "docs/next_rebuild.md", "docs/ops/"]   # docs/ops/ = �
 # 11-12 인프라 관리자 299 요청 · 사용자 승인 — 한 쪽만 시험(09_monitoring). 값은 299가 적은 그대로
 root = "4133218bb52481079af8f3712ad8d73c"        # 프로젝트 > 인프라
 docs_page = "4153218bb52480069acbdd52063fe2c5"   # [기술문서]
-portfolio_page = "4153218bb52480d39869e736a15b4b8f"   # [포트폴리오](비어 있음, 인프라 저장소에 portfolio/ 없음)
+portfolio_page = "4153218bb52480d39869e736a15b4b8f"   # [포트폴리오](2026-11-23 포트폴리오 12편이 올라갔다)
 github = "https://github.com/Gabriel-Joo/ronanlab-infra"
 ref = "origin/main"
 # 11-12 사용자 · 299: docs · quiet_min · skip · create · archive · title · order · header · headings는 인프라 저장소
